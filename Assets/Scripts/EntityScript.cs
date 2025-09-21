@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class PlayerScript : MonoBehaviour
+public class EntityScript : MonoBehaviour
 {
     public int speed = 1;
     public int maxHealth = 10;

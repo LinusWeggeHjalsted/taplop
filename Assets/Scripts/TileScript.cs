@@ -5,19 +5,18 @@ public class TileScript : MonoBehaviour
 {
     private InputAction clickAction;
     public GameObject player;
-    public PlayerScript playerScript;
+    public EntityScript playerScript;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
     public bool isOccupied = false;
     public bool isHighlighted = false;
-    public bool isClickable = false;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
         var playerInput = FindObjectOfType<PlayerInput>();
         player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerScript>();
+        playerScript = player.GetComponent<EntityScript>();
         turnLogic = GameObject.Find("Turn Logic");
         turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
 
@@ -34,7 +33,7 @@ public class TileScript : MonoBehaviour
             if (hit.collider.gameObject == this.gameObject)
             {
                 Debug.Log("clicked tile at " + this.transform.position);
-                if (!isClickable)
+                if (!isHighlighted)
                 {
                     return;
                 }
@@ -46,7 +45,10 @@ public class TileScript : MonoBehaviour
                         turnLogicScript.hasMoved = true;
                         break;
                     case TurnLogicScript.GameState.PlayerTurnAttack:
-                        // to-do
+                        GameObject skillUsed = turnLogicScript.skillUsed;
+                        Skill skillScript = skillUsed.GetComponent<Skill>();
+                        skillScript.useSkill(this.transform.position);
+                        turnLogicScript.hasAttacked = true;
                         break;
                 }
             }

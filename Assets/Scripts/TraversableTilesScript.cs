@@ -162,9 +162,8 @@ public class TraversableTilesScript : MonoBehaviour
         for (int i = 0; i < this.transform.childCount; i++)
         {
             Transform tileTransform = this.transform.GetChild(i);
-            Debug.Log("tile at " + tileTransform.position.ToString());
-            GameObject tileObject = tileTransform.gameObject;
-            tileLookup.Add(tileTransform.position, tileObject);
+            GameObject tile = tileTransform.gameObject;
+            tileLookup.Add(tileTransform.position, tile);
         }
     }
 

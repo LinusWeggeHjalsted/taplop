@@ -3,7 +3,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 
-
 public class TurnLogicScript : MonoBehaviour
 {
     public enum GameState
@@ -15,8 +14,9 @@ public class TurnLogicScript : MonoBehaviour
     }
 
     public GameState currentGameState;
+    public GameObject skillUsed;
     public GameObject player;
-    public PlayerScript playerScript;
+    public EntityScript playerScript;
     public GameObject enemies;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
@@ -25,6 +25,7 @@ public class TurnLogicScript : MonoBehaviour
     public Dictionary<Vector3, GameObject> tileLookup = new Dictionary<Vector3, GameObject>();
     
     public bool hasMoved = false;
+    public bool hasAttacked = false;
 
     IEnumerator WaitForLevelBuilderBeforeNewGameState()
     {
@@ -40,7 +41,7 @@ public class TurnLogicScript : MonoBehaviour
     {
         currentGameState = GameState.BuildingLevel;
         player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerScript>();
+        playerScript = player.GetComponent<EntityScript>();
         enemies = GameObject.Find("Enemies");
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
@@ -74,10 +75,6 @@ public class TurnLogicScript : MonoBehaviour
                         if (tileScript.isHighlighted)
                         {
                             tileScript.isHighlighted = false;
-                        }
-                        if (tileScript.isClickable)
-                        {
-                            tileScript.isClickable = false;
                         }
                     }
                     break;
@@ -122,16 +119,16 @@ public class TurnLogicScript : MonoBehaviour
                 {
                     TileScript tileScript = tileLookup[pos].GetComponent<TileScript>();
                     tileScript.isHighlighted = true;
-                    tileScript.isClickable = true;
                 }
-                // await player input
+                // to-do - await player input
 
                 break;
             case GameState.PlayerTurnAttack:
-                // select skill, select targets, update level
+                // to-do - select skill, select targets, update level
+
                 break;
             case GameState.EnemyTurn:
-                // execute ai per active enemy
+                // to-do - execute ai per active enemy
                 break;
         }
     }
