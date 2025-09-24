@@ -8,6 +8,8 @@ public class TileScript : MonoBehaviour
     public EntityScript playerScript;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
+    public GameObject highlight;
+    public Animator highlightAnimator;
     public bool isOccupied = false;
     public bool isHighlighted = false;
 
@@ -19,6 +21,8 @@ public class TileScript : MonoBehaviour
         playerScript = player.GetComponent<EntityScript>();
         turnLogic = GameObject.Find("Turn Logic");
         turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+        highlight = this.transform.Find("Highlight").gameObject;
+        highlightAnimator = highlight.GetComponent<Animator>();
 
         clickAction = playerInput.actions.FindAction("Click");
         clickAction.performed += OnClick;
@@ -58,6 +62,6 @@ public class TileScript : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-
+        highlightAnimator.SetBool("isHighlighted", isHighlighted);
     }
 }

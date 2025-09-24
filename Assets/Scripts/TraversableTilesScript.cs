@@ -35,6 +35,18 @@ public class TraversableTilesScript : MonoBehaviour
     public LevelBuilderScript levelBuilderScript;
     public Dictionary<Vector3, GameObject> tileLookup = new Dictionary<Vector3, GameObject>();
     
+    public void ClearHighlights()
+    {
+        foreach (GameObject tileObject in tileLookup.Values)
+        {
+            TileScript tileScript = tileObject.GetComponent<TileScript>();
+            if (tileScript.isHighlighted)
+            {
+                tileScript.isHighlighted = false;
+            }
+        }
+    }
+
     public float Distance(Vector3 startPosition, Vector3 endPosition)
     {
         // diagonal movement is allowed

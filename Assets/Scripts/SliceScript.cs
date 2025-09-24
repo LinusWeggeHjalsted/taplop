@@ -4,6 +4,8 @@ using System.Collections.Generic;
 public class SliceScript : MonoBehaviour, Skill
 {
     public float range = 1f;
+    public int cooldown = 0;
+    public int currentCooldown = 0;
     public GameObject sword;
     public SwordScript swordScript;
     public GameObject traversableTiles;
@@ -15,9 +17,20 @@ public class SliceScript : MonoBehaviour, Skill
     public TurnLogicScript turnLogicScript;
     public GameObject damageCalculator;
     public DamageCalculatorScript damageCalculatorScript;
+    
+    public int GetCurrentCooldown()
+    {
+        return currentCooldown;
+    }
+
+    public void ReduceCooldown(int number)
+    {
+        currentCooldown -= number;
+    }
 
     public void useSkill(Vector3 targetPosition)
     {
+        Debug.Log("using slice");
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -31,13 +44,14 @@ public class SliceScript : MonoBehaviour, Skill
         if (target != null)
         {
             EntityScript targetScript = target.GetComponent<EntityScript>();
-            targetScript.currentHealth -= swordScript.damage;
+            targetScript.IncomingDamage(swordScript.damage);
         }
         // to-do - use actual damage calculation
     }
 
     public void prepareSkill(Vector3 fromPosition)
     {
+        Debug.Log("preparing slice");
         // to-do - clear all highlighting
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
@@ -71,6 +85,7 @@ public class SliceScript : MonoBehaviour, Skill
                 targetTileScript.isHighlighted = true;
             }
         }
+        Debug.Log("highlighted possible targets");
     }
 
     void Start()

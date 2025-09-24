@@ -1,20 +1,26 @@
 using UnityEngine;
 
-public class SwordScript : MonoBehaviour
+public class SwordScript : MonoBehaviour, Weapon
 {
-    public string itemName; // to-do - will be set when instantiated
-    public int damage = 1; // to-do - will be set when instantiated
-    public GameObject slice;
+    public bool finishedBuilding = false;
+    public GameObject firstSkillPrefab;
+    public GameObject firstSkill;
     public GameObject secondSkillPrefab;
     public GameObject secondSkill;
-    public GameObject wielder;
+    public string itemName; // to-do - will be set when instantiated
+    public int damage = 1; // to-do - will be set when instantiated
+
+    public bool IsFinishedBuilding()
+    {
+        return finishedBuilding;
+    }
 
     void Start()
     {
-        slice = GameObject.Find("Slice");
-        // to-do - read from current loadout to get second skill choice
+        firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Slice");
+        firstSkill = Instantiate(firstSkillPrefab, this.transform);
         secondSkillPrefab = Resources.Load<GameObject>("Prefabs/Spinblade");
         secondSkill = Instantiate(secondSkillPrefab, this.transform); 
-        wielder = this.transform.parent.parent.gameObject;
+        finishedBuilding = true;
     }
 }
