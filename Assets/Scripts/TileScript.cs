@@ -11,9 +11,22 @@ public class TileScript : MonoBehaviour
     public GameObject highlight;
     public Animator highlightAnimator;
     public bool isOccupied = false;
-    public bool isHighlighted = false;
+    private bool isHighlighted = false;
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+    public bool IsHighlighted 
+    {
+        get
+        {
+            return this.isHighlighted;
+        }
+        set
+        {
+            this.isHighlighted = value;
+            highlightAnimator.SetBool("isHighlighted", isHighlighted);
+            Debug.Log(this.transform.position.ToString() + "tile was highlighted");
+        }
+    }
+
     void Start()
     {
         var playerInput = FindObjectOfType<PlayerInput>();
@@ -59,9 +72,7 @@ public class TileScript : MonoBehaviour
         }
     }
 
-    // Update is called once per frame
     void Update()
     {
-        highlightAnimator.SetBool("isHighlighted", isHighlighted);
     }
 }

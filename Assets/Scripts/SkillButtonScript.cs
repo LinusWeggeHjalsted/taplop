@@ -83,12 +83,4 @@ public class SkillButtonScript : MonoBehaviour
         skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
         cooldownPrefab = Resources.Load<GameObject>("Prefabs/Cooldown Overlay Panel");
     }
-
-    void Update()
-    {
-        if (finishedBuilding)
-        {
-            DisplayCooldown();
-        }
-    }
 }

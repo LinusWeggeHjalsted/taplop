@@ -82,7 +82,7 @@ public class SliceScript : MonoBehaviour, Skill
             TileScript targetTileScript = targetTile.GetComponent<TileScript>();
             if (targetTileScript.isOccupied)
             {
-                targetTileScript.isHighlighted = true;
+                targetTileScript.IsHighlighted = true;
             }
         }
         Debug.Log("highlighted possible targets");

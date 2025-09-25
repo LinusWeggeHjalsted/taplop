@@ -40,9 +40,9 @@ public class TraversableTilesScript : MonoBehaviour
         foreach (GameObject tileObject in tileLookup.Values)
         {
             TileScript tileScript = tileObject.GetComponent<TileScript>();
-            if (tileScript.isHighlighted)
+            if (tileScript.IsHighlighted)
             {
-                tileScript.isHighlighted = false;
+                tileScript.IsHighlighted = false;
             }
         }
     }

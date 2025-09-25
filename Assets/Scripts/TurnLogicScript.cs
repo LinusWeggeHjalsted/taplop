@@ -70,7 +70,6 @@ public class TurnLogicScript : MonoBehaviour
     IEnumerator PlayerTurnMove()
     {
         hasMoved = false;
-        skillsPanelScript.ReduceCooldowns(1);
         // find reachable tiles
         int playerSpeed = playerScript.speed;
         Vector3 playerPosition = player.transform.position;
@@ -109,30 +108,18 @@ public class TurnLogicScript : MonoBehaviour
         foreach (Vector3 pos in reachableTiles)
         {
             TileScript tileScript = tileLookup[pos].GetComponent<TileScript>();
-            tileScript.isHighlighted = true;
+            tileScript.IsHighlighted = true;
         }
         while (!hasMoved)
         {
             yield return null;
         }
-        hasMoved = false;
         GameObject newTile = tileLookup[player.transform.position];
         TileScript newTileScript = newTile.GetComponent<TileScript>();
         GameObject oldTile = tileLookup[playerScript.previousPosition];
         TileScript oldTileScript = oldTile.GetComponent<TileScript>();
         newTileScript.isOccupied = true;
-        oldTileScript.isOccupied = false;
-    
-        foreach (KeyValuePair<Vector3, GameObject> tile in tileLookup)
-        {
-            TileScript tileScript = tile.Value.GetComponent<TileScript>();
-            if (tileScript.isHighlighted)
-            {
-                tileScript.isHighlighted = false;
-            }
-        }
-        
-        traversableTilesScript.ClearHighlights();
+        oldTileScript.isOccupied = false;        
         currentGameState = GameState.PlayerTurnAttack;
         hasMoved = false;
         turnStarted = false;
@@ -146,7 +133,6 @@ public class TurnLogicScript : MonoBehaviour
             yield return null;
         }
         
-        traversableTilesScript.ClearHighlights();
         currentGameState = GameState.EnemiesTurn;
         hasAttacked = false;
         turnStarted = false;
@@ -163,6 +149,8 @@ public class TurnLogicScript : MonoBehaviour
                 {
                     if (!turnStarted)
                     {
+                        skillsPanelScript.ReduceCooldowns(1);
+                        traversableTilesScript.ClearHighlights();
                         turnStarted = true;
                         turnStatusText.text = "Move!";
                         StartCoroutine(PlayerTurnMove());
@@ -175,6 +163,7 @@ public class TurnLogicScript : MonoBehaviour
                 {
                     if (!turnStarted)
                     {
+                        traversableTilesScript.ClearHighlights();
                         turnStarted = true;
                         turnStatusText.text = "Attack!";
                         StartCoroutine(PlayerTurnAttack());
@@ -185,6 +174,7 @@ public class TurnLogicScript : MonoBehaviour
                 // to-do - execute ai per active enemy
                 if (!turnStarted)
                 {
+                    traversableTilesScript.ClearHighlights();
                     turnStarted = true;
                     turnStatusText.text = "Enemy turns...";
                     traversableTilesScript.ClearHighlights();

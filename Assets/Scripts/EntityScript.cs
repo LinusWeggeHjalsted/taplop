@@ -19,13 +19,27 @@ public class EntityScript : MonoBehaviour
     public string currentBuildTemplate = "00000000";
     public int speed = 1;
     public int maxHealth = 10;
-    public int currentHealth = 10;
+    private int currentHealth = 10;
     public int armor = 0;
     public Vector3 previousPosition = new Vector3();
     public int unlockedSkills = 2;
 
     public List<GameObject> equippedSkills = new List<GameObject>();
     
+    public int CurrentHealth
+    {
+        get
+        {
+            return this.currentHealth;
+        }
+        set
+        {
+            this.currentHealth = value;
+            DisplayHealth();
+            Debug.Log(name + " health was updated to " + this.currentHealth.ToString());
+        }
+    }
+
     public void DisplayHit()
     {
         GameObject hitObject = new GameObject("Hit Sprite Object");
@@ -97,7 +111,7 @@ public class EntityScript : MonoBehaviour
         {
             actualDamage = 0;
         }
-        currentHealth -= actualDamage;
+        CurrentHealth -= actualDamage;
     }
 
     IEnumerator WaitForGearBeforePopulating()
@@ -126,13 +140,8 @@ public class EntityScript : MonoBehaviour
         gearScript = gear.GetComponent<GearScript>();
         hitSprite = Resources.Load<Sprite>("Hit");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
-        currentHealth = maxHealth;
+        CurrentHealth = maxHealth;
         unlockedSkills = 2;
         StartCoroutine(WaitForGearBeforePopulating());
-    }
-
-    void Update()
-    {
-        DisplayHealth();
     }
 }
