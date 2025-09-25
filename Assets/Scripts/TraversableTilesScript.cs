@@ -108,11 +108,6 @@ public class TraversableTilesScript : MonoBehaviour
                     {
                         continue;
                     }
-                    // to-do: check if tile is occupied
-                    if (tileLookup[neighborPosition].GetComponent<TileScript>().isOccupied)
-                    {
-                        continue;
-                    }
                     // update if neighbor has been checked already
                     if (openSetLookup.ContainsKey(neighborPosition))
                     {

@@ -102,6 +102,22 @@ public class EntityScript : MonoBehaviour
         }
     }
 
+    public void MoveTo(Vector3 targetPosition)
+    {
+        GameObject targetTile = tileLookup[targetPosition];
+        if (targetTile.isOccupied) 
+        {
+            Debug.Log("tried to move to an occupied tile");
+            return;
+        }
+        currentPosition = this.transform.position;
+        currentTile = tileLookup[currentPosition];
+        targetTile.isOccupied = true;
+        currentTile.isOccupied = false;
+        previousPosition = currentPosition;
+        this.transform.position = targetPosition;
+    }
+
     public void IncomingDamage(int damage)
     {
         DisplayHit();
