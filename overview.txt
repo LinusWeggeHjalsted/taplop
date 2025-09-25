@@ -59,6 +59,9 @@ utility skills
         focus - reset all weapon skill cooldowns, cooldown 10
         meditate - reset all utility skill cooldowns, cooldown 10
         time walk - get an extra turn after this one, cooldown 10
+    spells
+        chain lightning - range 1, strike all enemies within range 1 of target repeating, cooldown 5
+        shockwave - range 1, strike and knockback all enemies within range, cooldown 5
 
 enemies
     bat - speed 1, dagger
