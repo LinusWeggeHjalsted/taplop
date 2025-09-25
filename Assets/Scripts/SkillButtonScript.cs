@@ -60,6 +60,7 @@ public class SkillButtonScript : MonoBehaviour
         {
             yield return null;
         }
+        Debug.Log("skill button finished waiting for player");
         while (!skillsPanelScript.finishedAssigning)
         {
             yield return null;
@@ -76,11 +77,20 @@ public class SkillButtonScript : MonoBehaviour
         turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
         player = GameObject.Find("Player");
         playerScript = player.GetComponent<EntityScript>();
-        StartCoroutine(WaitForPlayerLoadout());
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
         skillsPanel = this.transform.parent.gameObject;
         skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
         cooldownPrefab = Resources.Load<GameObject>("Prefabs/Cooldown Overlay Panel");
+
+        StartCoroutine(WaitForPlayerLoadout());
+    }
+
+    void Update()
+    {
+        if (finishedBuilding)
+        {
+            DisplayCooldown();
+        }
     }
 }
