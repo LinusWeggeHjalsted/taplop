@@ -60,7 +60,6 @@ public class SkillButtonScript : MonoBehaviour
         {
             yield return null;
         }
-        Debug.Log("skill button finished waiting for player");
         while (!skillsPanelScript.finishedAssigning)
         {
             yield return null;

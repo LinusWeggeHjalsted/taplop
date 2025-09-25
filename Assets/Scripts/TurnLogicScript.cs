@@ -17,6 +17,7 @@ public class TurnLogicScript : MonoBehaviour
     public GameObject player;
     public EntityScript playerScript;
     public GameObject enemies;
+    public EnemiesScript enemiesScript;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject levelBuilder;
@@ -56,6 +57,7 @@ public class TurnLogicScript : MonoBehaviour
         player = GameObject.Find("Player");
         playerScript = player.GetComponent<EntityScript>();
         enemies = GameObject.Find("Enemies");
+        enemiesScript = enemies.GetComponent<EnemiesScript>();
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         levelBuilder = GameObject.Find("Level Builder");
@@ -133,8 +135,19 @@ public class TurnLogicScript : MonoBehaviour
             yield return null;
         }
         
+        enemiesScript.KillDeadEnemies();
         currentGameState = GameState.EnemiesTurn;
         hasAttacked = false;
+        turnStarted = false;
+    }
+
+    void EnemiesTurn()
+    {
+        foreach (GameObject enemy in enemiesScript.enemyLookup.Values)
+        {
+            enemiesScript.EnemyTurnMove(enemy);
+        }
+        currentGameState = GameState.PlayerTurnMove;
         turnStarted = false;
     }
 
@@ -177,9 +190,7 @@ public class TurnLogicScript : MonoBehaviour
                     traversableTilesScript.ClearHighlights();
                     turnStarted = true;
                     turnStatusText.text = "Enemy turns...";
-                    traversableTilesScript.ClearHighlights();
-                    turnStarted = false;
-                    currentGameState = GameState.PlayerTurnMove;
+                    EnemiesTurn();
                 }
                 break;
         }

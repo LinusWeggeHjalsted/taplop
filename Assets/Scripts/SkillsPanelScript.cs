@@ -46,14 +46,9 @@ public class SkillsPanelScript : MonoBehaviour
             GameObject skillButton = this.transform.GetChild(i).gameObject;
             SkillButtonScript skillButtonScript = skillButton.GetComponent<SkillButtonScript>();
             skillButtonScript.skillNumber = i;
+            Debug.Log("Assigned " + skillButtonScript.skillNumber.ToString());
         }
         finishedAssigning = true;
         StartCoroutine(WaitForSkillButtons());
-    }
-
-    // Update is called once per frame
-    void Update()
-    {
-        
     }
 }

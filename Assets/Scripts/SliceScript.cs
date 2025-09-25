@@ -15,12 +15,22 @@ public class SliceScript : MonoBehaviour, Skill
     public GameObject player;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
-    public GameObject damageCalculator;
-    public DamageCalculatorScript damageCalculatorScript;
     
-    public int GetCurrentCooldown()
+    public float GetRange()
     {
-        return currentCooldown;
+        return range;
+    }
+
+    public int CurrentCooldown
+    {
+        get
+        {
+            return currentCooldown;
+        }
+        set
+        {
+            currentCooldown = value;
+        }
     }
 
     public void ReduceCooldown(int number)
@@ -46,13 +56,12 @@ public class SliceScript : MonoBehaviour, Skill
             EntityScript targetScript = target.GetComponent<EntityScript>();
             targetScript.IncomingDamage(swordScript.damage);
         }
-        // to-do - use actual damage calculation
     }
 
     public void prepareSkill(Vector3 fromPosition)
     {
         Debug.Log("preparing slice");
-        // to-do - clear all highlighting
+        traversableTilesScript.ClearHighlights();
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
         for (float i = -range; i <= range; i++)
@@ -99,7 +108,5 @@ public class SliceScript : MonoBehaviour, Skill
         player = GameObject.Find("Player");
         turnLogic = GameObject.Find("Turn Logic");
         turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
-        damageCalculator = GameObject.Find("Damage Calculator");
-        damageCalculatorScript = damageCalculator.GetComponent<DamageCalculatorScript>();
     }
 }

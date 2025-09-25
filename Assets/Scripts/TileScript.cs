@@ -23,7 +23,6 @@ public class TileScript : MonoBehaviour
         {
             this.isHighlighted = value;
             highlightAnimator.SetBool("isHighlighted", isHighlighted);
-            Debug.Log(this.transform.position.ToString() + "tile was highlighted");
         }
     }
 
@@ -49,7 +48,6 @@ public class TileScript : MonoBehaviour
         {
             if (hit.collider.gameObject == this.gameObject)
             {
-                Debug.Log("clicked tile at " + this.transform.position);
                 if (!isHighlighted)
                 {
                     return;
@@ -57,8 +55,7 @@ public class TileScript : MonoBehaviour
                 switch (turnLogicScript.currentGameState)
                 {
                     case TurnLogicScript.GameState.PlayerTurnMove: 
-                        playerScript.previousPosition = player.transform.position;
-                        player.transform.position = this.transform.position;
+                        playerScript.MoveTo(this.transform.position);
                         turnLogicScript.hasMoved = true;
                         break;
                     case TurnLogicScript.GameState.PlayerTurnAttack:
@@ -70,9 +67,5 @@ public class TileScript : MonoBehaviour
                 }
             }
         }
-    }
-
-    void Update()
-    {
     }
 }

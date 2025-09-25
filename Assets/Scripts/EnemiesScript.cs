@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 public class EnemiesScript : MonoBehaviour
 {
@@ -43,6 +44,24 @@ public class EnemiesScript : MonoBehaviour
         StartCoroutine(WaitForLevelBuilderBeforePopulating());
     }
 
+    public void KillDeadEnemies()
+    {
+        List<GameObject> enemyObjects = enemyLookup.Values.ToList();
+        foreach (GameObject enemy in enemyObjects)
+        {
+            EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+            if (enemyScript.CurrentHealth <= 0)
+            {
+                Vector3 enemyPosition = enemy.transform.position;
+                enemyLookup.Remove(enemyPosition);
+                GameObject tile = tileLookup[enemyPosition];
+                TileScript tileScript = tile.GetComponent<TileScript>();
+                tileScript.isOccupied = false;
+                Destroy(enemy);
+            }
+        }
+    }
+
     public void EnemyTurnMove(GameObject enemy)
     {
         Vector3 enemyPosition = enemy.transform.position;
@@ -54,7 +73,7 @@ public class EnemiesScript : MonoBehaviour
         {
             EntityScript enemyScript = enemy.GetComponent<EntityScript>();
             int enemySpeed = enemyScript.speed;
-            float enemyMinRange = (float)enemyScript.minRange;
+            float enemyMinRange = enemyScript.minRange;
             if (distanceToPlayer <= enemyMinRange)
             {
                 return;
@@ -63,7 +82,7 @@ public class EnemiesScript : MonoBehaviour
             Vector3 targetPosition = playerPosition;
             if (pathLength > 1)
             {
-                if (enemySpeed >= pathLength)
+                if (enemySpeed >= pathLength - 1)
                 {
                     targetPosition = pathToPlayer[1];
                 }
@@ -73,7 +92,9 @@ public class EnemiesScript : MonoBehaviour
                 }
             }
             // check for collision
-            if (tileLookup[targetPosition].isOccupied)
+            GameObject targetTile = tileLookup[targetPosition];
+            TileScript targetTileScript = targetTile.GetComponent<TileScript>();
+            if (targetTileScript.isOccupied)
             {
                 // to-do: try going around
                 return;

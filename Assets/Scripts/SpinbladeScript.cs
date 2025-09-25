@@ -15,8 +15,11 @@ public class SpinbladeScript : MonoBehaviour, Skill
     public GameObject player;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
-    public GameObject damageCalculator;
-    public DamageCalculatorScript damageCalculatorScript;
+    
+    public float GetRange()
+    {
+        return range;
+    }
 
     public int GetCurrentCooldown()
     {
@@ -88,7 +91,5 @@ public class SpinbladeScript : MonoBehaviour, Skill
         player = GameObject.Find("Player");
         turnLogic = GameObject.Find("Turn Logic");
         turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
-        damageCalculator = GameObject.Find("Damage Calculator");
-        damageCalculatorScript = damageCalculator.GetComponent<DamageCalculatorScript>();
     }
 }

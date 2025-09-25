@@ -1,10 +1,13 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 public class EntityScript : MonoBehaviour
 {
     public bool finishedBuilding = false;
+    public GameObject traversableTiles;
+    public TraversableTilesScript traversableTilesScript;
     public GameObject gear;
     public GearScript gearScript;
     public Transform mainHand;
@@ -22,22 +25,23 @@ public class EntityScript : MonoBehaviour
     private int currentHealth = 10;
     public int armor = 0;
     public Vector3 previousPosition = new Vector3();
-    public int unlockedSkills = 2;
+    public int unlockedSkills = 3;
     public List<GameObject> equippedSkills = new List<GameObject>();
-    public int minRange
+    public float minRange
     {
         get
         {
-            List<int> skillRanges = new List<int>();
+            List<float> skillRanges = new List<float>();
             for (int i = 0; i < equippedSkills.Count; i++)
             {
                 GameObject skill = equippedSkills[i];
                 Skill skillScript = skill.GetComponent<Skill>();
-                skillRanges.Add(skillScript.range);
+                skillRanges.Add(skillScript.GetRange());
             }
-            return skillRanges.Min;
+            return skillRanges.Min();
         }
     }
+    public int reflectDuration = 0;
    
     public int CurrentHealth
     {
@@ -63,7 +67,6 @@ public class EntityScript : MonoBehaviour
         hitRenderer.sortingOrder = 2;
         hitRenderer.sprite = hitSprite;
         Destroy(hitObject, 0.5f);
-        Debug.Log("displayed and destroyed hit sprite");
     }
 
     public void DisplayHealth()
@@ -117,16 +120,19 @@ public class EntityScript : MonoBehaviour
 
     public void MoveTo(Vector3 targetPosition)
     {
+        Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         GameObject targetTile = tileLookup[targetPosition];
-        if (targetTile.isOccupied) 
+        TileScript targetTileScript = targetTile.GetComponent<TileScript>();
+        if (targetTileScript.isOccupied) 
         {
             Debug.Log("tried to move to an occupied tile");
             return;
         }
-        currentPosition = this.transform.position;
-        currentTile = tileLookup[currentPosition];
-        targetTile.isOccupied = true;
-        currentTile.isOccupied = false;
+        Vector3 currentPosition = this.transform.position;
+        GameObject currentTile = tileLookup[currentPosition];
+        TileScript currentTileScript = currentTile.GetComponent<TileScript>();
+        targetTileScript.isOccupied = true;
+        currentTileScript.isOccupied = false;
         previousPosition = currentPosition;
         this.transform.position = targetPosition;
     }
@@ -141,6 +147,15 @@ public class EntityScript : MonoBehaviour
             actualDamage = 0;
         }
         CurrentHealth -= actualDamage;
+    }
+
+    public void ReduceCooldowns(int number)
+    {
+        foreach (GameObject skill in equippedSkills)
+        {
+            Skill skillScript = skill.GetComponent<Skill>();
+            skillScript.CurrentCooldown -= number;
+        }
     }
 
     IEnumerator WaitForGearBeforePopulating()
@@ -165,6 +180,8 @@ public class EntityScript : MonoBehaviour
     void Start()
     {
         Debug.Log("Hello World - I'm " + this.name);
+        traversableTiles = GameObject.Find("Traversable Tiles");
+        traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
         hitSprite = Resources.Load<Sprite>("Hit");
