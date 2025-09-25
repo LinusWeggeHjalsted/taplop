@@ -21,6 +21,7 @@ public class SwordScript : MonoBehaviour, Weapon
         firstSkill = Instantiate(firstSkillPrefab, this.transform);
         secondSkillPrefab = Resources.Load<GameObject>("Prefabs/Spinblade");
         secondSkill = Instantiate(secondSkillPrefab, this.transform); 
+        damage = 3;
         finishedBuilding = true;
     }
 }
