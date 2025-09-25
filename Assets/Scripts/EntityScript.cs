@@ -23,9 +23,22 @@ public class EntityScript : MonoBehaviour
     public int armor = 0;
     public Vector3 previousPosition = new Vector3();
     public int unlockedSkills = 2;
-
     public List<GameObject> equippedSkills = new List<GameObject>();
-    
+    public int minRange
+    {
+        get
+        {
+            List<int> skillRanges = new List<int>();
+            for (int i = 0; i < equippedSkills.Count; i++)
+            {
+                GameObject skill = equippedSkills[i];
+                Skill skillScript = skill.GetComponent<Skill>();
+                skillRanges.Add(skillScript.range);
+            }
+            return skillRanges.Min;
+        }
+    }
+   
     public int CurrentHealth
     {
         get
