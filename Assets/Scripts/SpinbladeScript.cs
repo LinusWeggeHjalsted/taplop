@@ -5,7 +5,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
 {
     public float range = 1f;
     public int cooldown = 2;
-    public int currentCooldown = 0;
+    private int currentCooldown = 0;
     public GameObject sword;
     public SwordScript swordScript;
     public GameObject traversableTiles;
@@ -21,7 +21,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
         return range;
     }
 
-    public int GetCurrentCooldown()
+    public int CurrentCooldown()
     {
         return currentCooldown;
     }
@@ -31,14 +31,14 @@ public class SpinbladeScript : MonoBehaviour, Skill
         currentCooldown -= number;
     }
 
-    public void useSkill(Vector3 targetPosition)
+    public void useSkill(Vector3 targetPosition, GameObject wielder)
     {
 
     }
 
-    public void prepareSkill(Vector3 fromPosition)
+    public void prepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        Debug.Log("using spinblade");
+        Debug.Log(wielder.name + " using spinblade");
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
         for (float i = -range; i <= range; i++)
@@ -72,7 +72,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
             if (target != null)
             {
                 EntityScript targetScript = target.GetComponent<EntityScript>();
-                targetScript.IncomingDamage(swordScript.damage);
+                targetScript.IncomingDamage(swordScript.damage, wielder);
             }
             // to-do - use actual damage calculation
         }

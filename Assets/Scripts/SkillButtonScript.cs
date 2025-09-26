@@ -21,7 +21,7 @@ public class SkillButtonScript : MonoBehaviour
 
     public void DisplayCooldown()
     {
-        if (skillScript.GetCurrentCooldown() > 0)
+        if (skillScript.CurrentCooldown() > 0)
         {
             if (cooldownOverlay == null)
             {
@@ -42,13 +42,13 @@ public class SkillButtonScript : MonoBehaviour
         switch (turnLogicScript.currentGameState)
         {
             case TurnLogicScript.GameState.PlayerTurnAttack:
-                if (skillScript.GetCurrentCooldown() > 0)
+                if (skillScript.CurrentCooldown() > 0)
                 {
                     Debug.Log("Skill is on cooldown");
                     break;
                 }
                 Debug.Log("Skill " + (skillNumber + 1).ToString() + " was pressed");
-                skillScript.prepareSkill(player.transform.position);
+                skillScript.prepareSkill(player.transform.position, player);
                 turnLogicScript.skillUsed = skill;
                 break;
         }

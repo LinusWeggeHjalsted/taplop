@@ -17,7 +17,7 @@ public class SkillsPanelScript : MonoBehaviour
             SkillButtonScript skillButtonScript = skillButton.GetComponent<SkillButtonScript>();
             GameObject skill = skillButtonScript.skill;
             Skill skillScript = skill.GetComponent<Skill>();
-            skillScript.ReduceCooldown(number);
+            skillScript.ReduceCooldown(1);
         }
     }
 

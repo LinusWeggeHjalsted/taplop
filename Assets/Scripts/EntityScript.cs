@@ -137,16 +137,25 @@ public class EntityScript : MonoBehaviour
         this.transform.position = targetPosition;
     }
 
-    public void IncomingDamage(int damage)
+    public void IncomingDamage(int damage, GameObject attacker)
     {
         DisplayHit();
+        if (reflectDuration > 0)
+        {
+            EntityScript attackerScript = attacker.GetComponent<EntityScript>();
+            attackerScript.IncomingDamage(damage, attacker);
+        }
+
         // to-do - figure out a good damage calculation
         int actualDamage = damage - armor;
         if (actualDamage < 0)
         {
-            actualDamage = 0;
+            return;
         }
-        CurrentHealth -= actualDamage;
+        else
+        {
+            CurrentHealth -= actualDamage;
+        }
     }
 
     public void ReduceCooldowns(int number)
@@ -154,7 +163,7 @@ public class EntityScript : MonoBehaviour
         foreach (GameObject skill in equippedSkills)
         {
             Skill skillScript = skill.GetComponent<Skill>();
-            skillScript.CurrentCooldown -= number;
+            skillScript.ReduceCooldown(number);
         }
     }
 
@@ -187,7 +196,7 @@ public class EntityScript : MonoBehaviour
         hitSprite = Resources.Load<Sprite>("Hit");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
         CurrentHealth = maxHealth;
-        unlockedSkills = 2;
+        unlockedSkills = 3;
         StartCoroutine(WaitForGearBeforePopulating());
     }
 }

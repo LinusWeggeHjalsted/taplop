@@ -4,7 +4,7 @@ public class ReflectScript : MonoBehaviour, Skill
 {
     public float range = 0;
     public int cooldown = 5;
-    public int currentCooldown = 0;
+    private int currentCooldown = 0;
     public GameObject shield;
     public ShieldScript shieldScript;
     public GameObject traversableTiles;
@@ -20,7 +20,7 @@ public class ReflectScript : MonoBehaviour, Skill
         return range;
     }
 
-    public int GetCurrentCooldown()
+    public int CurrentCooldown()
     {
         return currentCooldown;
     }
@@ -30,26 +30,17 @@ public class ReflectScript : MonoBehaviour, Skill
         currentCooldown -= number;
     }
 
-    public void useSkill(Vector3 targetPosition)
+    public void useSkill(Vector3 targetPosition, GameObject wielder)
     {
     }
 
-    public void prepareSkill(Vector3 fromPosition)
+    public void prepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        Debug.Log("using reflect");
-        GameObject wielder = null;
-        if (fromPosition == player.transform.position)
-        {
-            wielder = player;
-        }
-        if (enemiesScript.enemyLookup.ContainsKey(fromPosition))
-        {
-            wielder = enemiesScript.enemyLookup[fromPosition];
-        }
         if (wielder != null)
         {
+            Debug.Log(wielder.name + " using reflect");
             EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-            wielderScript.reflectDuration = 1;
+            wielderScript.reflectDuration += 1;
         }
         turnLogicScript.hasAttacked = true;
         currentCooldown = cooldown;

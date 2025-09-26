@@ -325,7 +325,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   range: 0
   cooldown: 5
-  currentCooldown: 0
   shield: {fileID: 0}
   shieldScript: {fileID: 0}
   traversableTiles: {fileID: 0}
@@ -1132,7 +1131,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 317fcabba2fcc6cfa89aad192b3d264e, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 4920021a69e2d69a8aabee733f3fb741, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1

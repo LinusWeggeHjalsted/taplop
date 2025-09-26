@@ -5,7 +5,7 @@ public class SliceScript : MonoBehaviour, Skill
 {
     public float range = 1f;
     public int cooldown = 0;
-    public int currentCooldown = 0;
+    private int currentCooldown = 0;
     public GameObject sword;
     public SwordScript swordScript;
     public GameObject traversableTiles;
@@ -21,16 +21,9 @@ public class SliceScript : MonoBehaviour, Skill
         return range;
     }
 
-    public int CurrentCooldown
+    public int CurrentCooldown()
     {
-        get
-        {
-            return currentCooldown;
-        }
-        set
-        {
-            currentCooldown = value;
-        }
+        return currentCooldown;
     }
 
     public void ReduceCooldown(int number)
@@ -38,9 +31,9 @@ public class SliceScript : MonoBehaviour, Skill
         currentCooldown -= number;
     }
 
-    public void useSkill(Vector3 targetPosition)
+    public void useSkill(Vector3 targetPosition, GameObject wielder)
     {
-        Debug.Log("using slice");
+        Debug.Log(wielder.name + " using slice");
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -54,13 +47,13 @@ public class SliceScript : MonoBehaviour, Skill
         if (target != null)
         {
             EntityScript targetScript = target.GetComponent<EntityScript>();
-            targetScript.IncomingDamage(swordScript.damage);
+            targetScript.IncomingDamage(swordScript.damage, wielder);
         }
     }
 
-    public void prepareSkill(Vector3 fromPosition)
+    public void prepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        Debug.Log("preparing slice");
+        Debug.Log(wielder.name + " preparing slice");
         traversableTilesScript.ClearHighlights();
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
