@@ -61,20 +61,25 @@ public class SpinbladeScript : MonoBehaviour, Skill
             Vector3 targetPosition = fromPosition + delta;
             Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
             GameObject target = null;
-            if (enemyLookup.ContainsKey(targetPosition))
+            if (fromPosition == player.transform.position)
             {
-                target = enemyLookup[targetPosition];
+                if (enemyLookup.ContainsKey(targetPosition))
+                {
+                    target = enemyLookup[targetPosition];
+                }
             }
-            if (targetPosition == player.transform.position)
+            if (enemyLookup.ContainsKey(fromPosition))
             {
-                target = player;
+                if (targetPosition == player.transform.position)
+                {
+                    target = player;
+                }
             }
             if (target != null)
             {
                 EntityScript targetScript = target.GetComponent<EntityScript>();
                 targetScript.IncomingDamage(swordScript.damage, wielder);
             }
-            // to-do - use actual damage calculation
         }
         turnLogicScript.hasAttacked = true;
         currentCooldown = cooldown;

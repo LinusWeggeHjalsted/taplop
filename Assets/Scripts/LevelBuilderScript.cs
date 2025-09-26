@@ -2,14 +2,31 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 
-public class ParsedLevel
-{
-    public string levelDescription;
-    public char[][] levelLayout;
-}
-
 public class LevelBuilderScript : MonoBehaviour
 {
+    public class PreParse
+    {
+        public string levelDescription;
+        public char[][] levelLayout;
+        public string enemyInformation;
+    }
+
+    public class PreEnemy
+    {
+        public string enemyName;
+        public int maxHealth;
+        public int speed;
+        public int aggroRange;
+    }
+
+    public class ParsedLevel
+    {
+        public List<Vector3> tilePositions;
+        public Vector3 playerPosition;
+        public Dictionary<Vector3, char> enemyPositions;
+        public List<PreEnemy> preEnemies;
+    }
+    
     public bool finishedBuilding = false;
     public GameObject level;
     public LevelScript levelScript;
@@ -43,6 +60,11 @@ public class LevelBuilderScript : MonoBehaviour
         return position;
     }
     
+    public Dictionary<Vector3, char> FindEnemyPositions(char[][] lvlLayout)
+    {
+
+    }
+
     public List<Vector3> FindTilePositions(char[][] lvlLayout)
     {
         List<Vector3> positions = new List<Vector3>();
@@ -79,10 +101,12 @@ public class LevelBuilderScript : MonoBehaviour
             string[] fileLines = levelFile.text.Split('\n');
             int descriptionIndex = Array.IndexOf(fileLines, "Level Description") + 1;
             int layoutIndex = Array.IndexOf(fileLines, "Level Layout") + 1;
+            int enemiesIndex = Array.IndexOf(fileLines, "Enemies") + 1;
             // to-do: handle bad files
 
             int descriptionLength = layoutIndex - descriptionIndex - 2;
-            int layoutLength = fileLines.Length - layoutIndex - 2;
+            int layoutLength = enemiesIndex - layoutIndex - 2;
+            int enemiesLength = fileLines.Length - enemiesIndex - 2;
 
             string description = fileLines[descriptionIndex];
             string[] layoutBlock = new string[layoutLength];

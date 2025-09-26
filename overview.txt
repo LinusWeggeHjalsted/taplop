@@ -41,7 +41,7 @@ weapons
 
 offhands
 	shield
-        reflect - incoming damage is prevented and dealt to the attacker, cooldown 5
+        reflect - duration 1, incoming damage is prevented and dealt to the attacker, cooldown 5
         bash - range 1, knockback and stun, cooldown 3
     idol
 		absorb - convert incoming damage to healing, cooldown 5
@@ -54,6 +54,7 @@ utility skills
         splinter weapon - duration 2, attacks also attack each tile within range 1 of target, cooldown 5
         stoneform - duration 5, can't be stunned and heal 10% of max health at end of turn, cooldown 10
         leeching weapon - duration 5, attacks also steal health, cooldown 10
+        promise of death - duration 1, reset all cooldowns and gain full health if an enemy dies, cooldown 10
     cantrips
         blink - teleport range 4, cooldown 5
         focus - reset all weapon skill cooldowns, cooldown 10
