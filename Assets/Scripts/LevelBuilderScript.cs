@@ -1,6 +1,7 @@
 using UnityEngine;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 public class LevelBuilderScript : MonoBehaviour
 {
@@ -8,7 +9,7 @@ public class LevelBuilderScript : MonoBehaviour
     {
         public string levelDescription;
         public char[][] levelLayout;
-        public string enemyInformation;
+        public string[][] enemyInfo;
     }
 
     public class PreEnemy
@@ -35,60 +36,10 @@ public class LevelBuilderScript : MonoBehaviour
     public GameObject enemies;
     public GameObject traversableTiles;
     public GameObject tilePrefab;
-    
-    public Vector3 FindPlayerSpawnPosition(char[][] lvlLayout)
-    {
-        Vector3 position = new Vector3(0, 0, 0); 
-        bool notFound = true;
-        for (int i = 0; i < lvlLayout.Length; i++)
-        {
-            for (int j = 0; j < lvlLayout[i].Length; j++)
-            {
-                if (lvlLayout[i][j] == '!')
-                {
-                    position = new Vector3(j, lvlLayout.Length - 1 - i, 0);
-                    // flipping y axis to match Unity
-                    Debug.Log("Found player spawn position at " + position.ToString());
-                    notFound = false;
-                }
-            }
-        }
-        if (notFound)
-        {
-            Debug.LogError("Couldn't find player spawn position");
-        }
-        return position;
-    }
-    
-    public Dictionary<Vector3, char> FindEnemyPositions(char[][] lvlLayout)
-    {
 
-    }
-
-    public List<Vector3> FindTilePositions(char[][] lvlLayout)
+    public PreParse LoadLevelFile(string lvlName)
     {
-        List<Vector3> positions = new List<Vector3>();
-        for (int i = 0; i < lvlLayout.Length; i++)
-        {
-            for (int j = 0; j < lvlLayout[i].Length; j++)
-            {
-                if (lvlLayout[i][j] != ' ')
-                {
-                    Vector3 position = new Vector3(j, lvlLayout.Length - 1 - i, 0);
-                    positions.Add(position);
-                }
-            }
-        }
-        if (positions.Count == 0)
-        {
-            Debug.LogError("No tiles found");
-        }
-        return positions;
-    }
-
-    public ParsedLevel ParseLevel(string lvlName)
-    {
-        ParsedLevel parsedLevel = new ParsedLevel();
+        PreParse preParse = new PreParse();
         string filePath = "Levels/" + lvlName;
         Debug.Log("Loading level file " + filePath);
         TextAsset levelFile = Resources.Load<TextAsset>(filePath);
@@ -99,16 +50,17 @@ public class LevelBuilderScript : MonoBehaviour
         else
         {
             string[] fileLines = levelFile.text.Split('\n');
-            int descriptionIndex = Array.IndexOf(fileLines, "Level Description") + 1;
-            int layoutIndex = Array.IndexOf(fileLines, "Level Layout") + 1;
-            int enemiesIndex = Array.IndexOf(fileLines, "Enemies") + 1;
+            int descriptionIndex = Array.IndexOf(fileLines, "Description") + 1;
+            int layoutIndex = Array.IndexOf(fileLines, "Layout") + 1;
+            int enemyInfoIndex = Array.IndexOf(fileLines, "Enemy Info") + 1;
             // to-do: handle bad files
 
             int descriptionLength = layoutIndex - descriptionIndex - 2;
-            int layoutLength = enemiesIndex - layoutIndex - 2;
-            int enemiesLength = fileLines.Length - enemiesIndex - 2;
+            int layoutLength = enemyInfoIndex - layoutIndex - 2;
+            int enemyInfoLength = fileLines.Length - enemyInfoIndex - 2;
 
             string description = fileLines[descriptionIndex];
+
             string[] layoutBlock = new string[layoutLength];
             Array.Copy(fileLines, layoutIndex, layoutBlock, 0, layoutLength);
             char[][] layout = new char[layoutLength][];
@@ -116,24 +68,72 @@ public class LevelBuilderScript : MonoBehaviour
             {
                 layout[i] = layoutBlock[i].ToCharArray();
             }
-            parsedLevel.levelDescription = description;
-            parsedLevel.levelLayout = layout;
+
+            string[] enemyInfoBlock = new string[enemyInfoLength];
+            Array.Copy(fileLines, enemyInfoIndex, enemyInfoBlock, 0, enemyInfoLength);
+            // to-do - chop up enemy info, slice by blank line
+            preParse.levelDescription = description;
+            preParse.levelLayout = layout;
+            preParse.enemyInfo = enemyInfo;
         }   
-        return parsedLevel;
+        return preParse;
     }
 
-    public void BuildLevel(string lvlName)
+    public ParsedLevel ParseLevel(PreParse preParse)
     {
-        ParsedLevel parsedLevel = ParseLevel(lvlName);
-        List<Vector3> tilePositions = FindTilePositions(parsedLevel.levelLayout);
-        Vector3 playerSpawnPosition = FindPlayerSpawnPosition(parsedLevel.levelLayout);
-        player.transform.position = playerSpawnPosition; 
-        for (int i = 0; i < tilePositions.Count; i++)
+        ParsedLevel parsedLevel = new ParsedLevel();
+        parsedLevel.tilePositions = new List<Vector3>();
+        parsedLevel.enemyPositions = new Dictionary<Vector3, char>;
+        for (int i = 0; i < preParse.layout.Length; i++)
+        {
+            for (int j = 0; j < preParse.layout[i].Length; j++)
+            {
+                // flip y axis
+                Vector3 position = new Vector3(j, preParse.layout.Length - i, 0);
+                char tileCode = preParse.layout[i][j];
+                if (tileCode != ' ')
+                {
+                    parsedLevel.tilePositions.Add(position);
+                    if (tileCode == '.')
+                    {
+                        continue;
+                    }
+                    if (tileCode == '!')
+                    {
+                        parsedLevel.playerPosition = position;
+                    }
+                    else
+                    {
+                        enemyPositions.Add(position, tileCode);
+                    }
+                }
+            }
+        }
+        // find unique enemy types
+        List<char> enemyTypes = parsedLevel.enemyPositions.Values.Distinct().ToList();
+        Dictionary<char, int> codeIndices = new Dictionary<char, int>();
+        foreach (char enemyCode in enemyTypes)
+        {
+            int lineIndex = preParse.enemies.IndexOf(enemyCode.ToString());
+            if ()
+            codeIndices.Add(enemyCode, lineIndex);
+        }
+        List<>
+    }
+
+    public void BuildLevel(ParsedLevel parsedLevel)
+    {
+        player.transform.position = parsedLevel.playerPosition; 
+        
+        for (int i = 0; i < parsedLevel.tilePositions.Count; i++)
         {
             GameObject newTile = Instantiate(tilePrefab, traversableTiles.transform);
-            newTile.transform.position = tilePositions[i];
-            // update tile if it is occupied by player
-            if (tilePositions[i] == playerSpawnPosition)
+            newTile.transform.position = parsedLevel.tilePositions[i];
+            if (tilePositions[i] == parsedLevel.playerPosition)
+            {
+                newTile.GetComponent<TileScript>().isOccupied = true;
+            }
+            if (parsedLevel.enemyPositions.ContainsKey(tilePositions[i]))
             {
                 newTile.GetComponent<TileScript>().isOccupied = true;
             }
