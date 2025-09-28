@@ -4,6 +4,11 @@ public class NoSkillScript : MonoBehaviour, Skill
 {
     private int currentCooldown = 0;
 
+    public string GetDescription()
+    {
+        return "";
+    }
+
     public float GetRange()
     {
         return 0;

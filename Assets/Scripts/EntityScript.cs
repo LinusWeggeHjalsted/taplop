@@ -6,8 +6,13 @@ using System.Linq;
 public class EntityScript : MonoBehaviour
 {
     public bool finishedBuilding = false;
+    public GameObject levelBuilder;
+    public LevelBuilderScript levelBuilderScript;
+    public bool levelBuilderLoaded = false;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
+    public GameObject enemies;
+    public EnemiesScript enemiesScript;
     public GameObject gear;
     public GearScript gearScript;
     public Transform mainHand;
@@ -20,12 +25,13 @@ public class EntityScript : MonoBehaviour
     public Sprite hitSprite;
 
     public string currentBuildTemplate = "00000000";
-    public int speed = 1;
     public int maxHealth = 10;
-    private int currentHealth = 10;
-    public int armor = 0;
+    private int currentHealth;
+    public int armor;
+    public int speed;
+    public int aggroRange;
     public Vector3 previousPosition = new Vector3();
-    public int unlockedSkills = 3;
+    public int unlockedSkills;
     public List<GameObject> equippedSkills = new List<GameObject>();
     public float minRange
     {
@@ -70,7 +76,10 @@ public class EntityScript : MonoBehaviour
     }
 
     public void DisplayHealth()
-    {
+    {   if (!levelBuilderLoaded)
+        {
+            return;
+        }
         if (healthBar == null)
         {
             healthBar = new GameObject("Entity Health Bar");
@@ -134,6 +143,10 @@ public class EntityScript : MonoBehaviour
         targetTileScript.isOccupied = true;
         currentTileScript.isOccupied = false;
         previousPosition = currentPosition;
+        if (enemiesScript.enemyLookup.ContainsKey(currentPosition))
+        {
+            enemiesScript.EnemyMoved(currentPosition, targetPosition);
+        }
         this.transform.position = targetPosition;
     }
 
@@ -173,6 +186,10 @@ public class EntityScript : MonoBehaviour
         {
             yield return null;
         }
+        while (!levelBuilderScript.finishedBuilding)
+        {
+            yield return null;
+        }
         mainHand = gear.transform.Find("Main Hand");
         offHand = gear.transform.Find("Off Hand");
         mainHandWeapon = mainHand.GetChild(0).gameObject;
@@ -189,14 +206,18 @@ public class EntityScript : MonoBehaviour
     void Start()
     {
         Debug.Log("Hello World - I'm " + this.name);
+        levelBuilder = GameObject.Find("Level Builder");
+        levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
+        levelBuilderLoaded = true;
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
+        enemies = GameObject.Find("Enemies");
+        enemiesScript = enemies.GetComponent<EnemiesScript>();
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
         hitSprite = Resources.Load<Sprite>("Hit");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
         CurrentHealth = maxHealth;
-        unlockedSkills = 3;
         StartCoroutine(WaitForGearBeforePopulating());
     }
 }

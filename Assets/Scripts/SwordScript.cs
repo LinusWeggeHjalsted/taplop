@@ -15,6 +15,11 @@ public class SwordScript : MonoBehaviour, Weapon
         return finishedBuilding;
     }
 
+    public void SetDamage(int number)
+    {
+        damage = number;
+    }
+
     void Start()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Slice");

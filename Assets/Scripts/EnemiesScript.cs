@@ -15,6 +15,10 @@ public class EnemiesScript : MonoBehaviour
 
     IEnumerator WaitForLevelBuilderBeforePopulating()
     {
+        while (!levelBuilderScript.finishedBuilding)
+        {
+            yield return null;
+        }
         while (!traversableTilesScript.finishedBuilding)
         {
             yield return null;
@@ -31,6 +35,13 @@ public class EnemiesScript : MonoBehaviour
             tileScript.isOccupied = true;
             Debug.Log("found enemy at " + enemyTransform.position.ToString());
         }
+    }
+
+    public void EnemyMoved(Vector3 currentPosition, Vector3 targetPosition)
+    {
+        GameObject enemyObject = enemyLookup[currentPosition];
+        enemyLookup.Add(targetPosition, enemyObject);
+        enemyLookup.Remove(currentPosition);
     }
 
     void Start()
@@ -88,10 +99,12 @@ public class EnemiesScript : MonoBehaviour
                 }
                 else
                 {
-                    targetPosition = pathToPlayer[-enemySpeed];
+                    Debug.Log("enemySpeed is " + enemySpeed.ToString());
+                    Debug.Log("pathLength is " + pathLength.ToString());
+                    int targetIndex = pathLength - enemySpeed;
+                    targetPosition = pathToPlayer[targetIndex];
                 }
             }
-            // check for collision
             GameObject targetTile = tileLookup[targetPosition];
             TileScript targetTileScript = targetTile.GetComponent<TileScript>();
             if (targetTileScript.isOccupied)

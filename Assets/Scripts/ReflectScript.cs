@@ -2,6 +2,7 @@ using UnityEngine;
 
 public class ReflectScript : MonoBehaviour, Skill
 {
+    public string description = "Incoming damage is prevented and dealt to the attacker";
     public float range = 0;
     public int cooldown = 5;
     private int currentCooldown = 0;
@@ -14,7 +15,12 @@ public class ReflectScript : MonoBehaviour, Skill
     public GameObject player;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
- 
+     
+    public string GetDescription()
+    {
+        return description;
+    }
+
     public float GetRange()
     {
         return range;

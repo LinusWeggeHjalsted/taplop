@@ -229,6 +229,7 @@ MonoBehaviour:
   finishedBuilding: 0
   firstSkillPrefab: {fileID: 0}
   firstSkill: {fileID: 0}
+  damage: 1
 --- !u!1 &235211313
 GameObject:
   m_ObjectHideFlags: 0
@@ -258,8 +259,7 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 2117323343}
+  m_Children: []
   m_Father: {fileID: 247921640}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &235211315
@@ -323,6 +323,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ff057f7e382c0bb76af2f065e5e0d697, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  description: Incoming damage is prevented and dealt to the attacker
   range: 0
   cooldown: 5
   shield: {fileID: 0}
@@ -713,6 +714,7 @@ MonoBehaviour:
   enemies: {fileID: 0}
   traversableTiles: {fileID: 0}
   tilePrefab: {fileID: 0}
+  enemyPrefab: {fileID: 0}
 --- !u!1 &568171316
 GameObject:
   m_ObjectHideFlags: 0
@@ -990,6 +992,8 @@ MonoBehaviour:
   player: {fileID: 0}
   playerScript: {fileID: 0}
   skill: {fileID: 0}
+  tooltipPrefab: {fileID: 0}
+  tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
   cooldownOverlay: {fileID: 0}
 --- !u!1 &615977793
@@ -1053,6 +1057,8 @@ MonoBehaviour:
   player: {fileID: 0}
   playerScript: {fileID: 0}
   skill: {fileID: 0}
+  tooltipPrefab: {fileID: 0}
+  tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
   cooldownOverlay: {fileID: 0}
 --- !u!114 &615977796
@@ -1260,108 +1266,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 247921640}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &736728365
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 736728366}
-  - component: {fileID: 736728367}
-  m_Layer: 0
-  m_Name: Sword
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &736728366
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 736728365}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 1093857906}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &736728367
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 736728365}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cc56678c50620f3e48c822fb79e90f4d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: '::'
-  finishedBuilding: 0
-  firstSkillPrefab: {fileID: 0}
-  firstSkill: {fileID: 0}
-  secondSkillPrefab: {fileID: 0}
-  secondSkill: {fileID: 0}
-  itemName: 
-  damage: 1
---- !u!1 &782844585
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 782844586}
-  - component: {fileID: 782844587}
-  m_Layer: 0
-  m_Name: Gear
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &782844586
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 782844585}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -2, y: -4, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 1093857906}
-  - {fileID: 1890572667}
-  m_Father: {fileID: 2117323343}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &782844587
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 782844585}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9a16b47f07ca28316aeff375e3c45fe1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: '::'
-  finishedBuilding: 0
-  mainHand: {fileID: 0}
-  offHand: {fileID: 0}
-  mainHandWeapon: {fileID: 0}
-  offHandWeapon: {fileID: 0}
 --- !u!1 &960096369
 GameObject:
   m_ObjectHideFlags: 0
@@ -1708,87 +1612,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1067651200}
   m_CullTransparentMesh: 1
---- !u!1 &1091947554
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1091947555}
-  - component: {fileID: 1091947556}
-  m_Layer: 0
-  m_Name: No Weapon
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1091947555
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1091947554}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 1890572667}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1091947556
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1091947554}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f67c429e7cfdcde5ea2c5c485994d32f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: '::'
-  finishedBuilding: 0
-  firstSkillPrefab: {fileID: 0}
-  firstSkill: {fileID: 0}
-  itemName: 
-  damage: 1
---- !u!1 &1093857905
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1093857906}
-  m_Layer: 0
-  m_Name: Main Hand
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1093857906
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1093857905}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 736728366}
-  m_Father: {fileID: 782844586}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1136532183
 GameObject:
   m_ObjectHideFlags: 0
@@ -2060,6 +1883,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
+  levelBuilder: {fileID: 0}
+  levelBuilderScript: {fileID: 0}
   mainHand: {fileID: 0}
   offHand: {fileID: 0}
   mainHandWeapon: {fileID: 0}
@@ -2368,6 +2193,8 @@ MonoBehaviour:
   player: {fileID: 0}
   playerScript: {fileID: 0}
   skill: {fileID: 0}
+  tooltipPrefab: {fileID: 0}
+  tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
   cooldownOverlay: {fileID: 0}
 --- !u!114 &1749983892
@@ -2570,8 +2397,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
+  levelBuilder: {fileID: 0}
+  levelBuilderScript: {fileID: 0}
+  levelBuilderLoaded: 0
   traversableTiles: {fileID: 0}
   traversableTilesScript: {fileID: 0}
+  enemies: {fileID: 0}
+  enemiesScript: {fileID: 0}
   gear: {fileID: 0}
   gearScript: {fileID: 0}
   mainHand: {fileID: 0}
@@ -2583,9 +2415,10 @@ MonoBehaviour:
   healthBarStates: []
   hitSprite: {fileID: 4457663794195168306, guid: ec85f00b5722e6900b46f0a2b5382767, type: 3}
   currentBuildTemplate: 00000000
-  speed: 1
   maxHealth: 10
   armor: 0
+  speed: 1
+  aggroRange: 0
   previousPosition: {x: 0, y: 0, z: 0}
   unlockedSkills: 3
   equippedSkills: []
@@ -2811,38 +2644,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1a8a05de0ac134f4f9d01bef6b9da077, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Cinemachine::Cinemachine.CinemachinePixelPerfect
---- !u!1 &1890572666
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1890572667}
-  m_Layer: 0
-  m_Name: Off Hand
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1890572667
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1890572666}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 1091947555}
-  m_Father: {fileID: 782844586}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1908961072
 GameObject:
   m_ObjectHideFlags: 0
@@ -3129,131 +2930,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 12152da5b1bb58bdaaaa6294eaa2c593, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
---- !u!1 &2117323342
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 2117323343}
-  - component: {fileID: 2117323344}
-  - component: {fileID: 2117323345}
-  m_Layer: 0
-  m_Name: Test Enemy
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &2117323343
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2117323342}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 782844586}
-  m_Father: {fileID: 235211314}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!212 &2117323344
-SpriteRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2117323342}
-  m_Enabled: 1
-  m_CastShadows: 0
-  m_ReceiveShadows: 0
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 0
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
-  m_ForceMeshLod: -1
-  m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: a97c105638bdf8b4a8650670310a4cd3, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 0
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_GlobalIlluminationMeshLod: 0
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 1
-  m_Sprite: {fileID: 6246832655069406539, guid: b607b923394b68035bf5184e87ce0335, type: 3}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_FlipX: 0
-  m_FlipY: 0
-  m_DrawMode: 0
-  m_Size: {x: 0.1, y: 0.16}
-  m_AdaptiveModeThreshold: 0.5
-  m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 1
-  m_MaskInteraction: 0
-  m_SpriteSortPoint: 0
---- !u!114 &2117323345
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2117323342}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5291bec53e04e8566bfdcef5ca8a83e7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::EntityScript
-  finishedBuilding: 0
-  traversableTiles: {fileID: 0}
-  traversableTilesScript: {fileID: 0}
-  gear: {fileID: 0}
-  gearScript: {fileID: 0}
-  mainHand: {fileID: 0}
-  offHand: {fileID: 0}
-  mainHandWeapon: {fileID: 0}
-  offHandWeapon: {fileID: 0}
-  healthBar: {fileID: 0}
-  healthBarRenderer: {fileID: 0}
-  healthBarStates: []
-  hitSprite: {fileID: 0}
-  currentBuildTemplate: 00000000
-  speed: 1
-  maxHealth: 10
-  armor: 0
-  previousPosition: {x: 0, y: 0, z: 0}
-  unlockedSkills: 1
-  equippedSkills: []
-  reflectDuration: 0
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

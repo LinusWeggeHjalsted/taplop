@@ -1,8 +1,9 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using System.Collections;
 
-public class SkillButtonScript : MonoBehaviour
+public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
 {
     public bool finishedBuilding = false;
     public int skillNumber;
@@ -15,9 +16,32 @@ public class SkillButtonScript : MonoBehaviour
     public EntityScript playerScript;
     public GameObject skill;
     public Skill skillScript;
+    public GameObject tooltipPrefab;
+    public GameObject tooltip;
 
     public GameObject cooldownPrefab;
     public GameObject cooldownOverlay;
+
+    public void OnPointerEnter(PointerEventData eventData)
+    {
+        if (finishedBuilding)
+        {
+            if (tooltip == null)
+            {
+                tooltip = Instantiate(tooltipPrefab, this.gameObject.transform);
+                TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
+                tooltipScript.SetText(skill.name, skillScript.GetDescription());
+            }
+        }
+    }
+
+    public void OnPointerExit(PointerEventData eventData)
+    {
+        if (tooltip != null)
+        {
+            Destroy(tooltip);
+        }
+    }
 
     public void DisplayCooldown()
     {
@@ -80,6 +104,7 @@ public class SkillButtonScript : MonoBehaviour
         button.onClick.AddListener(OnActivate);
         skillsPanel = this.transform.parent.gameObject;
         skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
+        tooltipPrefab = Resources.Load<GameObject>("Prefabs/Tooltip");
         cooldownPrefab = Resources.Load<GameObject>("Prefabs/Cooldown Overlay Panel");
 
         StartCoroutine(WaitForPlayerLoadout());

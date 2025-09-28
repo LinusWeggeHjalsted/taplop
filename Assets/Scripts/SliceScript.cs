@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 public class SliceScript : MonoBehaviour, Skill
 {
+    public string description = "Basic sword attack";
     public float range = 1f;
     public int cooldown = 0;
     private int currentCooldown = 0;
@@ -16,6 +17,11 @@ public class SliceScript : MonoBehaviour, Skill
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
     
+    public string GetDescription()
+    {
+        return description;
+    }
+
     public float GetRange()
     {
         return range;

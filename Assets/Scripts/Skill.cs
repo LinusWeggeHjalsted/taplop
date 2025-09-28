@@ -2,6 +2,7 @@ using UnityEngine;
 
 public interface Skill
 {
+    string GetDescription();
     float GetRange();
     int CurrentCooldown();
     void ReduceCooldown(int number);

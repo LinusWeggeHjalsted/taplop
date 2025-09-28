@@ -1,20 +1,24 @@
-Level Description
+Description
 test level
 
-Level Layout
-        ... 
-        ....
-     ...1
-    .....      .
-    !......   .=.
-   .    ...   ..
-    .   ...   .
-         .....
+Layout
+       ... 
+       ....
+    ...1
+   .....      .
+   !......   .=.
+  .    ...   ..
+   .   ...   .
+        .....
 
-Enemies
+Enemy Info
 1
 name Test Enemy
 maxHealth 10
+armor 0
 speed 1
 aggroRange 3
+unlockedSkills 3
+mainHandWeapon Sword
+mainHandDamage 3
 

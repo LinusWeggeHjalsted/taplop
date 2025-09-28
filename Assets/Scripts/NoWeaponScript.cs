@@ -13,6 +13,11 @@ public class NoWeaponScript : MonoBehaviour, Weapon
         return finishedBuilding;
     }
 
+    public void SetDamage(int number)
+    {
+        damage = number;
+    }
+
     void Start()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/No Skill");

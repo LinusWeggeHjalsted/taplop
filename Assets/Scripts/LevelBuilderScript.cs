@@ -9,15 +9,21 @@ public class LevelBuilderScript : MonoBehaviour
     {
         public string levelDescription;
         public char[][] levelLayout;
-        public string[][] enemyInfo;
+        public List<string[]> enemyInfo;
     }
 
     public class PreEnemy
     {
         public string enemyName;
         public int maxHealth;
+        public int armor;
         public int speed;
         public int aggroRange;
+        public int unlockedSkills;
+        public string mainHandWeapon;
+        public int mainHandDamage;
+        public string offHandWeapon;
+        public int offHandDamage;
     }
 
     public class ParsedLevel
@@ -25,7 +31,7 @@ public class LevelBuilderScript : MonoBehaviour
         public List<Vector3> tilePositions;
         public Vector3 playerPosition;
         public Dictionary<Vector3, char> enemyPositions;
-        public List<PreEnemy> preEnemies;
+        public Dictionary<char, PreEnemy> preEnemies;
     }
     
     public bool finishedBuilding = false;
@@ -36,6 +42,7 @@ public class LevelBuilderScript : MonoBehaviour
     public GameObject enemies;
     public GameObject traversableTiles;
     public GameObject tilePrefab;
+    public GameObject enemyPrefab;
 
     public PreParse LoadLevelFile(string lvlName)
     {
@@ -51,12 +58,16 @@ public class LevelBuilderScript : MonoBehaviour
         {
             string[] fileLines = levelFile.text.Split('\n');
             int descriptionIndex = Array.IndexOf(fileLines, "Description") + 1;
+            Debug.Log("descriptionIndex is " + descriptionIndex.ToString());
             int layoutIndex = Array.IndexOf(fileLines, "Layout") + 1;
+            Debug.Log("layoutIndex is " + layoutIndex.ToString());
             int enemyInfoIndex = Array.IndexOf(fileLines, "Enemy Info") + 1;
+            Debug.Log("enemyInfoIndex is " + enemyInfoIndex.ToString());
             // to-do: handle bad files
 
             int descriptionLength = layoutIndex - descriptionIndex - 2;
             int layoutLength = enemyInfoIndex - layoutIndex - 2;
+            Debug.Log("layoutLength is " + layoutLength.ToString());
             int enemyInfoLength = fileLines.Length - enemyInfoIndex - 2;
 
             string description = fileLines[descriptionIndex];
@@ -72,6 +83,25 @@ public class LevelBuilderScript : MonoBehaviour
             string[] enemyInfoBlock = new string[enemyInfoLength];
             Array.Copy(fileLines, enemyInfoIndex, enemyInfoBlock, 0, enemyInfoLength);
             // to-do - chop up enemy info, slice by blank line
+            List<string[]> enemyInfo = new List<string[]>();
+            List<string> currentSubArray = new List<string>();
+            foreach (string line in enemyInfoBlock)
+            {
+                if (line == "")
+                {
+                    enemyInfo.Add(currentSubArray.ToArray());
+                    currentSubArray.Clear();
+                }
+                else
+                {
+                    currentSubArray.Add(line);
+                }
+            }
+            if (currentSubArray.Count > 0)
+            {
+                enemyInfo.Add(currentSubArray.ToArray());
+            }
+
             preParse.levelDescription = description;
             preParse.levelLayout = layout;
             preParse.enemyInfo = enemyInfo;
@@ -83,14 +113,16 @@ public class LevelBuilderScript : MonoBehaviour
     {
         ParsedLevel parsedLevel = new ParsedLevel();
         parsedLevel.tilePositions = new List<Vector3>();
-        parsedLevel.enemyPositions = new Dictionary<Vector3, char>;
-        for (int i = 0; i < preParse.layout.Length; i++)
+        parsedLevel.enemyPositions = new Dictionary<Vector3, char>();
+        parsedLevel.preEnemies = new Dictionary<char, PreEnemy>();
+        // find positions of things
+        for (int i = 0; i < preParse.levelLayout.Length; i++)
         {
-            for (int j = 0; j < preParse.layout[i].Length; j++)
+            for (int j = 0; j < preParse.levelLayout[i].Length; j++)
             {
                 // flip y axis
-                Vector3 position = new Vector3(j, preParse.layout.Length - i, 0);
-                char tileCode = preParse.layout[i][j];
+                Vector3 position = new Vector3(j, preParse.levelLayout.Length - i, 0);
+                char tileCode = preParse.levelLayout[i][j];
                 if (tileCode != ' ')
                 {
                     parsedLevel.tilePositions.Add(position);
@@ -101,24 +133,146 @@ public class LevelBuilderScript : MonoBehaviour
                     if (tileCode == '!')
                     {
                         parsedLevel.playerPosition = position;
+                        continue;
+                    }
+                    if (tileCode == '=')
+                    {
+                        // to-do: end trigger
+                        continue;
                     }
                     else
                     {
-                        enemyPositions.Add(position, tileCode);
+                        parsedLevel.enemyPositions.Add(position, tileCode);
                     }
                 }
             }
         }
-        // find unique enemy types
-        List<char> enemyTypes = parsedLevel.enemyPositions.Values.Distinct().ToList();
-        Dictionary<char, int> codeIndices = new Dictionary<char, int>();
-        foreach (char enemyCode in enemyTypes)
+        // parse individual enemy information
+        foreach (string[] enemyStrings in preParse.enemyInfo)
         {
-            int lineIndex = preParse.enemies.IndexOf(enemyCode.ToString());
-            if ()
-            codeIndices.Add(enemyCode, lineIndex);
+            PreEnemy preEnemy = new PreEnemy();
+            preEnemy.mainHandWeapon = "No Weapon";
+            preEnemy.offHandWeapon = "No Weapon";
+            if (enemyStrings[0].Length > 1)
+            {
+                Debug.LogError("bad enemy info, first line should be a single character");
+                continue;
+            }
+            char enemyCode = enemyStrings[0][0];
+            for (int i = 1; i < enemyStrings.Length; i++)
+            {
+                string currentLine = enemyStrings[i];
+                if (currentLine.StartsWith("name "))
+                {
+                    string enemyName = currentLine.Substring("name ".Length);
+                    preEnemy.enemyName = enemyName;
+                }
+                else if (currentLine.StartsWith("maxHealth "))
+                {
+                    string enemyMaxHealth = currentLine.Substring("maxHealth ".Length);
+                    int maxHealthNumber;
+                    if (Int32.TryParse(enemyMaxHealth, out maxHealthNumber))
+                    {
+                        preEnemy.maxHealth = maxHealthNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("maxHealth is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("armor "))
+                {
+                    string enemyArmor = currentLine.Substring("armor ".Length);
+                    int armorNumber;
+                    if (Int32.TryParse(enemyArmor, out armorNumber))
+                    {
+                        preEnemy.armor = armorNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("armor is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("speed "))
+                {
+                    string enemySpeed = currentLine.Substring("speed ".Length);
+                    int speedNumber;
+                    if (Int32.TryParse(enemySpeed, out speedNumber))
+                    {
+                        preEnemy.speed = speedNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("speed is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("aggroRange "))
+                {
+                    string enemyAggroRange = currentLine.Substring("aggroRange ".Length);
+                    int aggroRangeNumber;
+                    if (Int32.TryParse(enemyAggroRange, out aggroRangeNumber))
+                    {
+                        preEnemy.aggroRange = aggroRangeNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("aggroRange is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("unlockedSkills "))
+                {
+                    string enemyUnlockedSkills = currentLine.Substring("unlockedSkills ".Length);
+                    int unlockedSkillsNumber;
+                    if (Int32.TryParse(enemyUnlockedSkills, out unlockedSkillsNumber))
+                    {
+                        preEnemy.unlockedSkills = unlockedSkillsNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("unlockedSkills is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("mainHandWeapon "))
+                {
+                    string enemyMainHandWeapon = currentLine.Substring("mainHandWeapon ".Length);
+                    preEnemy.mainHandWeapon = enemyMainHandWeapon;
+                }
+                else if (currentLine.StartsWith("mainHandDamage "))
+                {
+                    string enemyMainHandDamage = currentLine.Substring("mainHandDamage ".Length);
+                    int mainHandDamageNumber;
+                    if (Int32.TryParse(enemyMainHandDamage, out mainHandDamageNumber))
+                    {
+                        preEnemy.mainHandDamage = mainHandDamageNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("mainHandDamage is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("offHandWeapon "))
+                {
+                    string enemyOffHandWeapon = currentLine.Substring("offHandWeapon ".Length);
+                    preEnemy.offHandWeapon = enemyOffHandWeapon;
+                }
+                else if (currentLine.StartsWith("offHandDamage "))
+                {
+                    string enemyOffHandDamage = currentLine.Substring("offHandDamage ".Length);
+                    int offHandDamageNumber;
+                    if (Int32.TryParse(enemyOffHandDamage, out offHandDamageNumber))
+                    {
+                        preEnemy.offHandDamage = offHandDamageNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("offHandDamage is not a number");
+                    }
+                }
+            }
+            parsedLevel.preEnemies.Add(enemyCode, preEnemy);
         }
-        List<>
+
+        return parsedLevel;
     }
 
     public void BuildLevel(ParsedLevel parsedLevel)
@@ -129,14 +283,46 @@ public class LevelBuilderScript : MonoBehaviour
         {
             GameObject newTile = Instantiate(tilePrefab, traversableTiles.transform);
             newTile.transform.position = parsedLevel.tilePositions[i];
-            if (tilePositions[i] == parsedLevel.playerPosition)
+            if (parsedLevel.tilePositions[i] == parsedLevel.playerPosition)
             {
                 newTile.GetComponent<TileScript>().isOccupied = true;
             }
-            if (parsedLevel.enemyPositions.ContainsKey(tilePositions[i]))
+            if (parsedLevel.enemyPositions.ContainsKey(parsedLevel.tilePositions[i]))
             {
                 newTile.GetComponent<TileScript>().isOccupied = true;
             }
+        }
+
+        foreach (Vector3 enemyPosition in parsedLevel.enemyPositions.Keys)
+        {
+            char enemyCode = parsedLevel.enemyPositions[enemyPosition];
+            if (!parsedLevel.preEnemies.ContainsKey(enemyCode))
+            {
+                Debug.LogError("no enemy info for enemy code " + enemyCode.ToString());
+                continue;
+            }
+            PreEnemy preEnemy = parsedLevel.preEnemies[enemyCode];
+            GameObject newEnemy = Instantiate(enemyPrefab, enemies.transform);
+            newEnemy.transform.position = enemyPosition;
+            newEnemy.name = preEnemy.enemyName;
+            EntityScript newEnemyScript = newEnemy.GetComponent<EntityScript>();
+            newEnemyScript.maxHealth = preEnemy.maxHealth;
+            newEnemyScript.CurrentHealth = preEnemy.maxHealth;
+            newEnemyScript.armor = preEnemy.armor;
+            newEnemyScript.speed = preEnemy.speed;
+            newEnemyScript.aggroRange = preEnemy.aggroRange;
+            newEnemyScript.unlockedSkills = preEnemy.unlockedSkills;
+            GameObject mainHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.mainHandWeapon);
+            GameObject offHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.offHandWeapon);
+            Transform enemyGear = newEnemy.transform.Find("Gear");
+            Transform enemyMainHand = enemyGear.Find("Main Hand");
+            Transform enemyOffHand = enemyGear.Find("Off Hand");
+            GameObject enemyMainHandWeapon = Instantiate(mainHandWeaponPrefab, enemyMainHand);
+            Weapon enemyMainHandWeaponScript = enemyMainHandWeapon.GetComponent<Weapon>();
+            enemyMainHandWeaponScript.SetDamage(preEnemy.mainHandDamage);
+            GameObject enemyOffHandWeapon = Instantiate(offHandWeaponPrefab, enemyOffHand);
+            Weapon enemyOffHandWeaponScript = enemyOffHandWeapon.GetComponent<Weapon>();
+            enemyOffHandWeaponScript.SetDamage(preEnemy.offHandDamage);
         }
     }
 
@@ -149,9 +335,9 @@ public class LevelBuilderScript : MonoBehaviour
         enemies = GameObject.Find("Enemies");
         traversableTiles = GameObject.Find("Traversable Tiles");
         tilePrefab = Resources.Load<GameObject>("Prefabs/Tile");
+        enemyPrefab = Resources.Load<GameObject>("Prefabs/Enemy");
 
-        BuildLevel(levelName);
+        BuildLevel(ParseLevel(LoadLevelFile(levelName)));
         finishedBuilding = true;
     }
-
 }
