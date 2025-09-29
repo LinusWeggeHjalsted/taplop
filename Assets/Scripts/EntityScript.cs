@@ -84,7 +84,7 @@ public class EntityScript : MonoBehaviour
     {
         GameObject aggroObject = new GameObject("Aggro Sprite Object");
         aggroObject.transform.parent = this.transform;
-        aggroObject.transform.localPosition = new Vector3(0, 1.25f, 0);
+        aggroObject.transform.localPosition = new Vector3(0, 1.125f, 0);
         SpriteRenderer aggroRenderer = aggroObject.AddComponent<SpriteRenderer>();
         aggroRenderer.sortingLayerName = "Effects";
         aggroRenderer.sortingOrder = 2;
@@ -96,7 +96,7 @@ public class EntityScript : MonoBehaviour
     {
         GameObject hitObject = new GameObject("Hit Sprite Object");
         hitObject.transform.parent = this.transform;
-        hitObject.transform.localPosition = new Vector3(0, 0.25f, 0);
+        hitObject.transform.localPosition = new Vector3(0, 0.375f, 0);
         SpriteRenderer hitRenderer = hitObject.AddComponent<SpriteRenderer>();
         hitRenderer.sortingLayerName = "Effects";
         hitRenderer.sortingOrder = 2;

@@ -141,12 +141,13 @@ public class TurnLogicScript : MonoBehaviour
         turnStarted = false;
     }
 
-    void EnemiesTurn()
+    IEnumerator EnemiesTurn()
     {
         Dictionary<Vector3, GameObject> activeEnemyLookup = new Dictionary<Vector3, GameObject>(enemiesScript.activeEnemyLookup);
         foreach (GameObject enemy in activeEnemyLookup.Values)
         {
             enemiesScript.EnemyTurnMove(enemy);
+            yield return new WaitForSeconds(0.5f);
         }
         currentGameState = GameState.PlayerTurnMove;
         turnStarted = false;
@@ -191,7 +192,7 @@ public class TurnLogicScript : MonoBehaviour
                     traversableTilesScript.ClearHighlights();
                     turnStarted = true;
                     turnStatusText.text = "Enemy turns...";
-                    EnemiesTurn();
+                    StartCoroutine(EnemiesTurn());
                 }
                 break;
         }
