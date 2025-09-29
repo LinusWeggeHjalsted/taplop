@@ -12,6 +12,7 @@ public class EnemiesScript : MonoBehaviour
     public GameObject player;
     public Dictionary<Vector3, GameObject> tileLookup = new Dictionary<Vector3, GameObject>();
     public Dictionary<Vector3, GameObject> enemyLookup = new Dictionary<Vector3, GameObject>();
+    public Dictionary<Vector3, GameObject> activeEnemyLookup = new Dictionary<Vector3, GameObject>();
 
     IEnumerator WaitForLevelBuilderBeforePopulating()
     {
@@ -37,13 +38,6 @@ public class EnemiesScript : MonoBehaviour
         }
     }
 
-    public void EnemyMoved(Vector3 currentPosition, Vector3 targetPosition)
-    {
-        GameObject enemyObject = enemyLookup[currentPosition];
-        enemyLookup.Add(targetPosition, enemyObject);
-        enemyLookup.Remove(currentPosition);
-    }
-
     void Start()
     {
         levelBuilder = GameObject.Find("Level Builder");
@@ -53,6 +47,39 @@ public class EnemiesScript : MonoBehaviour
         player = GameObject.Find("Player");
         // wait for level builder
         StartCoroutine(WaitForLevelBuilderBeforePopulating());
+    }
+
+    public void UpdateAggro()
+    {
+        foreach (GameObject enemy in enemyLookup.Values)
+        {
+            // to-do: deaggro when player is far away
+            EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+            if (!enemyScript.IsActive)
+            {
+                Vector3 playerPosition = player.transform.position;
+                Vector3 enemyPosition = enemy.transform.position;
+                int aggroRange = enemyScript.aggroRange;
+                Debug.Log("aggroRange is " + aggroRange.ToString());
+                if (traversableTilesScript.Distance(playerPosition, enemyPosition) <= (float)aggroRange)
+                {
+                    enemyScript.IsActive = true;
+                    activeEnemyLookup.Add(enemyPosition, enemy);
+                }
+            }
+        }
+    }
+
+    public void EnemyMoved(Vector3 currentPosition, Vector3 targetPosition)
+    {
+        GameObject enemyObject = enemyLookup[currentPosition];
+        enemyLookup.Add(targetPosition, enemyObject);
+        enemyLookup.Remove(currentPosition);
+        if (activeEnemyLookup.ContainsKey(currentPosition))
+        {
+            activeEnemyLookup.Add(targetPosition, enemyObject);
+            activeEnemyLookup.Remove(currentPosition);
+        }
     }
 
     public void KillDeadEnemies()
@@ -65,6 +92,10 @@ public class EnemiesScript : MonoBehaviour
             {
                 Vector3 enemyPosition = enemy.transform.position;
                 enemyLookup.Remove(enemyPosition);
+                if (activeEnemyLookup.ContainsKey(enemyPosition))
+                {
+                    activeEnemyLookup.Remove(enemyPosition);
+                }
                 GameObject tile = tileLookup[enemyPosition];
                 TileScript tileScript = tile.GetComponent<TileScript>();
                 tileScript.isOccupied = false;

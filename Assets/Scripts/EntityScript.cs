@@ -11,6 +11,7 @@ public class EntityScript : MonoBehaviour
     public bool levelBuilderLoaded = false;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
+    public GameObject player;
     public GameObject enemies;
     public EnemiesScript enemiesScript;
     public GameObject gear;
@@ -23,16 +24,46 @@ public class EntityScript : MonoBehaviour
     public SpriteRenderer healthBarRenderer;
     public Sprite[] healthBarStates = new Sprite[8];
     public Sprite hitSprite;
+    public Sprite aggroSprite;
 
     public string currentBuildTemplate = "00000000";
     public int maxHealth = 10;
     private int currentHealth;
+    public int CurrentHealth
+    {
+        get
+        {
+            return this.currentHealth;
+        }
+        set
+        {
+            this.currentHealth = value;
+            DisplayHealth();
+            Debug.Log(name + " health was updated to " + this.currentHealth.ToString());
+        }
+    }
     public int armor;
     public int speed;
     public int aggroRange;
     public Vector3 previousPosition = new Vector3();
     public int unlockedSkills;
     public List<GameObject> equippedSkills = new List<GameObject>();
+    private bool isActive = false;
+    public bool IsActive
+    {
+        get
+        {
+            return isActive;
+        }
+        set
+        {
+            if (value == true)
+            {
+                DisplayAggro();
+            }
+            isActive = value;
+        }
+    }
     public float minRange
     {
         get
@@ -49,25 +80,23 @@ public class EntityScript : MonoBehaviour
     }
     public int reflectDuration = 0;
    
-    public int CurrentHealth
+    public void DisplayAggro()
     {
-        get
-        {
-            return this.currentHealth;
-        }
-        set
-        {
-            this.currentHealth = value;
-            DisplayHealth();
-            Debug.Log(name + " health was updated to " + this.currentHealth.ToString());
-        }
+        GameObject aggroObject = new GameObject("Aggro Sprite Object");
+        aggroObject.transform.parent = this.transform;
+        aggroObject.transform.localPosition = new Vector3(0, 1.25f, 0);
+        SpriteRenderer aggroRenderer = aggroObject.AddComponent<SpriteRenderer>();
+        aggroRenderer.sortingLayerName = "Effects";
+        aggroRenderer.sortingOrder = 2;
+        aggroRenderer.sprite = aggroSprite;
+        Destroy(aggroObject, 0.5f);
     }
 
     public void DisplayHit()
     {
         GameObject hitObject = new GameObject("Hit Sprite Object");
         hitObject.transform.parent = this.transform;
-        hitObject.transform.localPosition = new Vector3(0, 0.3f, 0);
+        hitObject.transform.localPosition = new Vector3(0, 0.25f, 0);
         SpriteRenderer hitRenderer = hitObject.AddComponent<SpriteRenderer>();
         hitRenderer.sortingLayerName = "Effects";
         hitRenderer.sortingOrder = 2;
@@ -148,6 +177,10 @@ public class EntityScript : MonoBehaviour
             enemiesScript.EnemyMoved(currentPosition, targetPosition);
         }
         this.transform.position = targetPosition;
+        if (targetPosition == player.transform.position)
+        {
+            enemiesScript.UpdateAggro();
+        }
     }
 
     public void IncomingDamage(int damage, GameObject attacker)
@@ -211,11 +244,13 @@ public class EntityScript : MonoBehaviour
         levelBuilderLoaded = true;
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
+        player = GameObject.Find("Player");
         enemies = GameObject.Find("Enemies");
         enemiesScript = enemies.GetComponent<EnemiesScript>();
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
         hitSprite = Resources.Load<Sprite>("Hit");
+        aggroSprite = Resources.Load<Sprite>("EnemyAggro");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
         CurrentHealth = maxHealth;
         StartCoroutine(WaitForGearBeforePopulating());

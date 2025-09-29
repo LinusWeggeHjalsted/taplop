@@ -1402,6 +1402,8 @@ MonoBehaviour:
   button: {fileID: 0}
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
+  tooltipPrefab: {fileID: 0}
+  tooltip: {fileID: 0}
 --- !u!1 &1001442165
 GameObject:
   m_ObjectHideFlags: 3
@@ -2402,6 +2404,7 @@ MonoBehaviour:
   levelBuilderLoaded: 0
   traversableTiles: {fileID: 0}
   traversableTilesScript: {fileID: 0}
+  player: {fileID: 0}
   enemies: {fileID: 0}
   enemiesScript: {fileID: 0}
   gear: {fileID: 0}
@@ -2414,6 +2417,7 @@ MonoBehaviour:
   healthBarRenderer: {fileID: 0}
   healthBarStates: []
   hitSprite: {fileID: 4457663794195168306, guid: ec85f00b5722e6900b46f0a2b5382767, type: 3}
+  aggroSprite: {fileID: 0}
   currentBuildTemplate: 00000000
   maxHealth: 10
   armor: 0

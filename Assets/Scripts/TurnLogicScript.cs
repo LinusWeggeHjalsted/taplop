@@ -143,9 +143,9 @@ public class TurnLogicScript : MonoBehaviour
 
     void EnemiesTurn()
     {
-        for (int i = 0; i < enemies.transform.childCount; i++)
+        Dictionary<Vector3, GameObject> activeEnemyLookup = new Dictionary<Vector3, GameObject>(enemiesScript.activeEnemyLookup);
+        foreach (GameObject enemy in activeEnemyLookup.Values)
         {
-            GameObject enemy = enemies.transform.GetChild(i).gameObject;
             enemiesScript.EnemyTurnMove(enemy);
         }
         currentGameState = GameState.PlayerTurnMove;
