@@ -39,7 +39,11 @@ public class SliceScript : MonoBehaviour, Skill
 
     public int EnemyPriority(Vector3 fromPosition)
     {
-        playerPosition = player.transform.position;
+        if (currentCooldown > 0)
+        {
+            return -1;
+        }
+        Vector3 playerPosition = player.transform.position;
         float distanceToPlayer = traversableTilesScript.Distance(fromPosition, playerPosition);
         if (distanceToPlayer > range)
         {
@@ -51,7 +55,24 @@ public class SliceScript : MonoBehaviour, Skill
         }
     }
 
-    public void useSkill(Vector3 targetPosition, GameObject wielder)
+    public Vector3 EnemySelectTarget(Vector3 fromPosition)
+    {
+        Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
+        Vector3 playerPosition = player.transform.position;
+        GameObject playerTile = tileLookup[playerPosition];
+        TileScript tileScript = playerTile.GetComponent<TileScript>();
+        if (tileScript.IsHighlighted)
+        {
+            return playerPosition;
+        }
+        else
+        {
+            Debug.LogError("enemy tried to use slice without targets in range");
+            return fromPosition;
+        }
+    }
+
+    public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
         Debug.Log(wielder.name + " using slice");
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
@@ -71,7 +92,7 @@ public class SliceScript : MonoBehaviour, Skill
         }
     }
 
-    public void prepareSkill(Vector3 fromPosition, GameObject wielder)
+    public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         Debug.Log(wielder.name + " preparing slice");
         traversableTilesScript.ClearHighlights();
@@ -99,12 +120,23 @@ public class SliceScript : MonoBehaviour, Skill
             {
                 continue;
             }
-            // to-do - need to implement line of sight check
-            GameObject targetTile = tileLookup[targetPosition];
-            TileScript targetTileScript = targetTile.GetComponent<TileScript>();
-            if (targetTileScript.isOccupied)
+            if (enemiesScript.enemyLookup.ContainsKey(fromPosition))
             {
-                targetTileScript.IsHighlighted = true;
+                if (player.transform.position == targetPosition)
+                {
+                    GameObject targetTile = tileLookup[targetPosition];
+                    TileScript targetTileScript = targetTile.GetComponent<TileScript>();
+                    targetTileScript.IsHighlighted = true;
+                }
+            }
+            else if (fromPosition == player.transform.position)
+            {
+                if (enemiesScript.enemyLookup.ContainsKey(targetPosition))
+                {
+                    GameObject targetTile = tileLookup[targetPosition];
+                    TileScript targetTileScript = targetTile.GetComponent<TileScript>();
+                    targetTileScript.IsHighlighted = true;
+                }
             }
         }
         Debug.Log("highlighted possible targets");

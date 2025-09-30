@@ -38,6 +38,10 @@ public class ReflectScript : MonoBehaviour, Skill
 
     public int EnemyPriority(Vector3 fromPosition)
     {
+        if (currentCooldown > 0)
+        {
+            return -1;
+        }
         Vector3 playerPosition = player.transform.position;
         EntityScript playerScript = player.GetComponent<EntityScript>();
         float distanceFromPlayer = traversableTilesScript.Distance(playerPosition, fromPosition);
@@ -51,11 +55,16 @@ public class ReflectScript : MonoBehaviour, Skill
         }
     }
 
-    public void useSkill(Vector3 targetPosition, GameObject wielder)
+    public Vector3 EnemySelectTarget(Vector3 fromPosition)
+    {
+        return fromPosition;
+    }
+
+    public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
     }
 
-    public void prepareSkill(Vector3 fromPosition, GameObject wielder)
+    public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         if (wielder != null)
         {

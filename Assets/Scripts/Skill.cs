@@ -7,6 +7,7 @@ public interface Skill
     int CurrentCooldown();
     void ReduceCooldown(int number);
     int EnemyPriority(Vector3 fromPosition);
-    void useSkill(Vector3 targetPosition, GameObject wielder);
-    void prepareSkill(Vector3 fromPosition, GameObject wielder);
+    Vector3 EnemySelectTarget(Vector3 fromPosition);
+    void UseSkill(Vector3 targetPosition, GameObject wielder);
+    void PrepareSkill(Vector3 fromPosition, GameObject wielder);
 }

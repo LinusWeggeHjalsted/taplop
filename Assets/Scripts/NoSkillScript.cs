@@ -28,12 +28,17 @@ public class NoSkillScript : MonoBehaviour, Skill
         return -1;
     }
 
-    public void useSkill(Vector3 targetPosition, GameObject wielder)
+    public Vector3 EnemySelectTarget(Vector3 fromPosition)
+    {
+        return fromPosition;
+    }
+
+    public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
         Debug.Log("no skill equipped in this slot");
     }
 
-    public void prepareSkill(Vector3 fromPosition, GameObject wielder)
+    public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         Debug.Log("no skill equipped in this slot");
     }

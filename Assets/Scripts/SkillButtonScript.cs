@@ -72,7 +72,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                     break;
                 }
                 Debug.Log("Skill " + (skillNumber + 1).ToString() + " was pressed");
-                skillScript.prepareSkill(player.transform.position, player);
+                skillScript.PrepareSkill(player.transform.position, player);
                 turnLogicScript.skillUsed = skill;
                 break;
         }

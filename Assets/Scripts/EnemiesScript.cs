@@ -142,12 +142,41 @@ public class EnemiesScript : MonoBehaviour
         Vector3 enemyPosition = enemy.transform.position;
         EntityScript enemyScript = enemy.GetComponent<EntityScript>();
         List<GameObject> enemySkills = enemyScript.equippedSkills;
-        List<int> skillPriorities = new List<int>();
+        Dictionary<GameObject, int> attackSkillPriorities = new Dictionary<GameObject, int>();
+        List<GameObject> priority0Skills = new List<GameObject>();
         for (int i = 0; i < enemySkills.Count; i++)
         {
             GameObject skill = enemySkills[i];
             Skill skillScript = skill.GetComponent<Skill>();
-            skillPriorities.Add(skillScript.EnemyPriority(enemyPosition));
+            int enemyPriority = skillScript.EnemyPriority(enemyPosition);
+            if (enemyPriority == 0)
+            {
+                priority0Skills.Add(skill);
+            }
+            else if (enemyPriority > 0)
+            {
+                attackSkillPriorities.Add(skill, enemyPriority);
+            }
+        }
+        List<KeyValuePair<GameObject, int>> sortedSkillPriorities = new List<KeyValuePair<GameObject, int>>();
+        sortedSkillPriorities = attackSkillPriorities.OrderBy(pair => pair.Value).ToList();
+        // cast all relevant cantrips and enchantments
+        foreach (GameObject skill in priority0Skills)
+        {
+            Skill skillScript = skill.GetComponent<Skill>();
+            skillScript.PrepareSkill(enemyPosition, enemy);
+            Vector3 selectedTarget = skillScript.EnemySelectTarget(enemyPosition);
+            skillScript.UseSkill(selectedTarget, enemy);
+            KillDeadEnemies();
+        }
+        if (sortedSkillPriorities.Count > 0)
+        {
+            GameObject selectedAttack = sortedSkillPriorities[0].Key;
+            Skill attackScript = selectedAttack.GetComponent<Skill>();
+            attackScript.PrepareSkill(enemyPosition, enemy);
+            Vector3 attackTarget = attackScript.EnemySelectTarget(enemyPosition);
+            attackScript.UseSkill(attackTarget, enemy);
+            KillDeadEnemies();
         }
     }
 }

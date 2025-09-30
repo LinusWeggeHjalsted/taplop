@@ -201,6 +201,7 @@ public class EntityScript : MonoBehaviour
         {
             EntityScript attackerScript = attacker.GetComponent<EntityScript>();
             attackerScript.IncomingDamage(damage, attacker);
+            return;
         }
 
         // to-do - figure out a good damage calculation
@@ -221,6 +222,15 @@ public class EntityScript : MonoBehaviour
         {
             Skill skillScript = skill.GetComponent<Skill>();
             skillScript.ReduceCooldown(number);
+        }
+    }
+
+    public void ReduceEffectDurations(int number)
+    {
+        reflectDuration -= number;
+        if (reflectDuration < 0)
+        {
+            reflectDuration = 0;
         }
     }
 

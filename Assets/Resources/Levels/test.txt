@@ -14,11 +14,11 @@ Layout
 Enemy Info
 1
 name Test Enemy
-maxHealth 10
+maxHealth 7
 armor 0
 speed 1
 aggroRange 3
 unlockedSkills 3
 mainHandWeapon Sword
-mainHandDamage 3
+mainHandDamage 2
 

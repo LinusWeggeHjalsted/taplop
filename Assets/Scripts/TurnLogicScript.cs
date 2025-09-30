@@ -146,10 +146,13 @@ public class TurnLogicScript : MonoBehaviour
         Dictionary<Vector3, GameObject> activeEnemyLookup = new Dictionary<Vector3, GameObject>(enemiesScript.activeEnemyLookup);
         foreach (GameObject enemy in activeEnemyLookup.Values)
         {
+            EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+            enemyScript.ReduceCooldowns(1);
+            enemyScript.ReduceEffectDurations(1);
             enemiesScript.EnemyTurnMove(enemy);
             yield return new WaitForSeconds(0.25f);
             enemiesScript.EnemyTurnAttack(enemy);
-            yield return new WaitForSeconds(0.5f);
+            yield return new WaitForSeconds(0.25f);
         }
         currentGameState = GameState.PlayerTurnMove;
         turnStarted = false;
@@ -166,7 +169,8 @@ public class TurnLogicScript : MonoBehaviour
                 {
                     if (!turnStarted)
                     {
-                        skillsPanelScript.ReduceCooldowns(1);
+                        playerScript.ReduceCooldowns(1);
+                        playerScript.ReduceEffectDurations(1);
                         traversableTilesScript.ClearHighlights();
                         turnStarted = true;
                         turnStatusText.text = "Move!";
@@ -175,7 +179,6 @@ public class TurnLogicScript : MonoBehaviour
                 }
                 break;
             case GameState.PlayerTurnAttack:
-                // to-do - update level
                 if (!hasAttacked)
                 {
                     if (!turnStarted)
@@ -193,7 +196,7 @@ public class TurnLogicScript : MonoBehaviour
                 {
                     traversableTilesScript.ClearHighlights();
                     turnStarted = true;
-                    turnStatusText.text = "Enemy turns...";
+                    turnStatusText.text = "Enemies' turn...";
                     StartCoroutine(EnemiesTurn());
                 }
                 break;
