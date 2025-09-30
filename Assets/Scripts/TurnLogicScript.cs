@@ -147,6 +147,8 @@ public class TurnLogicScript : MonoBehaviour
         foreach (GameObject enemy in activeEnemyLookup.Values)
         {
             enemiesScript.EnemyTurnMove(enemy);
+            yield return new WaitForSeconds(0.25f);
+            enemiesScript.EnemyTurnAttack(enemy);
             yield return new WaitForSeconds(0.5f);
         }
         currentGameState = GameState.PlayerTurnMove;

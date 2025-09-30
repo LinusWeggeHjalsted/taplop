@@ -36,6 +36,21 @@ public class ReflectScript : MonoBehaviour, Skill
         currentCooldown -= number;
     }
 
+    public int EnemyPriority(Vector3 fromPosition)
+    {
+        Vector3 playerPosition = player.transform.position;
+        EntityScript playerScript = player.GetComponent<EntityScript>();
+        float distanceFromPlayer = traversableTilesScript.Distance(playerPosition, fromPosition);
+        if (distanceFromPlayer > playerScript.minRange)
+        {
+            return -1;
+        }
+        else
+        {
+            return 1;
+        }
+    }
+
     public void useSkill(Vector3 targetPosition, GameObject wielder)
     {
     }

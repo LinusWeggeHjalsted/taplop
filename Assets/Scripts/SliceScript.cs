@@ -37,6 +37,20 @@ public class SliceScript : MonoBehaviour, Skill
         currentCooldown -= number;
     }
 
+    public int EnemyPriority(Vector3 fromPosition)
+    {
+        playerPosition = player.transform.position;
+        float distanceToPlayer = traversableTilesScript.Distance(fromPosition, playerPosition);
+        if (distanceToPlayer > range)
+        {
+            return -1;
+        }
+        else
+        {
+            return 1;
+        }
+    }
+
     public void useSkill(Vector3 targetPosition, GameObject wielder)
     {
         Debug.Log(wielder.name + " using slice");

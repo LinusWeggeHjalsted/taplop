@@ -33,11 +33,18 @@ public class EntityScript : MonoBehaviour
     {
         get
         {
-            return this.currentHealth;
+            return currentHealth;
         }
         set
         {
-            this.currentHealth = value;
+            if (value > maxHealth)
+            {
+                currentHealth = maxHealth;
+            }
+            else
+            {
+                currentHealth = value;
+            }
             DisplayHealth();
             Debug.Log(name + " health was updated to " + this.currentHealth.ToString());
         }
@@ -73,7 +80,11 @@ public class EntityScript : MonoBehaviour
             {
                 GameObject skill = equippedSkills[i];
                 Skill skillScript = skill.GetComponent<Skill>();
-                skillRanges.Add(skillScript.GetRange());
+                float skillRange = skillScript.GetRange();
+                if (skillRange > 0)
+                {
+                    skillRanges.Add(skillScript.GetRange());
+                }
             }
             return skillRanges.Min();
         }

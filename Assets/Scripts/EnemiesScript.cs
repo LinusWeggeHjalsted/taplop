@@ -60,7 +60,6 @@ public class EnemiesScript : MonoBehaviour
                 Vector3 playerPosition = player.transform.position;
                 Vector3 enemyPosition = enemy.transform.position;
                 int aggroRange = enemyScript.aggroRange;
-                Debug.Log("aggroRange is " + aggroRange.ToString());
                 if (traversableTilesScript.Distance(playerPosition, enemyPosition) <= (float)aggroRange)
                 {
                     enemyScript.IsActive = true;
@@ -130,23 +129,25 @@ public class EnemiesScript : MonoBehaviour
                 }
                 else
                 {
-                    Debug.Log("enemySpeed is " + enemySpeed.ToString());
-                    Debug.Log("pathLength is " + pathLength.ToString());
                     int targetIndex = pathLength - enemySpeed;
                     targetPosition = pathToPlayer[targetIndex];
                 }
-            }
-            GameObject targetTile = tileLookup[targetPosition];
-            TileScript targetTileScript = targetTile.GetComponent<TileScript>();
-            if (targetTileScript.isOccupied)
-            {
-                // to-do: try going around
-                return;
-            }
-            else
-            {
                 enemyScript.MoveTo(targetPosition);
             }
+        }
+    }
+
+    public void EnemyTurnAttack(GameObject enemy)
+    {
+        Vector3 enemyPosition = enemy.transform.position;
+        EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+        List<GameObject> enemySkills = enemyScript.equippedSkills;
+        List<int> skillPriorities = new List<int>();
+        for (int i = 0; i < enemySkills.Count; i++)
+        {
+            GameObject skill = enemySkills[i];
+            Skill skillScript = skill.GetComponent<Skill>();
+            skillPriorities.Add(skillScript.EnemyPriority(enemyPosition));
         }
     }
 }

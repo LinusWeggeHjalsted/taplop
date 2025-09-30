@@ -23,6 +23,11 @@ public class NoSkillScript : MonoBehaviour, Skill
     {
     }
 
+    public int EnemyPriority(Vector3 fromPosition)
+    {
+        return -1;
+    }
+
     public void useSkill(Vector3 targetPosition, GameObject wielder)
     {
         Debug.Log("no skill equipped in this slot");
