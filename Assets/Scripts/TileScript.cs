@@ -12,7 +12,6 @@ public class TileScript : MonoBehaviour
     public Animator highlightAnimator;
     public bool isOccupied = false;
     private bool isHighlighted = false;
-
     public bool IsHighlighted 
     {
         get
@@ -25,6 +24,28 @@ public class TileScript : MonoBehaviour
             highlightAnimator.SetBool("isHighlighted", isHighlighted);
         }
     }
+    private bool isRespawn = false;
+    public bool IsRespawn
+    {
+        get
+        {
+            return isRespawn;
+        }
+        set
+        {
+            if (value == true)
+            {
+                GameObject respawnOverlay = new GameObject("Respawn Overlay");
+                respawnOverlay.transform.parent = this.transform;
+                respawnOverlay.transform.localPosition = new Vector3(0, 0, 0);
+                SpriteRenderer respawnRenderer = respawnOverlay.AddComponent<SpriteRenderer>();
+                respawnRenderer.sortingOrder = 1;
+                Sprite respawnSprite = Resources.Load<Sprite>("Respawn");
+                respawnRenderer.sprite = respawnSprite;
+            }
+            isRespawn = value;
+        }
+    }
 
     void Start()
     {
@@ -35,7 +56,6 @@ public class TileScript : MonoBehaviour
         turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
         highlight = this.transform.Find("Highlight").gameObject;
         highlightAnimator = highlight.GetComponent<Animator>();
-
         clickAction = playerInput.actions.FindAction("Click");
         clickAction.performed += OnClick;
     }

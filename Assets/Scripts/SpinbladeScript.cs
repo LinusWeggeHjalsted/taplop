@@ -51,7 +51,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
         }
         else
         {
-            return 1;
+            return 2;
         }
     }
 
@@ -110,7 +110,10 @@ public class SpinbladeScript : MonoBehaviour, Skill
                 targetScript.IncomingDamage(swordScript.damage, wielder);
             }
         }
-        turnLogicScript.hasAttacked = true;
+        if (wielder == player)
+        {
+            turnLogicScript.hasAttacked = true;
+        }
         currentCooldown = cooldown;
     }
 

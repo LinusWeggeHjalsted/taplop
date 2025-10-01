@@ -285,7 +285,9 @@ public class LevelBuilderScript : MonoBehaviour
             newTile.transform.position = parsedLevel.tilePositions[i];
             if (parsedLevel.tilePositions[i] == parsedLevel.playerPosition)
             {
-                newTile.GetComponent<TileScript>().isOccupied = true;
+                TileScript tileScript = newTile.GetComponent<TileScript>();
+                tileScript.isOccupied = true;
+                tileScript.IsRespawn = true;
             }
             if (parsedLevel.enemyPositions.ContainsKey(parsedLevel.tilePositions[i]))
             {

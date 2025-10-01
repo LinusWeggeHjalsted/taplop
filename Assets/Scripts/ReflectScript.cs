@@ -72,7 +72,10 @@ public class ReflectScript : MonoBehaviour, Skill
             EntityScript wielderScript = wielder.GetComponent<EntityScript>();
             wielderScript.reflectDuration += 1;
         }
-        turnLogicScript.hasAttacked = true;
+        if (wielder == player)
+        {
+            turnLogicScript.hasAttacked = true;
+        }
         currentCooldown = cooldown;
     }
 

@@ -68,6 +68,22 @@ public class TurnLogicScript : MonoBehaviour
         // wait for LevelBuilder to finish building
         StartCoroutine(WaitForBuildingBeforeNewGameState());
     }
+    
+    public void RespawnPlayer()
+    {
+        Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
+        Vector3 respawnPosition = new Vector3();
+        foreach (GameObject tile in tileLookup.Values)
+        {
+            TileScript tileScript = tile.GetComponent<TileScript>();
+            if (tileScript.IsRespawn)
+            {
+                respawnPosition = tile.transform.position;
+            }
+        }
+        playerScript.MoveTo(respawnPosition);
+        playerScript.CurrentHealth = playerScript.maxHealth;
+    }
 
     IEnumerator PlayerTurnMove()
     {
@@ -144,8 +160,10 @@ public class TurnLogicScript : MonoBehaviour
     IEnumerator EnemiesTurn()
     {
         Dictionary<Vector3, GameObject> activeEnemyLookup = new Dictionary<Vector3, GameObject>(enemiesScript.activeEnemyLookup);
+        Debug.Log(activeEnemyLookup.Count.ToString() + " active enemies");
         foreach (GameObject enemy in activeEnemyLookup.Values)
         {
+            Debug.Log(enemy.name + " is taking its turn");
             EntityScript enemyScript = enemy.GetComponent<EntityScript>();
             enemyScript.ReduceCooldowns(1);
             enemyScript.ReduceEffectDurations(1);
@@ -169,10 +187,14 @@ public class TurnLogicScript : MonoBehaviour
                 {
                     if (!turnStarted)
                     {
+                        turnStarted = true;
+                        if (playerScript.CurrentHealth <= 0)
+                        {
+                            RespawnPlayer();
+                        }
                         playerScript.ReduceCooldowns(1);
                         playerScript.ReduceEffectDurations(1);
                         traversableTilesScript.ClearHighlights();
-                        turnStarted = true;
                         turnStatusText.text = "Move!";
                         StartCoroutine(PlayerTurnMove());
                     }
@@ -183,19 +205,19 @@ public class TurnLogicScript : MonoBehaviour
                 {
                     if (!turnStarted)
                     {
-                        traversableTilesScript.ClearHighlights();
                         turnStarted = true;
+                        traversableTilesScript.ClearHighlights();
                         turnStatusText.text = "Attack!";
                         StartCoroutine(PlayerTurnAttack());
                     }
                 }
                 break;
             case GameState.EnemiesTurn:
-                // to-do - execute ai per active enemy
                 if (!turnStarted)
                 {
-                    traversableTilesScript.ClearHighlights();
+                    Debug.Log("enemies turn started");
                     turnStarted = true;
+                    traversableTilesScript.ClearHighlights();
                     turnStatusText.text = "Enemies' turn...";
                     StartCoroutine(EnemiesTurn());
                 }

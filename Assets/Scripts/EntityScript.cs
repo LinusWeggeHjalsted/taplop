@@ -112,7 +112,7 @@ public class EntityScript : MonoBehaviour
         hitRenderer.sortingLayerName = "Effects";
         hitRenderer.sortingOrder = 2;
         hitRenderer.sprite = hitSprite;
-        Destroy(hitObject, 0.5f);
+        Destroy(hitObject, 0.25f);
     }
 
     public void DisplayHealth()
@@ -197,13 +197,16 @@ public class EntityScript : MonoBehaviour
     public void IncomingDamage(int damage, GameObject attacker)
     {
         DisplayHit();
+        if (!IsActive)
+        {
+            IsActive = true;
+        }
         if (reflectDuration > 0)
         {
             EntityScript attackerScript = attacker.GetComponent<EntityScript>();
             attackerScript.IncomingDamage(damage, attacker);
             return;
         }
-
         // to-do - figure out a good damage calculation
         int actualDamage = damage - armor;
         if (actualDamage < 0)

@@ -51,7 +51,7 @@ public class SliceScript : MonoBehaviour, Skill
         }
         else
         {
-            return 1;
+            return 3;
         }
     }
 
