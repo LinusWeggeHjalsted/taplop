@@ -5,6 +5,7 @@ using System.Linq;
 
 public class EnemiesScript : MonoBehaviour
 {
+    public bool finishedBuilding = false;
     public GameObject levelBuilder;
     public LevelBuilderScript levelBuilderScript;
     public GameObject traversableTiles;
@@ -36,6 +37,7 @@ public class EnemiesScript : MonoBehaviour
             tileScript.isOccupied = true;
             Debug.Log("found enemy at " + enemyTransform.position.ToString());
         }
+        finishedBuilding = true;
     }
 
     void Start()
@@ -109,11 +111,11 @@ public class EnemiesScript : MonoBehaviour
         Vector3 playerPosition = player.transform.position;
         float distanceToPlayer = traversableTilesScript.Distance(enemyPosition, playerPosition);
         List<Vector3> pathToPlayer = traversableTilesScript.ShortestPath(enemyPosition, playerPosition);
-        int pathLength = pathToPlayer.Count;
         if (pathToPlayer != null)
         {
+            int pathLength = pathToPlayer.Count;
             EntityScript enemyScript = enemy.GetComponent<EntityScript>();
-            int enemySpeed = enemyScript.speed;
+            int enemySpeed = enemyScript.Speed;
             float enemyMinRange = enemyScript.minRange;
             if (distanceToPlayer <= enemyMinRange)
             {

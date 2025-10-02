@@ -8,11 +8,16 @@ public class SwordScript : MonoBehaviour, Weapon
     public GameObject secondSkillPrefab;
     public GameObject secondSkill;
     public string itemName; // to-do - will be set when instantiated
-    public int damage = 1; // to-do - will be set when instantiated
+    private int damage = 1; // to-do - will be set when instantiated
 
     public bool IsFinishedBuilding()
     {
         return finishedBuilding;
+    }
+
+    public int GetDamage()
+    {
+        return damage;
     }
 
     public void SetDamage(int number)

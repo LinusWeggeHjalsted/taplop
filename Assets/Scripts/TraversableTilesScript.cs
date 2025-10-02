@@ -115,6 +115,14 @@ public class TraversableTilesScript : MonoBehaviour
                     {
                         continue;
                     }
+                    // check if tile is the respawn tile, if you're an enemy
+                    if (enemiesScript.enemyLookup.ContainsKey(startPosition))
+                    {
+                        if (tileLookup[neighborPosition].GetComponent<TileScript>().IsRespawn)
+                        {
+                            continue;
+                        }
+                    }
                     // update if neighbor has been checked already
                     if (openSetLookup.ContainsKey(neighborPosition))
                     {
@@ -179,6 +187,7 @@ public class TraversableTilesScript : MonoBehaviour
             GameObject tile = tileTransform.gameObject;
             tileLookup.Add(tileTransform.position, tile);
         }
+        finishedBuilding = true;
     }
 
     void Start()
@@ -189,6 +198,5 @@ public class TraversableTilesScript : MonoBehaviour
         enemiesScript = enemies.GetComponent<EnemiesScript>();
         // wait for LevelBuilder to finish building
         StartCoroutine(WaitForLevelBuilderBeforePopulating());
-        finishedBuilding = true;
     }
 }

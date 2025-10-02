@@ -20,6 +20,12 @@ public class EntityScript : MonoBehaviour
     public Transform offHand;
     public GameObject mainHandWeapon;
     public GameObject offHandWeapon;
+    public Transform hands;
+    public Transform body;
+    public Transform feet;
+    public GameObject gloves;
+    public GameObject coat;
+    public GameObject boots;
     public GameObject healthBar;
     public SpriteRenderer healthBarRenderer;
     public Sprite[] healthBarStates = new Sprite[8];
@@ -27,7 +33,19 @@ public class EntityScript : MonoBehaviour
     public Sprite aggroSprite;
 
     public string currentBuildTemplate = "00000000";
-    public int maxHealth = 10;
+    private int maxHealth = 10;
+    public int MaxHealth
+    {
+        get
+        {
+            CoatScript coatScript = coat.GetComponent<CoatScript>();
+            return maxHealth + coatScript.healthBonus;
+        }
+        set
+        {
+            maxHealth = value;
+        }
+    }
     private int currentHealth;
     public int CurrentHealth
     {
@@ -37,20 +55,66 @@ public class EntityScript : MonoBehaviour
         }
         set
         {
-            if (value > maxHealth)
+            if (value > MaxHealth)
             {
-                currentHealth = maxHealth;
+                currentHealth = MaxHealth;
             }
             else
             {
                 currentHealth = value;
             }
             DisplayHealth();
-            Debug.Log(name + " health was updated to " + this.currentHealth.ToString());
         }
     }
-    public int armor;
-    public int speed;
+    private int armor;
+    public int Armor
+    {
+        get
+        {
+            GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
+            CoatScript coatScript = coat.GetComponent<CoatScript>();
+            BootsScript bootsScript = boots.GetComponent<BootsScript>();
+            int glovesArmor = glovesScript.armorBonus;
+            int coatArmor = coatScript.armorBonus;
+            int bootsArmor = bootsScript.armorBonus;
+            return armor + glovesArmor + coatArmor + bootsArmor;
+        }
+        set
+        {
+            armor = value;
+        }
+    }
+    private int speed = 1;
+    public int Speed
+    {
+        get
+        {
+            BootsScript bootsScript = boots.GetComponent<BootsScript>();
+            return speed + bootsScript.speedBonus;
+        }
+        set
+        {
+            speed = value;
+        }
+    }
+    public int mainHandDamage
+    {
+        get
+        {
+            Weapon mainHandWeaponScript = mainHandWeapon.GetComponent<Weapon>();
+            GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
+            return mainHandWeaponScript.GetDamage() + glovesScript.damageBonus;
+        }
+    }
+    public int offHandDamage
+    {
+        get
+        {
+            Weapon offHandWeaponScript = offHandWeapon.GetComponent<Weapon>();
+            GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
+            return offHandWeaponScript.GetDamage() + glovesScript.damageBonus;
+        }
+    }
     public int aggroRange;
     public Vector3 previousPosition = new Vector3();
     public int unlockedSkills;
@@ -257,6 +321,13 @@ public class EntityScript : MonoBehaviour
         equippedSkills.Add(skill1);
         equippedSkills.Add(skill2);
         equippedSkills.Add(skill3);
+        hands = gear.transform.Find("Hands");
+        body = gear.transform.Find("Body");
+        feet = gear.transform.Find("Feet");
+        gloves = hands.GetChild(0).gameObject;
+        coat = body.GetChild(0).gameObject;
+        boots = feet.GetChild(0).gameObject;
+        CurrentHealth = MaxHealth;
         finishedBuilding = true;
     }
 
@@ -276,7 +347,6 @@ public class EntityScript : MonoBehaviour
         hitSprite = Resources.Load<Sprite>("Hit");
         aggroSprite = Resources.Load<Sprite>("EnemyAggro");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
-        CurrentHealth = maxHealth;
         StartCoroutine(WaitForGearBeforePopulating());
     }
 }

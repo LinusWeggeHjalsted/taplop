@@ -5,11 +5,16 @@ public class ShieldScript : MonoBehaviour, Weapon
     public bool finishedBuilding = false;
     public GameObject firstSkillPrefab;
     public GameObject firstSkill;
-    public int damage = 1;
+    private int damage = 1;
 
     public bool IsFinishedBuilding()
     {
         return finishedBuilding;
+    }
+
+    public int GetDamage()
+    {
+        return damage;
     }
 
     public void SetDamage(int number)

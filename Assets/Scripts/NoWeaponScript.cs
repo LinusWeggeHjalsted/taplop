@@ -6,13 +6,17 @@ public class NoWeaponScript : MonoBehaviour, Weapon
     public GameObject firstSkillPrefab;
     public GameObject firstSkill;
     public string itemName; // to-do - will be set when instantiated
-    public int damage = 1; // to-do - will be set when instantiated
+    private int damage = 1; // to-do - will be set when instantiated
 
     public bool IsFinishedBuilding()
     {
         return finishedBuilding;
     }
 
+    public int GetDamage()
+    {
+        return damage;
+    }
     public void SetDamage(int number)
     {
         damage = number;

@@ -47,6 +47,14 @@ public class TurnLogicScript : MonoBehaviour
         {
             yield return null;
         }
+        while (!playerScript.finishedBuilding)
+        {
+            yield return null;
+        }
+        while (!enemiesScript.finishedBuilding)
+        {
+            yield return null;
+        }
         currentGameState = GameState.PlayerTurnMove;
         tileLookup = traversableTilesScript.tileLookup;
     }
@@ -82,14 +90,14 @@ public class TurnLogicScript : MonoBehaviour
             }
         }
         playerScript.MoveTo(respawnPosition);
-        playerScript.CurrentHealth = playerScript.maxHealth;
+        playerScript.CurrentHealth = playerScript.MaxHealth;
     }
 
     IEnumerator PlayerTurnMove()
     {
         hasMoved = false;
         // find reachable tiles
-        int playerSpeed = playerScript.speed;
+        int playerSpeed = playerScript.Speed;
         Vector3 playerPosition = player.transform.position;
         List<Vector3> reachableTiles = new List<Vector3>();
         for (int i = -playerSpeed; i <= playerSpeed; i++)
@@ -122,7 +130,7 @@ public class TurnLogicScript : MonoBehaviour
                 }
             }
         }
-        
+
         foreach (Vector3 pos in reachableTiles)
         {
             TileScript tileScript = tileLookup[pos].GetComponent<TileScript>();

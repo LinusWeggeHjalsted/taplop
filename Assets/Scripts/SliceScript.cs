@@ -75,6 +75,7 @@ public class SliceScript : MonoBehaviour, Skill
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
         Debug.Log(wielder.name + " using slice");
+        EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -88,7 +89,7 @@ public class SliceScript : MonoBehaviour, Skill
         if (target != null)
         {
             EntityScript targetScript = target.GetComponent<EntityScript>();
-            targetScript.IncomingDamage(swordScript.damage, wielder);
+            targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
         }
     }
 

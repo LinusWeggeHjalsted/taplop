@@ -68,6 +68,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         Debug.Log(wielder.name + " using spinblade");
+        EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
         for (float i = -range; i <= range; i++)
@@ -107,7 +108,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
             if (target != null)
             {
                 EntityScript targetScript = target.GetComponent<EntityScript>();
-                targetScript.IncomingDamage(swordScript.damage, wielder);
+                targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
             }
         }
         if (wielder == player)

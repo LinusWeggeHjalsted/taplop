@@ -308,10 +308,9 @@ public class LevelBuilderScript : MonoBehaviour
             newEnemy.transform.position = enemyPosition;
             newEnemy.name = preEnemy.enemyName;
             EntityScript newEnemyScript = newEnemy.GetComponent<EntityScript>();
-            newEnemyScript.maxHealth = preEnemy.maxHealth;
-            newEnemyScript.CurrentHealth = preEnemy.maxHealth;
-            newEnemyScript.armor = preEnemy.armor;
-            newEnemyScript.speed = preEnemy.speed;
+            newEnemyScript.MaxHealth = preEnemy.maxHealth;
+            newEnemyScript.Armor = preEnemy.armor;
+            newEnemyScript.Speed = preEnemy.speed;
             newEnemyScript.aggroRange = preEnemy.aggroRange;
             newEnemyScript.unlockedSkills = preEnemy.unlockedSkills;
             GameObject mainHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.mainHandWeapon);
