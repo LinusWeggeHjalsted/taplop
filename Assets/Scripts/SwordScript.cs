@@ -1,16 +1,26 @@
 using UnityEngine;
 
-public class SwordScript : MonoBehaviour, Weapon, ItemScript
+public class SwordScript : MonoBehaviour, Weapon, MainHandScript, ItemScript
 {
     public bool finishedBuilding = false;
     public GameObject firstSkillPrefab;
-    public GameObject firstSkill;
+    private GameObject firstSkill;
     public GameObject secondSkillPrefab;
-    public GameObject secondSkill;
+    private GameObject secondSkill;
     public Sprite itemSprite;
     public string itemType;
     public string itemName; // to-do - will be set when instantiated
     private int damage = 1; // to-do - will be set when instantiated
+
+    public GameObject FirstSkill()
+    {
+        return firstSkill;
+    }
+
+    public GameObject SecondSkill()
+    {
+        return secondSkill;
+    }
 
     public bool IsFinishedBuilding()
     {

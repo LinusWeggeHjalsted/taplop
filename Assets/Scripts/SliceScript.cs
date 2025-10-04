@@ -5,10 +5,9 @@ public class SliceScript : MonoBehaviour, Skill
 {
     public string description = "Basic sword attack";
     public float range = 1f;
+    private Sprite skillSprite;
     public int cooldown = 0;
     private int currentCooldown = 0;
-    public GameObject sword;
-    public SwordScript swordScript;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -25,6 +24,11 @@ public class SliceScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public Sprite GetSprite()
+    {
+        return skillSprite;
     }
 
     public int CurrentCooldown()
@@ -145,8 +149,7 @@ public class SliceScript : MonoBehaviour, Skill
 
     void Start()
     {
-        sword = this.transform.parent.gameObject;
-        swordScript = sword.GetComponent<SwordScript>();
+        skillSprite = Resources.Load<Sprite>("Skill Sprites/Slice");
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         enemies = GameObject.Find("Enemies");

@@ -9,6 +9,17 @@ public class SkillsPanelScript : MonoBehaviour
     public GameObject player;
     public EntityScript playerScript;
 
+    public void UpdateButtons()
+    {
+        for (int i = 0; i < this.transform.childCount; i++)
+        {
+            Debug.Log("updating buttons");
+            GameObject skillButton = this.transform.GetChild(i).gameObject;
+            SkillButtonScript buttonScript = skillButton.GetComponent<SkillButtonScript>();
+            buttonScript.UpdateButton();
+        }
+    }
+
     public void ReduceCooldowns(int number)
     {
         for (int i = 0; i < this.transform.childCount; i++)

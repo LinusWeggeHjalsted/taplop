@@ -7,6 +7,8 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
     public EntityScript playerScript;
     public Transform playerGear;
     public Transform playerInventory;
+    public GameObject skillsPanel;
+    public SkillsPanelScript skillsPanelScript;
     public string itemType = "";
 
     void Start()
@@ -15,6 +17,8 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
         playerScript = player.GetComponent<EntityScript>();
         playerGear = player.transform.Find("Gear");
         playerInventory = player.transform.Find("Inventory");
+        skillsPanel = GameObject.Find("Skills Panel");
+        skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
     }
 
     public void SwapWithOtherSlot(GameObject otherItemSlot, GameObject otherItem)
@@ -66,6 +70,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                         actualOwnItem.transform.parent = playerScript.feet;
                         break;
                 }
+                skillsPanelScript.UpdateButtons();
             }
 
             if (otherItemSlotScript.itemType != "")
@@ -99,6 +104,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                         actualOtherItem.transform.parent = playerScript.feet;
                         break;
                 }
+                skillsPanelScript.UpdateButtons();
             }
         }
     }
@@ -139,6 +145,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                             actualItem.transform.parent = playerScript.feet;
                             break;
                     }
+                    skillsPanelScript.UpdateButtons();
                 }
             }
             else
@@ -149,7 +156,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                 {
                     GameObject actualItem = itemScript.item;
                     actualItem.transform.parent = playerScript.inventory;
-
+                    skillsPanelScript.UpdateButtons();
                 }
                 itemScript.currentParent = this.transform;
             }

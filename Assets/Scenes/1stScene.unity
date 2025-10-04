@@ -361,8 +361,7 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 244001307}
+  m_Children: []
   m_Father: {fileID: 1622091008}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &229678827
@@ -379,7 +378,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
   firstSkillPrefab: {fileID: 0}
-  firstSkill: {fileID: 0}
   itemSprite: {fileID: 0}
   itemType: 
 --- !u!1 &235211313
@@ -432,62 +430,6 @@ MonoBehaviour:
   traversableTiles: {fileID: 0}
   traversableTilesScript: {fileID: 0}
   player: {fileID: 0}
---- !u!1 &244001306
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 244001307}
-  - component: {fileID: 244001308}
-  m_Layer: 0
-  m_Name: Reflect
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &244001307
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 244001306}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 229678826}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &244001308
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 244001306}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ff057f7e382c0bb76af2f065e5e0d697, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: '::'
-  description: Incoming damage is prevented and dealt to the attacker
-  range: 0
-  cooldown: 5
-  shield: {fileID: 0}
-  shieldScript: {fileID: 0}
-  traversableTiles: {fileID: 0}
-  traversableTilesScript: {fileID: 0}
-  enemies: {fileID: 0}
-  enemiesScript: {fileID: 0}
-  player: {fileID: 0}
-  turnLogic: {fileID: 0}
-  turnLogicScript: {fileID: 0}
 --- !u!1 &247921638
 GameObject:
   m_ObjectHideFlags: 0
@@ -600,9 +542,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
   firstSkillPrefab: {fileID: 0}
-  firstSkill: {fileID: 0}
   secondSkillPrefab: {fileID: 0}
-  secondSkill: {fileID: 0}
   itemSprite: {fileID: 0}
   itemType: 
   itemName: 
@@ -1106,7 +1046,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 1868182305847966066, guid: 2a26ba59000bece559c012defe5cf9d2, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 471b42c3a631cc06a8f8d3cddda9cc9a, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -1139,6 +1079,7 @@ MonoBehaviour:
   finishedBuilding: 0
   skillNumber: 0
   button: {fileID: 0}
+  image: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -1146,6 +1087,7 @@ MonoBehaviour:
   player: {fileID: 0}
   playerScript: {fileID: 0}
   skill: {fileID: 0}
+  noSkillSprite: {fileID: 0}
   tooltipPrefab: {fileID: 0}
   tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
@@ -1204,6 +1146,7 @@ MonoBehaviour:
   finishedBuilding: 0
   skillNumber: 0
   button: {fileID: 0}
+  image: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -1211,6 +1154,7 @@ MonoBehaviour:
   player: {fileID: 0}
   playerScript: {fileID: 0}
   skill: {fileID: 0}
+  noSkillSprite: {fileID: 0}
   tooltipPrefab: {fileID: 0}
   tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
@@ -1291,7 +1235,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 4920021a69e2d69a8aabee733f3fb741, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 471b42c3a631cc06a8f8d3cddda9cc9a, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -2847,6 +2791,7 @@ MonoBehaviour:
   finishedBuilding: 0
   skillNumber: 0
   button: {fileID: 0}
+  image: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -2854,6 +2799,7 @@ MonoBehaviour:
   player: {fileID: 0}
   playerScript: {fileID: 0}
   skill: {fileID: 0}
+  noSkillSprite: {fileID: 0}
   tooltipPrefab: {fileID: 0}
   tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
@@ -2934,7 +2880,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 317fcabba2fcc6cfa89aad192b3d264e, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 471b42c3a631cc06a8f8d3cddda9cc9a, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -3071,14 +3017,10 @@ MonoBehaviour:
   gearScript: {fileID: 0}
   mainHand: {fileID: 0}
   offHand: {fileID: 0}
-  mainHandWeapon: {fileID: 0}
-  offHandWeapon: {fileID: 0}
   hands: {fileID: 0}
   body: {fileID: 0}
   feet: {fileID: 0}
-  gloves: {fileID: 0}
-  coat: {fileID: 0}
-  boots: {fileID: 0}
+  inventory: {fileID: 0}
   healthBar: {fileID: 0}
   healthBarRenderer: {fileID: 0}
   healthBarStates: []
@@ -3088,7 +3030,6 @@ MonoBehaviour:
   aggroRange: 0
   previousPosition: {x: 0, y: 0, z: 0}
   unlockedSkills: 3
-  equippedSkills: []
   reflectDuration: 0
 --- !u!1 &1822895321
 GameObject:

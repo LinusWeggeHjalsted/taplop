@@ -5,6 +5,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
 {
     public string description = "Attack all targets within range";
     public float range = 1f;
+    public Sprite skillSprite;
     public int cooldown = 2;
     private int currentCooldown = 0;
     public GameObject sword;
@@ -25,6 +26,11 @@ public class SpinbladeScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public Sprite GetSprite()
+    {
+        return skillSprite;
     }
 
     public int CurrentCooldown()
@@ -120,6 +126,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
 
     void Start()
     {
+        skillSprite = Resources.Load<Sprite>("Skill Sprites/Spinblade");
         sword = this.transform.parent.gameObject;
         swordScript = sword.GetComponent<SwordScript>();
         traversableTiles = GameObject.Find("Traversable Tiles");

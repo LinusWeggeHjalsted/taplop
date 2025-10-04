@@ -3,6 +3,7 @@ using UnityEngine;
 public class NoSkillScript : MonoBehaviour, Skill
 {
     private int currentCooldown = 0;
+    private Sprite skillSprite;
 
     public string GetDescription()
     {
@@ -12,6 +13,11 @@ public class NoSkillScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return 0;
+    }
+
+    public Sprite GetSprite()
+    {
+        return skillSprite;
     }
 
     public int CurrentCooldown()
@@ -43,4 +49,8 @@ public class NoSkillScript : MonoBehaviour, Skill
         Debug.Log("no skill equipped in this slot");
     }
 
+    void Start()
+    {
+        skillSprite = Resources.Load<Sprite>("Skill Sprites/NoSkill");
+    }
 }

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class NoWeaponScript : MonoBehaviour, Weapon, ItemScript
+public class NoWeaponScript : MonoBehaviour, Weapon, MainHandScript, OffHandScript, ItemScript
 {
     public bool finishedBuilding = false;
     public GameObject firstSkillPrefab;
@@ -9,6 +9,16 @@ public class NoWeaponScript : MonoBehaviour, Weapon, ItemScript
     public Sprite itemSprite;
     public string itemType = "None";
     private int damage = 1; // to-do - will be set when instantiated
+
+    public GameObject FirstSkill()
+    {
+        return firstSkill;
+    }
+
+    public GameObject SecondSkill()
+    {
+        return firstSkill;
+    }
 
     public bool IsFinishedBuilding()
     {

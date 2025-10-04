@@ -143,21 +143,24 @@ public class EnemiesScript : MonoBehaviour
     {
         Vector3 enemyPosition = enemy.transform.position;
         EntityScript enemyScript = enemy.GetComponent<EntityScript>();
-        List<GameObject> enemySkills = enemyScript.equippedSkills;
+        GameObject[] enemySkills = enemyScript.equippedSkills;
         Dictionary<GameObject, int> attackSkillPriorities = new Dictionary<GameObject, int>();
         List<GameObject> priority0Skills = new List<GameObject>();
-        for (int i = 0; i < enemySkills.Count; i++)
+        for (int i = 0; i < enemySkills.Length; i++)
         {
             GameObject skill = enemySkills[i];
-            Skill skillScript = skill.GetComponent<Skill>();
-            int enemyPriority = skillScript.EnemyPriority(enemyPosition);
-            if (enemyPriority == 0)
+            if (skill != null)
             {
-                priority0Skills.Add(skill);
-            }
-            else if (enemyPriority > 0)
-            {
-                attackSkillPriorities.Add(skill, enemyPriority);
+                Skill skillScript = skill.GetComponent<Skill>();
+                int enemyPriority = skillScript.EnemyPriority(enemyPosition);
+                if (enemyPriority == 0)
+                {
+                    priority0Skills.Add(skill);
+                }
+                else if (enemyPriority > 0)
+                {
+                    attackSkillPriorities.Add(skill, enemyPriority);
+                }
             }
         }
         List<KeyValuePair<GameObject, int>> sortedSkillPriorities = new List<KeyValuePair<GameObject, int>>();

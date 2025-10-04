@@ -4,6 +4,7 @@ public class ReflectScript : MonoBehaviour, Skill
 {
     public string description = "Incoming damage is prevented and dealt to the attacker";
     public float range = 0;
+    private Sprite skillSprite;
     public int cooldown = 5;
     private int currentCooldown = 0;
     public GameObject shield;
@@ -24,6 +25,11 @@ public class ReflectScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public Sprite GetSprite()
+    {
+        return skillSprite;
     }
 
     public int CurrentCooldown()
@@ -81,6 +87,7 @@ public class ReflectScript : MonoBehaviour, Skill
 
     void Start()
     {
+        skillSprite = Resources.Load<Sprite>("Skill Sprites/Reflect");
         shield = this.transform.parent.gameObject;
         shieldScript = shield.GetComponent<ShieldScript>();
         traversableTiles = GameObject.Find("Traversable Tiles");

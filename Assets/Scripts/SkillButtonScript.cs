@@ -8,6 +8,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     public bool finishedBuilding = false;
     public int skillNumber;
     public Button button;
+    public Image image;
     public GameObject skillsPanel;
     public SkillsPanelScript skillsPanelScript;
     public GameObject turnLogic;
@@ -16,6 +17,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     public EntityScript playerScript;
     public GameObject skill;
     public Skill skillScript;
+    public Sprite noSkillSprite;
     public GameObject tooltipPrefab;
     public GameObject tooltip;
 
@@ -24,7 +26,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
 
     public void OnPointerEnter(PointerEventData eventData)
     {
-        if (finishedBuilding)
+        if (finishedBuilding && skill != null)
         {
             if (tooltip == null)
             {
@@ -78,6 +80,20 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         }
     }
 
+    public void UpdateButton()
+    {
+        skill = playerScript.equippedSkills[skillNumber];
+        if (skill == null)
+        {
+            image.sprite = noSkillSprite;
+        }
+        else
+        {
+            skillScript = skill.GetComponent<Skill>();
+            image.sprite = skillScript.GetSprite();
+        }
+    }
+
     IEnumerator WaitForPlayerLoadout()
     {
         while (!playerScript.finishedBuilding)
@@ -88,9 +104,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             yield return null;
         }
-        skill = playerScript.equippedSkills[skillNumber];
-        skillScript = skill.GetComponent<Skill>();
-        Debug.Log("finished building skill button " + skillNumber.ToString());
+        UpdateButton();
         finishedBuilding = true;
     }
 
@@ -102,8 +116,10 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         playerScript = player.GetComponent<EntityScript>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
+        image = this.GetComponent<Image>();
         skillsPanel = this.transform.parent.gameObject;
         skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
+        noSkillSprite = Resources.Load<Sprite>("Skill Sprites/NoSkill");
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/Tooltip");
         cooldownPrefab = Resources.Load<GameObject>("Prefabs/Cooldown Overlay Panel");
 

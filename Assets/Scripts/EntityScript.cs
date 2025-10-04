@@ -174,7 +174,25 @@ public class EntityScript : MonoBehaviour
     public int aggroRange;
     public Vector3 previousPosition = new Vector3();
     public int unlockedSkills;
-    public List<GameObject> equippedSkills = new List<GameObject>();
+    public GameObject[] equippedSkills
+    {
+        get
+        {
+            GameObject[] skillArray = new GameObject[8];
+            if (mainHandWeapon != null)
+            {
+                MainHandScript mainHandWeaponScript = mainHandWeapon.GetComponent<MainHandScript>();
+                skillArray[0] = mainHandWeaponScript.FirstSkill();
+                skillArray[1] = mainHandWeaponScript.SecondSkill();
+            }
+            if (offHandWeapon != null)
+            {
+                OffHandScript offHandWeaponScript = offHandWeapon.GetComponent<OffHandScript>();
+                skillArray[2] = offHandWeaponScript.FirstSkill();
+            }
+            return skillArray;
+        }
+    }
     private bool isActive = false;
     public bool IsActive
     {
@@ -196,14 +214,17 @@ public class EntityScript : MonoBehaviour
         get
         {
             List<float> skillRanges = new List<float>();
-            for (int i = 0; i < equippedSkills.Count; i++)
+            for (int i = 0; i < equippedSkills.Length; i++)
             {
                 GameObject skill = equippedSkills[i];
-                Skill skillScript = skill.GetComponent<Skill>();
-                float skillRange = skillScript.GetRange();
-                if (skillRange > 0)
+                if (skill != null)
                 {
-                    skillRanges.Add(skillScript.GetRange());
+                    Skill skillScript = skill.GetComponent<Skill>();
+                    float skillRange = skillScript.GetRange();
+                    if (skillRange > 0)
+                    {
+                        skillRanges.Add(skillScript.GetRange());
+                    }
                 }
             }
             return skillRanges.Min();
@@ -343,8 +364,11 @@ public class EntityScript : MonoBehaviour
     {
         foreach (GameObject skill in equippedSkills)
         {
-            Skill skillScript = skill.GetComponent<Skill>();
-            skillScript.ReduceCooldown(number);
+            if (skill != null)
+            {
+                Skill skillScript = skill.GetComponent<Skill>();
+                skillScript.ReduceCooldown(number);
+            }
         }
     }
 
@@ -369,12 +393,6 @@ public class EntityScript : MonoBehaviour
         }
         mainHand = gear.transform.Find("Main Hand");
         offHand = gear.transform.Find("Off Hand");
-        GameObject skill1 = mainHandWeapon.transform.GetChild(0).gameObject;
-        GameObject skill2 = mainHandWeapon.transform.GetChild(1).gameObject;
-        GameObject skill3 = offHandWeapon.transform.GetChild(0).gameObject;
-        equippedSkills.Add(skill1);
-        equippedSkills.Add(skill2);
-        equippedSkills.Add(skill3);
         hands = gear.transform.Find("Hands");
         body = gear.transform.Find("Body");
         feet = gear.transform.Find("Feet");

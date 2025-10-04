@@ -4,6 +4,7 @@ public interface Skill
 {
     string GetDescription();
     float GetRange();
+    Sprite GetSprite();
     int CurrentCooldown();
     void ReduceCooldown(int number);
     int EnemyPriority(Vector3 fromPosition);
