@@ -18,14 +18,50 @@ public class EntityScript : MonoBehaviour
     public GearScript gearScript;
     public Transform mainHand;
     public Transform offHand;
-    public GameObject mainHandWeapon;
-    public GameObject offHandWeapon;
+    public GameObject mainHandWeapon
+    {
+        get
+        {
+            if (mainHand.childCount == 0) return null;
+            return mainHand.GetChild(0).gameObject;
+        }
+    }
+    public GameObject offHandWeapon
+    {
+        get
+        {
+            if (offHand.childCount == 0) return null;
+            return offHand.GetChild(0).gameObject;
+        }
+    }
     public Transform hands;
     public Transform body;
     public Transform feet;
-    public GameObject gloves;
-    public GameObject coat;
-    public GameObject boots;
+    public GameObject gloves
+    {
+        get
+        {
+            if (hands.childCount == 0) return null;
+            return hands.GetChild(0).gameObject;
+        }
+    }
+    public GameObject coat
+    {
+        get
+        {
+            if (body.childCount == 0) return null;
+            return body.GetChild(0).gameObject;
+        }
+    }
+    public GameObject boots
+    {
+        get
+        {
+            if (feet.childCount == 0) return null;
+            return feet.GetChild(0).gameObject;
+        }
+    }
+    public Transform inventory;
     public GameObject healthBar;
     public SpriteRenderer healthBarRenderer;
     public Sprite[] healthBarStates = new Sprite[8];
@@ -101,18 +137,38 @@ public class EntityScript : MonoBehaviour
     {
         get
         {
-            Weapon mainHandWeaponScript = mainHandWeapon.GetComponent<Weapon>();
-            GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
-            return mainHandWeaponScript.GetDamage() + glovesScript.damageBonus;
+            int mainHandWeaponDamage = 0;
+            if (mainHandWeapon != null)
+            {
+                Weapon mainHandWeaponScript = mainHandWeapon.GetComponent<Weapon>();
+                mainHandWeaponDamage = mainHandWeaponScript.GetDamage();
+            }
+            int glovesDamage = 0;
+            if (gloves != null)
+            {
+                GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
+                glovesDamage = glovesScript.damageBonus;
+            }
+            return mainHandWeaponDamage + glovesDamage;
         }
     }
     public int offHandDamage
     {
         get
         {
-            Weapon offHandWeaponScript = offHandWeapon.GetComponent<Weapon>();
-            GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
-            return offHandWeaponScript.GetDamage() + glovesScript.damageBonus;
+            int offHandWeaponDamage = 0;
+            if (offHandWeapon != null)
+            {
+                Weapon offHandWeaponScript = offHandWeapon.GetComponent<Weapon>();
+                offHandWeaponDamage = offHandWeaponScript.GetDamage();
+            }
+            int glovesDamage = 0;
+            if (gloves != null)
+            {
+                GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
+                glovesDamage = glovesScript.damageBonus;
+            }
+            return offHandWeaponDamage + glovesDamage;
         }
     }
     public int aggroRange;
@@ -313,8 +369,6 @@ public class EntityScript : MonoBehaviour
         }
         mainHand = gear.transform.Find("Main Hand");
         offHand = gear.transform.Find("Off Hand");
-        mainHandWeapon = mainHand.GetChild(0).gameObject;
-        offHandWeapon = offHand.GetChild(0).gameObject;
         GameObject skill1 = mainHandWeapon.transform.GetChild(0).gameObject;
         GameObject skill2 = mainHandWeapon.transform.GetChild(1).gameObject;
         GameObject skill3 = offHandWeapon.transform.GetChild(0).gameObject;
@@ -324,9 +378,6 @@ public class EntityScript : MonoBehaviour
         hands = gear.transform.Find("Hands");
         body = gear.transform.Find("Body");
         feet = gear.transform.Find("Feet");
-        gloves = hands.GetChild(0).gameObject;
-        coat = body.GetChild(0).gameObject;
-        boots = feet.GetChild(0).gameObject;
         CurrentHealth = MaxHealth;
         finishedBuilding = true;
     }
@@ -344,6 +395,7 @@ public class EntityScript : MonoBehaviour
         enemiesScript = enemies.GetComponent<EnemiesScript>();
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
+        inventory = this.transform.Find("Inventory");
         hitSprite = Resources.Load<Sprite>("Hit");
         aggroSprite = Resources.Load<Sprite>("EnemyAggro");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
