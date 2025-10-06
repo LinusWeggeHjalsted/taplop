@@ -39,10 +39,10 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
             ownItem.transform.localPosition = new Vector3(0, 0, 0);
 
             Transform playerInventory = playerScript.inventory;
-            if (itemType != "")
+            if (otherItemSlotScript.itemType != "")
             {
                 GameObject actualOwnItem = ownItemScript.item;
-                switch (itemType)
+                switch (otherItemSlotScript.itemType)
                 {
                     case "Main Hand Weapon":
                         GameObject currentMainHandWeapon = playerScript.mainHandWeapon;
@@ -73,7 +73,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                 skillsPanelScript.UpdateButtons();
             }
 
-            if (otherItemSlotScript.itemType != "")
+            if (itemType != "")
             {
                 GameObject actualOtherItem = otherItemScript.item;
                 switch (itemType)

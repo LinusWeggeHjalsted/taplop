@@ -3,9 +3,9 @@ using UnityEngine;
 public class ReflectScript : MonoBehaviour, Skill
 {
     public string description = "Incoming damage is prevented and dealt to the attacker";
-    public float range = 0;
+    public float range;
     private Sprite skillSprite;
-    public int cooldown = 5;
+    public int cooldown;
     private int currentCooldown = 0;
     public GameObject shield;
     public ShieldScript shieldScript;
@@ -87,6 +87,8 @@ public class ReflectScript : MonoBehaviour, Skill
 
     void Start()
     {
+        cooldown = 4;
+        range = 0;
         skillSprite = Resources.Load<Sprite>("Skill Sprites/Reflect");
         shield = this.transform.parent.gameObject;
         shieldScript = shield.GetComponent<ShieldScript>();

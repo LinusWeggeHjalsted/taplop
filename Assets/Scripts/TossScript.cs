@@ -1,9 +1,9 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class SliceScript : MonoBehaviour, Skill
+public class TossScript : MonoBehaviour, Skill
 {
-    public string description = "Basic sword attack";
+    public string description = "Attack target";
     public float range;
     private Sprite skillSprite;
     public int cooldown;
@@ -71,14 +71,14 @@ public class SliceScript : MonoBehaviour, Skill
         }
         else
         {
-            Debug.LogError("enemy tried to use slice without targets in range");
+            Debug.LogError("enemy tried to use toss without targets in range");
             return fromPosition;
         }
     }
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
-        Debug.Log(wielder.name + " using slice");
+        Debug.Log(wielder.name + " using toss");
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
@@ -95,11 +95,12 @@ public class SliceScript : MonoBehaviour, Skill
             EntityScript targetScript = target.GetComponent<EntityScript>();
             targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
         }
+        currentCooldown = cooldown;
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        Debug.Log(wielder.name + " preparing slice");
+        Debug.Log(wielder.name + " preparing toss");
         traversableTilesScript.ClearHighlights();
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
@@ -149,9 +150,9 @@ public class SliceScript : MonoBehaviour, Skill
 
     void Start()
     {
-        cooldown = 0;
-        range = 1f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Slice");
+        cooldown = 2;
+        range = 3f;
+        skillSprite = Resources.Load<Sprite>("Skill Sprites/Toss");
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         enemies = GameObject.Find("Enemies");

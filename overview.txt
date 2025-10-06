@@ -28,8 +28,8 @@ weapons
         shadow strike - range 1, teleport range 2, teleport then attack, cooldown 3
     spear
         impale - range 2, basic spear attack, cooldown 1
-        flurry - range 2, attack 3 times, cooldown 2
         toss - range 4, cooldown 2
+        flurry - range 2, attack 3 times, cooldown 2
     wand
         spark - range 3, basic wand attack, cooldown 1
         lightning strike - range 3, also attack all tiles adjacent to target, cooldown 3
