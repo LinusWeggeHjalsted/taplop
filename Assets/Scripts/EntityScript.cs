@@ -100,6 +100,12 @@ public class EntityScript : MonoBehaviour
                 currentHealth = value;
             }
             DisplayHealth();
+            if (this.gameObject == player)
+            {
+                GameObject playerHealthBar = GameObject.Find("Player Health Bar");
+                PlayerHealthBarScript playerHealthBarScript = playerHealthBar.GetComponent<PlayerHealthBarScript>();
+                playerHealthBarScript.UpdateHealthBar();
+            }
         }
     }
     private int armor;
