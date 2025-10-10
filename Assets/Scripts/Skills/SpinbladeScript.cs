@@ -1,13 +1,16 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class ImpaleScript : MonoBehaviour, Skill
+public class SpinbladeScript : MonoBehaviour, Skill
 {
-    public string description = "Attack target";
-    public float range;
+    private string skillType;
+    private string description; 
+    private float range;
     private Sprite skillSprite;
-    public int cooldown;
+    private int cooldown;
     private int currentCooldown = 0;
+    public GameObject sword;
+    public SwordScript swordScript;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -16,6 +19,11 @@ public class ImpaleScript : MonoBehaviour, Skill
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
     
+    public string GetSkillType()
+    {
+        return skillType;
+    }
+
     public string GetDescription()
     {
         return description;
@@ -29,6 +37,11 @@ public class ImpaleScript : MonoBehaviour, Skill
     public Sprite GetSprite()
     {
         return skillSprite;
+    }
+
+    public int GetCooldown()
+    {
+        return cooldown;
     }
 
     public int CurrentCooldown()
@@ -55,52 +68,24 @@ public class ImpaleScript : MonoBehaviour, Skill
         }
         else
         {
-            return 3;
+            return 2;
         }
     }
 
     public Vector3 EnemySelectTarget(Vector3 fromPosition)
     {
-        Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
-        Vector3 playerPosition = player.transform.position;
-        GameObject playerTile = tileLookup[playerPosition];
-        TileScript tileScript = playerTile.GetComponent<TileScript>();
-        if (tileScript.IsHighlighted)
-        {
-            return playerPosition;
-        }
-        else
-        {
-            Debug.LogError("enemy tried to use impale without targets in range");
-            return fromPosition;
-        }
+        return fromPosition;
     }
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
-        Debug.Log(wielder.name + " using impale");
-        EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
-        GameObject target = null;
-        if (enemyLookup.ContainsKey(targetPosition))
-        {
-            target = enemyLookup[targetPosition];
-        }
-        if (targetPosition == player.transform.position)
-        {
-            target = player;
-        }
-        if (target != null)
-        {
-            EntityScript targetScript = target.GetComponent<EntityScript>();
-            targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
-        }
+
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        Debug.Log(wielder.name + " preparing impale");
-        traversableTilesScript.ClearHighlights();
+        Debug.Log(wielder.name + " using spinblade");
+        EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
         for (float i = -range; i <= range; i++)
@@ -121,37 +106,44 @@ public class ImpaleScript : MonoBehaviour, Skill
         foreach (Vector3 delta in deltas)
         {
             Vector3 targetPosition = fromPosition + delta;
-            if (!tileLookup.ContainsKey(targetPosition))
+            Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
+            GameObject target = null;
+            if (fromPosition == player.transform.position)
             {
-                continue;
-            }
-            if (enemiesScript.enemyLookup.ContainsKey(fromPosition))
-            {
-                if (player.transform.position == targetPosition)
+                if (enemyLookup.ContainsKey(targetPosition))
                 {
-                    GameObject targetTile = tileLookup[targetPosition];
-                    TileScript targetTileScript = targetTile.GetComponent<TileScript>();
-                    targetTileScript.IsHighlighted = true;
+                    target = enemyLookup[targetPosition];
                 }
             }
-            else if (fromPosition == player.transform.position)
+            if (enemyLookup.ContainsKey(fromPosition))
             {
-                if (enemiesScript.enemyLookup.ContainsKey(targetPosition))
+                if (targetPosition == player.transform.position)
                 {
-                    GameObject targetTile = tileLookup[targetPosition];
-                    TileScript targetTileScript = targetTile.GetComponent<TileScript>();
-                    targetTileScript.IsHighlighted = true;
+                    target = player;
                 }
+            }
+            if (target != null)
+            {
+                EntityScript targetScript = target.GetComponent<EntityScript>();
+                targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
             }
         }
-        Debug.Log("highlighted possible targets");
+        if (wielder == player)
+        {
+            turnLogicScript.hasAttacked = true;
+        }
+        currentCooldown = cooldown;
     }
 
     void Start()
     {
-        cooldown = 0;
+        skillType = "Main Hand Skill";
+        description = "Attack all targets within range";
+        cooldown = 2;
         range = 1f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Impale");
+        skillSprite = Resources.Load<Sprite>("Skill Sprites/Spinblade");
+        sword = this.transform.parent.gameObject;
+        swordScript = sword.GetComponent<SwordScript>();
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         enemies = GameObject.Find("Enemies");

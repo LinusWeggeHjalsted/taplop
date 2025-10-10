@@ -2,10 +2,11 @@ using UnityEngine;
 
 public class ReflectScript : MonoBehaviour, Skill
 {
-    public string description = "Incoming damage is prevented and dealt to the attacker";
-    public float range;
+    private string skillType;
+    private string description;
+    private float range;
     private Sprite skillSprite;
-    public int cooldown;
+    private int cooldown;
     private int currentCooldown = 0;
     public GameObject shield;
     public ShieldScript shieldScript;
@@ -17,6 +18,11 @@ public class ReflectScript : MonoBehaviour, Skill
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
      
+    public string GetSkillType()
+    {
+        return skillType;
+    }
+
     public string GetDescription()
     {
         return description;
@@ -30,6 +36,11 @@ public class ReflectScript : MonoBehaviour, Skill
     public Sprite GetSprite()
     {
         return skillSprite;
+    }
+
+    public int GetCooldown()
+    {
+        return cooldown;
     }
 
     public int CurrentCooldown()
@@ -87,6 +98,8 @@ public class ReflectScript : MonoBehaviour, Skill
 
     void Start()
     {
+        skillType = "Off Hand Skill";
+        description = "Incoming damage is prevented and dealt to the attacker";
         cooldown = 4;
         range = 0;
         skillSprite = Resources.Load<Sprite>("Skill Sprites/Reflect");

@@ -2,9 +2,11 @@ using UnityEngine;
 
 public interface Skill
 {
+    string GetSkillType();
     string GetDescription();
     float GetRange();
     Sprite GetSprite();
+    int GetCooldown();
     int CurrentCooldown();
     void ReduceCooldown(int number);
     int EnemyPriority(Vector3 fromPosition);

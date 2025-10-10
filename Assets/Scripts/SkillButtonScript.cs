@@ -7,6 +7,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
 {
     public bool finishedBuilding = false;
     public int skillNumber;
+    public RectTransform buttonRectTransform;
     public Button button;
     public Image image;
     public GameObject skillsPanel;
@@ -30,9 +31,29 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             if (tooltip == null)
             {
+                Vector3[] buttonCorners = new Vector3[4];
+                buttonRectTransform.GetWorldCorners(buttonCorners);
+                Vector3 buttonTopRightPosition = buttonCorners[2];
+
                 tooltip = Instantiate(tooltipPrefab, this.gameObject.transform);
+                RectTransform tooltipRectTransform = tooltip.GetComponent<RectTransform>();
+                tooltipRectTransform.pivot = new Vector2(1f, 0);
+                tooltipRectTransform.position = buttonTopRightPosition;
                 TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-                tooltipScript.SetText(skill.name, skillScript.GetDescription());
+                string skillType = skillScript.GetSkillType() + "\n";
+                string skillDescription = skillScript.GetDescription() + "\n";
+                string skillRange = "";
+                if (skillScript.GetRange() > 0)
+                {
+                    skillRange = "Range " + skillScript.GetRange().ToString() + "\n";
+                }
+                string skillCooldown = "";
+                if (skillScript.GetCooldown() > 0)
+                {
+                    skillCooldown = "Cooldown " + skillScript.GetCooldown().ToString() + "\n";
+                }
+                string tooltipText = skillType + skillDescription + skillRange + skillCooldown;
+                tooltipScript.SetText(skill.name, tooltipText);
             }
         }
     }
@@ -114,6 +135,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
         player = GameObject.Find("Player");
         playerScript = player.GetComponent<EntityScript>();
+        buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
         image = this.GetComponent<Image>();

@@ -1,12 +1,13 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class TossScript : MonoBehaviour, Skill
+public class ImpaleScript : MonoBehaviour, Skill
 {
-    public string description = "Attack target";
-    public float range;
+    private string skillType;
+    private string description;
+    private float range;
     private Sprite skillSprite;
-    public int cooldown;
+    private int cooldown;
     private int currentCooldown = 0;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
@@ -16,6 +17,11 @@ public class TossScript : MonoBehaviour, Skill
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
     
+    public string GetSkillType()
+    {
+        return skillType;
+    }
+
     public string GetDescription()
     {
         return description;
@@ -29,6 +35,11 @@ public class TossScript : MonoBehaviour, Skill
     public Sprite GetSprite()
     {
         return skillSprite;
+    }
+
+    public int GetCooldown()
+    {
+        return cooldown;
     }
 
     public int CurrentCooldown()
@@ -71,14 +82,14 @@ public class TossScript : MonoBehaviour, Skill
         }
         else
         {
-            Debug.LogError("enemy tried to use toss without targets in range");
+            Debug.LogError("enemy tried to use impale without targets in range");
             return fromPosition;
         }
     }
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
-        Debug.Log(wielder.name + " using toss");
+        Debug.Log(wielder.name + " using impale");
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
@@ -95,12 +106,11 @@ public class TossScript : MonoBehaviour, Skill
             EntityScript targetScript = target.GetComponent<EntityScript>();
             targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
         }
-        currentCooldown = cooldown;
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        Debug.Log(wielder.name + " preparing toss");
+        Debug.Log(wielder.name + " preparing impale");
         traversableTilesScript.ClearHighlights();
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
@@ -150,9 +160,11 @@ public class TossScript : MonoBehaviour, Skill
 
     void Start()
     {
+        skillType = "Main Hand Skill";
+        description = "Attack target for 2x damage";
         cooldown = 2;
-        range = 3f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Toss");
+        range = 1f;
+        skillSprite = Resources.Load<Sprite>("Skill Sprites/Impale");
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         enemies = GameObject.Find("Enemies");
