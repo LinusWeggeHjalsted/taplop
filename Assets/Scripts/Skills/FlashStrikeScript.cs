@@ -192,7 +192,7 @@ public class FlashStrikeScript : MonoBehaviour, Skill
     {
         skillName = "Flash Strike";
         skillType = "Off Hand Skill";
-        description = "Attack target";
+        description = "Teleport then attack each adjacent target";
         cooldown = 3;
         range = 2f;
         skillSprite = Resources.Load<Sprite>("Skill Sprites/FlashStrike");

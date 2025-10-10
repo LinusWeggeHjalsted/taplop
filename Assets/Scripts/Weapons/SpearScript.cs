@@ -64,6 +64,7 @@ public class SpearScript : MonoBehaviour, WeaponScript, ItemScript
         thirdSkill = Instantiate(thirdSkillPrefab, this.transform);
         itemSprite = Resources.Load<Sprite>("Items/SpearItem");
         itemType = "Weapon";
+        damage = 3;
         finishedBuilding = true;
     }
 }

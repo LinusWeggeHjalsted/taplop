@@ -111,16 +111,16 @@ public class EnemiesScript : MonoBehaviour
         Vector3 playerPosition = player.transform.position;
         float distanceToPlayer = traversableTilesScript.Distance(enemyPosition, playerPosition);
         List<Vector3> pathToPlayer = traversableTilesScript.ShortestPath(enemyPosition, playerPosition);
+        EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+        int enemySpeed = enemyScript.Speed;
+        float enemyMinRange = enemyScript.minRange;
+        if (distanceToPlayer <= enemyMinRange)
+        {
+            return;
+        }
         if (pathToPlayer != null)
         {
             int pathLength = pathToPlayer.Count;
-            EntityScript enemyScript = enemy.GetComponent<EntityScript>();
-            int enemySpeed = enemyScript.Speed;
-            float enemyMinRange = enemyScript.minRange;
-            if (distanceToPlayer <= enemyMinRange)
-            {
-                return;
-            }
             // go as far as it can, but stop short of player
             Vector3 targetPosition = playerPosition;
             if (pathLength > 1)
@@ -135,6 +135,44 @@ public class EnemiesScript : MonoBehaviour
                     targetPosition = pathToPlayer[targetIndex];
                 }
                 enemyScript.MoveTo(targetPosition);
+            }
+        }
+        else
+        {
+            Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
+            List<Vector3> deltas = new List<Vector3>();
+            for (float i = -enemySpeed; i <= enemySpeed; i++)
+            {
+                for (float j = -enemySpeed; j <= enemySpeed; j++)
+                {
+                    Vector3 delta = new Vector3(i, j, 0);
+                    deltas.Add(delta);
+                }
+            }
+            List<Vector3> targetPositions = new List<Vector3>();
+            foreach (Vector3 delta in deltas)
+            {
+                Vector3 targetPosition = enemyPosition + delta;
+                if (!tileLookup.ContainsKey(targetPosition))
+                {
+                    continue;
+                }
+                else
+                {
+                    GameObject targetTile = tileLookup[targetPosition];
+                    TileScript targetTileScript = targetTile.GetComponent<TileScript>();
+                    List<Vector3> pathToTarget = traversableTilesScript.ShortestPath(enemyPosition, targetPosition);
+                    if (pathToTarget != null && pathToTarget.Count <= enemySpeed)
+                    {
+                        targetPositions.Add(targetPosition);
+                    }
+                }
+            }
+            if (targetPositions.Count > 0)
+            {
+                // sort targetPositions by distance to player
+                targetPositions = targetPositions.OrderBy(pos => traversableTilesScript.Distance(pos, player.transform.position)).ToList();
+                enemyScript.MoveTo(targetPositions[0]);
             }
         }
     }

@@ -187,6 +187,7 @@ public class TurnLogicScript : MonoBehaviour
                 enemyScript.ReduceStunDuration(1);
             }
         }
+        yield return new WaitForSeconds(0.25f);
         currentGameState = GameState.PlayerTurnMove;
         turnStarted = false;
     }

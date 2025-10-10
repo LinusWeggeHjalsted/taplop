@@ -72,7 +72,7 @@ public class SkewerScript : MonoBehaviour, Skill
         }
         else
         {
-            return 3;
+            return 1;
         }
     }
 

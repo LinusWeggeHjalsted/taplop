@@ -90,7 +90,6 @@ public class SpinbladeScript : MonoBehaviour, Skill
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        Debug.Log(wielder.name + " using spinblade");
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
@@ -145,7 +144,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
     {
         skillName = "Spinblade";
         skillType = "Main Hand Skill";
-        description = "Attack all targets within range";
+        description = "Attack each target within range";
         cooldown = 2;
         range = 1f;
         skillSprite = Resources.Load<Sprite>("Skill Sprites/Spinblade");

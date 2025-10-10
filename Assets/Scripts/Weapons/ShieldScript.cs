@@ -63,6 +63,7 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
         thirdSkill = Instantiate(thirdSkillPrefab, this.transform);
         itemSprite = Resources.Load<Sprite>("Items/ShieldItem");
         itemType = "Weapon";
+        damage = 3;
         finishedBuilding = true;
     }
 }

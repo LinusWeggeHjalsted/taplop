@@ -72,7 +72,7 @@ public class ImpaleScript : MonoBehaviour, Skill
         }
         else
         {
-            return 3;
+            return 2;
         }
     }
 

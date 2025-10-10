@@ -14,6 +14,7 @@ public class EntityScript : MonoBehaviour
     public GameObject player;
     public GameObject enemies;
     public EnemiesScript enemiesScript;
+    public SpriteRenderer spriteRenderer;
     public GameObject gear;
     public GearScript gearScript;
     public Transform mainHand;
@@ -326,6 +327,16 @@ public class EntityScript : MonoBehaviour
             return;
         }
         Vector3 currentPosition = this.transform.position;
+        // flip sprite if moving left, unflip if moving right
+        float xDif = targetPosition.x - currentPosition.x;
+        if (xDif < 0)
+        {
+            spriteRenderer.flipX = true;
+        }
+        if (xDif > 0)
+        {
+            spriteRenderer.flipX = false;
+        }
         GameObject currentTile = tileLookup[currentPosition];
         TileScript currentTileScript = currentTile.GetComponent<TileScript>();
         targetTileScript.isOccupied = true;
@@ -364,7 +375,7 @@ public class EntityScript : MonoBehaviour
         else
         {
             CurrentHealth -= actualDamage;
-            Debug.Log("took " + actualDamage.ToString() + " damage");
+            Debug.Log(this.gameObject.name + " took " + actualDamage.ToString() + " damage from " + attacker.name);
         }
     }
 
@@ -452,6 +463,7 @@ public class EntityScript : MonoBehaviour
         player = GameObject.Find("Player");
         enemies = GameObject.Find("Enemies");
         enemiesScript = enemies.GetComponent<EnemiesScript>();
+        spriteRenderer = this.gameObject.GetComponent<SpriteRenderer>();
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
         inventory = this.transform.Find("Inventory");
