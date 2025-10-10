@@ -5,6 +5,8 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
     public bool finishedBuilding = false;
     public GameObject firstSkillPrefab;
     private GameObject firstSkill;
+    public GameObject secondSkillPrefab;
+    private GameObject secondSkill;
     public GameObject thirdSkillPrefab;
     private GameObject thirdSkill;
     public Sprite itemSprite;
@@ -18,7 +20,7 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
 
     public GameObject SecondSkill()
     {
-        return thirdSkill; // to-do
+        return secondSkill;
     }
 
     public GameObject ThirdSkill()
@@ -55,6 +57,8 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Bash");
         firstSkill = Instantiate(firstSkillPrefab, this.transform);
+        secondSkillPrefab = Resources.Load<GameObject>("Prefabs/Slam");
+        secondSkill = Instantiate(secondSkillPrefab, this.transform);
         thirdSkillPrefab = Resources.Load<GameObject>("Prefabs/Reflect");
         thirdSkill = Instantiate(thirdSkillPrefab, this.transform);
         itemSprite = Resources.Load<Sprite>("Items/ShieldItem");

@@ -236,6 +236,7 @@ public class EntityScript : MonoBehaviour
             return skillRanges.Min();
         }
     }
+    public int stunDuration = 0;
     public int reflectDuration = 0;
    
     public void DisplayAggro()
@@ -367,6 +368,30 @@ public class EntityScript : MonoBehaviour
         }
     }
 
+    public void Knockback(Vector3 fromPosition, GameObject attacker, int collisionDamage)
+    {
+        Vector3 difference = this.transform.position - fromPosition;
+        Vector3 targetPosition = this.transform.position + difference;
+        Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
+        if (tileLookup.ContainsKey(targetPosition))
+        {
+            GameObject tile = tileLookup[targetPosition];
+            TileScript tileScript = tile.GetComponent<TileScript>();
+            if (tileScript.isOccupied)
+            {
+                IncomingDamage(collisionDamage, attacker);
+            }
+            else
+            {
+                MoveTo(targetPosition);
+            }
+        }
+        else
+        {
+            IncomingDamage(collisionDamage, attacker);
+        }
+    }
+
     public void ReduceCooldowns(int number)
     {
         foreach (GameObject skill in equippedSkills)
@@ -376,6 +401,15 @@ public class EntityScript : MonoBehaviour
                 Skill skillScript = skill.GetComponent<Skill>();
                 skillScript.ReduceCooldown(number);
             }
+        }
+    }
+
+    public void ReduceStunDuration(int number)
+    {
+        stunDuration -= number;
+        if (stunDuration < 0)
+        {
+            stunDuration = 0;
         }
     }
 

@@ -175,10 +175,17 @@ public class TurnLogicScript : MonoBehaviour
             EntityScript enemyScript = enemy.GetComponent<EntityScript>();
             enemyScript.ReduceCooldowns(1);
             enemyScript.ReduceEffectDurations(1);
-            enemiesScript.EnemyTurnMove(enemy);
-            yield return new WaitForSeconds(0.25f);
-            enemiesScript.EnemyTurnAttack(enemy);
-            yield return new WaitForSeconds(0.25f);
+            if (enemyScript.stunDuration == 0)
+            {
+                enemiesScript.EnemyTurnMove(enemy);
+                yield return new WaitForSeconds(0.25f);
+                enemiesScript.EnemyTurnAttack(enemy);
+                yield return new WaitForSeconds(0.25f);
+            }
+            else
+            {
+                enemyScript.ReduceStunDuration(1);
+            }
         }
         currentGameState = GameState.PlayerTurnMove;
         turnStarted = false;
@@ -203,8 +210,17 @@ public class TurnLogicScript : MonoBehaviour
                         playerScript.ReduceCooldowns(1);
                         playerScript.ReduceEffectDurations(1);
                         traversableTilesScript.ClearHighlights();
-                        turnStatusText.text = "Move!";
-                        StartCoroutine(PlayerTurnMove());
+                        turnStatusText.text = "Player Move Step";
+                        if (playerScript.stunDuration == 0)
+                        {
+                            StartCoroutine(PlayerTurnMove());
+                        }
+                        else
+                        {
+                            playerScript.ReduceStunDuration(1);
+                            currentGameState = GameState.EnemiesTurn;
+                            turnStarted = false;
+                        }
                     }
                 }
                 break;
@@ -215,7 +231,7 @@ public class TurnLogicScript : MonoBehaviour
                     {
                         turnStarted = true;
                         traversableTilesScript.ClearHighlights();
-                        turnStatusText.text = "Attack!";
+                        turnStatusText.text = "Player Attack Step";
                         StartCoroutine(PlayerTurnAttack());
                     }
                 }
