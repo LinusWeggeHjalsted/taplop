@@ -2,6 +2,7 @@ using UnityEngine;
 
 public interface Skill
 {
+    string GetSkillName();
     string GetSkillType();
     string GetDescription();
     float GetRange();

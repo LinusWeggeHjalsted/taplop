@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 public class ImpaleScript : MonoBehaviour, Skill
 {
+    private string skillName;
     private string skillType;
     private string description;
     private float range;
@@ -17,6 +18,11 @@ public class ImpaleScript : MonoBehaviour, Skill
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
     
+    public string GetSkillName()
+    {
+        return skillName;
+    }
+
     public string GetSkillType()
     {
         return skillType;
@@ -160,6 +166,7 @@ public class ImpaleScript : MonoBehaviour, Skill
 
     void Start()
     {
+        skillName = "Impale";
         skillType = "Main Hand Skill";
         description = "Attack target for 2x damage";
         cooldown = 2;

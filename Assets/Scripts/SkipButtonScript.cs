@@ -24,7 +24,11 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
             tooltipRectTransform.pivot = new Vector2(1f, 0);
             tooltipRectTransform.position = buttonTopRightPosition;
             TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-            tooltipScript.SetText("Skip step", "");
+            StartCoroutine(tooltipScript.SetText("Skip step", ""));
+        }
+        if (tooltip != null)
+        {
+            tooltip.SetActive(true);
         }
     }
 
@@ -32,7 +36,7 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
     {
         if (tooltip != null)
         {
-            Destroy(tooltip);
+            tooltip.SetActive(false);
         }
     }
 

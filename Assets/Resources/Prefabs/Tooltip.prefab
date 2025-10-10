@@ -65,7 +65,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: header text
+  m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
   m_sharedMaterial: {fileID: 3837557773144658646, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
@@ -233,7 +233,7 @@ MonoBehaviour:
     m_Left: 24
     m_Right: 24
     m_Top: 16
-    m_Bottom: 16
+    m_Bottom: 32
   m_ChildAlignment: 0
   m_Spacing: 1
   m_ChildForceExpandWidth: 0
@@ -289,8 +289,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5654b1eb14074d4c95f3e31b7dee0b5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  finishedBuilding: 0
   tooltipHeader: {fileID: 8183585562027342687}
   tooltipContent: {fileID: 32338279177978804}
+  layoutElement: {fileID: 0}
+  charLimit: 32
 --- !u!1 &7687525069125017148
 GameObject:
   m_ObjectHideFlags: 0
@@ -356,7 +359,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: tooltip text
+  m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
   m_sharedMaterial: {fileID: 3837557773144658646, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}

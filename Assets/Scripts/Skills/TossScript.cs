@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 public class TossScript : MonoBehaviour, Skill
 {
+    private string skillName;
     private string skillType;
     private string description;
     private float range;
@@ -17,6 +18,11 @@ public class TossScript : MonoBehaviour, Skill
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
     
+    public string GetSkillName()
+    {
+        return skillName;
+    }
+
     public string GetSkillType()
     {
         return skillType;
@@ -161,6 +167,7 @@ public class TossScript : MonoBehaviour, Skill
 
     void Start()
     {
+        skillName = "Toss";
         skillType = "Main Hand Skill";
         description = "Attack target";
         cooldown = 0;

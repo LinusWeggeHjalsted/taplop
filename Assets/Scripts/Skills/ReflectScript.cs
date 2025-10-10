@@ -2,6 +2,7 @@ using UnityEngine;
 
 public class ReflectScript : MonoBehaviour, Skill
 {
+    private string skillName;
     private string skillType;
     private string description;
     private float range;
@@ -17,7 +18,12 @@ public class ReflectScript : MonoBehaviour, Skill
     public GameObject player;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
-     
+
+    public string GetSkillName()
+    {
+        return skillName;
+    }
+
     public string GetSkillType()
     {
         return skillType;
@@ -98,6 +104,7 @@ public class ReflectScript : MonoBehaviour, Skill
 
     void Start()
     {
+        skillName = "Reflect";
         skillType = "Off Hand Skill";
         description = "Incoming damage is prevented and dealt to the attacker";
         cooldown = 4;

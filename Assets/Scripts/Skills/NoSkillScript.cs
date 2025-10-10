@@ -5,6 +5,11 @@ public class NoSkillScript : MonoBehaviour, Skill
     private int currentCooldown = 0;
     private Sprite skillSprite;
 
+    public string GetSkillName()
+    {
+        return "No Skill";
+    }
+
     public string GetSkillType()
     {
         return "";

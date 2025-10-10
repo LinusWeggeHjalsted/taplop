@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 public class SpinbladeScript : MonoBehaviour, Skill
 {
+    private string skillName;
     private string skillType;
     private string description; 
     private float range;
@@ -19,6 +20,11 @@ public class SpinbladeScript : MonoBehaviour, Skill
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
     
+    public string GetSkillName()
+    {
+        return skillName;
+    }
+
     public string GetSkillType()
     {
         return skillType;
@@ -137,6 +143,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
 
     void Start()
     {
+        skillName = "Spinblade";
         skillType = "Main Hand Skill";
         description = "Attack all targets within range";
         cooldown = 2;

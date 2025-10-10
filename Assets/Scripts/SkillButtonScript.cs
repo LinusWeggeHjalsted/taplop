@@ -40,8 +40,9 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 tooltipRectTransform.pivot = new Vector2(1f, 0);
                 tooltipRectTransform.position = buttonTopRightPosition;
                 TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-                string skillType = skillScript.GetSkillType() + "\n";
+                string skillName = skillScript.GetSkillName();
                 string skillDescription = skillScript.GetDescription() + "\n";
+                string skillType = skillScript.GetSkillType() + "\n";
                 string skillRange = "";
                 if (skillScript.GetRange() > 0)
                 {
@@ -52,8 +53,12 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 {
                     skillCooldown = "Cooldown " + skillScript.GetCooldown().ToString() + "\n";
                 }
-                string tooltipText = skillType + skillDescription + skillRange + skillCooldown;
-                tooltipScript.SetText(skill.name, tooltipText);
+                string tooltipText = skillDescription + skillType + skillRange + skillCooldown;
+                StartCoroutine(tooltipScript.SetText(skillName, tooltipText));
+            }
+            if (tooltip != null)
+            {
+                tooltip.SetActive(true);
             }
         }
     }
@@ -62,7 +67,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     {
         if (tooltip != null)
         {
-            Destroy(tooltip);
+            tooltip.SetActive(false);
         }
     }
 
