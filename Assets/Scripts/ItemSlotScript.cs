@@ -39,73 +39,68 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
             ownItem.transform.localPosition = new Vector3(0, 0, 0);
 
             Transform playerInventory = playerScript.inventory;
+
+            // Get references to actual items before any modifications
+            GameObject actualOwnItem = ownItemScript.item;
+            GameObject actualOtherItem = otherItemScript.item;
+
+            // Handle equipping items from otherItemSlot to this slot
             if (otherItemSlotScript.itemType != "")
             {
-                GameObject actualOwnItem = ownItemScript.item;
                 switch (otherItemSlotScript.itemType)
                 {
-                    case "Main Hand Weapon":
-                        GameObject currentMainHandWeapon = playerScript.mainHandWeapon;
-                        currentMainHandWeapon.transform.parent = playerInventory;
-                        actualOwnItem.transform.parent = playerScript.mainHand;
-                        break;
-                    case "Off Hand Weapon":
-                        GameObject currentOffHandWeapon = playerScript.offHandWeapon;
-                        currentOffHandWeapon.transform.parent = playerInventory;
-                        actualOwnItem.transform.parent = playerScript.offHand;
+                    case "Weapon":
+                        Transform targetHand = (otherItemSlot.transform.parent.name == "Main Hand")
+                            ? playerScript.mainHand
+                            : playerScript.offHand;
+                        actualOwnItem.transform.parent = targetHand;
                         break;
                     case "Coat":
-                        GameObject currentCoat = playerScript.coat;
-                        currentCoat.transform.parent = playerInventory;
                         actualOwnItem.transform.parent = playerScript.body;
                         break;
                     case "Gloves":
-                        GameObject currentGloves = playerScript.gloves;
-                        currentGloves.transform.parent = playerInventory;
                         actualOwnItem.transform.parent = playerScript.hands;
                         break;
                     case "Boots":
-                        GameObject currentBoots = playerScript.boots;
-                        currentBoots.transform.parent = playerInventory;
                         actualOwnItem.transform.parent = playerScript.feet;
                         break;
                 }
-                skillsPanelScript.UpdateButtons();
+            }
+            else
+            {
+                // otherItemSlot is inventory, so actualOwnItem should go to inventory
+                actualOwnItem.transform.parent = playerInventory;
             }
 
+            // Handle equipping items from this slot to otherItemSlot
             if (itemType != "")
             {
-                GameObject actualOtherItem = otherItemScript.item;
                 switch (itemType)
                 {
-                    case "Main Hand Weapon":
-                        GameObject currentMainHandWeapon = playerScript.mainHandWeapon;
-                        currentMainHandWeapon.transform.parent = playerInventory;
-                        actualOtherItem.transform.parent = playerScript.mainHand;
-                        break;
-                    case "Off Hand Weapon":
-                        GameObject currentOffHandWeapon = playerScript.offHandWeapon;
-                        currentOffHandWeapon.transform.parent = playerInventory;
-                        actualOtherItem.transform.parent = playerScript.offHand;
+                    case "Weapon":
+                        Transform targetHand = (this.transform.parent.name == "Main Hand")
+                            ? playerScript.mainHand
+                            : playerScript.offHand;
+                        actualOtherItem.transform.parent = targetHand;
                         break;
                     case "Coat":
-                        GameObject currentCoat = playerScript.coat;
-                        currentCoat.transform.parent = playerInventory;
                         actualOtherItem.transform.parent = playerScript.body;
                         break;
                     case "Gloves":
-                        GameObject currentGloves = playerScript.gloves;
-                        currentGloves.transform.parent = playerInventory;
                         actualOtherItem.transform.parent = playerScript.hands;
                         break;
                     case "Boots":
-                        GameObject currentBoots = playerScript.boots;
-                        currentBoots.transform.parent = playerInventory;
                         actualOtherItem.transform.parent = playerScript.feet;
                         break;
                 }
-                skillsPanelScript.UpdateButtons();
             }
+            else
+            {
+                // this slot is inventory, so actualOtherItem should go to inventory
+                actualOtherItem.transform.parent = playerInventory;
+            }
+
+            skillsPanelScript.UpdateButtons();
         }
     }
 
@@ -129,11 +124,11 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                     ItemScript actualItemScript = actualItem.GetComponent<ItemScript>();
                     switch (itemType)
                     {
-                        case "Main Hand Weapon":
-                            actualItem.transform.parent = playerScript.mainHand;
-                            break;
-                        case "Off Hand Weapon":
-                            actualItem.transform.parent = playerScript.offHand;
+                        case "Weapon":
+                            Transform targetHand = (this.transform.parent.name == "Main Hand")
+                                ? playerScript.mainHand
+                                : playerScript.offHand;
+                            actualItem.transform.parent = targetHand;
                             break;
                         case "Coat":
                             actualItem.transform.parent = playerScript.body;

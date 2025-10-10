@@ -319,10 +319,10 @@ public class LevelBuilderScript : MonoBehaviour
             Transform enemyMainHand = enemyGear.Find("Main Hand");
             Transform enemyOffHand = enemyGear.Find("Off Hand");
             GameObject enemyMainHandWeapon = Instantiate(mainHandWeaponPrefab, enemyMainHand);
-            Weapon enemyMainHandWeaponScript = enemyMainHandWeapon.GetComponent<Weapon>();
+            WeaponScript enemyMainHandWeaponScript = enemyMainHandWeapon.GetComponent<WeaponScript>();
             enemyMainHandWeaponScript.SetDamage(preEnemy.mainHandDamage);
             GameObject enemyOffHandWeapon = Instantiate(offHandWeaponPrefab, enemyOffHand);
-            Weapon enemyOffHandWeaponScript = enemyOffHandWeapon.GetComponent<Weapon>();
+            WeaponScript enemyOffHandWeaponScript = enemyOffHandWeapon.GetComponent<WeaponScript>();
             enemyOffHandWeaponScript.SetDamage(preEnemy.offHandDamage);
         }
     }

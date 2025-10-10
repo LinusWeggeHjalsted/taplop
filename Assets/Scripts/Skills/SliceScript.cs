@@ -95,7 +95,6 @@ public class SliceScript : MonoBehaviour, Skill
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
-        Debug.Log(wielder.name + " using slice");
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
@@ -116,7 +115,6 @@ public class SliceScript : MonoBehaviour, Skill
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        Debug.Log(wielder.name + " preparing slice");
         traversableTilesScript.ClearHighlights();
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();

@@ -1,14 +1,15 @@
 using UnityEngine;
 
-public class NoWeaponScript : MonoBehaviour, Weapon, MainHandScript, OffHandScript, ItemScript
+public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
 {
     public bool finishedBuilding = false;
     public GameObject firstSkillPrefab;
-    public GameObject firstSkill;
-    public string itemName; // to-do - will be set when instantiated
+    private GameObject firstSkill;
+    public GameObject thirdSkillPrefab;
+    private GameObject thirdSkill;
     public Sprite itemSprite;
-    public string itemType = "None";
-    private int damage = 1; // to-do - will be set when instantiated
+    public string itemType;
+    private int damage = 1;
 
     public GameObject FirstSkill()
     {
@@ -17,7 +18,12 @@ public class NoWeaponScript : MonoBehaviour, Weapon, MainHandScript, OffHandScri
 
     public GameObject SecondSkill()
     {
-        return firstSkill;
+        return thirdSkill; // to-do
+    }
+
+    public GameObject ThirdSkill()
+    {
+        return thirdSkill;
     }
 
     public bool IsFinishedBuilding()
@@ -47,9 +53,12 @@ public class NoWeaponScript : MonoBehaviour, Weapon, MainHandScript, OffHandScri
 
     void Start()
     {
-        firstSkillPrefab = Resources.Load<GameObject>("Prefabs/No Skill");
+        firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Bash");
         firstSkill = Instantiate(firstSkillPrefab, this.transform);
-        itemSprite = Resources.Load<Sprite>("Items/NoItem");
+        thirdSkillPrefab = Resources.Load<GameObject>("Prefabs/Reflect");
+        thirdSkill = Instantiate(thirdSkillPrefab, this.transform);
+        itemSprite = Resources.Load<Sprite>("Items/ShieldItem");
+        itemType = "Weapon";
         finishedBuilding = true;
     }
 }

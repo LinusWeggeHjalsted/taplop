@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class ImpaleScript : MonoBehaviour, Skill
+public class SkewerScript : MonoBehaviour, Skill
 {
     private string skillName;
     private string skillType;
@@ -17,7 +17,7 @@ public class ImpaleScript : MonoBehaviour, Skill
     public GameObject player;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
-    
+
     public string GetSkillName()
     {
         return skillName;
@@ -88,7 +88,7 @@ public class ImpaleScript : MonoBehaviour, Skill
         }
         else
         {
-            Debug.LogError("enemy tried to use impale without targets in range");
+            Debug.LogError("enemy tried to use skewer without targets in range");
             return fromPosition;
         }
     }
@@ -109,7 +109,7 @@ public class ImpaleScript : MonoBehaviour, Skill
         if (target != null)
         {
             EntityScript targetScript = target.GetComponent<EntityScript>();
-            targetScript.IncomingDamage(wielderScript.mainHandDamage * 2, wielder);
+            targetScript.IncomingDamage(wielderScript.offHandDamage * 3, wielder);
         }
         currentCooldown = cooldown;
     }
@@ -164,12 +164,12 @@ public class ImpaleScript : MonoBehaviour, Skill
 
     void Start()
     {
-        skillName = "Impale";
-        skillType = "Main Hand Skill";
-        description = "Attack target for 2x damage";
-        cooldown = 2;
+        skillName = "Skewer";
+        skillType = "Off Hand Skill";
+        description = "Attack target for 3x damage";
+        cooldown = 4;
         range = 1f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Impale");
+        skillSprite = Resources.Load<Sprite>("Skill Sprites/Skewer");
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         enemies = GameObject.Find("Enemies");

@@ -146,7 +146,7 @@ public class EntityScript : MonoBehaviour
             int mainHandWeaponDamage = 0;
             if (mainHandWeapon != null)
             {
-                Weapon mainHandWeaponScript = mainHandWeapon.GetComponent<Weapon>();
+                WeaponScript mainHandWeaponScript = mainHandWeapon.GetComponent<WeaponScript>();
                 mainHandWeaponDamage = mainHandWeaponScript.GetDamage();
             }
             int glovesDamage = 0;
@@ -165,7 +165,7 @@ public class EntityScript : MonoBehaviour
             int offHandWeaponDamage = 0;
             if (offHandWeapon != null)
             {
-                Weapon offHandWeaponScript = offHandWeapon.GetComponent<Weapon>();
+                WeaponScript offHandWeaponScript = offHandWeapon.GetComponent<WeaponScript>();
                 offHandWeaponDamage = offHandWeaponScript.GetDamage();
             }
             int glovesDamage = 0;
@@ -187,14 +187,14 @@ public class EntityScript : MonoBehaviour
             GameObject[] skillArray = new GameObject[8];
             if (mainHandWeapon != null)
             {
-                MainHandScript mainHandWeaponScript = mainHandWeapon.GetComponent<MainHandScript>();
+                WeaponScript mainHandWeaponScript = mainHandWeapon.GetComponent<WeaponScript>();
                 skillArray[0] = mainHandWeaponScript.FirstSkill();
                 skillArray[1] = mainHandWeaponScript.SecondSkill();
             }
             if (offHandWeapon != null)
             {
-                OffHandScript offHandWeaponScript = offHandWeapon.GetComponent<OffHandScript>();
-                skillArray[2] = offHandWeaponScript.FirstSkill();
+                WeaponScript offHandWeaponScript = offHandWeapon.GetComponent<WeaponScript>();
+                skillArray[2] = offHandWeaponScript.ThirdSkill();
             }
             return skillArray;
         }
@@ -363,6 +363,7 @@ public class EntityScript : MonoBehaviour
         else
         {
             CurrentHealth -= actualDamage;
+            Debug.Log("took " + actualDamage.ToString() + " damage");
         }
     }
 

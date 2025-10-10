@@ -1,12 +1,14 @@
 using UnityEngine;
 
-public class SpearScript : MonoBehaviour, Weapon, MainHandScript, ItemScript
+public class SpearScript : MonoBehaviour, WeaponScript, ItemScript
 {
     public bool finishedBuilding = false;
     public GameObject firstSkillPrefab;
     private GameObject firstSkill;
     public GameObject secondSkillPrefab;
     private GameObject secondSkill;
+    public GameObject thirdSkillPrefab;
+    private GameObject thirdSkill;
     public Sprite itemSprite;
     public string itemType;
     public string itemName;
@@ -20,6 +22,11 @@ public class SpearScript : MonoBehaviour, Weapon, MainHandScript, ItemScript
     public GameObject SecondSkill()
     {
         return secondSkill;
+    }
+
+    public GameObject ThirdSkill()
+    {
+        return thirdSkill;
     }
 
     public bool IsFinishedBuilding()
@@ -49,12 +56,14 @@ public class SpearScript : MonoBehaviour, Weapon, MainHandScript, ItemScript
 
     void Start()
     {
-        firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Impale");
+        firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Toss");
         firstSkill = Instantiate(firstSkillPrefab, this.transform);
-        secondSkillPrefab = Resources.Load<GameObject>("Prefabs/Toss");
+        secondSkillPrefab = Resources.Load<GameObject>("Prefabs/Impale");
         secondSkill = Instantiate(secondSkillPrefab, this.transform);
+        thirdSkillPrefab = Resources.Load<GameObject>("Prefabs/Skewer");
+        thirdSkill = Instantiate(thirdSkillPrefab, this.transform);
         itemSprite = Resources.Load<Sprite>("Items/SpearItem");
-        itemType = "Main Hand Weapon";
+        itemType = "Weapon";
         finishedBuilding = true;
     }
 }

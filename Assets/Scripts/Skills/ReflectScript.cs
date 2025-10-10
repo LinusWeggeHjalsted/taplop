@@ -91,7 +91,6 @@ public class ReflectScript : MonoBehaviour, Skill
     {
         if (wielder != null)
         {
-            Debug.Log(wielder.name + " using reflect");
             EntityScript wielderScript = wielder.GetComponent<EntityScript>();
             wielderScript.reflectDuration += 1;
         }

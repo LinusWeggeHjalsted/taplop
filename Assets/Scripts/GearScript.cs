@@ -10,8 +10,8 @@ public class GearScript : MonoBehaviour
     public Transform offHand;
     public GameObject mainHandWeapon;
     public GameObject offHandWeapon;
-    public Weapon mainHandWeaponScript;
-    public Weapon offHandWeaponScript;
+    public WeaponScript mainHandWeaponScript;
+    public WeaponScript offHandWeaponScript;
 
     IEnumerator WaitForWeapons()
     {
@@ -22,8 +22,8 @@ public class GearScript : MonoBehaviour
 
         mainHandWeapon = mainHand.GetChild(0).gameObject;
         offHandWeapon = offHand.GetChild(0).gameObject;
-        mainHandWeaponScript = mainHandWeapon.GetComponent<Weapon>();
-        offHandWeaponScript = offHandWeapon.GetComponent<Weapon>();
+        mainHandWeaponScript = mainHandWeapon.GetComponent<WeaponScript>();
+        offHandWeaponScript = offHandWeapon.GetComponent<WeaponScript>();
 
         while (!(mainHandWeaponScript.IsFinishedBuilding() && offHandWeaponScript.IsFinishedBuilding()))
         {

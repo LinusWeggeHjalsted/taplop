@@ -30,10 +30,10 @@ public class GearUIScript : MonoBehaviour
         feetItemSlot = feet.GetChild(0);
 
         ItemSlotScript mainHandItemSlotScript = mainHandItemSlot.GetComponent<ItemSlotScript>();
-        mainHandItemSlotScript.itemType = "Main Hand Weapon";
+        mainHandItemSlotScript.itemType = "Weapon";
 
         ItemSlotScript offHandItemSlotScript = offHandItemSlot.GetComponent<ItemSlotScript>();
-        offHandItemSlotScript.itemType = "Off Hand Weapon";
+        offHandItemSlotScript.itemType = "Weapon";
 
         ItemSlotScript bodyItemSlotScript = bodyItemSlot.GetComponent<ItemSlotScript>();
         bodyItemSlotScript.itemType = "Coat";

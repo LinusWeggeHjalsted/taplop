@@ -1,15 +1,26 @@
 using UnityEngine;
 
-public class ShieldScript : MonoBehaviour, Weapon, OffHandScript, ItemScript
+public class NoWeaponScript : MonoBehaviour, WeaponScript, ItemScript
 {
     public bool finishedBuilding = false;
     public GameObject firstSkillPrefab;
-    private GameObject firstSkill;
+    public GameObject firstSkill;
+    public string itemName; // to-do - will be set when instantiated
     public Sprite itemSprite;
-    public string itemType;
-    private int damage = 1;
+    public string itemType = "Weapon";
+    private int damage = 1; // to-do - will be set when instantiated
 
     public GameObject FirstSkill()
+    {
+        return firstSkill;
+    }
+
+    public GameObject SecondSkill()
+    {
+        return firstSkill;
+    }
+
+    public GameObject ThirdSkill()
     {
         return firstSkill;
     }
@@ -41,10 +52,9 @@ public class ShieldScript : MonoBehaviour, Weapon, OffHandScript, ItemScript
 
     void Start()
     {
-        firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Reflect");
+        firstSkillPrefab = Resources.Load<GameObject>("Prefabs/No Skill");
         firstSkill = Instantiate(firstSkillPrefab, this.transform);
-        itemSprite = Resources.Load<Sprite>("Items/ShieldItem");
-        itemType = "Off Hand Weapon";
+        itemSprite = Resources.Load<Sprite>("Items/NoItem");
         finishedBuilding = true;
     }
 }

@@ -23,13 +23,13 @@ skills
 
 weapons
 	sword
-		slice - range 1, basic sword attack, cooldown 1
+		slice - range 1, basic sword attack, cooldown 0
 		spinblade - range 1, attack all tiles within range, cooldown 2
-        shadow strike - range 1, teleport range 2, teleport then attack, cooldown 3
+        flash strike - range 2, teleport then attack all targets within range, cooldown 3
     spear
-        impale - range 2, basic spear attack, cooldown 1
-        toss - range 4, cooldown 2
-        flurry - range 2, attack 3 times, cooldown 2
+        toss - range 3, cooldown 0
+        impale - range 1, attack target for 2x damage, cooldown 2
+        skewer - range 1, attack target for 3x damage, cooldown 4
     wand
         spark - range 3, basic wand attack, cooldown 1
         lightning strike - range 3, also attack all tiles adjacent to target, cooldown 3
@@ -38,11 +38,10 @@ weapons
         stab - range 1, basic dagger attack, deal 2x damage if enemy has full health, cooldown 1
         vampiric strike - range 1, heal for damage dealt, cooldown 2
         retreating swipe - range 1, teleport range 2, attack then teleport, cooldown 3
-
-offhands
 	shield
+        bash - range 1, attack target, cooldown 0
+        slam - range 1, stun and knockback targets within range, cooldown 2
         reflect - duration 1, incoming damage is prevented and dealt to the attacker, cooldown 5
-        bash - range 1, knockback and stun, cooldown 3
     idol
 		absorb - convert incoming damage to healing, cooldown 5
         drain - range 1, steal health from each enemy within range, cooldown 3

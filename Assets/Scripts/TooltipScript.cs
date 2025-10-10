@@ -27,7 +27,6 @@ public class TooltipScript : MonoBehaviour
                 maxWidth = line.Length;
             }
         }
-        Debug.Log("maxWidth " + maxWidth + " and charLimit " + charLimit);
         if (maxWidth < charLimit)
         {
             layoutElement.enabled = false;

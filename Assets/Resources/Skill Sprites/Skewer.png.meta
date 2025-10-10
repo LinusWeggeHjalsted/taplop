@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 4920021a69e2d69a8aabee733f3fb741
+guid: 194c3277ec6664e22aac7ccdeea7466d
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -8345982081815789130
-    second: Reflect_0
+      213: -599458063704016092
+    second: Skewer_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -101,7 +101,7 @@ TextureImporter:
     maxTextureSize: 2048
     resizeAlgorithm: 0
     textureFormat: -1
-    textureCompression: 0
+    textureCompression: 1
     compressionQuality: 50
     crunchedCompression: 0
     allowsAlphaSplitting: 0
@@ -113,7 +113,7 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Reflect_0
+      name: Skewer_0
       rect:
         serializedVersion: 2
         x: 0
@@ -128,8 +128,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 6b14897f38d1d2c80800000000000000
-      internalID: -8345982081815789130
+      spriteID: 42bbd2f211c4ea7f0800000000000000
+      internalID: -599458063704016092
       vertices: []
       indices: 
       edges: []
@@ -148,7 +148,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Reflect_0: -8345982081815789130
+      Skewer_0: -599458063704016092
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

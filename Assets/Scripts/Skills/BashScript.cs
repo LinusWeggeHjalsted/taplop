@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class ImpaleScript : MonoBehaviour, Skill
+public class BashScript : MonoBehaviour, Skill
 {
     private string skillName;
     private string skillType;
@@ -88,7 +88,7 @@ public class ImpaleScript : MonoBehaviour, Skill
         }
         else
         {
-            Debug.LogError("enemy tried to use impale without targets in range");
+            Debug.LogError("enemy tried to use bash without targets in range");
             return fromPosition;
         }
     }
@@ -109,9 +109,8 @@ public class ImpaleScript : MonoBehaviour, Skill
         if (target != null)
         {
             EntityScript targetScript = target.GetComponent<EntityScript>();
-            targetScript.IncomingDamage(wielderScript.mainHandDamage * 2, wielder);
+            targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
         }
-        currentCooldown = cooldown;
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
@@ -164,12 +163,12 @@ public class ImpaleScript : MonoBehaviour, Skill
 
     void Start()
     {
-        skillName = "Impale";
+        skillName = "Bash";
         skillType = "Main Hand Skill";
-        description = "Attack target for 2x damage";
-        cooldown = 2;
+        description = "Attack target";
+        cooldown = 0;
         range = 1f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Impale");
+        skillSprite = Resources.Load<Sprite>("Skill Sprites/Bash");
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         enemies = GameObject.Find("Enemies");

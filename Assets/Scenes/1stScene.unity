@@ -268,6 +268,7 @@ MonoBehaviour:
   finishedBuilding: 0
   firstSkillPrefab: {fileID: 0}
   secondSkillPrefab: {fileID: 0}
+  thirdSkillPrefab: {fileID: 0}
   itemSprite: {fileID: 0}
   itemType: 
   itemName: 
@@ -427,7 +428,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
-  firstSkillPrefab: {fileID: 0}
+  thirdSkillPrefab: {fileID: 0}
   itemSprite: {fileID: 0}
   itemType: 
 --- !u!1 &235211313
@@ -593,6 +594,7 @@ MonoBehaviour:
   finishedBuilding: 0
   firstSkillPrefab: {fileID: 0}
   secondSkillPrefab: {fileID: 0}
+  thirdSkillPrefab: {fileID: 0}
   itemSprite: {fileID: 0}
   itemType: 
   itemName: 
@@ -1128,6 +1130,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
   skillNumber: 0
+  buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
   skillsPanel: {fileID: 0}
@@ -1195,6 +1198,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
   skillNumber: 0
+  buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
   skillsPanel: {fileID: 0}
@@ -1548,6 +1552,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: '::'
   button: {fileID: 0}
+  buttonRectTransform: {fileID: 0}
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   tooltipPrefab: {fileID: 0}
@@ -2717,6 +2722,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
   skillNumber: 0
+  buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
   skillsPanel: {fileID: 0}
