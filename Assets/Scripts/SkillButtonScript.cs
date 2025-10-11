@@ -29,6 +29,21 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     {
         if (finishedBuilding && skill != null)
         {
+            string skillName = skillScript.GetSkillName();
+            string skillDescription = skillScript.GetDescription() + "\n";
+            string skillType = skillScript.GetSkillType() + "\n";
+            string skillRange = "";
+            if (skillScript.GetRange() > 0)
+            {
+                skillRange = "Range " + skillScript.GetRange().ToString() + "\n";
+            }
+            string skillCooldown = "";
+            if (skillScript.GetCooldown() > 0)
+            {
+                skillCooldown = "Cooldown " + skillScript.GetCooldown().ToString() + "\n";
+            }
+            string tooltipText = skillDescription + skillType + skillRange + skillCooldown;
+
             if (tooltip == null)
             {
                 Vector3[] buttonCorners = new Vector3[4];
@@ -40,24 +55,12 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 tooltipRectTransform.pivot = new Vector2(1f, 0);
                 tooltipRectTransform.position = buttonTopRightPosition;
                 TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-                string skillName = skillScript.GetSkillName();
-                string skillDescription = skillScript.GetDescription() + "\n";
-                string skillType = skillScript.GetSkillType() + "\n";
-                string skillRange = "";
-                if (skillScript.GetRange() > 0)
-                {
-                    skillRange = "Range " + skillScript.GetRange().ToString() + "\n";
-                }
-                string skillCooldown = "";
-                if (skillScript.GetCooldown() > 0)
-                {
-                    skillCooldown = "Cooldown " + skillScript.GetCooldown().ToString() + "\n";
-                }
-                string tooltipText = skillDescription + skillType + skillRange + skillCooldown;
                 StartCoroutine(tooltipScript.SetText(skillName, tooltipText));
             }
             if (tooltip != null)
             {
+                TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
+                StartCoroutine(tooltipScript.SetText(skillName, tooltipText));
                 tooltip.SetActive(true);
             }
         }
