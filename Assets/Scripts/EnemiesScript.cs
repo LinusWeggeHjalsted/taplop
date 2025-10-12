@@ -190,7 +190,7 @@ public class EnemiesScript : MonoBehaviour
             if (skill != null)
             {
                 Skill skillScript = skill.GetComponent<Skill>();
-                int enemyPriority = skillScript.EnemyPriority(enemyPosition);
+                int enemyPriority = skillScript.EnemyPriority(enemyPosition, enemy);
                 if (enemyPriority == 0)
                 {
                     priority0Skills.Add(skill);

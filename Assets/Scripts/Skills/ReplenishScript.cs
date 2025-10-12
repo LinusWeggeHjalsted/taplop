@@ -1,6 +1,8 @@
 using UnityEngine;
+using System.Collections.Generic;
+using System.Linq;
 
-public class ReflectScript : MonoBehaviour, Skill
+public class ReplenishScript : MonoBehaviour, Skill
 {
     private string skillName;
     private string skillType;
@@ -9,8 +11,6 @@ public class ReflectScript : MonoBehaviour, Skill
     private Sprite skillSprite;
     private int cooldown;
     private int currentCooldown = 0;
-    public GameObject shield;
-    public ShieldScript shieldScript;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -65,22 +65,26 @@ public class ReflectScript : MonoBehaviour, Skill
         {
             return -1;
         }
-        Vector3 playerPosition = player.transform.position;
-        EntityScript playerScript = player.GetComponent<EntityScript>();
-        float distanceFromPlayer = traversableTilesScript.Distance(playerPosition, fromPosition);
-        if (distanceFromPlayer > playerScript.minRange)
-        {
-            return -1;
-        }
         else
         {
-            return 1;
+            EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+            int currentHealth = enemyScript.CurrentHealth;
+            int maxHealth = enemyScript.MaxHealth;
+            float healthRatio = (float)currentHealth / (float)maxHealth;
+            if (healthRatio < 0.5f)
+            {
+                return 0;
+            }
+            else
+            {
+                return -1;
+            }
         }
     }
 
     public Vector3 EnemySelectTarget(Vector3 fromPosition)
     {
-        return fromPosition;
+       return fromPosition; 
     }
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
@@ -89,28 +93,19 @@ public class ReflectScript : MonoBehaviour, Skill
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        if (wielder != null)
-        {
-            EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-            wielderScript.reflectDuration += 1;
-        }
-        if (wielder == player)
-        {
-            turnLogicScript.hasAttacked = true;
-        }
+        EntityScript wielderScript = wielder.GetComponent<EntityScript>();
+        wielderScript.CurrentHealth = wielderScript.MaxHealth;
         currentCooldown = cooldown;
     }
 
     void Start()
     {
-        skillName = "Reflect";
-        skillType = "Off Hand Skill";
-        description = "Incoming damage is prevented and dealt to the attacker";
-        cooldown = 4;
+        skillName = "Replenish";
+        skillType = "Cantrip";
+        description = "Heal to full health";
+        cooldown = 5;
         range = 0;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Reflect");
-        shield = this.transform.parent.gameObject;
-        shieldScript = shield.GetComponent<ShieldScript>();
+        skillSprite = Resources.Load<Sprite>("Skill Sprites/Replenish");
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         enemies = GameObject.Find("Enemies");

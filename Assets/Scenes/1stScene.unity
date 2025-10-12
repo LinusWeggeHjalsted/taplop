@@ -2793,6 +2793,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1668693119}
+  - {fileID: 2116175339}
   m_Father: {fileID: 1805413436}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1145732271
@@ -3471,6 +3472,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1597f4ba83077f723a6311295c364b84, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  traversableTiles: {fileID: 0}
+  traversableTilesScript: {fileID: 0}
+  enemies: {fileID: 0}
+  enemiesScript: {fileID: 0}
+  player: {fileID: 0}
+  turnLogic: {fileID: 0}
+  turnLogicScript: {fileID: 0}
 --- !u!1 &1749021532
 GameObject:
   m_ObjectHideFlags: 0
@@ -4556,6 +4564,57 @@ MonoBehaviour:
   characterUI: {fileID: 0}
   inventoryUIPrefab: {fileID: 0}
   inventoryUIPanel: {fileID: 0}
+--- !u!1 &2116175338
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2116175339}
+  - component: {fileID: 2116175340}
+  m_Layer: 0
+  m_Name: Replenish
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2116175339
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2116175338}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1136532184}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2116175340
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2116175338}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a09b1ae9e2e79ba8c843dca0b25041fa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: '::'
+  traversableTiles: {fileID: 0}
+  traversableTilesScript: {fileID: 0}
+  enemies: {fileID: 0}
+  enemiesScript: {fileID: 0}
+  player: {fileID: 0}
+  turnLogic: {fileID: 0}
+  turnLogicScript: {fileID: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

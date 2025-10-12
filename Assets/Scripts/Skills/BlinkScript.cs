@@ -59,7 +59,7 @@ public class BlinkScript : MonoBehaviour, Skill
         currentCooldown -= number;
     }
 
-    public int EnemyPriority(Vector3 fromPosition)
+    public int EnemyPriority(Vector3 fromPosition, GameObject enemy)
     {
         if (currentCooldown > 0)
         {
@@ -148,7 +148,7 @@ public class BlinkScript : MonoBehaviour, Skill
         skillType = "Cantrip";
         description = "Teleport";
         cooldown = 3;
-        range = 2f;
+        range = 3f;
         skillSprite = Resources.Load<Sprite>("Skill Sprites/Blink");
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();

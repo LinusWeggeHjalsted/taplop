@@ -58,7 +58,7 @@ public class SliceScript : MonoBehaviour, Skill
         currentCooldown -= number;
     }
 
-    public int EnemyPriority(Vector3 fromPosition)
+    public int EnemyPriority(Vector3 fromPosition, GameObject enemy)
     {
         if (currentCooldown > 0)
         {

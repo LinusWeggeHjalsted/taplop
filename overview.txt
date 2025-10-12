@@ -55,7 +55,8 @@ utility skills
         leeching weapon - duration 5, attacks also steal health, cooldown 10
         promise of death - duration 1, reset all cooldowns and gain full health if an enemy dies, cooldown 10
     cantrips
-        blink - teleport range 4, cooldown 5
+        replenish - heal to full health, cooldown 5
+        blink - teleport range 3, cooldown 3
         focus - reset all weapon skill cooldowns, cooldown 10
         meditate - reset all utility skill cooldowns, cooldown 10
         time walk - get an extra turn after this one, cooldown 10

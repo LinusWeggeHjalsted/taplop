@@ -44,7 +44,7 @@ public class NoSkillScript : MonoBehaviour, Skill
     {
     }
 
-    public int EnemyPriority(Vector3 fromPosition)
+    public int EnemyPriority(Vector3 fromPosition, GameObject enemy)
     {
         return -1;
     }
