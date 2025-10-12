@@ -82,7 +82,6 @@ public class TileScript : MonoBehaviour
                         GameObject skillUsed = turnLogicScript.skillUsed;
                         Skill skillScript = skillUsed.GetComponent<Skill>();
                         skillScript.UseSkill(this.transform.position, player);
-                        turnLogicScript.hasAttacked = true;
                         break;
                 }
             }

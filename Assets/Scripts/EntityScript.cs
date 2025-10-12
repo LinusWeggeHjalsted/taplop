@@ -62,6 +62,7 @@ public class EntityScript : MonoBehaviour
             return feet.GetChild(0).gameObject;
         }
     }
+    public Transform utilitySkills;
     public Transform inventory;
     public GameObject healthBar;
     public SpriteRenderer healthBarRenderer;
@@ -180,7 +181,7 @@ public class EntityScript : MonoBehaviour
     }
     public int aggroRange;
     public Vector3 previousPosition = new Vector3();
-    public int unlockedSkills;
+    public int unlockedSkills = 8;
     public GameObject[] equippedSkills
     {
         get
@@ -196,6 +197,16 @@ public class EntityScript : MonoBehaviour
             {
                 WeaponScript offHandWeaponScript = offHandWeapon.GetComponent<WeaponScript>();
                 skillArray[2] = offHandWeaponScript.ThirdSkill();
+            }
+            if (utilitySkills.childCount > 0)
+            {
+                for (int i = 0; i < utilitySkills.childCount; i++)
+                {
+                    if (i < 5) // to-do - find a nicer way of ensuring max 5 utility skills
+                    {
+                        skillArray[i + 3] = utilitySkills.GetChild(i).gameObject;
+                    }
+                }
             }
             return skillArray;
         }
@@ -466,6 +477,7 @@ public class EntityScript : MonoBehaviour
         spriteRenderer = this.gameObject.GetComponent<SpriteRenderer>();
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
+        utilitySkills = this.transform.Find("Utility Skills");
         inventory = this.transform.Find("Inventory");
         hitSprite = Resources.Load<Sprite>("Hit");
         aggroSprite = Resources.Load<Sprite>("EnemyAggro");

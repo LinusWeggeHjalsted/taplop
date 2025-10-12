@@ -76,7 +76,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e1d99047aa05581a3a623fedfbf110d7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  itemSprite: {fileID: 0}
   itemName: 
+  itemType: 
   armorBonus: 0
   speedBonus: 0
 --- !u!1 &2118407060735424933
@@ -143,6 +145,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 250632577493004264}
+  - {fileID: 137460449336065678}
   - {fileID: 8620078749812439813}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -225,18 +228,16 @@ MonoBehaviour:
   player: {fileID: 0}
   enemies: {fileID: 0}
   enemiesScript: {fileID: 0}
+  spriteRenderer: {fileID: 0}
   gear: {fileID: 0}
   gearScript: {fileID: 0}
   mainHand: {fileID: 0}
   offHand: {fileID: 0}
-  mainHandWeapon: {fileID: 0}
-  offHandWeapon: {fileID: 0}
   hands: {fileID: 0}
   body: {fileID: 0}
   feet: {fileID: 0}
-  gloves: {fileID: 0}
-  coat: {fileID: 0}
-  boots: {fileID: 0}
+  utilitySkills: {fileID: 0}
+  inventory: {fileID: 0}
   healthBar: {fileID: 0}
   healthBarRenderer: {fileID: 0}
   healthBarStates: []
@@ -246,7 +247,7 @@ MonoBehaviour:
   aggroRange: 0
   previousPosition: {x: 0, y: 0, z: 0}
   unlockedSkills: 1
-  equippedSkills: []
+  stunDuration: 0
   reflectDuration: 0
 --- !u!1 &5294289241776631897
 GameObject:
@@ -292,7 +293,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6e0f5bc6d84330d9591b6bf998633147, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  itemSprite: {fileID: 0}
   itemName: 
+  itemType: 
   armorBonus: 0
   damageBonus: 0
 --- !u!1 &5902753170363119705
@@ -370,9 +373,42 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a9e5879bcb2dc53448e318d50b34f17c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  itemSprite: {fileID: 0}
   itemName: 
+  itemType: 
   armorBonus: 0
   healthBonus: 0
+--- !u!1 &7943307314463790873
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 137460449336065678}
+  m_Layer: 0
+  m_Name: Utility Skills
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &137460449336065678
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7943307314463790873}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 135800234907529976}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &8253840805154609901
 GameObject:
   m_ObjectHideFlags: 0

@@ -111,6 +111,10 @@ public class SliceScript : MonoBehaviour, Skill
             EntityScript targetScript = target.GetComponent<EntityScript>();
             targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
         }
+        if (wielder == player)
+        {
+            turnLogicScript.hasAttacked = true;
+        }
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)

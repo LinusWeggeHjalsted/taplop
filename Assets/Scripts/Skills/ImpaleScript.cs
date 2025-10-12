@@ -112,6 +112,10 @@ public class ImpaleScript : MonoBehaviour, Skill
             targetScript.IncomingDamage(wielderScript.mainHandDamage * 2, wielder);
         }
         currentCooldown = cooldown;
+        if (wielder == player)
+        {
+            turnLogicScript.hasAttacked = true;
+        }
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)

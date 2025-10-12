@@ -112,7 +112,10 @@ public class TossScript : MonoBehaviour, Skill
             EntityScript targetScript = target.GetComponent<EntityScript>();
             targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
         }
-        currentCooldown = cooldown;
+        if (wielder == player)
+        {
+            turnLogicScript.hasAttacked = true;
+        }
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)

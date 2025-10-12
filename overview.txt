@@ -40,11 +40,11 @@ weapons
         retreating swipe - range 1, teleport range 2, attack then teleport, cooldown 3
 	shield
         bash - range 1, attack target, cooldown 0
-        slam - range 1, stun and knockback targets within range, cooldown 2
+        slam - range 1, stun and knockback each target within range, cooldown 2
         reflect - duration 1, incoming damage is prevented and dealt to the attacker, cooldown 5
     idol
-		absorb - convert incoming damage to healing, cooldown 5
         drain - range 1, steal health from each enemy within range, cooldown 3
+		absorb - convert incoming damage to healing, cooldown 5
 
 utility skills
     enchantments

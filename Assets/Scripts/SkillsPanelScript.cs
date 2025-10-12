@@ -51,7 +51,7 @@ public class SkillsPanelScript : MonoBehaviour
     {
         player = GameObject.Find("Player");
         playerScript = player.GetComponent<EntityScript>();
-        int unlockedSkills = playerScript.unlockedSkills;
+        int unlockedSkills = 8; // to-do - get this information elsewhere
         for (int i = 0; i < unlockedSkills; i++)
         {
             GameObject skillButton = this.transform.GetChild(i).gameObject;

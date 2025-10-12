@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
-public class FlashStrikeScript : MonoBehaviour, Skill
+public class BlinkScript : MonoBehaviour, Skill
 {
     private string skillName;
     private string skillType;
@@ -67,7 +67,7 @@ public class FlashStrikeScript : MonoBehaviour, Skill
         }
         else
         {
-            return 2;
+            return 0;
         }
     }
 
@@ -108,54 +108,10 @@ public class FlashStrikeScript : MonoBehaviour, Skill
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
+        traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.MoveTo(targetPosition);
-        List<Vector3> deltas = new List<Vector3>();
-        for (float i = -1; i <= 1; i++)
-        {
-            for (float j = -1; j <= 1; j++)
-            {
-                if (i == 0 && j == 0)
-                {
-                    continue;
-                }
-                else
-                {
-                    Vector3 delta = new Vector3(i, j, 0);
-                    deltas.Add(delta);
-                }
-            }
-        }
-        foreach (Vector3 delta in deltas)
-        {
-            Vector3 attackTarget = targetPosition + delta;
-            Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
-            GameObject target = null;
-            if (targetPosition == player.transform.position)
-            {
-                if (enemyLookup.ContainsKey(attackTarget))
-                {
-                    target = enemyLookup[attackTarget];
-                }
-            }
-            if (enemyLookup.ContainsKey(targetPosition))
-            {
-                if (attackTarget == player.transform.position)
-                {
-                    target = player;
-                }
-            }
-            if (target != null)
-            {
-                EntityScript targetScript = target.GetComponent<EntityScript>();
-                targetScript.IncomingDamage(wielderScript.offHandDamage, wielder);
-            }
-        }
         currentCooldown = cooldown;
-        if (wielder == player)
-        {
-            turnLogicScript.hasAttacked = true;
-        }
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
@@ -188,12 +144,12 @@ public class FlashStrikeScript : MonoBehaviour, Skill
 
     void Start()
     {
-        skillName = "Flash Strike";
-        skillType = "Off Hand Skill";
-        description = "Teleport then attack each adjacent target";
+        skillName = "Blink";
+        skillType = "Cantrip";
+        description = "Teleport";
         cooldown = 3;
         range = 2f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/FlashStrike");
+        skillSprite = Resources.Load<Sprite>("Skill Sprites/Blink");
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         enemies = GameObject.Find("Enemies");

@@ -112,6 +112,10 @@ public class SkewerScript : MonoBehaviour, Skill
             targetScript.IncomingDamage(wielderScript.offHandDamage * 3, wielder);
         }
         currentCooldown = cooldown;
+        if (wielder == player)
+        {
+            turnLogicScript.hasAttacked = true;
+        }
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)

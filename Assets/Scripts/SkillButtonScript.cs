@@ -158,7 +158,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
 
     void Update()
     {
-        if (finishedBuilding)
+        if (finishedBuilding && skill != null)
         {
             DisplayCooldown();
         }
