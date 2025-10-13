@@ -35,6 +35,8 @@ public class LevelBuilderScript : MonoBehaviour
     }
     
     public bool finishedBuilding = false;
+    public GameObject missionLogic;
+    public MissionLogicScript missionLogicScript;
     public GameObject level;
     public LevelScript levelScript;
     public string levelName;
@@ -329,9 +331,9 @@ public class LevelBuilderScript : MonoBehaviour
 
     void Start()
     {
-        level = GameObject.Find("Level");
-        levelScript = level.GetComponent<LevelScript>();
-        levelName = levelScript.levelName;
+        missionLogic = GameObject.Find("Mission Logic");
+        missionLogicScript = missionLogic.GetComponent<MissionLogicScript>();
+        levelName = missionLogicScript.currentLevelName;
         player = GameObject.Find("Player");
         enemies = GameObject.Find("Enemies");
         traversableTiles = GameObject.Find("Traversable Tiles");

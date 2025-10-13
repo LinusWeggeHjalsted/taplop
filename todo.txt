@@ -1,0 +1,16 @@
+- main menu
+- mission logic
+- item tooltips
+- show cooldown number
+- load player save
+    create new player default save
+- write player save
+    figure out player's local file saving and loading
+- skills menu
+- lock switching equipped gear and skills when there are active enemies
+- ground items
+    prefab
+    update level parser
+- currency
+- enemy loot
+- make a sexy loading screen

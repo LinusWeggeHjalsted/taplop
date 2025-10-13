@@ -220,9 +220,11 @@ public class EntityScript : MonoBehaviour
         }
         set
         {
-            if (value == true)
+            Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
+            if (value == true && enemyLookup.ContainsKey(this.transform.position))
             {
                 DisplayAggro();
+                enemiesScript.activeEnemyLookup.Add(this.transform.position, this.gameObject);
             }
             isActive = value;
         }
@@ -364,7 +366,7 @@ public class EntityScript : MonoBehaviour
         }
     }
 
-    public void IncomingDamage(int damage, GameObject attacker)
+    public int IncomingDamage(int damage, GameObject attacker)
     {
         DisplayHit();
         if (!IsActive)
@@ -375,18 +377,25 @@ public class EntityScript : MonoBehaviour
         {
             EntityScript attackerScript = attacker.GetComponent<EntityScript>();
             attackerScript.IncomingDamage(damage, attacker);
-            return;
+            return 0;
         }
-        // to-do - figure out a good damage calculation
-        int actualDamage = damage - armor;
+        // half of incoming damage is reduced by armor
+        int halfDamage = damage / 2;
+        int armorDamage = (damage - halfDamage - Armor);
+        if (armorDamage < 0)
+        {
+            armorDamage = 0;
+        }
+        int actualDamage = halfDamage + armorDamage;
         if (actualDamage < 0)
         {
-            return;
+            return 0;
         }
         else
         {
             CurrentHealth -= actualDamage;
             Debug.Log(this.gameObject.name + " took " + actualDamage.ToString() + " damage from " + attacker.name);
+            return actualDamage;
         }
     }
 

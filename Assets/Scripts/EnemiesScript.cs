@@ -65,7 +65,6 @@ public class EnemiesScript : MonoBehaviour
                 if (traversableTilesScript.Distance(playerPosition, enemyPosition) <= (float)aggroRange)
                 {
                     enemyScript.IsActive = true;
-                    activeEnemyLookup.Add(enemyPosition, enemy);
                 }
             }
         }
