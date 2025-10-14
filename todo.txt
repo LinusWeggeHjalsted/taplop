@@ -1,7 +1,10 @@
 - main menu
 - mission logic
+    level end trigger
 - item tooltips
 - show cooldown number
+- playerdata gameobject
+    synchronize with player entity
 - load player save
     create new player default save
 - write player save
