@@ -19,7 +19,6 @@ public class LevelBuilderScript : MonoBehaviour
         public int armor;
         public int speed;
         public int aggroRange;
-        public int unlockedSkills;
         public string mainHandWeapon;
         public int mainHandDamage;
         public string offHandWeapon;
@@ -60,16 +59,12 @@ public class LevelBuilderScript : MonoBehaviour
         {
             string[] fileLines = levelFile.text.Split('\n');
             int descriptionIndex = Array.IndexOf(fileLines, "Description") + 1;
-            Debug.Log("descriptionIndex is " + descriptionIndex.ToString());
             int layoutIndex = Array.IndexOf(fileLines, "Layout") + 1;
-            Debug.Log("layoutIndex is " + layoutIndex.ToString());
             int enemyInfoIndex = Array.IndexOf(fileLines, "Enemy Info") + 1;
-            Debug.Log("enemyInfoIndex is " + enemyInfoIndex.ToString());
             // to-do: handle bad files
 
             int descriptionLength = layoutIndex - descriptionIndex - 2;
             int layoutLength = enemyInfoIndex - layoutIndex - 2;
-            Debug.Log("layoutLength is " + layoutLength.ToString());
             int enemyInfoLength = fileLines.Length - enemyInfoIndex - 2;
 
             string description = fileLines[descriptionIndex];
@@ -84,7 +79,6 @@ public class LevelBuilderScript : MonoBehaviour
 
             string[] enemyInfoBlock = new string[enemyInfoLength];
             Array.Copy(fileLines, enemyInfoIndex, enemyInfoBlock, 0, enemyInfoLength);
-            // to-do - chop up enemy info, slice by blank line
             List<string[]> enemyInfo = new List<string[]>();
             List<string> currentSubArray = new List<string>();
             foreach (string line in enemyInfoBlock)
@@ -221,19 +215,6 @@ public class LevelBuilderScript : MonoBehaviour
                         Debug.LogError("aggroRange is not a number");
                     }
                 }
-                else if (currentLine.StartsWith("unlockedSkills "))
-                {
-                    string enemyUnlockedSkills = currentLine.Substring("unlockedSkills ".Length);
-                    int unlockedSkillsNumber;
-                    if (Int32.TryParse(enemyUnlockedSkills, out unlockedSkillsNumber))
-                    {
-                        preEnemy.unlockedSkills = unlockedSkillsNumber;
-                    }
-                    else
-                    {
-                        Debug.LogError("unlockedSkills is not a number");
-                    }
-                }
                 else if (currentLine.StartsWith("mainHandWeapon "))
                 {
                     string enemyMainHandWeapon = currentLine.Substring("mainHandWeapon ".Length);
@@ -314,7 +295,6 @@ public class LevelBuilderScript : MonoBehaviour
             newEnemyScript.Armor = preEnemy.armor;
             newEnemyScript.Speed = preEnemy.speed;
             newEnemyScript.aggroRange = preEnemy.aggroRange;
-            newEnemyScript.unlockedSkills = preEnemy.unlockedSkills;
             GameObject mainHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.mainHandWeapon);
             GameObject offHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.offHandWeapon);
             Transform enemyGear = newEnemy.transform.Find("Gear");

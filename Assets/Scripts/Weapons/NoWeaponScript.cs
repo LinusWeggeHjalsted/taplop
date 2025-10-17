@@ -7,7 +7,8 @@ public class NoWeaponScript : MonoBehaviour, WeaponScript, ItemScript
     public GameObject firstSkill;
     public string itemName; // to-do - will be set when instantiated
     public Sprite itemSprite;
-    public string itemType = "Weapon";
+    public string itemType;
+    public string itemSubType;
     private int damage = 1; // to-do - will be set when instantiated
 
     public GameObject FirstSkill()
@@ -50,11 +51,23 @@ public class NoWeaponScript : MonoBehaviour, WeaponScript, ItemScript
         return itemType;
     }
 
+    public string ItemSubType()
+    {
+        return itemSubType;
+    }
+
+    public string ItemName()
+    {
+        return "None";
+    }
+
     void Start()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/No Skill");
         firstSkill = Instantiate(firstSkillPrefab, this.transform);
         itemSprite = Resources.Load<Sprite>("Items/NoItem");
+        itemType = "Weapon";
+        itemSubType = "None";
         finishedBuilding = true;
     }
 }

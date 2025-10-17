@@ -11,6 +11,7 @@ public class SpearScript : MonoBehaviour, WeaponScript, ItemScript
     private GameObject thirdSkill;
     public Sprite itemSprite;
     public string itemType;
+    public string itemSubType;
     public string itemName;
     private int damage = 1;
 
@@ -54,6 +55,16 @@ public class SpearScript : MonoBehaviour, WeaponScript, ItemScript
         return itemType;
     }
 
+    public string ItemSubType()
+    {
+        return itemSubType;
+    }
+
+    public string ItemName()
+    {
+        return itemName;
+    }
+
     void Start()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Toss");
@@ -64,6 +75,7 @@ public class SpearScript : MonoBehaviour, WeaponScript, ItemScript
         thirdSkill = Instantiate(thirdSkillPrefab, this.transform);
         itemSprite = Resources.Load<Sprite>("Items/SpearItem");
         itemType = "Weapon";
+        itemSubType = "Spear";
         damage = 3;
         finishedBuilding = true;
     }

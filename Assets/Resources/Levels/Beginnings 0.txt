@@ -18,7 +18,6 @@ maxHealth 7
 armor 0
 speed 1
 aggroRange 3
-unlockedSkills 3
 mainHandWeapon Sword
 mainHandDamage 2
 

@@ -8,4 +8,7 @@ public interface WeaponScript
     public bool IsFinishedBuilding();
     public int GetDamage();
     public void SetDamage(int number);
+    public string ItemType();
+    public string ItemSubType();
+    public string ItemName();
 }

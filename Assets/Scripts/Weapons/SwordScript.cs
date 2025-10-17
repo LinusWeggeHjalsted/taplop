@@ -11,6 +11,7 @@ public class SwordScript : MonoBehaviour, WeaponScript, ItemScript
     private GameObject thirdSkill;
     public Sprite itemSprite;
     public string itemType;
+    public string itemSubType;
     public string itemName; // to-do - will be set when instantiated
     private int damage = 1; // to-do - will be set when instantiated
 
@@ -54,6 +55,16 @@ public class SwordScript : MonoBehaviour, WeaponScript, ItemScript
         return itemType;
     }
 
+    public string ItemSubType()
+    {
+        return itemSubType;
+    }
+
+    public string ItemName()
+    {
+        return itemName;
+    }
+
     void Start()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Slice");
@@ -64,6 +75,7 @@ public class SwordScript : MonoBehaviour, WeaponScript, ItemScript
         thirdSkill = Instantiate(thirdSkillPrefab, this.transform);
         itemSprite = Resources.Load<Sprite>("Items/SwordItem");
         itemType = "Weapon";
+        itemSubType = "Sword";
         damage = 3;
         finishedBuilding = true;
     }

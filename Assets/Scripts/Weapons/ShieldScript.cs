@@ -11,6 +11,8 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
     private GameObject thirdSkill;
     public Sprite itemSprite;
     public string itemType;
+    public string itemSubType;
+    public string itemName;
     private int damage = 1;
 
     public GameObject FirstSkill()
@@ -53,6 +55,16 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
         return itemType;
     }
 
+    public string ItemSubType()
+    {
+        return itemSubType;
+    }
+    
+    public string ItemName()
+    {
+        return itemName;
+    }
+
     void Start()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Bash");
@@ -63,6 +75,7 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
         thirdSkill = Instantiate(thirdSkillPrefab, this.transform);
         itemSprite = Resources.Load<Sprite>("Items/ShieldItem");
         itemType = "Weapon";
+        itemSubType = "Shield";
         damage = 3;
         finishedBuilding = true;
     }

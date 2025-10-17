@@ -181,7 +181,7 @@ public class EntityScript : MonoBehaviour
     }
     public int aggroRange;
     public Vector3 previousPosition = new Vector3();
-    public int unlockedSkills = 8;
+    public int utilitySkillSlots = 5;
     public GameObject[] equippedSkills
     {
         get
@@ -202,7 +202,7 @@ public class EntityScript : MonoBehaviour
             {
                 for (int i = 0; i < utilitySkills.childCount; i++)
                 {
-                    if (i < 5) // to-do - find a nicer way of ensuring max 5 utility skills
+                    if (i < utilitySkillSlots)
                     {
                         skillArray[i + 3] = utilitySkills.GetChild(i).gameObject;
                     }
