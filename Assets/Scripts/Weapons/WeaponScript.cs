@@ -11,4 +11,5 @@ public interface WeaponScript
     public string ItemType();
     public string ItemSubType();
     public string ItemName();
+    public void SetItemName(string newName);
 }

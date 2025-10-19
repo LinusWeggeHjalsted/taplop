@@ -5,6 +5,7 @@ public class MissionLogicScript : MonoBehaviour
 {
     public string missionName; // to be set from elsewhere
     public int missionLength; // to be set from elsewhere
+    public string hubExit; // to be set from elsewhere
     public List<string> levelNames
     {
         get
@@ -33,9 +34,27 @@ public class MissionLogicScript : MonoBehaviour
     {
         // to-do: instantiate this information variably
         missionName = "Beginnings";
-        missionLength = 1;
+        missionLength = 2;
         currentLevel = 0;
         levelPrefab = Resources.Load<GameObject>("Prefabs/Level");
-        level = Instantiate(levelPrefab);
+        NextLevel();
+    }
+    
+    public void NextLevel()
+    {
+        if (level != null)
+        {
+            GameObject player = level.transform.Find("Player").gameObject;
+            PlayerDataScript.Instance.BuildDataFromPlayer(player);
+            Destroy(level);
+        }
+        if (currentLevel < missionLength)
+        {
+            level = Instantiate(levelPrefab);
+        }
+        else
+        {
+            // to-do: exit player to hub and start hub logic
+        }
     }
 }

@@ -6,6 +6,8 @@ using System.Linq;
 public class EntityScript : MonoBehaviour
 {
     public bool finishedBuilding = false;
+    public GameObject missionLogic;
+    public MissionLogicScript missionLogicScript;
     public GameObject levelBuilder;
     public LevelBuilderScript levelBuilderScript;
     public bool levelBuilderLoaded = false;
@@ -363,6 +365,11 @@ public class EntityScript : MonoBehaviour
         if (targetPosition == player.transform.position)
         {
             enemiesScript.UpdateAggro();
+            if (enemiesScript.activeEnemyLookup.Count == 0 && targetTileScript.IsEnd)
+            {
+                missionLogicScript.currentLevel += 1;
+                missionLogicScript.NextLevel();
+            }
         }
     }
 
@@ -463,18 +470,14 @@ public class EntityScript : MonoBehaviour
         {
             yield return null;
         }
-        mainHand = gear.transform.Find("Main Hand");
-        offHand = gear.transform.Find("Off Hand");
-        hands = gear.transform.Find("Hands");
-        body = gear.transform.Find("Body");
-        feet = gear.transform.Find("Feet");
-        CurrentHealth = MaxHealth;
         finishedBuilding = true;
     }
 
     void Start()
     {
         Debug.Log("Hello World - I'm " + this.name);
+        missionLogic = GameObject.Find("Mission Logic");
+        missionLogicScript = missionLogic.GetComponent<MissionLogicScript>();
         levelBuilder = GameObject.Find("Level Builder");
         levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
         levelBuilderLoaded = true;
@@ -491,6 +494,11 @@ public class EntityScript : MonoBehaviour
         hitSprite = Resources.Load<Sprite>("Hit");
         aggroSprite = Resources.Load<Sprite>("EnemyAggro");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
+        mainHand = gear.transform.Find("Main Hand");
+        offHand = gear.transform.Find("Off Hand");
+        hands = gear.transform.Find("Hands");
+        body = gear.transform.Find("Body");
+        feet = gear.transform.Find("Feet");
         StartCoroutine(WaitForGearBeforePopulating());
     }
 }

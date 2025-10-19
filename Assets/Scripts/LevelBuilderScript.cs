@@ -28,6 +28,7 @@ public class LevelBuilderScript : MonoBehaviour
     public class ParsedLevel
     {
         public List<Vector3> tilePositions;
+        public Vector3 endPosition;
         public Vector3 playerPosition;
         public Dictionary<Vector3, char> enemyPositions;
         public Dictionary<char, PreEnemy> preEnemies;
@@ -53,7 +54,7 @@ public class LevelBuilderScript : MonoBehaviour
         TextAsset levelFile = Resources.Load<TextAsset>(filePath);
         if (levelFile == null)
         {
-            Debug.LogError("No file with name " + filePath + " found in Levels");
+            Debug.LogError("No level file found at path " + filePath);
         }
         else
         {
@@ -133,7 +134,7 @@ public class LevelBuilderScript : MonoBehaviour
                     }
                     if (tileCode == '=')
                     {
-                        // to-do: end trigger
+                        parsedLevel.endPosition = position;
                         continue;
                     }
                     else
@@ -254,7 +255,6 @@ public class LevelBuilderScript : MonoBehaviour
             }
             parsedLevel.preEnemies.Add(enemyCode, preEnemy);
         }
-
         return parsedLevel;
     }
 
@@ -266,15 +266,19 @@ public class LevelBuilderScript : MonoBehaviour
         {
             GameObject newTile = Instantiate(tilePrefab, traversableTiles.transform);
             newTile.transform.position = parsedLevel.tilePositions[i];
+            TileScript tileScript = newTile.GetComponent<TileScript>();
             if (parsedLevel.tilePositions[i] == parsedLevel.playerPosition)
             {
-                TileScript tileScript = newTile.GetComponent<TileScript>();
                 tileScript.isOccupied = true;
                 tileScript.IsRespawn = true;
             }
             if (parsedLevel.enemyPositions.ContainsKey(parsedLevel.tilePositions[i]))
             {
                 newTile.GetComponent<TileScript>().isOccupied = true;
+            }
+            if (parsedLevel.tilePositions[i] == parsedLevel.endPosition)
+            {
+                tileScript.IsEnd = true;
             }
         }
 
@@ -321,6 +325,7 @@ public class LevelBuilderScript : MonoBehaviour
         enemyPrefab = Resources.Load<GameObject>("Prefabs/Enemy");
 
         BuildLevel(ParseLevel(LoadLevelFile(levelName)));
+        StartCoroutine(PlayerDataScript.Instance.BuildPlayerFromData(player));
         finishedBuilding = true;
     }
 }

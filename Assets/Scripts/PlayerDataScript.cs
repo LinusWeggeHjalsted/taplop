@@ -1,5 +1,6 @@
 using UnityEngine;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 
 public class PlayerDataScript : MonoBehaviour
@@ -34,6 +35,8 @@ public class PlayerDataScript : MonoBehaviour
         public int armor;
         public int speed;
     }
+
+    public bool finishedBuilding = false;
 
     public string playerName;
     
@@ -73,12 +76,12 @@ public class PlayerDataScript : MonoBehaviour
 
     void Start()
     {
-        
+        LoadPlayerData("New Player");
     }
 
     public void LoadPlayerData(string savePath)
     {
-        TextAsset playerSaveFile = Resources.Load<TextAsset>("New Player");
+        TextAsset playerSaveFile = Resources.Load<TextAsset>(savePath);
         if (playerSaveFile == null)
         {
             Debug.LogError("No save file found at path " + savePath);
@@ -101,7 +104,7 @@ public class PlayerDataScript : MonoBehaviour
             int[] sectionIndices = new int[sectionCount];
             for (int i = 0; i < sectionCount; i++)
             {
-                int sectionIndex = Array.IndexOf(fileLines, sectionHeaders[i]);
+                int sectionIndex = Array.IndexOf(fileLines, sectionHeaders[i]) + 1;
                 sectionIndices[i] = sectionIndex;
             }
             // to-do: verify that sections are in correct order
@@ -364,7 +367,182 @@ public class PlayerDataScript : MonoBehaviour
                     }
                 }
             }
-            // to-do: parse inventory
+            // parse inventory
+            string[] inventoryBlock = sectionBlocks[7];
+            List<string[]> inventoryItemBlocks = new List<string[]>();
+            List<string> currentSubArray = new List<string>();
+            foreach (string line in inventoryBlock)
+            {
+                if (line == "")
+                {
+                    inventoryItemBlocks.Add(currentSubArray.ToArray());
+                    currentSubArray.Clear();
+                }
+                else
+                {
+                    currentSubArray.Add(line);
+                }
+            }
+            if (currentSubArray.Count > 0)
+            {
+                inventoryItemBlocks.Add(currentSubArray.ToArray());
+            }
+            foreach (string[] itemBlock in inventoryItemBlocks)
+            {
+                // first line should define itemType
+                string firstLine = itemBlock[0];
+                Debug.Log("firstLine = " + firstLine);
+                if (firstLine.StartsWith("itemType "))
+                {
+                    string itemType = firstLine.Substring("itemType ".Length);
+                    switch (itemType)
+                    {
+                        case "Weapon":
+                            WeaponData inventoryWeapon = new WeaponData();
+                            for (int i = 1; i < itemBlock.Length; i++)
+                            {
+                                string currentLine = itemBlock[i];
+                                if (currentLine.StartsWith("itemName "))
+                                {
+                                    inventoryWeapon.itemName = currentLine.Substring("itemName ".Length);
+                                }
+                                else if (currentLine.StartsWith("weaponType "))
+                                {
+                                    inventoryWeapon.weaponType = currentLine.Substring("weaponType ".Length);
+                                }
+                                else if (currentLine.StartsWith("damage "))
+                                {
+                                    string damageString = currentLine.Substring("damage ".Length);
+                                    int damageNumber;
+                                    if (Int32.TryParse(damageString, out damageNumber))
+                                    {
+                                        inventoryWeapon.damage = damageNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory weapon damage is not a number");
+                                    }
+                                }
+                            }
+                            inventory.Add(inventoryWeapon);
+                            break;
+                        case "Coat":
+                            CoatData inventoryCoat = new CoatData();
+                            for (int i = 1; i < itemBlock.Length; i++)
+                            {
+                                string currentLine = itemBlock[i];
+                                if (currentLine.StartsWith("itemName "))
+                                {
+                                    inventoryCoat.itemName = currentLine.Substring("itemName ".Length);
+                                }
+                                else if (currentLine.StartsWith("armor "))
+                                {
+                                    string armorString = currentLine.Substring("armor ".Length);
+                                    int armorNumber;
+                                    if (Int32.TryParse(armorString, out armorNumber))
+                                    {
+                                        inventoryCoat.armor = armorNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory coat armor is not a number");
+                                    }
+                                }
+                                else if (currentLine.StartsWith("health "))
+                                {
+                                    string healthString = currentLine.Substring("health ".Length);
+                                    int healthNumber;
+                                    if (Int32.TryParse(healthString, out healthNumber))
+                                    {
+                                        inventoryCoat.health = healthNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory coat health is not a number");
+                                    }
+                                }
+                            }
+                            inventory.Add(inventoryCoat);
+                            break;
+                        case "Gloves":
+                            GlovesData inventoryGloves = new GlovesData();
+                            for (int i = 1; i < itemBlock.Length; i++)
+                            {
+                                string currentLine = itemBlock[i];
+                                if (currentLine.StartsWith("itemName "))
+                                {
+                                    inventoryGloves.itemName = currentLine.Substring("itemName ".Length);
+                                }
+                                else if (currentLine.StartsWith("armor "))
+                                {
+                                    string armorString = currentLine.Substring("armor ".Length);
+                                    int armorNumber;
+                                    if (Int32.TryParse(armorString, out armorNumber))
+                                    {
+                                        inventoryGloves.armor = armorNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory gloves armor is not a number");
+                                    }
+                                }
+                                else if (currentLine.StartsWith("damage "))
+                                {
+                                    string damageString = currentLine.Substring("damage ".Length);
+                                    int damageNumber;
+                                    if (Int32.TryParse(damageString, out damageNumber))
+                                    {
+                                        inventoryGloves.damage = damageNumber;
+                                    }
+                                }
+                            }
+                            inventory.Add(inventoryGloves);
+                            break;
+                        case "Boots":
+                            BootsData inventoryBoots = new BootsData();
+                            for (int i = 1; i < itemBlock.Length; i++)
+                            {
+                                string currentLine = itemBlock[i];
+                                if (currentLine.StartsWith("itemName "))
+                                {
+                                    inventoryBoots.itemName = currentLine.Substring("itemName ".Length);
+                                }
+                                else if (currentLine.StartsWith("armor "))
+                                {
+                                    string armorString = currentLine.Substring("armor ".Length);
+                                    int armorNumber;
+                                    if (Int32.TryParse(armorString, out armorNumber))
+                                    {
+                                        inventoryBoots.armor = armorNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory boots armor is not a number");
+                                    }
+                                }
+                                else if (currentLine.StartsWith("speed "))
+                                {
+                                    string speedString = currentLine.Substring("speed ".Length);
+                                    int speedNumber;
+                                    if (Int32.TryParse(speedString, out speedNumber))
+                                    {
+                                        inventoryBoots.speed = speedNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory boots speed is not a number");
+                                    }
+                                }
+                            }
+                            inventory.Add(inventoryBoots);
+                            break;
+                    }
+                }
+                else
+                {
+                    Debug.LogError("item in inventory is not specifying its item type");
+                }
+            }
             // parse utility skills
             string[] utilitySkillsBlock = sectionBlocks[8];
             utilitySkills = new List<string>();
@@ -377,18 +555,165 @@ public class PlayerDataScript : MonoBehaviour
 
     public void SavePlayerData(string savePath)
     {
-
+        // to-do
     }
 
-    public void BuildPlayerFromData(GameObject player)
+    public IEnumerator BuildPlayerFromData(GameObject player)
     {
-
+        finishedBuilding = false;
+        EntityScript playerScript = player.GetComponent<EntityScript>();
+        while (!playerScript.finishedBuilding)
+        {
+            yield return null;
+        }
+        Transform playerMainHand = playerScript.mainHand;
+        Transform playerOffHand = playerScript.offHand;
+        Transform playerBody = playerScript.body;
+        Transform playerHands = playerScript.hands;
+        Transform playerFeet = playerScript.feet;
+        Transform playerInventory = playerScript.inventory;
+        Transform playerUtilitySkills = playerScript.utilitySkills;
+        // clear out player
+        void ClearChildren(Transform playerPart)
+        {
+            for (int i = playerPart.childCount - 1; i >= 0; i--)
+            {
+                GameObject partChild = playerPart.GetChild(i).gameObject;
+                Destroy(partChild);
+            }
+        }
+        ClearChildren(playerMainHand);
+        ClearChildren(playerOffHand);
+        ClearChildren(playerBody);
+        ClearChildren(playerHands);
+        ClearChildren(playerFeet);
+        ClearChildren(playerInventory);
+        ClearChildren(playerUtilitySkills);
+        // update player info
+        playerScript.utilitySkillSlots = utilitySkillSlots;
+        // create player gear
+        if (mainHandWeapon != null)
+        {
+            GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/" + mainHandWeapon.weaponType);
+            if (weaponPrefab != null)
+            {
+                GameObject newWeapon = Instantiate(weaponPrefab, playerMainHand);
+                WeaponScript weaponScript = newWeapon.GetComponent<WeaponScript>();
+                weaponScript.SetItemName(mainHandWeapon.itemName);
+                weaponScript.SetDamage(mainHandWeapon.damage);
+            }
+            else
+            {
+                Debug.LogError("unrecognized main hand weapon type");
+            }
+        }
+        if (offHandWeapon != null)
+        {
+            GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/" + offHandWeapon.weaponType);
+            if (weaponPrefab != null)
+            {
+                GameObject newWeapon = Instantiate(weaponPrefab, playerOffHand);
+                WeaponScript weaponScript = newWeapon.GetComponent<WeaponScript>();
+                weaponScript.SetItemName(offHandWeapon.itemName);
+                weaponScript.SetDamage(offHandWeapon.damage);
+            }
+            else
+            {
+                Debug.LogError("unrecognized main hand weapon type");
+            }
+        }
+        if (coat != null)
+        {
+            GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");
+            GameObject newCoat = Instantiate(coatPrefab, playerBody);
+            CoatScript coatScript = newCoat.GetComponent<CoatScript>();
+            coatScript.itemName = coat.itemName;
+            coatScript.armorBonus = coat.armor;
+            coatScript.healthBonus = coat.health;
+        }
+        if (gloves != null)
+        {
+            GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Gloves");
+            GameObject newGloves = Instantiate(glovesPrefab, playerHands);
+            GlovesScript glovesScript = newGloves.GetComponent<GlovesScript>();
+            glovesScript.itemName = gloves.itemName;
+            glovesScript.armorBonus = gloves.armor;
+            glovesScript.damageBonus = gloves.damage;
+        }
+        if (boots != null)
+        {
+            GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");
+            GameObject newBoots = Instantiate(bootsPrefab, playerFeet);
+            BootsScript bootsScript = newBoots.GetComponent<BootsScript>();
+            bootsScript.itemName = boots.itemName;
+            bootsScript.armorBonus = boots.armor;
+            bootsScript.speedBonus = boots.speed;
+        }
+        // create player inventory
+        foreach (InventoryItemData inventoryItem in inventory)
+        {
+            if (inventoryItem is WeaponData)
+            {
+                WeaponData inventoryWeapon = (WeaponData)inventoryItem;
+                GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/" + inventoryWeapon.weaponType);
+                GameObject newWeapon = Instantiate(weaponPrefab, playerInventory);
+                WeaponScript weaponScript = newWeapon.GetComponent<WeaponScript>();
+                weaponScript.SetItemName(inventoryWeapon.itemName);
+                weaponScript.SetDamage(inventoryWeapon.damage);
+            }
+            else if (inventoryItem is CoatData)
+            {
+                CoatData inventoryCoat = (CoatData)inventoryItem;
+                GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");
+                GameObject newCoat = Instantiate(coatPrefab, playerInventory);
+                CoatScript coatScript = newCoat.GetComponent<CoatScript>();
+                coatScript.itemName = inventoryCoat.itemName;
+                coatScript.armorBonus = inventoryCoat.armor;
+                coatScript.healthBonus = inventoryCoat.health;
+            }
+            else if (inventoryItem is GlovesData)
+            {
+                GlovesData inventoryGloves = (GlovesData)inventoryItem;
+                GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Gloves");
+                GameObject newGloves = Instantiate(glovesPrefab, playerInventory);
+                GlovesScript glovesScript = newGloves.GetComponent<GlovesScript>();
+                glovesScript.itemName = inventoryGloves.itemName;
+                glovesScript.armorBonus = inventoryGloves.armor;
+                glovesScript.damageBonus = inventoryGloves.damage;
+            }
+            else if (inventoryItem is BootsData)
+            {
+                BootsData inventoryBoots = (BootsData)inventoryItem;
+                GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");
+                GameObject newBoots = Instantiate(bootsPrefab, playerInventory);
+                BootsScript bootsScript = newBoots.GetComponent<BootsScript>();
+                bootsScript.itemName = inventoryBoots.itemName;
+                bootsScript.armorBonus = inventoryBoots.armor;
+                bootsScript.speedBonus = inventoryBoots.speed;
+            }
+        }
+        // create player utility skills
+        foreach (string skillName in utilitySkills)
+        {
+            if (unlockedSkills.Contains(skillName))
+            {
+                GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/" + skillName);
+                GameObject newSkill = Instantiate(skillPrefab, playerUtilitySkills);
+            }
+            else
+            {
+                Debug.LogError("player has not unlocked the skill " + skillName);
+            }
+        }
+        finishedBuilding = true;
     }
     
     public void BuildDataFromPlayer(GameObject player)
     {
         EntityScript playerScript = player.GetComponent<EntityScript>();
-        
+        // get player info
+        utilitySkillSlots = playerScript.utilitySkillSlots;
+        // get player gear
         GameObject playerMainHandWeapon = playerScript.mainHandWeapon;
         if (playerMainHandWeapon != null)
         {
@@ -454,7 +779,7 @@ public class PlayerDataScript : MonoBehaviour
         {
             boots = null;
         }
-
+        // get player inventory
         Transform playerInventory = playerScript.inventory;
         inventory = new List<InventoryItemData>();
         for (int i = 0; i < playerInventory.childCount; i++)
@@ -498,7 +823,7 @@ public class PlayerDataScript : MonoBehaviour
                     break;
             }
         }
-
+        // get player utility skills
         Transform playerUtilitySkills = playerScript.utilitySkills;
         utilitySkills = new List<string>();
         for (int i = 0; i < playerUtilitySkills.childCount; i++)

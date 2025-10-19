@@ -61,6 +61,10 @@ public class NoWeaponScript : MonoBehaviour, WeaponScript, ItemScript
         return "None";
     }
 
+    public void SetItemName(string newItemName)
+    {
+    }
+
     void Start()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/No Skill");

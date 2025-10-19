@@ -51,6 +51,16 @@ public class EnemiesScript : MonoBehaviour
         StartCoroutine(WaitForLevelBuilderBeforePopulating());
     }
 
+    public void FillEnemyHealth()
+    {
+        for (int i = 0; i < this.transform.childCount; i++)
+        {
+            GameObject enemy = this.transform.GetChild(i).gameObject;
+            EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+            enemyScript.CurrentHealth = enemyScript.MaxHealth;
+        }
+    }
+
     public void UpdateAggro()
     {
         foreach (GameObject enemy in enemyLookup.Values)

@@ -46,6 +46,28 @@ public class TileScript : MonoBehaviour
             isRespawn = value;
         }
     }
+    private bool isEnd = false;
+    public bool IsEnd
+    {
+        get
+        {
+            return isEnd;
+        }
+        set
+        {
+            if (value == true)
+            {
+                GameObject endOverlay = new GameObject("End Overlay");
+                endOverlay.transform.parent = this.transform;
+                endOverlay.transform.localPosition = new Vector3(0, 0, 0);
+                SpriteRenderer endRenderer = endOverlay.AddComponent<SpriteRenderer>();
+                endRenderer.sortingOrder = 1;
+                Sprite endSprite = Resources.Load<Sprite>("Flag");
+                endRenderer.sprite = endSprite;
+            }
+            isEnd = value;
+        }
+    }
 
     void Start()
     {

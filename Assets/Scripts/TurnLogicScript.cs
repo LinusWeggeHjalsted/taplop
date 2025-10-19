@@ -55,6 +55,12 @@ public class TurnLogicScript : MonoBehaviour
         {
             yield return null;
         }
+        while (!PlayerDataScript.Instance.finishedBuilding)
+        {
+            yield return null;
+        }
+        enemiesScript.FillEnemyHealth();
+        skillsPanelScript.UpdateButtons();
         currentGameState = GameState.PlayerTurnMove;
         tileLookup = traversableTilesScript.tileLookup;
     }
@@ -167,10 +173,12 @@ public class TurnLogicScript : MonoBehaviour
 
     IEnumerator EnemiesTurn()
     {
+        traversableTilesScript.ClearHighlights();
         Dictionary<Vector3, GameObject> activeEnemyLookup = new Dictionary<Vector3, GameObject>(enemiesScript.activeEnemyLookup);
         Debug.Log(activeEnemyLookup.Count.ToString() + " active enemies");
         foreach (GameObject enemy in activeEnemyLookup.Values)
         {
+            yield return new WaitForSeconds(0.25f);
             Debug.Log(enemy.name + " is taking its turn");
             EntityScript enemyScript = enemy.GetComponent<EntityScript>();
             enemyScript.ReduceCooldowns(1);
@@ -180,7 +188,6 @@ public class TurnLogicScript : MonoBehaviour
                 enemiesScript.EnemyTurnMove(enemy);
                 yield return new WaitForSeconds(0.25f);
                 enemiesScript.EnemyTurnAttack(enemy);
-                yield return new WaitForSeconds(0.25f);
             }
             else
             {

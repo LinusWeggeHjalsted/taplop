@@ -34,6 +34,16 @@ armor 1
 speed 0
 
 Inventory
+itemType Weapon
+itemName Starter Spear
+weaponType Spear
+damage 3
+
+itemType Boots
+itemName Speedy Boots
+armor 1
+speed 1
 
 Utility Skills
 Replenish
+

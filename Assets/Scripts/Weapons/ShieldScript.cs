@@ -64,6 +64,11 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
     {
         return itemName;
     }
+    
+    public void SetItemName(string newItemName)
+    {
+        itemName = newItemName;
+    }
 
     void Start()
     {

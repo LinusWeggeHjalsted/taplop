@@ -17,3 +17,4 @@
 - currency
 - enemy loot
 - make a sexy loading screen
+- sort active enemies by distance to player before taking their turn

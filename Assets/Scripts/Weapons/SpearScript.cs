@@ -65,6 +65,11 @@ public class SpearScript : MonoBehaviour, WeaponScript, ItemScript
         return itemName;
     }
 
+    public void SetItemName(string newItemName)
+    {
+        itemName = newItemName;
+    }
+
     void Start()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Toss");
