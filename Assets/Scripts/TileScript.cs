@@ -82,6 +82,14 @@ public class TileScript : MonoBehaviour
         clickAction.performed += OnClick;
     }
 
+    void OnDestroy()
+    {
+        if (clickAction != null)
+        {
+            clickAction.performed -= OnClick;
+        }
+    }
+
     private void OnClick(InputAction.CallbackContext context)
     {
         Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Mouse.current.position.ReadValue());

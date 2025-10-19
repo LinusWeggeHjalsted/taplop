@@ -46,7 +46,12 @@ public class MissionLogicScript : MonoBehaviour
         {
             GameObject player = level.transform.Find("Player").gameObject;
             PlayerDataScript.Instance.BuildDataFromPlayer(player);
-            Destroy(level);
+            MonoBehaviour[] allMonoBehaviours = level.GetComponentsInChildren<MonoBehaviour>();
+            foreach (MonoBehaviour monoBehavior in allMonoBehaviours)
+            {
+                monoBehavior.StopAllCoroutines();
+            }
+            DestroyImmediate(level);
         }
         if (currentLevel < missionLength)
         {
