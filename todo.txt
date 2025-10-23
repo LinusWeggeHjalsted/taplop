@@ -1,20 +1,18 @@
 - main menu
-- mission logic
-    level end trigger
 - item tooltips
-- show cooldown number
-- playerdata gameobject
-    synchronize with player entity
-- load player save
-    create new player default save
+- show cooldown number on skills
 - write player save
-    figure out player's local file saving and loading
 - skills menu
 - lock switching equipped gear and skills when there are active enemies
 - ground items
     prefab
     update level parser
+- skill durations
 - currency
 - enemy loot
+    enemies drop all inventory and 1 item from equipment or skill tome of an equipped utility skill
+- sell items from inventory
 - make a sexy loading screen
 - sort active enemies by distance to player before taking their turn
+- display effect sprites (stun, reflect)
+- weaponswap

@@ -12,8 +12,8 @@ public class SwordScript : MonoBehaviour, WeaponScript, ItemScript
     public Sprite itemSprite;
     public string itemType;
     public string itemSubType;
-    public string itemName; // to-do - will be set when instantiated
-    private int damage = 1; // to-do - will be set when instantiated
+    public string itemName;
+    private int damage;
 
     public GameObject FirstSkill()
     {
@@ -81,7 +81,6 @@ public class SwordScript : MonoBehaviour, WeaponScript, ItemScript
         itemSprite = Resources.Load<Sprite>("Items/SwordItem");
         itemType = "Weapon";
         itemSubType = "Sword";
-        damage = 3;
         finishedBuilding = true;
     }
 }

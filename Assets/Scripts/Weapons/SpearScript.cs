@@ -13,7 +13,7 @@ public class SpearScript : MonoBehaviour, WeaponScript, ItemScript
     public string itemType;
     public string itemSubType;
     public string itemName;
-    private int damage = 1;
+    private int damage;
 
     public GameObject FirstSkill()
     {
@@ -81,7 +81,6 @@ public class SpearScript : MonoBehaviour, WeaponScript, ItemScript
         itemSprite = Resources.Load<Sprite>("Items/SpearItem");
         itemType = "Weapon";
         itemSubType = "Spear";
-        damage = 3;
         finishedBuilding = true;
     }
 }

@@ -34,7 +34,7 @@ public class MissionLogicScript : MonoBehaviour
     {
         // to-do: instantiate this information variably
         missionName = "Beginnings";
-        missionLength = 2;
+        missionLength = 3;
         currentLevel = 0;
         levelPrefab = Resources.Load<GameObject>("Prefabs/Level");
         NextLevel();

@@ -11,12 +11,12 @@ Replenish
 Main Hand Weapon
 itemName Starter Sword
 weaponType Sword
-damage 3
+damage 4
 
 Off Hand Weapon
 itemName Starter Shield
 weaponType Shield
-damage 3
+damage 4
 
 Coat
 itemName Starter Coat

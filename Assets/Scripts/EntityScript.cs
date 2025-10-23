@@ -183,7 +183,7 @@ public class EntityScript : MonoBehaviour
     }
     public int aggroRange;
     public Vector3 previousPosition = new Vector3();
-    public int utilitySkillSlots = 5;
+    public int utilitySkillSlots;
     public GameObject[] equippedSkills
     {
         get
@@ -254,7 +254,7 @@ public class EntityScript : MonoBehaviour
     }
     public int stunDuration = 0;
     public int reflectDuration = 0;
-   
+
     public void DisplayAggro()
     {
         GameObject aggroObject = new GameObject("Aggro Sprite Object");
@@ -276,7 +276,7 @@ public class EntityScript : MonoBehaviour
         hitRenderer.sortingLayerName = "Effects";
         hitRenderer.sortingOrder = 2;
         hitRenderer.sprite = hitSprite;
-        Destroy(hitObject, 0.25f);
+        Destroy(hitObject, 0.125f);
     }
 
     public void DisplayHealth()

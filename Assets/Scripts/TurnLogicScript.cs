@@ -166,6 +166,7 @@ public class TurnLogicScript : MonoBehaviour
         }
         
         enemiesScript.KillDeadEnemies();
+        PlayerDataScript.Instance.turns += 1;
         currentGameState = GameState.EnemiesTurn;
         hasAttacked = false;
         turnStarted = false;
@@ -213,6 +214,7 @@ public class TurnLogicScript : MonoBehaviour
                         turnStarted = true;
                         if (playerScript.CurrentHealth <= 0)
                         {
+                            PlayerDataScript.Instance.deaths += 1;
                             RespawnPlayer();
                         }
                         playerScript.ReduceCooldowns(1);

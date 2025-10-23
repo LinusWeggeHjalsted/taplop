@@ -13,7 +13,7 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
     public string itemType;
     public string itemSubType;
     public string itemName;
-    private int damage = 1;
+    private int damage;
 
     public GameObject FirstSkill()
     {
@@ -81,7 +81,6 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
         itemSprite = Resources.Load<Sprite>("Items/ShieldItem");
         itemType = "Weapon";
         itemSubType = "Shield";
-        damage = 3;
         finishedBuilding = true;
     }
 }

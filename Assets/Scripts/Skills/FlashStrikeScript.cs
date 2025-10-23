@@ -111,7 +111,7 @@ public class FlashStrikeScript : MonoBehaviour, Skill
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.MoveTo(targetPosition);
         List<Vector3> deltas = new List<Vector3>();
-        for (float i = -1; i <= 1; i++)
+        for (float i = -range; i <= range; i++)
         {
             for (float j = -1; j <= 1; j++)
             {

@@ -1,10 +1,10 @@
 Description
-test level
+Beginnings 0
 
 Layout
-       ... 
-       1...
-    ...1
+       1.. 
+       .1..
+    ....
    .....      .
    !......   .=.
   .    ...   1.
@@ -13,11 +13,11 @@ Layout
 
 Enemy Info
 1
-name Test Enemy
-maxHealth 7
+name Warrior
+maxHealth 10
 armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Sword
-mainHandDamage 2
+mainHandDamage 4
 

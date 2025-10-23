@@ -1,0 +1,43 @@
+weapons
+	sword
+		*slice - attack target, range 1, cooldown 0
+		*spinblade - attack all tiles within range, range 1, cooldown 2
+        *flash strike - teleport then attack all targets within range, range 2, cooldown 4
+    spear
+        *toss - attack target, range 3, cooldown 0
+        *impale - attack target for 2x damage, range 1, cooldown 2
+        *skewer - attack target for 3x damage, range 1, cooldown 4
+    wand
+        spark - attack target, range 2, cooldown 0
+        lightning strike - also attack all tiles adjacent to target, range 3, cooldown 3
+        blitz - attack and stun each enemy within range, range 1, cooldown 5
+    dagger
+        stab - attack target dealing 2x damage if target has full health, range 1, cooldown 0
+        vampiric strike - attack target and heal for damage dealt, range 1, cooldown 2
+        undecided
+	shield
+        *bash - attack target, range 1, cooldown 0
+        *slam - stun and knockback each target within range, range 1, cooldown 2
+        *reflect - incoming damage is prevented and dealt to the attacker, duration 1, cooldown 5
+    idol
+        heal - heal for 20% of max health, cooldown 0
+        drain - steal health from each target within range, range 1, cooldown 4
+		absorb - convert incoming damage to healing, cooldown 4
+
+utility skills
+    enchantments
+        temporal anchor - return to this location with current cooldowns when temporal anchor ends, duration 2, cooldown 5
+        haste - reduce cooldowns by 1 and increase speed by 1, duration 2, cooldown 5
+        splinter weapon - attacks also attack each tile within range 1 of target, duration 2, cooldown 5
+        stoneform - can't be stunned and heal 10% of max health at end of turn, duration 5, cooldown 10
+        leeching weapon - attacks also steal health, duration 5, cooldown 10
+        promise of death - reset all cooldowns and gain full health if an enemy dies, duration 1, cooldown 10
+    cantrips
+        *replenish - gain full health, cooldown 5
+        *blink - teleport, range 3, cooldown 3
+        focus - reset all weapon skill cooldowns, cooldown 10
+        meditate - reset all utility skill cooldowns, cooldown 10
+        time walk - get an extra turn after this one, cooldown 10
+    spells
+        chain lightning - attack target and each target connected to it, range 1, cooldown 5
+        shockwave - strike and knockback all enemies within range, range 1, cooldown 5
