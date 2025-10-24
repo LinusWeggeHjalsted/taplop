@@ -176,11 +176,9 @@ public class TurnLogicScript : MonoBehaviour
     {
         traversableTilesScript.ClearHighlights();
         Dictionary<Vector3, GameObject> activeEnemyLookup = new Dictionary<Vector3, GameObject>(enemiesScript.activeEnemyLookup);
-        Debug.Log(activeEnemyLookup.Count.ToString() + " active enemies");
         foreach (GameObject enemy in activeEnemyLookup.Values)
         {
             yield return new WaitForSeconds(0.25f);
-            Debug.Log(enemy.name + " is taking its turn");
             EntityScript enemyScript = enemy.GetComponent<EntityScript>();
             enemyScript.ReduceCooldowns(1);
             enemyScript.ReduceEffectDurations(1);
@@ -249,7 +247,6 @@ public class TurnLogicScript : MonoBehaviour
             case GameState.EnemiesTurn:
                 if (!turnStarted)
                 {
-                    Debug.Log("enemies turn started");
                     turnStarted = true;
                     traversableTilesScript.ClearHighlights();
                     turnStatusText.text = "Enemies' turn...";

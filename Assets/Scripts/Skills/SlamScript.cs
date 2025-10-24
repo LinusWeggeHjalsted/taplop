@@ -130,7 +130,7 @@ public class SlamScript : MonoBehaviour, Skill
             if (target != null)
             {
                 EntityScript targetScript = target.GetComponent<EntityScript>();
-                targetScript.Knockback(fromPosition, wielder, wielderScript.mainHandDamage);
+                targetScript.Knockback(fromPosition, wielder, 2 * wielderScript.mainHandDamage);
                 targetScript.stunDuration += 1;
             }
         }

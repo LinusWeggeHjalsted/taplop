@@ -13,6 +13,18 @@ public class BootsScript : MonoBehaviour, ItemScript
         return itemSprite;
     }
 
+    public string ItemName()
+    {
+        return itemName;
+    }
+
+    public string ItemDescription()
+    {
+        string armorString = "Armor +" + armorBonus.ToString();
+        string speedString = "Speed +" + speedBonus.ToString();
+        return armorString + "\n" + speedString;
+    }
+    
     public string ItemType()
     {
         return itemType;

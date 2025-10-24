@@ -37,7 +37,7 @@ Inventory
 itemType Weapon
 itemName Starter Spear
 weaponType Spear
-damage 3
+damage 4
 
 itemType Boots
 itemName Speedy Boots

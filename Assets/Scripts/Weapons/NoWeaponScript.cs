@@ -61,6 +61,11 @@ public class NoWeaponScript : MonoBehaviour, WeaponScript, ItemScript
         return "None";
     }
 
+    public string ItemDescription()
+    {
+        return "None";
+    }
+
     public void SetItemName(string newItemName)
     {
     }

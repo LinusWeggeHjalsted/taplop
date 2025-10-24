@@ -113,7 +113,7 @@ public class FlashStrikeScript : MonoBehaviour, Skill
         List<Vector3> deltas = new List<Vector3>();
         for (float i = -range; i <= range; i++)
         {
-            for (float j = -1; j <= 1; j++)
+            for (float j = -range; j <= range; j++)
             {
                 if (i == 0 && j == 0)
                 {
@@ -190,7 +190,7 @@ public class FlashStrikeScript : MonoBehaviour, Skill
     {
         skillName = "Flash Strike";
         skillType = "Off Hand Skill";
-        description = "Teleport then attack each adjacent target";
+        description = "Teleport then attack each target within skill range";
         cooldown = 3;
         range = 2f;
         skillSprite = Resources.Load<Sprite>("Skill Sprites/FlashStrike");

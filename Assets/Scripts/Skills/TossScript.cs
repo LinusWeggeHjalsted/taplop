@@ -88,14 +88,12 @@ public class TossScript : MonoBehaviour, Skill
         }
         else
         {
-            Debug.LogError("enemy tried to use toss without targets in range");
             return fromPosition;
         }
     }
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
-        Debug.Log(wielder.name + " using toss");
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
@@ -120,7 +118,6 @@ public class TossScript : MonoBehaviour, Skill
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        Debug.Log(wielder.name + " preparing toss");
         traversableTilesScript.ClearHighlights();
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();

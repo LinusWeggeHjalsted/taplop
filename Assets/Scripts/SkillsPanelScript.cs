@@ -13,7 +13,6 @@ public class SkillsPanelScript : MonoBehaviour
     {
         for (int i = 0; i < this.transform.childCount; i++)
         {
-            Debug.Log("updating buttons");
             GameObject skillButton = this.transform.GetChild(i).gameObject;
             SkillButtonScript buttonScript = skillButton.GetComponent<SkillButtonScript>();
             buttonScript.UpdateButton();
@@ -43,7 +42,6 @@ public class SkillsPanelScript : MonoBehaviour
                 yield return null;
             }
         }
-        Debug.Log("skill buttons finished building");
         finishedBuilding = true;
     }
 
@@ -57,7 +55,6 @@ public class SkillsPanelScript : MonoBehaviour
             GameObject skillButton = this.transform.GetChild(i).gameObject;
             SkillButtonScript skillButtonScript = skillButton.GetComponent<SkillButtonScript>();
             skillButtonScript.skillNumber = i;
-            Debug.Log("Assigned " + skillButtonScript.skillNumber.ToString());
         }
         finishedAssigning = true;
         StartCoroutine(WaitForSkillButtons());

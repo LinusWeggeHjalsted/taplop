@@ -50,6 +50,17 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
         return itemSprite;
     }
 
+    public string ItemName()
+    {
+        return itemName;
+    }
+
+    public string ItemDescription()
+    {
+        string damageString = "Damage " + damage.ToString();
+        return damageString;
+    }
+
     public string ItemType()
     {
         return itemType;
@@ -58,12 +69,7 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
     public string ItemSubType()
     {
         return itemSubType;
-    }
-    
-    public string ItemName()
-    {
-        return itemName;
-    }
+    } 
     
     public void SetItemName(string newItemName)
     {

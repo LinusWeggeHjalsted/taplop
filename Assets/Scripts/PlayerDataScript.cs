@@ -391,7 +391,6 @@ public class PlayerDataScript : MonoBehaviour
             {
                 // first line should define itemType
                 string firstLine = itemBlock[0];
-                Debug.Log("firstLine = " + firstLine);
                 if (firstLine.StartsWith("itemType "))
                 {
                     string itemType = firstLine.Substring("itemType ".Length);

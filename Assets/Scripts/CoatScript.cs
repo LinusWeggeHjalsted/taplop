@@ -13,6 +13,18 @@ public class CoatScript : MonoBehaviour, ItemScript
         return itemSprite;
     }
 
+    public string ItemName()
+    {
+        return itemName;
+    }
+
+    public string ItemDescription()
+    {
+        string armorString = "Armor +" + armorBonus.ToString();
+        string healthString = "Health +" + healthBonus.ToString();
+        return armorString + "\n" + healthString;
+    }
+
     public string ItemType()
     {
         return itemType;
