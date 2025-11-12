@@ -89,7 +89,6 @@ public class PlayerDataScript : MonoBehaviour
         else
         {
             string[] fileLines = playerSaveFile.text.Split('\n');
-            int sectionCount = 9;
             string[] sectionHeaders = new string[] {
                 "Info",
                 "Unlocked Skills", 
@@ -101,6 +100,7 @@ public class PlayerDataScript : MonoBehaviour
                 "Inventory",
                 "Utility Skills"
             };
+            int sectionCount = sectionHeaders.Length;
             int[] sectionIndices = new int[sectionCount];
             for (int i = 0; i < sectionCount; i++)
             {

@@ -1,12 +1,9 @@
 - main menu
-- item tooltips
 - show cooldown number on skills
 - write player save
 - skills menu
 - lock switching equipped gear and skills when there are active enemies
-- ground items
-    prefab
-    update level parser
+- pick up items
 - skill durations
 - currency
 - enemy loot
@@ -16,3 +13,6 @@
 - sort active enemies by distance to player before taking their turn
 - display effect sprites (stun, reflect)
 - weaponswap
+- display used skills
+- dps meter
+

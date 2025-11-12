@@ -1,5 +1,5 @@
-Description
-Beginnings 0
+Metadata
+creator Strider
 
 Layout
        1.. 
@@ -8,7 +8,7 @@ Layout
    .....      .
    !......   .=.
   .    ...   1.
-   .   ...   .
+   a   ...   .
         .....
 
 Enemy Info
@@ -19,5 +19,13 @@ armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Sword
+mainHandName Bronze Sword
 mainHandDamage 4
+
+Item Info
+a
+name Comfortable Boots
+type Boots
+armor 1
+speed 1
 

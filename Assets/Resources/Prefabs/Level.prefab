@@ -679,8 +679,6 @@ MonoBehaviour:
   levelBuilderScript: {fileID: 0}
   mainHand: {fileID: 0}
   offHand: {fileID: 0}
-  mainHandWeapon: {fileID: 0}
-  offHandWeapon: {fileID: 0}
 --- !u!1 &1099693426031639336
 GameObject:
   m_ObjectHideFlags: 0
@@ -830,6 +828,7 @@ Transform:
   - {fileID: 4412474267511096711}
   - {fileID: 8200703806683987638}
   - {fileID: 144051360994860408}
+  - {fileID: 6221137757080921768}
   - {fileID: 5030309325911724684}
   - {fileID: 5224060413691881776}
   m_Father: {fileID: 0}
@@ -1168,6 +1167,37 @@ CanvasGroup:
   m_Interactable: 1
   m_BlocksRaycasts: 1
   m_IgnoreParentGroups: 0
+--- !u!1 &3727009432735612977
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6221137757080921768}
+  m_Layer: 0
+  m_Name: Drops
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6221137757080921768
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3727009432735612977}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 9031370341824819560}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &3768774176138263813
 GameObject:
   m_ObjectHideFlags: 0
@@ -2847,7 +2877,7 @@ Camera:
   far clip plane: 1000
   field of view: 34
   orthographic: 1
-  orthographic size: 10.90625
+  orthographic size: 12.1875
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2

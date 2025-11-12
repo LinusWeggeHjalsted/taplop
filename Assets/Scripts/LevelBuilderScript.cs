@@ -7,9 +7,10 @@ public class LevelBuilderScript : MonoBehaviour
 {
     public class PreParse
     {
-        public string levelDescription;
+        public string[] levelMetadata;
         public char[][] levelLayout;
         public List<string[]> enemyInfo;
+        public List<string[]> itemInfo;
     }
 
     public class PreEnemy
@@ -20,9 +21,22 @@ public class LevelBuilderScript : MonoBehaviour
         public int speed;
         public int aggroRange;
         public string mainHandWeapon;
+        public string mainHandName;
         public int mainHandDamage;
         public string offHandWeapon;
+        public string offHandName;
         public int offHandDamage;
+    }
+
+    public class PreItem
+    {
+        public string itemName;
+        public string itemType;
+        public string weaponType;
+        public int armor;
+        public int damage;
+        public int health;
+        public int speed;
     }
 
     public class ParsedLevel
@@ -32,6 +46,8 @@ public class LevelBuilderScript : MonoBehaviour
         public Vector3 playerPosition;
         public Dictionary<Vector3, char> enemyPositions;
         public Dictionary<char, PreEnemy> preEnemies;
+        public Dictionary<Vector3, char> itemPositions;
+        public Dictionary<char, PreItem> preItems;
     }
     
     public bool finishedBuilding = false;
@@ -42,9 +58,11 @@ public class LevelBuilderScript : MonoBehaviour
     public string levelName;
     public GameObject player;
     public GameObject enemies;
+    public GameObject drops;
     public GameObject traversableTiles;
     public GameObject tilePrefab;
     public GameObject enemyPrefab;
+    public GameObject groundItemsPrefab;
 
     public PreParse LoadLevelFile(string lvlName)
     {
@@ -59,27 +77,56 @@ public class LevelBuilderScript : MonoBehaviour
         else
         {
             string[] fileLines = levelFile.text.Split('\n');
-            int descriptionIndex = Array.IndexOf(fileLines, "Description") + 1;
-            int layoutIndex = Array.IndexOf(fileLines, "Layout") + 1;
-            int enemyInfoIndex = Array.IndexOf(fileLines, "Enemy Info") + 1;
-            // to-do: handle bad files
+            string[] sectionHeaders = new string[] {
+                "Metadata",
+                "Layout",
+                "Enemy Info",
+                "Item Info"
+            };
+            int sectionCount = sectionHeaders.Length;
+            int[] sectionIndices = new int[sectionCount];
+            for (int i = 0; i < sectionCount; i++)
+            {
+                int sectionIndex = Array.IndexOf(fileLines, sectionHeaders[i]) + 1;
+                sectionIndices[i] = sectionIndex;
+            }
+            // to-do: verify that sections are in correct order
+            int[] sectionLengths = new int[sectionCount];
+            for (int i = 0; i < sectionCount; i++)
+            {
+                if (i + 1 == sectionCount)
+                {
+                    int sectionLength = fileLines.Length - sectionIndices[i] - 2;
+                    sectionLengths[i] = sectionLength;
+                }
+                else
+                {
+                    int sectionLength = sectionIndices[i + 1] - sectionIndices[i] - 2;
+                    sectionLengths[i] = sectionLength;
+                }
+            }
+            string[][] sectionBlocks = new string[sectionCount][];
+            for (int i = 0; i < sectionCount; i++)
+            {
+                string[] sectionBlock = new string[sectionLengths[i]];
+                Array.Copy(fileLines, sectionIndices[i], sectionBlock, 0, sectionLengths[i]);
+                sectionBlocks[i] = sectionBlock;
+            }
 
-            int descriptionLength = layoutIndex - descriptionIndex - 2;
-            int layoutLength = enemyInfoIndex - layoutIndex - 2;
-            int enemyInfoLength = fileLines.Length - enemyInfoIndex - 2;
+            // metadata
+            string[] metadataBlock = sectionBlocks[0];
 
-            string description = fileLines[descriptionIndex];
-
-            string[] layoutBlock = new string[layoutLength];
-            Array.Copy(fileLines, layoutIndex, layoutBlock, 0, layoutLength);
+            // layout
+            int layoutLength = sectionLengths[1];
+            string[] layoutBlock = sectionBlocks[1];
             char[][] layout = new char[layoutLength][];
             for (int i = 0; i < layoutLength; i++)
             {
                 layout[i] = layoutBlock[i].ToCharArray();
             }
 
-            string[] enemyInfoBlock = new string[enemyInfoLength];
-            Array.Copy(fileLines, enemyInfoIndex, enemyInfoBlock, 0, enemyInfoLength);
+            // enemy info
+            string[] enemyInfoBlock = sectionBlocks[2];
             List<string[]> enemyInfo = new List<string[]>();
             List<string> currentSubArray = new List<string>();
             foreach (string line in enemyInfoBlock)
@@ -99,9 +146,31 @@ public class LevelBuilderScript : MonoBehaviour
                 enemyInfo.Add(currentSubArray.ToArray());
             }
 
-            preParse.levelDescription = description;
+            // item info
+            string[] itemInfoBlock = sectionBlocks[3];
+            List<string[]> itemInfo = new List<string[]>();
+            currentSubArray = new List<string>();
+            foreach (string line in itemInfoBlock)
+            {
+                if (line == "")
+                {
+                    itemInfo.Add(currentSubArray.ToArray());
+                    currentSubArray.Clear();
+                }
+                else
+                {
+                    currentSubArray.Add(line);
+                }
+            }
+            if (currentSubArray.Count > 0)
+            {
+                itemInfo.Add(currentSubArray.ToArray());
+            }
+
+            preParse.levelMetadata = metadataBlock;
             preParse.levelLayout = layout;
             preParse.enemyInfo = enemyInfo;
+            preParse.itemInfo = itemInfo;
         }   
         return preParse;
     }
@@ -112,38 +181,8 @@ public class LevelBuilderScript : MonoBehaviour
         parsedLevel.tilePositions = new List<Vector3>();
         parsedLevel.enemyPositions = new Dictionary<Vector3, char>();
         parsedLevel.preEnemies = new Dictionary<char, PreEnemy>();
-        // find positions of things
-        for (int i = 0; i < preParse.levelLayout.Length; i++)
-        {
-            for (int j = 0; j < preParse.levelLayout[i].Length; j++)
-            {
-                // flip y axis
-                Vector3 position = new Vector3(j, preParse.levelLayout.Length - i, 0);
-                char tileCode = preParse.levelLayout[i][j];
-                if (tileCode != ' ')
-                {
-                    parsedLevel.tilePositions.Add(position);
-                    if (tileCode == '.')
-                    {
-                        continue;
-                    }
-                    if (tileCode == '!')
-                    {
-                        parsedLevel.playerPosition = position;
-                        continue;
-                    }
-                    if (tileCode == '=')
-                    {
-                        parsedLevel.endPosition = position;
-                        continue;
-                    }
-                    else
-                    {
-                        parsedLevel.enemyPositions.Add(position, tileCode);
-                    }
-                }
-            }
-        }
+        parsedLevel.itemPositions = new Dictionary<Vector3, char>();
+        parsedLevel.preItems = new Dictionary<char, PreItem>();
         // parse individual enemy information
         foreach (string[] enemyStrings in preParse.enemyInfo)
         {
@@ -221,6 +260,11 @@ public class LevelBuilderScript : MonoBehaviour
                     string enemyMainHandWeapon = currentLine.Substring("mainHandWeapon ".Length);
                     preEnemy.mainHandWeapon = enemyMainHandWeapon;
                 }
+                else if (currentLine.StartsWith("mainHandName "))
+                {
+                    string enemyMainHandName = currentLine.Substring("mainHandName ".Length);
+                    preEnemy.mainHandName = enemyMainHandName;
+                }
                 else if (currentLine.StartsWith("mainHandDamage "))
                 {
                     string enemyMainHandDamage = currentLine.Substring("mainHandDamage ".Length);
@@ -239,6 +283,11 @@ public class LevelBuilderScript : MonoBehaviour
                     string enemyOffHandWeapon = currentLine.Substring("offHandWeapon ".Length);
                     preEnemy.offHandWeapon = enemyOffHandWeapon;
                 }
+                else if (currentLine.StartsWith("offHandName "))
+                {
+                    string enemyOffHandName = currentLine.Substring("offHandName ".Length);
+                    preEnemy.offHandName = enemyOffHandName;
+                }
                 else if (currentLine.StartsWith("offHandDamage "))
                 {
                     string enemyOffHandDamage = currentLine.Substring("offHandDamage ".Length);
@@ -254,6 +303,128 @@ public class LevelBuilderScript : MonoBehaviour
                 }
             }
             parsedLevel.preEnemies.Add(enemyCode, preEnemy);
+        }
+        // parse individual item information
+        foreach (string[] itemStrings in preParse.itemInfo)
+        {
+            PreItem preItem = new PreItem();
+            if (itemStrings[0].Length > 1)
+            {
+                Debug.LogError("bad item info, first line should be a single character");
+                continue;
+            }
+            char itemCode = itemStrings[0][0];
+            for (int i = 1; i < itemStrings.Length; i++)
+            {
+                string currentLine = itemStrings[i];
+                if (currentLine.StartsWith("name "))
+                {
+                    string itemName = currentLine.Substring("name ".Length);
+                    preItem.itemName = itemName;
+                }
+                else if (currentLine.StartsWith("type "))
+                {
+                    string itemType = currentLine.Substring("type ".Length);
+                    preItem.itemType = itemType;
+                }
+                else if (currentLine.StartsWith("weaponType "))
+                {
+                    string weaponType = currentLine.Substring("weaponType ".Length);
+                    preItem.weaponType = weaponType;
+                }
+                else if (currentLine.StartsWith("armor "))
+                {
+                    string armor = currentLine.Substring("armor ".Length);
+                    int armorNumber;
+                    if (Int32.TryParse(armor, out armorNumber))
+                    {
+                        preItem.armor = armorNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("armor is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("damage "))
+                {
+                    string damage = currentLine.Substring("damage ".Length);
+                    int damageNumber;
+                    if (Int32.TryParse(damage, out damageNumber))
+                    {
+                        preItem.damage = damageNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("damage is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("health "))
+                {
+                    string health = currentLine.Substring("health ".Length);
+                    int healthNumber;
+                    if (Int32.TryParse(health, out healthNumber))
+                    {
+                        preItem.health = healthNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("health is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("speed "))
+                {
+                    string speed = currentLine.Substring("speed ".Length);
+                    int speedNumber;
+                    if (Int32.TryParse(speed, out speedNumber))
+                    {
+                        preItem.speed = speedNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("speed is not a number");
+                    }
+                }
+            }
+            parsedLevel.preItems.Add(itemCode, preItem);
+        }
+        // find positions of things
+        for (int i = 0; i < preParse.levelLayout.Length; i++)
+        {
+            for (int j = 0; j < preParse.levelLayout[i].Length; j++)
+            {
+                // flip y axis
+                Vector3 position = new Vector3(j, preParse.levelLayout.Length - i, 0);
+                char tileCode = preParse.levelLayout[i][j];
+                if (tileCode != ' ')
+                {
+                    parsedLevel.tilePositions.Add(position);
+                    if (tileCode == '.')
+                    {
+                        continue;
+                    }
+                    if (tileCode == '!')
+                    {
+                        parsedLevel.playerPosition = position;
+                        continue;
+                    }
+                    if (tileCode == '=')
+                    {
+                        parsedLevel.endPosition = position;
+                        continue;
+                    }
+                    else
+                    {
+                        if (parsedLevel.preEnemies.ContainsKey(tileCode))
+                        {
+                            parsedLevel.enemyPositions.Add(position, tileCode);
+                        }
+                        if (parsedLevel.preItems.ContainsKey(tileCode))
+                        {
+                            parsedLevel.itemPositions.Add(position, tileCode);
+                        }
+                    }
+                }
+            }
         }
         return parsedLevel;
     }
@@ -281,7 +452,7 @@ public class LevelBuilderScript : MonoBehaviour
                 tileScript.IsEnd = true;
             }
         }
-
+        
         foreach (Vector3 enemyPosition in parsedLevel.enemyPositions.Keys)
         {
             char enemyCode = parsedLevel.enemyPositions[enemyPosition];
@@ -311,6 +482,61 @@ public class LevelBuilderScript : MonoBehaviour
             WeaponScript enemyOffHandWeaponScript = enemyOffHandWeapon.GetComponent<WeaponScript>();
             enemyOffHandWeaponScript.SetDamage(preEnemy.offHandDamage);
         }
+
+        foreach (Vector3 itemPosition in parsedLevel.itemPositions.Keys)
+        {
+            char itemCode = parsedLevel.itemPositions[itemPosition];
+            if (!parsedLevel.preItems.ContainsKey(itemCode))
+            {
+                Debug.LogError("no item info for item code " + itemCode.ToString());
+                continue;
+            }
+            PreItem preItem = parsedLevel.preItems[itemCode];
+
+            GameObject newGroundItems = Instantiate(groundItemsPrefab, drops.transform);
+            newGroundItems.transform.position = itemPosition;
+            switch (preItem.itemType)
+            {
+                case "Weapon":
+                    GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/" + preItem.weaponType);
+                    if (weaponPrefab != null)
+                    {
+                        GameObject newWeapon = Instantiate(weaponPrefab, newGroundItems.transform);
+                        WeaponScript weaponScript = newWeapon.GetComponent<WeaponScript>();
+                        weaponScript.SetItemName(preItem.itemName);
+                        weaponScript.SetDamage(preItem.damage);
+                    }
+                    else
+                    {
+                        Debug.LogError("unrecognized weapon type");
+                    }
+                    break;
+                case "Coat":
+                    GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");
+                    GameObject newCoat = Instantiate(coatPrefab, newGroundItems.transform);
+                    CoatScript coatScript = newCoat.GetComponent<CoatScript>();
+                    coatScript.itemName = preItem.itemName;
+                    coatScript.armorBonus = preItem.armor;
+                    coatScript.healthBonus = preItem.health;
+                    break;
+                case "Gloves":
+                    GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Gloves");
+                    GameObject newGloves = Instantiate(glovesPrefab, newGroundItems.transform);
+                    GlovesScript glovesScript = newGloves.GetComponent<GlovesScript>();
+                    glovesScript.itemName = preItem.itemName;
+                    glovesScript.armorBonus = preItem.armor;
+                    glovesScript.damageBonus = preItem.damage;
+                    break;
+                case "Boots":
+                    GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");
+                    GameObject newBoots = Instantiate(bootsPrefab, newGroundItems.transform);
+                    BootsScript bootsScript = newBoots.GetComponent<BootsScript>();
+                    bootsScript.itemName = preItem.itemName;
+                    bootsScript.armorBonus = preItem.armor;
+                    bootsScript.speedBonus = preItem.speed;
+                    break;
+            }
+        }
     }
 
     void Start()
@@ -320,9 +546,11 @@ public class LevelBuilderScript : MonoBehaviour
         levelName = missionLogicScript.currentLevelName;
         player = GameObject.Find("Player");
         enemies = GameObject.Find("Enemies");
+        drops = GameObject.Find("Drops");
         traversableTiles = GameObject.Find("Traversable Tiles");
         tilePrefab = Resources.Load<GameObject>("Prefabs/Tile");
         enemyPrefab = Resources.Load<GameObject>("Prefabs/Enemy");
+        groundItemsPrefab = Resources.Load<GameObject>("Prefabs/Ground Items");
 
         BuildLevel(ParseLevel(LoadLevelFile(levelName)));
         StartCoroutine(PlayerDataScript.Instance.BuildPlayerFromData(player));

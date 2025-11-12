@@ -2,7 +2,7 @@ Description
 Beginnings 2
 
 Layout
-          .
+          1
      ... ..
    ....2.
  ........
@@ -20,6 +20,7 @@ armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Sword
+mainHandName Bronze Sword
 mainHandDamage 4
 
 2
@@ -29,5 +30,8 @@ armor 0
 speed 1
 aggroRange 4
 mainHandWeapon Spear
+mainHandName Bronze Spear
 mainHandDamage 4
+
+Item Info
 

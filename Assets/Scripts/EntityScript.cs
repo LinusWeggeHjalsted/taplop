@@ -371,6 +371,7 @@ public class EntityScript : MonoBehaviour
                 missionLogicScript.NextLevel();
             }
         }
+
     }
 
     public int IncomingDamage(int damage, GameObject attacker)
