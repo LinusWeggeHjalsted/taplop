@@ -1176,6 +1176,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 6221137757080921768}
+  - component: {fileID: 9055743174448425417}
   m_Layer: 0
   m_Name: Drops
   m_TagString: Untagged
@@ -1198,6 +1199,21 @@ Transform:
   m_Children: []
   m_Father: {fileID: 9031370341824819560}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &9055743174448425417
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3727009432735612977}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bae94b390847404a488b4f595313a1c9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: '::'
+  finishedBuilding: 0
+  levelBuilder: {fileID: 0}
+  levelBuilderScript: {fileID: 0}
 --- !u!1 &3768774176138263813
 GameObject:
   m_ObjectHideFlags: 0
@@ -2095,6 +2111,8 @@ MonoBehaviour:
   player: {fileID: 0}
   enemies: {fileID: 0}
   enemiesScript: {fileID: 0}
+  drops: {fileID: 0}
+  dropsScript: {fileID: 0}
   spriteRenderer: {fileID: 0}
   gear: {fileID: 0}
   gearScript: {fileID: 0}
@@ -2105,6 +2123,7 @@ MonoBehaviour:
   feet: {fileID: 0}
   utilitySkills: {fileID: 0}
   inventory: {fileID: 0}
+  inventorySize: 0
   healthBar: {fileID: 0}
   healthBarRenderer: {fileID: 0}
   healthBarStates: []
@@ -2802,9 +2821,11 @@ MonoBehaviour:
   levelName: 
   player: {fileID: 0}
   enemies: {fileID: 0}
+  drops: {fileID: 0}
   traversableTiles: {fileID: 0}
   tilePrefab: {fileID: 0}
   enemyPrefab: {fileID: 0}
+  groundItemsPrefab: {fileID: 0}
 --- !u!1 &7703037104913916439
 GameObject:
   m_ObjectHideFlags: 0
@@ -2877,7 +2898,7 @@ Camera:
   far clip plane: 1000
   field of view: 34
   orthographic: 1
-  orthographic size: 12.1875
+  orthographic size: 10.90625
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2

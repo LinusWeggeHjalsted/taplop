@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using TMPro;
 using System.Collections;
 
 public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
@@ -80,8 +81,11 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             if (cooldownOverlay == null)
             {
-                cooldownOverlay =  Instantiate(cooldownPrefab, this.transform);
+                cooldownOverlay = Instantiate(cooldownPrefab, this.transform);
             }
+            GameObject cooldownText = cooldownOverlay.transform.Find("Cooldown Text").gameObject;
+            TMP_Text textField = cooldownText.GetComponent<TMP_Text>();
+            textField.text = skillScript.CurrentCooldown().ToString();
         }
         else
         {

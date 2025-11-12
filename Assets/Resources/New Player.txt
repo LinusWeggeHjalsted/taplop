@@ -39,11 +39,6 @@ itemName Starter Spear
 weaponType Spear
 damage 4
 
-itemType Boots
-itemName Speedy Boots
-armor 1
-speed 1
-
 Utility Skills
 Replenish
 

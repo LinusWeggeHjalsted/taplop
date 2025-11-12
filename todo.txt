@@ -1,14 +1,16 @@
 - main menu
-- show cooldown number on skills
+- game controller
+    switch between and initialize main menu, missions, hubs
+- unify tooltips to 1 game object
 - write player save
 - skills menu
 - lock switching equipped gear and skills when there are active enemies
-- pick up items
 - skill durations
 - currency
 - enemy loot
     enemies drop all inventory and 1 item from equipment or skill tome of an equipped utility skill
 - sell items from inventory
+- update inventory ui to use player entity's inventory array
 - make a sexy loading screen
 - sort active enemies by distance to player before taking their turn
 - display effect sprites (stun, reflect)

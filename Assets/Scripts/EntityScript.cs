@@ -16,6 +16,8 @@ public class EntityScript : MonoBehaviour
     public GameObject player;
     public GameObject enemies;
     public EnemiesScript enemiesScript;
+    public GameObject drops;
+    public DropsScript dropsScript;
     public SpriteRenderer spriteRenderer;
     public GameObject gear;
     public GearScript gearScript;
@@ -66,6 +68,26 @@ public class EntityScript : MonoBehaviour
     }
     public Transform utilitySkills;
     public Transform inventory;
+    public int inventorySize;
+    public GameObject[] inventoryItems
+    {
+        get
+        {
+            GameObject[] itemArray = new GameObject[inventorySize];
+            for (int i = 0; i < inventory.childCount; i++)
+            {
+                if (i < inventorySize)
+                {
+                    itemArray[i] = inventory.GetChild(i).gameObject;
+                }
+                else
+                {
+                    Debug.LogError("entity has more items in inventory than inventorySize " + inventorySize.ToString() + " allows");
+                }
+            }
+            return itemArray;
+        }
+    }
     public GameObject healthBar;
     public SpriteRenderer healthBarRenderer;
     public Sprite[] healthBarStates = new Sprite[8];
@@ -73,7 +95,7 @@ public class EntityScript : MonoBehaviour
     public Sprite aggroSprite;
 
     public string currentBuildTemplate = "00000000";
-    private int maxHealth = 10;
+    private int maxHealth;
     public int MaxHealth
     {
         get
@@ -357,11 +379,13 @@ public class EntityScript : MonoBehaviour
         targetTileScript.isOccupied = true;
         currentTileScript.isOccupied = false;
         previousPosition = currentPosition;
+        // update enemy lookups
         if (enemiesScript.enemyLookup.ContainsKey(currentPosition))
         {
             enemiesScript.EnemyMoved(currentPosition, targetPosition);
         }
         this.transform.position = targetPosition;
+        // update aggro
         if (targetPosition == player.transform.position)
         {
             enemiesScript.UpdateAggro();
@@ -371,7 +395,25 @@ public class EntityScript : MonoBehaviour
                 missionLogicScript.NextLevel();
             }
         }
-
+        // pick up ground items
+        if (dropsScript.groundItemsLookup.ContainsKey(targetPosition))
+        {
+            GameObject groundItems = dropsScript.groundItemsLookup[targetPosition];
+            while (groundItems.transform.childCount > 0 && inventory.childCount < inventorySize)
+            {
+                Transform item = groundItems.transform.GetChild(0);
+                item.parent = inventory;
+            }
+            if (groundItems.transform.childCount == 0)
+            {
+                dropsScript.groundItemsLookup.Remove(targetPosition);
+                Destroy(groundItems);
+            }
+            else
+            {
+                Debug.Log("inventory full");
+            }
+        }
     }
 
     public int IncomingDamage(int damage, GameObject attacker)
@@ -477,6 +519,7 @@ public class EntityScript : MonoBehaviour
     void Start()
     {
         Debug.Log("Hello World - I'm " + this.name);
+        maxHealth = 10;
         missionLogic = GameObject.Find("Mission Logic");
         missionLogicScript = missionLogic.GetComponent<MissionLogicScript>();
         levelBuilder = GameObject.Find("Level Builder");
@@ -487,11 +530,14 @@ public class EntityScript : MonoBehaviour
         player = GameObject.Find("Player");
         enemies = GameObject.Find("Enemies");
         enemiesScript = enemies.GetComponent<EnemiesScript>();
+        drops = GameObject.Find("Drops");
+        dropsScript = drops.GetComponent<DropsScript>();
         spriteRenderer = this.gameObject.GetComponent<SpriteRenderer>();
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
         utilitySkills = this.transform.Find("Utility Skills");
         inventory = this.transform.Find("Inventory");
+        inventorySize = 24;
         hitSprite = Resources.Load<Sprite>("Hit");
         aggroSprite = Resources.Load<Sprite>("EnemyAggro");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
