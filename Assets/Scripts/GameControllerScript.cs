@@ -21,6 +21,7 @@ public class GameControllerScript : MonoBehaviour
             Destroy(hub);
         }
         missionLogic = Instantiate(missionPrefab);
+        missionLogic.name = "Mission Logic";
         MissionLogicScript missionLogicScript = missionLogic.GetComponent<MissionLogicScript>();
         missionLogicScript.missionName = missionName;
         missionLogicScript.missionLength = missionLength;
@@ -45,6 +46,6 @@ public class GameControllerScript : MonoBehaviour
         mainMenuPrefab = Resources.Load<GameObject>("Prefabs/Main Menu");
         missionPrefab = Resources.Load<GameObject>("Prefabs/Mission Logic");
         hubPrefab = Resources.Load<GameObject>("Prefabs/Hub");
-        StartMission("Beginnings", 3, "1stHub");
+        StartMission("Beginnings", 3, "TestHub");
     }
 }

@@ -4,7 +4,7 @@ using UnityEngine.UI;
 public class InventoryUIScript : MonoBehaviour
 {
     public GameObject player;
-    public EntityScript playerScript;
+    public PlayerCharacterScript playerScript;
     public Transform playerInventory;
     public GameObject itemSlotPrefab;
     public GameObject inventoryItemPrefab;
@@ -12,7 +12,7 @@ public class InventoryUIScript : MonoBehaviour
     void Start()
     {
         player = GameObject.Find("Player");
-        playerScript = player.GetComponent<EntityScript>();
+        playerScript = player.GetComponent<PlayerCharacterScript>();
         playerInventory = player.transform.Find("Inventory");
         itemSlotPrefab = Resources.Load<GameObject>("Prefabs/Item Slot");
         inventoryItemPrefab = Resources.Load<GameObject>("Prefabs/Inventory Item");

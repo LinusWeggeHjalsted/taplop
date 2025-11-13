@@ -3,9 +3,20 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
-public class EntityScript : MonoBehaviour
+public class EntityScript : MonoBehaviour, PlayerCharacterScript
 {
-    public bool finishedBuilding = false;
+    private bool _finishedBuilding = false;
+    public bool finishedBuilding
+    {
+        get
+        {
+            return _finishedBuilding;
+        }
+        set
+        {
+            _finishedBuilding = value;
+        }
+    }
     public GameObject missionLogic;
     public MissionLogicScript missionLogicScript;
     public GameObject levelBuilder;
@@ -21,8 +32,39 @@ public class EntityScript : MonoBehaviour
     public SpriteRenderer spriteRenderer;
     public GameObject gear;
     public GearScript gearScript;
-    public Transform mainHand;
-    public Transform offHand;
+
+    // Private backing fields
+    private Transform _mainHand;
+    private Transform _offHand;
+    private Transform _hands;
+    private Transform _body;
+    private Transform _feet;
+    private Transform _inventory;
+    private int _inventorySize;
+    private Transform _utilitySkills;
+    private int _utilitySkillSlots;
+
+    // Interface properties
+    public Transform mainHand { get { return _mainHand; } }
+    public Transform offHand { get { return _offHand; } }
+    public Transform hands { get { return _hands; } }
+    public Transform body { get { return _body; } }
+    public Transform feet { get { return _feet; } }
+    public Transform inventory { get { return _inventory; } }
+    public int inventorySize { get { return _inventorySize; } }
+    public Transform utilitySkills { get { return _utilitySkills; } }
+    public int utilitySkillSlots 
+    {
+        get
+        {
+            return _utilitySkillSlots;
+        }
+        set
+        {
+            _utilitySkillSlots = value;
+        }
+    }
+
     public GameObject mainHandWeapon
     {
         get
@@ -39,9 +81,6 @@ public class EntityScript : MonoBehaviour
             return offHand.GetChild(0).gameObject;
         }
     }
-    public Transform hands;
-    public Transform body;
-    public Transform feet;
     public GameObject gloves
     {
         get
@@ -66,9 +105,6 @@ public class EntityScript : MonoBehaviour
             return feet.GetChild(0).gameObject;
         }
     }
-    public Transform utilitySkills;
-    public Transform inventory;
-    public int inventorySize;
     public GameObject[] inventoryItems
     {
         get
@@ -205,7 +241,6 @@ public class EntityScript : MonoBehaviour
     }
     public int aggroRange;
     public Vector3 previousPosition = new Vector3();
-    public int utilitySkillSlots;
     public GameObject[] equippedSkills
     {
         get
@@ -535,17 +570,17 @@ public class EntityScript : MonoBehaviour
         spriteRenderer = this.gameObject.GetComponent<SpriteRenderer>();
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
-        utilitySkills = this.transform.Find("Utility Skills");
-        inventory = this.transform.Find("Inventory");
-        inventorySize = 24;
         hitSprite = Resources.Load<Sprite>("Hit");
         aggroSprite = Resources.Load<Sprite>("EnemyAggro");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
-        mainHand = gear.transform.Find("Main Hand");
-        offHand = gear.transform.Find("Off Hand");
-        hands = gear.transform.Find("Hands");
-        body = gear.transform.Find("Body");
-        feet = gear.transform.Find("Feet");
+        _mainHand = gear.transform.Find("Main Hand");
+        _offHand = gear.transform.Find("Off Hand");
+        _body = gear.transform.Find("Body");
+        _hands = gear.transform.Find("Hands");
+        _feet = gear.transform.Find("Feet");
+        _inventory = this.transform.Find("Inventory");
+        _inventorySize = 24;
+        _utilitySkills = this.transform.Find("Utility Skills");
         StartCoroutine(WaitForGearBeforePopulating());
     }
 }

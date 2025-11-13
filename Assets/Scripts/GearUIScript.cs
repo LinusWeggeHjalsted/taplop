@@ -4,7 +4,7 @@ using UnityEngine.UI;
 public class GearUIScript : MonoBehaviour
 {
     public GameObject player;
-    public EntityScript playerScript;
+    public PlayerCharacterScript playerScript;
     public GameObject inventoryItemPrefab;
     public Transform mainHandItemSlot;
     public Transform offHandItemSlot;
@@ -15,7 +15,7 @@ public class GearUIScript : MonoBehaviour
     void Start()
     {
         player = GameObject.Find("Player");
-        playerScript = player.GetComponent<EntityScript>();
+        playerScript = player.GetComponent<PlayerCharacterScript>();
         inventoryItemPrefab = Resources.Load<GameObject>("Prefabs/Inventory Item");
         Transform gearSlots = this.transform.Find("Gear Slots");
         Transform mainHand = gearSlots.Find("Main Hand");

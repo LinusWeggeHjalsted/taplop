@@ -1,0 +1,34 @@
+Metadata
+
+Layout
+          1
+     ... ..
+   ......
+ ........
+0 ...!..
+   ........
+    ....   .2
+     .
+    3
+
+Exit Info
+0
+missionName Beginnings
+missionLength 3
+endHub TestHub
+
+1
+missionName Forest
+missionLength 4
+endHub TestHub
+
+2
+missionName Wetlands
+missionLength 3
+endHub TestHub
+
+3
+missionName Seatown
+missionLength 1
+endHub TestHub
+

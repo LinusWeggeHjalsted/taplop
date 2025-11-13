@@ -560,7 +560,7 @@ public class PlayerDataScript : MonoBehaviour
     public IEnumerator BuildPlayerFromData(GameObject player)
     {
         finishedBuilding = false;
-        EntityScript playerScript = player.GetComponent<EntityScript>();
+        PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
         while (!playerScript.finishedBuilding)
         {
             yield return null;
@@ -709,7 +709,7 @@ public class PlayerDataScript : MonoBehaviour
     
     public void BuildDataFromPlayer(GameObject player)
     {
-        EntityScript playerScript = player.GetComponent<EntityScript>();
+        PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
         // get player info
         utilitySkillSlots = playerScript.utilitySkillSlots;
         // get player gear
