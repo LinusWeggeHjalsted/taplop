@@ -1,11 +1,14 @@
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 
 public class MissionLogicScript : MonoBehaviour
 {
-    public string missionName; // to be set from elsewhere
-    public int missionLength; // to be set from elsewhere
-    public string hubExit; // to be set from elsewhere
+    public GameObject gameController;
+    public GameControllerScript gameControllerScript;
+    public string missionName;
+    public int missionLength;
+    public string endHub;
     public List<string> levelNames
     {
         get
@@ -30,14 +33,22 @@ public class MissionLogicScript : MonoBehaviour
     public GameObject levelPrefab;
     public GameObject level;
 
+    IEnumerator WaitForGameController()
+    {
+        while (missionName == null || endHub == null)
+        {
+            yield return null;
+        }
+        NextLevel();
+    }
+
     void Start()
     {
-        // to-do: instantiate this information variably
-        missionName = "Beginnings";
-        missionLength = 3;
-        currentLevel = 0;
+        gameController = GameObject.Find("Game Controller");
+        gameControllerScript = gameController.GetComponent<GameControllerScript>();
         levelPrefab = Resources.Load<GameObject>("Prefabs/Level");
-        NextLevel();
+        currentLevel = 0;
+        StartCoroutine(WaitForGameController());
     }
     
     public void NextLevel()
@@ -59,7 +70,7 @@ public class MissionLogicScript : MonoBehaviour
         }
         else
         {
-            // to-do: exit player to hub and start hub logic
+            gameControllerScript.EnterHub(endHub);
         }
     }
 }
