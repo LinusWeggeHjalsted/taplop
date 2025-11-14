@@ -5,7 +5,7 @@ using System.Collections.Generic;
 
 public class PlayerDataScript : MonoBehaviour
 {
-    public static PlayerDataScript Instance { get; private set;}
+    public static PlayerDataScript Instance { get; private set; }
 
     public abstract class InventoryItemData
     {

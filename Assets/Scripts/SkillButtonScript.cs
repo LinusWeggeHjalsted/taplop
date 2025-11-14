@@ -16,7 +16,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
     public GameObject player;
-    public EntityScript playerScript;
+    public PlayerCharacterScript playerScript;
     public GameObject skill;
     public Skill skillScript;
     public Sprite noSkillSprite;
@@ -55,8 +55,6 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 RectTransform tooltipRectTransform = tooltip.GetComponent<RectTransform>();
                 tooltipRectTransform.pivot = new Vector2(1f, 0);
                 tooltipRectTransform.position = buttonTopRightPosition;
-                TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-                StartCoroutine(tooltipScript.SetText(skillName, tooltipText));
             }
             if (tooltip != null)
             {
@@ -144,9 +142,12 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     void Start()
     {
         turnLogic = GameObject.Find("Turn Logic");
-        turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+        if (turnLogic != null)
+        {
+            turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+        }
         player = GameObject.Find("Player");
-        playerScript = player.GetComponent<EntityScript>();
+        playerScript = player.GetComponent<PlayerCharacterScript>();
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);

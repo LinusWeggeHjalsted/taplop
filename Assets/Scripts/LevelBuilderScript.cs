@@ -432,7 +432,7 @@ public class LevelBuilderScript : MonoBehaviour
     public void BuildLevel(ParsedLevel parsedLevel)
     {
         player.transform.position = parsedLevel.playerPosition; 
-        
+        // build tiles
         for (int i = 0; i < parsedLevel.tilePositions.Count; i++)
         {
             GameObject newTile = Instantiate(tilePrefab, traversableTiles.transform);
@@ -452,7 +452,7 @@ public class LevelBuilderScript : MonoBehaviour
                 tileScript.IsEnd = true;
             }
         }
-        
+        // build enemies
         foreach (Vector3 enemyPosition in parsedLevel.enemyPositions.Keys)
         {
             char enemyCode = parsedLevel.enemyPositions[enemyPosition];
@@ -482,7 +482,7 @@ public class LevelBuilderScript : MonoBehaviour
             WeaponScript enemyOffHandWeaponScript = enemyOffHandWeapon.GetComponent<WeaponScript>();
             enemyOffHandWeaponScript.SetDamage(preEnemy.offHandDamage);
         }
-
+        // build items
         foreach (Vector3 itemPosition in parsedLevel.itemPositions.Keys)
         {
             char itemCode = parsedLevel.itemPositions[itemPosition];

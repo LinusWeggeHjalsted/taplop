@@ -7,7 +7,7 @@ public class SkillsPanelScript : MonoBehaviour
     public bool finishedBuilding = false;
     public bool finishedAssigning = false;
     public GameObject player;
-    public EntityScript playerScript;
+    public PlayerCharacterScript playerScript;
 
     public void UpdateButtons()
     {
@@ -48,7 +48,7 @@ public class SkillsPanelScript : MonoBehaviour
     void Start()
     {
         player = GameObject.Find("Player");
-        playerScript = player.GetComponent<EntityScript>();
+        playerScript = player.GetComponent<PlayerCharacterScript>();
         int unlockedSkills = 8; // to-do - get this information elsewhere
         for (int i = 0; i < unlockedSkills; i++)
         {

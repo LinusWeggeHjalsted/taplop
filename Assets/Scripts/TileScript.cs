@@ -5,7 +5,7 @@ public class TileScript : MonoBehaviour
 {
     private InputAction clickAction;
     public GameObject player;
-    public EntityScript playerScript;
+    public PlayerCharacterScript playerScript;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
     public GameObject highlight;
@@ -73,9 +73,12 @@ public class TileScript : MonoBehaviour
     {
         var playerInput = FindObjectOfType<PlayerInput>();
         player = GameObject.Find("Player");
-        playerScript = player.GetComponent<EntityScript>();
+        playerScript = player.GetComponent<PlayerCharacterScript>();
         turnLogic = GameObject.Find("Turn Logic");
-        turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+        if (turnLogic != null)
+        {
+            turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+        }
         highlight = this.transform.Find("Highlight").gameObject;
         highlightAnimator = highlight.GetComponent<Animator>();
         clickAction = playerInput.actions.FindAction("Click");

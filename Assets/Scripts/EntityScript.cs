@@ -398,8 +398,8 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             Debug.Log("tried to move to an occupied tile");
             return;
         }
-        Vector3 currentPosition = this.transform.position;
         // flip sprite if moving left, unflip if moving right
+        Vector3 currentPosition = this.transform.position;
         float xDif = targetPosition.x - currentPosition.x;
         if (xDif < 0)
         {

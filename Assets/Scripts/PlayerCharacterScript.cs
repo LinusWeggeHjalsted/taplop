@@ -19,4 +19,6 @@ public interface PlayerCharacterScript
     Transform utilitySkills { get; }
     int utilitySkillSlots { get; set; }
     GameObject[] equippedSkills { get; }
+
+    void MoveTo(Vector3 targetPosition);
 }

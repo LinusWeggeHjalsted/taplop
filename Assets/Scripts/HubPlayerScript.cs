@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
 {
@@ -20,6 +21,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
     public HubTilesScript hubTilesScript;
     public GameObject hubExits;
     public HubExitsScript hubExitsScript;
+    public SpriteRenderer spriteRenderer;
 
     public GameObject gear;
     public GearScript gearScript;
@@ -142,6 +144,35 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
             return skillArray;
         }
     }
+    private float moveTimer = 0;
+    private float moveDelay = 0.1f; // to-do - compute based off player speed
+
+    public void MoveTo(Vector3 targetPosition)
+    {
+        // flip sprite if moving left, unflip if moving right
+        Vector3 currentPosition = this.transform.position;
+        float xDif = targetPosition.x - currentPosition.x;
+        if (xDif < 0)
+        {
+            spriteRenderer.flipX = true;
+        }
+        if (xDif > 0)
+        {
+            spriteRenderer.flipX = false;
+        }
+        this.transform.position = targetPosition;
+        // start mission if standing on exit
+        if (hubExitsScript.exitLookup.ContainsKey(targetPosition))
+        {
+            GameObject exit = hubExitsScript.exitLookup[targetPosition];
+            ExitScript exitScript = exit.GetComponent<ExitScript>();
+            string missionName = exitScript.missionName;
+            int missionLength = exitScript.missionLength;
+            string endHub = exitScript.endHub;
+            PlayerDataScript.Instance.BuildDataFromPlayer(this.gameObject);
+            GameControllerScript.Instance.StartMission(missionName, missionLength, endHub);
+        }
+    }
 
     void Start()
     {
@@ -151,6 +182,8 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         hubTilesScript = hubTiles.GetComponent<HubTilesScript>();
         hubExits = GameObject.Find("Hub Exits");
         hubExitsScript = hubExits.GetComponent<HubExitsScript>();
+        spriteRenderer = this.gameObject.GetComponent<SpriteRenderer>();
+        gear = this.transform.Find("Gear").gameObject;
         _mainHand = gear.transform.Find("Main Hand");
         _offHand = gear.transform.Find("Off Hand");
         _body = gear.transform.Find("Body");
@@ -159,5 +192,42 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         _inventory = this.transform.Find("Inventory");
         _inventorySize = 24;
         _utilitySkills = this.transform.Find("Utility Skills");
+        finishedBuilding = true;
+    }
+
+    void Update()
+    {
+        moveTimer += Time.deltaTime;
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard == null) return;
+
+        float horizontalInput = 0;
+        float verticalInput = 0;
+        if (keyboard.rightArrowKey.isPressed || keyboard.dKey.isPressed)
+        {
+            horizontalInput = 1;
+        }
+        if (keyboard.leftArrowKey.isPressed || keyboard.aKey.isPressed)
+        {
+            horizontalInput = -1;
+        }
+        if (keyboard.upArrowKey.isPressed || keyboard.wKey.isPressed)
+        {
+            verticalInput = 1;
+        }
+        if (keyboard.downArrowKey.isPressed || keyboard.sKey.isPressed)
+        {
+            verticalInput = -1;
+        }
+        if ((horizontalInput != 0 || verticalInput != 0) && moveTimer >= moveDelay)
+        {
+            Vector3 moveDelta = new Vector3(horizontalInput, verticalInput, 0);
+            Vector3 targetPosition = this.transform.position + moveDelta;
+            if (hubTilesScript.tileLookup.ContainsKey(targetPosition))
+            {
+                MoveTo(targetPosition);
+                moveTimer = 0;
+            }
+        }
     }
 }

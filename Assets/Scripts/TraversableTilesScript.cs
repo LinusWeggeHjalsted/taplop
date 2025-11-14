@@ -183,9 +183,8 @@ public class TraversableTilesScript : MonoBehaviour
         // populate tileLookup
         for (int i = 0; i < this.transform.childCount; i++)
         {
-            Transform tileTransform = this.transform.GetChild(i);
-            GameObject tile = tileTransform.gameObject;
-            tileLookup.Add(tileTransform.position, tile);
+            GameObject tile = this.transform.GetChild(i).gameObject;
+            tileLookup.Add(tile.transform.position, tile);
         }
         finishedBuilding = true;
     }

@@ -2,6 +2,7 @@ using UnityEngine;
 
 public class GameControllerScript : MonoBehaviour
 {
+    public static GameControllerScript Instance { get; private set; }
     public GameObject mainMenuPrefab;
     public GameObject missionPrefab;
     public GameObject missionLogic;
@@ -37,8 +38,22 @@ public class GameControllerScript : MonoBehaviour
             Destroy(missionLogic);
         }
         hub = Instantiate(hubPrefab);
-        HubScript hubScript = hub.GetComponent<HubScript>();
-        hubScript.hubName = hubName;
+        GameObject hubBuilder = hub.transform.Find("Hub Builder").gameObject;
+        HubBuilderScript hubBuilderScript = hubBuilder.GetComponent<HubBuilderScript>();
+        hubBuilderScript.hubName = hubName;
+    }
+
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+            DontDestroyOnLoad(this.gameObject);
+        }
+        else
+        {
+            Destroy(this.gameObject);
+        }
     }
 
     void Start()

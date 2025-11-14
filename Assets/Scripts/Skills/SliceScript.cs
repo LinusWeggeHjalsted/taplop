@@ -175,11 +175,20 @@ public class SliceScript : MonoBehaviour, Skill
         range = 1f;
         skillSprite = Resources.Load<Sprite>("Skill Sprites/Slice");
         traversableTiles = GameObject.Find("Traversable Tiles");
-        traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
+        if (traversableTiles != null)
+        {
+            traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
+        }
         enemies = GameObject.Find("Enemies");
-        enemiesScript = enemies.GetComponent<EnemiesScript>();
+        if (enemies != null)
+        {
+            enemiesScript = enemies.GetComponent<EnemiesScript>();
+        }
         player = GameObject.Find("Player");
         turnLogic = GameObject.Find("Turn Logic");
-        turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+        if (turnLogic != null)
+        {
+            turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+        }
     }
 }
