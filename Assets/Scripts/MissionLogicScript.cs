@@ -39,6 +39,9 @@ public class MissionLogicScript : MonoBehaviour
         {
             yield return null;
         }
+        PlayerDataScript playerData = PlayerDataScript.Instance;
+        int missionSeed = playerData.randomSeed + playerData.turns + missionName.GetHashCode();
+        Random.InitState(missionSeed);
         NextLevel();
     }
 

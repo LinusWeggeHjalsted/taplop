@@ -155,7 +155,6 @@ MonoBehaviour:
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
-  playerScript: {fileID: 0}
   skill: {fileID: 0}
   noSkillSprite: {fileID: 0}
   tooltipPrefab: {fileID: 0}
@@ -675,8 +674,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
-  levelBuilder: {fileID: 0}
-  levelBuilderScript: {fileID: 0}
   mainHand: {fileID: 0}
   offHand: {fileID: 0}
 --- !u!1 &1099693426031639336
@@ -1043,7 +1040,6 @@ MonoBehaviour:
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
-  playerScript: {fileID: 0}
   skill: {fileID: 0}
   noSkillSprite: {fileID: 0}
   tooltipPrefab: {fileID: 0}
@@ -1340,7 +1336,6 @@ MonoBehaviour:
   finishedBuilding: 0
   finishedAssigning: 0
   player: {fileID: 0}
-  playerScript: {fileID: 0}
 --- !u!1 &4282365501509472923
 GameObject:
   m_ObjectHideFlags: 0
@@ -1772,7 +1767,6 @@ MonoBehaviour:
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
-  playerScript: {fileID: 0}
   skill: {fileID: 0}
   noSkillSprite: {fileID: 0}
   tooltipPrefab: {fileID: 0}
@@ -2100,7 +2094,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5291bec53e04e8566bfdcef5ca8a83e7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
-  finishedBuilding: 0
   missionLogic: {fileID: 0}
   missionLogicScript: {fileID: 0}
   levelBuilder: {fileID: 0}
@@ -2116,14 +2109,6 @@ MonoBehaviour:
   spriteRenderer: {fileID: 0}
   gear: {fileID: 0}
   gearScript: {fileID: 0}
-  mainHand: {fileID: 0}
-  offHand: {fileID: 0}
-  hands: {fileID: 0}
-  body: {fileID: 0}
-  feet: {fileID: 0}
-  utilitySkills: {fileID: 0}
-  inventory: {fileID: 0}
-  inventorySize: 0
   healthBar: {fileID: 0}
   healthBarRenderer: {fileID: 0}
   healthBarStates: []
@@ -2132,7 +2117,6 @@ MonoBehaviour:
   currentBuildTemplate: 00000000
   aggroRange: 0
   previousPosition: {x: 0, y: 0, z: 0}
-  utilitySkillSlots: 5
   stunDuration: 0
   reflectDuration: 0
 --- !u!1 &5463074885201409457
@@ -2576,7 +2560,6 @@ MonoBehaviour:
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
-  playerScript: {fileID: 0}
   skill: {fileID: 0}
   noSkillSprite: {fileID: 0}
   tooltipPrefab: {fileID: 0}
@@ -2898,7 +2881,7 @@ Camera:
   far clip plane: 1000
   field of view: 34
   orthographic: 1
-  orthographic size: 10.90625
+  orthographic size: 12.1875
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -3191,7 +3174,6 @@ MonoBehaviour:
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
-  playerScript: {fileID: 0}
   skill: {fileID: 0}
   noSkillSprite: {fileID: 0}
   tooltipPrefab: {fileID: 0}
@@ -3534,7 +3516,6 @@ MonoBehaviour:
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
-  playerScript: {fileID: 0}
   skill: {fileID: 0}
   noSkillSprite: {fileID: 0}
   tooltipPrefab: {fileID: 0}
@@ -3756,7 +3737,6 @@ MonoBehaviour:
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
-  playerScript: {fileID: 0}
   skill: {fileID: 0}
   noSkillSprite: {fileID: 0}
   tooltipPrefab: {fileID: 0}
@@ -3918,7 +3898,6 @@ MonoBehaviour:
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
-  playerScript: {fileID: 0}
   skill: {fileID: 0}
   noSkillSprite: {fileID: 0}
   tooltipPrefab: {fileID: 0}

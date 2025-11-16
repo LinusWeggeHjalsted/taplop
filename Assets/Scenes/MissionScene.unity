@@ -355,9 +355,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
   playerName: 
+  randomSeed: 0
   turns: 0
   deaths: 0
-  gems: 0
+  defeatedEnemies: 0
+  woodSalvage: 0
+  metalSalvage: 0
+  leatherSalvage: 0
+  knowledge: 0
   utilitySkillSlots: 0
   unlockedSkills: []
   utilitySkills: []

@@ -41,9 +41,14 @@ public class PlayerDataScript : MonoBehaviour
     public string playerName;
     
     // info
+    public int randomSeed;
     public int turns;
     public int deaths;
-    public int gems;
+    public int defeatedEnemies;
+    public int woodSalvage;
+    public int metalSalvage;
+    public int leatherSalvage;
+    public int knowledge;
     public int utilitySkillSlots;
     public List<string> unlockedSkills = new List<string>();
     // to-do - hubs
@@ -165,17 +170,69 @@ public class PlayerDataScript : MonoBehaviour
                         Debug.LogError("deaths is not a number");
                     }
                 }
-                else if (currentLine.StartsWith("gems "))
+                else if (currentLine.StartsWith("defeatedEnemies "))
                 {
-                    string gemsString = currentLine.Substring("gems ".Length);
-                    int gemsNumber;
-                    if (Int32.TryParse(gemsString, out gemsNumber))
+                    string defeatedEnemiesString = currentLine.Substring("defeatedEnemies ".Length);
+                    int defeatedEnemiesNumber;
+                    if (Int32.TryParse(defeatedEnemiesString, out defeatedEnemiesNumber))
                     {
-                        gems = gemsNumber;
+                        defeatedEnemies = defeatedEnemiesNumber;
                     }
                     else
                     {
-                        Debug.LogError("gems is not a number");
+                        Debug.LogError("defeatedEnemies is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("woodSalvage "))
+                {
+                    string woodSalvageString = currentLine.Substring("woodSalvage ".Length);
+                    int woodSalvageNumber;
+                    if (Int32.TryParse(woodSalvageString, out woodSalvageNumber))
+                    {
+                        woodSalvage = woodSalvageNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("woodSalvage is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("metalSalvage "))
+                {
+                    string metalSalvageString = currentLine.Substring("metalSalvage ".Length);
+                    int metalSalvageNumber;
+                    if (Int32.TryParse(metalSalvageString, out metalSalvageNumber))
+                    {
+                        metalSalvage = metalSalvageNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("metalSalvage is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("leatherSalvage "))
+                {
+                    string leatherSalvageString = currentLine.Substring("leatherSalvage ".Length);
+                    int leatherSalvageNumber;
+                    if (Int32.TryParse(leatherSalvageString, out leatherSalvageNumber))
+                    {
+                        leatherSalvage = leatherSalvageNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("leatherSalvage is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("knowledge "))
+                {
+                    string knowledgeString = currentLine.Substring("knowledge ".Length);
+                    int knowledgeNumber;
+                    if (Int32.TryParse(knowledgeString, out knowledgeNumber))
+                    {
+                        knowledge = knowledgeNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("knowledge is not a number");
                     }
                 }
                 else if (currentLine.StartsWith("utilitySkillSlots "))

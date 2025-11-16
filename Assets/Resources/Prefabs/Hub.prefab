@@ -1432,7 +1432,7 @@ Camera:
   far clip plane: 1000
   field of view: 34
   orthographic: 1
-  orthographic size: 10.90625
+  orthographic size: 12.1875
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -1682,6 +1682,7 @@ MonoBehaviour:
   hubTilesScript: {fileID: 0}
   hubExits: {fileID: 0}
   hubExitsScript: {fileID: 0}
+  spriteRenderer: {fileID: 0}
   gear: {fileID: 0}
   gearScript: {fileID: 0}
 --- !u!1 &4954083374901437062
@@ -2286,6 +2287,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b530bcc7405ee7dd5a0f9ab10f600fae, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  finishedBuilding: 0
+  hubBuilder: {fileID: 0}
+  hubBuilderScript: {fileID: 0}
 --- !u!1 &7019048211587669333
 GameObject:
   m_ObjectHideFlags: 0

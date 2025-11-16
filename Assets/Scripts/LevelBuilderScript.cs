@@ -16,6 +16,7 @@ public class LevelBuilderScript : MonoBehaviour
     public class PreEnemy
     {
         public string enemyName;
+        public string enemySprite;
         public int maxHealth;
         public int armor;
         public int speed;
@@ -26,6 +27,15 @@ public class LevelBuilderScript : MonoBehaviour
         public string offHandWeapon;
         public string offHandName;
         public int offHandDamage;
+        public string coatName;
+        public int coatArmor;
+        public int coatHealth;
+        public string glovesName;
+        public int glovesArmor;
+        public int glovesDamage;
+        public string bootsName;
+        public int bootsArmor;
+        public int bootsSpeed;
     }
 
     public class PreItem
@@ -187,8 +197,6 @@ public class LevelBuilderScript : MonoBehaviour
         foreach (string[] enemyStrings in preParse.enemyInfo)
         {
             PreEnemy preEnemy = new PreEnemy();
-            preEnemy.mainHandWeapon = "No Weapon";
-            preEnemy.offHandWeapon = "No Weapon";
             if (enemyStrings[0].Length > 1)
             {
                 Debug.LogError("bad enemy info, first line should be a single character");
@@ -202,6 +210,11 @@ public class LevelBuilderScript : MonoBehaviour
                 {
                     string enemyName = currentLine.Substring("name ".Length);
                     preEnemy.enemyName = enemyName;
+                }
+                if (currentLine.StartsWith("sprite "))
+                {
+                    string enemySprite = currentLine.Substring("sprite ".Length);
+                    preEnemy.enemySprite = enemySprite;
                 }
                 else if (currentLine.StartsWith("maxHealth "))
                 {
@@ -301,6 +314,100 @@ public class LevelBuilderScript : MonoBehaviour
                         Debug.LogError("offHandDamage is not a number");
                     }
                 }
+                else if (currentLine.StartsWith("coatName "))
+                {
+                    string coatName = currentLine.Substring("coatName ".Length);
+                    preEnemy.coatName = coatName;
+                }
+                else if (currentLine.StartsWith("coatArmor "))
+                {
+                    string coatArmor = currentLine.Substring("coatArmor ".Length);
+                    int coatArmorNumber;
+                    if (Int32.TryParse(coatArmor, out coatArmorNumber))
+                    {
+                        preEnemy.coatArmor = coatArmorNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("coatArmor is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("coatHealth "))
+                {
+                    string coatHealth = currentLine.Substring("coatHealth ".Length);
+                    int coatHealthNumber;
+                    if (Int32.TryParse(coatHealth, out coatHealthNumber))
+                    {
+                        preEnemy.coatHealth = coatHealthNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("coatHealth is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("glovesName "))
+                {
+                    string glovesName = currentLine.Substring("glovesName ".Length);
+                    preEnemy.glovesName = glovesName;
+                }
+                else if (currentLine.StartsWith("glovesArmor "))
+                {
+                    string glovesArmor = currentLine.Substring("glovesArmor ".Length);
+                    int glovesArmorNumber;
+                    if (Int32.TryParse(glovesArmor, out glovesArmorNumber))
+                    {
+                        preEnemy.glovesArmor = glovesArmorNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("glovesArmor is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("glovesDamage "))
+                {
+                    string glovesDamage = currentLine.Substring("glovesDamage ".Length);
+                    int glovesDamageNumber;
+                    if (Int32.TryParse(glovesDamage, out glovesDamageNumber))
+                    {
+                        preEnemy.glovesDamage = glovesDamageNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("glovesDamage is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("bootsName "))
+                {
+                    string bootsName = currentLine.Substring("bootsName ".Length);
+                    preEnemy.bootsName = bootsName;
+                }
+                else if (currentLine.StartsWith("bootsArmor "))
+                {
+                    string bootsArmor = currentLine.Substring("bootsArmor ".Length);
+                    int bootsArmorNumber;
+                    if (Int32.TryParse(bootsArmor, out bootsArmorNumber))
+                    {
+                        preEnemy.bootsArmor = bootsArmorNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("bootsArmor is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("bootsSpeed "))
+                {
+                    string bootsSpeed = currentLine.Substring("bootsSpeed ".Length);
+                    int bootsSpeedNumber;
+                    if (Int32.TryParse(bootsSpeed, out bootsSpeedNumber))
+                    {
+                        preEnemy.bootsSpeed = bootsSpeedNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("bootsSpeed is not a number");
+                    }
+                }
+
             }
             parsedLevel.preEnemies.Add(enemyCode, preEnemy);
         }
@@ -466,21 +573,64 @@ public class LevelBuilderScript : MonoBehaviour
             newEnemy.transform.position = enemyPosition;
             newEnemy.name = preEnemy.enemyName;
             EntityScript newEnemyScript = newEnemy.GetComponent<EntityScript>();
+            if (preEnemy.enemySprite != null)
+            {
+                newEnemyScript.spriteRenderer = newEnemy.GetComponent<SpriteRenderer>();
+                newEnemyScript.SpriteSheet = Resources.LoadAll<Sprite>("Enemies/" + preEnemy.enemySprite);
+            }
             newEnemyScript.MaxHealth = preEnemy.maxHealth;
             newEnemyScript.Armor = preEnemy.armor;
             newEnemyScript.Speed = preEnemy.speed;
             newEnemyScript.aggroRange = preEnemy.aggroRange;
-            GameObject mainHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.mainHandWeapon);
-            GameObject offHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.offHandWeapon);
             Transform enemyGear = newEnemy.transform.Find("Gear");
             Transform enemyMainHand = enemyGear.Find("Main Hand");
             Transform enemyOffHand = enemyGear.Find("Off Hand");
-            GameObject enemyMainHandWeapon = Instantiate(mainHandWeaponPrefab, enemyMainHand);
-            WeaponScript enemyMainHandWeaponScript = enemyMainHandWeapon.GetComponent<WeaponScript>();
-            enemyMainHandWeaponScript.SetDamage(preEnemy.mainHandDamage);
-            GameObject enemyOffHandWeapon = Instantiate(offHandWeaponPrefab, enemyOffHand);
-            WeaponScript enemyOffHandWeaponScript = enemyOffHandWeapon.GetComponent<WeaponScript>();
-            enemyOffHandWeaponScript.SetDamage(preEnemy.offHandDamage);
+            Transform enemyBody = enemyGear.Find("Body");
+            Transform enemyHands = enemyGear.Find("Hands");
+            Transform enemyFeet = enemyGear.Find("Feet");
+            GameObject mainHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.mainHandWeapon);
+            if (mainHandWeaponPrefab != null)
+            {
+                GameObject enemyMainHandWeapon = Instantiate(mainHandWeaponPrefab, enemyMainHand);
+                WeaponScript enemyMainHandWeaponScript = enemyMainHandWeapon.GetComponent<WeaponScript>();
+                enemyMainHandWeaponScript.SetItemName(preEnemy.mainHandName);
+                enemyMainHandWeaponScript.SetDamage(preEnemy.mainHandDamage);
+            }
+            GameObject offHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.offHandWeapon);
+            if (offHandWeaponPrefab != null)
+            {
+                GameObject enemyOffHandWeapon = Instantiate(offHandWeaponPrefab, enemyOffHand);
+                WeaponScript enemyOffHandWeaponScript = enemyOffHandWeapon.GetComponent<WeaponScript>();
+                enemyOffHandWeaponScript.SetItemName(preEnemy.offHandName);
+                enemyOffHandWeaponScript.SetDamage(preEnemy.offHandDamage);
+            }
+            if (preEnemy.coatName != null)
+            {
+                GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");
+                GameObject enemyCoat = Instantiate(coatPrefab, enemyBody);
+                CoatScript enemyCoatScript = enemyCoat.GetComponent<CoatScript>();
+                enemyCoatScript.itemName = preEnemy.coatName;
+                enemyCoatScript.armorBonus = preEnemy.coatArmor;
+                enemyCoatScript.healthBonus = preEnemy.coatHealth;
+            }
+            if (preEnemy.glovesName != null)
+            {
+                GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Gloves");
+                GameObject enemyGloves = Instantiate(glovesPrefab, enemyBody);
+                GlovesScript enemyGlovesScript = enemyGloves.GetComponent<GlovesScript>();
+                enemyGlovesScript.itemName = preEnemy.glovesName;
+                enemyGlovesScript.armorBonus = preEnemy.glovesArmor;
+                enemyGlovesScript.damageBonus = preEnemy.glovesDamage;
+            }
+            if (preEnemy.bootsName != null)
+            {
+                GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");
+                GameObject enemyBoots = Instantiate(bootsPrefab, enemyBody);
+                BootsScript enemyBootsScript = enemyBoots.GetComponent<BootsScript>();
+                enemyBootsScript.itemName = preEnemy.bootsName;
+                enemyBootsScript.armorBonus = preEnemy.bootsArmor;
+                enemyBootsScript.speedBonus = preEnemy.bootsSpeed;
+            }
         }
         // build items
         foreach (Vector3 itemPosition in parsedLevel.itemPositions.Keys)

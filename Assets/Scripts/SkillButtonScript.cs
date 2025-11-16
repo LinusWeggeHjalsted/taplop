@@ -154,7 +154,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         image = this.GetComponent<Image>();
         skillsPanel = this.transform.parent.gameObject;
         skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
-        noSkillSprite = Resources.Load<Sprite>("Skill Sprites/NoSkill");
+        noSkillSprite = Resources.Load<Sprite>("Skills/NoSkill");
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/Tooltip");
         cooldownPrefab = Resources.Load<GameObject>("Prefabs/Cooldown Overlay Panel");
 

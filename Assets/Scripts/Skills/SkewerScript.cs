@@ -173,7 +173,7 @@ public class SkewerScript : MonoBehaviour, Skill
         description = "Attack target for 3x damage";
         cooldown = 4;
         range = 1f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Skewer");
+        skillSprite = Resources.Load<Sprite>("Skills/Skewer");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)
         {

@@ -1,20 +1,23 @@
+- dev tools
 - main menu
-- game controller
-    switch between and initialize main menu, missions, hubs
 - unify tooltips to 1 game object
+- level clear conditions
 - write player save
 - skills menu
 - lock switching equipped gear and skills when there are active enemies
 - skill durations
-- currency
-- enemy loot
-    enemies drop all inventory and 1 item from equipment or skill tome of an equipped utility skill
-- sell items from inventory
-- update inventory ui to use player entity's inventory array
-- make a sexy loading screen
+- better enemy death
+- 10 knowledge for completing a mission
+- salvage items from inventory
+- update inventory ui to use player character's inventory array
+- loading screen
 - sort active enemies by distance to player before taking their turn
 - display effect sprites (stun, reflect)
 - weaponswap
 - display used skills
-- dps meter
-
+- damage meter
+- scenery
+- npc's
+- gear shop
+- skill trainer
+- missing spear bug in Beginnings 1

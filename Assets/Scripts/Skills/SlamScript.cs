@@ -148,7 +148,7 @@ public class SlamScript : MonoBehaviour, Skill
         description = "Stun and knockback each target within range";
         cooldown = 2;
         range = 1f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Slam");
+        skillSprite = Resources.Load<Sprite>("Skills/Slam");
         sword = this.transform.parent.gameObject;
         swordScript = sword.GetComponent<SwordScript>();
         traversableTiles = GameObject.Find("Traversable Tiles");

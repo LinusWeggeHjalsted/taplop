@@ -30,10 +30,23 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public GameObject drops;
     public DropsScript dropsScript;
     public SpriteRenderer spriteRenderer;
+    private Sprite[] spriteSheet = new Sprite[2];
+    public Sprite[] SpriteSheet
+    {
+        get
+        {
+            return spriteSheet;
+        }
+        set
+        {
+            // update SpriteRenderer
+            spriteSheet = value;
+            spriteRenderer.sprite = spriteSheet[0];
+        }
+    }
     public GameObject gear;
     public GearScript gearScript;
 
-    // Private backing fields
     private Transform _mainHand;
     private Transform _offHand;
     private Transform _hands;
@@ -44,7 +57,6 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     private Transform _utilitySkills;
     private int _utilitySkillSlots;
 
-    // Interface properties
     public Transform mainHand { get { return _mainHand; } }
     public Transform offHand { get { return _offHand; } }
     public Transform hands { get { return _hands; } }
@@ -136,8 +148,13 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     {
         get
         {
-            CoatScript coatScript = coat.GetComponent<CoatScript>();
-            return maxHealth + coatScript.healthBonus;
+            int coatHealth = 0;
+            if (coat != null)
+            {
+                CoatScript coatScript = coat.GetComponent<CoatScript>();
+                coatHealth = coatScript.healthBonus;
+            }
+            return maxHealth + coatHealth;
         }
         set
         {
@@ -175,13 +192,25 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     {
         get
         {
-            GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
-            CoatScript coatScript = coat.GetComponent<CoatScript>();
-            BootsScript bootsScript = boots.GetComponent<BootsScript>();
-            int glovesArmor = glovesScript.armorBonus;
-            int coatArmor = coatScript.armorBonus;
-            int bootsArmor = bootsScript.armorBonus;
-            return armor + glovesArmor + coatArmor + bootsArmor;
+            int coatArmor = 0;
+            if (coat != null)
+            {
+                CoatScript coatScript = coat.GetComponent<CoatScript>();
+                coatArmor = coatScript.armorBonus;
+            }
+            int glovesArmor = 0;
+            if (gloves != null)
+            {
+                GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
+                glovesArmor = glovesScript.armorBonus;
+            }
+            int bootsArmor = 0;
+            if (boots != null)
+            {
+                BootsScript bootsScript = boots.GetComponent<BootsScript>();
+                bootsArmor = bootsScript.armorBonus;
+            }
+            return armor + coatArmor + glovesArmor + bootsArmor;
         }
         set
         {
@@ -193,8 +222,13 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     {
         get
         {
-            BootsScript bootsScript = boots.GetComponent<BootsScript>();
-            return speed + bootsScript.speedBonus;
+            int bootsSpeed = 0;
+            if (boots != null)
+            {
+                BootsScript bootsScript = boots.GetComponent<BootsScript>();
+                bootsSpeed = bootsScript.speedBonus;
+            }
+            return speed + bootsSpeed;
         }
         set
         {
@@ -403,11 +437,11 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         float xDif = targetPosition.x - currentPosition.x;
         if (xDif < 0)
         {
-            spriteRenderer.flipX = true;
+            spriteRenderer.sprite = SpriteSheet[1];
         }
         if (xDif > 0)
         {
-            spriteRenderer.flipX = false;
+            spriteRenderer.sprite = SpriteSheet[0];
         }
         GameObject currentTile = tileLookup[currentPosition];
         TileScript currentTileScript = currentTile.GetComponent<TileScript>();
@@ -538,6 +572,83 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
+    public void DropItems()
+    {
+        // only drop items if this is an enemy
+        if (!enemiesScript.enemyLookup.ContainsKey(this.transform.position))
+        {
+            return;
+        }
+        // check if there are ground items already
+        GameObject groundItems;
+        if (dropsScript.groundItemsLookup.ContainsKey(this.transform.position))
+        {
+            groundItems = dropsScript.groundItemsLookup[this.transform.position];
+        }
+        else
+        {
+            GameObject groundItemsPrefab = Resources.Load<GameObject>("Prefabs/Ground Items");
+            groundItems = Instantiate(groundItemsPrefab, drops.transform);
+            groundItems.transform.position = this.transform.position;
+            dropsScript.groundItemsLookup.Add(this.transform.position, groundItems);
+        }
+        // drop inventory
+        for (int i = 0; i < inventory.childCount; i++)
+        {
+            Transform inventoryItem = inventory.GetChild(i);
+            inventoryItem.parent = groundItems.transform;
+        }
+        // prepare to drop random item
+        List<GameObject> equippedGear = new List<GameObject>();
+        if (mainHandWeapon != null)
+        {
+            equippedGear.Add(mainHandWeapon);
+        }
+        if (offHandWeapon != null)
+        {
+            equippedGear.Add(offHandWeapon);
+        }
+        if (coat != null)
+        {
+            equippedGear.Add(coat);
+        }
+        if (gloves != null)
+        {
+            equippedGear.Add(gloves);
+        }
+        if (boots != null)
+        {
+            equippedGear.Add(boots);
+        }
+        List<GameObject> equippedUtilitySkills = new List<GameObject>();
+        for (int i = 0; i < utilitySkills.childCount; i++)
+        {
+            equippedUtilitySkills.Add(utilitySkills.GetChild(i).gameObject);
+        }
+        // pick 1 random gear piece or utility skill to drop
+        if (equippedGear.Count > 0 || equippedUtilitySkills.Count > 0)
+        {
+            int totalCount = equippedGear.Count + equippedUtilitySkills.Count;
+            int randomIndex = Random.Range(0, totalCount);
+            if (randomIndex < equippedGear.Count)
+            {
+                GameObject gearDrop = equippedGear[randomIndex];
+                gearDrop.transform.parent = groundItems.transform;
+            }
+            else
+            {
+                int skillIndex = randomIndex - equippedGear.Count;
+                GameObject skillDrop = equippedUtilitySkills[skillIndex];
+                Skill skillScript = skillDrop.GetComponent<Skill>();
+                GameObject skillTomePrefab = Resources.Load<GameObject>("Prefabs/Skill Tome");
+                GameObject tomeDrop = Instantiate(skillTomePrefab, groundItems.transform);
+                SkillTomeScript tomeScript = tomeDrop.GetComponent<SkillTomeScript>();
+                tomeScript.itemSprite = Resources.Load<Sprite>("Items/SkillTome");
+                tomeScript.skillName = skillScript.GetSkillName();
+            }
+        }
+    }
+
     IEnumerator WaitForGearBeforePopulating()
     {
         while (!gearScript.finishedBuilding)
@@ -554,6 +665,11 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     void Start()
     {
         Debug.Log("Hello World - I'm " + this.name);
+        spriteRenderer = this.gameObject.GetComponent<SpriteRenderer>();
+        if (this.gameObject.name == "Player")
+        {
+            SpriteSheet = Resources.LoadAll<Sprite>("Player");
+        }
         maxHealth = 10;
         missionLogic = GameObject.Find("Mission Logic");
         missionLogicScript = missionLogic.GetComponent<MissionLogicScript>();
@@ -567,7 +683,6 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         enemiesScript = enemies.GetComponent<EnemiesScript>();
         drops = GameObject.Find("Drops");
         dropsScript = drops.GetComponent<DropsScript>();
-        spriteRenderer = this.gameObject.GetComponent<SpriteRenderer>();
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
         hitSprite = Resources.Load<Sprite>("Hit");
@@ -582,5 +697,9 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         _inventorySize = 24;
         _utilitySkills = this.transform.Find("Utility Skills");
         StartCoroutine(WaitForGearBeforePopulating());
+    }
+
+    void OnDestroy()
+    {
     }
 }

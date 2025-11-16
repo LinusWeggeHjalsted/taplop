@@ -105,7 +105,7 @@ public class ReplenishScript : MonoBehaviour, Skill
         description = "Heal to full health";
         cooldown = 5;
         range = 0;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Replenish");
+        skillSprite = Resources.Load<Sprite>("Skills/Replenish");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)
         {

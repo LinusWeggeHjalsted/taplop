@@ -144,8 +144,24 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
             return skillArray;
         }
     }
+    private int speed = 1;
+    public int Speed
+    {    
+        get
+        {
+            BootsScript bootsScript = boots.GetComponent<BootsScript>();
+            return speed + bootsScript.speedBonus;
+        }
+    }
     private float moveTimer = 0;
-    private float moveDelay = 0.1f; // to-do - compute based off player speed
+    private float baseMoveDelay = 0.5f;
+    private float moveDelay
+    {
+        get
+        {
+            return baseMoveDelay / (float)Speed;
+        }
+    }
 
     public void MoveTo(Vector3 targetPosition)
     {
@@ -219,14 +235,17 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         {
             verticalInput = -1;
         }
-        if ((horizontalInput != 0 || verticalInput != 0) && moveTimer >= moveDelay)
+        if (horizontalInput != 0 || verticalInput != 0)
         {
-            Vector3 moveDelta = new Vector3(horizontalInput, verticalInput, 0);
-            Vector3 targetPosition = this.transform.position + moveDelta;
-            if (hubTilesScript.tileLookup.ContainsKey(targetPosition))
+            if (moveTimer >= moveDelay)
             {
-                MoveTo(targetPosition);
-                moveTimer = 0;
+                Vector3 moveDelta = new Vector3(horizontalInput, verticalInput, 0);
+                Vector3 targetPosition = this.transform.position + moveDelta;
+                if (hubTilesScript.tileLookup.ContainsKey(targetPosition))
+                {
+                    MoveTo(targetPosition);
+                    moveTimer = 0;
+                }
             }
         }
     }

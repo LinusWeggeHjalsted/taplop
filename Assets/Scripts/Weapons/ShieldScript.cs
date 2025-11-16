@@ -75,6 +75,20 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
     {
         itemName = newItemName;
     }
+    
+    public int[] SalvageValue()
+    {
+        int[] salvage = new int[4];
+        // wood
+        salvage[0] = damage;
+        // metal
+        salvage[1] = 0;
+        // leather
+        salvage[2] = 0;
+        // knowledge
+        salvage[3] = 0;
+        return salvage;
+    }
 
     void Start()
     {

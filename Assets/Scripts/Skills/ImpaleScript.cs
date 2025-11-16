@@ -173,7 +173,7 @@ public class ImpaleScript : MonoBehaviour, Skill
         description = "Attack target for 2x damage";
         cooldown = 2;
         range = 1f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Impale");
+        skillSprite = Resources.Load<Sprite>("Skills/Impale");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)
         {

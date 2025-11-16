@@ -193,7 +193,7 @@ public class FlashStrikeScript : MonoBehaviour, Skill
         description = "Teleport then attack each target within skill range";
         cooldown = 3;
         range = 2f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/FlashStrike");
+        skillSprite = Resources.Load<Sprite>("Skills/FlashStrike");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)
         {

@@ -1,7 +1,7 @@
 weapons
 	sword
 		*slice - attack target, range 1, cooldown 0
-		*spinblade - attack all tiles within range, range 1, cooldown 2
+		*spinblade - attack each target within range, range 1, cooldown 2
         *flash strike - teleport then attack all targets within range, range 2, cooldown 4
     spear
         *toss - attack target, range 3, cooldown 0
@@ -9,12 +9,12 @@ weapons
         *skewer - attack target for 3x damage, range 1, cooldown 4
     wand
         spark - attack target, range 2, cooldown 0
-        lightning strike - also attack all tiles adjacent to target, range 3, cooldown 3
+        lightning strike - attack target and each target adjacent to target, range 3, cooldown 3
         blitz - attack and stun each enemy within range, range 1, cooldown 5
     dagger
         stab - attack target dealing 2x damage if target has full health, range 1, cooldown 0
         vampiric strike - attack target and heal for damage dealt, range 1, cooldown 2
-        undecided
+        retreating swipe - attack target for 2x damage and retreat 2 tiles, range 1, cooldown 3
 	shield
         *bash - attack target, range 1, cooldown 0
         *slam - stun and knockback each target within range, range 1, cooldown 2
@@ -35,9 +35,10 @@ utility skills
     cantrips
         *replenish - gain full health, cooldown 5
         *blink - teleport, range 3, cooldown 3
+        howl - aggro all enemies in range, range 16, cooldown 10
         focus - reset all weapon skill cooldowns, cooldown 10
         meditate - reset all utility skill cooldowns, cooldown 10
         time walk - get an extra turn after this one, cooldown 10
     spells
         chain lightning - attack target and each target connected to it, range 1, cooldown 5
-        shockwave - strike and knockback all enemies within range, range 1, cooldown 5
+        shockwave - strike and knockback each target within range, range 1, cooldown 5

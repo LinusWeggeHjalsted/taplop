@@ -30,6 +30,20 @@ public class BootsScript : MonoBehaviour, ItemScript
         return itemType;
     }
 
+    public int[] SalvageValue()
+    {
+        int[] salvage = new int[4];
+        // wood
+        salvage[0] = 0;
+        // metal
+        salvage[1] = 0;
+        // leather
+        salvage[2] = armorBonus + speedBonus;
+        // knowledge
+        salvage[3] = 0;
+        return salvage;
+    }
+
     void Start()
     {
         itemSprite = Resources.Load<Sprite>("Items/BootsItem");

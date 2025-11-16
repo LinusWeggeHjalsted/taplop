@@ -163,7 +163,6 @@ public class SliceScript : MonoBehaviour, Skill
                 }
             }
         }
-        Debug.Log("highlighted possible targets");
     }
 
     void Start()
@@ -173,7 +172,7 @@ public class SliceScript : MonoBehaviour, Skill
         description = "Attack target";
         cooldown = 0;
         range = 1f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Slice");
+        skillSprite = Resources.Load<Sprite>("Skills/Slice");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)
         {

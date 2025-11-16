@@ -147,7 +147,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
         description = "Attack each target within range";
         cooldown = 2;
         range = 1f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Spinblade");
+        skillSprite = Resources.Load<Sprite>("Skills/Spinblade");
         sword = this.transform.parent.gameObject;
         swordScript = sword.GetComponent<SwordScript>();
         traversableTiles = GameObject.Find("Traversable Tiles");

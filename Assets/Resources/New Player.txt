@@ -2,7 +2,11 @@ Info
 playerName New Player
 turns 0
 deaths 0
-gems 0
+defeatedEnemies 0
+woodSalvage 0
+metalSalvage 0
+leatherSalvage 0
+knowledge 0
 utilitySkillSlots 1
 
 Unlocked Skills
@@ -11,12 +15,12 @@ Replenish
 Main Hand Weapon
 itemName Starter Sword
 weaponType Sword
-damage 4
+damage 3
 
 Off Hand Weapon
 itemName Starter Shield
 weaponType Shield
-damage 4
+damage 3
 
 Coat
 itemName Starter Coat
@@ -34,10 +38,6 @@ armor 1
 speed 0
 
 Inventory
-itemType Weapon
-itemName Starter Spear
-weaponType Spear
-damage 4
 
 Utility Skills
 Replenish

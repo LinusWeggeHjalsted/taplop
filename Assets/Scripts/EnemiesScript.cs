@@ -100,6 +100,7 @@ public class EnemiesScript : MonoBehaviour
             EntityScript enemyScript = enemy.GetComponent<EntityScript>();
             if (enemyScript.CurrentHealth <= 0)
             {
+                enemyScript.DropItems();
                 Vector3 enemyPosition = enemy.transform.position;
                 enemyLookup.Remove(enemyPosition);
                 if (activeEnemyLookup.ContainsKey(enemyPosition))

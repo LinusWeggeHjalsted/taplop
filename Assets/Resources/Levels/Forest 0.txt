@@ -1,0 +1,56 @@
+Metadata
+creator Strider
+
+Layout
+               ..=
+    .2  ..   ...
+   2....  .....
+     ...     ...  ..2.
+     ..        . .. ..2
+       ..      ..     .a
+        .     ..
+         ......
+        .....
+       .1..
+        ....
+        ..
+      ..
+      !
+
+Enemy Info
+1
+name Invader Warrior
+sprite InvaderSwordNone
+maxHealth 7
+armor 0
+speed 1
+aggroRange 3
+mainHandWeapon Sword
+mainHandName Bronze Sword
+mainHandDamage 4
+coatName Cloth Coat
+coatArmor 2
+coatHealth 1
+
+2
+name Brown Wolf
+sprite BrownWolf
+maxHealth 10
+armor 0
+speed 1
+aggroRange 6
+mainHandWeapon Sword
+mainHandName Wild Sword
+mainHandDamage 5
+bootsName Wolf Pelt Boots
+bootsArmor 2
+bootsSpeed 1
+utilitySkill Blink
+utilitySkill Howl
+
+Item Info
+a
+name Rusty Dagger
+type Weapon
+weaponType Dagger
+damage 4

@@ -70,6 +70,12 @@ public class NoWeaponScript : MonoBehaviour, WeaponScript, ItemScript
     {
     }
 
+    public int[] SalvageValue()
+    {
+        int[] salvage = new int[4]{0, 0, 0, 0};
+        return salvage;
+    }
+
     void Start()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/No Skill");

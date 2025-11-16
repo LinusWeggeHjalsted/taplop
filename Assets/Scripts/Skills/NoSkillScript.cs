@@ -66,6 +66,6 @@ public class NoSkillScript : MonoBehaviour, Skill
 
     void Start()
     {
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/NoSkill");
+        skillSprite = Resources.Load<Sprite>("Skills/NoSkill");
     }
 }

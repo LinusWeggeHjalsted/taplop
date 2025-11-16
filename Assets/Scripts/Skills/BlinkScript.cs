@@ -149,7 +149,7 @@ public class BlinkScript : MonoBehaviour, Skill
         description = "Teleport";
         cooldown = 3;
         range = 3f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Blink");
+        skillSprite = Resources.Load<Sprite>("Skills/Blink");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)
         {

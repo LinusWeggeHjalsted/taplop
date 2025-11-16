@@ -108,7 +108,7 @@ public class ReflectScript : MonoBehaviour, Skill
         description = "Incoming damage is prevented and dealt to the attacker";
         cooldown = 4;
         range = 0;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Reflect");
+        skillSprite = Resources.Load<Sprite>("Skills/Reflect");
         shield = this.transform.parent.gameObject;
         shieldScript = shield.GetComponent<ShieldScript>();
         traversableTiles = GameObject.Find("Traversable Tiles");

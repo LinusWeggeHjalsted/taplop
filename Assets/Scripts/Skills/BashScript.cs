@@ -172,7 +172,7 @@ public class BashScript : MonoBehaviour, Skill
         description = "Attack target";
         cooldown = 0;
         range = 1f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Bash");
+        skillSprite = Resources.Load<Sprite>("Skills/Bash");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)
         {

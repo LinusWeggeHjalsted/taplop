@@ -28,59 +28,9 @@ Transform:
   m_LocalPosition: {x: 2, y: 4, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 4085392914189250264}
+  m_Children: []
   m_Father: {fileID: 250632577493004264}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &785430886123260025
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 4677661788903690080}
-  - component: {fileID: 2491575275479360040}
-  m_Layer: 0
-  m_Name: Boots
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &4677661788903690080
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 785430886123260025}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 6704702715044282215}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &2491575275479360040
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 785430886123260025}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e1d99047aa05581a3a623fedfbf110d7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: '::'
-  itemSprite: {fileID: 0}
-  itemName: 
-  itemType: 
-  armorBonus: 0
-  speedBonus: 0
 --- !u!1 &2118407060735424933
 GameObject:
   m_ObjectHideFlags: 0
@@ -109,8 +59,7 @@ Transform:
   m_LocalPosition: {x: 2, y: 4, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 342247401443153885}
+  m_Children: []
   m_Father: {fileID: 250632577493004264}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &5085265933987628258
@@ -219,7 +168,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5291bec53e04e8566bfdcef5ca8a83e7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EntityScript
-  finishedBuilding: 0
+  missionLogic: {fileID: 0}
+  missionLogicScript: {fileID: 0}
   levelBuilder: {fileID: 0}
   levelBuilderScript: {fileID: 0}
   levelBuilderLoaded: 0
@@ -228,16 +178,11 @@ MonoBehaviour:
   player: {fileID: 0}
   enemies: {fileID: 0}
   enemiesScript: {fileID: 0}
+  drops: {fileID: 0}
+  dropsScript: {fileID: 0}
   spriteRenderer: {fileID: 0}
   gear: {fileID: 0}
   gearScript: {fileID: 0}
-  mainHand: {fileID: 0}
-  offHand: {fileID: 0}
-  hands: {fileID: 0}
-  body: {fileID: 0}
-  feet: {fileID: 0}
-  utilitySkills: {fileID: 0}
-  inventory: {fileID: 0}
   healthBar: {fileID: 0}
   healthBarRenderer: {fileID: 0}
   healthBarStates: []
@@ -246,58 +191,8 @@ MonoBehaviour:
   currentBuildTemplate: 00000000
   aggroRange: 0
   previousPosition: {x: 0, y: 0, z: 0}
-  unlockedSkills: 1
   stunDuration: 0
   reflectDuration: 0
---- !u!1 &5294289241776631897
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 4085392914189250264}
-  - component: {fileID: 5448597569878157773}
-  m_Layer: 0
-  m_Name: Gloves
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &4085392914189250264
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5294289241776631897}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 7940273440976525132}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &5448597569878157773
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5294289241776631897}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 6e0f5bc6d84330d9591b6bf998633147, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: '::'
-  itemSprite: {fileID: 0}
-  itemName: 
-  itemType: 
-  armorBonus: 0
-  damageBonus: 0
 --- !u!1 &5902753170363119705
 GameObject:
   m_ObjectHideFlags: 0
@@ -329,55 +224,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 250632577493004264}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &7464002477674931891
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 342247401443153885}
-  - component: {fileID: 593684859885377590}
-  m_Layer: 0
-  m_Name: Coat
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &342247401443153885
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7464002477674931891}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 6419926994294753785}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &593684859885377590
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7464002477674931891}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a9e5879bcb2dc53448e318d50b34f17c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: '::'
-  itemSprite: {fileID: 0}
-  itemName: 
-  itemType: 
-  armorBonus: 0
-  healthBonus: 0
 --- !u!1 &7943307314463790873
 GameObject:
   m_ObjectHideFlags: 0
@@ -468,8 +314,7 @@ Transform:
   m_LocalPosition: {x: 2, y: 4, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 4677661788903690080}
+  m_Children: []
   m_Father: {fileID: 250632577493004264}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &8545596269654154704
@@ -522,12 +367,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
-  levelBuilder: {fileID: 0}
-  levelBuilderScript: {fileID: 0}
   mainHand: {fileID: 0}
   offHand: {fileID: 0}
-  mainHandWeapon: {fileID: 0}
-  offHandWeapon: {fileID: 0}
 --- !u!1 &8964766901567740924
 GameObject:
   m_ObjectHideFlags: 0

@@ -172,7 +172,7 @@ public class TossScript : MonoBehaviour, Skill
         description = "Attack target";
         cooldown = 0;
         range = 3f;
-        skillSprite = Resources.Load<Sprite>("Skill Sprites/Toss");
+        skillSprite = Resources.Load<Sprite>("Skills/Toss");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)
         {
