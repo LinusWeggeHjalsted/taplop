@@ -616,7 +616,7 @@ public class LevelBuilderScript : MonoBehaviour
             if (preEnemy.glovesName != null)
             {
                 GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Gloves");
-                GameObject enemyGloves = Instantiate(glovesPrefab, enemyBody);
+                GameObject enemyGloves = Instantiate(glovesPrefab, enemyHands);
                 GlovesScript enemyGlovesScript = enemyGloves.GetComponent<GlovesScript>();
                 enemyGlovesScript.itemName = preEnemy.glovesName;
                 enemyGlovesScript.armorBonus = preEnemy.glovesArmor;
@@ -625,7 +625,7 @@ public class LevelBuilderScript : MonoBehaviour
             if (preEnemy.bootsName != null)
             {
                 GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");
-                GameObject enemyBoots = Instantiate(bootsPrefab, enemyBody);
+                GameObject enemyBoots = Instantiate(bootsPrefab, enemyFeet);
                 BootsScript enemyBootsScript = enemyBoots.GetComponent<BootsScript>();
                 enemyBootsScript.itemName = preEnemy.bootsName;
                 enemyBootsScript.armorBonus = preEnemy.bootsArmor;

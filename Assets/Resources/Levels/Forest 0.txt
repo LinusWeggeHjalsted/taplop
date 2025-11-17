@@ -54,3 +54,4 @@ name Rusty Dagger
 type Weapon
 weaponType Dagger
 damage 4
+

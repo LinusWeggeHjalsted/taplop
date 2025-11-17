@@ -179,7 +179,7 @@ public class VampiricStrikeScript : MonoBehaviour, Skill
         skillName = "Vampiric Strike";
         skillType = "Main Hand Skill";
         description = "Attack target and heal for damage dealt";
-        cooldown = 0;
+        cooldown = 2;
         range = 1f;
         skillSprite = Resources.Load<Sprite>("Skills/VampiricStrike");
         traversableTiles = GameObject.Find("Traversable Tiles");

@@ -61,6 +61,10 @@ public class GameControllerScript : MonoBehaviour
         mainMenuPrefab = Resources.Load<GameObject>("Prefabs/Main Menu");
         missionPrefab = Resources.Load<GameObject>("Prefabs/Mission Logic");
         hubPrefab = Resources.Load<GameObject>("Prefabs/Hub");
+#if UNITY_EDITOR
+        GameObject devToolsPrefab = Resources.Load<GameObject>("Prefabs/Dev Tools");
+        Instantiate(devToolsPrefab);
+#endif
         StartMission("Beginnings", 3, "TestHub");
     }
 }

@@ -12,9 +12,9 @@ weapons
         lightning strike - attack target and each target adjacent to target, range 3, cooldown 3
         blitz - attack and stun each enemy within range, range 1, cooldown 5
     dagger
-        stab - attack target dealing 2x damage if target has full health, range 1, cooldown 0
-        vampiric strike - attack target and heal for damage dealt, range 1, cooldown 2
-        retreating swipe - attack target for 2x damage and retreat 2 tiles, range 1, cooldown 3
+        *stab - attack target dealing 2x damage if target has full health, range 1, cooldown 0
+        *vampiric strike - attack target and heal for damage dealt, range 1, cooldown 2
+        *retreating swipe - attack target for 2x damage and retreat 2 tiles, range 1, cooldown 3
 	shield
         *bash - attack target, range 1, cooldown 0
         *slam - stun and knockback each target within range, range 1, cooldown 2

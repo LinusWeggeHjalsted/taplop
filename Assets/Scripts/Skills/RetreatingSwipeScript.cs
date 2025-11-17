@@ -189,7 +189,7 @@ public class RetreatingSwipeScript : MonoBehaviour, Skill
         skillName = "Retreating Swipe";
         skillType = "Off Hand Skill";
         description = "Attack target for 2x damage and retreat 2 tiles";
-        cooldown = 0;
+        cooldown = 3;
         range = 1f;
         skillSprite = Resources.Load<Sprite>("Skills/RetreatingSwipe");
         traversableTiles = GameObject.Find("Traversable Tiles");
