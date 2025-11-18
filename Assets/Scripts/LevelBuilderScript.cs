@@ -36,6 +36,7 @@ public class LevelBuilderScript : MonoBehaviour
         public string bootsName;
         public int bootsArmor;
         public int bootsSpeed;
+        public List<string> utilitySkills;
     }
 
     public class PreItem
@@ -197,6 +198,7 @@ public class LevelBuilderScript : MonoBehaviour
         foreach (string[] enemyStrings in preParse.enemyInfo)
         {
             PreEnemy preEnemy = new PreEnemy();
+            preEnemy.utilitySkills = new List<string>();
             if (enemyStrings[0].Length > 1)
             {
                 Debug.LogError("bad enemy info, first line should be a single character");
@@ -407,7 +409,11 @@ public class LevelBuilderScript : MonoBehaviour
                         Debug.LogError("bootsSpeed is not a number");
                     }
                 }
-
+                else if (currentLine.StartsWith("utilitySkill "))
+                {
+                    string utilitySkill = currentLine.Substring("utilitySkill ".Length);
+                    preEnemy.utilitySkills.Add(utilitySkill);
+                }
             }
             parsedLevel.preEnemies.Add(enemyCode, preEnemy);
         }
@@ -588,6 +594,8 @@ public class LevelBuilderScript : MonoBehaviour
             Transform enemyBody = enemyGear.Find("Body");
             Transform enemyHands = enemyGear.Find("Hands");
             Transform enemyFeet = enemyGear.Find("Feet");
+            Transform enemyUtilitySkills = newEnemy.transform.Find("Utility Skills");
+            newEnemyScript.utilitySkillSlots = 5; // to-do - think about this
             GameObject mainHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.mainHandWeapon);
             if (mainHandWeaponPrefab != null)
             {
@@ -630,6 +638,14 @@ public class LevelBuilderScript : MonoBehaviour
                 enemyBootsScript.itemName = preEnemy.bootsName;
                 enemyBootsScript.armorBonus = preEnemy.bootsArmor;
                 enemyBootsScript.speedBonus = preEnemy.bootsSpeed;
+            }
+            foreach (string utilitySkill in preEnemy.utilitySkills)
+            {
+                GameObject utilitySkillPrefab = Resources.Load<GameObject>("Prefabs/" + utilitySkill);
+                if (utilitySkillPrefab != null)
+                {
+                    Instantiate(utilitySkillPrefab, enemyUtilitySkills);
+                }
             }
         }
         // build items

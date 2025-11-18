@@ -8,6 +8,7 @@ public class SkillsPanelScript : MonoBehaviour
     public bool finishedAssigning = false;
     public GameObject player;
     public PlayerCharacterScript playerScript;
+    public GameObject[] skillButtons;
 
     public void UpdateButtons()
     {
@@ -49,10 +50,12 @@ public class SkillsPanelScript : MonoBehaviour
     {
         player = GameObject.Find("Player");
         playerScript = player.GetComponent<PlayerCharacterScript>();
-        int unlockedSkills = 8; // to-do - get this information elsewhere
-        for (int i = 0; i < unlockedSkills; i++)
+        int totalSkills = 8;
+        skillButtons = new GameObject[totalSkills];
+        for (int i = 0; i < totalSkills; i++)
         {
             GameObject skillButton = this.transform.GetChild(i).gameObject;
+            skillButtons[i] = skillButton;
             SkillButtonScript skillButtonScript = skillButton.GetComponent<SkillButtonScript>();
             skillButtonScript.skillNumber = i;
         }

@@ -1,8 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
-using System.Linq;
 
-public class ReplenishScript : MonoBehaviour, Skill
+public class HowlScript : MonoBehaviour, Skill
 {
     private string skillName;
     private string skillType;
@@ -18,7 +17,7 @@ public class ReplenishScript : MonoBehaviour, Skill
     public GameObject player;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
-
+    
     public string GetSkillName()
     {
         return skillName;
@@ -67,24 +66,13 @@ public class ReplenishScript : MonoBehaviour, Skill
         }
         else
         {
-            EntityScript enemyScript = enemy.GetComponent<EntityScript>();
-            int currentHealth = enemyScript.CurrentHealth;
-            int maxHealth = enemyScript.MaxHealth;
-            float healthRatio = (float)currentHealth / (float)maxHealth;
-            if (healthRatio < 0.5f)
-            {
-                return 0;
-            }
-            else
-            {
-                return -1;
-            }
+            return 0;
         }
     }
 
     public Vector3 EnemySelectTarget(Vector3 fromPosition)
     {
-       return fromPosition; 
+        return fromPosition;
     }
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
@@ -94,19 +82,44 @@ public class ReplenishScript : MonoBehaviour, Skill
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
-        EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.CurrentHealth = wielderScript.MaxHealth;
+        Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
+        List<Vector3> deltas = new List<Vector3>();
+        for (float i = -range; i <= range; i++)
+        {
+            for (float j = -range; j <= range; j++)
+            {
+                if (i == 0 && j == 0)
+                {
+                    continue;
+                }
+                else
+                {
+                    Vector3 delta = new Vector3(i, j, 0);
+                    deltas.Add(delta);
+                }
+            }
+        }
+        foreach (Vector3 delta in deltas)
+        {
+            Vector3 position = wielder.transform.position + delta;
+            if (enemyLookup.ContainsKey(position))
+            {
+                GameObject enemyInRange = enemyLookup[position];
+                EntityScript enemyScript = enemyInRange.GetComponent<EntityScript>();
+                enemyScript.IsActive = true;
+            }
+        }
         currentCooldown = cooldown;
     }
 
     void Start()
     {
-        skillName = "Replenish";
+        skillName = "Howl";
         skillType = "Cantrip";
-        description = "Heal to full health";
-        cooldown = 5;
-        range = 0;
-        skillSprite = Resources.Load<Sprite>("Skills/Replenish");
+        description = "Aggro each enemy in range";
+        cooldown = 10;
+        range = 16f;
+        skillSprite = Resources.Load<Sprite>("Skills/Howl");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)
         {

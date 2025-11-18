@@ -316,8 +316,11 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
             if (value == true && enemyLookup.ContainsKey(this.transform.position))
             {
-                DisplayAggro();
-                enemiesScript.activeEnemyLookup.Add(this.transform.position, this.gameObject);
+                if (!enemiesScript.activeEnemyLookup.ContainsKey(this.transform.position))
+                {
+                    DisplayAggro();
+                    enemiesScript.activeEnemyLookup.Add(this.transform.position, this.gameObject);
+                }
             }
             isActive = value;
         }

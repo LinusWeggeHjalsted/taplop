@@ -5,10 +5,10 @@ Layout
                ..=
     .2  ..   ...
    2....  .....
-     ...     ...  ..2.
-     ..        . .. ..2
-       ..      ..     .a
-        .     ..
+     ...     ...  .2.
+     ..     .  . . ..2
+       ..   .  ..    .a
+        .    ...
          ......
         .....
        .1..
@@ -22,21 +22,24 @@ Enemy Info
 name Invader Warrior
 sprite InvaderSwordNone
 maxHealth 7
-armor 0
+armor -3
 speed 1
 aggroRange 3
 mainHandWeapon Sword
 mainHandName Bronze Sword
-mainHandDamage 4
+mainHandDamage 5
 coatName Cloth Coat
 coatArmor 2
 coatHealth 1
+glovesName Cloth Gloves
+glovesArmor 2
+glovesDamage 1
 
 2
 name Brown Wolf
 sprite BrownWolf
 maxHealth 10
-armor 0
+armor -1
 speed 1
 aggroRange 6
 mainHandWeapon Sword
@@ -53,5 +56,5 @@ a
 name Rusty Dagger
 type Weapon
 weaponType Dagger
-damage 4
+damage 5
 

@@ -213,16 +213,19 @@ public class EnemiesScript : MonoBehaviour
         }
         List<KeyValuePair<GameObject, int>> sortedSkillPriorities = new List<KeyValuePair<GameObject, int>>();
         sortedSkillPriorities = attackSkillPriorities.OrderBy(pair => pair.Value).ToList();
-        // cast all relevant cantrips and enchantments
-        foreach (GameObject skill in priority0Skills)
+        // if there are any priority 0 skills left to cast, cast one and restart attack turn
+        if (priority0Skills.Count > 0)
         {
+            GameObject skill = priority0Skills[0];
             Skill skillScript = skill.GetComponent<Skill>();
             skillScript.PrepareSkill(enemyPosition, enemy);
             Vector3 selectedTarget = skillScript.EnemySelectTarget(enemyPosition);
             skillScript.UseSkill(selectedTarget, enemy);
             KillDeadEnemies();
+            EnemyTurnAttack(enemy);
         }
-        if (sortedSkillPriorities.Count > 0)
+        // then use an attack
+        else if (sortedSkillPriorities.Count > 0)
         {
             GameObject selectedAttack = sortedSkillPriorities[0].Key;
             Skill attackScript = selectedAttack.GetComponent<Skill>();

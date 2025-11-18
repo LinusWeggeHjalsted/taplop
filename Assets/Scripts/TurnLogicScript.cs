@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
 using TMPro;
 using System;
 using System.Collections;
@@ -25,6 +27,8 @@ public class TurnLogicScript : MonoBehaviour
     public TMP_Text turnStatusText;
     public GameObject skillsPanel;
     public SkillsPanelScript skillsPanelScript;
+    public GameObject skipButton;
+    public SkipButtonScript skipButtonScript;
     public Dictionary<Vector3, GameObject> tileLookup = new Dictionary<Vector3, GameObject>();
     
     public GameState currentGameState;
@@ -79,6 +83,8 @@ public class TurnLogicScript : MonoBehaviour
         turnStatusText = GameObject.Find("Turn Status Text").GetComponent<TMP_Text>();
         skillsPanel = GameObject.Find("Skills Panel");
         skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
+        skipButton = GameObject.Find("Skip Button");
+        skipButtonScript = skipButton.GetComponent<SkipButtonScript>();
         // wait for LevelBuilder to finish building
         StartCoroutine(WaitForBuildingBeforeNewGameState());
     }
@@ -200,6 +206,7 @@ public class TurnLogicScript : MonoBehaviour
 
     void Update()
     {
+
         switch (currentGameState)
         {
             case GameState.BuildingLevel:
@@ -230,6 +237,15 @@ public class TurnLogicScript : MonoBehaviour
                             turnStarted = false;
                         }
                     }
+                    Keyboard keyboard = Keyboard.current;
+                    if (keyboard != null)
+                    {
+                        // press space to skip moving
+                        if (keyboard.spaceKey.wasPressedThisFrame)
+                        {
+                            skipButtonScript.OnActivate();
+                        }
+                    }
                 }
                 break;
             case GameState.PlayerTurnAttack:
@@ -241,6 +257,35 @@ public class TurnLogicScript : MonoBehaviour
                         traversableTilesScript.ClearHighlights();
                         turnStatusText.text = "Player Attack Step";
                         StartCoroutine(PlayerTurnAttack());
+                    }
+                    // check for keypresses
+                    Keyboard keyboard = Keyboard.current;
+                    if (keyboard != null)
+                    {
+                        KeyControl[] numberKeys = {
+                            keyboard.digit1Key,
+                            keyboard.digit2Key,
+                            keyboard.digit3Key,
+                            keyboard.digit4Key,
+                            keyboard.digit5Key,
+                            keyboard.digit6Key,
+                            keyboard.digit7Key,
+                            keyboard.digit8Key
+                        };
+                        for (int i = 0; i < numberKeys.Length; i++)
+                        {
+                            if (numberKeys[i].wasPressedThisFrame)
+                            {
+                                GameObject skillButton = skillsPanelScript.skillButtons[i];
+                                SkillButtonScript skillButtonScript = skillButton.GetComponent<SkillButtonScript>();
+                                skillButtonScript.OnActivate();
+                            }
+                        }
+                        // press space to skip attacking
+                        if (keyboard.spaceKey.wasPressedThisFrame)
+                        {
+                            skipButtonScript.OnActivate();
+                        }
                     }
                 }
                 break;

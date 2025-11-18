@@ -11,6 +11,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     public RectTransform buttonRectTransform;
     public Button button;
     public Image image;
+    public Transform canvas;
     public GameObject skillsPanel;
     public SkillsPanelScript skillsPanelScript;
     public GameObject turnLogic;
@@ -44,20 +45,25 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 skillCooldown = "Cooldown " + skillScript.GetCooldown().ToString() + "\n";
             }
             string tooltipText = skillDescription + skillType + skillRange + skillCooldown;
-
+            Vector3[] buttonCorners = new Vector3[4];
+            buttonRectTransform.GetWorldCorners(buttonCorners);
+            Vector3 buttonTopRightPosition = buttonCorners[2];
+            Transform tooltipTransform = canvas.Find("Tooltip");
+            if (tooltipTransform != null)
+            {
+                tooltip = tooltipTransform.gameObject;
+            }
             if (tooltip == null)
             {
-                Vector3[] buttonCorners = new Vector3[4];
-                buttonRectTransform.GetWorldCorners(buttonCorners);
-                Vector3 buttonTopRightPosition = buttonCorners[2];
-
                 tooltip = Instantiate(tooltipPrefab, this.gameObject.transform);
-                RectTransform tooltipRectTransform = tooltip.GetComponent<RectTransform>();
-                tooltipRectTransform.pivot = new Vector2(1f, 0);
-                tooltipRectTransform.position = buttonTopRightPosition;
+                tooltip.name = "Tooltip";
+                tooltip.transform.SetAsLastSibling();
             }
             if (tooltip != null)
             {
+                RectTransform tooltipRectTransform = tooltip.GetComponent<RectTransform>();
+                tooltipRectTransform.pivot = new Vector2(1f, 0);
+                tooltipRectTransform.position = buttonTopRightPosition;
                 TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
                 StartCoroutine(tooltipScript.SetText(skillName, tooltipText));
                 tooltip.SetActive(true);
@@ -152,6 +158,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
         image = this.GetComponent<Image>();
+        canvas = GameObject.Find("Canvas").transform;
         skillsPanel = this.transform.parent.gameObject;
         skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
         noSkillSprite = Resources.Load<Sprite>("Skills/NoSkill");

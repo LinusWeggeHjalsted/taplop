@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
 
 public class InventoryButtonScript : MonoBehaviour
 {
@@ -26,5 +27,17 @@ public class InventoryButtonScript : MonoBehaviour
         button.onClick.AddListener(OnActivate);
         characterUI = GameObject.Find("Character UI").transform;
         inventoryUIPrefab = Resources.Load<GameObject>("Prefabs/Inventory UI Panel");
+    }
+
+    void Update()
+    {
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard != null)
+        {
+            if (keyboard.iKey.wasPressedThisFrame)
+            {
+                OnActivate();
+            }
+        }
     }
 }

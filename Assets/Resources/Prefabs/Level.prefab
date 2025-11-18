@@ -1336,6 +1336,7 @@ MonoBehaviour:
   finishedBuilding: 0
   finishedAssigning: 0
   player: {fileID: 0}
+  skillButtons: []
 --- !u!1 &4282365501509472923
 GameObject:
   m_ObjectHideFlags: 0
@@ -3577,6 +3578,8 @@ MonoBehaviour:
   turnStatusText: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
+  skipButton: {fileID: 0}
+  skipButtonScript: {fileID: 0}
   currentGameState: 0
   skillUsed: {fileID: 0}
   hasMoved: 0

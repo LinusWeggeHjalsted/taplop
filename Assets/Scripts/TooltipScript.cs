@@ -6,7 +6,7 @@ using System.Collections;
 
 public class TooltipScript : MonoBehaviour
 {
-    public bool finishedBuilding;
+    public bool finishedBuilding = false;
     public TMP_Text tooltipHeader;
     public TMP_Text tooltipContent;
     public LayoutElement layoutElement;
@@ -42,7 +42,7 @@ public class TooltipScript : MonoBehaviour
         tooltipHeader = this.transform.Find("Tooltip Header").gameObject.GetComponent<TMP_Text>();
         tooltipContent = this.transform.Find("Tooltip Content").gameObject.GetComponent<TMP_Text>();
         layoutElement = this.GetComponent<LayoutElement>();
-        charLimit = 32;
+        charLimit = 24;
         finishedBuilding = true;
     }
 }

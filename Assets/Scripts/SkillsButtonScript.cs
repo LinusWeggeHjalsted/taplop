@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
 
 public class SkillsButtonScript : MonoBehaviour
 {
@@ -26,5 +27,17 @@ public class SkillsButtonScript : MonoBehaviour
         button.onClick.AddListener(OnActivate);
         characterUI = GameObject.Find("Character UI").transform;
         skillsUIPrefab = Resources.Load<GameObject>("Prefabs/Skills UI Panel");
+    }
+
+    void Update()
+    {
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard != null)
+        {
+            if (keyboard.pKey.wasPressedThisFrame)
+            {
+                OnActivate();
+            }
+        }
     }
 }

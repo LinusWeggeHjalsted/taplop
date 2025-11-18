@@ -35,10 +35,10 @@ utility skills
     cantrips
         *replenish - gain full health, cooldown 5
         *blink - teleport, range 3, cooldown 3
-        howl - aggro all enemies in range, range 16, cooldown 10
+        *howl - aggro each enemy in range, range 16, cooldown 10
         focus - reset all weapon skill cooldowns, cooldown 10
         meditate - reset all utility skill cooldowns, cooldown 10
         time walk - get an extra turn after this one, cooldown 10
     spells
         chain lightning - attack target and each target connected to it, range 1, cooldown 5
-        shockwave - strike and knockback each target within range, range 1, cooldown 5
+        shockwave - attack and knockback each target within range, range 1, cooldown 5

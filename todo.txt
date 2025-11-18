@@ -1,6 +1,5 @@
-- dev tools
+- more dev tools
 - main menu
-- unify tooltips to 1 game object
 - level clear conditions
 - write player save
 - skills menu
@@ -8,7 +7,6 @@
 - skill durations
 - better enemy death
 - 10 knowledge for completing a mission
-- salvage items from inventory
 - update inventory ui to use player character's inventory array
 - loading screen
 - sort active enemies by distance to player before taking their turn
@@ -20,4 +18,7 @@
 - npc's
 - gear shop
 - skill trainer
-- missing spear bug in Beginnings 1
+- map
+- missing item drop bug in Beginnings 1 (also happening in Forest 0) has to do with enemy pickup
+- enemy pathing bug (happens in Beginnings 1 and Forest 0)
+- enemy tried to use slice without targets in range (Forest 0)

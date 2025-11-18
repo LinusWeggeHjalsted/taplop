@@ -12,44 +12,35 @@ public class GearUIScript : MonoBehaviour
     public Transform handsItemSlot;
     public Transform feetItemSlot;
 
-    void Start()
+    public void RefreshUI()
     {
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerCharacterScript>();
-        inventoryItemPrefab = Resources.Load<GameObject>("Prefabs/Inventory Item");
-        Transform gearSlots = this.transform.Find("Gear Slots");
-        Transform mainHand = gearSlots.Find("Main Hand");
-        Transform offHand = gearSlots.Find("Off Hand");
-        Transform body = gearSlots.Find("Body");
-        Transform hands = gearSlots.Find("Hands");
-        Transform feet = gearSlots.Find("Feet");
-        mainHandItemSlot = mainHand.GetChild(0);
-        offHandItemSlot = offHand.GetChild(0);
-        bodyItemSlot = body.GetChild(0);
-        handsItemSlot = hands.GetChild(0);
-        feetItemSlot = feet.GetChild(0);
-
-        ItemSlotScript mainHandItemSlotScript = mainHandItemSlot.GetComponent<ItemSlotScript>();
-        mainHandItemSlotScript.itemType = "Weapon";
-
-        ItemSlotScript offHandItemSlotScript = offHandItemSlot.GetComponent<ItemSlotScript>();
-        offHandItemSlotScript.itemType = "Weapon";
-
-        ItemSlotScript bodyItemSlotScript = bodyItemSlot.GetComponent<ItemSlotScript>();
-        bodyItemSlotScript.itemType = "Coat";
-
-        ItemSlotScript handsItemSlotScript = handsItemSlot.GetComponent<ItemSlotScript>();
-        handsItemSlotScript.itemType = "Gloves";
-
-        ItemSlotScript feetItemSlotScript = feetItemSlot.GetComponent<ItemSlotScript>();
-        feetItemSlotScript.itemType = "Boots";
-
+        // clear existing items from all slots
+        if (mainHandItemSlot.childCount > 0)
+        {
+            Destroy(mainHandItemSlot.GetChild(0).gameObject);
+        }
+        if (offHandItemSlot.childCount > 0)
+        {
+            Destroy(offHandItemSlot.GetChild(0).gameObject);
+        }
+        if (bodyItemSlot.childCount > 0)
+        {
+            Destroy(bodyItemSlot.GetChild(0).gameObject);
+        }
+        if (handsItemSlot.childCount > 0)
+        {
+            Destroy(handsItemSlot.GetChild(0).gameObject);
+        }
+        if (feetItemSlot.childCount > 0)
+        {
+            Destroy(feetItemSlot.GetChild(0).gameObject);
+        }
+        // then build inventory items
         GameObject mainHandWeapon = playerScript.mainHandWeapon;
         GameObject offHandWeapon = playerScript.offHandWeapon;
         GameObject coat = playerScript.coat;
         GameObject gloves = playerScript.gloves;
         GameObject boots = playerScript.boots;
-        
         if (mainHandWeapon != null)
         {
             ItemScript mainHandWeaponScript = mainHandWeapon.GetComponent<ItemScript>();
@@ -100,5 +91,40 @@ public class GearUIScript : MonoBehaviour
             Image bootsItemImage = bootsItem.GetComponent<Image>();
             bootsItemImage.sprite = bootsSprite;
         }
+    }
+
+    void Start()
+    {
+        player = GameObject.Find("Player");
+        playerScript = player.GetComponent<PlayerCharacterScript>();
+        inventoryItemPrefab = Resources.Load<GameObject>("Prefabs/Inventory Item");
+        Transform gearSlots = this.transform.Find("Gear Slots");
+        Transform mainHand = gearSlots.Find("Main Hand");
+        Transform offHand = gearSlots.Find("Off Hand");
+        Transform body = gearSlots.Find("Body");
+        Transform hands = gearSlots.Find("Hands");
+        Transform feet = gearSlots.Find("Feet");
+        mainHandItemSlot = mainHand.GetChild(0);
+        offHandItemSlot = offHand.GetChild(0);
+        bodyItemSlot = body.GetChild(0);
+        handsItemSlot = hands.GetChild(0);
+        feetItemSlot = feet.GetChild(0);
+
+        ItemSlotScript mainHandItemSlotScript = mainHandItemSlot.GetComponent<ItemSlotScript>();
+        mainHandItemSlotScript.itemType = "Weapon";
+
+        ItemSlotScript offHandItemSlotScript = offHandItemSlot.GetComponent<ItemSlotScript>();
+        offHandItemSlotScript.itemType = "Weapon";
+
+        ItemSlotScript bodyItemSlotScript = bodyItemSlot.GetComponent<ItemSlotScript>();
+        bodyItemSlotScript.itemType = "Coat";
+
+        ItemSlotScript handsItemSlotScript = handsItemSlot.GetComponent<ItemSlotScript>();
+        handsItemSlotScript.itemType = "Gloves";
+
+        ItemSlotScript feetItemSlotScript = feetItemSlot.GetComponent<ItemSlotScript>();
+        feetItemSlotScript.itemType = "Boots";
+
+        RefreshUI();
     }
 }
