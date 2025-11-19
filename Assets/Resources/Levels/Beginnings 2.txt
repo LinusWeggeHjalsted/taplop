@@ -2,13 +2,13 @@ Description
 creator Strider
 
 Layout
-          1
+          3
      ... ..
    ....2.
  ........
 ! ...=....
    ...1..2.
-    1...   .1
+    1...   .3
      .
     1
 
@@ -34,6 +34,23 @@ aggroRange 4
 mainHandWeapon Spear
 mainHandName Bronze Spear
 mainHandDamage 4
+
+3
+name Invader Warrior
+sprite InvaderSwordNone
+maxHealth 7
+armor -3
+speed 1
+aggroRange 3
+mainHandWeapon Sword
+mainHandName Bronze Sword
+mainHandDamage 5
+coatName Cloth Coat
+coatArmor 2
+coatHealth 1
+glovesName Cloth Gloves
+glovesArmor 2
+glovesDamage 1
 
 Item Info
 

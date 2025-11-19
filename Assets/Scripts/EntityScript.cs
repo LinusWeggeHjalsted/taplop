@@ -475,6 +475,14 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             {
                 Transform item = groundItems.transform.GetChild(0);
                 item.parent = inventory;
+                // refresh open inventory UI panel
+                Transform characterUI = GameObject.Find("Character UI").transform;
+                Transform inventoryUIPanel = characterUI.Find("Inventory UI Panel(Clone)");
+                if (inventoryUIPanel != null)
+                {
+                    InventoryUIScript inventoryUIScript = inventoryUIPanel.GetComponent<InventoryUIScript>();
+                    inventoryUIScript.RefreshUI();
+                }
             }
             if (groundItems.transform.childCount == 0)
             {

@@ -154,7 +154,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         }
     }
     private float moveTimer = 0;
-    private float baseMoveDelay = 0.5f;
+    private float baseMoveDelay = 0.3f;
     private float moveDelay
     {
         get

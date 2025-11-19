@@ -160,6 +160,7 @@ public class FlashStrikeScript : MonoBehaviour, Skill
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
+        traversableTilesScript.ClearHighlights();
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
         for (float i = -range; i <= range; i++)

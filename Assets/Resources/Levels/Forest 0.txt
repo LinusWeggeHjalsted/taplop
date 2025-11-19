@@ -45,7 +45,7 @@ aggroRange 6
 mainHandWeapon Sword
 mainHandName Wild Sword
 mainHandDamage 5
-bootsName Wolf Pelt Boots
+bootsName Wolfskin Boots
 bootsArmor 2
 bootsSpeed 1
 utilitySkill Blink
