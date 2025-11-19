@@ -35,7 +35,6 @@ public class EnemiesScript : MonoBehaviour
             GameObject tile = tileLookup[enemyTransform.position];
             TileScript tileScript = tile.GetComponent<TileScript>();
             tileScript.isOccupied = true;
-            Debug.Log("found enemy at " + enemyTransform.position.ToString());
         }
         finishedBuilding = true;
     }
@@ -135,26 +134,32 @@ public class EnemiesScript : MonoBehaviour
             Vector3 targetPosition = playerPosition;
             if (pathLength > 1)
             {
+                // pathToPlayer is sorted in reverse order
                 if (enemySpeed >= pathLength - 1)
                 {
                     targetPosition = pathToPlayer[1];
                 }
                 else
                 {
-                    int targetIndex = pathLength - enemySpeed;
-                    targetPosition = pathToPlayer[targetIndex];
+                    // (pathLength - 1) - (enemySpeed - 1)
+                    targetPosition = pathToPlayer[pathLength - enemySpeed];
                 }
                 enemyScript.MoveTo(targetPosition);
             }
         }
         else
         {
+            Debug.Log("no path found");
             Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
             List<Vector3> deltas = new List<Vector3>();
             for (float i = -enemySpeed; i <= enemySpeed; i++)
             {
                 for (float j = -enemySpeed; j <= enemySpeed; j++)
                 {
+                    if (i == 0 && j == 0)
+                    {
+                        continue;
+                    }
                     Vector3 delta = new Vector3(i, j, 0);
                     deltas.Add(delta);
                 }

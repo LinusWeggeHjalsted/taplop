@@ -24,6 +24,11 @@ public class PathNode : IComparable<PathNode>
     {
         if (this.fCost < other.fCost) return -1;
         if (this.fCost > other.fCost) return 1;
+        // if fCosts are equal, use position as tiebreaker to ensure uniqueness
+        if (this.position.x != other.position.x)
+            return this.position.x.CompareTo(other.position.x);
+        if (this.position.y != other.position.y)
+            return this.position.y.CompareTo(other.position.y);
         else return 0;
     }
 }
@@ -130,8 +135,11 @@ public class TraversableTilesScript : MonoBehaviour
                         float newGCost = focusedNode.gCost + Distance(focusedNode.position, neighborPosition);
                         if (newGCost < existingNode.gCost)
                         {
+                            // Remove from SortedSet before updating fCost, then re-add
+                            openSet.Remove(existingNode);
                             existingNode.gCost = newGCost;
                             existingNode.parent = focusedNode;
+                            openSet.Add(existingNode);
                         }
                     }
                     // if not, create a new PathNode for the neighbor
@@ -147,7 +155,7 @@ public class TraversableTilesScript : MonoBehaviour
             }
         }
 
-        // path found or does not exist, backtrack and return path
+        // path found or does not exist, backtrack and return path in reverse order
         if (pathNotFound)
         {
             return null;

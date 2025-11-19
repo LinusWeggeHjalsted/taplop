@@ -604,9 +604,13 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             dropsScript.groundItemsLookup.Add(this.transform.position, groundItems);
         }
         // drop inventory
+        List<Transform> inventoryList = new List<Transform>();
         for (int i = 0; i < inventory.childCount; i++)
         {
-            Transform inventoryItem = inventory.GetChild(i);
+            inventoryList.Add(inventory.GetChild(i));
+        }
+        foreach (Transform inventoryItem in inventoryList)
+        {
             inventoryItem.parent = groundItems.transform;
         }
         // prepare to drop random item

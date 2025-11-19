@@ -19,6 +19,4 @@
 - gear shop
 - skill trainer
 - map
-- missing item drop bug in Beginnings 1 (also happening in Forest 0) has to do with enemy pickup
-- enemy pathing bug (happens in Beginnings 1 and Forest 0)
 - enemy tried to use slice without targets in range (Forest 0)
