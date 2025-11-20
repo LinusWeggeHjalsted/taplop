@@ -1,0 +1,31 @@
+Metadata
+creator Strider
+
+Layout
+ .
+  ..   ...
+  ....... .
+  ..1.1.
+  ...=..
+   .....
+   ....
+    ..
+     !
+
+Enemy Info
+1
+name Invader Javelineer
+sprite InvaderSpearNone
+maxHealth 10
+armor 0
+speed 1
+aggroRange 4
+mainHandWeapon Spear
+mainHandName Bronze Spear
+mainHandDamage 5
+coatName Cloth Coat
+coatArmor 2
+coatHealth 2
+
+Item Info
+

@@ -19,4 +19,10 @@
 - gear shop
 - skill trainer
 - map
+- base damage stat for balancing with negative damage on enemies
 - enemy tried to use slice without targets in range (Forest 0)
+- tomes aren't saved with BuildDataFromPlayer
+- item not picked up when on level end flag
+- blink should prioritize shortest path to player, not shortest distance
+- missing health text in hubs
+- update turns, deaths, defeated enemies counters
