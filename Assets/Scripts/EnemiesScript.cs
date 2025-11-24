@@ -110,6 +110,7 @@ public class EnemiesScript : MonoBehaviour
                 TileScript tileScript = tile.GetComponent<TileScript>();
                 tileScript.isOccupied = false;
                 Destroy(enemy);
+                PlayerDataScript.Instance.defeatedEnemies += 1;
             }
         }
     }

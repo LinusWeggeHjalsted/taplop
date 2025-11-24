@@ -64,6 +64,7 @@ public class TurnLogicScript : MonoBehaviour
             yield return null;
         }
         enemiesScript.FillEnemyHealth();
+        playerScript.CurrentHealth = playerScript.MaxHealth;
         skillsPanelScript.UpdateButtons();
         currentGameState = GameState.PlayerTurnMove;
         tileLookup = traversableTilesScript.tileLookup;
@@ -152,12 +153,6 @@ public class TurnLogicScript : MonoBehaviour
         {
             yield return null;
         }
-        GameObject newTile = tileLookup[player.transform.position];
-        TileScript newTileScript = newTile.GetComponent<TileScript>();
-        GameObject oldTile = tileLookup[playerScript.previousPosition];
-        TileScript oldTileScript = oldTile.GetComponent<TileScript>();
-        newTileScript.isOccupied = true;
-        oldTileScript.isOccupied = false;        
         currentGameState = GameState.PlayerTurnAttack;
         hasMoved = false;
         turnStarted = false;
@@ -170,7 +165,6 @@ public class TurnLogicScript : MonoBehaviour
         {
             yield return null;
         }
-        
         enemiesScript.KillDeadEnemies();
         PlayerDataScript.Instance.turns += 1;
         currentGameState = GameState.EnemiesTurn;
@@ -206,7 +200,6 @@ public class TurnLogicScript : MonoBehaviour
 
     void Update()
     {
-
         switch (currentGameState)
         {
             case GameState.BuildingLevel:
@@ -219,6 +212,7 @@ public class TurnLogicScript : MonoBehaviour
                         turnStarted = true;
                         if (playerScript.CurrentHealth <= 0)
                         {
+                            Debug.Log("player died, respawning");
                             PlayerDataScript.Instance.deaths += 1;
                             RespawnPlayer();
                         }

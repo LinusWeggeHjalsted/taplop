@@ -182,6 +182,19 @@ public class TraversableTilesScript : MonoBehaviour
         }
     }
 
+    public int WalkingDistance(Vector3 startPosition, Vector3 endPosition)
+    {
+        List<Vector3> shortestPath = ShortestPath(startPosition, endPosition);
+        if (shortestPath != null)
+        {
+            return shortestPath.Count;
+        }
+        else
+        {
+            return Int32.MaxValue;
+        }
+    }
+
     IEnumerator WaitForLevelBuilderBeforePopulating()
     {
         while (!levelBuilderScript.finishedBuilding)

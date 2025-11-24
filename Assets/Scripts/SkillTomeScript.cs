@@ -38,4 +38,9 @@ public class SkillTomeScript : MonoBehaviour, ItemScript
         salvage[3] = 1;
         return salvage;
     }
+
+    void Start()
+    {
+        itemSprite = Resources.Load<Sprite>("Items/SkillTome");
+    }
 }

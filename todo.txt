@@ -6,11 +6,10 @@
 - lock switching equipped gear and skills when there are active enemies
 - skill durations
 - better enemy death
-- 10 knowledge for completing a mission
 - update inventory ui to use player character's inventory array
 - loading screen
 - sort active enemies by distance to player before taking their turn
-- display effect sprites (stun, reflect)
+- display stun effect sprite
 - weaponswap
 - display used skills
 - damage meter
@@ -21,8 +20,5 @@
 - map
 - base damage stat for balancing with negative damage on enemies
 - enemy tried to use slice without targets in range (Forest 0)
-- tomes aren't saved with BuildDataFromPlayer
-- item not picked up when on level end flag
-- blink should prioritize shortest path to player, not shortest distance
 - missing health text in hubs
-- update turns, deaths, defeated enemies counters
+- ground item animation to grab attention

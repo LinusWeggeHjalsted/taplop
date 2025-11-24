@@ -1,0 +1,52 @@
+Metadata
+creator Strider
+
+Layout
+           .
+!..       ..
+.....    ...2   ..=
+... ..1     ......
+ ..... . ... ...
+ ...  .....    2
+  ....  .. .  .
+ .. .......2..
+  ..2..  ...
+    ....2.
+
+Enemy Info
+1
+name Invader Warrior
+sprite InvaderSwordNone
+maxHealth 7
+armor -3
+speed 1
+aggroRange 3
+mainHandWeapon Sword
+mainHandName Bronze Sword
+mainHandDamage 5
+coatName Cloth Coat
+coatArmor 2
+coatHealth 1
+glovesName Cloth Gloves
+glovesArmor 2
+glovesDamage 1
+
+2
+name Crab
+sprite Crab
+maxHealth 5
+armor -2
+speed 1
+aggroRange 3
+mainHandWeapon Sword
+mainHandName Crab Sword
+mainHandDamage 3
+offHandWeapon Shield
+offHandName Crab Shield
+offHandDamage 5
+glovesName Crab Gloves
+glovesArmor 2
+glovesDamage 1
+
+Item Info
+

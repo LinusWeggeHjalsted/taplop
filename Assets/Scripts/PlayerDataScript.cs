@@ -36,6 +36,11 @@ public class PlayerDataScript : MonoBehaviour
         public int speed;
     }
 
+    public class TomeData : InventoryItemData
+    {
+        public string skillName;
+    }
+
     public bool finishedBuilding = false;
 
     public string playerName;
@@ -592,6 +597,21 @@ public class PlayerDataScript : MonoBehaviour
                             }
                             inventory.Add(inventoryBoots);
                             break;
+                        case "Tome":
+                            TomeData inventoryTome = new TomeData();
+                            for (int i = 1; i < itemBlock.Length; i++)
+                            {
+                                string currentLine = itemBlock[i];
+                                if (currentLine.StartsWith("itemName "))
+                                {
+                                    inventoryTome.itemName = currentLine.Substring("itemName ".Length);
+                                }
+                                else if (currentLine.StartsWith("skillName "))
+                                {
+                                    inventoryTome.skillName = currentLine.Substring("skillName ".Length);
+                                }
+                            }
+                            break;
                     }
                 }
                 else
@@ -747,6 +767,14 @@ public class PlayerDataScript : MonoBehaviour
                 bootsScript.armorBonus = inventoryBoots.armor;
                 bootsScript.speedBonus = inventoryBoots.speed;
             }
+            else if (inventoryItem is TomeData)
+            {
+                TomeData inventoryTome = (TomeData)inventoryItem;
+                GameObject tomePrefab = Resources.Load<GameObject>("Prefabs/Skill Tome");
+                GameObject newTome = Instantiate(tomePrefab, playerInventory);
+                SkillTomeScript tomeScript = newTome.GetComponent<SkillTomeScript>();
+                tomeScript.skillName = inventoryTome.skillName;
+            }
         }
         // create player utility skills
         foreach (string skillName in utilitySkills)
@@ -876,6 +904,12 @@ public class PlayerDataScript : MonoBehaviour
                     bootsData.armor = playerInventoryBootsScript.armorBonus;
                     bootsData.speed = playerInventoryBootsScript.speedBonus;
                     inventory.Add(bootsData);
+                    break;
+                case "Tome":
+                    SkillTomeScript playerInventoryTomeScript = playerInventoryItem.GetComponent<SkillTomeScript>();
+                    TomeData tomeData = new TomeData();
+                    tomeData.skillName = playerInventoryTomeScript.skillName;
+                    inventory.Add(tomeData);
                     break;
             }
         }

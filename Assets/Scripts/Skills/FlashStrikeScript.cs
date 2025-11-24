@@ -111,9 +111,9 @@ public class FlashStrikeScript : MonoBehaviour, Skill
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.MoveTo(targetPosition);
         List<Vector3> deltas = new List<Vector3>();
-        for (float i = -range; i <= range; i++)
+        for (float i = -1; i <= 1; i++)
         {
-            for (float j = -range; j <= range; j++)
+            for (float j = -1; j <= 1; j++)
             {
                 if (i == 0 && j == 0)
                 {
@@ -191,9 +191,9 @@ public class FlashStrikeScript : MonoBehaviour, Skill
     {
         skillName = "Flash Strike";
         skillType = "Off Hand Skill";
-        description = "Teleport then attack each target within skill range";
+        description = "Teleport then attack each adjacent target";
         cooldown = 3;
-        range = 2f;
+        range = 3f;
         skillSprite = Resources.Load<Sprite>("Skills/FlashStrike");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)

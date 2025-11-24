@@ -46,11 +46,11 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
         {
             case TurnLogicScript.GameState.PlayerTurnMove:
                 turnLogicScript.currentGameState = TurnLogicScript.GameState.PlayerTurnAttack;
-                turnLogicScript.turnStarted = false;
+                turnLogicScript.hasMoved = true;
                 break;
             case TurnLogicScript.GameState.PlayerTurnAttack:
                 turnLogicScript.currentGameState = TurnLogicScript.GameState.EnemiesTurn;
-                turnLogicScript.turnStarted = false;
+                turnLogicScript.hasAttacked = true;
                 break;
         }
     }

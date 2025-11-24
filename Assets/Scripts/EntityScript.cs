@@ -141,6 +141,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public Sprite[] healthBarStates = new Sprite[8];
     public Sprite hitSprite;
     public Sprite aggroSprite;
+    public Sprite reflectSprite;
 
     public string currentBuildTemplate = "00000000";
     private int maxHealth;
@@ -347,7 +348,44 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
     }
     public int stunDuration = 0;
-    public int reflectDuration = 0;
+    private int _reflectDuration = 0;
+    public int reflectDuration
+    {
+        get
+        {
+            return _reflectDuration;
+        }
+        set
+        {
+            _reflectDuration = value;
+            DisplayReflect();
+        }
+    }
+    public GameObject reflectEffect;
+
+    public void DisplayReflect()
+    {
+        if (reflectDuration > 0)
+        {
+            if (reflectEffect == null)
+            {
+                reflectEffect = new GameObject("Reflect Sprite Object");
+                reflectEffect.transform.parent = this.transform;
+                reflectEffect.transform.localPosition = new Vector3(0, 0.5f, 0);
+                SpriteRenderer reflectRenderer = reflectEffect.AddComponent<SpriteRenderer>();
+                reflectRenderer.sortingLayerName = "Effects";
+                reflectRenderer.sortingOrder = 1; // to-do - fix these
+                reflectRenderer.sprite = reflectSprite;
+            }
+        }
+        else
+        {
+            if (reflectEffect != null)
+            {
+                Destroy(reflectEffect);
+            }
+        }
+    }
 
     public void DisplayAggro()
     {
@@ -457,16 +495,6 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             enemiesScript.EnemyMoved(currentPosition, targetPosition);
         }
         this.transform.position = targetPosition;
-        // update aggro
-        if (targetPosition == player.transform.position)
-        {
-            enemiesScript.UpdateAggro();
-            if (enemiesScript.activeEnemyLookup.Count == 0 && targetTileScript.IsEnd)
-            {
-                missionLogicScript.currentLevel += 1;
-                missionLogicScript.NextLevel();
-            }
-        }
         // pick up ground items
         if (dropsScript.groundItemsLookup.ContainsKey(targetPosition))
         {
@@ -492,6 +520,16 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             else
             {
                 Debug.Log("inventory full");
+            }
+        }
+        // update aggro and finish level if player is on level end
+        if (targetPosition == player.transform.position)
+        {
+            enemiesScript.UpdateAggro();
+            if (enemiesScript.activeEnemyLookup.Count == 0 && targetTileScript.IsEnd)
+            {
+                missionLogicScript.currentLevel += 1;
+                missionLogicScript.NextLevel();
             }
         }
     }
@@ -658,7 +696,6 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 GameObject skillTomePrefab = Resources.Load<GameObject>("Prefabs/Skill Tome");
                 GameObject tomeDrop = Instantiate(skillTomePrefab, groundItems.transform);
                 SkillTomeScript tomeScript = tomeDrop.GetComponent<SkillTomeScript>();
-                tomeScript.itemSprite = Resources.Load<Sprite>("Items/SkillTome");
                 tomeScript.skillName = skillScript.GetSkillName();
             }
         }
@@ -702,6 +739,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         gearScript = gear.GetComponent<GearScript>();
         hitSprite = Resources.Load<Sprite>("Hit");
         aggroSprite = Resources.Load<Sprite>("EnemyAggro");
+        reflectSprite = Resources.Load<Sprite>("ReflectEffect");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
         _mainHand = gear.transform.Find("Main Hand");
         _offHand = gear.transform.Find("Off Hand");
