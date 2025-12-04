@@ -103,7 +103,9 @@ public class VampiricStrikeScript : MonoBehaviour, Skill
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
+        traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
+        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))

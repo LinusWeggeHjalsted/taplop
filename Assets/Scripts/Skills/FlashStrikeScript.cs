@@ -108,7 +108,9 @@ public class FlashStrikeScript : MonoBehaviour, Skill
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
+        traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
+        wielderScript.DisplayUsedSkill(skillSprite);
         wielderScript.MoveTo(targetPosition);
         List<Vector3> deltas = new List<Vector3>();
         for (float i = -1; i <= 1; i++)

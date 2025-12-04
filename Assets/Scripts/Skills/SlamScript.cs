@@ -85,12 +85,13 @@ public class SlamScript : MonoBehaviour, Skill
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
-
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
+        traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
+        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
         for (float i = -range; i <= range; i++)

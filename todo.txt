@@ -11,14 +11,22 @@
 - sort active enemies by distance to player before taking their turn
 - display stun effect sprite
 - weaponswap
-- display used skills
 - damage meter
 - scenery
 - npc's
 - gear shop
 - skill trainer
+- ui horizontal scroll
 - map
 - base damage stat for balancing with negative damage on enemies
 - enemy tried to use slice without targets in range (Forest 0)
 - missing health text in hubs
 - ground item animation to grab attention
+- healthbar above entities are not updating correctly
+- wrong tooltip when inventory has been updated
+- stuck tooltip on weapon skill
+- pathing behavior could be improved when no path is found
+- maybe pathing bug in forest 2
+- pants with pickup radius bonus
+- amulet with spell damage
+- enchantment gameobjects

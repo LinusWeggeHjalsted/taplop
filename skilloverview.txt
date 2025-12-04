@@ -1,44 +1,60 @@
 weapons
 	sword
-		*slice - attack target, range 1, cooldown 0
+		*slice - attack target, range 1
 		*spinblade - attack each target within range, range 1, cooldown 2
-        *flash strike - teleport then attack all targets within range, range 2, cooldown 4
-    spear
-        *toss - attack target, range 3, cooldown 0
-        *impale - attack target for 2x damage, range 1, cooldown 2
-        *skewer - attack target for 3x damage, range 1, cooldown 4
-    wand
-        spark - attack target, range 2, cooldown 0
-        lightning strike - attack target and each target adjacent to target, range 3, cooldown 3
-        blitz - attack and stun each enemy within range, range 1, cooldown 5
-    dagger
-        *stab - attack target dealing 2x damage if target has full health, range 1, cooldown 0
-        *vampiric strike - attack target and heal for damage dealt, range 1, cooldown 2
-        *retreating swipe - attack target for 2x damage and retreat 2 tiles, range 1, cooldown 3
+        *flash strike - teleport then attack each adjacent target, range 2, cooldown 4
 	shield
-        *bash - attack target, range 1, cooldown 0
+        *bash - attack target, range 1
         *slam - stun and knockback each target within range, range 1, cooldown 2
         *reflect - incoming damage is prevented and dealt to the attacker, duration 1, cooldown 5
+    spear
+        *toss - attack target, range 3
+        *impale - attack target for 2x damage, range 1, cooldown 2
+        *skewer - attack target for 3x damage, range 1, cooldown 4
+    dagger
+        *stab - attack target dealing 2x damage if target has full health, range 1
+        *vampiric strike - attack target and heal for damage dealt, range 1, cooldown 2
+        *retreating swipe - attack target for 2x damage and retreat 2 tiles, range 1, cooldown 3
+    axe
+        chop - attack target, range 1
+        cleave - attack and stun target, range 1, duration 1, cooldown 2
+        throw - attack target for 2x damage, range 3, cooldown 4
+    wand
+        spark - attack target, range 2
+        lightning strike - attack target and each other adjacent target, range 2, cooldown 2
+        blitz - attack and stun each target within range, range 1, cooldown 5
     idol
-        heal - heal for 20% of max health, cooldown 0
+        heal - heal for 20% of max health
         drain - steal health from each target within range, range 1, cooldown 4
-		absorb - convert incoming damage to healing, cooldown 4
+		absorb - incoming damage is converted to healing, duration 1, cooldown 5
+    crossbow
+        shoot - attack target, range 3
+        leg shot - attack and cripple target, range 3, duration 1, cooldown 2
+        head shot - attack and stun target, range 3, duration 1, cooldown 4
 
 utility skills
     enchantments
+        that which rushes - reduce cooldowns of used skills by 1 and increase speed by 1, duration 2, cooldown 5
+        that which reaches - increase pickup radius and range of used skills by 1, duration 2, cooldown 5
+        that which lingers - increase skill durations by 1, duration 2, cooldown 5
+        that which splinters - attack each target adjacent to attacked targets, duration 2, cooldown 5
+        that which leeches - attacks also steal health, duration 2, cooldown 5
+        stone form - reduce incoming stun durations by 1, increase outgoing stun durations by 1, and heal 10% of max health at end of turn, duration 5, cooldown 10
+        diamond form - become invulnerable and stunned and heal 5% of max health at end of turn, duration 5, cooldown 10
         temporal anchor - return to this location with current cooldowns when temporal anchor ends, duration 2, cooldown 5
-        haste - reduce cooldowns by 1 and increase speed by 1, duration 2, cooldown 5
-        splinter weapon - attacks also attack each tile within range 1 of target, duration 2, cooldown 5
-        stoneform - can't be stunned and heal 10% of max health at end of turn, duration 5, cooldown 10
-        leeching weapon - attacks also steal health, duration 5, cooldown 10
         promise of death - reset all cooldowns and gain full health if an enemy dies, duration 1, cooldown 10
     cantrips
         *replenish - gain full health, cooldown 5
         *blink - teleport, range 3, cooldown 3
         *howl - aggro each enemy in range, range 16, cooldown 10
+        pull - pull target, range 3, cooldown 3
+        swap - swap places with target, range 3, cooldown 3
+        disenchant - remove all enchantments from target and heal 10% of max health for each enchantment removed, cooldown 5
         focus - reset all weapon skill cooldowns, cooldown 10
         meditate - reset all utility skill cooldowns, cooldown 10
         time walk - get an extra turn after this one, cooldown 10
     spells
         chain lightning - attack target and each target connected to it, range 1, cooldown 5
         shockwave - attack and knockback each target within range, range 1, cooldown 5
+        worldfire - attack each target within range, range 5, cooldown 10
+        

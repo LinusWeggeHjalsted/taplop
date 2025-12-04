@@ -95,6 +95,7 @@ public class ReplenishScript : MonoBehaviour, Skill
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
+        wielderScript.DisplayUsedSkill(skillSprite);
         wielderScript.CurrentHealth = wielderScript.MaxHealth;
         currentCooldown = cooldown;
     }

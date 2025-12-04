@@ -89,11 +89,10 @@ public class ReflectScript : MonoBehaviour, Skill
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        if (wielder != null)
-        {
-            EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-            wielderScript.reflectDuration += 1;
-        }
+        traversableTilesScript.ClearHighlights();
+        EntityScript wielderScript = wielder.GetComponent<EntityScript>();
+        wielderScript.DisplayUsedSkill(skillSprite);
+        wielderScript.reflectDuration += 1;
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;

@@ -387,6 +387,17 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
+    public void DisplayUsedSkill(Sprite skillSprite)
+    {
+        GameObject usedSkillObject = new GameObject("Used Skill Sprite Object");
+        usedSkillObject.transform.parent = this.transform;
+        usedSkillObject.transform.localPosition = new Vector3(0, 1.5f, 0);
+        SpriteRenderer usedSkillRenderer = usedSkillObject.AddComponent<SpriteRenderer>();
+        usedSkillRenderer.sortingOrder = 3;
+        usedSkillRenderer.sprite = skillSprite;
+        Destroy(usedSkillObject, 0.5f);
+    }
+
     public void DisplayAggro()
     {
         GameObject aggroObject = new GameObject("Aggro Sprite Object");

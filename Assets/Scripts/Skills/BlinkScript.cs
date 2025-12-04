@@ -110,6 +110,7 @@ public class BlinkScript : MonoBehaviour, Skill
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
+        wielderScript.DisplayUsedSkill(skillSprite);
         wielderScript.MoveTo(targetPosition);
         currentCooldown = cooldown;
     }
