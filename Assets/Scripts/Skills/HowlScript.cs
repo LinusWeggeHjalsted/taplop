@@ -76,7 +76,7 @@ public class HowlScript : MonoBehaviour, Skill
         }
     }
 
-    public Vector3 EnemySelectTarget(Vector3 fromPosition)
+    public Vector3 EnemySelectTarget(Vector3 fromPosition, GameObject enemy)
     {
         return fromPosition;
     }
@@ -90,11 +90,12 @@ public class HowlScript : MonoBehaviour, Skill
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.DisplayUsedSkill(skillSprite);
+        float effectiveRange = range + wielderScript.enchantmentModifiers.range;
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         List<Vector3> deltas = new List<Vector3>();
-        for (float i = -range; i <= range; i++)
+        for (float i = -effectiveRange; i <= effectiveRange; i++)
         {
-            for (float j = -range; j <= range; j++)
+            for (float j = -effectiveRange; j <= effectiveRange; j++)
             {
                 if (i == 0 && j == 0)
                 {

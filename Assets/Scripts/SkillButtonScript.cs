@@ -37,14 +37,33 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             string skillRange = "";
             if (skillScript.GetRange() > 0)
             {
-                skillRange = "Range " + skillScript.GetRange().ToString() + "\n";
+                float modifierRange = 0;
+                if (turnLogic != null)
+                {
+                    EntityScript playerEntityScript = player.GetComponent<EntityScript>();
+                    modifierRange = playerEntityScript.enchantmentModifiers.range;
+                }
+                float effectiveRange = skillScript.GetRange() + modifierRange;
+                skillRange = "Range " + effectiveRange.ToString() + "\n";
+            }
+            string skillDuration = "";
+            if (skillScript.GetDuration() > 0)
+            {
+                int modifierDuration = 0;
+                if (turnLogic != null)
+                {
+                    EntityScript playerEntityScript = player.GetComponent<EntityScript>();
+                    modifierDuration = playerEntityScript.enchantmentModifiers.duration;
+                }
+                int effectiveDuration = skillScript.GetDuration() + modifierDuration;
+                skillDuration = "Duration " + effectiveDuration.ToString() + "\n";
             }
             string skillCooldown = "";
             if (skillScript.GetCooldown() > 0)
             {
                 skillCooldown = "Cooldown " + skillScript.GetCooldown().ToString() + "\n";
             }
-            string tooltipText = skillDescription + skillType + skillRange + skillCooldown;
+            string tooltipText = skillDescription + skillType + skillRange + skillDuration + skillCooldown;
             Vector3[] buttonCorners = new Vector3[4];
             buttonRectTransform.GetWorldCorners(buttonCorners);
             Vector3 buttonTopRightPosition = buttonCorners[2];

@@ -82,7 +82,7 @@ public class ImpaleScript : MonoBehaviour, Skill
         }
     }
 
-    public Vector3 EnemySelectTarget(Vector3 fromPosition)
+    public Vector3 EnemySelectTarget(Vector3 fromPosition, GameObject enemy)
     {
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         Vector3 playerPosition = player.transform.position;
@@ -128,11 +128,13 @@ public class ImpaleScript : MonoBehaviour, Skill
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
+        EntityScript wielderScript = wielder.GetComponent<EntityScript>();
+        float effectiveRange = range + wielderScript.enchantmentModifiers.range;
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
-        for (float i = -range; i <= range; i++)
+        for (float i = -effectiveRange; i <= effectiveRange; i++)
         {
-            for (float j = -range; j <= range; j++)
+            for (float j = -effectiveRange; j <= effectiveRange; j++)
             {
                 if (i == 0 && j == 0)
                 {

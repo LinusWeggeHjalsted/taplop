@@ -240,7 +240,8 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 BootsScript bootsScript = boots.GetComponent<BootsScript>();
                 bootsSpeed = bootsScript.speedBonus;
             }
-            return speed + bootsSpeed;
+            int effectiveSpeed = speed + bootsSpeed + enchantmentModifiers.speed;
+            return effectiveSpeed;
         }
         set
         {
@@ -289,12 +290,13 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     {
         get
         {
+            int effectiveRadius = enchantmentModifiers.pickupRadius;
             if (pants != null)
             {
                 PantsScript pantsScript = pants.GetComponent<PantsScript>();
-                return pantsScript.pickupRadius;
+                effectiveRadius += pantsScript.pickupRadius;
             }
-            else return 0;
+            return effectiveRadius;
         }
     }
     public int aggroRange;
@@ -363,7 +365,8 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                     float skillRange = skillScript.GetRange();
                     if (skillRange > 0)
                     {
-                        skillRanges.Add(skillScript.GetRange());
+                        float effectiveRange = skillRange + enchantmentModifiers.range;
+                        skillRanges.Add(effectiveRange);
                     }
                 }
             }

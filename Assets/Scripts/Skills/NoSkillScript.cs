@@ -54,7 +54,7 @@ public class NoSkillScript : MonoBehaviour, Skill
         return -1;
     }
 
-    public Vector3 EnemySelectTarget(Vector3 fromPosition)
+    public Vector3 EnemySelectTarget(Vector3 fromPosition, GameObject enemy)
     {
         return fromPosition;
     }

@@ -8,7 +8,6 @@
 - update inventory ui to use player character's inventory array
 - loading screen
 - sort active enemies by distance to player before taking their turn
-- display stun effect sprite
 - weaponswap
 - damage meter
 - scenery

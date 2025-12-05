@@ -80,7 +80,7 @@ public class StoneFormScript : MonoBehaviour, Skill, EnchantmentScript
         }
     }
 
-    public Vector3 EnemySelectTarget(Vector3 fromPosition)
+    public Vector3 EnemySelectTarget(Vector3 fromPosition, GameObject enemy)
     {
         return fromPosition;
     }
