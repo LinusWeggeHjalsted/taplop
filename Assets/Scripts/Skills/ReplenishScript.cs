@@ -8,9 +8,10 @@ public class ReplenishScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private Sprite skillSprite;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -37,6 +38,11 @@ public class ReplenishScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -105,8 +111,9 @@ public class ReplenishScript : MonoBehaviour, Skill
         skillName = "Replenish";
         skillType = "Cantrip";
         description = "Heal to full health";
-        cooldown = 5;
         range = 0;
+        duration = 0;
+        cooldown = 5;
         skillSprite = Resources.Load<Sprite>("Skills/Replenish");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)

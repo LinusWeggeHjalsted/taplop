@@ -28,8 +28,9 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
 
     private Transform _mainHand;
     private Transform _offHand;
-    private Transform _hands;
     private Transform _body;
+    private Transform _hands;
+    private Transform _legs;
     private Transform _feet;
     private Transform _inventory;
     private int _inventorySize;
@@ -38,8 +39,9 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
 
     public Transform mainHand { get { return _mainHand; } }
     public Transform offHand { get { return _offHand; } }
-    public Transform hands { get { return _hands; } }
     public Transform body { get { return _body; } }
+    public Transform hands { get { return _hands; } }
+    public Transform legs { get { return _legs; } }
     public Transform feet { get { return _feet; } }
     public Transform inventory { get { return _inventory; } }
     public int inventorySize { get { return _inventorySize; } }
@@ -78,6 +80,14 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         {
             if (hands.childCount == 0) return null;
             return hands.GetChild(0).gameObject;
+        }
+    }
+    public GameObject pants
+    {
+        get
+        {
+            if (legs.childCount == 0) return null;
+            return legs.GetChild(0).gameObject;
         }
     }
     public GameObject coat
@@ -204,6 +214,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         _offHand = gear.transform.Find("Off Hand");
         _body = gear.transform.Find("Body");
         _hands = gear.transform.Find("Hands");
+        _legs = gear.transform.Find("Legs");
         _feet = gear.transform.Find("Feet");
         _inventory = this.transform.Find("Inventory");
         _inventorySize = 24;

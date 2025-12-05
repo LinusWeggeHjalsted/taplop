@@ -32,8 +32,9 @@ Transform:
   m_Children:
   - {fileID: 8451188293549409614}
   - {fileID: 3760921790326505484}
-  - {fileID: 4967480024349016113}
   - {fileID: 5699063602429991037}
+  - {fileID: 4967480024349016113}
+  - {fileID: 6503460062795136564}
   - {fileID: 1990583735065344802}
   m_Father: {fileID: 8712606954518212440}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -926,6 +927,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -1063,6 +1065,7 @@ MonoBehaviour:
   finishedBuilding: 0
   finishedAssigning: 0
   player: {fileID: 0}
+  skillButtons: []
 --- !u!1 &3036218983389148996
 GameObject:
   m_ObjectHideFlags: 0
@@ -1349,6 +1352,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -1432,7 +1436,7 @@ Camera:
   far clip plane: 1000
   field of view: 34
   orthographic: 1
-  orthographic size: 12.1875
+  orthographic size: 12.21875
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -1685,6 +1689,37 @@ MonoBehaviour:
   spriteRenderer: {fileID: 0}
   gear: {fileID: 0}
   gearScript: {fileID: 0}
+--- !u!1 &4734353948826732307
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6503460062795136564}
+  m_Layer: 0
+  m_Name: Legs
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6503460062795136564
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4734353948826732307}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1694298517020147632}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &4954083374901437062
 GameObject:
   m_ObjectHideFlags: 0
@@ -1972,6 +2007,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -2440,6 +2476,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -2601,6 +2638,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -2762,6 +2800,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -3231,6 +3270,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -3392,6 +3432,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}

@@ -17,15 +17,18 @@ Enemy Info
 name Invader Javelineer
 sprite InvaderSpearNone
 maxHealth 10
-armor 0
+armor -2
 speed 1
 aggroRange 4
 mainHandWeapon Spear
 mainHandName Bronze Spear
 mainHandDamage 5
-coatName Cloth Coat
+coatName Leather Coat
 coatArmor 2
-coatHealth 2
+coatHealth 1
+pantsName Leather Pants
+pantsArmor 2
+pantsPickupRadius 1
 
 Item Info
 

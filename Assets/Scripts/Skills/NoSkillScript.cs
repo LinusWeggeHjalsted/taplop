@@ -25,6 +25,11 @@ public class NoSkillScript : MonoBehaviour, Skill
         return 0;
     }
 
+    public int GetDuration()
+    {
+        return 0;
+    }
+
     public Sprite GetSprite()
     {
         return skillSprite;

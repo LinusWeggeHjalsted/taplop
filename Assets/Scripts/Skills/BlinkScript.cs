@@ -8,9 +8,10 @@ public class BlinkScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private Sprite skillSprite;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -37,6 +38,11 @@ public class BlinkScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -149,8 +155,9 @@ public class BlinkScript : MonoBehaviour, Skill
         skillName = "Blink";
         skillType = "Cantrip";
         description = "Teleport";
-        cooldown = 3;
         range = 3f;
+        duration = 0;
+        cooldown = 3;
         skillSprite = Resources.Load<Sprite>("Skills/Blink");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)

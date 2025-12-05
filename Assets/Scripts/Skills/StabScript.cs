@@ -7,9 +7,10 @@ public class StabScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private Sprite skillSprite;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -36,6 +37,11 @@ public class StabScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -121,11 +127,11 @@ public class StabScript : MonoBehaviour, Skill
             EntityScript targetScript = target.GetComponent<EntityScript>();
             if (targetScript.CurrentHealth == targetScript.MaxHealth)
             {
-                targetScript.IncomingDamage(2 * wielderScript.mainHandDamage, wielder);
+                wielderScript.Attack(2 * wielderScript.mainHandDamage, target);
             }
             else
             {
-                targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
+                wielderScript.Attack(wielderScript.mainHandDamage, target);
             }
         }
         if (wielder == player)
@@ -187,8 +193,9 @@ public class StabScript : MonoBehaviour, Skill
         skillName = "Stab";
         skillType = "Main Hand Skill";
         description = "Attack target, dealing 2x damage if target has full health";
-        cooldown = 0;
         range = 1f;
+        duration = 0;
+        cooldown = 0;
         skillSprite = Resources.Load<Sprite>("Skills/Stab");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)

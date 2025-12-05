@@ -10,6 +10,7 @@ public class GearUIScript : MonoBehaviour
     public Transform offHandItemSlot;
     public Transform bodyItemSlot;
     public Transform handsItemSlot;
+    public Transform legsItemSlot;
     public Transform feetItemSlot;
 
     public void RefreshUI()
@@ -31,6 +32,10 @@ public class GearUIScript : MonoBehaviour
         {
             Destroy(handsItemSlot.GetChild(0).gameObject);
         }
+        if (legsItemSlot.childCount > 0)
+        {
+            Destroy(legsItemSlot.GetChild(0).gameObject);
+        }
         if (feetItemSlot.childCount > 0)
         {
             Destroy(feetItemSlot.GetChild(0).gameObject);
@@ -40,6 +45,7 @@ public class GearUIScript : MonoBehaviour
         GameObject offHandWeapon = playerScript.offHandWeapon;
         GameObject coat = playerScript.coat;
         GameObject gloves = playerScript.gloves;
+        GameObject pants = playerScript.pants;
         GameObject boots = playerScript.boots;
         if (mainHandWeapon != null)
         {
@@ -81,6 +87,16 @@ public class GearUIScript : MonoBehaviour
             Image glovesItemImage = glovesItem.GetComponent<Image>();
             glovesItemImage.sprite = glovesSprite;
         }
+        if (pants != null)
+        {
+            ItemScript pantsScript = pants.GetComponent<ItemScript>();
+            Sprite pantsSprite = pantsScript.GetSprite();
+            GameObject pantsItem = Instantiate(inventoryItemPrefab, legsItemSlot);
+            InventoryItemScript pantsItemScript = pantsItem.GetComponent<InventoryItemScript>();
+            pantsItemScript.item = pants;
+            Image pantsItemImage = pantsItem.GetComponent<Image>();
+            pantsItemImage.sprite = pantsSprite;
+        }
         if (boots != null)
         {
             ItemScript bootsScript = boots.GetComponent<ItemScript>();
@@ -103,11 +119,13 @@ public class GearUIScript : MonoBehaviour
         Transform offHand = gearSlots.Find("Off Hand");
         Transform body = gearSlots.Find("Body");
         Transform hands = gearSlots.Find("Hands");
+        Transform legs = gearSlots.Find("Legs");
         Transform feet = gearSlots.Find("Feet");
         mainHandItemSlot = mainHand.GetChild(0);
         offHandItemSlot = offHand.GetChild(0);
         bodyItemSlot = body.GetChild(0);
         handsItemSlot = hands.GetChild(0);
+        legsItemSlot = legs.GetChild(0);
         feetItemSlot = feet.GetChild(0);
 
         ItemSlotScript mainHandItemSlotScript = mainHandItemSlot.GetComponent<ItemSlotScript>();
@@ -121,6 +139,9 @@ public class GearUIScript : MonoBehaviour
 
         ItemSlotScript handsItemSlotScript = handsItemSlot.GetComponent<ItemSlotScript>();
         handsItemSlotScript.itemType = "Gloves";
+
+        ItemSlotScript legsItemSlotScript = legsItemSlot.GetComponent<ItemSlotScript>();
+        legsItemSlotScript.itemType = "Pants";
 
         ItemSlotScript feetItemSlotScript = feetItemSlot.GetComponent<ItemSlotScript>();
         feetItemSlotScript.itemType = "Boots";

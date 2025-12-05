@@ -150,6 +150,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -656,8 +657,9 @@ Transform:
   m_Children:
   - {fileID: 304147959137546636}
   - {fileID: 1077685407760402432}
-  - {fileID: 8083952597284830649}
   - {fileID: 6563841655861033383}
+  - {fileID: 8083952597284830649}
+  - {fileID: 2927783878860048361}
   - {fileID: 7334686067465300910}
   m_Father: {fileID: 8200703806683987638}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -885,6 +887,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 7528660860088145104}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2227976297658820834
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3587400603269439837}
+  m_Layer: 0
+  m_Name: Enchantments
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &3587400603269439837
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2227976297658820834}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 8200703806683987638}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2903379480261628831
 GameObject:
   m_ObjectHideFlags: 0
@@ -1035,6 +1068,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -1763,6 +1797,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -2023,6 +2058,7 @@ Transform:
   - {fileID: 7528660860088145104}
   - {fileID: 5903917599939213879}
   - {fileID: 4444773360443484230}
+  - {fileID: 3587400603269439837}
   m_Father: {fileID: 9031370341824819560}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &5214486221021970294
@@ -2115,11 +2151,14 @@ MonoBehaviour:
   healthBarStates: []
   hitSprite: {fileID: 4457663794195168306, guid: ec85f00b5722e6900b46f0a2b5382767, type: 3}
   aggroSprite: {fileID: 0}
+  stunSprite: {fileID: 0}
+  reflectSprite: {fileID: 0}
   currentBuildTemplate: 00000000
   aggroRange: 0
   previousPosition: {x: 0, y: 0, z: 0}
-  stunDuration: 0
-  reflectDuration: 0
+  stunEffect: {fileID: 0}
+  reflectEffect: {fileID: 0}
+  enchantments: {fileID: 0}
 --- !u!1 &5463074885201409457
 GameObject:
   m_ObjectHideFlags: 0
@@ -2556,6 +2595,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -2810,6 +2850,37 @@ MonoBehaviour:
   tilePrefab: {fileID: 0}
   enemyPrefab: {fileID: 0}
   groundItemsPrefab: {fileID: 0}
+--- !u!1 &7219101730112612961
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2927783878860048361}
+  m_Layer: 0
+  m_Name: Legs
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2927783878860048361
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7219101730112612961}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 7528660860088145104}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &7703037104913916439
 GameObject:
   m_ObjectHideFlags: 0
@@ -2882,7 +2953,7 @@ Camera:
   far clip plane: 1000
   field of view: 34
   orthographic: 1
-  orthographic size: 12.1875
+  orthographic size: 11.71875
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -3170,6 +3241,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -3512,6 +3584,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -3735,6 +3808,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}
@@ -3896,6 +3970,7 @@ MonoBehaviour:
   buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
   image: {fileID: 0}
+  canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
   skillsPanelScript: {fileID: 0}
   turnLogic: {fileID: 0}

@@ -7,9 +7,10 @@ public class ImpaleScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private Sprite skillSprite;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -36,6 +37,11 @@ public class ImpaleScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -110,8 +116,7 @@ public class ImpaleScript : MonoBehaviour, Skill
         }
         if (target != null)
         {
-            EntityScript targetScript = target.GetComponent<EntityScript>();
-            targetScript.IncomingDamage(wielderScript.mainHandDamage * 2, wielder);
+            wielderScript.Attack(wielderScript.mainHandDamage * 2, target);
         }
         currentCooldown = cooldown;
         if (wielder == player)
@@ -173,8 +178,9 @@ public class ImpaleScript : MonoBehaviour, Skill
         skillName = "Impale";
         skillType = "Main Hand Skill";
         description = "Attack target for 2x damage";
-        cooldown = 2;
         range = 1f;
+        duration = 0;
+        cooldown = 2;
         skillSprite = Resources.Load<Sprite>("Skills/Impale");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)

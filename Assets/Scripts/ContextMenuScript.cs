@@ -54,6 +54,13 @@ public class ContextMenuScript : MonoBehaviour
                 glovesButtonScript.selectedItem = item;
                 StartCoroutine(glovesButtonScript.SetText("Equip to hands"));
                 break;
+            case "Pants":
+                GameObject pantsButton = Instantiate(equipButtonPrefab, this.transform);
+                EquipButtonScript pantsButtonScript = pantsButton.GetComponent<EquipButtonScript>();
+                pantsButtonScript.targetTransform = playerScript.legs;
+                pantsButtonScript.selectedItem = item;
+                StartCoroutine(pantsButtonScript.SetText("Equip to legs"));
+                break;
             case "Boots":
                 GameObject bootsButton = Instantiate(equipButtonPrefab, this.transform);
                 EquipButtonScript bootsButtonScript = bootsButton.GetComponent<EquipButtonScript>();

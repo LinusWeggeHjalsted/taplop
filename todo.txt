@@ -4,7 +4,6 @@
 - write player save
 - skills menu
 - lock switching equipped gear and skills when there are active enemies
-- skill durations
 - better enemy death
 - update inventory ui to use player character's inventory array
 - loading screen
@@ -27,6 +26,4 @@
 - stuck tooltip on weapon skill
 - pathing behavior could be improved when no path is found
 - maybe pathing bug in forest 2
-- pants with pickup radius bonus
 - amulet with spell damage
-- enchantment gameobjects

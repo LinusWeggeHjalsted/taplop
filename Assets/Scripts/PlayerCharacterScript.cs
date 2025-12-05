@@ -7,11 +7,13 @@ public interface PlayerCharacterScript
     Transform offHand { get; }
     Transform body { get; }
     Transform hands { get; }
+    Transform legs { get; }
     Transform feet { get; }
     GameObject mainHandWeapon { get; }
     GameObject offHandWeapon { get; }
     GameObject coat { get; }
     GameObject gloves { get; }
+    GameObject pants { get; }
     GameObject boots { get; }
     Transform inventory { get; }
     int inventorySize { get; }

@@ -33,6 +33,9 @@ public class LevelBuilderScript : MonoBehaviour
         public string glovesName;
         public int glovesArmor;
         public int glovesDamage;
+        public string pantsName;
+        public int pantsArmor;
+        public int pantsPickupRadius;
         public string bootsName;
         public int bootsArmor;
         public int bootsSpeed;
@@ -45,8 +48,9 @@ public class LevelBuilderScript : MonoBehaviour
         public string itemType;
         public string weaponType;
         public int armor;
-        public int damage;
         public int health;
+        public int damage;
+        public int pickupRadius;
         public int speed;
     }
 
@@ -378,6 +382,37 @@ public class LevelBuilderScript : MonoBehaviour
                         Debug.LogError("glovesDamage is not a number");
                     }
                 }
+                else if (currentLine.StartsWith("pantsName "))
+                {
+                    string pantsName = currentLine.Substring("pantsName ".Length);
+                    preEnemy.pantsName = pantsName;
+                }
+                else if (currentLine.StartsWith("pantsArmor "))
+                {
+                    string pantsArmor = currentLine.Substring("pantsArmor ".Length);
+                    int pantsArmorNumber;
+                    if (Int32.TryParse(pantsArmor, out pantsArmorNumber))
+                    {
+                        preEnemy.pantsArmor = pantsArmorNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("pantsArmor is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("pantsPickupRadius "))
+                {
+                    string pantsPickupRadius = currentLine.Substring("pantsPickupRadius ".Length);
+                    int pantsPickupRadiusNumber;
+                    if (Int32.TryParse(pantsPickupRadius, out pantsPickupRadiusNumber))
+                    {
+                        preEnemy.pantsPickupRadius = pantsPickupRadiusNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("pantsPickupRadius is not a number");
+                    }
+                }
                 else if (currentLine.StartsWith("bootsName "))
                 {
                     string bootsName = currentLine.Substring("bootsName ".Length);
@@ -593,6 +628,7 @@ public class LevelBuilderScript : MonoBehaviour
             Transform enemyOffHand = enemyGear.Find("Off Hand");
             Transform enemyBody = enemyGear.Find("Body");
             Transform enemyHands = enemyGear.Find("Hands");
+            Transform enemyLegs = enemyGear.Find("Legs");
             Transform enemyFeet = enemyGear.Find("Feet");
             Transform enemyUtilitySkills = newEnemy.transform.Find("Utility Skills");
             newEnemyScript.utilitySkillSlots = 5; // to-do - think about this
@@ -629,6 +665,15 @@ public class LevelBuilderScript : MonoBehaviour
                 enemyGlovesScript.itemName = preEnemy.glovesName;
                 enemyGlovesScript.armorBonus = preEnemy.glovesArmor;
                 enemyGlovesScript.damageBonus = preEnemy.glovesDamage;
+            }
+            if (preEnemy.pantsName != null)
+            {
+                GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Pants");
+                GameObject enemyPants = Instantiate(pantsPrefab, enemyLegs);
+                PantsScript enemyPantsScript = enemyPants.GetComponent<PantsScript>();
+                enemyPantsScript.itemName = preEnemy.pantsName;
+                enemyPantsScript.armorBonus = preEnemy.pantsArmor;
+                enemyPantsScript.pickupRadius = preEnemy.pantsPickupRadius;
             }
             if (preEnemy.bootsName != null)
             {
@@ -692,6 +737,14 @@ public class LevelBuilderScript : MonoBehaviour
                     glovesScript.itemName = preItem.itemName;
                     glovesScript.armorBonus = preItem.armor;
                     glovesScript.damageBonus = preItem.damage;
+                    break;
+                case "Pants":
+                    GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Pants");
+                    GameObject newPants = Instantiate(pantsPrefab, newGroundItems.transform);
+                    PantsScript pantsScript = newPants.GetComponent<PantsScript>();
+                    pantsScript.itemName = preItem.itemName;
+                    pantsScript.armorBonus = preItem.armor;
+                    pantsScript.pickupRadius = preItem.pickupRadius;
                     break;
                 case "Boots":
                     GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");

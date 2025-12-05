@@ -7,9 +7,10 @@ public class RetreatingSwipeScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private Sprite skillSprite;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -36,6 +37,11 @@ public class RetreatingSwipeScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -110,8 +116,7 @@ public class RetreatingSwipeScript : MonoBehaviour, Skill
         }
         if (target != null)
         {
-            EntityScript targetScript = target.GetComponent<EntityScript>();
-            targetScript.IncomingDamage(2 * wielderScript.offHandDamage, wielder);
+            wielderScript.Attack(2 * wielderScript.offHandDamage, target);
             // retreat 2 tiles
             Vector3 wielderPosition = wielder.transform.position;
             Vector3 positionDelta = target.transform.position - wielderPosition;
@@ -192,8 +197,9 @@ public class RetreatingSwipeScript : MonoBehaviour, Skill
         skillName = "Retreating Swipe";
         skillType = "Off Hand Skill";
         description = "Attack target for 2x damage and retreat 2 tiles";
-        cooldown = 3;
         range = 1f;
+        duration = 0;
+        cooldown = 3;
         skillSprite = Resources.Load<Sprite>("Skills/RetreatingSwipe");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)

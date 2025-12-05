@@ -182,6 +182,7 @@ public class TurnLogicScript : MonoBehaviour
             EntityScript enemyScript = enemy.GetComponent<EntityScript>();
             enemyScript.ReduceCooldowns(1);
             enemyScript.ReduceEffectDurations(1);
+            enemyScript.ReduceEnchantmentDurations(1);
             if (enemyScript.stunDuration == 0)
             {
                 enemiesScript.EnemyTurnMove(enemy);
@@ -192,6 +193,7 @@ public class TurnLogicScript : MonoBehaviour
             {
                 enemyScript.ReduceStunDuration(1);
             }
+            enemyScript.EndOfTurnEnchantmentEffects();
         }
         yield return new WaitForSeconds(0.25f);
         currentGameState = GameState.PlayerTurnMove;
@@ -218,6 +220,7 @@ public class TurnLogicScript : MonoBehaviour
                         }
                         playerScript.ReduceCooldowns(1);
                         playerScript.ReduceEffectDurations(1);
+                        playerScript.ReduceEnchantmentDurations(1);
                         traversableTilesScript.ClearHighlights();
                         turnStatusText.text = "Player Move Step";
                         if (playerScript.stunDuration == 0)
@@ -288,6 +291,7 @@ public class TurnLogicScript : MonoBehaviour
                 {
                     turnStarted = true;
                     traversableTilesScript.ClearHighlights();
+                    playerScript.EndOfTurnEnchantmentEffects();
                     turnStatusText.text = "Enemies' turn...";
                     StartCoroutine(EnemiesTurn());
                 }

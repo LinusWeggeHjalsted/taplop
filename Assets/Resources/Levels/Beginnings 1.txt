@@ -1,10 +1,10 @@
-Description
+Metadata
 creator Strider
 
 Layout
        2
-  !..   a
- ....  ..
+  !..   .
+ ....  .a
  ..   ..
   ....
    ..
@@ -18,23 +18,35 @@ Enemy Info
 name Invader Warrior
 sprite InvaderSwordNone
 maxHealth 7
-armor 0
+armor -2
 speed 1
 aggroRange 3
 mainHandWeapon Sword
 mainHandName Bronze Sword
 mainHandDamage 4
+coatName Cloth Coat
+coatArmor 1
+coatHealth 1
+pantsName Cloth Pants
+pantsArmor 1
+pantsPickupRadius 1
 
 2
 name Invader Javelineer
 sprite InvaderSpearNone
 maxHealth 7
-armor 0
+armor -2
 speed 1
 aggroRange 4
 mainHandWeapon Spear
 mainHandName Bronze Spear
 mainHandDamage 4
+coatName Cloth Coat
+coatArmor 1
+coatHealth 1
+pantsName Cloth Pants
+pantsArmor 1
+pantsPickupRadius 1
 
 Item Info
 a

@@ -6,9 +6,10 @@ public class ReflectScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private Sprite skillSprite;
     public GameObject shield;
     public ShieldScript shieldScript;
     public GameObject traversableTiles;
@@ -37,6 +38,11 @@ public class ReflectScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -92,7 +98,8 @@ public class ReflectScript : MonoBehaviour, Skill
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.DisplayUsedSkill(skillSprite);
-        wielderScript.reflectDuration += 1;
+        int effectiveDuration = duration + wielderScript.enchantmentModifiers.duration;
+        wielderScript.reflectDuration += effectiveDuration;
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;
@@ -105,8 +112,9 @@ public class ReflectScript : MonoBehaviour, Skill
         skillName = "Reflect";
         skillType = "Off Hand Skill";
         description = "Incoming damage is prevented and dealt to the attacker";
-        cooldown = 4;
         range = 0;
+        duration = 1;
+        cooldown = 4;
         skillSprite = Resources.Load<Sprite>("Skills/Reflect");
         shield = this.transform.parent.gameObject;
         shieldScript = shield.GetComponent<ShieldScript>();

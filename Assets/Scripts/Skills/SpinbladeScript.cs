@@ -7,9 +7,10 @@ public class SpinbladeScript : MonoBehaviour, Skill
     private string skillType;
     private string description; 
     private float range;
-    private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private Sprite skillSprite;
     public GameObject sword;
     public SwordScript swordScript;
     public GameObject traversableTiles;
@@ -38,6 +39,11 @@ public class SpinbladeScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -130,8 +136,7 @@ public class SpinbladeScript : MonoBehaviour, Skill
             }
             if (target != null)
             {
-                EntityScript targetScript = target.GetComponent<EntityScript>();
-                targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
+                wielderScript.Attack(wielderScript.mainHandDamage, target);
             }
         }
         if (wielder == player)
@@ -146,8 +151,9 @@ public class SpinbladeScript : MonoBehaviour, Skill
         skillName = "Spinblade";
         skillType = "Main Hand Skill";
         description = "Attack each target within range";
-        cooldown = 2;
         range = 1f;
+        duration = 0;
+        cooldown = 2;
         skillSprite = Resources.Load<Sprite>("Skills/Spinblade");
         sword = this.transform.parent.gameObject;
         swordScript = sword.GetComponent<SwordScript>();

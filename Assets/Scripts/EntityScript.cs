@@ -49,8 +49,9 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
 
     private Transform _mainHand;
     private Transform _offHand;
-    private Transform _hands;
     private Transform _body;
+    private Transform _hands;
+    private Transform _legs;
     private Transform _feet;
     private Transform _inventory;
     private int _inventorySize;
@@ -59,8 +60,9 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
 
     public Transform mainHand { get { return _mainHand; } }
     public Transform offHand { get { return _offHand; } }
-    public Transform hands { get { return _hands; } }
     public Transform body { get { return _body; } }
+    public Transform hands { get { return _hands; } }
+    public Transform legs { get { return _legs; } }
     public Transform feet { get { return _feet; } }
     public Transform inventory { get { return _inventory; } }
     public int inventorySize { get { return _inventorySize; } }
@@ -93,6 +95,14 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             return offHand.GetChild(0).gameObject;
         }
     }
+    public GameObject coat
+    {
+        get
+        {
+            if (body.childCount == 0) return null;
+            return body.GetChild(0).gameObject;
+        }
+    }
     public GameObject gloves
     {
         get
@@ -101,12 +111,12 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             return hands.GetChild(0).gameObject;
         }
     }
-    public GameObject coat
+    public GameObject pants
     {
         get
         {
-            if (body.childCount == 0) return null;
-            return body.GetChild(0).gameObject;
+            if (legs.childCount == 0) return null;
+            return legs.GetChild(0).gameObject;
         }
     }
     public GameObject boots
@@ -141,6 +151,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public Sprite[] healthBarStates = new Sprite[8];
     public Sprite hitSprite;
     public Sprite aggroSprite;
+    public Sprite stunSprite;
     public Sprite reflectSprite;
 
     public string currentBuildTemplate = "00000000";
@@ -274,6 +285,18 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             return offHandWeaponDamage + glovesDamage;
         }
     }
+    public int pickupRadius
+    {
+        get
+        {
+            if (pants != null)
+            {
+                PantsScript pantsScript = pants.GetComponent<PantsScript>();
+                return pantsScript.pickupRadius;
+            }
+            else return 0;
+        }
+    }
     public int aggroRange;
     public Vector3 previousPosition = new Vector3();
     public GameObject[] equippedSkills
@@ -347,7 +370,21 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             return skillRanges.Min();
         }
     }
-    public int stunDuration = 0;
+    // effects
+    private int _stunDuration = 0;
+    public int stunDuration
+    {
+        get
+        {
+            return _stunDuration;
+        }
+        set
+        {
+            _stunDuration = value;
+            DisplayStun();
+        }
+    }
+    public GameObject stunEffect;
     private int _reflectDuration = 0;
     public int reflectDuration
     {
@@ -362,6 +399,81 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
     }
     public GameObject reflectEffect;
+    public Transform enchantments;
+    List<GameObject> activeEnchantments
+    {
+        get
+        {
+            List<GameObject> enchantmentList = new List<GameObject>();
+            if (enchantments.childCount > 0)
+            {
+                for (int i = 0; i < enchantments.childCount; i++)
+                {
+                    GameObject enchantment = enchantments.GetChild(i).gameObject;
+                    enchantmentList.Add(enchantment);
+                }
+            }
+            return enchantmentList;
+        }
+    }
+
+    public class Modifiers
+    {
+        public int outgoingDamage;
+        public int incomingDamage;
+        public int speed;
+        public float range;
+        public int duration;
+        public int outgoingStunDuration;
+        public int incomingStunDuration;
+        public int pickupRadius;
+    }
+
+    public Modifiers enchantmentModifiers
+    {
+        get
+        {
+            Modifiers totalModifiers = new Modifiers();
+            foreach (GameObject enchantment in activeEnchantments)
+            {
+                EnchantmentScript enchantmentScript = enchantment.GetComponent<EnchantmentScript>();
+                Modifiers modifiers = enchantmentScript.ModifierEffects();
+                totalModifiers.outgoingDamage += modifiers.outgoingDamage;
+                totalModifiers.incomingDamage += modifiers.incomingDamage;
+                totalModifiers.speed += modifiers.speed;
+                totalModifiers.range += modifiers.range;
+                totalModifiers.duration += modifiers.duration;
+                totalModifiers.outgoingStunDuration += modifiers.outgoingStunDuration;
+                totalModifiers.incomingStunDuration += modifiers.incomingStunDuration;
+                totalModifiers.pickupRadius += modifiers.pickupRadius;
+            }
+            return totalModifiers;
+        }
+    }
+
+    public void DisplayStun()
+    {
+        if (stunDuration > 0)
+        {
+            if (stunEffect == null)
+            {
+                stunEffect = new GameObject("Stun Sprite Object");
+                stunEffect.transform.parent = this.transform;
+                stunEffect.transform.localPosition = new Vector3(0, 1f, 0);
+                SpriteRenderer stunRenderer = stunEffect.AddComponent<SpriteRenderer>();
+                stunRenderer.sortingLayerName = "Effects";
+                stunRenderer.sortingOrder = 1;
+                stunRenderer.sprite = stunSprite;
+            }
+        }
+        else
+        {
+            if (stunEffect != null)
+            {
+                Destroy(stunEffect);
+            }
+        }
+    }
 
     public void DisplayReflect()
     {
@@ -385,6 +497,10 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 Destroy(reflectEffect);
             }
         }
+    }
+
+    public void DisplayEnchantment()
+    {
     }
 
     public void DisplayUsedSkill(Sprite skillSprite)
@@ -507,30 +623,43 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
         this.transform.position = targetPosition;
         // pick up ground items
-        if (dropsScript.groundItemsLookup.ContainsKey(targetPosition))
+        List<Vector3> pickupDeltas = new List<Vector3>();
+        for (float i = -pickupRadius; i <= pickupRadius; i++)
         {
-            GameObject groundItems = dropsScript.groundItemsLookup[targetPosition];
-            while (groundItems.transform.childCount > 0 && inventory.childCount < inventorySize)
+            for (float j = -pickupRadius; j <= pickupRadius; j++)
             {
-                Transform item = groundItems.transform.GetChild(0);
-                item.parent = inventory;
-                // refresh open inventory UI panel
-                Transform characterUI = GameObject.Find("Character UI").transform;
-                Transform inventoryUIPanel = characterUI.Find("Inventory UI Panel(Clone)");
-                if (inventoryUIPanel != null)
+                Vector3 delta = new Vector3(i, j, 0);
+                pickupDeltas.Add(delta);
+            }
+        }
+        foreach (Vector3 delta in pickupDeltas)
+        {
+            Vector3 pickupPosition = this.transform.position + delta;
+            if (dropsScript.groundItemsLookup.ContainsKey(pickupPosition))
+            {
+                GameObject groundItems = dropsScript.groundItemsLookup[pickupPosition];
+                while (groundItems.transform.childCount > 0 && inventory.childCount < inventorySize)
                 {
-                    InventoryUIScript inventoryUIScript = inventoryUIPanel.GetComponent<InventoryUIScript>();
-                    inventoryUIScript.RefreshUI();
+                    Transform item = groundItems.transform.GetChild(0);
+                    item.parent = inventory;
+                    // refresh open inventory UI panel
+                    Transform characterUI = GameObject.Find("Character UI").transform;
+                    Transform inventoryUIPanel = characterUI.Find("Inventory UI Panel(Clone)");
+                    if (inventoryUIPanel != null)
+                    {
+                        InventoryUIScript inventoryUIScript = inventoryUIPanel.GetComponent<InventoryUIScript>();
+                        inventoryUIScript.RefreshUI();
+                    }
                 }
-            }
-            if (groundItems.transform.childCount == 0)
-            {
-                dropsScript.groundItemsLookup.Remove(targetPosition);
-                Destroy(groundItems);
-            }
-            else
-            {
-                Debug.Log("inventory full");
+                if (groundItems.transform.childCount == 0)
+                {
+                    dropsScript.groundItemsLookup.Remove(pickupPosition);
+                    Destroy(groundItems);
+                }
+                else
+                {
+                    Debug.Log("inventory full");
+                }
             }
         }
         // update aggro and finish level if player is on level end
@@ -543,6 +672,19 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 missionLogicScript.NextLevel();
             }
         }
+    }
+
+    public int Attack(int damage, GameObject defender)
+    {
+        OnAttackEnchantmentEffects(defender);
+        return OutgoingDamage(damage, defender);
+    }
+
+    public int OutgoingDamage(int damage, GameObject defender)
+    {
+        EntityScript defenderScript = defender.GetComponent<EntityScript>();
+        int effectiveDamage = damage + enchantmentModifiers.outgoingDamage;
+        return defenderScript.IncomingDamage(effectiveDamage, this.gameObject);
     }
 
     public int IncomingDamage(int damage, GameObject attacker)
@@ -558,15 +700,16 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             attackerScript.IncomingDamage(damage, attacker);
             return 0;
         }
+        int effectiveDamage = damage + enchantmentModifiers.incomingDamage;
         // half of incoming damage is reduced by armor
-        int halfDamage = damage / 2;
-        int armorDamage = (damage - halfDamage - Armor);
+        int halfDamage = effectiveDamage / 2;
+        int armorDamage = (effectiveDamage - halfDamage - Armor);
         if (armorDamage < 0)
         {
             armorDamage = 0;
         }
         int actualDamage = halfDamage + armorDamage;
-        if (actualDamage < 0)
+        if (actualDamage <= 0)
         {
             return 0;
         }
@@ -580,6 +723,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
 
     public void Knockback(Vector3 fromPosition, GameObject attacker, int collisionDamage)
     {
+        EntityScript attackerScript = attacker.GetComponent<EntityScript>();
         Vector3 difference = this.transform.position - fromPosition;
         Vector3 targetPosition = this.transform.position + difference;
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
@@ -589,7 +733,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             TileScript tileScript = tile.GetComponent<TileScript>();
             if (tileScript.isOccupied)
             {
-                IncomingDamage(collisionDamage, attacker);
+                attackerScript.Attack(collisionDamage, this.gameObject);
             }
             else
             {
@@ -598,7 +742,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
         else
         {
-            IncomingDamage(collisionDamage, attacker);
+            attackerScript.Attack(collisionDamage, this.gameObject);
         }
     }
 
@@ -629,6 +773,38 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         if (reflectDuration < 0)
         {
             reflectDuration = 0;
+        }
+    }
+
+    public void ReduceEnchantmentDurations(int number)
+    {
+        foreach (GameObject enchantment in activeEnchantments)
+        {
+            EnchantmentScript enchantmentScript = enchantment.GetComponent<EnchantmentScript>();
+            enchantmentScript.currentDuration -= 1;
+            if (enchantmentScript.currentDuration <= 0)
+            {
+                enchantmentScript.EndEffect(this.gameObject);
+                Destroy(enchantment);
+            }
+        }
+    }
+
+    public void OnAttackEnchantmentEffects(GameObject target)
+    {
+        foreach (GameObject enchantment in activeEnchantments)
+        {
+            EnchantmentScript enchantmentScript = enchantment.GetComponent<EnchantmentScript>();
+            enchantmentScript.OnAttackEffect(target, this.gameObject);
+        }
+    }
+
+    public void EndOfTurnEnchantmentEffects()
+    {
+        foreach (GameObject enchantment in activeEnchantments)
+        {
+            EnchantmentScript enchantmentScript = enchantment.GetComponent<EnchantmentScript>();
+            enchantmentScript.EndOfTurnEffect(this.gameObject);
         }
     }
 
@@ -750,16 +926,19 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         gearScript = gear.GetComponent<GearScript>();
         hitSprite = Resources.Load<Sprite>("Hit");
         aggroSprite = Resources.Load<Sprite>("EnemyAggro");
+        stunSprite = Resources.Load<Sprite>("StunEffect");
         reflectSprite = Resources.Load<Sprite>("ReflectEffect");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
         _mainHand = gear.transform.Find("Main Hand");
         _offHand = gear.transform.Find("Off Hand");
         _body = gear.transform.Find("Body");
         _hands = gear.transform.Find("Hands");
+        _legs = gear.transform.Find("Legs");
         _feet = gear.transform.Find("Feet");
         _inventory = this.transform.Find("Inventory");
         _inventorySize = 24;
         _utilitySkills = this.transform.Find("Utility Skills");
+        enchantments = this.transform.Find("Enchantments");
         StartCoroutine(WaitForGearBeforePopulating());
     }
 

@@ -6,6 +6,7 @@ public interface Skill
     string GetSkillType();
     string GetDescription();
     float GetRange();
+    int GetDuration();
     Sprite GetSprite();
     int GetCooldown();
     int CurrentCooldown();

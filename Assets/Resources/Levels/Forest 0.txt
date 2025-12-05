@@ -22,18 +22,21 @@ Enemy Info
 name Invader Warrior
 sprite InvaderSwordNone
 maxHealth 7
-armor -3
+armor -4
 speed 1
 aggroRange 3
 mainHandWeapon Sword
 mainHandName Bronze Sword
 mainHandDamage 5
-coatName Cloth Coat
+coatName Leather Coat
 coatArmor 2
 coatHealth 1
-glovesName Cloth Gloves
+glovesName Leather Gloves
 glovesArmor 2
 glovesDamage 1
+pantsName Leather Pants
+pantsArmor 2
+pantsPickupRadius 1
 
 2
 name Brown Wolf

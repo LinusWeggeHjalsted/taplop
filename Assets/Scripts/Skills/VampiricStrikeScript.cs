@@ -6,10 +6,11 @@ public class VampiricStrikeScript : MonoBehaviour, Skill
     private string skillName;
     private string skillType;
     private string description;
-    private float range;
     private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private float range;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -36,6 +37,11 @@ public class VampiricStrikeScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -118,8 +124,7 @@ public class VampiricStrikeScript : MonoBehaviour, Skill
         }
         if (target != null)
         {
-            EntityScript targetScript = target.GetComponent<EntityScript>();
-            int dealtDamage = targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
+            int dealtDamage = wielderScript.Attack(wielderScript.mainHandDamage, target);
             wielderScript.CurrentHealth += dealtDamage;
         }
         if (wielder == player)
@@ -182,8 +187,9 @@ public class VampiricStrikeScript : MonoBehaviour, Skill
         skillName = "Vampiric Strike";
         skillType = "Main Hand Skill";
         description = "Attack target and heal for damage dealt";
-        cooldown = 2;
         range = 1f;
+        duration = 0;
+        cooldown = 2;
         skillSprite = Resources.Load<Sprite>("Skills/VampiricStrike");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)

@@ -30,6 +30,12 @@ public class PlayerDataScript : MonoBehaviour
         public int damage;
     }
 
+    public class PantsData : InventoryItemData
+    {
+        public int armor;
+        public int pickupRadius;
+    }
+
     public class BootsData : InventoryItemData
     {
         public int armor;
@@ -63,6 +69,7 @@ public class PlayerDataScript : MonoBehaviour
     public WeaponData offHandWeapon;
     public CoatData coat;
     public GlovesData gloves;
+    public PantsData pants;
     public BootsData boots;
 
     // inventory
@@ -106,6 +113,7 @@ public class PlayerDataScript : MonoBehaviour
                 "Off Hand Weapon",
                 "Coat",
                 "Gloves",
+                "Pants",
                 "Boots",
                 "Inventory",
                 "Utility Skills"
@@ -392,8 +400,45 @@ public class PlayerDataScript : MonoBehaviour
                     }
                 }
             }
+            // parse pants
+            string[] pantsBlock = sectionBlocks[6];
+            pants = new PantsData();
+            for (int i = 0; i < pantsBlock.Length; i++)
+            {
+                string currentLine = pantsBlock[i];
+                if (currentLine.StartsWith("itemName "))
+                {
+                    pants.itemName = currentLine.Substring("itemName ".Length);
+                }
+                else if (currentLine.StartsWith("armor "))
+                {
+                    string armorString = currentLine.Substring("armor ".Length);
+                    int armorNumber;
+                    if (Int32.TryParse(armorString, out armorNumber))
+                    {
+                        pants.armor = armorNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("pants armor is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("pickupRadius "))
+                {
+                    string pickupRadiusString = currentLine.Substring("pickupRadius ".Length);
+                    int pickupRadiusNumber;
+                    if (Int32.TryParse(pickupRadiusString, out pickupRadiusNumber))
+                    {
+                        pants.pickupRadius = pickupRadiusNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("pants pickupRadius is not a number");
+                    }
+                }
+            }
             // parse boots
-            string[] bootsBlock = sectionBlocks[6];
+            string[] bootsBlock = sectionBlocks[7];
             boots = new BootsData();
             for (int i = 0; i < bootsBlock.Length; i++)
             {
@@ -430,7 +475,7 @@ public class PlayerDataScript : MonoBehaviour
                 }
             }
             // parse inventory
-            string[] inventoryBlock = sectionBlocks[7];
+            string[] inventoryBlock = sectionBlocks[8];
             List<string[]> inventoryItemBlocks = new List<string[]>();
             List<string> currentSubArray = new List<string>();
             foreach (string line in inventoryBlock)
@@ -559,6 +604,40 @@ public class PlayerDataScript : MonoBehaviour
                             }
                             inventory.Add(inventoryGloves);
                             break;
+                        case "Pants":
+                            PantsData inventoryPants = new PantsData();
+                            for (int i = 1; i < itemBlock.Length; i++)
+                            {
+                                string currentLine = itemBlock[i];
+                                if (currentLine.StartsWith("itemName "))
+                                {
+                                    inventoryPants.itemName = currentLine.Substring("itemName ".Length);
+                                }
+                                else if (currentLine.StartsWith("armor "))
+                                {
+                                    string armorString = currentLine.Substring("armor ".Length);
+                                    int armorNumber;
+                                    if (Int32.TryParse(armorString, out armorNumber))
+                                    {
+                                        inventoryPants.armor = armorNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory pants armor is not a number");
+                                    }
+                                }
+                                else if (currentLine.StartsWith("pickupRadius "))
+                                {
+                                    string pickupRadiusString = currentLine.Substring("pickupRadius ".Length);
+                                    int pickupRadiusNumber;
+                                    if (Int32.TryParse(pickupRadiusString, out pickupRadiusNumber))
+                                    {
+                                        inventoryPants.pickupRadius = pickupRadiusNumber;
+                                    }
+                                }
+                            }
+                            inventory.Add(inventoryPants);
+                            break;
                         case "Boots":
                             BootsData inventoryBoots = new BootsData();
                             for (int i = 1; i < itemBlock.Length; i++)
@@ -620,7 +699,7 @@ public class PlayerDataScript : MonoBehaviour
                 }
             }
             // parse utility skills
-            string[] utilitySkillsBlock = sectionBlocks[8];
+            string[] utilitySkillsBlock = sectionBlocks[9];
             utilitySkills = new List<string>();
             for (int i = 0; i < utilitySkillsBlock.Length; i++)
             {
@@ -646,6 +725,7 @@ public class PlayerDataScript : MonoBehaviour
         Transform playerOffHand = playerScript.offHand;
         Transform playerBody = playerScript.body;
         Transform playerHands = playerScript.hands;
+        Transform playerLegs = playerScript.legs;
         Transform playerFeet = playerScript.feet;
         Transform playerInventory = playerScript.inventory;
         Transform playerUtilitySkills = playerScript.utilitySkills;
@@ -662,6 +742,7 @@ public class PlayerDataScript : MonoBehaviour
         ClearChildren(playerOffHand);
         ClearChildren(playerBody);
         ClearChildren(playerHands);
+        ClearChildren(playerLegs);
         ClearChildren(playerFeet);
         ClearChildren(playerInventory);
         ClearChildren(playerUtilitySkills);
@@ -716,6 +797,16 @@ public class PlayerDataScript : MonoBehaviour
             glovesScript.armorBonus = gloves.armor;
             glovesScript.damageBonus = gloves.damage;
         }
+        if (pants != null)
+        {
+            GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Pants");
+            GameObject newPants = Instantiate(pantsPrefab, playerLegs);
+            PantsScript pantsScript = newPants.GetComponent<PantsScript>();
+            pantsScript.itemName = pants.itemName;
+            pantsScript.armorBonus = pants.armor;
+            pantsScript.pickupRadius = pants.pickupRadius;
+        }
+
         if (boots != null)
         {
             GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");
@@ -756,6 +847,16 @@ public class PlayerDataScript : MonoBehaviour
                 glovesScript.itemName = inventoryGloves.itemName;
                 glovesScript.armorBonus = inventoryGloves.armor;
                 glovesScript.damageBonus = inventoryGloves.damage;
+            }
+            else if (inventoryItem is PantsData)
+            {
+                PantsData inventoryPants = (PantsData)inventoryItem;
+                GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Pants");
+                GameObject newPants = Instantiate(pantsPrefab, playerInventory);
+                PantsScript pantsScript = newPants.GetComponent<PantsScript>();
+                pantsScript.itemName = inventoryPants.itemName;
+                pantsScript.armorBonus = inventoryPants.armor;
+                pantsScript.pickupRadius = inventoryPants.pickupRadius;
             }
             else if (inventoryItem is BootsData)
             {
@@ -850,6 +951,19 @@ public class PlayerDataScript : MonoBehaviour
         {
             gloves = null;
         }
+        GameObject playerPants = playerScript.pants;
+        if (playerPants != null)
+        {
+            PantsScript playerPantsScript = playerPants.GetComponent<PantsScript>();
+            pants = new PantsData();
+            pants.itemName = playerPantsScript.itemName;
+            pants.armor = playerPantsScript.armorBonus;
+            pants.pickupRadius = playerPantsScript.pickupRadius;
+        }
+        else
+        {
+            pants = null;
+        }
         GameObject playerBoots = playerScript.boots;
         if (playerBoots != null)
         {
@@ -896,6 +1010,14 @@ public class PlayerDataScript : MonoBehaviour
                     glovesData.armor = playerInventoryGlovesScript.armorBonus;
                     glovesData.damage = playerInventoryGlovesScript.damageBonus;
                     inventory.Add(glovesData);
+                    break;
+                case "Pants":
+                    PantsScript playerInventoryPantsScript = playerInventoryItem.GetComponent<PantsScript>();
+                    PantsData pantsData = new PantsData();
+                    pantsData.itemName = playerInventoryPantsScript.itemName;
+                    pantsData.armor = playerInventoryPantsScript.armorBonus;
+                    pantsData.pickupRadius = playerInventoryPantsScript.pickupRadius;
+                    inventory.Add(pantsData);
                     break;
                 case "Boots":
                     BootsScript playerInventoryBootsScript = playerInventoryItem.GetComponent<BootsScript>();

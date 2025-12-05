@@ -1,7 +1,6 @@
 using UnityEngine;
-using System.Collections.Generic;
 
-public class HowlScript : MonoBehaviour, Skill
+public class StoneFormScript : MonoBehaviour, Skill, EnchantmentScript
 {
     private string skillName;
     private string skillType;
@@ -18,7 +17,7 @@ public class HowlScript : MonoBehaviour, Skill
     public GameObject player;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
-    
+
     public string GetSkillName()
     {
         return skillName;
@@ -44,11 +43,6 @@ public class HowlScript : MonoBehaviour, Skill
         return duration;
     }
 
-    public Sprite GetSprite()
-    {
-        return skillSprite;
-    }
-
     public int GetCooldown()
     {
         return cooldown;
@@ -57,6 +51,11 @@ public class HowlScript : MonoBehaviour, Skill
     public int CurrentCooldown()
     {
         return currentCooldown;
+    }
+
+    public Sprite GetSprite()
+    {
+        return skillSprite;
     }
 
     public void ReduceCooldown(int number)
@@ -70,9 +69,14 @@ public class HowlScript : MonoBehaviour, Skill
         {
             return -1;
         }
-        else
+        EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+        if (enemyScript.CurrentHealth < enemyScript.MaxHealth)
         {
             return 0;
+        }
+        else
+        {
+            return -1;
         }
     }
 
@@ -90,45 +94,75 @@ public class HowlScript : MonoBehaviour, Skill
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.DisplayUsedSkill(skillSprite);
-        Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
-        List<Vector3> deltas = new List<Vector3>();
-        for (float i = -range; i <= range; i++)
+        // create or extend enchantment
+        Transform wielderEnchantments = wielderScript.enchantments;
+        GameObject stoneFormEnchantment;
+        Transform stoneFormTransform = wielderEnchantments.Find("Stone Form");
+        if (stoneFormTransform != null)
         {
-            for (float j = -range; j <= range; j++)
-            {
-                if (i == 0 && j == 0)
-                {
-                    continue;
-                }
-                else
-                {
-                    Vector3 delta = new Vector3(i, j, 0);
-                    deltas.Add(delta);
-                }
-            }
+            stoneFormEnchantment = stoneFormTransform.gameObject;
         }
-        foreach (Vector3 delta in deltas)
+        else
         {
-            Vector3 position = wielder.transform.position + delta;
-            if (enemyLookup.ContainsKey(position))
-            {
-                GameObject enemyInRange = enemyLookup[position];
-                EntityScript enemyScript = enemyInRange.GetComponent<EntityScript>();
-                enemyScript.IsActive = true;
-            }
+            GameObject stoneFormPrefab = Resources.Load<GameObject>("Prefabs/Stone Form");
+            stoneFormEnchantment = Instantiate(stoneFormPrefab, wielderEnchantments);
+            stoneFormEnchantment.name = "Stone Form";
         }
+        EnchantmentScript enchantmentScript = stoneFormEnchantment.GetComponent<EnchantmentScript>();
+        int effectiveDuration = duration + wielderScript.enchantmentModifiers.duration;
+        enchantmentScript.currentDuration += effectiveDuration;
         currentCooldown = cooldown;
+    }
+
+    // enchantment functions
+    private int _currentDuration = 0;
+    public int currentDuration
+    {
+        get
+        {
+            return _currentDuration;
+        }
+        set
+        {
+            _currentDuration = value;
+            if (_currentDuration <= 0)
+            {
+                _currentDuration = 0;
+            }
+        }
+    }
+
+    public EntityScript.Modifiers ModifierEffects()
+    {
+        EntityScript.Modifiers modifiers = new EntityScript.Modifiers();
+        modifiers.outgoingStunDuration = 1;
+        modifiers.incomingStunDuration = -1;
+        return modifiers;
+    }
+
+    public void OnAttackEffect(GameObject target, GameObject wielder)
+    {
+    }
+
+    public void EndOfTurnEffect(GameObject wielder)
+    {
+        EntityScript wielderScript = wielder.GetComponent<EntityScript>();
+        wielderScript.CurrentHealth += wielderScript.MaxHealth / 5;
+    }
+
+    public void EndEffect(GameObject wielder)
+    {
     }
 
     void Start()
     {
-        skillName = "Howl";
-        skillType = "Cantrip";
-        description = "Aggro each enemy in range";
-        range = 16f;
-        duration = 0;
+        skillName = "Stone Form";
+        skillType = "Enchantment";
+        description = "Reduce incoming stun durations by 1, increase outgoing stun durations by 1, and heal 20% of max health at end of turn";
+        range = 0;
+        duration = 5;
         cooldown = 10;
-        skillSprite = Resources.Load<Sprite>("Skills/Howl");
+        skillSprite = Resources.Load<Sprite>("Skills/StoneForm");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)
         {

@@ -8,9 +8,10 @@ public class FlashStrikeScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private Sprite skillSprite;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -37,6 +38,11 @@ public class FlashStrikeScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -149,8 +155,7 @@ public class FlashStrikeScript : MonoBehaviour, Skill
             }
             if (target != null)
             {
-                EntityScript targetScript = target.GetComponent<EntityScript>();
-                targetScript.IncomingDamage(wielderScript.offHandDamage, wielder);
+                wielderScript.Attack(wielderScript.offHandDamage, target);
             }
         }
         currentCooldown = cooldown;
@@ -194,8 +199,9 @@ public class FlashStrikeScript : MonoBehaviour, Skill
         skillName = "Flash Strike";
         skillType = "Off Hand Skill";
         description = "Teleport then attack each adjacent target";
-        cooldown = 3;
         range = 3f;
+        duration = 0;
+        cooldown = 3;
         skillSprite = Resources.Load<Sprite>("Skills/FlashStrike");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)

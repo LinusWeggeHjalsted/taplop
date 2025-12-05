@@ -7,9 +7,10 @@ public class SlamScript : MonoBehaviour, Skill
     private string skillType;
     private string description; 
     private float range;
-    private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private Sprite skillSprite;
     public GameObject sword;
     public SwordScript swordScript;
     public GameObject traversableTiles;
@@ -38,6 +39,11 @@ public class SlamScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -132,7 +138,11 @@ public class SlamScript : MonoBehaviour, Skill
             {
                 EntityScript targetScript = target.GetComponent<EntityScript>();
                 targetScript.Knockback(fromPosition, wielder, 2 * wielderScript.mainHandDamage);
-                targetScript.stunDuration += 1;
+                int durationModifier = wielderScript.enchantmentModifiers.duration;
+                int outgoingModifier = wielderScript.enchantmentModifiers.outgoingStunDuration;
+                int incomingModifier = targetScript.enchantmentModifiers.incomingStunDuration;
+                int effectiveDuration = duration + durationModifier + outgoingModifier + incomingModifier;
+                targetScript.stunDuration += effectiveDuration;
             }
         }
         if (wielder == player)
@@ -147,8 +157,9 @@ public class SlamScript : MonoBehaviour, Skill
         skillName = "Slam";
         skillType = "Main Hand Skill";
         description = "Stun and knockback each target within range";
-        cooldown = 2;
         range = 1f;
+        duration = 1;
+        cooldown = 2;
         skillSprite = Resources.Load<Sprite>("Skills/Slam");
         sword = this.transform.parent.gameObject;
         swordScript = sword.GetComponent<SwordScript>();

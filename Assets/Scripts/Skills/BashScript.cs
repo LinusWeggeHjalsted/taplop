@@ -7,9 +7,10 @@ public class BashScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private Sprite skillSprite;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -36,6 +37,11 @@ public class BashScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -110,8 +116,7 @@ public class BashScript : MonoBehaviour, Skill
         }
         if (target != null)
         {
-            EntityScript targetScript = target.GetComponent<EntityScript>();
-            targetScript.IncomingDamage(wielderScript.mainHandDamage, wielder);
+            wielderScript.Attack(wielderScript.mainHandDamage, target);
         }
         if (wielder == player)
         {
@@ -172,8 +177,9 @@ public class BashScript : MonoBehaviour, Skill
         skillName = "Bash";
         skillType = "Main Hand Skill";
         description = "Attack target";
-        cooldown = 0;
         range = 1f;
+        duration = 0;
+        cooldown = 0;
         skillSprite = Resources.Load<Sprite>("Skills/Bash");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)

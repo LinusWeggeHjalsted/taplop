@@ -7,9 +7,10 @@ public class SkewerScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private Sprite skillSprite;
+    private int duration;
     private int cooldown;
     private int currentCooldown = 0;
+    private Sprite skillSprite;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject enemies;
@@ -36,6 +37,11 @@ public class SkewerScript : MonoBehaviour, Skill
     public float GetRange()
     {
         return range;
+    }
+
+    public int GetDuration()
+    {
+        return duration;
     }
 
     public Sprite GetSprite()
@@ -110,8 +116,7 @@ public class SkewerScript : MonoBehaviour, Skill
         }
         if (target != null)
         {
-            EntityScript targetScript = target.GetComponent<EntityScript>();
-            targetScript.IncomingDamage(wielderScript.offHandDamage * 3, wielder);
+            wielderScript.Attack(3 * wielderScript.offHandDamage, target);
         }
         currentCooldown = cooldown;
         if (wielder == player)
@@ -173,8 +178,9 @@ public class SkewerScript : MonoBehaviour, Skill
         skillName = "Skewer";
         skillType = "Off Hand Skill";
         description = "Attack target for 3x damage";
-        cooldown = 4;
         range = 1f;
+        duration = 0;
+        cooldown = 4;
         skillSprite = Resources.Load<Sprite>("Skills/Skewer");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)
