@@ -2,8 +2,10 @@
 - main menu
 - level clear conditions
 - write player save
+- rename skills panel to skill bar
 - skills menu
 - lock switching equipped gear and skills when there are active enemies
+    maybe lock when in missions instead
 - better enemy death
 - loading screen
 - sort active enemies by distance to player before taking their turn
@@ -25,4 +27,4 @@
 - pathing behavior could be improved when no path is found
 - maybe pathing bug in forest 2
 - amulet with spell damage
-- save player changes made in hub
+- handle items / skills dropped on skill buttons / item slots
