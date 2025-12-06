@@ -76,7 +76,7 @@ public class PlayerDataScript : MonoBehaviour
     public List<InventoryItemData> inventory = new List<InventoryItemData>();
 
     // utility skill names
-    public List<string> utilitySkills = new List<string>();
+    public string[] utilitySkills = new string[5];
 
     void Awake()
     {
@@ -700,10 +700,19 @@ public class PlayerDataScript : MonoBehaviour
             }
             // parse utility skills
             string[] utilitySkillsBlock = sectionBlocks[9];
-            utilitySkills = new List<string>();
+            utilitySkills = new string[5];
             for (int i = 0; i < utilitySkillsBlock.Length; i++)
             {
-                utilitySkills.Add(utilitySkillsBlock[i]);
+                string currentLine = utilitySkillsBlock[i];
+                string[] splitLine = currentLine.Split(' ');
+                int skillNumber;
+                if (Int32.TryParse(splitLine[0], out skillNumber))
+                {
+                    if (4 <= skillNumber && skillNumber <= 8) // to-do - think about this
+                    { 
+                        utilitySkills[skillNumber - 4] = splitLine[1];
+                    }
+                }
             }
         }
     }
@@ -779,6 +788,8 @@ public class PlayerDataScript : MonoBehaviour
                 Debug.LogError("unrecognized main hand weapon type");
             }
         }
+        // wait one frame for weapons' Start() methods to run and create their skills
+        yield return null;
         if (coat != null)
         {
             GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");
@@ -878,18 +889,26 @@ public class PlayerDataScript : MonoBehaviour
             }
         }
         // create player utility skills
-        foreach (string skillName in utilitySkills)
+        for (int i = 0; i < utilitySkills.Length; i++)
         {
-            if (unlockedSkills.Contains(skillName))
+            if (utilitySkills[i] != null)
             {
-                GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/" + skillName);
-                GameObject newSkill = Instantiate(skillPrefab, playerUtilitySkills);
-            }
-            else
-            {
-                Debug.LogError("player has not unlocked the skill " + skillName);
+                string skillName = utilitySkills[i];
+                if (unlockedSkills.Contains(skillName))
+                {
+                    GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/" + skillName);
+                    GameObject newSkill = Instantiate(skillPrefab, playerUtilitySkills);
+                    Skill skillScript = newSkill.GetComponent<Skill>();
+                    skillScript.skillBarPosition = i + 4;
+                }
+                else
+                {
+                    Debug.LogError("player has not unlocked the skill " + skillName);
+                }
             }
         }
+        // wait one frame for utility skills' Start() methods to run and load their sprites
+        yield return null;
         finishedBuilding = true;
     }
     
@@ -1037,12 +1056,20 @@ public class PlayerDataScript : MonoBehaviour
         }
         // get player utility skills
         Transform playerUtilitySkills = playerScript.utilitySkills;
-        utilitySkills = new List<string>();
+        utilitySkills = new string[5];
         for (int i = 0; i < playerUtilitySkills.childCount; i++)
         {
             GameObject playerSkill = playerUtilitySkills.GetChild(i).gameObject;
             Skill playerSkillScript = playerSkill.GetComponent<Skill>();
-            utilitySkills.Add(playerSkillScript.GetSkillName());
+            int skillIndex = playerSkillScript.skillBarPosition - 4;
+            if (utilitySkills[skillIndex] != null)
+            {
+                Debug.LogError($"there is already a skill in slot {skillIndex + 4}");
+            }
+            else
+            {
+                utilitySkills[skillIndex] = playerSkillScript.GetSkillName();
+            }
         }
     }
 }

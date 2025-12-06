@@ -45,5 +45,5 @@ speed 0
 Inventory
 
 Utility Skills
-Replenish
+4 Replenish
 

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using System.Collections;
 
 public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
 {
@@ -147,7 +148,17 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
                 {
                     if (i < utilitySkillSlots)
                     {
-                        skillArray[i + 3] = utilitySkills.GetChild(i).gameObject;
+                        GameObject utilitySkill = utilitySkills.GetChild(i).gameObject;
+                        Skill skillScript = utilitySkill.GetComponent<Skill>();
+                        int skillIndex = skillScript.skillBarPosition - 1;
+                        if (skillArray[skillIndex] != null)
+                        {
+                            Debug.LogError($"there is already a skill in slot {skillIndex}");
+                        }
+                        else
+                        {
+                            skillArray[skillIndex] = utilitySkill;
+                        }
                     }
                 }
             }
@@ -200,6 +211,15 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
+    IEnumerator WaitForGear()
+    {
+        while (!gearScript.finishedBuilding)
+        {
+            yield return null;
+        }
+        finishedBuilding = true;
+    }
+
     void Start()
     {
         hubBuilder = GameObject.Find("Hub Builder");
@@ -210,6 +230,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         hubExitsScript = hubExits.GetComponent<HubExitsScript>();
         spriteRenderer = this.gameObject.GetComponent<SpriteRenderer>();
         gear = this.transform.Find("Gear").gameObject;
+        gearScript = gear.GetComponent<GearScript>();
         _mainHand = gear.transform.Find("Main Hand");
         _offHand = gear.transform.Find("Off Hand");
         _body = gear.transform.Find("Body");
@@ -219,7 +240,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         _inventory = this.transform.Find("Inventory");
         _inventorySize = 24;
         _utilitySkills = this.transform.Find("Utility Skills");
-        finishedBuilding = true;
+        StartCoroutine(WaitForGear());
     }
 
     void Update()

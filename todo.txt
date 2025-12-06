@@ -25,3 +25,4 @@
 - pathing behavior could be improved when no path is found
 - maybe pathing bug in forest 2
 - amulet with spell damage
+- save player changes made in hub

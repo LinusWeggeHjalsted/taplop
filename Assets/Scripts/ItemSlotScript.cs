@@ -4,7 +4,7 @@ using UnityEngine.EventSystems;
 public class ItemSlotScript : MonoBehaviour, IDropHandler
 {
     public GameObject player;
-    public EntityScript playerScript;
+    public PlayerCharacterScript playerScript;
     public Transform playerGear;
     public Transform playerInventory;
     public GameObject skillsPanel;
@@ -15,7 +15,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
     void Start()
     {
         player = GameObject.Find("Player");
-        playerScript = player.GetComponent<EntityScript>();
+        playerScript = player.GetComponent<PlayerCharacterScript>();
         playerGear = player.transform.Find("Gear");
         playerInventory = player.transform.Find("Inventory");
         skillsPanel = GameObject.Find("Skills Panel");

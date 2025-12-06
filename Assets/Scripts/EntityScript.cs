@@ -330,7 +330,17 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 {
                     if (i < utilitySkillSlots)
                     {
-                        skillArray[i + 3] = utilitySkills.GetChild(i).gameObject;
+                        GameObject utilitySkill = utilitySkills.GetChild(i).gameObject;
+                        Skill skillScript = utilitySkill.GetComponent<Skill>();
+                        int skillIndex = skillScript.skillBarPosition - 1;
+                        if (skillArray[skillIndex] != null)
+                        {
+                            Debug.LogError($"there is already a skill in slot {skillIndex}");
+                        }
+                        else
+                        {
+                            skillArray[skillIndex] = utilitySkill;
+                        }
                     }
                 }
             }

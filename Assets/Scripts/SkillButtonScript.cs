@@ -160,6 +160,14 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             yield return null;
         }
+        // In hub, also wait for PlayerDataScript to finish building player from data
+        if (PlayerDataScript.Instance != null)
+        {
+            while (!PlayerDataScript.Instance.finishedBuilding)
+            {
+                yield return null;
+            }
+        }
         UpdateButton();
         finishedBuilding = true;
     }

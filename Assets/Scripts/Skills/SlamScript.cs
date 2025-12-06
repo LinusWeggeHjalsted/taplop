@@ -20,6 +20,18 @@ public class SlamScript : MonoBehaviour, Skill
     public GameObject player;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
+    private int _skillBarPosition;
+    public int skillBarPosition
+    {
+        get
+        {
+            return _skillBarPosition;
+        }
+        set
+        {
+            _skillBarPosition = value;
+        }
+    }
     
     public string GetSkillName()
     {

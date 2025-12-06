@@ -4,6 +4,18 @@ public class NoSkillScript : MonoBehaviour, Skill
 {
     private int currentCooldown = 0;
     private Sprite skillSprite;
+    private int _skillBarPosition;
+    public int skillBarPosition
+    {
+        get
+        {
+            return _skillBarPosition;
+        }
+        set
+        {
+            _skillBarPosition = value;
+        }
+    }
 
     public string GetSkillName()
     {

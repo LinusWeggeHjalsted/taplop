@@ -2,6 +2,7 @@ using UnityEngine;
 
 public interface Skill
 {
+    int skillBarPosition { get; set; }
     string GetSkillName();
     string GetSkillType();
     string GetDescription();
