@@ -5,7 +5,6 @@
 - skills menu
 - lock switching equipped gear and skills when there are active enemies
 - better enemy death
-- update inventory ui to use player character's inventory array
 - loading screen
 - sort active enemies by distance to player before taking their turn
 - weaponswap

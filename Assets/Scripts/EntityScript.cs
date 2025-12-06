@@ -134,9 +134,16 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             GameObject[] itemArray = new GameObject[inventorySize];
             for (int i = 0; i < inventory.childCount; i++)
             {
-                if (i < inventorySize)
+                GameObject item = inventory.GetChild(i).gameObject;
+                ItemScript itemScript = item.GetComponent<ItemScript>();
+                int inventoryIndex = itemScript.inventoryPosition - 1; // 1-indexed inventoryPosition
+                if (inventoryIndex < inventorySize)
                 {
-                    itemArray[i] = inventory.GetChild(i).gameObject;
+                    if (itemArray[inventoryIndex] != null)
+                    {
+                        Debug.LogError("item is occupying same slot as another item");
+                    }
+                    itemArray[inventoryIndex] = inventory.GetChild(i).gameObject;
                 }
                 else
                 {
@@ -644,7 +651,17 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 while (groundItems.transform.childCount > 0 && inventory.childCount < inventorySize)
                 {
                     Transform item = groundItems.transform.GetChild(0);
+                    ItemScript itemScript = item.GetComponent<ItemScript>();
                     item.parent = inventory;
+                    // find first empty inventory slot
+                    for (int i = 0; i < inventorySize; i++)
+                    {
+                        if (inventoryItems[i] == null)
+                        {
+                            itemScript.inventoryPosition = i + 1;
+                            break;
+                        }
+                    }
                     // refresh open inventory UI panel
                     Transform characterUI = GameObject.Find("Character UI").transform;
                     Transform inventoryUIPanel = characterUI.Find("Inventory UI Panel(Clone)");

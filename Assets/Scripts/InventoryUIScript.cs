@@ -11,20 +11,32 @@ public class InventoryUIScript : MonoBehaviour
 
     public void RefreshUI()
     {
-        // Clear all existing item slots
+        // clear all existing item slots
         for (int i = this.transform.childCount - 1; i >= 0; i--)
         {
             Destroy(this.transform.GetChild(i).gameObject);
         }
 
-        // Rebuild inventory grid
-        for (int i = 0; i < 24; i++)
+        // rebuild inventory grid
+        GameObject[] playerItems = playerScript.inventoryItems;
+        for (int i = 0; i < playerScript.inventorySize; i++)
         {
             GameObject itemSlot = Instantiate(itemSlotPrefab, this.transform);
+            ItemSlotScript itemSlotScript = itemSlot.GetComponent<ItemSlotScript>();
+            itemSlotScript.inventoryPosition = i + 1;
+            // look for item in this slot
             GameObject item = null;
-            if (i < playerInventory.childCount)
+            for (int j = 0; j < playerItems.Length; j++)
             {
-                item = playerInventory.GetChild(i).gameObject;
+                GameObject playerItem = playerItems[j];
+                if (playerItem != null)
+                {
+                    ItemScript playerItemScript = playerItem.GetComponent<ItemScript>();
+                    if (playerItemScript.inventoryPosition == i + 1)
+                    {
+                        item = playerItem;
+                    }
+                }
             }
             if (item != null)
             {

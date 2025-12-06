@@ -14,6 +14,18 @@ public class SwordScript : MonoBehaviour, WeaponScript, ItemScript
     public string itemSubType;
     public string itemName;
     private int damage;
+    private int _inventoryPosition;
+    public int inventoryPosition
+    {
+        get
+        {
+            return _inventoryPosition;
+        }
+        set
+        {
+            _inventoryPosition = value;
+        }
+    }
 
     public GameObject FirstSkill()
     {

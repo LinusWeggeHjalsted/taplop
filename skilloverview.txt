@@ -39,7 +39,7 @@ utility skills
         that which lingers - increase durations by 1, duration 2, cooldown 5
         that which splinters - attack each target adjacent to attacked targets, duration 2, cooldown 5
         that which leeches - attacks also steal health, duration 2, cooldown 5
-        stone form - reduce incoming stun durations by 1, increase outgoing stun durations by 1, and heal 20% of max health at end of turn, duration 5, cooldown 10
+        *stone form - reduce incoming stun durations by 1, increase outgoing stun durations by 1, and heal 20% of max health at end of turn, duration 5, cooldown 10
         diamond form - become invulnerable and stunned and heal 10% of max health at end of turn, duration 5, cooldown 10
         glass form - increase incoming and outgoing damage by spell damage, duration 5, cooldown 10
         temporal anchor - return to this location with current cooldowns when temporal anchor ends, duration 2, cooldown 5

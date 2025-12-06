@@ -28,12 +28,24 @@ public class EquipButtonScript : MonoBehaviour
             Debug.LogError("targetTransform or selectedItem not set yet");
             return;
         }
+        ItemScript selectedItemScript = selectedItem.GetComponent<ItemScript>();
+        int selectedItemPosition = selectedItemScript.inventoryPosition;
+        GameObject currentItem = null;
+        int currentItemPosition = 0;
         if (targetTransform.childCount > 0)
         {
-            Transform currentItem = targetTransform.GetChild(0);
-            currentItem.parent = playerScript.inventory;
+            currentItem = targetTransform.GetChild(0).gameObject;
+            currentItem.transform.parent = playerScript.inventory;
         }
         selectedItem.transform.parent = targetTransform;
+        // swap inventory positions
+        if (currentItem != null)
+        {
+            ItemScript currentItemScript = currentItem.gameObject.GetComponent<ItemScript>();
+            currentItemPosition = currentItemScript.inventoryPosition;
+            currentItemScript.inventoryPosition = selectedItemPosition;
+        }
+        selectedItemScript.inventoryPosition = currentItemPosition;
         // refresh open UI panels
         Transform characterUI = GameObject.Find("Character UI").transform;
         Transform gearUIPanel = characterUI.Find("Gear UI Panel(Clone)");

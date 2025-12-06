@@ -10,6 +10,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
     public GameObject skillsPanel;
     public SkillsPanelScript skillsPanelScript;
     public string itemType = "";
+    public int inventoryPosition;
 
     void Start()
     {
@@ -40,19 +41,27 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
 
             Transform playerInventory = playerScript.inventory;
 
-            // Get references to actual items before any modifications
             GameObject actualOwnItem = ownItemScript.item;
+            ItemScript actualOwnItemScript = actualOwnItem.GetComponent<ItemScript>();
             GameObject actualOtherItem = otherItemScript.item;
+            ItemScript actualOtherItemScript = actualOtherItem.GetComponent<ItemScript>();
 
-            // Handle equipping items from otherItemSlot to this slot
+            // find where own item goes
             if (otherItemSlotScript.itemType != "")
             {
+
                 switch (otherItemSlotScript.itemType)
                 {
                     case "Weapon":
-                        Transform targetHand = (otherItemSlot.transform.parent.name == "Main Hand")
-                            ? playerScript.mainHand
-                            : playerScript.offHand;
+                        Transform targetHand;
+                        if (otherItemSlot.transform.parent.name == "Main Hand")
+                        {
+                            targetHand = playerScript.mainHand;
+                        }
+                        else
+                        {
+                            targetHand = playerScript.offHand;
+                        }
                         actualOwnItem.transform.parent = targetHand;
                         break;
                     case "Coat":
@@ -68,19 +77,24 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
             }
             else
             {
-                // otherItemSlot is inventory, so actualOwnItem should go to inventory
                 actualOwnItem.transform.parent = playerInventory;
             }
 
-            // Handle equipping items from this slot to otherItemSlot
+            // find where other item goes
             if (itemType != "")
             {
                 switch (itemType)
                 {
                     case "Weapon":
-                        Transform targetHand = (this.transform.parent.name == "Main Hand")
-                            ? playerScript.mainHand
-                            : playerScript.offHand;
+                        Transform targetHand;
+                        if (this.transform.parent.name == "Main Hand")
+                        {
+                            targetHand = playerScript.mainHand;
+                        }
+                        else
+                        {
+                            targetHand = playerScript.offHand;
+                        }
                         actualOtherItem.transform.parent = targetHand;
                         break;
                     case "Coat":
@@ -99,7 +113,12 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                 // this slot is inventory, so actualOtherItem should go to inventory
                 actualOtherItem.transform.parent = playerInventory;
             }
-
+            
+            // swap inventoryPositions
+            int ownPosition = actualOwnItemScript.inventoryPosition;
+            int otherPosition = actualOtherItemScript.inventoryPosition;
+            actualOwnItemScript.inventoryPosition = otherPosition;
+            actualOtherItemScript.inventoryPosition = ownPosition;
             skillsPanelScript.UpdateButtons();
         }
     }
@@ -108,9 +127,10 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
     {
         GameObject droppedItem = eventData.pointerDrag;
         InventoryItemScript itemScript = droppedItem.GetComponent<InventoryItemScript>();
+        GameObject actualItem = itemScript.item;
+        ItemScript actualItemScript = actualItem.GetComponent<ItemScript>();
         if (this.transform.childCount > 0)
         {
-
             SwapWithOtherSlot(itemScript.currentParent.gameObject, droppedItem);
         }
         else
@@ -120,14 +140,18 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                 if (itemScript.itemType == itemType)
                 {
                     itemScript.currentParent = this.transform;
-                    GameObject actualItem = itemScript.item;
-                    ItemScript actualItemScript = actualItem.GetComponent<ItemScript>();
                     switch (itemType)
                     {
                         case "Weapon":
-                            Transform targetHand = (this.transform.parent.name == "Main Hand")
-                                ? playerScript.mainHand
-                                : playerScript.offHand;
+                            Transform targetHand;
+                            if (this.transform.parent.name == "Main Hand")
+                            {
+                                targetHand = playerScript.mainHand;
+                            }
+                            else
+                            {
+                                targetHand = playerScript.offHand;
+                            }
                             actualItem.transform.parent = targetHand;
                             break;
                         case "Coat":
@@ -149,12 +173,12 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                 ItemSlotScript originalItemSlotScript = originalItemSlot.GetComponent<ItemSlotScript>();
                 if (originalItemSlotScript.itemType != "")
                 {
-                    GameObject actualItem = itemScript.item;
                     actualItem.transform.parent = playerScript.inventory;
                     skillsPanelScript.UpdateButtons();
                 }
                 itemScript.currentParent = this.transform;
             }
+            actualItemScript.inventoryPosition = this.inventoryPosition;
         }
     }
 }

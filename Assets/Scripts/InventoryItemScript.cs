@@ -19,6 +19,14 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
             return itemScript.ItemType();
         }
     }
+    public int inventoryPosition
+    {
+        get
+        {
+            ItemScript itemScript = item.GetComponent<ItemScript>();
+            return itemScript.inventoryPosition;
+        }
+    }
 
     public void OnBeginDrag(PointerEventData eventData)
     {

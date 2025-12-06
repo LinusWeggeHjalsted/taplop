@@ -4,6 +4,18 @@ public class SkillTomeScript : MonoBehaviour, ItemScript
 {
     public Sprite itemSprite;
     public string skillName;
+    private int _inventoryPosition;
+    public int inventoryPosition
+    {
+        get
+        {
+            return _inventoryPosition;
+        }
+        set
+        {
+            _inventoryPosition = value;
+        }
+    }
 
     public Sprite GetSprite()
     {

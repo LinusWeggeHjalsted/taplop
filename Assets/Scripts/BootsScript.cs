@@ -7,6 +7,18 @@ public class BootsScript : MonoBehaviour, ItemScript
     public string itemType;
     public int armorBonus = 0;
     public int speedBonus = 0;
+    private int _inventoryPosition;
+    public int inventoryPosition
+    {
+        get
+        {
+            return _inventoryPosition;
+        }
+        set
+        {
+            _inventoryPosition = value;
+        }
+    }
 
     public Sprite GetSprite()
     {
