@@ -24,13 +24,19 @@ public class LearnButtonScript : MonoBehaviour
         {
             playerDataScript.unlockedSkills.Add(skillName);
             DestroyImmediate(selectedItem);
-            // refresh open UI panels
+            // refresh open menus
             Transform characterUI = GameObject.Find("Character UI").transform;
-            Transform inventoryUIPanel = characterUI.Find("Inventory UI Panel(Clone)");
-            if (inventoryUIPanel != null)
+            Transform inventoryMenu = characterUI.Find("Inventory Menu(Clone)");
+            if (inventoryMenu != null)
             {
-                InventoryUIScript inventoryUIScript = inventoryUIPanel.GetComponent<InventoryUIScript>();
-                inventoryUIScript.RefreshUI();
+                InventoryMenuScript inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
+                inventoryMenuScript.RefreshUI();
+            }
+            Transform skillsMenu = characterUI.Find("Skills Menu(Clone)");
+            if (skillsMenu != null)
+            {
+                SkillsMenuScript skillsMenuScript = skillsMenu.GetComponent<SkillsMenuScript>();
+                skillsMenuScript.RefreshUI();
             }
             // close context menu
             Transform canvas = GameObject.Find("Canvas").transform;

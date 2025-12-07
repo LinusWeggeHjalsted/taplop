@@ -136,6 +136,7 @@ public class ThrowScript : MonoBehaviour, Skill
         {
             turnLogicScript.hasAttacked = true;
         }
+        currentCooldown = cooldown;
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)

@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-public class GearUIScript : MonoBehaviour
+public class GearMenuScript : MonoBehaviour
 {
     public GameObject player;
     public PlayerCharacterScript playerScript;

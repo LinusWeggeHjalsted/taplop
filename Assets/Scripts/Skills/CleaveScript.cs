@@ -133,8 +133,7 @@ public class CleaveScript : MonoBehaviour, Skill
             EntityScript targetScript = target.GetComponent<EntityScript>();
             int incomingModifier = targetScript.enchantmentModifiers.incomingStunDuration;
             int outgoingModifier = wielderScript.enchantmentModifiers.outgoingStunDuration;
-            int durationModifier = wielderScript.enchantmentModifiers.duration;
-            int effectiveDuration = duration + durationModifier + outgoingModifier + incomingModifier;
+            int effectiveDuration = duration + outgoingModifier + incomingModifier;
             wielderScript.Attack(wielderScript.mainHandDamage, target);
             targetScript.stunDuration += effectiveDuration;
         }
@@ -142,6 +141,7 @@ public class CleaveScript : MonoBehaviour, Skill
         {
             turnLogicScript.hasAttacked = true;
         }
+        currentCooldown = cooldown;
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
@@ -201,7 +201,7 @@ public class CleaveScript : MonoBehaviour, Skill
         description = "Attack and stun target";
         range = 1f;
         duration = 1;
-        cooldown = 2;
+        cooldown = 3;
         skillSprite = Resources.Load<Sprite>("Skills/Cleave");
         traversableTiles = GameObject.Find("Traversable Tiles");
         if (traversableTiles != null)

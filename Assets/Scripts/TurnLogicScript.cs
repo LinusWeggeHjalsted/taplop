@@ -26,7 +26,7 @@ public class TurnLogicScript : MonoBehaviour
     public LevelBuilderScript levelBuilderScript;
     public TMP_Text turnStatusText;
     public GameObject skillsPanel;
-    public SkillsPanelScript skillsPanelScript;
+    public SkillBarScript skillBarScript;
     public GameObject skipButton;
     public SkipButtonScript skipButtonScript;
     public Dictionary<Vector3, GameObject> tileLookup = new Dictionary<Vector3, GameObject>();
@@ -47,7 +47,7 @@ public class TurnLogicScript : MonoBehaviour
         {
             yield return null;
         }
-        while (!skillsPanelScript.finishedBuilding)
+        while (!skillBarScript.finishedBuilding)
         {
             yield return null;
         }
@@ -65,7 +65,7 @@ public class TurnLogicScript : MonoBehaviour
         }
         enemiesScript.FillEnemyHealth();
         playerScript.CurrentHealth = playerScript.MaxHealth;
-        skillsPanelScript.UpdateButtons();
+        skillBarScript.UpdateButtons();
         currentGameState = GameState.PlayerTurnMove;
         tileLookup = traversableTilesScript.tileLookup;
     }
@@ -83,7 +83,7 @@ public class TurnLogicScript : MonoBehaviour
         levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
         turnStatusText = GameObject.Find("Turn Status Text").GetComponent<TMP_Text>();
         skillsPanel = GameObject.Find("Skills Panel");
-        skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
+        skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         skipButton = GameObject.Find("Skip Button");
         skipButtonScript = skipButton.GetComponent<SkipButtonScript>();
         // wait for LevelBuilder to finish building
@@ -276,7 +276,7 @@ public class TurnLogicScript : MonoBehaviour
                         {
                             if (numberKeys[i].wasPressedThisFrame)
                             {
-                                GameObject skillButton = skillsPanelScript.skillButtons[i];
+                                GameObject skillButton = skillBarScript.skillButtons[i];
                                 SkillButtonScript skillButtonScript = skillButton.GetComponent<SkillButtonScript>();
                                 skillButtonScript.OnActivate();
                             }

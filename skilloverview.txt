@@ -5,7 +5,7 @@ weapons
         *flash strike - teleport then attack each adjacent target, range 2, cooldown 4
 	shield
         *bash - attack target, range 1
-        *slam - stun and knockback each target within range, range 1, cooldown 2
+        *slam - stun and knockback each target within range, range 1, cooldown 3
         *reflect - incoming damage is prevented and dealt to the attacker, duration 1, cooldown 5
     spear
         *toss - attack target, range 3
@@ -17,7 +17,7 @@ weapons
         *retreating swipe - attack target for 2x damage and retreat 2 tiles, range 1, cooldown 3
     axe
         *chop - attack target, range 1
-        *cleave - attack and stun target, range 1, duration 1, cooldown 2
+        *cleave - attack and stun target, range 1, duration 1, cooldown 3
         *throw - attack target for 2x damage, range 3, cooldown 4
     wand
         spark - attack target, range 2
@@ -36,7 +36,7 @@ utility skills
     enchantments
         that which rushes - reduce cooldowns of used skills by 1 and increase speed by 1, duration 2, cooldown 5
         that which reaches - increase pickup radius and range of used skills by 1, duration 2, cooldown 5
-        that which lingers - increase durations by 1, duration 2, cooldown 5
+        *that which lingers - increase non-stun durations by 1, duration 2, cooldown 5
         that which splinters - attack each target adjacent to attacked targets, duration 2, cooldown 5
         that which leeches - attacks also steal health, duration 2, cooldown 5
         *stone form - reduce incoming stun durations by 1, increase outgoing stun durations by 1, and heal 20% of max health at end of turn, duration 5, cooldown 10

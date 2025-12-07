@@ -153,10 +153,9 @@ public class SlamScript : MonoBehaviour, Skill
             {
                 EntityScript targetScript = target.GetComponent<EntityScript>();
                 targetScript.Knockback(fromPosition, wielder, 2 * wielderScript.mainHandDamage);
-                int durationModifier = wielderScript.enchantmentModifiers.duration;
                 int outgoingModifier = wielderScript.enchantmentModifiers.outgoingStunDuration;
                 int incomingModifier = targetScript.enchantmentModifiers.incomingStunDuration;
-                int effectiveDuration = duration + durationModifier + outgoingModifier + incomingModifier;
+                int effectiveDuration = duration + outgoingModifier + incomingModifier;
                 targetScript.stunDuration += effectiveDuration;
             }
         }
@@ -174,7 +173,7 @@ public class SlamScript : MonoBehaviour, Skill
         description = "Stun and knockback each target within range";
         range = 1f;
         duration = 1;
-        cooldown = 2;
+        cooldown = 3;
         skillSprite = Resources.Load<Sprite>("Skills/Slam");
         sword = this.transform.parent.gameObject;
         swordScript = sword.GetComponent<SwordScript>();

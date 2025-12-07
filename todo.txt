@@ -28,7 +28,9 @@
 - maybe pathing bug in forest 2
 - amulet with spell damage
 - handle items / skills dropped on skill buttons / item slots
-- implement skillBarPosition for enemy utility skills
 - normalize long range knockback and retreat
 - remember player's weapon skill cooldowns when swapping weapons
 - cancel prepared skills when swapping skills
+- move self-contained initialization to Awake for all scripts
+- consider form of x instead of x form
+- add menu titles and x button to close 

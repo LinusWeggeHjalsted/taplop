@@ -27,8 +27,15 @@ public class TooltipScript : MonoBehaviour
                 maxWidth = line.Length;
             }
         }
-        if (maxWidth < charLimit)
+        if (maxWidth >= charLimit)
         {
+            // long text: enable layout element and set max width to force wrapping
+            layoutElement.enabled = true;
+            layoutElement.preferredWidth = charLimit * 24; // approximate pixels per char
+        }
+        else
+        {
+            // short text: disable layout element to let it size naturally
             layoutElement.enabled = false;
         }
         tooltipHeader.text = headerText;

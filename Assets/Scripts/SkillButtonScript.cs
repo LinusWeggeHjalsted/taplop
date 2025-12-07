@@ -13,7 +13,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     public Image image;
     public Transform canvas;
     public GameObject skillsPanel;
-    public SkillsPanelScript skillsPanelScript;
+    public SkillBarScript skillBarScript;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
     public GameObject player;
@@ -76,7 +76,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             }
             if (tooltip == null)
             {
-                tooltip = Instantiate(tooltipPrefab, this.gameObject.transform);
+                tooltip = Instantiate(tooltipPrefab, canvas);
                 tooltip.name = "Tooltip";
                 tooltip.transform.SetAsLastSibling();
             }
@@ -191,8 +191,19 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             Debug.Log("this skill slot is not unlocked yet");
             return;
         }
-        GameObject droppedSkillButton = eventData.pointerDrag;
-        SkillButtonScript skillButtonScript = droppedSkillButton.GetComponent<SkillButtonScript>();
+        GameObject droppedObject = eventData.pointerDrag;
+
+        // check if dropped object is an UnlockedSkillScript (from skills menu)
+        UnlockedSkillScript unlockedSkillScript = droppedObject.GetComponent<UnlockedSkillScript>();
+        if (unlockedSkillScript != null)
+        {
+            HandleUnlockedSkillDrop(droppedObject);
+            skillBarScript.UpdateButtons();
+            return;
+        }
+
+        // otherwise, handle SkillButtonScript (skill bar to skill bar swap)
+        SkillButtonScript skillButtonScript = droppedObject.GetComponent<SkillButtonScript>();
         if (skillButtonScript == null)
         {
             Debug.Log("not a skill");
@@ -249,7 +260,85 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             // replace skill (skill from panel that's not on bar yet)
         }
-        skillsPanelScript.UpdateButtons();
+        skillBarScript.UpdateButtons();
+    }
+
+    private void HandleUnlockedSkillDrop(GameObject unlockedSkill)
+    {
+        UnlockedSkillScript unlockedSkillScript = unlockedSkill.GetComponent<UnlockedSkillScript>();
+        string droppedSkillName = unlockedSkillScript.skillName;
+        if (string.IsNullOrEmpty(droppedSkillName))
+        {
+            Debug.LogError("UnlockedSkillScript has no skill name");
+            return;
+        }
+
+        // check if this skill already exists on the bar
+        bool skillExists = false;
+        GameObject foundSkill = null;
+        Skill foundSkillScript = null;
+        for (int i = 3; i < playerScript.equippedSkills.Length; i++)
+        {
+            GameObject equippedSkill = playerScript.equippedSkills[i];
+            if (equippedSkill != null)
+            {
+                Skill equippedSkillScript = equippedSkill.GetComponent<Skill>();
+                if (equippedSkillScript.GetSkillName() == droppedSkillName)
+                {
+                    skillExists = true;
+                    foundSkill = equippedSkill;
+                    foundSkillScript = equippedSkillScript;
+                    break;
+                }
+            }
+        }
+
+        if (skillExists)
+        {
+            // swap skills on bar
+            int foundPosition = foundSkillScript.skillBarPosition;
+
+            if (skill != null)
+            {
+                Skill ownSkillScript = skill.GetComponent<Skill>();
+                int ownPosition = ownSkillScript.skillBarPosition;
+                foundSkillScript.skillBarPosition = ownPosition;
+                ownSkillScript.skillBarPosition = foundPosition;
+            }
+            else
+            {
+                foundSkillScript.skillBarPosition = skillNumber + 1;
+            }
+        }
+        else
+        {
+            // remove old skill from this slot if present
+            if (skill != null)
+            {
+                Destroy(skill);
+            }
+
+            // instantiate new skill under player's Utility Skills
+            GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/" + droppedSkillName);
+            if (skillPrefab == null)
+            {
+                Debug.LogError("Could not find skill prefab: Prefabs/" + droppedSkillName);
+                return;
+            }
+            Transform utilitySkills = playerScript.utilitySkills;
+            GameObject newSkill = Instantiate(skillPrefab, utilitySkills);
+            Skill newSkillScript = newSkill.GetComponent<Skill>();
+            newSkillScript.skillBarPosition = skillNumber + 1;
+        }
+
+        // Wait a frame for the new skill to initialize before updating the UI
+        StartCoroutine(DelayedUpdateButtons());
+    }
+
+    IEnumerator DelayedUpdateButtons()
+    {
+        yield return null;
+        skillBarScript.UpdateButtons();
     }
 
     IEnumerator WaitForPlayerLoadout()
@@ -258,7 +347,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             yield return null;
         }
-        while (!skillsPanelScript.finishedAssigning)
+        while (!skillBarScript.finishedAssigning)
         {
             yield return null;
         }
@@ -289,7 +378,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         image = this.GetComponent<Image>();
         canvas = GameObject.Find("Canvas").transform;
         skillsPanel = this.transform.parent.gameObject;
-        skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
+        skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         noSkillSprite = Resources.Load<Sprite>("Skills/NoSkill");
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/Tooltip");
         cooldownPrefab = Resources.Load<GameObject>("Prefabs/Cooldown Overlay Panel");

@@ -6,18 +6,18 @@ public class SkillsButtonScript : MonoBehaviour
 {
     public Button button;
     public Transform characterUI;
-    public GameObject skillsUIPrefab;
-    public GameObject skillsUIPanel;
+    public GameObject skillsMenuPrefab;
+    public GameObject skillsMenu;
 
     public void OnActivate()
     {
-        if (skillsUIPanel == null)
+        if (skillsMenu == null)
         {
-            skillsUIPanel = Instantiate(skillsUIPrefab, characterUI);
+            skillsMenu = Instantiate(skillsMenuPrefab, characterUI);
         }
         else
         {
-            Destroy(skillsUIPanel);
+            Destroy(skillsMenu);
         }
     }
 
@@ -26,7 +26,7 @@ public class SkillsButtonScript : MonoBehaviour
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
         characterUI = GameObject.Find("Character UI").transform;
-        skillsUIPrefab = Resources.Load<GameObject>("Prefabs/Skills UI Panel");
+        skillsMenuPrefab = Resources.Load<GameObject>("Prefabs/Skills Menu");
     }
 
     void Update()

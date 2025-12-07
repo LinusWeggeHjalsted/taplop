@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 
-public class SkillsPanelScript : MonoBehaviour
+public class SkillBarScript : MonoBehaviour
 {
     public bool finishedBuilding = false;
     public bool finishedAssigning = false;

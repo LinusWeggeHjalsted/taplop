@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-public class InventoryUIScript : MonoBehaviour
+public class InventoryMenuScript : MonoBehaviour
 {
     public GameObject player;
     public PlayerCharacterScript playerScript;

@@ -161,7 +161,7 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
     {
         skillName = "That Which Lingers";
         skillType = "Enchantment";
-        description = "Increase all durations by 1";
+        description = "Increase all non-stun durations by 1";
         range = 0;
         duration = 2;
         cooldown = 5;

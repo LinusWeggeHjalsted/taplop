@@ -6,18 +6,18 @@ public class InventoryButtonScript : MonoBehaviour
 {
     public Button button;
     public Transform characterUI;
-    public GameObject inventoryUIPrefab;
-    public GameObject inventoryUIPanel;
+    public GameObject inventoryMenuPrefab;
+    public GameObject inventoryMenu;
 
     public void OnActivate()
     {
-        if (inventoryUIPanel == null)
+        if (inventoryMenu == null)
         {
-            inventoryUIPanel = Instantiate(inventoryUIPrefab, characterUI);
+            inventoryMenu = Instantiate(inventoryMenuPrefab, characterUI);
         }
         else
         {
-            Destroy(inventoryUIPanel);
+            Destroy(inventoryMenu);
         }
     }
 
@@ -26,7 +26,7 @@ public class InventoryButtonScript : MonoBehaviour
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
         characterUI = GameObject.Find("Character UI").transform;
-        inventoryUIPrefab = Resources.Load<GameObject>("Prefabs/Inventory UI Panel");
+        inventoryMenuPrefab = Resources.Load<GameObject>("Prefabs/Inventory Menu");
     }
 
     void Update()

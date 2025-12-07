@@ -8,7 +8,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
     public Transform playerGear;
     public Transform playerInventory;
     public GameObject skillsPanel;
-    public SkillsPanelScript skillsPanelScript;
+    public SkillBarScript skillBarScript;
     public string itemType = "";
     public int inventoryPosition;
 
@@ -19,7 +19,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
         playerGear = player.transform.Find("Gear");
         playerInventory = player.transform.Find("Inventory");
         skillsPanel = GameObject.Find("Skills Panel");
-        skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
+        skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
     }
 
     public void SwapWithOtherSlot(GameObject otherItemSlot, GameObject otherItem)
@@ -119,7 +119,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
             int otherPosition = actualOtherItemScript.inventoryPosition;
             actualOwnItemScript.inventoryPosition = otherPosition;
             actualOtherItemScript.inventoryPosition = ownPosition;
-            skillsPanelScript.UpdateButtons();
+            skillBarScript.UpdateButtons();
         }
     }
 
@@ -164,7 +164,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                             actualItem.transform.parent = playerScript.feet;
                             break;
                     }
-                    skillsPanelScript.UpdateButtons();
+                    skillBarScript.UpdateButtons();
                 }
             }
             else
@@ -174,7 +174,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                 if (originalItemSlotScript.itemType != "")
                 {
                     actualItem.transform.parent = playerScript.inventory;
-                    skillsPanelScript.UpdateButtons();
+                    skillBarScript.UpdateButtons();
                 }
                 itemScript.currentParent = this.transform;
             }

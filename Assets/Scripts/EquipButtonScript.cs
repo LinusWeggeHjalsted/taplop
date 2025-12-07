@@ -46,24 +46,24 @@ public class EquipButtonScript : MonoBehaviour
             currentItemScript.inventoryPosition = selectedItemPosition;
         }
         selectedItemScript.inventoryPosition = currentItemPosition;
-        // refresh open UI panels
+        // refresh open menus
         Transform characterUI = GameObject.Find("Character UI").transform;
-        Transform gearUIPanel = characterUI.Find("Gear UI Panel(Clone)");
-        if (gearUIPanel != null)
+        Transform gearMenu = characterUI.Find("Gear Menu(Clone)");
+        if (gearMenu != null)
         {
-            GearUIScript gearUIScript = gearUIPanel.GetComponent<GearUIScript>();
-            gearUIScript.RefreshUI();
+            GearMenuScript gearMenuScript = gearMenu.GetComponent<GearMenuScript>();
+            gearMenuScript.RefreshUI();
         }
-        Transform inventoryUIPanel = characterUI.Find("Inventory UI Panel(Clone)");
-        if (inventoryUIPanel != null)
+        Transform inventoryMenu = characterUI.Find("Inventory Menu(Clone)");
+        if (inventoryMenu != null)
         {
-            InventoryUIScript inventoryUIScript = inventoryUIPanel.GetComponent<InventoryUIScript>();
-            inventoryUIScript.RefreshUI();
+            InventoryMenuScript inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
+            inventoryMenuScript.RefreshUI();
         }
         // refresh skills panel in case weapons changed
         GameObject skillsPanel = GameObject.Find("Skills Panel");
-        SkillsPanelScript skillsPanelScript = skillsPanel.GetComponent<SkillsPanelScript>();
-        skillsPanelScript.UpdateButtons();
+        SkillBarScript skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
+        skillBarScript.UpdateButtons();
         // close context menu
         Transform canvas = GameObject.Find("Canvas").transform;
         Transform contextMenu = canvas.Find("Context Menu");

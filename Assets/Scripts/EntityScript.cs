@@ -425,7 +425,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         get
         {
             List<GameObject> enchantmentList = new List<GameObject>();
-            if (enchantments.childCount > 0)
+            if (enchantments != null && enchantments.childCount > 0)
             {
                 for (int i = 0; i < enchantments.childCount; i++)
                 {
@@ -681,13 +681,13 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                     {
                         break;
                     }
-                    // refresh open inventory UI panel
+                    // refresh open inventory menu
                     Transform characterUI = GameObject.Find("Character UI").transform;
-                    Transform inventoryUIPanel = characterUI.Find("Inventory UI Panel(Clone)");
-                    if (inventoryUIPanel != null)
+                    Transform inventoryMenu = characterUI.Find("Inventory Menu(Clone)");
+                    if (inventoryMenu != null)
                     {
-                        InventoryUIScript inventoryUIScript = inventoryUIPanel.GetComponent<InventoryUIScript>();
-                        inventoryUIScript.RefreshUI();
+                        InventoryMenuScript inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
+                        inventoryMenuScript.RefreshUI();
                     }
                 }
                 if (groundItems.transform.childCount == 0)
@@ -726,17 +726,17 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         return defenderScript.IncomingDamage(effectiveDamage, this.gameObject);
     }
 
-    public int IncomingDamage(int damage, GameObject attacker)
+    public int IncomingDamage(int damage, GameObject attacker, bool isReflected = false)
     {
         DisplayHit();
         if (!IsActive)
         {
             IsActive = true;
         }
-        if (reflectDuration > 0)
+        if (reflectDuration > 0 && !isReflected)
         {
             EntityScript attackerScript = attacker.GetComponent<EntityScript>();
-            attackerScript.IncomingDamage(damage, attacker);
+            attackerScript.IncomingDamage(damage, this.gameObject, true);
             return 0;
         }
         int effectiveDamage = damage + enchantmentModifiers.incomingDamage;
