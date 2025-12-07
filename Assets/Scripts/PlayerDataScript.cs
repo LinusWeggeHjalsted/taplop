@@ -10,6 +10,7 @@ public class PlayerDataScript : MonoBehaviour
     public abstract class InventoryItemData
     {
         public string itemName;
+        public int inventoryPosition;
     }
 
     public class WeaponData : InventoryItemData
@@ -838,6 +839,8 @@ public class PlayerDataScript : MonoBehaviour
                 WeaponScript weaponScript = newWeapon.GetComponent<WeaponScript>();
                 weaponScript.SetItemName(inventoryWeapon.itemName);
                 weaponScript.SetDamage(inventoryWeapon.damage);
+                ItemScript itemScript = newWeapon.GetComponent<ItemScript>();
+                itemScript.inventoryPosition = inventoryWeapon.inventoryPosition;
             }
             else if (inventoryItem is CoatData)
             {
@@ -848,6 +851,8 @@ public class PlayerDataScript : MonoBehaviour
                 coatScript.itemName = inventoryCoat.itemName;
                 coatScript.armorBonus = inventoryCoat.armor;
                 coatScript.healthBonus = inventoryCoat.health;
+                ItemScript itemScript = newCoat.GetComponent<ItemScript>();
+                itemScript.inventoryPosition = inventoryCoat.inventoryPosition;
             }
             else if (inventoryItem is GlovesData)
             {
@@ -858,6 +863,8 @@ public class PlayerDataScript : MonoBehaviour
                 glovesScript.itemName = inventoryGloves.itemName;
                 glovesScript.armorBonus = inventoryGloves.armor;
                 glovesScript.damageBonus = inventoryGloves.damage;
+                ItemScript itemScript = newGloves.GetComponent<ItemScript>();
+                itemScript.inventoryPosition = inventoryGloves.inventoryPosition;
             }
             else if (inventoryItem is PantsData)
             {
@@ -868,6 +875,8 @@ public class PlayerDataScript : MonoBehaviour
                 pantsScript.itemName = inventoryPants.itemName;
                 pantsScript.armorBonus = inventoryPants.armor;
                 pantsScript.pickupRadius = inventoryPants.pickupRadius;
+                ItemScript itemScript = newPants.GetComponent<ItemScript>();
+                itemScript.inventoryPosition = inventoryPants.inventoryPosition;
             }
             else if (inventoryItem is BootsData)
             {
@@ -878,6 +887,8 @@ public class PlayerDataScript : MonoBehaviour
                 bootsScript.itemName = inventoryBoots.itemName;
                 bootsScript.armorBonus = inventoryBoots.armor;
                 bootsScript.speedBonus = inventoryBoots.speed;
+                ItemScript itemScript = newBoots.GetComponent<ItemScript>();
+                itemScript.inventoryPosition = inventoryBoots.inventoryPosition;
             }
             else if (inventoryItem is TomeData)
             {
@@ -886,6 +897,8 @@ public class PlayerDataScript : MonoBehaviour
                 GameObject newTome = Instantiate(tomePrefab, playerInventory);
                 SkillTomeScript tomeScript = newTome.GetComponent<SkillTomeScript>();
                 tomeScript.skillName = inventoryTome.skillName;
+                ItemScript itemScript = newTome.GetComponent<ItemScript>();
+                itemScript.inventoryPosition = inventoryTome.inventoryPosition;
             }
         }
         // create player utility skills
@@ -1010,6 +1023,7 @@ public class PlayerDataScript : MonoBehaviour
                     WeaponScript playerInventoryWeaponScript = playerInventoryItem.GetComponent<WeaponScript>();
                     WeaponData weaponData = new WeaponData();
                     weaponData.itemName = playerInventoryWeaponScript.ItemName();
+                    weaponData.inventoryPosition = playerInventoryWeaponScript.inventoryPosition;
                     weaponData.weaponType = playerInventoryWeaponScript.ItemSubType();
                     weaponData.damage = playerInventoryWeaponScript.GetDamage();
                     inventory.Add(weaponData);
@@ -1018,6 +1032,7 @@ public class PlayerDataScript : MonoBehaviour
                     CoatScript playerInventoryCoatScript = playerInventoryItem.GetComponent<CoatScript>();
                     CoatData coatData = new CoatData();
                     coatData.itemName = playerInventoryCoatScript.itemName;
+                    coatData.inventoryPosition = playerInventoryCoatScript.inventoryPosition;
                     coatData.armor = playerInventoryCoatScript.armorBonus;
                     coatData.health = playerInventoryCoatScript.healthBonus;
                     inventory.Add(coatData);
@@ -1026,6 +1041,7 @@ public class PlayerDataScript : MonoBehaviour
                     GlovesScript playerInventoryGlovesScript = playerInventoryItem.GetComponent<GlovesScript>();
                     GlovesData glovesData = new GlovesData();
                     glovesData.itemName = playerInventoryGlovesScript.itemName;
+                    glovesData.inventoryPosition = playerInventoryGlovesScript.inventoryPosition;
                     glovesData.armor = playerInventoryGlovesScript.armorBonus;
                     glovesData.damage = playerInventoryGlovesScript.damageBonus;
                     inventory.Add(glovesData);
@@ -1034,6 +1050,7 @@ public class PlayerDataScript : MonoBehaviour
                     PantsScript playerInventoryPantsScript = playerInventoryItem.GetComponent<PantsScript>();
                     PantsData pantsData = new PantsData();
                     pantsData.itemName = playerInventoryPantsScript.itemName;
+                    pantsData.inventoryPosition = playerInventoryPantsScript.inventoryPosition;
                     pantsData.armor = playerInventoryPantsScript.armorBonus;
                     pantsData.pickupRadius = playerInventoryPantsScript.pickupRadius;
                     inventory.Add(pantsData);
@@ -1042,6 +1059,7 @@ public class PlayerDataScript : MonoBehaviour
                     BootsScript playerInventoryBootsScript = playerInventoryItem.GetComponent<BootsScript>();
                     BootsData bootsData = new BootsData();
                     bootsData.itemName = playerInventoryBootsScript.itemName;
+                    bootsData.inventoryPosition = playerInventoryBootsScript.inventoryPosition;
                     bootsData.armor = playerInventoryBootsScript.armorBonus;
                     bootsData.speed = playerInventoryBootsScript.speedBonus;
                     inventory.Add(bootsData);
@@ -1050,6 +1068,7 @@ public class PlayerDataScript : MonoBehaviour
                     SkillTomeScript playerInventoryTomeScript = playerInventoryItem.GetComponent<SkillTomeScript>();
                     TomeData tomeData = new TomeData();
                     tomeData.skillName = playerInventoryTomeScript.skillName;
+                    tomeData.inventoryPosition = playerInventoryTomeScript.inventoryPosition;
                     inventory.Add(tomeData);
                     break;
             }

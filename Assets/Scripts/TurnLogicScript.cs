@@ -153,6 +153,8 @@ public class TurnLogicScript : MonoBehaviour
         {
             yield return null;
         }
+        traversableTilesScript.ClearHighlights();
+        skillUsed = null;
         currentGameState = GameState.PlayerTurnAttack;
         hasMoved = false;
         turnStarted = false;
@@ -187,7 +189,7 @@ public class TurnLogicScript : MonoBehaviour
             {
                 enemiesScript.EnemyTurnMove(enemy);
                 yield return new WaitForSeconds(0.25f);
-                enemiesScript.EnemyTurnAttack(enemy);
+                yield return enemiesScript.EnemyTurnAttack(enemy);
             }
             else
             {
@@ -252,6 +254,7 @@ public class TurnLogicScript : MonoBehaviour
                     {
                         turnStarted = true;
                         traversableTilesScript.ClearHighlights();
+                        skillUsed = null;
                         turnStatusText.text = "Player Attack Step";
                         StartCoroutine(PlayerTurnAttack());
                     }

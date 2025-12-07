@@ -2,6 +2,7 @@ using UnityEngine;
 
 public interface WeaponScript 
 {
+    public int inventoryPosition { get; set; }
     public GameObject FirstSkill();
     public GameObject SecondSkill();
     public GameObject ThirdSkill();

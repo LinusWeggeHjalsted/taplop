@@ -193,7 +193,7 @@ public class EnemiesScript : MonoBehaviour
         }
     }
 
-    public void EnemyTurnAttack(GameObject enemy)
+    public IEnumerator EnemyTurnAttack(GameObject enemy)
     {
         Vector3 enemyPosition = enemy.transform.position;
         EntityScript enemyScript = enemy.GetComponent<EntityScript>();
@@ -228,7 +228,8 @@ public class EnemiesScript : MonoBehaviour
             Vector3 selectedTarget = skillScript.EnemySelectTarget(enemyPosition, enemy);
             skillScript.UseSkill(selectedTarget, enemy);
             KillDeadEnemies();
-            EnemyTurnAttack(enemy);
+            yield return new WaitForSeconds(0.5f);
+            yield return EnemyTurnAttack(enemy);
         }
         // then use an attack
         else if (sortedSkillPriorities.Count > 0)

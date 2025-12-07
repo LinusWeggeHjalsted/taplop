@@ -16,9 +16,9 @@ weapons
         *vampiric strike - attack target and heal for damage dealt, range 1, cooldown 2
         *retreating swipe - attack target for 2x damage and retreat 2 tiles, range 1, cooldown 3
     axe
-        chop - attack target, range 1
-        cleave - attack and stun target, range 1, duration 1, cooldown 2
-        throw - attack target for 2x damage, range 3, cooldown 4
+        *chop - attack target, range 1
+        *cleave - attack and stun target, range 1, duration 1, cooldown 2
+        *throw - attack target for 2x damage, range 3, cooldown 4
     wand
         spark - attack target, range 2
         lightning strike - attack target and each other adjacent target, range 2, cooldown 2

@@ -113,6 +113,10 @@ public class TileScript : MonoBehaviour
                         break;
                     case TurnLogicScript.GameState.PlayerTurnAttack:
                         GameObject skillUsed = turnLogicScript.skillUsed;
+                        if (skillUsed == null)
+                        {
+                            return;
+                        }
                         Skill skillScript = skillUsed.GetComponent<Skill>();
                         skillScript.UseSkill(this.transform.position, player);
                         break;

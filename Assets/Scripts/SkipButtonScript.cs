@@ -8,6 +8,8 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
     public RectTransform buttonRectTransform;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
+    public GameObject traversableTiles;
+    public TraversableTilesScript traversableTilesScript;
     public GameObject tooltipPrefab;
     public GameObject tooltip;
 
@@ -45,10 +47,13 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
         switch (turnLogicScript.currentGameState)
         {
             case TurnLogicScript.GameState.PlayerTurnMove:
+                traversableTilesScript.ClearHighlights();
+                turnLogicScript.skillUsed = null;
                 turnLogicScript.currentGameState = TurnLogicScript.GameState.PlayerTurnAttack;
                 turnLogicScript.hasMoved = true;
                 break;
             case TurnLogicScript.GameState.PlayerTurnAttack:
+                traversableTilesScript.ClearHighlights();
                 turnLogicScript.currentGameState = TurnLogicScript.GameState.EnemiesTurn;
                 turnLogicScript.hasAttacked = true;
                 break;
@@ -59,6 +64,8 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
     {
         turnLogic = GameObject.Find("Turn Logic");
         turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+        traversableTiles = GameObject.Find("Traversable Tiles");
+        traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);

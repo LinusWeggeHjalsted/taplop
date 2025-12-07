@@ -15,7 +15,7 @@ Enemy Info
 1
 name Invader Warrior
 sprite InvaderSwordNone
-maxHealth 7
+maxHealth 10
 armor -2
 speed 1
 aggroRange 3

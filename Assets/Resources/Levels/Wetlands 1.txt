@@ -1,0 +1,51 @@
+Metadata
+creator Strider
+
+Layout
+ . ...
+  ..11.. ...
+ .. .1 1.. ..
+ ...  .11.....
+..      1.. ..
+!         .....
+           .2.
+           ..
+            =
+
+Enemy Info
+1
+name Crab
+sprite Crab
+maxHealth 10
+armor -2
+speed 1
+aggroRange 3
+mainHandWeapon Sword
+mainHandName Crab Sword
+mainHandDamage 5
+offHandWeapon Shield
+offHandName Crab Shield
+offHandDamage 5
+glovesName Crab Gloves
+glovesArmor 2
+glovesDamage 1
+utilitySkill Stone Form
+
+2
+name Giant Crab
+sprite GiantCrab
+maxHealth 15
+armor 4
+speed 1
+aggroRange 3
+mainHandWeapon Axe
+mainHandName Crab Axe
+mainHandDamage 6
+offHandWeapon Shield
+offHandName Crab Shield
+offHandDamage 6
+utilitySkill That Which Lingers
+utilitySkill Stone Form
+
+Item Info
+

@@ -684,12 +684,19 @@ public class LevelBuilderScript : MonoBehaviour
                 enemyBootsScript.armorBonus = preEnemy.bootsArmor;
                 enemyBootsScript.speedBonus = preEnemy.bootsSpeed;
             }
-            foreach (string utilitySkill in preEnemy.utilitySkills)
+            for (int i = 0; i < preEnemy.utilitySkills.Count; i++)
             {
+                string utilitySkill = preEnemy.utilitySkills[i];
                 GameObject utilitySkillPrefab = Resources.Load<GameObject>("Prefabs/" + utilitySkill);
                 if (utilitySkillPrefab != null)
                 {
-                    Instantiate(utilitySkillPrefab, enemyUtilitySkills);
+                    GameObject skillObject = Instantiate(utilitySkillPrefab, enemyUtilitySkills);
+                    Skill skillScript = skillObject.GetComponent<Skill>();
+                    skillScript.skillBarPosition = i + 4;
+                }
+                else
+                {
+                    Debug.LogError($"utility skill {utilitySkill} not found");
                 }
             }
         }

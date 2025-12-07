@@ -658,19 +658,28 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             if (dropsScript.groundItemsLookup.ContainsKey(pickupPosition))
             {
                 GameObject groundItems = dropsScript.groundItemsLookup[pickupPosition];
-                while (groundItems.transform.childCount > 0 && inventory.childCount < inventorySize)
+                while (groundItems.transform.childCount > 0 && inventory.childCount <= inventorySize)
                 {
                     Transform item = groundItems.transform.GetChild(0);
                     ItemScript itemScript = item.GetComponent<ItemScript>();
-                    item.parent = inventory;
+                    // cache the inventory array once to avoid repeated getter calls
+                    GameObject[] currentInventory = inventoryItems;
                     // find first empty inventory slot
+                    bool foundSlot = false;
                     for (int i = 0; i < inventorySize; i++)
                     {
-                        if (inventoryItems[i] == null)
+                        if (currentInventory[i] == null)
                         {
                             itemScript.inventoryPosition = i + 1;
+                            item.parent = inventory;
+                            foundSlot = true;
                             break;
                         }
+                    }
+                    // if no empty slot found, inventory is full
+                    if (!foundSlot)
+                    {
+                        break;
                     }
                     // refresh open inventory UI panel
                     Transform characterUI = GameObject.Find("Character UI").transform;
@@ -882,6 +891,10 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             equippedGear.Add(coat);
         }
+        if (pants != null)
+        {
+            equippedGear.Add(pants);
+        }
         if (gloves != null)
         {
             equippedGear.Add(gloves);
@@ -938,8 +951,8 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         if (this.gameObject.name == "Player")
         {
             SpriteSheet = Resources.LoadAll<Sprite>("Player");
+            maxHealth = 10;
         }
-        maxHealth = 10;
         missionLogic = GameObject.Find("Mission Logic");
         missionLogicScript = missionLogic.GetComponent<MissionLogicScript>();
         levelBuilder = GameObject.Find("Level Builder");
