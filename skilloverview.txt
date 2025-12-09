@@ -1,7 +1,7 @@
-weapons
-	sword
-		*slice - attack target, range 1
-		*spinblade - attack each target within range, range 1, cooldown 2
+- weapons
+    sword
+        *slice - attack target, range 1
+        *spinblade - attack each target within range, range 1, cooldown 2
         *flash strike - teleport then attack each adjacent target, range 2, cooldown 4
 	shield
         *bash - attack target, range 1
@@ -32,7 +32,7 @@ weapons
         leg shot - attack and cripple target, range 3, duration 1, cooldown 2
         head shot - attack and stun target, range 3, duration 1, cooldown 4
 
-utility skills
+- utility skills
     enchantments
         that which rushes - reduce cooldowns of used skills by 1 and increase speed by 1, duration 2, cooldown 5
         that which reaches - increase pickup radius and range of used skills by 1, duration 2, cooldown 5
@@ -58,4 +58,5 @@ utility skills
         chain lightning - attack target and each target connected to it, range 1, cooldown 5
         shockwave - attack and knockback each target within range, range 1, cooldown 5
         worldfire - attack each target within range, range 5, cooldown 10
+        adrenaline surge - reset all target's skill cooldowns and attack target for each skill cooldown reset this way, range 1, cooldown 5
         

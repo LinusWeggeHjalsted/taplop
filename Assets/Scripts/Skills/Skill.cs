@@ -10,8 +10,6 @@ public interface Skill
     int GetDuration();
     Sprite GetSprite();
     int GetCooldown();
-    int CurrentCooldown();
-    void ReduceCooldown(int number);
     int EnemyPriority(Vector3 fromPosition, GameObject enemy);
     Vector3 EnemySelectTarget(Vector3 fromPosition, GameObject enemy);
     void UseSkill(Vector3 targetPosition, GameObject wielder);

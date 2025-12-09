@@ -10,7 +10,6 @@ public class ReplenishScript : MonoBehaviour, Skill
     private float range;
     private int duration;
     private int cooldown;
-    private int currentCooldown = 0;
     private Sprite skillSprite;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
@@ -67,25 +66,15 @@ public class ReplenishScript : MonoBehaviour, Skill
         return cooldown;
     }
 
-    public int CurrentCooldown()
-    {
-        return currentCooldown;
-    }
-
-    public void ReduceCooldown(int number)
-    {
-        currentCooldown -= number;
-    }
-
     public int EnemyPriority(Vector3 fromPosition, GameObject enemy)
     {
-        if (currentCooldown > 0)
+        EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+        if (enemyScript.GetSkillCooldown(skillName) > 0)
         {
             return -1;
         }
         else
         {
-            EntityScript enemyScript = enemy.GetComponent<EntityScript>();
             int currentHealth = enemyScript.CurrentHealth;
             int maxHealth = enemyScript.MaxHealth;
             float healthRatio = (float)currentHealth / (float)maxHealth;
@@ -115,7 +104,7 @@ public class ReplenishScript : MonoBehaviour, Skill
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.DisplayUsedSkill(skillSprite);
         wielderScript.CurrentHealth = wielderScript.MaxHealth;
-        currentCooldown = cooldown;
+        wielderScript.SetSkillCooldown(skillName, cooldown);
     }
 
     void Start()

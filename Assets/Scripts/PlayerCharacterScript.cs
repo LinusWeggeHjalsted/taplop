@@ -23,4 +23,7 @@ public interface PlayerCharacterScript
     GameObject[] equippedSkills { get; }
 
     void MoveTo(Vector3 targetPosition);
+
+    int GetSkillCooldown(string skillName);
+    void SetSkillCooldown(string skillName, int number);
 }

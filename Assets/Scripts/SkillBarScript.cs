@@ -20,18 +20,6 @@ public class SkillBarScript : MonoBehaviour
         }
     }
 
-    public void ReduceCooldowns(int number)
-    {
-        for (int i = 0; i < this.transform.childCount; i++)
-        {
-            GameObject skillButton = this.transform.GetChild(i).gameObject;
-            SkillButtonScript skillButtonScript = skillButton.GetComponent<SkillButtonScript>();
-            GameObject skill = skillButtonScript.skill;
-            Skill skillScript = skill.GetComponent<Skill>();
-            skillScript.ReduceCooldown(1);
-        }
-    }
-
     IEnumerator WaitForSkillButtons()
     {
         for (int i = 0; i < this.transform.childCount; i++)

@@ -8,7 +8,6 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
     private float range;
     private int duration;
     private int cooldown;
-    private int currentCooldown = 0;
     private Sprite skillSprite;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
@@ -60,28 +59,18 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
         return cooldown;
     }
 
-    public int CurrentCooldown()
-    {
-        return currentCooldown;
-    }
-
     public Sprite GetSprite()
     {
         return skillSprite;
     }
 
-    public void ReduceCooldown(int number)
-    {
-        currentCooldown -= number;
-    }
-
     public int EnemyPriority(Vector3 fromPosition, GameObject enemy)
     {
-        if (currentCooldown > 0)
+        EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+        if (enemyScript.GetSkillCooldown(skillName) > 0)
         {
             return -1;
         }
-        EntityScript enemyScript = enemy.GetComponent<EntityScript>();
         // to-do - check for skills with durations about to be used
         return 0;
     }
@@ -117,7 +106,7 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
         EnchantmentScript enchantmentScript = thatWhichLingersEnchantment.GetComponent<EnchantmentScript>();
         int effectiveDuration = duration + wielderScript.enchantmentModifiers.duration;
         enchantmentScript.currentDuration += effectiveDuration;
-        currentCooldown = cooldown;
+        wielderScript.SetSkillCooldown(skillName, cooldown);
     }
 
     // enchantment functions

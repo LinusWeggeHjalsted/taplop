@@ -9,7 +9,6 @@ public class SpinbladeScript : MonoBehaviour, Skill
     private float range;
     private int duration;
     private int cooldown;
-    private int currentCooldown = 0;
     private Sprite skillSprite;
     public GameObject sword;
     public SwordScript swordScript;
@@ -68,23 +67,13 @@ public class SpinbladeScript : MonoBehaviour, Skill
         return cooldown;
     }
 
-    public int CurrentCooldown()
-    {
-        return currentCooldown;
-    }
-
-    public void ReduceCooldown(int number)
-    {
-        currentCooldown -= number;
-    }
-
     public int EnemyPriority(Vector3 fromPosition, GameObject enemy)
     {
-        if (currentCooldown > 0)
+        EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+        if (enemyScript.GetSkillCooldown(skillName) > 0)
         {
             return -1;
         }
-        EntityScript enemyScript = enemy.GetComponent<EntityScript>();
         float effectiveRange = range + enemyScript.enchantmentModifiers.range;
         Vector3 playerPosition = player.transform.position;
         float distanceToPlayer = traversableTilesScript.Distance(fromPosition, playerPosition);
@@ -154,11 +143,11 @@ public class SpinbladeScript : MonoBehaviour, Skill
                 wielderScript.Attack(wielderScript.mainHandDamage, target);
             }
         }
+        wielderScript.SetSkillCooldown(skillName, cooldown);
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;
         }
-        currentCooldown = cooldown;
     }
 
     void Start()

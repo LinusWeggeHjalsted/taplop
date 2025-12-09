@@ -2,11 +2,10 @@
 - main menu
 - level clear conditions
 - write player save
-- rename skills panel to skill bar
-- skills menu
 - lock switching equipped gear and skills when there are active enemies
-    maybe lock when in missions instead
 - better enemy death
+    make death a trigger in CurrentHealth set method
+    handle cases of enemies dying during their turn for turn logic
 - loading screen
 - sort active enemies by distance to player before taking their turn
 - weaponswap
@@ -14,7 +13,9 @@
 - scenery
 - npc's
 - gear shop
+- gear upgrading
 - skill trainer
+- unlock more skill slots
 - ui horizontal scroll
 - map
 - base damage stat for balancing with negative damage on enemies
@@ -22,15 +23,23 @@
 - missing health text in hubs
 - ground item animation to grab attention
 - healthbar above entities are not updating correctly
-- wrong tooltip when inventory has been updated
 - stuck tooltip on weapon skill
 - pathing behavior could be improved when no path is found
 - maybe pathing bug in forest 2
 - amulet with spell damage
 - handle items / skills dropped on skill buttons / item slots
 - normalize long range knockback and retreat
-- remember player's weapon skill cooldowns when swapping weapons
 - cancel prepared skills when swapping skills
 - move self-contained initialization to Awake for all scripts
 - consider form of x instead of x form
 - add menu titles and x button to close 
+- display enchantments
+- stun should probably not extend existing stun?
+- remember open menus between levels and hubs
+- track salvage value of picked up items
+    save to a Dictionary<string, (int, int[4])> of missionName, (turnsUsed, totalSalvage)
+- track turns until repeat of clones running missions, and receive totalSalvage for each repeated run
+    only receive accumulated repeat rewards on successful mission completion
+- update tooltip logic on skip button
+- add tooltips to ui buttons for inventory, gear, skills, healthbar
+- update healthbar when maxHealth changes

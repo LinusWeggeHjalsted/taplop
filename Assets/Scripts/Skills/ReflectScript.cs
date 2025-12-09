@@ -8,7 +8,6 @@ public class ReflectScript : MonoBehaviour, Skill
     private float range;
     private int duration;
     private int cooldown;
-    private int currentCooldown = 0;
     private Sprite skillSprite;
     public GameObject shield;
     public ShieldScript shieldScript;
@@ -67,19 +66,10 @@ public class ReflectScript : MonoBehaviour, Skill
         return cooldown;
     }
 
-    public int CurrentCooldown()
-    {
-        return currentCooldown;
-    }
-
-    public void ReduceCooldown(int number)
-    {
-        currentCooldown -= number;
-    }
-
     public int EnemyPriority(Vector3 fromPosition, GameObject enemy)
     {
-        if (currentCooldown > 0)
+        EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+        if (enemyScript.GetSkillCooldown(skillName) > 0)
         {
             return -1;
         }
@@ -116,7 +106,7 @@ public class ReflectScript : MonoBehaviour, Skill
         {
             turnLogicScript.hasAttacked = true;
         }
-        currentCooldown = cooldown;
+        wielderScript.SetSkillCooldown(skillName, cooldown);
     }
 
     void Start()

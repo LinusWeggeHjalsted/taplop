@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using TMPro;
+using System;
 using System.Collections;
 
 public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IDropHandler
@@ -20,6 +21,20 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     public PlayerCharacterScript playerScript;
     public GameObject skill;
     public Skill skillScript;
+    public string skillName
+    {
+        get
+        {
+            if (skillScript != null)
+            {
+                return skillScript.GetSkillName();
+            }
+            else
+            {
+                return "No Skill Loaded";
+            }
+        }
+    }
     public Sprite noSkillSprite;
     public GameObject tooltipPrefab;
     public GameObject tooltip;
@@ -102,7 +117,8 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
 
     public void DisplayCooldown()
     {
-        if (skillScript.CurrentCooldown() > 0)
+
+        if (playerScript.GetSkillCooldown(skillName) > 0)
         {
             if (cooldownOverlay == null)
             {
@@ -110,7 +126,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             }
             GameObject cooldownText = cooldownOverlay.transform.Find("Cooldown Text").gameObject;
             TMP_Text textField = cooldownText.GetComponent<TMP_Text>();
-            textField.text = skillScript.CurrentCooldown().ToString();
+            textField.text = playerScript.GetSkillCooldown(skillName).ToString();
         }
         else
         {
@@ -126,7 +142,11 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         switch (turnLogicScript.currentGameState)
         {
             case TurnLogicScript.GameState.PlayerTurnAttack:
-                if (skillScript.CurrentCooldown() > 0)
+                if (skillScript == null)
+                {
+                    break;
+                }
+                if (playerScript.GetSkillCooldown(skillName) > 0)
                 {
                     Debug.Log("Skill is on cooldown");
                     break;
@@ -192,7 +212,6 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             return;
         }
         GameObject droppedObject = eventData.pointerDrag;
-
         // check if dropped object is an UnlockedSkillScript (from skills menu)
         UnlockedSkillScript unlockedSkillScript = droppedObject.GetComponent<UnlockedSkillScript>();
         if (unlockedSkillScript != null)
@@ -201,7 +220,6 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             skillBarScript.UpdateButtons();
             return;
         }
-
         // otherwise, handle SkillButtonScript (skill bar to skill bar swap)
         SkillButtonScript skillButtonScript = droppedObject.GetComponent<SkillButtonScript>();
         if (skillButtonScript == null)
@@ -272,7 +290,6 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             Debug.LogError("UnlockedSkillScript has no skill name");
             return;
         }
-
         // check if this skill already exists on the bar
         bool skillExists = false;
         GameObject foundSkill = null;
@@ -292,12 +309,10 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 }
             }
         }
-
         if (skillExists)
         {
             // swap skills on bar
             int foundPosition = foundSkillScript.skillBarPosition;
-
             if (skill != null)
             {
                 Skill ownSkillScript = skill.GetComponent<Skill>();
@@ -312,12 +327,16 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         }
         else
         {
+            // update cooldown to max of the two being swapped
+            int ownCurrentCooldown = playerScript.GetSkillCooldown(skillName);
+            int droppedCurrentCooldown = playerScript.GetSkillCooldown(droppedSkillName);
+            int maxCurrentCooldown = Math.Max(ownCurrentCooldown, droppedCurrentCooldown);
+            playerScript.SetSkillCooldown(droppedSkillName, maxCurrentCooldown);
             // remove old skill from this slot if present
             if (skill != null)
             {
                 Destroy(skill);
             }
-
             // instantiate new skill under player's Utility Skills
             GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/" + droppedSkillName);
             if (skillPrefab == null)
@@ -330,7 +349,6 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             Skill newSkillScript = newSkill.GetComponent<Skill>();
             newSkillScript.skillBarPosition = skillNumber + 1;
         }
-
         // Wait a frame for the new skill to initialize before updating the UI
         StartCoroutine(DelayedUpdateButtons());
     }

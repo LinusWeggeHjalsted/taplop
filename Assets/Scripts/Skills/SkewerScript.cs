@@ -9,7 +9,6 @@ public class SkewerScript : MonoBehaviour, Skill
     private float range;
     private int duration;
     private int cooldown;
-    private int currentCooldown = 0;
     private Sprite skillSprite;
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
@@ -66,23 +65,13 @@ public class SkewerScript : MonoBehaviour, Skill
         return cooldown;
     }
 
-    public int CurrentCooldown()
-    {
-        return currentCooldown;
-    }
-
-    public void ReduceCooldown(int number)
-    {
-        currentCooldown -= number;
-    }
-
     public int EnemyPriority(Vector3 fromPosition, GameObject enemy)
     {
-        if (currentCooldown > 0)
+        EntityScript enemyScript = enemy.GetComponent<EntityScript>();
+        if (enemyScript.GetSkillCooldown(skillName) > 0)
         {
             return -1;
         }
-        EntityScript enemyScript = enemy.GetComponent<EntityScript>();
         float effectiveRange = range + enemyScript.enchantmentModifiers.range;
         Vector3 playerPosition = player.transform.position;
         float distanceToPlayer = traversableTilesScript.Distance(fromPosition, playerPosition);
@@ -132,7 +121,7 @@ public class SkewerScript : MonoBehaviour, Skill
         {
             wielderScript.Attack(3 * wielderScript.offHandDamage, target);
         }
-        currentCooldown = cooldown;
+        wielderScript.SetSkillCooldown(skillName, cooldown);
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;

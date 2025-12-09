@@ -347,6 +347,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             return skillArray;
         }
     }
+    public Dictionary<string, int> cooldownTracker = new Dictionary<string, int>();
     private bool isActive = false;
     public bool IsActive
     {
@@ -785,15 +786,50 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
+    public int GetSkillCooldown(string skillName)
+    {
+        if (cooldownTracker.ContainsKey(skillName))
+        {
+            return cooldownTracker[skillName];
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
+    public void SetSkillCooldown(string skillName, int number)
+    {
+        if (cooldownTracker.ContainsKey(skillName))
+        {
+            cooldownTracker[skillName] = number;
+        }
+        else
+        {
+            cooldownTracker.Add(skillName, number);
+        }
+    }
+
+    public void ReduceSkillCooldown(string skillName, int number)
+    {
+        if (!cooldownTracker.ContainsKey(skillName))
+        {
+            Debug.LogError("trying to reduce cooldown of skill {skillName} which isn't in the tracker");
+            return;
+        }
+        cooldownTracker[skillName] -= number;
+        if (cooldownTracker[skillName] < 0)
+        {
+            cooldownTracker[skillName] = 0;
+        }
+    }
+
     public void ReduceCooldowns(int number)
     {
-        foreach (GameObject skill in equippedSkills)
+        List<string> trackedCooldowns = cooldownTracker.Keys.ToList();
+        foreach (string skillName in trackedCooldowns)
         {
-            if (skill != null)
-            {
-                Skill skillScript = skill.GetComponent<Skill>();
-                skillScript.ReduceCooldown(number);
-            }
+            ReduceSkillCooldown(skillName, number);
         }
     }
 

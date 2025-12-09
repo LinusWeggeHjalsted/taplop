@@ -211,6 +211,15 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
+    public int GetSkillCooldown(string skillName)
+    {
+        return 0;
+    }
+
+    public void SetSkillCooldown(string skillName, int number)
+    {
+    }
+
     IEnumerator WaitForGear()
     {
         while (!gearScript.finishedBuilding)
