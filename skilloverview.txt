@@ -3,7 +3,7 @@
         *slice - attack target, range 1
         *spinblade - attack each target within range, range 1, cooldown 2
         *flash strike - teleport then attack each adjacent target, range 2, cooldown 4
-	shield
+    shield
         *bash - attack target, range 1
         *slam - stun and knockback each target within range, range 1, cooldown 3
         *reflect - incoming damage is prevented and dealt to the attacker, duration 1, cooldown 5
@@ -26,7 +26,7 @@
     idol
         heal - heal for 20% of max health
         drain - steal health from each target within range, range 1, cooldown 4
-		absorb - incoming damage is converted to healing, duration 1, cooldown 5
+        absorb - incoming damage is converted to healing, duration 1, cooldown 5
     crossbow
         shoot - attack target, range 3
         leg shot - attack and cripple target, range 3, duration 1, cooldown 2

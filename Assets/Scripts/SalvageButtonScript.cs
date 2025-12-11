@@ -7,27 +7,27 @@ public class SalvageButtonScript : MonoBehaviour
 {
     public Button button;
     public TMP_Text salvageText;
-    public int[] salvageValue;
+    public PlayerDataScript.Salvage salvageValue;
     public GameObject selectedItem;
 
-    public IEnumerator SetText(int[] itemSalvage)
+    public IEnumerator SetText(PlayerDataScript.Salvage itemSalvage)
     {
         string buildingString = "Salvage";
-        if (itemSalvage[0] > 0)
+        if (itemSalvage.wood > 0)
         {
-            buildingString += $" {itemSalvage[0]} wood";
+            buildingString += $" {itemSalvage.wood} wood";
         }
-        if (itemSalvage[1] > 0)
+        if (itemSalvage.metal > 0)
         {
-            buildingString += $" {itemSalvage[1]} metal";
+            buildingString += $" {itemSalvage.metal} metal";
         }
-        if (itemSalvage[2] > 0)
+        if (itemSalvage.leather > 0)
         {
-            buildingString += $" {itemSalvage[2]} leather";
+            buildingString += $" {itemSalvage.leather} leather";
         }
-        if (itemSalvage[3] > 0)
+        if (itemSalvage.knowledge > 0)
         {
-            buildingString += $" {itemSalvage[3]} knowledge";
+            buildingString += $" {itemSalvage.knowledge} knowledge";
         }
         while (salvageText == null)
         {
@@ -43,11 +43,7 @@ public class SalvageButtonScript : MonoBehaviour
             Debug.LogError("salvageValue or selectedItem not set yet");
             return;
         }
-        PlayerDataScript playerDataScript = PlayerDataScript.Instance;
-        playerDataScript.woodSalvage += salvageValue[0];
-        playerDataScript.metalSalvage += salvageValue[1];
-        playerDataScript.leatherSalvage += salvageValue[2];
-        playerDataScript.knowledge += salvageValue[3];
+        PlayerDataScript.Instance.collectedSalvage += salvageValue;
         DestroyImmediate(selectedItem);
         // refresh open menus
         Transform characterUI = GameObject.Find("Character UI").transform;

@@ -673,6 +673,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                         {
                             itemScript.inventoryPosition = i + 1;
                             item.parent = inventory;
+                            missionLogicScript.totalSalvage += itemScript.SalvageValue();
                             foundSlot = true;
                             break;
                         }

@@ -88,17 +88,10 @@ public class SpearScript : MonoBehaviour, WeaponScript, ItemScript
         itemName = newItemName;
     }
 
-    public int[] SalvageValue()
+    public PlayerDataScript.Salvage SalvageValue()
     {
-        int[] salvage = new int[4];
-        // wood
-        salvage[0] = damage;
-        // metal
-        salvage[1] = 0;
-        // leather
-        salvage[2] = 0;
-        // knowledge
-        salvage[3] = 0;
+        PlayerDataScript.Salvage salvage = new PlayerDataScript.Salvage();
+        salvage.wood = damage;
         return salvage;
     }
 

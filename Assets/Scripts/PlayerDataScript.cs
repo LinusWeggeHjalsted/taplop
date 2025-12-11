@@ -7,6 +7,24 @@ public class PlayerDataScript : MonoBehaviour
 {
     public static PlayerDataScript Instance { get; private set; }
 
+    public class Salvage
+    {
+        public int wood;
+        public int metal;
+        public int leather;
+        public int knowledge;
+
+        public static Salvage operator +(Salvage salvage1, Salvage salvage2)
+        {
+            Salvage combinedSalvage = new Salvage();
+            combinedSalvage.wood = salvage1.wood + salvage2.wood;
+            combinedSalvage.metal = salvage1.metal + salvage2.metal;
+            combinedSalvage.leather = salvage1.leather + salvage2.leather;
+            combinedSalvage.knowledge = salvage1.knowledge + salvage2.knowledge;
+            return combinedSalvage;
+        }
+    }
+
     public abstract class InventoryItemData
     {
         public string itemName;
@@ -48,6 +66,25 @@ public class PlayerDataScript : MonoBehaviour
         public string skillName;
     }
 
+    public class CloneData
+    {
+        public Salvage totalSalvage;
+        public int turnsToComplete;
+        private int _currentProgress;
+        public int currentProgress
+        {
+            get
+            {
+                return _currentProgress;
+            }
+            set
+            {
+                // restart at 0 when completed
+                _currentProgress = value % turnsToComplete;
+            }
+        }
+    }
+
     public bool finishedBuilding = false;
 
     public string playerName;
@@ -57,10 +94,7 @@ public class PlayerDataScript : MonoBehaviour
     public int turns;
     public int deaths;
     public int defeatedEnemies;
-    public int woodSalvage;
-    public int metalSalvage;
-    public int leatherSalvage;
-    public int knowledge;
+    public Salvage collectedSalvage = new Salvage();
     public int utilitySkillSlots;
     public List<string> unlockedSkills = new List<string>();
     // to-do - hubs
@@ -79,6 +113,9 @@ public class PlayerDataScript : MonoBehaviour
     // utility skill names
     public string[] utilitySkills = new string[5];
 
+    // clone data
+    public Dictionary<string, CloneData> allCloneData = new Dictionary<string, CloneData>();
+
     void Awake()
     {
         if (Instance == null)
@@ -94,7 +131,6 @@ public class PlayerDataScript : MonoBehaviour
 
     void Start()
     {
-        LoadPlayerData("New Player");
     }
 
     public void LoadPlayerData(string savePath)
@@ -203,7 +239,7 @@ public class PlayerDataScript : MonoBehaviour
                     int woodSalvageNumber;
                     if (Int32.TryParse(woodSalvageString, out woodSalvageNumber))
                     {
-                        woodSalvage = woodSalvageNumber;
+                        collectedSalvage.wood = woodSalvageNumber;
                     }
                     else
                     {
@@ -216,7 +252,7 @@ public class PlayerDataScript : MonoBehaviour
                     int metalSalvageNumber;
                     if (Int32.TryParse(metalSalvageString, out metalSalvageNumber))
                     {
-                        metalSalvage = metalSalvageNumber;
+                        collectedSalvage.metal = metalSalvageNumber;
                     }
                     else
                     {
@@ -229,7 +265,7 @@ public class PlayerDataScript : MonoBehaviour
                     int leatherSalvageNumber;
                     if (Int32.TryParse(leatherSalvageString, out leatherSalvageNumber))
                     {
-                        leatherSalvage = leatherSalvageNumber;
+                        collectedSalvage.leather = leatherSalvageNumber;
                     }
                     else
                     {
@@ -242,7 +278,7 @@ public class PlayerDataScript : MonoBehaviour
                     int knowledgeNumber;
                     if (Int32.TryParse(knowledgeString, out knowledgeNumber))
                     {
-                        knowledge = knowledgeNumber;
+                        collectedSalvage.knowledge = knowledgeNumber;
                     }
                     else
                     {

@@ -1,5 +1,4 @@
 - more dev tools
-- main menu
 - level clear conditions
 - write player save
 - lock switching equipped gear and skills when there are active enemies
@@ -36,10 +35,11 @@
 - display enchantments
 - stun should probably not extend existing stun?
 - remember open menus between levels and hubs
-- track salvage value of picked up items
+- track salvage value of picked up items per mission
     save to a Dictionary<string, (int, int[4])> of missionName, (turnsUsed, totalSalvage)
 - track turns until repeat of clones running missions, and receive totalSalvage for each repeated run
     only receive accumulated repeat rewards on successful mission completion
 - update tooltip logic on skip button
 - add tooltips to ui buttons for inventory, gear, skills, healthbar
 - update healthbar when maxHealth changes
+- DisplayCooldown should only be called when cooldowns change

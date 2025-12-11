@@ -775,8 +775,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   button: {fileID: 0}
   characterUI: {fileID: 0}
-  inventoryUIPrefab: {fileID: 0}
-  inventoryUIPanel: {fileID: 0}
+  inventoryMenuPrefab: {fileID: 0}
+  inventoryMenu: {fileID: 0}
 --- !u!1 &2663954241707506879
 GameObject:
   m_ObjectHideFlags: 0
@@ -929,7 +929,7 @@ MonoBehaviour:
   image: {fileID: 0}
   canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
-  skillsPanelScript: {fileID: 0}
+  skillBarScript: {fileID: 0}
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
@@ -939,6 +939,9 @@ MonoBehaviour:
   tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
   cooldownOverlay: {fileID: 0}
+  skillButtonPrefab: {fileID: 0}
+  placeholderButton: {fileID: 0}
+  currentParent: {fileID: 0}
 --- !u!1 &2683659741485998723
 GameObject:
   m_ObjectHideFlags: 0
@@ -1354,7 +1357,7 @@ MonoBehaviour:
   image: {fileID: 0}
   canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
-  skillsPanelScript: {fileID: 0}
+  skillBarScript: {fileID: 0}
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
@@ -1364,6 +1367,9 @@ MonoBehaviour:
   tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
   cooldownOverlay: {fileID: 0}
+  skillButtonPrefab: {fileID: 0}
+  placeholderButton: {fileID: 0}
+  currentParent: {fileID: 0}
 --- !u!1 &3717266334107687696
 GameObject:
   m_ObjectHideFlags: 0
@@ -1436,7 +1442,7 @@ Camera:
   far clip plane: 1000
   field of view: 34
   orthographic: 1
-  orthographic size: 12.21875
+  orthographic size: 11.71875
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -1855,8 +1861,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   button: {fileID: 0}
   characterUI: {fileID: 0}
-  gearUIPrefab: {fileID: 0}
-  gearUIPanel: {fileID: 0}
+  gearMenuPrefab: {fileID: 0}
+  gearMenu: {fileID: 0}
 --- !u!1 &5144648385837090037
 GameObject:
   m_ObjectHideFlags: 0
@@ -2009,7 +2015,7 @@ MonoBehaviour:
   image: {fileID: 0}
   canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
-  skillsPanelScript: {fileID: 0}
+  skillBarScript: {fileID: 0}
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
@@ -2019,6 +2025,9 @@ MonoBehaviour:
   tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
   cooldownOverlay: {fileID: 0}
+  skillButtonPrefab: {fileID: 0}
+  placeholderButton: {fileID: 0}
+  currentParent: {fileID: 0}
 --- !u!1 &5255974617277127959
 GameObject:
   m_ObjectHideFlags: 0
@@ -2478,7 +2487,7 @@ MonoBehaviour:
   image: {fileID: 0}
   canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
-  skillsPanelScript: {fileID: 0}
+  skillBarScript: {fileID: 0}
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
@@ -2488,6 +2497,9 @@ MonoBehaviour:
   tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
   cooldownOverlay: {fileID: 0}
+  skillButtonPrefab: {fileID: 0}
+  placeholderButton: {fileID: 0}
+  currentParent: {fileID: 0}
 --- !u!1 &7058118459845560098
 GameObject:
   m_ObjectHideFlags: 0
@@ -2640,7 +2652,7 @@ MonoBehaviour:
   image: {fileID: 0}
   canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
-  skillsPanelScript: {fileID: 0}
+  skillBarScript: {fileID: 0}
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
@@ -2650,6 +2662,9 @@ MonoBehaviour:
   tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
   cooldownOverlay: {fileID: 0}
+  skillButtonPrefab: {fileID: 0}
+  placeholderButton: {fileID: 0}
+  currentParent: {fileID: 0}
 --- !u!1 &7307615701620627273
 GameObject:
   m_ObjectHideFlags: 0
@@ -2802,7 +2817,7 @@ MonoBehaviour:
   image: {fileID: 0}
   canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
-  skillsPanelScript: {fileID: 0}
+  skillBarScript: {fileID: 0}
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
@@ -2812,6 +2827,9 @@ MonoBehaviour:
   tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
   cooldownOverlay: {fileID: 0}
+  skillButtonPrefab: {fileID: 0}
+  placeholderButton: {fileID: 0}
+  currentParent: {fileID: 0}
 --- !u!1 &7593054636316834931
 GameObject:
   m_ObjectHideFlags: 0
@@ -3030,8 +3048,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   button: {fileID: 0}
   characterUI: {fileID: 0}
-  skillsUIPrefab: {fileID: 0}
-  skillsUIPanel: {fileID: 0}
+  skillsMenuPrefab: {fileID: 0}
+  skillsMenu: {fileID: 0}
 --- !u!1 &8253108443382098918
 GameObject:
   m_ObjectHideFlags: 0
@@ -3272,7 +3290,7 @@ MonoBehaviour:
   image: {fileID: 0}
   canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
-  skillsPanelScript: {fileID: 0}
+  skillBarScript: {fileID: 0}
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
@@ -3282,6 +3300,9 @@ MonoBehaviour:
   tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
   cooldownOverlay: {fileID: 0}
+  skillButtonPrefab: {fileID: 0}
+  placeholderButton: {fileID: 0}
+  currentParent: {fileID: 0}
 --- !u!1 &8564367822425080016
 GameObject:
   m_ObjectHideFlags: 0
@@ -3434,7 +3455,7 @@ MonoBehaviour:
   image: {fileID: 0}
   canvas: {fileID: 0}
   skillsPanel: {fileID: 0}
-  skillsPanelScript: {fileID: 0}
+  skillBarScript: {fileID: 0}
   turnLogic: {fileID: 0}
   turnLogicScript: {fileID: 0}
   player: {fileID: 0}
@@ -3444,3 +3465,6 @@ MonoBehaviour:
   tooltip: {fileID: 0}
   cooldownPrefab: {fileID: 0}
   cooldownOverlay: {fileID: 0}
+  skillButtonPrefab: {fileID: 0}
+  placeholderButton: {fileID: 0}
+  currentParent: {fileID: 0}

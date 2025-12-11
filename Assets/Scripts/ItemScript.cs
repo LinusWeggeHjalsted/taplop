@@ -7,5 +7,5 @@ public interface ItemScript
     public string ItemName();
     public string ItemDescription();
     public string ItemType();
-    public int[] SalvageValue();
+    public PlayerDataScript.Salvage SalvageValue();
 }

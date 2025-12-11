@@ -4,8 +4,9 @@ using UnityEngine.EventSystems;
 
 public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
 {
-    public Button button;
     public RectTransform buttonRectTransform;
+    public Button button;
+    public Transform canvas;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
     public GameObject traversableTiles;
@@ -14,23 +15,28 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
     public GameObject tooltip;
 
     public void OnPointerEnter(PointerEventData eventData)
-    {
+    { 
+        Vector3[] buttonCorners = new Vector3[4];
+        buttonRectTransform.GetWorldCorners(buttonCorners);
+        Vector3 buttonTopRightPosition = buttonCorners[2];
+        Transform tooltipTransform = canvas.Find("Tooltip");
+        if (tooltipTransform != null)
+        {
+            tooltip = tooltipTransform.gameObject;
+        }
         if (tooltip == null)
         {
-            Vector3[] buttonCorners = new Vector3[4];
-            buttonRectTransform.GetWorldCorners(buttonCorners);
-            Vector3 buttonTopRightPosition = buttonCorners[2];
-
-            tooltip = Instantiate(tooltipPrefab, this.gameObject.transform);
+            tooltip = Instantiate(tooltipPrefab, canvas);
+            tooltip.name = "Tooltip";
+            tooltip.transform.SetAsLastSibling();
+        }
+        if (tooltip != null)
+        {
             RectTransform tooltipRectTransform = tooltip.GetComponent<RectTransform>();
             tooltipRectTransform.pivot = new Vector2(1f, 0);
             tooltipRectTransform.position = buttonTopRightPosition;
             TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
             StartCoroutine(tooltipScript.SetText("Skip step", ""));
-        }
-        if (tooltip != null)
-        {
-            tooltip.SetActive(true);
         }
     }
 
@@ -69,6 +75,7 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
+        canvas = GameObject.Find("Canvas").transform;
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/Tooltip");
     }
 }

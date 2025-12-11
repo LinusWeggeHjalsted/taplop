@@ -4,6 +4,7 @@ public class GameControllerScript : MonoBehaviour
 {
     public static GameControllerScript Instance { get; private set; }
     public GameObject mainMenuPrefab;
+    public GameObject mainMenu;
     public GameObject missionPrefab;
     public GameObject missionLogic;
     public GameObject hubPrefab;
@@ -11,12 +12,24 @@ public class GameControllerScript : MonoBehaviour
 
     public void MainMenu()
     {
-        // to-do
+        if (missionLogic != null)
+        {
+            Destroy(missionLogic);
+        }
+        if (hub != null)
+        {
+            Destroy(hub);
+        }
+        mainMenu = Instantiate(mainMenuPrefab);
     }
 
     public void StartMission(string missionName, int missionLength, string endHub)
     {
         // to-do - start loading screen
+        if (mainMenu != null)
+        {
+            Destroy(mainMenu);
+        }
         if (hub != null)
         {
             Destroy(hub);
@@ -33,6 +46,10 @@ public class GameControllerScript : MonoBehaviour
     {
         // to-do - start loading screen
         // to-do - add hub to discovered locations in PlayerData
+        if (mainMenu != null)
+        {
+            Destroy(mainMenu);
+        }
         if (missionLogic != null)
         {
             Destroy(missionLogic);
@@ -65,6 +82,6 @@ public class GameControllerScript : MonoBehaviour
         GameObject devToolsPrefab = Resources.Load<GameObject>("Prefabs/Dev Tools");
         Instantiate(devToolsPrefab);
 #endif
-        StartMission("Beginnings", 3, "TestHub");
+        MainMenu();
     }
 }

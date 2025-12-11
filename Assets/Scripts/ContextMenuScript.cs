@@ -76,7 +76,7 @@ public class ContextMenuScript : MonoBehaviour
                 learnButtonScript.selectedItem = item;
                 break;
         }
-        int[] itemSalvage = itemScript.SalvageValue();
+        PlayerDataScript.Salvage itemSalvage = itemScript.SalvageValue();
         GameObject salvageButton = Instantiate(salvageButtonPrefab, this.transform);
         SalvageButtonScript salvageButtonScript = salvageButton.GetComponent<SalvageButtonScript>();
         salvageButtonScript.salvageValue = itemSalvage;

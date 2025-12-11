@@ -32,6 +32,10 @@ public class MissionLogicScript : MonoBehaviour
     }
     public GameObject levelPrefab;
     public GameObject level;
+    public GameObject completedMissionMenuPrefab;
+    public GameObject completedMissionMenu;
+    public PlayerDataScript.Salvage totalSalvage;
+    public Dictionary<string, int> cloneProgressAtStart;
 
     IEnumerator WaitForGameController()
     {
@@ -40,6 +44,13 @@ public class MissionLogicScript : MonoBehaviour
             yield return null;
         }
         PlayerDataScript playerData = PlayerDataScript.Instance;
+        // save snapshot of current clone progress
+        Dictionary<string, PlayerDataScript.CloneData> allCloneData = playerData.allCloneData;
+        foreach (string cloneMission in allCloneData.Keys)
+        {
+            PlayerDataScript.CloneData cloneData = allCloneData[cloneMission];
+            cloneProgressAtStart.Add(cloneMission, cloneData.currentProgress);
+        }
         int missionSeed = playerData.randomSeed + playerData.turns + missionName.GetHashCode();
         Random.InitState(missionSeed);
         NextLevel();
@@ -51,6 +62,7 @@ public class MissionLogicScript : MonoBehaviour
         gameControllerScript = gameController.GetComponent<GameControllerScript>();
         levelPrefab = Resources.Load<GameObject>("Prefabs/Level");
         currentLevel = 0;
+        totalSalvage = new PlayerDataScript.Salvage();
         StartCoroutine(WaitForGameController());
     }
     
@@ -73,7 +85,15 @@ public class MissionLogicScript : MonoBehaviour
         }
         else
         {
-            gameControllerScript.EnterHub(endHub);
+            MissionEnd();
         }
+    }
+
+    public void MissionEnd()
+    {
+        // to-do - instantiate completed mission ui
+        // to-do - reward accumulated salvage from completed clone runs
+        // to-do - add new clone from this completed run
+        gameControllerScript.EnterHub(endHub);
     }
 }
