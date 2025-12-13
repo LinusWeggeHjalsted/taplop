@@ -169,6 +169,7 @@ public class TurnLogicScript : MonoBehaviour
         }
         enemiesScript.KillDeadEnemies();
         PlayerDataScript.Instance.turns += 1;
+        MissionLogicScript.Instance.totalTurns += 1;
         currentGameState = GameState.EnemiesTurn;
         hasAttacked = false;
         turnStarted = false;
@@ -232,6 +233,8 @@ public class TurnLogicScript : MonoBehaviour
                         else
                         {
                             playerScript.ReduceStunDuration(1);
+                            PlayerDataScript.Instance.turns += 1;
+                            MissionLogicScript.Instance.totalTurns += 1;
                             currentGameState = GameState.EnemiesTurn;
                             turnStarted = false;
                         }

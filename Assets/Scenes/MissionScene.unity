@@ -339,6 +339,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 55236c1e000ebd30890dd9ab2e993645, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  maxWeaponDamage: 10
+  maxArmor: 5
+  maxHealthBonus: 20
+  maxDamageBonus: 5
+  maxPickupRadius: 2
+  maxSpeedBonus: 2
+  maxUtilitySkillSlots: 5
+  maxFullUpgradeCost: 0
+  maxSalvage: 0
 --- !u!4 &1502411078
 Transform:
   m_ObjectHideFlags: 0
@@ -404,10 +413,6 @@ MonoBehaviour:
   turns: 0
   deaths: 0
   defeatedEnemies: 0
-  woodSalvage: 0
-  metalSalvage: 0
-  leatherSalvage: 0
-  knowledge: 0
   utilitySkillSlots: 0
   unlockedSkills: []
   utilitySkills: []

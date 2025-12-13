@@ -4,6 +4,7 @@ using System.Collections.Generic;
 
 public class MissionLogicScript : MonoBehaviour
 {
+    public static MissionLogicScript Instance { get; private set; }
     public GameObject gameController;
     public GameControllerScript gameControllerScript;
     public string missionName;
@@ -32,10 +33,26 @@ public class MissionLogicScript : MonoBehaviour
     }
     public GameObject levelPrefab;
     public GameObject level;
-    public GameObject completedMissionMenuPrefab;
-    public GameObject completedMissionMenu;
+    public GameObject missionCompletionScreenPrefab;
+    public GameObject missionCompletionScreen;
+    public int totalTurns;
     public PlayerDataScript.Salvage totalSalvage;
-    public Dictionary<string, int> cloneProgressAtStart;
+    public int totalKills;
+    public int totalUsedSkills;
+    public int totalOutgoingDamage;
+    public int totalIncomingDamage;
+
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+        else
+        {
+            Destroy(this.gameObject);
+        }
+    }
 
     IEnumerator WaitForGameController()
     {
@@ -44,13 +61,6 @@ public class MissionLogicScript : MonoBehaviour
             yield return null;
         }
         PlayerDataScript playerData = PlayerDataScript.Instance;
-        // save snapshot of current clone progress
-        Dictionary<string, PlayerDataScript.CloneData> allCloneData = playerData.allCloneData;
-        foreach (string cloneMission in allCloneData.Keys)
-        {
-            PlayerDataScript.CloneData cloneData = allCloneData[cloneMission];
-            cloneProgressAtStart.Add(cloneMission, cloneData.currentProgress);
-        }
         int missionSeed = playerData.randomSeed + playerData.turns + missionName.GetHashCode();
         Random.InitState(missionSeed);
         NextLevel();
@@ -61,6 +71,7 @@ public class MissionLogicScript : MonoBehaviour
         gameController = GameObject.Find("Game Controller");
         gameControllerScript = gameController.GetComponent<GameControllerScript>();
         levelPrefab = Resources.Load<GameObject>("Prefabs/Level");
+        missionCompletionScreenPrefab = Resources.Load<GameObject>("Prefabs/Mission Completion Screen");
         currentLevel = 0;
         totalSalvage = new PlayerDataScript.Salvage();
         StartCoroutine(WaitForGameController());
@@ -91,9 +102,6 @@ public class MissionLogicScript : MonoBehaviour
 
     public void MissionEnd()
     {
-        // to-do - instantiate completed mission ui
-        // to-do - reward accumulated salvage from completed clone runs
-        // to-do - add new clone from this completed run
-        gameControllerScript.EnterHub(endHub);
+        missionCompletionScreen = Instantiate(missionCompletionScreenPrefab, this.transform);
     }
 }

@@ -111,6 +111,7 @@ public class EnemiesScript : MonoBehaviour
                 tileScript.isOccupied = false;
                 Destroy(enemy);
                 PlayerDataScript.Instance.defeatedEnemies += 1;
+                MissionLogicScript.Instance.totalKills += 1;
             }
         }
     }

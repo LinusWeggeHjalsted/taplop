@@ -12,6 +12,7 @@ public class PlayerDataScript : MonoBehaviour
         public int wood;
         public int metal;
         public int leather;
+        public int cloth;
         public int knowledge;
 
         public static Salvage operator +(Salvage salvage1, Salvage salvage2)
@@ -20,6 +21,7 @@ public class PlayerDataScript : MonoBehaviour
             combinedSalvage.wood = salvage1.wood + salvage2.wood;
             combinedSalvage.metal = salvage1.metal + salvage2.metal;
             combinedSalvage.leather = salvage1.leather + salvage2.leather;
+            combinedSalvage.cloth = salvage1.cloth + salvage2.cloth;
             combinedSalvage.knowledge = salvage1.knowledge + salvage2.knowledge;
             return combinedSalvage;
         }
@@ -70,19 +72,6 @@ public class PlayerDataScript : MonoBehaviour
     {
         public Salvage totalSalvage;
         public int turnsToComplete;
-        private int _currentProgress;
-        public int currentProgress
-        {
-            get
-            {
-                return _currentProgress;
-            }
-            set
-            {
-                // restart at 0 when completed
-                _currentProgress = value % turnsToComplete;
-            }
-        }
     }
 
     public bool finishedBuilding = false;

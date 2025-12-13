@@ -4,11 +4,24 @@ using System.Collections;
 
 public class SkillBarScript : MonoBehaviour
 {
+    public static SkillBarScript Instance { get; private set; }
     public bool finishedBuilding = false;
     public bool finishedAssigning = false;
     public GameObject player;
     public PlayerCharacterScript playerScript;
     public GameObject[] skillButtons;
+
+    void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+        else
+        {
+            Destroy(this.gameObject);
+        }
+    }
 
     public void UpdateButtons()
     {
@@ -17,6 +30,19 @@ public class SkillBarScript : MonoBehaviour
             GameObject skillButton = this.transform.GetChild(i).gameObject;
             SkillButtonScript buttonScript = skillButton.GetComponent<SkillButtonScript>();
             buttonScript.UpdateButton();
+        }
+    }
+
+    public void DisplayCooldowns()
+    {
+        for (int i = 0; i < this.transform.childCount; i++)
+        {
+            GameObject skillButton = this.transform.GetChild(i).gameObject;
+            SkillButtonScript buttonScript = skillButton.GetComponent<SkillButtonScript>();
+            if (buttonScript.skill != null)
+            {
+                buttonScript.DisplayCooldown();
+            }
         }
     }
 

@@ -239,46 +239,15 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             skillScript = skill.GetComponent<Skill>();
         }
-        // check if dropped skill already exists on bar
-        bool skillExists = false;
-        GameObject foundSkill = null;
-        Skill foundSkillScript = null;
-        for (int i = 3; i < playerScript.equippedSkills.Length; i++)
+        int droppedSkillPosition = droppedSkillScript.skillBarPosition;
+        int ownPosition = skillNumber + 1;
+        droppedSkillScript.skillBarPosition = ownPosition;
+        if (skillScript != null)
         {
-            GameObject equippedSkill = playerScript.equippedSkills[i];
-            if (equippedSkill != null)
-            {
-                Skill equippedSkillScript = equippedSkill.GetComponent<Skill>();
-                if (droppedSkillScript.GetSkillName() == equippedSkillScript.GetSkillName())
-                {
-                    skillExists = true;
-                    foundSkill = equippedSkill;
-                    foundSkillScript = equippedSkillScript;
-                    break;
-                }
-            }
+            skillScript.skillBarPosition = droppedSkillPosition;
         }
-        if (skillExists)
-        {
-            // swap skills on bar if skill slot is unlocked
-            int foundPosition = foundSkillScript.skillBarPosition;
-
-            if (skillScript != null)
-            {
-                int ownPosition = skillScript.skillBarPosition;
-                foundSkillScript.skillBarPosition = ownPosition;
-                skillScript.skillBarPosition = foundPosition;
-            }
-            else
-            {
-                foundSkillScript.skillBarPosition = skillNumber + 1;
-            }
-        }
-        else
-        {
-            // replace skill (skill from panel that's not on bar yet)
-        }
-        skillBarScript.UpdateButtons();
+        skillBarScript.UpdateButtons(); // hacky way to prevent feeling of lag
+        StartCoroutine(DelayedUpdateButtons());
     }
 
     private void HandleUnlockedSkillDrop(GameObject unlockedSkill)
@@ -402,13 +371,5 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         cooldownPrefab = Resources.Load<GameObject>("Prefabs/Cooldown Overlay Panel");
         skillButtonPrefab = Resources.Load<GameObject>("Prefabs/Skill Button");
         StartCoroutine(WaitForPlayerLoadout());
-    }
-
-    void Update()
-    {
-        if (finishedBuilding && skill != null)
-        {
-            DisplayCooldown();
-        }
     }
 }

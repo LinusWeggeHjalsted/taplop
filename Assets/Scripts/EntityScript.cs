@@ -17,8 +17,6 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             _finishedBuilding = value;
         }
     }
-    public GameObject missionLogic;
-    public MissionLogicScript missionLogicScript;
     public GameObject levelBuilder;
     public LevelBuilderScript levelBuilderScript;
     public bool levelBuilderLoaded = false;
@@ -223,13 +221,19 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
                 glovesArmor = glovesScript.armorBonus;
             }
+            int pantsArmor = 0;
+            if (pants != null)
+            {
+                PantsScript pantsScript = pants.GetComponent<PantsScript>();
+                pantsArmor = pantsScript.armorBonus;
+            }
             int bootsArmor = 0;
             if (boots != null)
             {
                 BootsScript bootsScript = boots.GetComponent<BootsScript>();
                 bootsArmor = bootsScript.armorBonus;
             }
-            return armor + coatArmor + glovesArmor + bootsArmor;
+            return armor + coatArmor + glovesArmor + pantsArmor + bootsArmor;
         }
         set
         {
@@ -673,7 +677,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                         {
                             itemScript.inventoryPosition = i + 1;
                             item.parent = inventory;
-                            missionLogicScript.totalSalvage += itemScript.SalvageValue();
+                            MissionLogicScript.Instance.totalSalvage += itemScript.SalvageValue();
                             foundSlot = true;
                             break;
                         }
@@ -709,8 +713,8 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             enemiesScript.UpdateAggro();
             if (enemiesScript.activeEnemyLookup.Count == 0 && targetTileScript.IsEnd)
             {
-                missionLogicScript.currentLevel += 1;
-                missionLogicScript.NextLevel();
+                MissionLogicScript.Instance.currentLevel += 1;
+                MissionLogicScript.Instance.NextLevel();
             }
         }
     }
@@ -758,6 +762,14 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             CurrentHealth -= actualDamage;
             Debug.Log(this.gameObject.name + " took " + actualDamage.ToString() + " damage from " + attacker.name);
+            if (this.gameObject == player)
+            {
+                MissionLogicScript.Instance.totalIncomingDamage += actualDamage;
+            }
+            else
+            {
+                MissionLogicScript.Instance.totalOutgoingDamage += actualDamage;
+            }
             return actualDamage;
         }
     }
@@ -809,6 +821,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             cooldownTracker.Add(skillName, number);
         }
+        SkillBarScript.Instance.DisplayCooldowns();
     }
 
     public void ReduceSkillCooldown(string skillName, int number)
@@ -832,6 +845,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             ReduceSkillCooldown(skillName, number);
         }
+        SkillBarScript.Instance.DisplayCooldowns();
     }
 
     public void ReduceStunDuration(int number)
@@ -990,8 +1004,6 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             SpriteSheet = Resources.LoadAll<Sprite>("Player");
             maxHealth = 10;
         }
-        missionLogic = GameObject.Find("Mission Logic");
-        missionLogicScript = missionLogic.GetComponent<MissionLogicScript>();
         levelBuilder = GameObject.Find("Level Builder");
         levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
         levelBuilderLoaded = true;

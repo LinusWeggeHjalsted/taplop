@@ -7,7 +7,7 @@ woodSalvage 0
 metalSalvage 0
 leatherSalvage 0
 knowledge 0
-utilitySkillSlots 1
+utilitySkillSlots 5
 
 Unlocked Skills
 Replenish
