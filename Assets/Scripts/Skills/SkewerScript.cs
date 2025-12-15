@@ -119,7 +119,7 @@ public class SkewerScript : MonoBehaviour, Skill
         }
         if (target != null)
         {
-            wielderScript.Attack(3 * wielderScript.offHandDamage, target);
+            wielderScript.Attack(2 * wielderScript.offHandDamage, target);
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
         if (wielder == player)
@@ -182,7 +182,7 @@ public class SkewerScript : MonoBehaviour, Skill
     {
         skillName = "Skewer";
         skillType = "Off Hand Skill";
-        description = "Attack target for 3x damage";
+        description = "Attack target for 2x damage";
         range = 1f;
         duration = 0;
         cooldown = 4;

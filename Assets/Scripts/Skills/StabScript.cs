@@ -130,7 +130,8 @@ public class StabScript : MonoBehaviour, Skill
             EntityScript targetScript = target.GetComponent<EntityScript>();
             if (targetScript.CurrentHealth == targetScript.MaxHealth)
             {
-                wielderScript.Attack(2 * wielderScript.mainHandDamage, target);
+                float preciseDamage = 1.5f * (float)wielderScript.mainHandDamage;
+                wielderScript.Attack((int)preciseDamage, target);
             }
             else
             {
@@ -197,7 +198,7 @@ public class StabScript : MonoBehaviour, Skill
     {
         skillName = "Stab";
         skillType = "Main Hand Skill";
-        description = "Attack target, dealing 2x damage if target has full health";
+        description = "Attack target, dealing 1.5x damage if target has full health";
         range = 1f;
         duration = 0;
         cooldown = 0;

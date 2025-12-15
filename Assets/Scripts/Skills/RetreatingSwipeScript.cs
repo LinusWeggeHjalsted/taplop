@@ -119,7 +119,8 @@ public class RetreatingSwipeScript : MonoBehaviour, Skill
         }
         if (target != null)
         {
-            wielderScript.Attack(2 * wielderScript.offHandDamage, target);
+            float preciseDamage = 1.5f * (float)wielderScript.offHandDamage;
+            wielderScript.Attack((int)preciseDamage, target);
             // retreat 2 tiles
             Vector3 wielderPosition = wielder.transform.position;
             Vector3 positionDelta = target.transform.position - wielderPosition;
@@ -201,7 +202,7 @@ public class RetreatingSwipeScript : MonoBehaviour, Skill
     {
         skillName = "Retreating Swipe";
         skillType = "Off Hand Skill";
-        description = "Attack target for 2x damage and retreat 2 tiles";
+        description = "Attack target for 1.5x damage and retreat 2 tiles";
         range = 1f;
         duration = 0;
         cooldown = 3;

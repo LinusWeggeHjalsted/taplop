@@ -23,6 +23,14 @@ public class SkillBarScript : MonoBehaviour
         }
     }
 
+    void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            Instance = null;
+        }
+    }
+
     public void UpdateButtons()
     {
         for (int i = 0; i < this.transform.childCount; i++)

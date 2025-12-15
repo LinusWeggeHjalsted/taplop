@@ -9,16 +9,16 @@
         *reflect - incoming damage is prevented and dealt to the attacker, duration 1, cooldown 5
     spear
         *toss - attack target, range 3
-        *impale - attack target for 2x damage, range 1, cooldown 2
-        *skewer - attack target for 3x damage, range 1, cooldown 4
+        *impale - attack target for 1.5x damage, range 1, cooldown 2
+        *skewer - attack target for 2x damage, range 1, cooldown 4
     dagger
-        *stab - attack target dealing 2x damage if target has full health, range 1
+        *stab - attack target dealing 1.5x damage if target has full health, range 1
         *vampiric strike - attack target and heal for damage dealt, range 1, cooldown 2
-        *retreating swipe - attack target for 2x damage and retreat 2 tiles, range 1, cooldown 3
+        *retreating swipe - attack target for 1.5x damage and retreat 2 tiles, range 1, cooldown 3
     axe
         *chop - attack target, range 1
         *cleave - attack and stun target, range 1, duration 1, cooldown 3
-        *throw - attack target for 2x damage, range 3, cooldown 4
+        *throw - attack target for 1.5x damage, range 3, cooldown 4
     wand
         spark - attack target, range 2
         lightning strike - attack target and each other adjacent target, range 2, cooldown 2

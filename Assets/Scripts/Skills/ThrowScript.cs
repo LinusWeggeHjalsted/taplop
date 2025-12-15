@@ -119,7 +119,8 @@ public class ThrowScript : MonoBehaviour, Skill
         }
         if (target != null)
         {
-            wielderScript.Attack(2 * wielderScript.offHandDamage, target);
+            float preciseDamage = 1.5f * (float)wielderScript.offHandDamage;
+            wielderScript.Attack((int)preciseDamage, target);
         }
         if (wielder == player)
         {

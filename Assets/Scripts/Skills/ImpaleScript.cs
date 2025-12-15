@@ -118,7 +118,8 @@ public class ImpaleScript : MonoBehaviour, Skill
         }
         if (target != null)
         {
-            wielderScript.Attack(wielderScript.mainHandDamage * 2, target);
+            float preciseDamage = 1.5f * (float)wielderScript.mainHandDamage;
+            wielderScript.Attack((int)preciseDamage, target);
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
         if (wielder == player)
@@ -181,7 +182,7 @@ public class ImpaleScript : MonoBehaviour, Skill
     {
         skillName = "Impale";
         skillType = "Main Hand Skill";
-        description = "Attack target for 2x damage";
+        description = "Attack target for 1.5x damage";
         range = 1f;
         duration = 0;
         cooldown = 2;

@@ -54,6 +54,14 @@ public class MissionLogicScript : MonoBehaviour
         }
     }
 
+    void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            Instance = null;
+        }
+    }
+
     IEnumerator WaitForGameController()
     {
         while (missionName == null || endHub == null)

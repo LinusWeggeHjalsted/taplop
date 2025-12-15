@@ -80,6 +80,7 @@ public class PlayerDataScript : MonoBehaviour
     
     // info
     public int randomSeed;
+    public string lastHub;
     public int turns;
     public int deaths;
     public int defeatedEnemies;
@@ -182,6 +183,23 @@ public class PlayerDataScript : MonoBehaviour
                 if (currentLine.StartsWith("playerName "))
                 {
                     playerName = currentLine.Substring("playerName ".Length);
+                }
+                else if (currentLine.StartsWith("randomSeed "))
+                {
+                    string randomSeedString = currentLine.Substring("randomSeed ".Length);
+                    int randomSeedNumber;
+                    if (Int32.TryParse(randomSeedString, out randomSeedNumber))
+                    {
+                        randomSeed = randomSeedNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("randomSeed is not a number");
+                    }
+                }
+                else if (currentLine.StartsWith("lastHub "))
+                {
+                    lastHub = currentLine.Substring("lastHub ".Length);
                 }
                 else if (currentLine.StartsWith("turns "))
                 {

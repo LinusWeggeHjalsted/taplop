@@ -12,13 +12,18 @@ public class GameControllerScript : MonoBehaviour
 
     public void MainMenu()
     {
+        GameObject level = GameObject.Find("Level(Clone)");
+        if (level != null)
+        {
+            DestroyImmediate(level);
+        }
         if (missionLogic != null)
         {
             Destroy(missionLogic);
         }
         if (hub != null)
         {
-            Destroy(hub);
+            DestroyImmediate(hub);
         }
         mainMenu = Instantiate(mainMenuPrefab);
     }
@@ -32,7 +37,11 @@ public class GameControllerScript : MonoBehaviour
         }
         if (hub != null)
         {
-            Destroy(hub);
+            DestroyImmediate(hub);
+        }
+        if (missionLogic != null)
+        {
+            Destroy(missionLogic);
         }
         missionLogic = Instantiate(missionPrefab);
         missionLogic.name = "Mission Logic";
@@ -50,6 +59,11 @@ public class GameControllerScript : MonoBehaviour
         {
             Destroy(mainMenu);
         }
+        GameObject level = GameObject.Find("Level(Clone)");
+        if (level != null)
+        {
+            DestroyImmediate(level);
+        }
         if (missionLogic != null)
         {
             Destroy(missionLogic);
@@ -58,6 +72,7 @@ public class GameControllerScript : MonoBehaviour
         GameObject hubBuilder = hub.transform.Find("Hub Builder").gameObject;
         HubBuilderScript hubBuilderScript = hubBuilder.GetComponent<HubBuilderScript>();
         hubBuilderScript.hubName = hubName;
+        PlayerDataScript.Instance.lastHub = hubName;
     }
 
     void Awake()
