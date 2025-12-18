@@ -163,6 +163,10 @@ public class TurnLogicScript : MonoBehaviour
 
     public void RestartPlayerMoveStep()
     {
+        if (currentGameState != GameState.PlayerTurnMove)
+        {
+            return;
+        }
         if (playerMoveCoroutine != null)
         {
             StopCoroutine(playerMoveCoroutine);
