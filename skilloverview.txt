@@ -20,16 +20,16 @@
         *cleave - attack and stun target, range 1, duration 1, cooldown 3
         *throw - attack target for 1.5x damage, range 3, cooldown 4
     wand
-        spark - attack target, range 2
-        lightning strike - attack target and each other adjacent target, range 2, cooldown 2
+        spark - attack target, range 3
+
         blitz - attack and stun each target within range, range 1, cooldown 5
     idol
         heal - heal for 20% of max health
-        drain - steal health from each target within range, range 1, cooldown 4
+        drain - attack each target within range and heal for damage dealt, range 1, cooldown 4
         absorb - incoming damage is converted to healing, duration 1, cooldown 5
     crossbow
         shoot - attack target, range 3
-        leg shot - attack and cripple target, range 3, duration 1, cooldown 2
+        leg shot - attack and cripple target, range 3, duration 2, cooldown 2
         head shot - attack and stun target, range 3, duration 1, cooldown 4
 
 - utility skills

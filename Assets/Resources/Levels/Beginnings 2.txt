@@ -36,7 +36,7 @@ sprite InvaderSpearNone
 maxHealth 10
 armor -2
 speed 1
-aggroRange 4
+aggroRange 3
 mainHandWeapon Spear
 mainHandName Bronze Spear
 mainHandDamage 4

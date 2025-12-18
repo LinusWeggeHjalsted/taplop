@@ -1,4 +1,5 @@
 using UnityEngine;
+using TMPro;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -476,6 +477,45 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
+    public void DisplayDamage(int damage)
+    {
+        // create black outline/shadow text
+        GameObject shadowTextObject = new GameObject("Damage Shadow Text Object");
+        shadowTextObject.transform.parent = this.transform;
+        shadowTextObject.transform.localPosition = new Vector3(0.55f, 1.45f, 0);
+        TextMeshPro shadowTextMesh = shadowTextObject.AddComponent<TextMeshPro>();
+        TMP_FontAsset pixelFont = Resources.Load<TMP_FontAsset>("fs-pixel-sans-unicode-regular");
+        if (pixelFont != null)
+        {
+            shadowTextMesh.font = pixelFont;
+        }
+        shadowTextMesh.text = damage.ToString();
+        shadowTextMesh.fontSize = 8;
+        shadowTextMesh.alignment = TextAlignmentOptions.Center;
+        shadowTextMesh.color = Color.black;
+        shadowTextMesh.GetComponent<MeshRenderer>().sortingLayerName = "Effects";
+        shadowTextMesh.GetComponent<MeshRenderer>().sortingOrder = 2;
+
+        // create white text on top
+        GameObject damageTextObject = new GameObject("Damage Text Object");
+        damageTextObject.transform.parent = this.transform;
+        damageTextObject.transform.localPosition = new Vector3(0.5f, 1.5f, 0);
+        TextMeshPro damageTextMesh = damageTextObject.AddComponent<TextMeshPro>();
+        if (pixelFont != null)
+        {
+            damageTextMesh.font = pixelFont;
+        }
+        damageTextMesh.text = damage.ToString();
+        damageTextMesh.fontSize = 8;
+        damageTextMesh.alignment = TextAlignmentOptions.Center;
+        damageTextMesh.color = Color.white;
+        damageTextMesh.GetComponent<MeshRenderer>().sortingLayerName = "Effects";
+        damageTextMesh.GetComponent<MeshRenderer>().sortingOrder = 3;
+
+        Destroy(shadowTextObject, 0.5f);
+        Destroy(damageTextObject, 0.5f);
+    }
+
     public void DisplayStun()
     {
         if (stunDuration > 0)
@@ -760,6 +800,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
         else
         {
+            DisplayDamage(actualDamage);
             CurrentHealth -= actualDamage;
             Debug.Log(this.gameObject.name + " took " + actualDamage.ToString() + " damage from " + attacker.name);
             if (this.gameObject == player)

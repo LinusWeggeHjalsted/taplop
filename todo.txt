@@ -6,11 +6,10 @@
     make death a trigger in CurrentHealth set method
     handle cases of enemies dying during their turn for turn logic
 - loading screen
-- sort active enemies by distance to player before taking their turn
+!- sort active enemies by distance to player before taking their turn
 - weaponswap
-- damage meter
 - scenery
-- npc's
+- npc's in hubs
 - gear shop
 - gear upgrading
 - skill trainer
@@ -19,20 +18,27 @@
 - map
 - base damage stat for balancing with negative damage on enemies
 - enemy tried to use slice without targets in range (Forest 0)
-- missing health text in hubs
+!- missing health text in hubs
 - ground item animation to grab attention
 - stuck tooltip on weapon skill
 - pathing behavior could be improved when no path is found
 - maybe pathing bug in forest 2
 - amulet with spell damage
-- handle items / skills dropped on skill buttons / item slots
+!- handle items / skills dropped on skill buttons / item slots
 - normalize long range knockback and retreat
-- cancel prepared skills when swapping skills
 - move self-contained initialization to Awake for all scripts
 - consider form of x instead of x form
 - add menu titles and x button to close 
-- display enchantments
-- stun should probably not extend existing stun?
+!- display enchantments
 - remember open menus between levels and hubs
-- update healthbar when maxHealth changes
 - dragging an item into nothing should salvage it maybe
+!- autopickup within pickup radius
+!- seatown
+    wand mages with swap
+    daggerdagger rogues with focus
+!- license
+- still lots of bugginess with skillbar swapping
+- wolf used blink away
+!- death screen
+- refactor turn logic
+- display picked up items

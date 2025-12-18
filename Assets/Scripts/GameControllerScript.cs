@@ -30,6 +30,7 @@ public class GameControllerScript : MonoBehaviour
 
     public void StartMission(string missionName, int missionLength, string endHub)
     {
+        Debug.Log($"starting mission {missionName}");
         // to-do - start loading screen
         if (mainMenu != null)
         {
@@ -39,9 +40,14 @@ public class GameControllerScript : MonoBehaviour
         {
             DestroyImmediate(hub);
         }
+        GameObject level = GameObject.Find("Level(Clone)");
+        if (level != null)
+        {
+            DestroyImmediate(level);
+        }
         if (missionLogic != null)
         {
-            Destroy(missionLogic);
+            DestroyImmediate(missionLogic);
         }
         missionLogic = Instantiate(missionPrefab);
         missionLogic.name = "Mission Logic";

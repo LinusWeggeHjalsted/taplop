@@ -322,6 +322,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 366124baca67feaf3b78826a6e7a10b4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  button: {fileID: 0}
 --- !u!1 &942313374821424190
 GameObject:
   m_ObjectHideFlags: 0
@@ -697,7 +698,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 0, y: 43.492493}
+  m_SizeDelta: {x: 0, y: 95.6263}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &7890706546464768124
 CanvasRenderer:
@@ -793,6 +794,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 34844e5227ce3d887a6dd40dcad7a955, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  button: {fileID: 0}
 --- !u!1 &2622043269715622773
 GameObject:
   m_ObjectHideFlags: 0
@@ -1085,6 +1087,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 24e91b5804f942b52b220ce7c12bf83d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  missionCompletionHeaderText: {fileID: 0}
+  newCloneInfoPanel: {fileID: 0}
+  newCloneInfoText: {fileID: 0}
+  existingCloneInfoText: {fileID: 0}
+  combatInfoText: {fileID: 0}
+  cloneRunPanel: {fileID: 0}
+  cloneRunBodyText: {fileID: 0}
 --- !u!1 &5890304863281787142
 GameObject:
   m_ObjectHideFlags: 0

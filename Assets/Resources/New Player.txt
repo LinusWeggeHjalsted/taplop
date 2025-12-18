@@ -1,6 +1,6 @@
 Info
 playerName New Player
-randomSeed 1
+randomSeed 0
 turns 0
 deaths 0
 defeatedEnemies 0

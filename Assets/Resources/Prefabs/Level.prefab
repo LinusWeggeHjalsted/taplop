@@ -933,7 +933,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d9198e1ecd589b2a18b3e64f5f414585, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
+  canvas: {fileID: 0}
+  tooltipPrefab: {fileID: 0}
+  tooltip: {fileID: 0}
 --- !u!1 &1559855786323123651
 GameObject:
   m_ObjectHideFlags: 0

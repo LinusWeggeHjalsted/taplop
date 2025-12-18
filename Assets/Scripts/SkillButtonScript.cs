@@ -174,6 +174,10 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     
     public void OnBeginDrag(PointerEventData eventData)
     {
+        if (skillNumber < 3)
+        {
+            return;
+        }
         this.transform.parent = canvas;
         this.transform.SetAsLastSibling();
         Image skillImage = GetComponent<Image>();
@@ -181,16 +185,26 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         // create placeholder button
         placeholderButton = Instantiate(skillButtonPrefab, skillsPanel.transform);
         placeholderButton.transform.SetSiblingIndex(skillNumber);
+        SkillButtonScript placeholderScript = placeholderButton.GetComponent<SkillButtonScript>();
+        placeholderScript.skillNumber = skillNumber;
     }
 
     public void OnDrag(PointerEventData eventData)
     {
+        if (skillNumber < 3)
+        {
+            return;
+        }
         this.transform.position = eventData.position;
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
-        Destroy(placeholderButton);
+        if (skillNumber < 3)
+        {
+            return;
+        }
+        DestroyImmediate(placeholderButton);
         this.transform.parent = currentParent;
         this.transform.SetSiblingIndex(skillNumber);
         this.transform.localPosition = new Vector3(0, 0, 0);

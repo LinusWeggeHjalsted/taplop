@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 using System.Collections.Generic;
 
 public class SlamScript : MonoBehaviour, Skill
@@ -141,11 +142,12 @@ public class SlamScript : MonoBehaviour, Skill
             if (target != null)
             {
                 EntityScript targetScript = target.GetComponent<EntityScript>();
-                targetScript.Knockback(fromPosition, wielder, 2 * wielderScript.mainHandDamage);
+                float preciseDamage = 1.5f * (float)wielderScript.mainHandDamage;
+                targetScript.Knockback(fromPosition, wielder, (int)preciseDamage);
                 int outgoingModifier = wielderScript.enchantmentModifiers.outgoingStunDuration;
                 int incomingModifier = targetScript.enchantmentModifiers.incomingStunDuration;
                 int effectiveDuration = duration + outgoingModifier + incomingModifier;
-                targetScript.stunDuration += effectiveDuration;
+                targetScript.stunDuration = Math.Max(effectiveDuration, targetScript.stunDuration);
             }
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
@@ -159,7 +161,7 @@ public class SlamScript : MonoBehaviour, Skill
     {
         skillName = "Slam";
         skillType = "Main Hand Skill";
-        description = "Stun and knockback each target within range";
+        description = "Stun and knockback each target within range, dealing 1.5x damage to targets on collision";
         range = 1f;
         duration = 1;
         cooldown = 3;

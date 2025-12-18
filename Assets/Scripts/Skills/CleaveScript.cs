@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 using System.Collections.Generic;
 
 public class CleaveScript : MonoBehaviour, Skill
@@ -124,7 +125,7 @@ public class CleaveScript : MonoBehaviour, Skill
             int outgoingModifier = wielderScript.enchantmentModifiers.outgoingStunDuration;
             int effectiveDuration = duration + outgoingModifier + incomingModifier;
             wielderScript.Attack(wielderScript.mainHandDamage, target);
-            targetScript.stunDuration += effectiveDuration;
+            targetScript.stunDuration = Math.Max(effectiveDuration, targetScript.stunDuration);
         }
         if (wielder == player)
         {

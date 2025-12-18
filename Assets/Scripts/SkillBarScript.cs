@@ -39,6 +39,19 @@ public class SkillBarScript : MonoBehaviour
             SkillButtonScript buttonScript = skillButton.GetComponent<SkillButtonScript>();
             buttonScript.UpdateButton();
         }
+        // clear used skill and highlights
+        GameObject turnLogic = GameObject.Find("Turn Logic");
+        if (turnLogic != null)
+        {
+            TurnLogicScript turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+            if (turnLogicScript.currentGameState == TurnLogicScript.GameState.PlayerTurnAttack)
+            {
+                turnLogicScript.skillUsed = null;
+                GameObject traversableTiles = GameObject.Find("Traversable Tiles");
+                TraversableTilesScript traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
+                traversableTilesScript.ClearHighlights();
+            }
+        }
     }
 
     public void DisplayCooldowns()

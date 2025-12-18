@@ -120,6 +120,13 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
             actualOwnItemScript.inventoryPosition = otherPosition;
             actualOtherItemScript.inventoryPosition = ownPosition;
             skillBarScript.UpdateButtons();
+            GameObject playerHealthBar = GameObject.Find("Player Health Bar");
+            PlayerHealthBarScript playerHealthBarScript = playerHealthBar.GetComponent<PlayerHealthBarScript>();
+            playerHealthBarScript.UpdateHealthBar();
+            // restart player move step in case speed changed
+            GameObject turnLogic = GameObject.Find("Turn Logic");
+            TurnLogicScript turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+            turnLogicScript.RestartPlayerMoveStep();
         }
     }
 

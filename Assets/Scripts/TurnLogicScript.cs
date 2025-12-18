@@ -36,6 +36,7 @@ public class TurnLogicScript : MonoBehaviour
     public bool hasMoved = false;
     public bool hasAttacked = false;
     public bool turnStarted = false;
+    public Coroutine playerMoveCoroutine;
 
     IEnumerator WaitForBuildingBeforeNewGameState()
     {
@@ -106,7 +107,7 @@ public class TurnLogicScript : MonoBehaviour
         playerScript.CurrentHealth = playerScript.MaxHealth;
     }
 
-    IEnumerator PlayerTurnMove()
+    public IEnumerator PlayerTurnMove()
     {
         hasMoved = false;
         // find reachable tiles
@@ -160,6 +161,17 @@ public class TurnLogicScript : MonoBehaviour
         turnStarted = false;
     }
 
+    public void RestartPlayerMoveStep()
+    {
+        if (playerMoveCoroutine != null)
+        {
+            StopCoroutine(playerMoveCoroutine);
+            playerMoveCoroutine = null;
+        }
+        traversableTilesScript.ClearHighlights();
+        playerMoveCoroutine = StartCoroutine(PlayerTurnMove());
+    }
+
     IEnumerator PlayerTurnAttack()
     {
         hasAttacked = false;
@@ -167,6 +179,7 @@ public class TurnLogicScript : MonoBehaviour
         {
             yield return null;
         }
+        traversableTilesScript.ClearHighlights();
         enemiesScript.KillDeadEnemies();
         PlayerDataScript.Instance.turns += 1;
         MissionLogicScript.Instance.totalTurns += 1;
@@ -217,9 +230,13 @@ public class TurnLogicScript : MonoBehaviour
                         turnStarted = true;
                         if (playerScript.CurrentHealth <= 0)
                         {
-                            Debug.Log("player died, respawning");
+                            Debug.Log("player died, restarting mission");
                             PlayerDataScript.Instance.deaths += 1;
-                            RespawnPlayer();
+                            PlayerDataScript.Instance.BuildDataFromPlayer(player);
+                            string missionName = MissionLogicScript.Instance.missionName;
+                            int missionLength = MissionLogicScript.Instance.missionLength;
+                            string endHub = MissionLogicScript.Instance.endHub;
+                            GameControllerScript.Instance.StartMission(missionName, missionLength, endHub);
                         }
                         playerScript.ReduceCooldowns(1);
                         playerScript.ReduceEffectDurations(1);
@@ -228,7 +245,7 @@ public class TurnLogicScript : MonoBehaviour
                         turnStatusText.text = "Player Move Step";
                         if (playerScript.stunDuration == 0)
                         {
-                            StartCoroutine(PlayerTurnMove());
+                            playerMoveCoroutine = StartCoroutine(PlayerTurnMove());
                         }
                         else
                         {

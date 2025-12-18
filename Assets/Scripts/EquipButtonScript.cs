@@ -64,6 +64,14 @@ public class EquipButtonScript : MonoBehaviour
         GameObject skillsPanel = GameObject.Find("Skills Panel");
         SkillBarScript skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         skillBarScript.UpdateButtons();
+        // refresh health bar in case max health changed
+        GameObject playerHealthBar = GameObject.Find("Player Health Bar");
+        PlayerHealthBarScript playerHealthBarScript = playerHealthBar.GetComponent<PlayerHealthBarScript>();
+        playerHealthBarScript.UpdateHealthBar();
+        // restart move step in case speed changed
+        GameObject turnLogic = GameObject.Find("Turn Logic");
+        TurnLogicScript turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+        turnLogicScript.RestartPlayerMoveStep();
         // close context menu
         Transform canvas = GameObject.Find("Canvas").transform;
         Transform contextMenu = canvas.Find("Context Menu");
