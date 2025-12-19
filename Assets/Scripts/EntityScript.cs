@@ -28,6 +28,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public EnemiesScript enemiesScript;
     public GameObject drops;
     public DropsScript dropsScript;
+    public GameObject spriteObject;
     public SpriteRenderer spriteRenderer;
     private Sprite[] spriteSheet = new Sprite[2];
     public Sprite[] SpriteSheet
@@ -368,6 +369,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 if (!enemiesScript.activeEnemyLookup.ContainsKey(this.transform.position))
                 {
                     DisplayAggro();
+                    FaceTowards(player.transform.position);
                     enemiesScript.activeEnemyLookup.Add(this.transform.position, this.gameObject);
                 }
             }
@@ -426,6 +428,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     }
     public GameObject reflectEffect;
     public Transform enchantments;
+    private bool isDisplacing = false;
     List<GameObject> activeEnchantments
     {
         get
@@ -481,7 +484,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     {
         // create black outline/shadow text
         GameObject shadowTextObject = new GameObject("Damage Shadow Text Object");
-        shadowTextObject.transform.parent = this.transform;
+        shadowTextObject.transform.parent = spriteObject.transform;
         shadowTextObject.transform.localPosition = new Vector3(0.55f, 1.45f, 0);
         TextMeshPro shadowTextMesh = shadowTextObject.AddComponent<TextMeshPro>();
         TMP_FontAsset pixelFont = Resources.Load<TMP_FontAsset>("fs-pixel-sans-unicode-regular");
@@ -498,7 +501,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
 
         // create white text on top
         GameObject damageTextObject = new GameObject("Damage Text Object");
-        damageTextObject.transform.parent = this.transform;
+        damageTextObject.transform.parent = spriteObject.transform;
         damageTextObject.transform.localPosition = new Vector3(0.5f, 1.5f, 0);
         TextMeshPro damageTextMesh = damageTextObject.AddComponent<TextMeshPro>();
         if (pixelFont != null)
@@ -523,7 +526,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             if (stunEffect == null)
             {
                 stunEffect = new GameObject("Stun Sprite Object");
-                stunEffect.transform.parent = this.transform;
+                stunEffect.transform.parent = spriteObject.transform;
                 stunEffect.transform.localPosition = new Vector3(0, 1f, 0);
                 SpriteRenderer stunRenderer = stunEffect.AddComponent<SpriteRenderer>();
                 stunRenderer.sortingLayerName = "Effects";
@@ -547,7 +550,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             if (reflectEffect == null)
             {
                 reflectEffect = new GameObject("Reflect Sprite Object");
-                reflectEffect.transform.parent = this.transform;
+                reflectEffect.transform.parent = spriteObject.transform;
                 reflectEffect.transform.localPosition = new Vector3(0, 0.5f, 0);
                 SpriteRenderer reflectRenderer = reflectEffect.AddComponent<SpriteRenderer>();
                 reflectRenderer.sortingLayerName = "Effects";
@@ -571,7 +574,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public void DisplayUsedSkill(Sprite skillSprite)
     {
         GameObject usedSkillObject = new GameObject("Used Skill Sprite Object");
-        usedSkillObject.transform.parent = this.transform;
+        usedSkillObject.transform.parent = spriteObject.transform;
         usedSkillObject.transform.localPosition = new Vector3(0, 1.5f, 0);
         SpriteRenderer usedSkillRenderer = usedSkillObject.AddComponent<SpriteRenderer>();
         usedSkillRenderer.sortingOrder = 3;
@@ -582,7 +585,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public void DisplayAggro()
     {
         GameObject aggroObject = new GameObject("Aggro Sprite Object");
-        aggroObject.transform.parent = this.transform;
+        aggroObject.transform.parent = spriteObject.transform;
         aggroObject.transform.localPosition = new Vector3(0, 1.125f, 0);
         SpriteRenderer aggroRenderer = aggroObject.AddComponent<SpriteRenderer>();
         aggroRenderer.sortingLayerName = "Effects";
@@ -594,13 +597,26 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public void DisplayHit()
     {
         GameObject hitObject = new GameObject("Hit Sprite Object");
-        hitObject.transform.parent = this.transform;
+        hitObject.transform.parent = spriteObject.transform;
         hitObject.transform.localPosition = new Vector3(0, 0.375f, 0);
         SpriteRenderer hitRenderer = hitObject.AddComponent<SpriteRenderer>();
         hitRenderer.sortingLayerName = "Effects";
         hitRenderer.sortingOrder = 2;
         hitRenderer.sprite = hitSprite;
         Destroy(hitObject, 0.125f);
+    }
+
+    public void FaceTowards(Vector3 targetPosition)
+    {
+        float xDif = targetPosition.x - this.transform.position.x;
+        if (xDif < 0)
+        {
+            spriteRenderer.sprite = SpriteSheet[1];
+        }
+        else if (xDif > 0)
+        {
+            spriteRenderer.sprite = SpriteSheet[0];
+        }
     }
 
     public void DisplayHealth()
@@ -611,7 +627,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         if (healthBar == null)
         {
             healthBar = new GameObject("Entity Health Bar");
-            healthBar.transform.parent = this.transform;
+            healthBar.transform.parent = spriteObject.transform;
             healthBar.transform.localPosition = new Vector3(0, 1.5f, 0);
             healthBarRenderer = healthBar.AddComponent<SpriteRenderer>();
             healthBarRenderer.sortingLayerName = "Effects";
@@ -660,29 +676,16 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         GameObject targetTile = tileLookup[targetPosition];
         TileScript targetTileScript = targetTile.GetComponent<TileScript>();
-        if (targetTileScript.isOccupied) 
-        {
-            Debug.Log("tried to move to an occupied tile");
-            return;
-        }
         // flip sprite if moving left, unflip if moving right
         Vector3 currentPosition = this.transform.position;
-        float xDif = targetPosition.x - currentPosition.x;
-        if (xDif < 0)
-        {
-            spriteRenderer.sprite = SpriteSheet[1];
-        }
-        if (xDif > 0)
-        {
-            spriteRenderer.sprite = SpriteSheet[0];
-        }
+        FaceTowards(targetPosition);
         GameObject currentTile = tileLookup[currentPosition];
         TileScript currentTileScript = currentTile.GetComponent<TileScript>();
         targetTileScript.isOccupied = true;
         currentTileScript.isOccupied = false;
         previousPosition = currentPosition;
         // update enemy lookups
-        if (enemiesScript.enemyLookup.ContainsKey(currentPosition))
+        if (enemiesScript.enemyLookup.ContainsKey(currentPosition) && enemiesScript.enemyLookup[currentPosition] == this.gameObject)
         {
             enemiesScript.EnemyMoved(currentPosition, targetPosition);
         }
@@ -762,7 +765,23 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public int Attack(int damage, GameObject defender)
     {
         OnAttackEnchantmentEffects(defender);
+        FaceTowards(defender.transform.position);
+        if (!isDisplacing)
+        {
+            StartCoroutine(AttackDisplacement(defender));
+        }
         return OutgoingDamage(damage, defender);
+    }
+
+    IEnumerator AttackDisplacement(GameObject defender)
+    {
+        isDisplacing = true;
+        Vector3 difference = defender.transform.position - this.transform.position;
+        Vector3 offset = difference / 16f;
+        spriteObject.transform.localPosition = offset;
+        yield return new WaitForSeconds(0.25f);
+        spriteObject.transform.localPosition = Vector3.zero;
+        isDisplacing = false;
     }
 
     public int OutgoingDamage(int damage, GameObject defender)
@@ -1036,10 +1055,25 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         finishedBuilding = true;
     }
 
+    void Awake()
+    {
+        // create sprite object child and move renderer to it
+        spriteObject = new GameObject("Sprite Object");
+        spriteObject.transform.parent = this.transform;
+        spriteObject.transform.localPosition = Vector3.zero;
+        SpriteRenderer oldRenderer = this.gameObject.GetComponent<SpriteRenderer>();
+        spriteRenderer = spriteObject.AddComponent<SpriteRenderer>();
+        if (oldRenderer != null)
+        {
+            spriteRenderer.sortingLayerName = oldRenderer.sortingLayerName;
+            spriteRenderer.sortingOrder = oldRenderer.sortingOrder;
+            Destroy(oldRenderer);
+        }
+    }
+
     void Start()
     {
         Debug.Log("Hello World - I'm " + this.name);
-        spriteRenderer = this.gameObject.GetComponent<SpriteRenderer>();
         if (this.gameObject.name == "Player")
         {
             SpriteSheet = Resources.LoadAll<Sprite>("Player");

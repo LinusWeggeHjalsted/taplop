@@ -616,7 +616,6 @@ public class LevelBuilderScript : MonoBehaviour
             EntityScript newEnemyScript = newEnemy.GetComponent<EntityScript>();
             if (preEnemy.enemySprite != null)
             {
-                newEnemyScript.spriteRenderer = newEnemy.GetComponent<SpriteRenderer>();
                 newEnemyScript.SpriteSheet = Resources.LoadAll<Sprite>("Enemies/" + preEnemy.enemySprite);
             }
             newEnemyScript.MaxHealth = preEnemy.maxHealth;

@@ -1,0 +1,84 @@
+Info
+playerName Dev
+randomSeed 0
+turns 0
+deaths 0
+defeatedEnemies 0
+woodSalvage 0
+metalSalvage 0
+leatherSalvage 0
+knowledge 0
+utilitySkillSlots 5
+
+Unlocked Skills
+Replenish
+Blink
+Howl
+Stone Form
+That Which Lingers
+Swap
+Focus
+
+Main Hand Weapon
+
+Off Hand Weapon
+
+Coat
+itemName Dev Coat
+armor 2
+health 1
+
+Gloves
+itemName Dev Gloves
+armor 2
+damage 1
+
+Pants
+itemName Dev Pants
+armor 2
+pickupRadius 1
+
+Boots
+itemName Dev Boots
+armor 2
+speed 1
+
+Inventory
+itemType Weapon
+itemName Dev Sword
+weaponType Sword
+damage 5
+inventoryPosition 1
+
+itemType Weapon
+itemName Dev Shield
+weaponType Shield
+damage 5
+inventoryPosition 2
+
+itemType Weapon
+itemName Dev Spear
+weaponType Spear
+damage 5
+inventoryPosition 3
+
+itemType Weapon
+itemName Dev Dagger
+weaponType Dagger
+damage 5
+inventoryPosition 4
+
+itemType Weapon
+itemName Dev Axe
+weaponType Axe
+damage 5
+inventoryPosition 5
+
+itemType Weapon
+itemName Dev Wand
+weaponType Wand
+damage 5
+inventoryPosition 6
+
+Utility Skills
+

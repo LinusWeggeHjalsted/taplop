@@ -7,9 +7,10 @@ public class NewGameButtonScript : MonoBehaviour
 
     public void OnActivate()
     {
-        PlayerDataScript.Instance.LoadPlayerData("New Player");
+        PlayerDataScript.Instance.LoadPlayerData("DevSave");
         // to-do - pick a random seed
-        GameControllerScript.Instance.StartMission("Beginnings", 3, "TestHub");
+//        GameControllerScript.Instance.StartMission("Beginnings", 3, "TestHub");
+        GameControllerScript.Instance.EnterHub("TestHub");
     }
 
     void Start()

@@ -177,7 +177,7 @@ SpriteRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 1
-  m_Sprite: {fileID: 6246832655069406539, guid: b607b923394b68035bf5184e87ce0335, type: 3}
+  m_Sprite: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -185,7 +185,7 @@ SpriteRenderer:
   m_Size: {x: 0.1, y: 0.16}
   m_AdaptiveModeThreshold: 0.5
   m_SpriteTileMode: 0
-  m_WasSpriteAssigned: 1
+  m_WasSpriteAssigned: 0
   m_MaskInteraction: 0
   m_SpriteSortPoint: 0
 --- !u!114 &52838042833649974
@@ -200,8 +200,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5291bec53e04e8566bfdcef5ca8a83e7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EntityScript
-  missionLogic: {fileID: 0}
-  missionLogicScript: {fileID: 0}
   levelBuilder: {fileID: 0}
   levelBuilderScript: {fileID: 0}
   levelBuilderLoaded: 0
@@ -212,6 +210,7 @@ MonoBehaviour:
   enemiesScript: {fileID: 0}
   drops: {fileID: 0}
   dropsScript: {fileID: 0}
+  spriteObject: {fileID: 0}
   spriteRenderer: {fileID: 0}
   gear: {fileID: 0}
   gearScript: {fileID: 0}

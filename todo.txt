@@ -2,11 +2,12 @@
 - level clear conditions
 - write player save
 - lock switching equipped gear and skills when there are active enemies
+    maybe instead just allow it but set cooldowns when swapping
+    (currently swapping weapons is not showing correct cooldown until next time bar is updated)
 - better enemy death
     make death a trigger in CurrentHealth set method
     handle cases of enemies dying during their turn for turn logic
 - loading screen
-!- sort active enemies by distance to player before taking their turn
 - weaponswap
 - scenery
 - npc's in hubs
@@ -24,7 +25,6 @@
 - pathing behavior could be improved when no path is found
 - maybe pathing bug in forest 2
 - amulet with spell damage
-!- handle items / skills dropped on skill buttons / item slots
 - normalize long range knockback and retreat
 - move self-contained initialization to Awake for all scripts
 - consider form of x instead of x form
@@ -33,12 +33,16 @@
 - remember open menus between levels and hubs
 - dragging an item into nothing should salvage it maybe
 !- autopickup within pickup radius
+    actually maybe not - need to think about this
 !- seatown
-    wand mages with swap
-    daggerdagger rogues with focus
-!- license
+    more levels
 - still lots of bugginess with skillbar swapping
 - wolf used blink away
 !- death screen
 - refactor turn logic
 - display picked up items
+!- display owned salvage
+- open menus should block tiles from being clickable behind
+!- options menu
+- update salvage for all items
+!- clean up debugs

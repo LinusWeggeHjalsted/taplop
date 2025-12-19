@@ -34,8 +34,8 @@ utilitySkill Stone Form
 2
 name Giant Crab
 sprite GiantCrab
-maxHealth 15
-armor 1
+maxHealth 14
+armor 2
 speed 1
 aggroRange 3
 mainHandWeapon Axe

@@ -196,6 +196,10 @@ public class FlashStrikeScript : MonoBehaviour, Skill
                 {
                     targetTileScript.IsHighlighted = true;
                 }
+                else if (targetPosition == fromPosition)
+                {
+                    targetTileScript.IsHighlighted = true;
+                }
             }
         }
     }

@@ -410,6 +410,7 @@ MonoBehaviour:
   finishedBuilding: 0
   playerName: 
   randomSeed: 0
+  lastHub: 
   turns: 0
   deaths: 0
   defeatedEnemies: 0

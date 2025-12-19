@@ -1,0 +1,84 @@
+Metadata
+creator Strider
+
+Layout
+
+       !
+      ..
+      ...
+     ....
+     ....
+    ......
+  ...1.1...
+      .
+     ...  ...
+     ...  .3.
+ ............
+ .2..........
+ ...     ...
+         ...
+         ...
+          =
+
+Enemy Info
+1
+name Invader Warrior
+sprite InvaderSwordNone
+maxHealth 10
+armor -4
+speed 1
+aggroRange 3
+mainHandWeapon Sword
+mainHandName Bronze Sword
+mainHandDamage 5
+coatName Leather Coat
+coatArmor 2
+coatHealth 1
+glovesName Leather Gloves
+glovesArmor 2
+glovesDamage 1
+pantsName Leather Pants
+pantsArmor 2
+pantsPickupRadius 1
+
+2
+name Invader Wizard
+sprite InvaderWandNone
+maxHealth 10
+armor 0
+speed 1
+aggroRange 3
+mainHandWeapon Wand
+mainHandName Oak Wand
+mainHandDamage 5
+coatName Leather Coat
+coatArmor 2
+coatHealth 1
+pantsName Leather Pants
+pantsArmor 2
+pantsPickupRadius 1
+utilitySkill Swap
+
+3
+name Invader Rogue
+sprite InvaderDaggerDagger
+maxHealth 10
+armor 0
+speed 1
+aggroRange 3
+mainHandWeapon Dagger
+mainHandName Bronze Dagger
+mainHandDamage 5
+offHandWeapon Dagger
+offHandName Bronze Dagger
+offHandDamage 5
+pantsName Leather Pants
+pantsArmor 2
+pantsPickupRadius 1
+bootsName Leather Boots
+bootsArmor 2
+bootsSpeed 1
+utilitySkill Focus
+
+Item Info
+

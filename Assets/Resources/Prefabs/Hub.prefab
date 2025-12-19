@@ -773,10 +773,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1a56df0a2d2ada3e49acf42b2e7b3e62, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
+  canvas: {fileID: 0}
   characterUI: {fileID: 0}
   inventoryMenuPrefab: {fileID: 0}
   inventoryMenu: {fileID: 0}
+  tooltipPrefab: {fileID: 0}
+  tooltip: {fileID: 0}
 --- !u!1 &2663954241707506879
 GameObject:
   m_ObjectHideFlags: 0
@@ -1859,10 +1863,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 20dd555d269978661b3013781bed8c12, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
+  canvas: {fileID: 0}
   characterUI: {fileID: 0}
   gearMenuPrefab: {fileID: 0}
   gearMenu: {fileID: 0}
+  tooltipPrefab: {fileID: 0}
+  tooltip: {fileID: 0}
 --- !u!1 &5144648385837090037
 GameObject:
   m_ObjectHideFlags: 0
@@ -3046,10 +3054,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0888275a1093bcfd4a4db9d8cb582e67, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
+  canvas: {fileID: 0}
   characterUI: {fileID: 0}
   skillsMenuPrefab: {fileID: 0}
   skillsMenu: {fileID: 0}
+  tooltipPrefab: {fileID: 0}
+  tooltip: {fileID: 0}
 --- !u!1 &8253108443382098918
 GameObject:
   m_ObjectHideFlags: 0

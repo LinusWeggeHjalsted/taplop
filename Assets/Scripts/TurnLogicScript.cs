@@ -5,6 +5,7 @@ using TMPro;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 public class TurnLogicScript : MonoBehaviour
 {
@@ -196,7 +197,14 @@ public class TurnLogicScript : MonoBehaviour
     {
         traversableTilesScript.ClearHighlights();
         Dictionary<Vector3, GameObject> activeEnemyLookup = new Dictionary<Vector3, GameObject>(enemiesScript.activeEnemyLookup);
-        foreach (GameObject enemy in activeEnemyLookup.Values)
+        List<GameObject> sortedEnemies = activeEnemyLookup.Values.ToList();
+        sortedEnemies.Sort((a, b) =>
+        {
+            float distA = traversableTilesScript.Distance(player.transform.position, a.transform.position);
+            float distB = traversableTilesScript.Distance(player.transform.position, b.transform.position);
+            return distA.CompareTo(distB);
+        });
+        foreach (GameObject enemy in sortedEnemies)
         {
             yield return new WaitForSeconds(0.25f);
             EntityScript enemyScript = enemy.GetComponent<EntityScript>();

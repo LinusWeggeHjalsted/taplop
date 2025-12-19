@@ -37,7 +37,7 @@ public class MissionCompletionScreenScript : MonoBehaviour
             float newLeatherPerTurn = (float)totalSalvage.leather / (float)totalTurns;
             float newClothPerTurn = (float)totalSalvage.cloth / (float)totalTurns;
             float newKnowledgePerTurn = (float)totalSalvage.knowledge / (float)totalTurns;
-            newCloneInfoText.text = $"New clone gathers {newWoodPerTurn} wood, {newMetalPerTurn} metal, {newLeatherPerTurn} leather, {newClothPerTurn} cloth, {newKnowledgePerTurn} knowledge per turn";
+            newCloneInfoText.text = $"New clone gathers {newWoodPerTurn:F2} wood, {newMetalPerTurn:F2} metal, {newLeatherPerTurn:F2} leather, {newClothPerTurn:F2} cloth, {newKnowledgePerTurn:F2} knowledge per turn";
 
             PlayerDataScript.CloneData existingCloneData = PlayerDataScript.Instance.allCloneData[missionName];
             PlayerDataScript.Salvage existingTotalSalvage = existingCloneData.totalSalvage;
@@ -47,7 +47,7 @@ public class MissionCompletionScreenScript : MonoBehaviour
             float existingLeatherPerTurn = (float)existingTotalSalvage.leather / (float)existingTotalTurns;
             float existingClothPerTurn = (float)existingTotalSalvage.cloth / (float)existingTotalTurns;
             float existingKnowledgePerTurn = (float)existingTotalSalvage.knowledge / (float)existingTotalTurns;
-            existingCloneInfoText.text = $"Existing clone gathers {existingWoodPerTurn} wood, {existingMetalPerTurn} metal, {existingLeatherPerTurn} leather, {existingClothPerTurn} cloth, {existingKnowledgePerTurn} knowledge per turn";            
+            existingCloneInfoText.text = $"Existing clone gathers {existingWoodPerTurn:F2} wood, {existingMetalPerTurn:F2} metal, {existingLeatherPerTurn:F2} leather, {existingClothPerTurn:F2} cloth, {existingKnowledgePerTurn:F2} knowledge per turn";            
         }
 
         // display combat stats
@@ -59,10 +59,10 @@ public class MissionCompletionScreenScript : MonoBehaviour
         float usedSkillsPerTurn = (float)totalUsedSkills / (float)totalTurns;
         float outgoingDamagePerTurn = (float)totalOutgoingDamage / (float)totalTurns;
         float incomingDamagePerTurn = (float)totalIncomingDamage / (float)totalTurns;
-        combatInfoText.text = $"{killsPerTurn} kills per turn ({totalKills} total)\n{outgoingDamagePerTurn} outgoing damage per turn ({totalOutgoingDamage} total)\n{incomingDamagePerTurn} incoming damage per turn ({totalIncomingDamage} total)";
+        combatInfoText.text = $"{killsPerTurn:F2} kills per turn ({totalKills} total)\n{outgoingDamagePerTurn:F2} outgoing damage per turn ({totalOutgoingDamage} total)\n{incomingDamagePerTurn:F2} incoming damage per turn ({totalIncomingDamage} total)";
 
         // display clone run rewards if there are any saved clone runs other than this mission
-        if (PlayerDataScript.Instance.allCloneData.Count == 0)
+        if (PlayerDataScript.Instance.allCloneData.Count <= 1)
         {
             cloneRunPanel.SetActive(false);
         }

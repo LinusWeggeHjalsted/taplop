@@ -134,6 +134,10 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
     {
         GameObject droppedItem = eventData.pointerDrag;
         InventoryItemScript itemScript = droppedItem.GetComponent<InventoryItemScript>();
+        if (itemScript == null)
+        {
+            return;
+        }
         GameObject actualItem = itemScript.item;
         ItemScript actualItemScript = actualItem.GetComponent<ItemScript>();
         if (this.transform.childCount > 0)

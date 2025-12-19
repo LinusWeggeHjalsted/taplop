@@ -573,6 +573,19 @@ public class PlayerDataScript : MonoBehaviour
                                         Debug.LogError("inventory weapon damage is not a number");
                                     }
                                 }
+                                else if (currentLine.StartsWith("inventoryPosition "))
+                                {
+                                    string inventoryPositionString = currentLine.Substring("inventoryPosition ".Length);
+                                    int inventoryPositionNumber;
+                                    if (Int32.TryParse(inventoryPositionString, out inventoryPositionNumber))
+                                    {
+                                        inventoryWeapon.inventoryPosition = inventoryPositionNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory weapon inventoryPosition is not a number");
+                                    }
+                                }
                             }
                             inventory.Add(inventoryWeapon);
                             break;
@@ -611,6 +624,19 @@ public class PlayerDataScript : MonoBehaviour
                                         Debug.LogError("inventory coat health is not a number");
                                     }
                                 }
+                                else if (currentLine.StartsWith("inventoryPosition "))
+                                {
+                                    string inventoryPositionString = currentLine.Substring("inventoryPosition ".Length);
+                                    int inventoryPositionNumber;
+                                    if (Int32.TryParse(inventoryPositionString, out inventoryPositionNumber))
+                                    {
+                                        inventoryCoat.inventoryPosition = inventoryPositionNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory coat inventoryPosition is not a number");
+                                    }
+                                }
                             }
                             inventory.Add(inventoryCoat);
                             break;
@@ -645,6 +671,19 @@ public class PlayerDataScript : MonoBehaviour
                                         inventoryGloves.damage = damageNumber;
                                     }
                                 }
+                                else if (currentLine.StartsWith("inventoryPosition "))
+                                {
+                                    string inventoryPositionString = currentLine.Substring("inventoryPosition ".Length);
+                                    int inventoryPositionNumber;
+                                    if (Int32.TryParse(inventoryPositionString, out inventoryPositionNumber))
+                                    {
+                                        inventoryGloves.inventoryPosition = inventoryPositionNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory gloves inventoryPosition is not a number");
+                                    }
+                                }
                             }
                             inventory.Add(inventoryGloves);
                             break;
@@ -677,6 +716,19 @@ public class PlayerDataScript : MonoBehaviour
                                     if (Int32.TryParse(pickupRadiusString, out pickupRadiusNumber))
                                     {
                                         inventoryPants.pickupRadius = pickupRadiusNumber;
+                                    }
+                                }
+                                else if (currentLine.StartsWith("inventoryPosition "))
+                                {
+                                    string inventoryPositionString = currentLine.Substring("inventoryPosition ".Length);
+                                    int inventoryPositionNumber;
+                                    if (Int32.TryParse(inventoryPositionString, out inventoryPositionNumber))
+                                    {
+                                        inventoryPants.inventoryPosition = inventoryPositionNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory pants inventoryPosition is not a number");
                                     }
                                 }
                             }
@@ -717,6 +769,19 @@ public class PlayerDataScript : MonoBehaviour
                                         Debug.LogError("inventory boots speed is not a number");
                                     }
                                 }
+                                else if (currentLine.StartsWith("inventoryPosition "))
+                                {
+                                    string inventoryPositionString = currentLine.Substring("inventoryPosition ".Length);
+                                    int inventoryPositionNumber;
+                                    if (Int32.TryParse(inventoryPositionString, out inventoryPositionNumber))
+                                    {
+                                        inventoryBoots.inventoryPosition = inventoryPositionNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory boots inventoryPosition is not a number");
+                                    }
+                                }
                             }
                             inventory.Add(inventoryBoots);
                             break;
@@ -732,6 +797,19 @@ public class PlayerDataScript : MonoBehaviour
                                 else if (currentLine.StartsWith("skillName "))
                                 {
                                     inventoryTome.skillName = currentLine.Substring("skillName ".Length);
+                                }
+                                else if (currentLine.StartsWith("inventoryPosition "))
+                                {
+                                    string inventoryPositionString = currentLine.Substring("inventoryPosition ".Length);
+                                    int inventoryPositionNumber;
+                                    if (Int32.TryParse(inventoryPositionString, out inventoryPositionNumber))
+                                    {
+                                        inventoryTome.inventoryPosition = inventoryPositionNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory tome inventoryPosition is not a number");
+                                    }
                                 }
                             }
                             break;
@@ -802,7 +880,7 @@ public class PlayerDataScript : MonoBehaviour
         // update player info
         playerScript.utilitySkillSlots = utilitySkillSlots;
         // create player gear
-        if (mainHandWeapon != null)
+        if (mainHandWeapon.itemName != null)
         {
             GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/" + mainHandWeapon.weaponType);
             if (weaponPrefab != null)
@@ -817,7 +895,7 @@ public class PlayerDataScript : MonoBehaviour
                 Debug.LogError("unrecognized main hand weapon type");
             }
         }
-        if (offHandWeapon != null)
+        if (offHandWeapon.itemName != null)
         {
             GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/" + offHandWeapon.weaponType);
             if (weaponPrefab != null)
@@ -834,7 +912,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         // wait one frame for weapons' Start() methods to run and create their skills
         yield return null;
-        if (coat != null)
+        if (coat.itemName != null)
         {
             GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");
             GameObject newCoat = Instantiate(coatPrefab, playerBody);
@@ -843,7 +921,7 @@ public class PlayerDataScript : MonoBehaviour
             coatScript.armorBonus = coat.armor;
             coatScript.healthBonus = coat.health;
         }
-        if (gloves != null)
+        if (gloves.itemName != null)
         {
             GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Gloves");
             GameObject newGloves = Instantiate(glovesPrefab, playerHands);
@@ -852,7 +930,7 @@ public class PlayerDataScript : MonoBehaviour
             glovesScript.armorBonus = gloves.armor;
             glovesScript.damageBonus = gloves.damage;
         }
-        if (pants != null)
+        if (pants.itemName != null)
         {
             GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Pants");
             GameObject newPants = Instantiate(pantsPrefab, playerLegs);
@@ -862,7 +940,7 @@ public class PlayerDataScript : MonoBehaviour
             pantsScript.pickupRadius = pants.pickupRadius;
         }
 
-        if (boots != null)
+        if (boots.itemName != null)
         {
             GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");
             GameObject newBoots = Instantiate(bootsPrefab, playerFeet);
@@ -985,7 +1063,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         else
         {
-            mainHandWeapon = null;
+            mainHandWeapon = new WeaponData();
         }
         GameObject playerOffHandWeapon = playerScript.offHandWeapon;
         if (playerOffHandWeapon != null)
@@ -998,7 +1076,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         else
         {
-            offHandWeapon = null;
+            offHandWeapon = new WeaponData();
         }
         GameObject playerCoat = playerScript.coat;
         if (playerCoat != null)
@@ -1011,7 +1089,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         else
         {
-            coat = null;
+            coat = new CoatData();
         }
         GameObject playerGloves = playerScript.gloves;
         if (playerGloves != null)
@@ -1024,7 +1102,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         else
         {
-            gloves = null;
+            gloves = new GlovesData();
         }
         GameObject playerPants = playerScript.pants;
         if (playerPants != null)
@@ -1037,7 +1115,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         else
         {
-            pants = null;
+            pants = new PantsData();
         }
         GameObject playerBoots = playerScript.boots;
         if (playerBoots != null)
@@ -1050,7 +1128,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         else
         {
-            boots = null;
+            boots = new BootsData();
         }
         // get player inventory
         Transform playerInventory = playerScript.inventory;
