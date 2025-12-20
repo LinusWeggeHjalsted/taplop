@@ -211,6 +211,7 @@ public class TurnLogicScript : MonoBehaviour
             enemyScript.ReduceCooldowns(1);
             enemyScript.ReduceEffectDurations(1);
             enemyScript.ReduceEnchantmentDurations(1);
+            enemyScript.DisplayEnchantments();
             if (enemyScript.stunDuration == 0)
             {
                 enemiesScript.EnemyTurnMove(enemy);
@@ -253,6 +254,7 @@ public class TurnLogicScript : MonoBehaviour
                         playerScript.ReduceCooldowns(1);
                         playerScript.ReduceEffectDurations(1);
                         playerScript.ReduceEnchantmentDurations(1);
+                        playerScript.DisplayEnchantments();
                         traversableTilesScript.ClearHighlights();
                         turnStatusText.text = "Player Move Step";
                         if (playerScript.stunDuration == 0)

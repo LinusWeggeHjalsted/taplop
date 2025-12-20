@@ -3,7 +3,6 @@
 - write player save
 - lock switching equipped gear and skills when there are active enemies
     maybe instead just allow it but set cooldowns when swapping
-    (currently swapping weapons is not showing correct cooldown until next time bar is updated)
 - better enemy death
     make death a trigger in CurrentHealth set method
     handle cases of enemies dying during their turn for turn logic
@@ -27,16 +26,18 @@
 - amulet with spell damage
 - normalize long range knockback and retreat
 - move self-contained initialization to Awake for all scripts
+- make things into singleton instances where applicable to clean up loading everywhere
 - consider form of x instead of x form
 - add menu titles and x button to close 
-!- display enchantments
+- display player enchantments above bottom ui
 - remember open menus between levels and hubs
 - dragging an item into nothing should salvage it maybe
 !- autopickup within pickup radius
     actually maybe not - need to think about this
 !- seatown
     more levels
-- still lots of bugginess with skillbar swapping
+- still bugginess with skillbar swapping
+    in particular stuff still happens when dragging from weapon skills onto utility skills
 - wolf used blink away
 !- death screen
 - refactor turn logic
@@ -46,3 +47,4 @@
 !- options menu
 - update salvage for all items
 !- clean up debugs
+- redo parsing to split lines to get name and value separated in a more clean way

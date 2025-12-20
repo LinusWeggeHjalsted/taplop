@@ -29,6 +29,6 @@ endHub TestHub
 
 3
 missionName Seatown
-missionLength 1
+missionLength 2
 endHub TestHub
 

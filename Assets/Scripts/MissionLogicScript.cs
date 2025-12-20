@@ -18,7 +18,6 @@ public class MissionLogicScript : MonoBehaviour
             for (int i = 0; i < missionLength; i++)
             {
                 nameList.Add(missionName + " " + i.ToString());
-                Debug.Log(missionName + " " + i.ToString());
             }
             return nameList;
         }

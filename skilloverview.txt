@@ -38,7 +38,7 @@
         that which reaches - increase pickup radius and range of used skills by 1, duration 2, cooldown 5
         *that which lingers - increase non-stun durations by 1, duration 2, cooldown 5
         that which splinters - attack each target adjacent to attacked targets, duration 2, cooldown 5
-        that which leeches - attacks also steal health, duration 2, cooldown 5
+        that which leeches - attacks also heal for damage dealt, duration 2, cooldown 5
         *stone form - reduce incoming stun durations by 1, increase outgoing stun durations by 1, and heal 20% of max health at end of turn, duration 5, cooldown 10
         diamond form - become invulnerable and stunned and heal 10% of max health at end of turn, duration 5, cooldown 10
         glass form - increase incoming and outgoing damage by spell damage, duration 5, cooldown 10
@@ -52,7 +52,7 @@
         *swap - swap places with target, range 3, cooldown 3
         disenchant - remove all enchantments from target and heal 10% of max health for each enchantment removed, range 3, cooldown 5
         *focus - reset each equipped weapon skill cooldown, cooldown 10
-        meditate - reset each equipped utility skill cooldown, cooldown 10
+        meditate - reset each other equipped utility skill cooldown, cooldown 10
         time walk - get an extra turn after this one, cooldown 10
     spells
         chain lightning - attack target and each target connected to it, range 1, cooldown 5

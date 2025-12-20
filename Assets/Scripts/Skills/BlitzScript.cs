@@ -162,7 +162,7 @@ public class BlitzScript : MonoBehaviour, Skill
         skillType = "Off Hand Skill";
         description = "Attack and stun each target within range";
         range = 1f;
-        duration = 0;
+        duration = 1;
         cooldown = 5;
         skillSprite = Resources.Load<Sprite>("Skills/Blitz");
         sword = this.transform.parent.gameObject;

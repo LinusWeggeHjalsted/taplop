@@ -160,6 +160,9 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public Sprite aggroSprite;
     public Sprite stunSprite;
     public Sprite reflectSprite;
+    public Sprite[] enchantmentSprites = new Sprite[5];
+    public GameObject displayedEnchantments;
+    public SpriteRenderer enchantmentRenderer;
 
     public string currentBuildTemplate = "00000000";
     private int maxHealth;
@@ -567,8 +570,31 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
-    public void DisplayEnchantment()
+    public void DisplayEnchantments()
     {
+        int enchantmentCount = activeEnchantments.Count;
+        if (enchantmentCount == 0)
+        {
+            Destroy(displayedEnchantments);
+            return;
+        }
+        if (displayedEnchantments == null)
+        {
+            displayedEnchantments = new GameObject("Displayed Enchantments Sprite Object");
+            displayedEnchantments.transform.parent = spriteObject.transform;
+            displayedEnchantments.transform.localPosition = new Vector3(1f, 0.5f, 0);
+            enchantmentRenderer = displayedEnchantments.AddComponent<SpriteRenderer>();
+        }
+        if (displayedEnchantments != null)
+        {
+            enchantmentRenderer.sortingLayerName = "Effects";
+            enchantmentRenderer.sortingOrder = 1;
+            if (enchantmentCount > 5)
+            {
+                enchantmentCount = 5;
+            }
+            enchantmentRenderer.sprite = enchantmentSprites[enchantmentCount - 1];
+        }
     }
 
     public void DisplayUsedSkill(Sprite skillSprite)
@@ -935,7 +961,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             if (enchantmentScript.currentDuration <= 0)
             {
                 enchantmentScript.EndEffect(this.gameObject);
-                Destroy(enchantment);
+                DestroyImmediate(enchantment);
             }
         }
     }
@@ -1096,6 +1122,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         stunSprite = Resources.Load<Sprite>("StunEffect");
         reflectSprite = Resources.Load<Sprite>("ReflectEffect");
         healthBarStates = Resources.LoadAll<Sprite>("EntityHealthBars");
+        enchantmentSprites = Resources.LoadAll<Sprite>("EntityEnchantments");
         _mainHand = gear.transform.Find("Main Hand");
         _offHand = gear.transform.Find("Off Hand");
         _body = gear.transform.Find("Body");

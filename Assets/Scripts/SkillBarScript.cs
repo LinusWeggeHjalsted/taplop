@@ -39,6 +39,7 @@ public class SkillBarScript : MonoBehaviour
             SkillButtonScript buttonScript = skillButton.GetComponent<SkillButtonScript>();
             buttonScript.UpdateButton();
         }
+        DisplayCooldowns();
         // clear used skill and highlights
         GameObject turnLogic = GameObject.Find("Turn Logic");
         if (turnLogic != null)

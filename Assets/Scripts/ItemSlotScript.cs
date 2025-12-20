@@ -119,8 +119,10 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
             int otherPosition = actualOtherItemScript.inventoryPosition;
             actualOwnItemScript.inventoryPosition = otherPosition;
             actualOtherItemScript.inventoryPosition = ownPosition;
+            // update skill bar in case skills changed
             skillBarScript.UpdateButtons();
             GameObject playerHealthBar = GameObject.Find("Player Health Bar");
+            // update player health bar in case max health changed
             PlayerHealthBarScript playerHealthBarScript = playerHealthBar.GetComponent<PlayerHealthBarScript>();
             playerHealthBarScript.UpdateHealthBar();
             // restart player move step in case speed changed

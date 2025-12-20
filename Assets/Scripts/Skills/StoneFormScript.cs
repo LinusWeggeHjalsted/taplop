@@ -112,6 +112,7 @@ public class StoneFormScript : MonoBehaviour, Skill, EnchantmentScript
         EnchantmentScript enchantmentScript = stoneFormEnchantment.GetComponent<EnchantmentScript>();
         int effectiveDuration = duration + wielderScript.enchantmentModifiers.duration;
         enchantmentScript.currentDuration += effectiveDuration;
+        wielderScript.DisplayEnchantments();
         wielderScript.SetSkillCooldown(skillName, cooldown);
     }
 

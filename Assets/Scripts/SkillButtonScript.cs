@@ -226,15 +226,14 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             return;
         }
         GameObject droppedObject = eventData.pointerDrag;
-        // check if dropped object is an UnlockedSkillScript (from skills menu)
+        // check if dropped object is a skill from skills menu
         UnlockedSkillScript unlockedSkillScript = droppedObject.GetComponent<UnlockedSkillScript>();
         if (unlockedSkillScript != null)
         {
             HandleUnlockedSkillDrop(droppedObject);
-            skillBarScript.UpdateButtons();
             return;
         }
-        // otherwise, handle SkillButtonScript (skill bar to skill bar swap)
+        // check if it's a skill from the skill bar
         SkillButtonScript skillButtonScript = droppedObject.GetComponent<SkillButtonScript>();
         if (skillButtonScript == null)
         {
@@ -260,7 +259,6 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             skillScript.skillBarPosition = droppedSkillPosition;
         }
-        skillBarScript.UpdateButtons(); // hacky way to prevent feeling of lag
         StartCoroutine(DelayedUpdateButtons());
     }
 

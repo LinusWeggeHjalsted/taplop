@@ -18,6 +18,7 @@ public class UnlockedSkillScript : MonoBehaviour, IPointerEnterHandler, IPointer
     public GameObject unlockedSkillPrefab;
     public GameObject placeholder;
     public Transform currentParent;
+    public int currentSiblingIndex;
     public string skillName; // the name of the unlocked skill this represents
 
     public void OnPointerEnter(PointerEventData eventData)
@@ -80,13 +81,14 @@ public class UnlockedSkillScript : MonoBehaviour, IPointerEnterHandler, IPointer
 
     public void OnBeginDrag(PointerEventData eventData)
     {
+        currentSiblingIndex = this.transform.GetSiblingIndex();
         this.transform.parent = canvas;
         this.transform.SetAsLastSibling();
         Image skillImage = GetComponent<Image>();
         skillImage.raycastTarget = false;
         // create placeholder in the menu
         placeholder = Instantiate(unlockedSkillPrefab, currentParent);
-        placeholder.transform.SetSiblingIndex(this.transform.GetSiblingIndex());
+        placeholder.transform.SetSiblingIndex(currentSiblingIndex);
     }
 
     public void OnDrag(PointerEventData eventData)
@@ -98,6 +100,7 @@ public class UnlockedSkillScript : MonoBehaviour, IPointerEnterHandler, IPointer
     {
         Destroy(placeholder);
         this.transform.parent = currentParent;
+        this.transform.SetSiblingIndex(currentSiblingIndex);
         this.transform.localPosition = new Vector3(0, 0, 0);
         Image skillImage = GetComponent<Image>();
         skillImage.raycastTarget = true;

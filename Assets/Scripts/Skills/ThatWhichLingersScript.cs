@@ -89,6 +89,7 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.DisplayUsedSkill(skillSprite);
+        int effectiveDuration = duration + wielderScript.enchantmentModifiers.duration;
         // create or extend enchantment
         Transform wielderEnchantments = wielderScript.enchantments;
         GameObject thatWhichLingersEnchantment;
@@ -104,8 +105,8 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
             thatWhichLingersEnchantment.name = "That Which Lingers";
         }
         EnchantmentScript enchantmentScript = thatWhichLingersEnchantment.GetComponent<EnchantmentScript>();
-        int effectiveDuration = duration + wielderScript.enchantmentModifiers.duration;
         enchantmentScript.currentDuration += effectiveDuration;
+        wielderScript.DisplayEnchantments();
         wielderScript.SetSkillCooldown(skillName, cooldown);
     }
 
