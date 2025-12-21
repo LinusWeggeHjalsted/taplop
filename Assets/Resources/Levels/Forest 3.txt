@@ -21,12 +21,12 @@ armor -2
 speed 1
 aggroRange 3
 mainHandWeapon Spear
-mainHandName Bronze Spear
+mainHandName Invader Spear
 mainHandDamage 5
-coatName Leather Coat
+coatName Invader Coat
 coatArmor 2
 coatHealth 1
-pantsName Leather Pants
+pantsName Invader Pants
 pantsArmor 2
 pantsPickupRadius 1
 

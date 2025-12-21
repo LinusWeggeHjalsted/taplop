@@ -22,15 +22,15 @@ armor -4
 speed 1
 aggroRange 3
 mainHandWeapon Sword
-mainHandName Bronze Sword
+mainHandName Invader Sword
 mainHandDamage 5
-coatName Leather Coat
+coatName Invader Coat
 coatArmor 2
 coatHealth 1
-glovesName Leather Gloves
+glovesName Invader Gloves
 glovesArmor 2
 glovesDamage 1
-pantsName Leather Pants
+pantsName Invader Pants
 pantsArmor 2
 pantsPickupRadius 1
 

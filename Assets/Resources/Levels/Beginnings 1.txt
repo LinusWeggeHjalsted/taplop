@@ -22,12 +22,12 @@ armor -2
 speed 1
 aggroRange 3
 mainHandWeapon Sword
-mainHandName Bronze Sword
+mainHandName Invader Sword
 mainHandDamage 4
-coatName Cloth Coat
+coatName Invader Coat
 coatArmor 1
 coatHealth 1
-pantsName Cloth Pants
+pantsName Invader Pants
 pantsArmor 1
 pantsPickupRadius 1
 
@@ -39,12 +39,12 @@ armor -2
 speed 1
 aggroRange 3
 mainHandWeapon Spear
-mainHandName Bronze Spear
+mainHandName Invader Spear
 mainHandDamage 4
-coatName Cloth Coat
+coatName Invader Coat
 coatArmor 1
 coatHealth 1
-pantsName Cloth Pants
+pantsName Invader Pants
 pantsArmor 1
 pantsPickupRadius 1
 

@@ -9,10 +9,10 @@ Layout
     ..................
     ..........2.....2.
     ..................
-    .2.   .3....
-    ...
-    ...
-    313
+    .2.   .3....   
+    ...            ...
+    ...            ...
+    313            ...
      =
 
 Enemy Info
@@ -24,15 +24,15 @@ armor -2
 speed 1
 aggroRange 3
 mainHandWeapon Sword
-mainHandName Bronze Sword
+mainHandName Invader Sword
 mainHandDamage 5
-coatName Leather Coat
+coatName Invader Coat
 coatArmor 2
 coatHealth 1
-glovesName Leather Gloves
+glovesName Invader Gloves
 glovesArmor 2
 glovesDamage 1
-pantsName Leather Pants
+pantsName Invader Pants
 pantsArmor 2
 pantsPickupRadius 1
 
@@ -44,12 +44,12 @@ armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Wand
-mainHandName Oak Wand
+mainHandName Invader Wand
 mainHandDamage 5
-coatName Leather Coat
+coatName Invader Coat
 coatArmor 2
 coatHealth 1
-pantsName Leather Pants
+pantsName Invader Pants
 pantsArmor 2
 pantsPickupRadius 1
 utilitySkill Swap
@@ -62,15 +62,15 @@ armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Dagger
-mainHandName Bronze Dagger
+mainHandName Invader Dagger
 mainHandDamage 5
 offHandWeapon Dagger
-offHandName Bronze Dagger
+offHandName Invader Dagger
 offHandDamage 5
-pantsName Leather Pants
+pantsName Invader Pants
 pantsArmor 2
 pantsPickupRadius 1
-bootsName Leather Boots
+bootsName Invader Boots
 bootsArmor 2
 bootsSpeed 1
 utilitySkill Focus

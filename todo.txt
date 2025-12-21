@@ -1,13 +1,10 @@
 - more dev tools
 - level clear conditions
 - write player save
-- lock switching equipped gear and skills when there are active enemies
-    maybe instead just allow it but set cooldowns when swapping
 - better enemy death
     make death a trigger in CurrentHealth set method
     handle cases of enemies dying during their turn for turn logic
 - loading screen
-- weaponswap
 - scenery
 - npc's in hubs
 - gear shop
@@ -32,7 +29,7 @@
 - display player enchantments above bottom ui
 - remember open menus between levels and hubs
 - dragging an item into nothing should salvage it maybe
-!- autopickup within pickup radius
+- autopickup within pickup radius
     actually maybe not - need to think about this
 !- seatown
     more levels

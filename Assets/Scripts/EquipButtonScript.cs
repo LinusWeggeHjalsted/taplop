@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System;
 using System.Collections;
 
 public class EquipButtonScript : MonoBehaviour
@@ -39,13 +40,42 @@ public class EquipButtonScript : MonoBehaviour
         }
         selectedItem.transform.parent = targetTransform;
         // swap inventory positions
+        ItemScript currentItemScript = null;
         if (currentItem != null)
         {
-            ItemScript currentItemScript = currentItem.gameObject.GetComponent<ItemScript>();
+            currentItemScript = currentItem.gameObject.GetComponent<ItemScript>();
             currentItemPosition = currentItemScript.inventoryPosition;
             currentItemScript.inventoryPosition = selectedItemPosition;
         }
         selectedItemScript.inventoryPosition = currentItemPosition;
+        // set new skill cooldowns to max of the swapped skills in case a weapon was equipped
+        if (selectedItemScript.ItemType() == "Weapon" && currentItemScript != null)
+        {
+            WeaponScript currentWeaponScript = currentItem.GetComponent<WeaponScript>();
+            GameObject currentSecondSkill = currentWeaponScript.SecondSkill();
+            Skill currentSecondSkillScript = currentSecondSkill.GetComponent<Skill>();
+            string currentSecondSkillName = currentSecondSkillScript.GetSkillName();
+            int currentSecondCooldown = playerScript.GetSkillCooldown(currentSecondSkillName);
+            GameObject currentThirdSkill = currentWeaponScript.ThirdSkill();
+            Skill currentThirdSkillScript = currentThirdSkill.GetComponent<Skill>();
+            string currentThirdSkillName = currentThirdSkillScript.GetSkillName();
+            int currentThirdCooldown = playerScript.GetSkillCooldown(currentThirdSkillName);
+            
+            WeaponScript selectedWeaponScript = selectedItem.GetComponent<WeaponScript>();
+            GameObject selectedSecondSkill = selectedWeaponScript.SecondSkill();
+            Skill selectedSecondSkillScript = selectedSecondSkill.GetComponent<Skill>();
+            string selectedSecondSkillName = selectedSecondSkillScript.GetSkillName();
+            int selectedSecondCooldown = playerScript.GetSkillCooldown(selectedSecondSkillName);
+            GameObject selectedThirdSkill = selectedWeaponScript.ThirdSkill();
+            Skill selectedThirdSkillScript = selectedThirdSkill.GetComponent<Skill>();
+            string selectedThirdSkillName = selectedThirdSkillScript.GetSkillName();
+            int selectedThirdCooldown = playerScript.GetSkillCooldown(selectedThirdSkillName);
+
+            int maxSecondCooldown = Math.Max(currentSecondCooldown, selectedSecondCooldown);
+            int maxThirdCooldown = Math.Max(currentThirdCooldown, selectedThirdCooldown);
+            playerScript.SetSkillCooldown(selectedSecondSkillName, maxSecondCooldown);
+            playerScript.SetSkillCooldown(selectedThirdSkillName, maxThirdCooldown);
+        }
         // refresh open menus
         Transform characterUI = GameObject.Find("Character UI").transform;
         Transform gearMenu = characterUI.Find("Gear Menu(Clone)");
