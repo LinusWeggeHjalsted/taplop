@@ -2,10 +2,20 @@ using UnityEngine;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
+using System.Runtime.InteropServices;
 
 public class PlayerDataScript : MonoBehaviour
 {
     public static PlayerDataScript Instance { get; private set; }
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+    [DllImport("__Internal")]
+    private static extern void DownloadFile(string filename, string content);
+
+    [DllImport("__Internal")]
+    private static extern void UploadFile(string gameObjectName, string callbackMethodName);
+#endif
 
     public class Salvage
     {
@@ -37,6 +47,11 @@ public class PlayerDataScript : MonoBehaviour
     {
         public string weaponType;
         public int damage;
+    }
+
+    public class AmuletData : InventoryItemData
+    {
+        public int spellDamage;
     }
 
     public class CoatData : InventoryItemData
@@ -86,12 +101,12 @@ public class PlayerDataScript : MonoBehaviour
     public int defeatedEnemies;
     public Salvage collectedSalvage = new Salvage();
     public int utilitySkillSlots;
+    public List<string> discoveredHubs = new List<string>();
     public List<string> unlockedSkills = new List<string>();
-    // to-do - hubs
-
     // gear
     public WeaponData mainHandWeapon;
     public WeaponData offHandWeapon;
+    public AmuletData amulet;
     public CoatData coat;
     public GlovesData gloves;
     public PantsData pants;
@@ -125,25 +140,57 @@ public class PlayerDataScript : MonoBehaviour
 
     public void LoadPlayerData(string savePath)
     {
-        TextAsset playerSaveFile = Resources.Load<TextAsset>(savePath);
-        if (playerSaveFile == null)
+        string fileText = null;
+        // try loading from persistent data path first (for saves like Autosave)
+        string persistentPath = Application.persistentDataPath + "/" + savePath + ".txt";
+        if (File.Exists(persistentPath))
         {
-            Debug.LogError("No save file found at path " + savePath);
+            try
+            {
+                fileText = File.ReadAllText(persistentPath);
+                Debug.Log("Loaded player data from: " + persistentPath);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("Failed to load from persistent path: " + e.Message);
+            }
         }
-        else
+        // fall back to resources folder if not found in persistent path
+        if (fileText == null)
         {
-            string[] fileLines = playerSaveFile.text.Split('\n');
+            TextAsset playerSaveFile = Resources.Load<TextAsset>(savePath);
+            if (playerSaveFile == null)
+            {
+                Debug.LogError("No save file found at path " + savePath);
+                return;
+            }
+            fileText = playerSaveFile.text;
+        }
+        if (fileText != null)
+        {
+            LoadPlayerDataFromText(fileText);
+        }
+    }
+
+    public void LoadPlayerDataFromText(string fileText)
+    {
+        if (fileText != null)
+        {
+            string[] fileLines = fileText.Split('\n');
             string[] sectionHeaders = new string[] {
                 "Info",
+                "Discovered Hubs",
                 "Unlocked Skills", 
                 "Main Hand Weapon",
                 "Off Hand Weapon",
+                "Amulet",
                 "Coat",
                 "Gloves",
                 "Pants",
                 "Boots",
                 "Inventory",
-                "Utility Skills"
+                "Utility Skills",
+                "Clone Data"
             };
             int sectionCount = sectionHeaders.Length;
             int[] sectionIndices = new int[sectionCount];
@@ -165,6 +212,14 @@ public class PlayerDataScript : MonoBehaviour
                 {
                     int sectionLength = sectionIndices[i + 1] - sectionIndices[i] - 2;
                     sectionLengths[i] = sectionLength;
+                }
+
+                // Check for invalid section lengths
+                if (sectionLengths[i] < 0)
+                {
+                    Debug.LogError("Invalid section length for section " + sectionHeaders[i] + ": " + sectionLengths[i] +
+                                   ". Section index: " + sectionIndices[i] + ", File may be corrupted or in old format.");
+                    return;
                 }
             }
             string[][] sectionBlocks = new string[sectionCount][];
@@ -306,8 +361,9 @@ public class PlayerDataScript : MonoBehaviour
                     }
                 }
             }
+            // to-do - parse discovered hubs
             // parse unlocked skills
-            string[] unlockedSkillsBlock = sectionBlocks[1];
+            string[] unlockedSkillsBlock = sectionBlocks[2];
             unlockedSkills = new List<string>();
             for (int i = 0; i < unlockedSkillsBlock.Length; i++)
             {
@@ -315,7 +371,7 @@ public class PlayerDataScript : MonoBehaviour
                 unlockedSkills.Add(skillName);
             }
             // parse main hand weapon
-            string[] mainHandWeaponBlock = sectionBlocks[2];
+            string[] mainHandWeaponBlock = sectionBlocks[3];
             mainHandWeapon = new WeaponData();
             for (int i = 0; i < mainHandWeaponBlock.Length; i++)
             {
@@ -343,7 +399,7 @@ public class PlayerDataScript : MonoBehaviour
                 }
             }
             // parse off hand weapon
-            string[] offHandWeaponBlock = sectionBlocks[3];
+            string[] offHandWeaponBlock = sectionBlocks[4];
             offHandWeapon = new WeaponData();
             for (int i = 0; i < offHandWeaponBlock.Length; i++)
             {
@@ -370,8 +426,32 @@ public class PlayerDataScript : MonoBehaviour
                     }
                 }
             }
+            // parse amulet
+            string[] amuletBlock = sectionBlocks[5];
+            amulet = new AmuletData();
+            for (int i = 0; i < amuletBlock.Length; i++)
+            {
+                string currentLine = amuletBlock[i];
+                if (currentLine.StartsWith("itemName "))
+                {
+                    amulet.itemName = currentLine.Substring("itemName ".Length);
+                }
+                else if (currentLine.StartsWith("spellDamage "))
+                {
+                    string spellDamageString = currentLine.Substring("spellDamage ".Length);
+                    int spellDamageNumber;
+                    if (Int32.TryParse(spellDamageString, out spellDamageNumber))
+                    {
+                        amulet.spellDamage = spellDamageNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("amulet spellDamage is not a number");
+                    }
+                }
+            }
             // parse coat
-            string[] coatBlock = sectionBlocks[4];
+            string[] coatBlock = sectionBlocks[6];
             coat = new CoatData();
             for (int i = 0; i < coatBlock.Length; i++)
             {
@@ -408,7 +488,7 @@ public class PlayerDataScript : MonoBehaviour
                 }
             }
             // parse gloves
-            string[] glovesBlock = sectionBlocks[5];
+            string[] glovesBlock = sectionBlocks[7];
             gloves = new GlovesData();
             for (int i = 0; i < glovesBlock.Length; i++)
             {
@@ -445,7 +525,7 @@ public class PlayerDataScript : MonoBehaviour
                 }
             }
             // parse pants
-            string[] pantsBlock = sectionBlocks[6];
+            string[] pantsBlock = sectionBlocks[8];
             pants = new PantsData();
             for (int i = 0; i < pantsBlock.Length; i++)
             {
@@ -482,7 +562,7 @@ public class PlayerDataScript : MonoBehaviour
                 }
             }
             // parse boots
-            string[] bootsBlock = sectionBlocks[7];
+            string[] bootsBlock = sectionBlocks[9];
             boots = new BootsData();
             for (int i = 0; i < bootsBlock.Length; i++)
             {
@@ -519,7 +599,8 @@ public class PlayerDataScript : MonoBehaviour
                 }
             }
             // parse inventory
-            string[] inventoryBlock = sectionBlocks[8];
+            string[] inventoryBlock = sectionBlocks[10];
+            inventory = new List<InventoryItemData>();
             List<string[]> inventoryItemBlocks = new List<string[]>();
             List<string> currentSubArray = new List<string>();
             foreach (string line in inventoryBlock)
@@ -588,6 +669,44 @@ public class PlayerDataScript : MonoBehaviour
                                 }
                             }
                             inventory.Add(inventoryWeapon);
+                            break;
+                        case "Amulet":
+                            AmuletData inventoryAmulet = new AmuletData();
+                            for (int i = 1; i < itemBlock.Length; i++)
+                            {
+                                string currentLine = itemBlock[i];
+                                if (currentLine.StartsWith("itemName "))
+                                {
+                                    inventoryAmulet.itemName = currentLine.Substring("itemName ".Length);
+                                }
+                                else if (currentLine.StartsWith("spellDamage "))
+                                {
+                                    string spellDamageString = currentLine.Substring("spellDamage ".Length);
+                                    int spellDamageNumber;
+                                    if (Int32.TryParse(spellDamageString, out spellDamageNumber))
+                                    {
+                                        inventoryAmulet.spellDamage = spellDamageNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory amulet spellDamage is not a number");
+                                    }
+                                }
+                                else if (currentLine.StartsWith("inventoryPosition "))
+                                {
+                                    string inventoryPositionString = currentLine.Substring("inventoryPosition ".Length);
+                                    int inventoryPositionNumber;
+                                    if (Int32.TryParse(inventoryPositionString, out inventoryPositionNumber))
+                                    {
+                                        inventoryAmulet.inventoryPosition = inventoryPositionNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory amulet inventoryPosition is not a number");
+                                    }
+                                }
+                            }
+                            inventory.Add(inventoryAmulet);
                             break;
                         case "Coat":
                             CoatData inventoryCoat = new CoatData();
@@ -812,6 +931,7 @@ public class PlayerDataScript : MonoBehaviour
                                     }
                                 }
                             }
+                            inventory.Add(inventoryTome);
                             break;
                     }
                 }
@@ -821,27 +941,249 @@ public class PlayerDataScript : MonoBehaviour
                 }
             }
             // parse utility skills
-            string[] utilitySkillsBlock = sectionBlocks[9];
+            string[] utilitySkillsBlock = sectionBlocks[11];
             utilitySkills = new string[5];
             for (int i = 0; i < utilitySkillsBlock.Length; i++)
             {
                 string currentLine = utilitySkillsBlock[i];
-                string[] splitLine = currentLine.Split(' ');
-                int skillNumber;
-                if (Int32.TryParse(splitLine[0], out skillNumber))
+                int firstSpaceIndex = currentLine.IndexOf(' ');
+                if (firstSpaceIndex > 0 && firstSpaceIndex < currentLine.Length - 1)
                 {
-                    if (4 <= skillNumber && skillNumber <= 8) // to-do - think about this
-                    { 
-                        utilitySkills[skillNumber - 4] = splitLine[1];
+                    string skillNumberString = currentLine.Substring(0, firstSpaceIndex);
+                    string skillName = currentLine.Substring(firstSpaceIndex + 1);
+                    int skillNumber;
+                    if (Int32.TryParse(skillNumberString, out skillNumber))
+                    {
+                        if (4 <= skillNumber && skillNumber <= 8) // to-do - think about this
+                        {
+                            utilitySkills[skillNumber - 4] = skillName;
+                        }
                     }
                 }
             }
+            // to-do - parse clone data
         }
     }
 
     public void SavePlayerData(string savePath)
     {
-        // to-do
+        string saveData = "";
+
+        // write info section
+        saveData += "Info\n";
+        saveData += "playerName " + playerName + "\n";
+        saveData += "randomSeed " + randomSeed.ToString() + "\n";
+        saveData += "lastHub " + lastHub + "\n";
+        saveData += "turns " + turns.ToString() + "\n";
+        saveData += "deaths " + deaths.ToString() + "\n";
+        saveData += "defeatedEnemies " + defeatedEnemies.ToString() + "\n";
+        saveData += "woodSalvage " + collectedSalvage.wood.ToString() + "\n";
+        saveData += "metalSalvage " + collectedSalvage.metal.ToString() + "\n";
+        saveData += "leatherSalvage " + collectedSalvage.leather.ToString() + "\n";
+        saveData += "knowledge " + collectedSalvage.knowledge.ToString() + "\n";
+        saveData += "utilitySkillSlots " + utilitySkillSlots.ToString() + "\n";
+        saveData += "\n";
+
+        // write discovered hubs section
+        saveData += "Discovered Hubs\n";
+        for (int i = 0; i < discoveredHubs.Count; i++)
+        {
+            saveData += discoveredHubs[i] + "\n";
+        }
+        saveData += "\n";
+
+        // write unlocked skills section
+        saveData += "Unlocked Skills\n";
+        for (int i = 0; i < unlockedSkills.Count; i++)
+        {
+            saveData += unlockedSkills[i] + "\n";
+        }
+        saveData += "\n";
+
+        // write main hand weapon section
+        saveData += "Main Hand Weapon\n";
+        if (mainHandWeapon != null && mainHandWeapon.itemName != null)
+        {
+            saveData += "itemName " + mainHandWeapon.itemName + "\n";
+            saveData += "weaponType " + mainHandWeapon.weaponType + "\n";
+            saveData += "damage " + mainHandWeapon.damage.ToString() + "\n";
+        }
+        saveData += "\n";
+
+        // write off hand weapon section
+        saveData += "Off Hand Weapon\n";
+        if (offHandWeapon != null && offHandWeapon.itemName != null)
+        {
+            saveData += "itemName " + offHandWeapon.itemName + "\n";
+            saveData += "weaponType " + offHandWeapon.weaponType + "\n";
+            saveData += "damage " + offHandWeapon.damage.ToString() + "\n";
+        }
+        saveData += "\n";
+
+        // write amulet section
+        saveData += "Amulet\n";
+        if (amulet != null && amulet.itemName != null)
+        {
+            saveData += "itemName " + amulet.itemName + "\n";
+            saveData += "spellDamage " + amulet.spellDamage.ToString() + "\n";
+        }
+        saveData += "\n";
+
+        // write coat section
+        saveData += "Coat\n";
+        if (coat != null && coat.itemName != null)
+        {
+            saveData += "itemName " + coat.itemName + "\n";
+            saveData += "armor " + coat.armor.ToString() + "\n";
+            saveData += "health " + coat.health.ToString() + "\n";
+        }
+        saveData += "\n";
+
+        // write gloves section
+        saveData += "Gloves\n";
+        if (gloves != null && gloves.itemName != null)
+        {
+            saveData += "itemName " + gloves.itemName + "\n";
+            saveData += "armor " + gloves.armor.ToString() + "\n";
+            saveData += "damage " + gloves.damage.ToString() + "\n";
+        }
+        saveData += "\n";
+
+        // write pants section
+        saveData += "Pants\n";
+        if (pants != null && pants.itemName != null)
+        {
+            saveData += "itemName " + pants.itemName + "\n";
+            saveData += "armor " + pants.armor.ToString() + "\n";
+            saveData += "pickupRadius " + pants.pickupRadius.ToString() + "\n";
+        }
+        saveData += "\n";
+
+        // write boots section
+        saveData += "Boots\n";
+        if (boots != null && boots.itemName != null)
+        {
+            saveData += "itemName " + boots.itemName + "\n";
+            saveData += "armor " + boots.armor.ToString() + "\n";
+            saveData += "speed " + boots.speed.ToString() + "\n";
+        }
+        saveData += "\n";
+
+        // write inventory section
+        saveData += "Inventory\n";
+        for (int i = 0; i < inventory.Count; i++)
+        {
+            InventoryItemData item = inventory[i];
+            if (item is WeaponData)
+            {
+                WeaponData weaponItem = (WeaponData)item;
+                saveData += "itemType Weapon\n";
+                saveData += "itemName " + weaponItem.itemName + "\n";
+                saveData += "weaponType " + weaponItem.weaponType + "\n";
+                saveData += "damage " + weaponItem.damage.ToString() + "\n";
+                saveData += "inventoryPosition " + weaponItem.inventoryPosition.ToString() + "\n";
+                saveData += "\n";
+            }
+            else if (item is AmuletData)
+            {
+                AmuletData amuletItem = (AmuletData)item;
+                saveData += "itemType Amulet\n";
+                saveData += "itemName " + amuletItem.itemName + "\n";
+                saveData += "spellDamage " + amuletItem.spellDamage.ToString() + "\n";
+                saveData += "inventoryPosition " + amuletItem.inventoryPosition.ToString() + "\n";
+                saveData += "\n";
+            }
+            else if (item is CoatData)
+            {
+                CoatData coatItem = (CoatData)item;
+                saveData += "itemType Coat\n";
+                saveData += "itemName " + coatItem.itemName + "\n";
+                saveData += "armor " + coatItem.armor.ToString() + "\n";
+                saveData += "health " + coatItem.health.ToString() + "\n";
+                saveData += "inventoryPosition " + coatItem.inventoryPosition.ToString() + "\n";
+                saveData += "\n";
+            }
+            else if (item is GlovesData)
+            {
+                GlovesData glovesItem = (GlovesData)item;
+                saveData += "itemType Gloves\n";
+                saveData += "itemName " + glovesItem.itemName + "\n";
+                saveData += "armor " + glovesItem.armor.ToString() + "\n";
+                saveData += "damage " + glovesItem.damage.ToString() + "\n";
+                saveData += "inventoryPosition " + glovesItem.inventoryPosition.ToString() + "\n";
+                saveData += "\n";
+            }
+            else if (item is PantsData)
+            {
+                PantsData pantsItem = (PantsData)item;
+                saveData += "itemType Pants\n";
+                saveData += "itemName " + pantsItem.itemName + "\n";
+                saveData += "armor " + pantsItem.armor.ToString() + "\n";
+                saveData += "pickupRadius " + pantsItem.pickupRadius.ToString() + "\n";
+                saveData += "inventoryPosition " + pantsItem.inventoryPosition.ToString() + "\n";
+                saveData += "\n";
+            }
+            else if (item is BootsData)
+            {
+                BootsData bootsItem = (BootsData)item;
+                saveData += "itemType Boots\n";
+                saveData += "itemName " + bootsItem.itemName + "\n";
+                saveData += "armor " + bootsItem.armor.ToString() + "\n";
+                saveData += "speed " + bootsItem.speed.ToString() + "\n";
+                saveData += "inventoryPosition " + bootsItem.inventoryPosition.ToString() + "\n";
+                saveData += "\n";
+            }
+            else if (item is TomeData)
+            {
+                TomeData tomeItem = (TomeData)item;
+                saveData += "itemType Tome\n";
+                saveData += "itemName " + tomeItem.itemName + "\n";
+                saveData += "skillName " + tomeItem.skillName + "\n";
+                saveData += "inventoryPosition " + tomeItem.inventoryPosition.ToString() + "\n";
+                saveData += "\n";
+            }
+        }
+        if (inventory.Count == 0)
+        {
+            saveData += "\n";
+        }
+
+        // write utility skills section
+        saveData += "Utility Skills\n";
+        for (int i = 0; i < utilitySkills.Length; i++)
+        {
+            if (utilitySkills[i] != null)
+            {
+                int skillNumber = i + 4;
+                saveData += skillNumber.ToString() + " " + utilitySkills[i] + "\n";
+            }
+        }
+        saveData += "\n";
+
+        // write clone data section
+        saveData += "Clone Data\n";
+        // to-do - implement clone data saving
+        saveData += "\n";
+
+        // write to file or download
+#if UNITY_WEBGL && !UNITY_EDITOR
+        // in WebGL, trigger a browser download
+        string filename = savePath + ".txt";
+        DownloadFile(filename, saveData);
+        Debug.Log("Player data download triggered: " + filename);
+#else
+        // in standalone builds, save to file system
+        string fullPath = Application.persistentDataPath + "/" + savePath + ".txt";
+        try
+        {
+            File.WriteAllText(fullPath, saveData);
+            Debug.Log("Player data saved to " + fullPath);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Failed to save player data: " + e.Message);
+        }
+#endif
     }
 
     public IEnumerator BuildPlayerFromData(GameObject player)
@@ -854,6 +1196,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         Transform playerMainHand = playerScript.mainHand;
         Transform playerOffHand = playerScript.offHand;
+        Transform playerNeck = playerScript.neck;
         Transform playerBody = playerScript.body;
         Transform playerHands = playerScript.hands;
         Transform playerLegs = playerScript.legs;
@@ -866,11 +1209,12 @@ public class PlayerDataScript : MonoBehaviour
             for (int i = playerPart.childCount - 1; i >= 0; i--)
             {
                 GameObject partChild = playerPart.GetChild(i).gameObject;
-                Destroy(partChild);
+                DestroyImmediate(partChild);
             }
         }
         ClearChildren(playerMainHand);
         ClearChildren(playerOffHand);
+        ClearChildren(playerNeck);
         ClearChildren(playerBody);
         ClearChildren(playerHands);
         ClearChildren(playerLegs);
@@ -912,6 +1256,14 @@ public class PlayerDataScript : MonoBehaviour
         }
         // wait one frame for weapons' Start() methods to run and create their skills
         yield return null;
+        if (amulet.itemName != null)
+        {
+            GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Amulet");
+            GameObject newAmulet = Instantiate(amuletPrefab, playerNeck);
+            AmuletScript amuletScript = newAmulet.GetComponent<AmuletScript>();
+            amuletScript.itemName = amulet.itemName;
+            amuletScript.spellDamage = amulet.spellDamage;
+        }
         if (coat.itemName != null)
         {
             GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");
@@ -962,6 +1314,17 @@ public class PlayerDataScript : MonoBehaviour
                 weaponScript.SetDamage(inventoryWeapon.damage);
                 ItemScript itemScript = newWeapon.GetComponent<ItemScript>();
                 itemScript.inventoryPosition = inventoryWeapon.inventoryPosition;
+            }
+            else if (inventoryItem is AmuletData)
+            {
+                AmuletData inventoryAmulet = (AmuletData)inventoryItem;
+                GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Amulet");
+                GameObject newAmulet = Instantiate(amuletPrefab, playerInventory);
+                AmuletScript amuletScript = newAmulet.GetComponent<AmuletScript>();
+                amuletScript.itemName = inventoryAmulet.itemName;
+                amuletScript.spellDamage = inventoryAmulet.spellDamage;
+                ItemScript itemScript = newAmulet.GetComponent<ItemScript>();
+                itemScript.inventoryPosition = inventoryAmulet.inventoryPosition;
             }
             else if (inventoryItem is CoatData)
             {
@@ -1078,6 +1441,18 @@ public class PlayerDataScript : MonoBehaviour
         {
             offHandWeapon = new WeaponData();
         }
+        GameObject playerAmulet = playerScript.amulet;
+        if (playerAmulet != null)
+        {
+            AmuletScript playerAmuletScript = playerAmulet.GetComponent<AmuletScript>();
+            amulet = new AmuletData();
+            amulet.itemName = playerAmuletScript.itemName;
+            amulet.spellDamage = playerAmuletScript.spellDamage;
+        }
+        else
+        {
+            amulet = new AmuletData();
+        }
         GameObject playerCoat = playerScript.coat;
         if (playerCoat != null)
         {
@@ -1149,6 +1524,14 @@ public class PlayerDataScript : MonoBehaviour
                     weaponData.damage = playerInventoryWeaponScript.GetDamage();
                     inventory.Add(weaponData);
                     break;
+                case "Amulet":
+                    AmuletScript playerInventoryAmuletScript = playerInventoryItem.GetComponent<AmuletScript>();
+                    AmuletData amuletData = new AmuletData();
+                    amuletData.itemName = playerInventoryAmuletScript.itemName;
+                    amuletData.inventoryPosition = playerInventoryAmuletScript.inventoryPosition;
+                    amuletData.spellDamage = playerInventoryAmuletScript.spellDamage;
+                    inventory.Add(amuletData);
+                    break;
                 case "Coat":
                     CoatScript playerInventoryCoatScript = playerInventoryItem.GetComponent<CoatScript>();
                     CoatData coatData = new CoatData();
@@ -1188,6 +1571,7 @@ public class PlayerDataScript : MonoBehaviour
                 case "Tome":
                     SkillTomeScript playerInventoryTomeScript = playerInventoryItem.GetComponent<SkillTomeScript>();
                     TomeData tomeData = new TomeData();
+                    tomeData.itemName = playerInventoryItemScript.ItemName();
                     tomeData.skillName = playerInventoryTomeScript.skillName;
                     tomeData.inventoryPosition = playerInventoryTomeScript.inventoryPosition;
                     inventory.Add(tomeData);

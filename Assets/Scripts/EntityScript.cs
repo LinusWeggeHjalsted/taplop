@@ -49,6 +49,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
 
     private Transform _mainHand;
     private Transform _offHand;
+    private Transform _neck;
     private Transform _body;
     private Transform _hands;
     private Transform _legs;
@@ -60,6 +61,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
 
     public Transform mainHand { get { return _mainHand; } }
     public Transform offHand { get { return _offHand; } }
+    public Transform neck { get { return _neck; } }
     public Transform body { get { return _body; } }
     public Transform hands { get { return _hands; } }
     public Transform legs { get { return _legs; } }
@@ -93,6 +95,14 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             if (offHand.childCount == 0) return null;
             return offHand.GetChild(0).gameObject;
+        }
+    }
+    public GameObject amulet
+    {
+        get
+        {
+            if (neck.childCount == 0) return null;
+            return neck.GetChild(0).gameObject;
         }
     }
     public GameObject coat
@@ -300,6 +310,25 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 glovesDamage = glovesScript.damageBonus;
             }
             return offHandWeaponDamage + glovesDamage;
+        }
+    }
+    public int spellDamage
+    {
+        get
+        {
+            int amuletSpellDamage = 0;
+            if (amulet != null)
+            {
+                AmuletScript amuletScript = amulet.GetComponent<AmuletScript>();
+                amuletSpellDamage = amuletScript.spellDamage;
+            }
+            int glovesDamage = 0;
+            if (gloves != null)
+            {
+                GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
+                glovesDamage = glovesScript.damageBonus;
+            }
+            return amuletSpellDamage + glovesDamage;
         }
     }
     public int pickupRadius
@@ -1024,6 +1053,10 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             equippedGear.Add(offHandWeapon);
         }
+        if (amulet != null)
+        {
+            equippedGear.Add(amulet);
+        }
         if (coat != null)
         {
             equippedGear.Add(coat);
@@ -1125,6 +1158,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         enchantmentSprites = Resources.LoadAll<Sprite>("EntityEnchantments");
         _mainHand = gear.transform.Find("Main Hand");
         _offHand = gear.transform.Find("Off Hand");
+        _neck = gear.transform.Find("Neck");
         _body = gear.transform.Find("Body");
         _hands = gear.transform.Find("Hands");
         _legs = gear.transform.Find("Legs");

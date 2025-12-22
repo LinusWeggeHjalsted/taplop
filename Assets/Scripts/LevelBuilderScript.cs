@@ -27,6 +27,8 @@ public class LevelBuilderScript : MonoBehaviour
         public string offHandWeapon;
         public string offHandName;
         public int offHandDamage;
+        public string amuletName;
+        public int amuletSpellDamage;
         public string coatName;
         public int coatArmor;
         public int coatHealth;
@@ -50,6 +52,7 @@ public class LevelBuilderScript : MonoBehaviour
         public int armor;
         public int health;
         public int damage;
+        public int spellDamage;
         public int pickupRadius;
         public int speed;
     }
@@ -320,6 +323,24 @@ public class LevelBuilderScript : MonoBehaviour
                         Debug.LogError("offHandDamage is not a number");
                     }
                 }
+                else if (currentLine.StartsWith("amuletName "))
+                {
+                    string amuletName = currentLine.Substring("amuletName ".Length);
+                    preEnemy.amuletName = amuletName;
+                }
+                else if (currentLine.StartsWith("amuletSpellDamage "))
+                {
+                    string amuletSpellDamage = currentLine.Substring("amuletSpellDamage ".Length);
+                    int amuletSpellDamageNumber;
+                    if (Int32.TryParse(amuletSpellDamage, out amuletSpellDamageNumber))
+                    {
+                        preEnemy.amuletSpellDamage = amuletSpellDamageNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("amuletSpellDamage is not a number");
+                    }
+                }
                 else if (currentLine.StartsWith("coatName "))
                 {
                     string coatName = currentLine.Substring("coatName ".Length);
@@ -506,6 +527,19 @@ public class LevelBuilderScript : MonoBehaviour
                         Debug.LogError("damage is not a number");
                     }
                 }
+                else if (currentLine.StartsWith("spellDamage "))
+                {
+                    string spellDamage = currentLine.Substring("spellDamage ".Length);
+                    int spellDamageNumber;
+                    if (Int32.TryParse(spellDamage, out spellDamageNumber))
+                    {
+                        preItem.spellDamage = spellDamageNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("spellDamage is not a number");
+                    }
+                }
                 else if (currentLine.StartsWith("health "))
                 {
                     string health = currentLine.Substring("health ".Length);
@@ -625,6 +659,7 @@ public class LevelBuilderScript : MonoBehaviour
             Transform enemyGear = newEnemy.transform.Find("Gear");
             Transform enemyMainHand = enemyGear.Find("Main Hand");
             Transform enemyOffHand = enemyGear.Find("Off Hand");
+            Transform enemyNeck = enemyGear.Find("Neck");
             Transform enemyBody = enemyGear.Find("Body");
             Transform enemyHands = enemyGear.Find("Hands");
             Transform enemyLegs = enemyGear.Find("Legs");
@@ -646,6 +681,14 @@ public class LevelBuilderScript : MonoBehaviour
                 WeaponScript enemyOffHandWeaponScript = enemyOffHandWeapon.GetComponent<WeaponScript>();
                 enemyOffHandWeaponScript.SetItemName(preEnemy.offHandName);
                 enemyOffHandWeaponScript.SetDamage(preEnemy.offHandDamage);
+            }
+            if (preEnemy.amuletName != null)
+            {
+                GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Amulet");
+                GameObject enemyAmulet = Instantiate(amuletPrefab, enemyNeck);
+                AmuletScript enemyAmuletScript = enemyAmulet.GetComponent<AmuletScript>();
+                enemyAmuletScript.itemName = preEnemy.amuletName;
+                enemyAmuletScript.spellDamage = preEnemy.amuletSpellDamage;
             }
             if (preEnemy.coatName != null)
             {
@@ -727,6 +770,13 @@ public class LevelBuilderScript : MonoBehaviour
                     {
                         Debug.LogError("unrecognized weapon type");
                     }
+                    break;
+                case "Amulet":
+                    GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Amulet");
+                    GameObject newAmulet = Instantiate(amuletPrefab, newGroundItems.transform);
+                    AmuletScript amuletScript = newAmulet.GetComponent<AmuletScript>();
+                    amuletScript.itemName = preItem.itemName;
+                    amuletScript.spellDamage = preItem.spellDamage;
                     break;
                 case "Coat":
                     GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");

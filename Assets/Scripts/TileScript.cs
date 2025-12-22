@@ -1,9 +1,9 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.EventSystems;
 
 public class TileScript : MonoBehaviour
 {
-    private InputAction clickAction;
     public GameObject player;
     public PlayerCharacterScript playerScript;
     public GameObject turnLogic;
@@ -71,7 +71,6 @@ public class TileScript : MonoBehaviour
 
     void Start()
     {
-        var playerInput = FindObjectOfType<PlayerInput>();
         player = GameObject.Find("Player");
         playerScript = player.GetComponent<PlayerCharacterScript>();
         turnLogic = GameObject.Find("Turn Logic");
@@ -81,47 +80,29 @@ public class TileScript : MonoBehaviour
         }
         highlight = this.transform.Find("Highlight").gameObject;
         highlightAnimator = highlight.GetComponent<Animator>();
-        clickAction = playerInput.actions.FindAction("Click");
-        clickAction.performed += OnClick;
     }
 
-    void OnDestroy()
+    public void OnTileClicked()
     {
-        if (clickAction != null)
+        if (!isHighlighted)
         {
-            clickAction.performed -= OnClick;
+            return;
         }
-    }
-
-    private void OnClick(InputAction.CallbackContext context)
-    {
-        Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Mouse.current.position.ReadValue());
-        RaycastHit2D hit = Physics2D.Raycast(mousePosition, Vector2.zero);
-        if (hit.collider != null)
+        switch (turnLogicScript.currentGameState)
         {
-            if (hit.collider.gameObject == this.gameObject)
-            {
-                if (!isHighlighted)
+            case TurnLogicScript.GameState.PlayerTurnMove:
+                playerScript.MoveTo(this.transform.position);
+                turnLogicScript.hasMoved = true;
+                break;
+            case TurnLogicScript.GameState.PlayerTurnAttack:
+                GameObject skillUsed = turnLogicScript.skillUsed;
+                if (skillUsed == null)
                 {
                     return;
                 }
-                switch (turnLogicScript.currentGameState)
-                {
-                    case TurnLogicScript.GameState.PlayerTurnMove: 
-                        playerScript.MoveTo(this.transform.position);
-                        turnLogicScript.hasMoved = true;
-                        break;
-                    case TurnLogicScript.GameState.PlayerTurnAttack:
-                        GameObject skillUsed = turnLogicScript.skillUsed;
-                        if (skillUsed == null)
-                        {
-                            return;
-                        }
-                        Skill skillScript = skillUsed.GetComponent<Skill>();
-                        skillScript.UseSkill(this.transform.position, player);
-                        break;
-                }
-            }
+                Skill skillScript = skillUsed.GetComponent<Skill>();
+                skillScript.UseSkill(this.transform.position, player);
+                break;
         }
     }
 }

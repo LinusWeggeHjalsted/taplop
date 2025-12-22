@@ -1,6 +1,5 @@
 - more dev tools
 - level clear conditions
-- write player save
 - better enemy death
     make death a trigger in CurrentHealth set method
     handle cases of enemies dying during their turn for turn logic
@@ -20,7 +19,6 @@
 - stuck tooltip on weapon skill
 - pathing behavior could be improved when no path is found
 - maybe pathing bug in forest 2
-- amulet with spell damage
 - normalize long range knockback and retreat
 - move self-contained initialization to Awake for all scripts
 - make things into singleton instances where applicable to clean up loading everywhere
@@ -40,8 +38,8 @@
 - refactor turn logic
 - display picked up items
 !- display owned salvage
-- open menus should block tiles from being clickable behind
-!- options menu
 - update salvage for all items
 !- clean up debugs
 - redo parsing to split lines to get name and value separated in a more clean way
+- refactor gui overlay to be reusable between level and hub
+!- load specific save

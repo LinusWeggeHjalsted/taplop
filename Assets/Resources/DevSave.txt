@@ -1,6 +1,7 @@
 Info
 playerName Dev
 randomSeed 0
+lastHub TestHub
 turns 0
 deaths 0
 defeatedEnemies 0
@@ -9,6 +10,9 @@ metalSalvage 0
 leatherSalvage 0
 knowledge 0
 utilitySkillSlots 5
+
+Discovered Hubs
+TestHub
 
 Unlocked Skills
 Replenish
@@ -22,6 +26,10 @@ Focus
 Main Hand Weapon
 
 Off Hand Weapon
+
+Amulet
+itemName Dev Amulet
+spellDamage 5
 
 Coat
 itemName Dev Coat
@@ -81,4 +89,6 @@ damage 5
 inventoryPosition 6
 
 Utility Skills
+
+Clone Data
 

@@ -89,11 +89,17 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                         playerScript.SetSkillCooldown(ownSecondSkillName, maxSecondCooldown);
                         playerScript.SetSkillCooldown(ownThirdSkillName, maxThirdCooldown);
                         break;
+                    case "Amulet":
+                        actualOwnItem.transform.parent = playerScript.neck;
+                        break;
                     case "Coat":
                         actualOwnItem.transform.parent = playerScript.body;
                         break;
                     case "Gloves":
                         actualOwnItem.transform.parent = playerScript.hands;
+                        break;
+                    case "Pants":
+                        actualOwnItem.transform.parent = playerScript.legs;
                         break;
                     case "Boots":
                         actualOwnItem.transform.parent = playerScript.feet;
@@ -147,11 +153,17 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                         playerScript.SetSkillCooldown(otherSecondSkillName, maxSecondCooldown);
                         playerScript.SetSkillCooldown(otherThirdSkillName, maxThirdCooldown);
                         break;
+                    case "Amulet":
+                        actualOtherItem.transform.parent = playerScript.neck;
+                        break;
                     case "Coat":
                         actualOtherItem.transform.parent = playerScript.body;
                         break;
                     case "Gloves":
                         actualOtherItem.transform.parent = playerScript.hands;
+                        break;
+                    case "Pants":
+                        actualOtherItem.transform.parent = playerScript.legs;
                         break;
                     case "Boots":
                         actualOtherItem.transform.parent = playerScript.feet;
@@ -216,11 +228,17 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
                             }
                             actualItem.transform.parent = targetHand;
                             break;
+                        case "Amulet":
+                            actualItem.transform.parent = playerScript.neck;
+                            break;
                         case "Coat":
                             actualItem.transform.parent = playerScript.body;
                             break;
                         case "Gloves":
                             actualItem.transform.parent = playerScript.hands;
+                            break;
+                        case "Pants":
+                            actualItem.transform.parent = playerScript.legs;
                             break;
                         case "Boots":
                             actualItem.transform.parent = playerScript.feet;

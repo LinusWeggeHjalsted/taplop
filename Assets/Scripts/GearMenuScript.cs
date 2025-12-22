@@ -8,6 +8,7 @@ public class GearMenuScript : MonoBehaviour
     public GameObject inventoryItemPrefab;
     public Transform mainHandItemSlot;
     public Transform offHandItemSlot;
+    public Transform neckItemSlot;
     public Transform bodyItemSlot;
     public Transform handsItemSlot;
     public Transform legsItemSlot;
@@ -23,6 +24,10 @@ public class GearMenuScript : MonoBehaviour
         if (offHandItemSlot.childCount > 0)
         {
             Destroy(offHandItemSlot.GetChild(0).gameObject);
+        }
+        if (neckItemSlot.childCount > 0)
+        {
+            Destroy(neckItemSlot.GetChild(0).gameObject);
         }
         if (bodyItemSlot.childCount > 0)
         {
@@ -43,6 +48,7 @@ public class GearMenuScript : MonoBehaviour
         // then build inventory items
         GameObject mainHandWeapon = playerScript.mainHandWeapon;
         GameObject offHandWeapon = playerScript.offHandWeapon;
+        GameObject amulet = playerScript.amulet;
         GameObject coat = playerScript.coat;
         GameObject gloves = playerScript.gloves;
         GameObject pants = playerScript.pants;
@@ -66,6 +72,16 @@ public class GearMenuScript : MonoBehaviour
             offHandItemScript.item = offHandWeapon;
             Image offHandItemImage = offHandItem.GetComponent<Image>();
             offHandItemImage.sprite = offHandWeaponSprite;
+        }
+        if (amulet != null)
+        {
+            ItemScript amuletScript = amulet.GetComponent<ItemScript>();
+            Sprite amuletSprite = amuletScript.GetSprite();
+            GameObject amuletItem = Instantiate(inventoryItemPrefab, neckItemSlot);
+            InventoryItemScript amuletItemScript = amuletItem.GetComponent<InventoryItemScript>();
+            amuletItemScript.item = amulet;
+            Image amuletItemImage = amuletItem.GetComponent<Image>();
+            amuletItemImage.sprite = amuletSprite;
         }
         if (coat != null)
         {
@@ -115,14 +131,17 @@ public class GearMenuScript : MonoBehaviour
         playerScript = player.GetComponent<PlayerCharacterScript>();
         inventoryItemPrefab = Resources.Load<GameObject>("Prefabs/Inventory Item");
         Transform gearSlots = this.transform.Find("Gear Slots");
-        Transform mainHand = gearSlots.Find("Main Hand");
-        Transform offHand = gearSlots.Find("Off Hand");
+        Transform weapons = gearSlots.Find("Weapons");
+        Transform mainHand = weapons.Find("Main Hand");
+        Transform offHand = weapons.Find("Off Hand");
+        Transform neck = gearSlots.Find("Neck");
         Transform body = gearSlots.Find("Body");
         Transform hands = gearSlots.Find("Hands");
         Transform legs = gearSlots.Find("Legs");
         Transform feet = gearSlots.Find("Feet");
         mainHandItemSlot = mainHand.GetChild(0);
         offHandItemSlot = offHand.GetChild(0);
+        neckItemSlot = neck.GetChild(0);
         bodyItemSlot = body.GetChild(0);
         handsItemSlot = hands.GetChild(0);
         legsItemSlot = legs.GetChild(0);
@@ -133,6 +152,9 @@ public class GearMenuScript : MonoBehaviour
 
         ItemSlotScript offHandItemSlotScript = offHandItemSlot.GetComponent<ItemSlotScript>();
         offHandItemSlotScript.itemType = "Weapon";
+
+        ItemSlotScript neckItemSlotScript = neckItemSlot.GetComponent<ItemSlotScript>();
+        neckItemSlotScript.itemType = "Amulet";
 
         ItemSlotScript bodyItemSlotScript = bodyItemSlot.GetComponent<ItemSlotScript>();
         bodyItemSlotScript.itemType = "Coat";

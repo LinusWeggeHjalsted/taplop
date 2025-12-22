@@ -11,7 +11,7 @@ Layout
     ..................
     .2.   .3....   
     ...            ...
-    ...            ...
+    ...            .a.
     313            ...
      =
 
@@ -76,4 +76,9 @@ bootsSpeed 1
 utilitySkill Focus
 
 Item Info
+a
+name Hatchet
+type Weapon
+weaponType Axe
+damage 5
 

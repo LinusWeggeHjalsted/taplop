@@ -29,6 +29,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
 
     private Transform _mainHand;
     private Transform _offHand;
+    private Transform _neck;
     private Transform _body;
     private Transform _hands;
     private Transform _legs;
@@ -40,6 +41,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
 
     public Transform mainHand { get { return _mainHand; } }
     public Transform offHand { get { return _offHand; } }
+    public Transform neck { get { return _neck; } }
     public Transform body { get { return _body; } }
     public Transform hands { get { return _hands; } }
     public Transform legs { get { return _legs; } }
@@ -73,6 +75,14 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         {
             if (offHand.childCount == 0) return null;
             return offHand.GetChild(0).gameObject;
+        }
+    }
+    public GameObject amulet
+    {
+        get
+        {
+            if (neck.childCount == 0) return null;
+            return neck.GetChild(0).gameObject;
         }
     }
     public GameObject gloves
@@ -207,6 +217,9 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
             int missionLength = exitScript.missionLength;
             string endHub = exitScript.endHub;
             PlayerDataScript.Instance.BuildDataFromPlayer(this.gameObject);
+#if !UNITY_WEBGL || UNITY_EDITOR
+            PlayerDataScript.Instance.SavePlayerData("Autosave");
+#endif
             GameControllerScript.Instance.StartMission(missionName, missionLength, endHub);
         }
     }
@@ -242,6 +255,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         gearScript = gear.GetComponent<GearScript>();
         _mainHand = gear.transform.Find("Main Hand");
         _offHand = gear.transform.Find("Off Hand");
+        _neck = gear.transform.Find("Neck");
         _body = gear.transform.Find("Body");
         _hands = gear.transform.Find("Hands");
         _legs = gear.transform.Find("Legs");

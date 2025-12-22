@@ -93,6 +93,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 250632577493004264}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &4947431806232210425
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 741525630234971315}
+  m_Layer: 0
+  m_Name: Neck
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &741525630234971315
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4947431806232210425}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 250632577493004264}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &5085265933987628258
 GameObject:
   m_ObjectHideFlags: 0
@@ -221,6 +252,14 @@ MonoBehaviour:
   aggroSprite: {fileID: 0}
   stunSprite: {fileID: 0}
   reflectSprite: {fileID: 0}
+  enchantmentSprites:
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  displayedEnchantments: {fileID: 0}
+  enchantmentRenderer: {fileID: 0}
   currentBuildTemplate: 00000000
   aggroRange: 0
   previousPosition: {x: 0, y: 0, z: 0}
@@ -383,6 +422,7 @@ Transform:
   m_Children:
   - {fileID: 1311259373796609377}
   - {fileID: 8809869612578000080}
+  - {fileID: 741525630234971315}
   - {fileID: 6419926994294753785}
   - {fileID: 7940273440976525132}
   - {fileID: 3158302219673088631}

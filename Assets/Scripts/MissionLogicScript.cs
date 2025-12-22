@@ -90,6 +90,9 @@ public class MissionLogicScript : MonoBehaviour
         {
             GameObject player = level.transform.Find("Player").gameObject;
             PlayerDataScript.Instance.BuildDataFromPlayer(player);
+#if !UNITY_WEBGL || UNITY_EDITOR
+            PlayerDataScript.Instance.SavePlayerData("Autosave");
+#endif
             MonoBehaviour[] allMonoBehaviours = level.GetComponentsInChildren<MonoBehaviour>();
             foreach (MonoBehaviour monoBehavior in allMonoBehaviours)
             {

@@ -415,6 +415,7 @@ MonoBehaviour:
   deaths: 0
   defeatedEnemies: 0
   utilitySkillSlots: 0
+  discoveredHubs: []
   unlockedSkills: []
   utilitySkills: []
 --- !u!1660057539 &9223372036854775807

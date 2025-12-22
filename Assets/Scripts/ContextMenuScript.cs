@@ -40,6 +40,13 @@ public class ContextMenuScript : MonoBehaviour
                 offHandButtonScript.selectedItem = item;
                 StartCoroutine(offHandButtonScript.SetText("Equip to off hand"));
                 break;
+            case "Amulet":
+                GameObject amuletButton = Instantiate(equipButtonPrefab, this.transform);
+                EquipButtonScript amuletButtonScript = amuletButton.GetComponent<EquipButtonScript>();
+                amuletButtonScript.targetTransform = playerScript.neck;
+                amuletButtonScript.selectedItem = item;
+                StartCoroutine(amuletButtonScript.SetText("Equip to neck"));
+                break;
             case "Coat":
                 GameObject coatButton = Instantiate(equipButtonPrefab, this.transform);
                 EquipButtonScript coatButtonScript = coatButton.GetComponent<EquipButtonScript>();

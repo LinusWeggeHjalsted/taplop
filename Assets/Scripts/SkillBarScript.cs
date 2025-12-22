@@ -61,10 +61,7 @@ public class SkillBarScript : MonoBehaviour
         {
             GameObject skillButton = this.transform.GetChild(i).gameObject;
             SkillButtonScript buttonScript = skillButton.GetComponent<SkillButtonScript>();
-            if (buttonScript.skill != null)
-            {
-                buttonScript.DisplayCooldown();
-            }
+            buttonScript.DisplayCooldown();
         }
     }
 

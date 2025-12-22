@@ -5,12 +5,14 @@ public interface PlayerCharacterScript
     bool finishedBuilding { get; }
     Transform mainHand { get; }
     Transform offHand { get; }
+    Transform neck { get; }
     Transform body { get; }
     Transform hands { get; }
     Transform legs { get; }
     Transform feet { get; }
     GameObject mainHandWeapon { get; }
     GameObject offHandWeapon { get; }
+    GameObject amulet { get; }
     GameObject coat { get; }
     GameObject gloves { get; }
     GameObject pants { get; }

@@ -48,6 +48,11 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     {
         if (finishedBuilding && skill != null)
         {
+            // refresh canvas reference if it was destroyed
+            if (canvas == null)
+            {
+                canvas = GameObject.Find("Canvas").transform;
+            }
             string skillName = skillScript.GetSkillName();
             string skillDescription = skillScript.GetDescription() + "\n";
             string skillType = skillScript.GetSkillType() + "\n";
@@ -117,8 +122,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
 
     public void DisplayCooldown()
     {
-
-        if (playerScript.GetSkillCooldown(skillName) > 0)
+        if (skill != null && playerScript.GetSkillCooldown(skillName) > 0)
         {
             if (cooldownOverlay == null)
             {
@@ -133,6 +137,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             if (cooldownOverlay != null)
             {
                 Destroy(cooldownOverlay);
+                cooldownOverlay = null;
             }
         }
     }
@@ -177,6 +182,11 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         if (skillNumber < 3)
         {
             return;
+        }
+        // refresh canvas reference if it was destroyed
+        if (canvas == null)
+        {
+            canvas = GameObject.Find("Canvas").transform;
         }
         this.transform.parent = canvas;
         this.transform.SetAsLastSibling();

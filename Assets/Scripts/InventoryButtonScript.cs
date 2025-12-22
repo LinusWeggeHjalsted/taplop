@@ -16,6 +16,11 @@ public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPoint
 
     public void OnPointerEnter(PointerEventData eventData)
     {
+        // refresh canvas reference if it was destroyed
+        if (canvas == null)
+        {
+            canvas = GameObject.Find("Canvas").transform;
+        }
         Vector3[] buttonCorners = new Vector3[4];
         buttonRectTransform.GetWorldCorners(buttonCorners);
         Vector3 buttonTopLeftPosition = buttonCorners[1];

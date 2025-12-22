@@ -48,6 +48,9 @@ public class ExitButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
     {
         GameObject player = GameObject.Find("Player");
         PlayerDataScript.Instance.BuildDataFromPlayer(player);
+#if !UNITY_WEBGL || UNITY_EDITOR
+        PlayerDataScript.Instance.SavePlayerData("Autosave");
+#endif
         if (string.IsNullOrEmpty(PlayerDataScript.Instance.lastHub))
         {
             GameControllerScript.Instance.MainMenu();

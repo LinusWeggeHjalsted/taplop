@@ -16,9 +16,14 @@ public class GearButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
 
     public void OnPointerEnter(PointerEventData eventData)
     {
+        // refresh canvas reference if it was destroyed
+        if (canvas == null)
+        {
+            canvas = GameObject.Find("Canvas").transform;
+        }
         Vector3[] buttonCorners = new Vector3[4];
         buttonRectTransform.GetWorldCorners(buttonCorners);
-        Vector3 buttonTopLeftPosition = buttonCorners[1]; // to-do - change to top left
+        Vector3 buttonTopLeftPosition = buttonCorners[1];
         Transform tooltipTransform = canvas.Find("Tooltip");
         if (tooltipTransform != null)
         {

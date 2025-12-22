@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
+using UnityEngine.EventSystems;
 using TMPro;
 using System;
 using System.Collections;
@@ -31,13 +32,15 @@ public class TurnLogicScript : MonoBehaviour
     public GameObject skipButton;
     public SkipButtonScript skipButtonScript;
     public Dictionary<Vector3, GameObject> tileLookup = new Dictionary<Vector3, GameObject>();
-    
+
     public GameState currentGameState;
+    private bool isPointerOverUI = false;
     public GameObject skillUsed;
     public bool hasMoved = false;
     public bool hasAttacked = false;
     public bool turnStarted = false;
     public Coroutine playerMoveCoroutine;
+    private InputAction clickAction;
 
     IEnumerator WaitForBuildingBeforeNewGameState()
     {
@@ -88,8 +91,39 @@ public class TurnLogicScript : MonoBehaviour
         skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         skipButton = GameObject.Find("Skip Button");
         skipButtonScript = skipButton.GetComponent<SkipButtonScript>();
+        // subscribe to click action
+        var playerInput = FindObjectOfType<PlayerInput>();
+        clickAction = playerInput.actions.FindAction("Click");
+        clickAction.performed += OnClick;
         // wait for LevelBuilder to finish building
         StartCoroutine(WaitForBuildingBeforeNewGameState());
+    }
+
+    void OnDestroy()
+    {
+        if (clickAction != null)
+        {
+            clickAction.performed -= OnClick;
+        }
+    }
+
+    private void OnClick(InputAction.CallbackContext context)
+    {
+        // don't process clicks if the pointer is over a UI element
+        if (isPointerOverUI)
+        {
+            return;
+        }
+        Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Mouse.current.position.ReadValue());
+        RaycastHit2D hit = Physics2D.Raycast(mousePosition, Vector2.zero);
+        if (hit.collider != null)
+        {
+            TileScript tileScript = hit.collider.GetComponent<TileScript>();
+            if (tileScript != null)
+            {
+                tileScript.OnTileClicked();
+            }
+        }
     }
     
     public void RespawnPlayer()
@@ -231,6 +265,14 @@ public class TurnLogicScript : MonoBehaviour
 
     void Update()
     {
+        if (EventSystem.current.IsPointerOverGameObject())
+        {
+            isPointerOverUI = true;
+        }
+        else
+        {
+            isPointerOverUI = false;
+        }
         switch (currentGameState)
         {
             case GameState.BuildingLevel:
@@ -246,6 +288,9 @@ public class TurnLogicScript : MonoBehaviour
                             Debug.Log("player died, restarting mission");
                             PlayerDataScript.Instance.deaths += 1;
                             PlayerDataScript.Instance.BuildDataFromPlayer(player);
+#if !UNITY_WEBGL || UNITY_EDITOR
+                            PlayerDataScript.Instance.SavePlayerData("Autosave");
+#endif
                             string missionName = MissionLogicScript.Instance.missionName;
                             int missionLength = MissionLogicScript.Instance.missionLength;
                             string endHub = MissionLogicScript.Instance.endHub;
