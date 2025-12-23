@@ -361,7 +361,14 @@ public class PlayerDataScript : MonoBehaviour
                     }
                 }
             }
-            // to-do - parse discovered hubs
+            // parse discovered hubs
+            string[] discoveredHubsBlock = sectionBlocks[1];
+            discoveredHubs = new List<string>();
+            for (int i = 0; i < discoveredHubsBlock.Length; i++)
+            {
+                string hubName = discoveredHubsBlock[i];
+                discoveredHubs.Add(hubName);
+            }
             // parse unlocked skills
             string[] unlockedSkillsBlock = sectionBlocks[2];
             unlockedSkills = new List<string>();
@@ -961,7 +968,132 @@ public class PlayerDataScript : MonoBehaviour
                     }
                 }
             }
-            // to-do - parse clone data
+            // parse clone data
+            string[] cloneDataBlock = sectionBlocks[12];
+            allCloneData = new Dictionary<string, CloneData>();
+            List<string[]> cloneDataItemBlocks = new List<string[]>();
+            List<string> currentCloneSubArray = new List<string>();
+            foreach (string line in cloneDataBlock)
+            {
+                if (line == "")
+                {
+                    if (currentCloneSubArray.Count > 0)
+                    {
+                        cloneDataItemBlocks.Add(currentCloneSubArray.ToArray());
+                        currentCloneSubArray.Clear();
+                    }
+                }
+                else
+                {
+                    currentCloneSubArray.Add(line);
+                }
+            }
+            if (currentCloneSubArray.Count > 0)
+            {
+                cloneDataItemBlocks.Add(currentCloneSubArray.ToArray());
+            }
+            foreach (string[] cloneBlock in cloneDataItemBlocks)
+            {
+                string cloneName = null;
+                CloneData cloneData = new CloneData();
+                cloneData.totalSalvage = new Salvage();
+
+                for (int i = 0; i < cloneBlock.Length; i++)
+                {
+                    string currentLine = cloneBlock[i];
+                    if (currentLine.StartsWith("cloneName "))
+                    {
+                        cloneName = currentLine.Substring("cloneName ".Length);
+                    }
+                    else if (currentLine.StartsWith("wood "))
+                    {
+                        string woodString = currentLine.Substring("wood ".Length);
+                        int woodNumber;
+                        if (Int32.TryParse(woodString, out woodNumber))
+                        {
+                            cloneData.totalSalvage.wood = woodNumber;
+                        }
+                        else
+                        {
+                            Debug.LogError("clone data wood is not a number");
+                        }
+                    }
+                    else if (currentLine.StartsWith("metal "))
+                    {
+                        string metalString = currentLine.Substring("metal ".Length);
+                        int metalNumber;
+                        if (Int32.TryParse(metalString, out metalNumber))
+                        {
+                            cloneData.totalSalvage.metal = metalNumber;
+                        }
+                        else
+                        {
+                            Debug.LogError("clone data metal is not a number");
+                        }
+                    }
+                    else if (currentLine.StartsWith("leather "))
+                    {
+                        string leatherString = currentLine.Substring("leather ".Length);
+                        int leatherNumber;
+                        if (Int32.TryParse(leatherString, out leatherNumber))
+                        {
+                            cloneData.totalSalvage.leather = leatherNumber;
+                        }
+                        else
+                        {
+                            Debug.LogError("clone data leather is not a number");
+                        }
+                    }
+                    else if (currentLine.StartsWith("cloth "))
+                    {
+                        string clothString = currentLine.Substring("cloth ".Length);
+                        int clothNumber;
+                        if (Int32.TryParse(clothString, out clothNumber))
+                        {
+                            cloneData.totalSalvage.cloth = clothNumber;
+                        }
+                        else
+                        {
+                            Debug.LogError("clone data cloth is not a number");
+                        }
+                    }
+                    else if (currentLine.StartsWith("knowledge "))
+                    {
+                        string knowledgeString = currentLine.Substring("knowledge ".Length);
+                        int knowledgeNumber;
+                        if (Int32.TryParse(knowledgeString, out knowledgeNumber))
+                        {
+                            cloneData.totalSalvage.knowledge = knowledgeNumber;
+                        }
+                        else
+                        {
+                            Debug.LogError("clone data knowledge is not a number");
+                        }
+                    }
+                    else if (currentLine.StartsWith("turnsToComplete "))
+                    {
+                        string turnsString = currentLine.Substring("turnsToComplete ".Length);
+                        int turnsNumber;
+                        if (Int32.TryParse(turnsString, out turnsNumber))
+                        {
+                            cloneData.turnsToComplete = turnsNumber;
+                        }
+                        else
+                        {
+                            Debug.LogError("clone data turnsToComplete is not a number");
+                        }
+                    }
+                }
+
+                if (cloneName != null)
+                {
+                    allCloneData[cloneName] = cloneData;
+                }
+                else
+                {
+                    Debug.LogError("clone data entry missing cloneName");
+                }
+            }
         }
     }
 
@@ -1162,8 +1294,26 @@ public class PlayerDataScript : MonoBehaviour
 
         // write clone data section
         saveData += "Clone Data\n";
-        // to-do - implement clone data saving
-        saveData += "\n";
+        foreach (var cloneEntry in allCloneData)
+        {
+            string cloneName = cloneEntry.Key;
+            CloneData cloneData = cloneEntry.Value;
+            saveData += "cloneName " + cloneName + "\n";
+            if (cloneData.totalSalvage != null)
+            {
+                saveData += "wood " + cloneData.totalSalvage.wood.ToString() + "\n";
+                saveData += "metal " + cloneData.totalSalvage.metal.ToString() + "\n";
+                saveData += "leather " + cloneData.totalSalvage.leather.ToString() + "\n";
+                saveData += "cloth " + cloneData.totalSalvage.cloth.ToString() + "\n";
+                saveData += "knowledge " + cloneData.totalSalvage.knowledge.ToString() + "\n";
+            }
+            saveData += "turnsToComplete " + cloneData.turnsToComplete.ToString() + "\n";
+            saveData += "\n";
+        }
+        if (allCloneData.Count == 0)
+        {
+            saveData += "\n";
+        }
 
         // write to file or download
 #if UNITY_WEBGL && !UNITY_EDITOR

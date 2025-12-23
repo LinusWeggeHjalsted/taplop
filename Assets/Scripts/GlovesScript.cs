@@ -45,7 +45,10 @@ public class GlovesScript : MonoBehaviour, ItemScript
     public PlayerDataScript.Salvage SalvageValue()
     {
         PlayerDataScript.Salvage salvage = new PlayerDataScript.Salvage();
-        salvage.leather = armorBonus + damageBonus;
+        int totalValue = armorBonus + damageBonus;
+        int fractionValue = totalValue / 2;
+        salvage.cloth = fractionValue;
+        salvage.leather = totalValue - fractionValue;
         return salvage;
     }
 

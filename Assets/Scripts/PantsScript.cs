@@ -45,7 +45,10 @@ public class PantsScript : MonoBehaviour, ItemScript
     public PlayerDataScript.Salvage SalvageValue()
     {
         PlayerDataScript.Salvage salvage = new PlayerDataScript.Salvage();
-        salvage.leather = armorBonus + pickupRadius;
+        int totalValue = armorBonus + pickupRadius;
+        int fractionValue = totalValue / 2;
+        salvage.leather = fractionValue;
+        salvage.cloth = totalValue - fractionValue;
         return salvage;
     }
 

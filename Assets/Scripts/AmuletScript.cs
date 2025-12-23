@@ -43,7 +43,8 @@ public class AmuletScript : MonoBehaviour, ItemScript
     public PlayerDataScript.Salvage SalvageValue()
     {
         PlayerDataScript.Salvage salvage = new PlayerDataScript.Salvage();
-        salvage.knowledge = spellDamage;
+        int totalValue = spellDamage;
+        salvage.knowledge = totalValue;
         return salvage;
     }
 

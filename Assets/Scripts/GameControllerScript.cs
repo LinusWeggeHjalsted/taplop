@@ -60,7 +60,6 @@ public class GameControllerScript : MonoBehaviour
     public void EnterHub(string hubName)
     {
         // to-do - start loading screen
-        // to-do - add hub to discovered locations in PlayerData
         if (mainMenu != null)
         {
             Destroy(mainMenu);
@@ -79,6 +78,10 @@ public class GameControllerScript : MonoBehaviour
         HubBuilderScript hubBuilderScript = hubBuilder.GetComponent<HubBuilderScript>();
         hubBuilderScript.hubName = hubName;
         PlayerDataScript.Instance.lastHub = hubName;
+        if (!PlayerDataScript.Instance.discoveredHubs.Contains(hubName))
+        {
+            PlayerDataScript.Instance.discoveredHubs.Add(hubName);
+        }
     }
 
     void Awake()

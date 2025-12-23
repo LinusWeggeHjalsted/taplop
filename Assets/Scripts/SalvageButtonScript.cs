@@ -25,6 +25,10 @@ public class SalvageButtonScript : MonoBehaviour
         {
             buildingString += $" {itemSalvage.leather} leather";
         }
+        if (itemSalvage.cloth > 0)
+        {
+            buildingString += $" {itemSalvage.cloth} cloth";
+        }
         if (itemSalvage.knowledge > 0)
         {
             buildingString += $" {itemSalvage.knowledge} knowledge";

@@ -40,7 +40,8 @@ public class SkillTomeScript : MonoBehaviour, ItemScript
     public PlayerDataScript.Salvage SalvageValue()
     {
         PlayerDataScript.Salvage salvage = new PlayerDataScript.Salvage();
-        salvage.knowledge = 1;
+        int totalValue = 5;
+        salvage.knowledge = totalValue;
         return salvage;
     }
 

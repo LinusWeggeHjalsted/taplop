@@ -45,7 +45,10 @@ public class CoatScript : MonoBehaviour, ItemScript
     public PlayerDataScript.Salvage SalvageValue()
     {
         PlayerDataScript.Salvage salvage = new PlayerDataScript.Salvage();
-        salvage.leather = armorBonus + healthBonus;
+        int totalValue = armorBonus + healthBonus;
+        int fractionValue = totalValue / 2;
+        salvage.leather = fractionValue;
+        salvage.cloth = totalValue - fractionValue;
         return salvage;
     }
 

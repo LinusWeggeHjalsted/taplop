@@ -91,7 +91,10 @@ public class AxeScript : MonoBehaviour, WeaponScript, ItemScript
     public PlayerDataScript.Salvage SalvageValue()
     {
         PlayerDataScript.Salvage salvage = new PlayerDataScript.Salvage();
-        salvage.metal = damage;
+        int totalValue = damage;
+        int fractionValue = totalValue / 2;
+        salvage.wood = fractionValue;
+        salvage.metal = totalValue - fractionValue;
         return salvage;
     }
 

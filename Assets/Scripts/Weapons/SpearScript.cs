@@ -91,7 +91,10 @@ public class SpearScript : MonoBehaviour, WeaponScript, ItemScript
     public PlayerDataScript.Salvage SalvageValue()
     {
         PlayerDataScript.Salvage salvage = new PlayerDataScript.Salvage();
-        salvage.wood = damage;
+        int totalValue = damage;
+        int fractionValue = totalValue / 4;
+        salvage.metal = fractionValue;
+        salvage.wood = totalValue - fractionValue;
         return salvage;
     }
 

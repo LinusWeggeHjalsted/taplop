@@ -42,4 +42,7 @@
 !- clean up debugs
 - redo parsing to split lines to get name and value separated in a more clean way
 - refactor gui overlay to be reusable between level and hub
-!- load specific save
+- load save on standalone builds
+- organize scripts and resources into folders
+- clean up unused scripts and assets
+- rename things not following a standard naming scheme
