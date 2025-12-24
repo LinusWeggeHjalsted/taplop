@@ -236,7 +236,9 @@ public class HubBuilderScript : MonoBehaviour
             yield return null;
         }
         BuildHub(ParseHub(LoadHubFile("Hubs/" + hubName)));
-        StartCoroutine(PlayerDataScript.Instance.BuildPlayerFromData(player));
+        yield return StartCoroutine(PlayerDataScript.Instance.BuildPlayerFromData(player));
+        HubPlayerScript hubPlayerScript = player.GetComponent<HubPlayerScript>();
+        hubPlayerScript.CurrentHealth = hubPlayerScript.MaxHealth;
         finishedBuilding = true;
     }
 

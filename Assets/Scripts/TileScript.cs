@@ -24,28 +24,6 @@ public class TileScript : MonoBehaviour
             highlightAnimator.SetBool("isHighlighted", isHighlighted);
         }
     }
-    private bool isRespawn = false;
-    public bool IsRespawn
-    {
-        get
-        {
-            return isRespawn;
-        }
-        set
-        {
-            if (value == true)
-            {
-                GameObject respawnOverlay = new GameObject("Respawn Overlay");
-                respawnOverlay.transform.parent = this.transform;
-                respawnOverlay.transform.localPosition = new Vector3(0, 0, 0);
-                SpriteRenderer respawnRenderer = respawnOverlay.AddComponent<SpriteRenderer>();
-                respawnRenderer.sortingOrder = 1;
-                Sprite respawnSprite = Resources.Load<Sprite>("Respawn");
-                respawnRenderer.sprite = respawnSprite;
-            }
-            isRespawn = value;
-        }
-    }
     private bool isEnd = false;
     public bool IsEnd
     {

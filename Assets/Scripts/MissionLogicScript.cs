@@ -34,6 +34,8 @@ public class MissionLogicScript : MonoBehaviour
     public GameObject level;
     public GameObject missionCompletionScreenPrefab;
     public GameObject missionCompletionScreen;
+    public GameObject defeatScreenPrefab;
+    public GameObject defeatScreen;
     public int totalTurns;
     public PlayerDataScript.Salvage totalSalvage;
     public int totalKills;
@@ -79,6 +81,7 @@ public class MissionLogicScript : MonoBehaviour
         gameControllerScript = gameController.GetComponent<GameControllerScript>();
         levelPrefab = Resources.Load<GameObject>("Prefabs/Level");
         missionCompletionScreenPrefab = Resources.Load<GameObject>("Prefabs/Mission Completion Screen");
+        defeatScreenPrefab = Resources.Load<GameObject>("Prefabs/Defeat Screen");
         currentLevel = 0;
         totalSalvage = new PlayerDataScript.Salvage();
         StartCoroutine(WaitForGameController());
@@ -113,5 +116,16 @@ public class MissionLogicScript : MonoBehaviour
     public void MissionEnd()
     {
         missionCompletionScreen = Instantiate(missionCompletionScreenPrefab, this.transform);
+    }
+
+    public void MissionDefeat()
+    {
+        MonoBehaviour[] allMonoBehaviours = level.GetComponentsInChildren<MonoBehaviour>();
+        foreach (MonoBehaviour monoBehavior in allMonoBehaviours)
+        {
+            monoBehavior.StopAllCoroutines();
+        }
+        DestroyImmediate(level);
+        defeatScreen = Instantiate(defeatScreenPrefab, this.transform);
     }
 }

@@ -623,7 +623,6 @@ public class LevelBuilderScript : MonoBehaviour
             if (parsedLevel.tilePositions[i] == parsedLevel.playerPosition)
             {
                 tileScript.isOccupied = true;
-                tileScript.IsRespawn = true;
             }
             if (parsedLevel.enemyPositions.ContainsKey(parsedLevel.tilePositions[i]))
             {

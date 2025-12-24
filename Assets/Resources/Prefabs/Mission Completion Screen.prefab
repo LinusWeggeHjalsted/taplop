@@ -162,7 +162,7 @@ MonoBehaviour:
   m_FillClockwise: 1
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
-  m_PixelsPerUnitMultiplier: 4
+  m_PixelsPerUnitMultiplier: 1
 --- !u!114 &1483782058742014040
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -322,7 +322,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 366124baca67feaf3b78826a6e7a10b4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  buttonRectTransform: {fileID: 0}
   button: {fileID: 0}
+  canvas: {fileID: 0}
+  tooltipPrefab: {fileID: 0}
+  tooltip: {fileID: 0}
 --- !u!1 &942313374821424190
 GameObject:
   m_ObjectHideFlags: 0
@@ -434,7 +438,7 @@ Camera:
   m_Enabled: 1
   serializedVersion: 2
   m_ClearFlags: 2
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_BackGroundColor: {r: 0.3019608, g: 0.23921569, b: 0.4745098, a: 0}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
   m_FOVAxisMode: 0
@@ -459,7 +463,7 @@ Camera:
   far clip plane: 1000
   field of view: 34
   orthographic: 1
-  orthographic size: 11.71875
+  orthographic size: 11.59375
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -1013,7 +1017,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.CanvasScaler
   m_UiScaleMode: 0
-  m_ReferencePixelsPerUnit: 100
+  m_ReferencePixelsPerUnit: 16
   m_ScaleFactor: 1
   m_ReferenceResolution: {x: 800, y: 600}
   m_ScreenMatchMode: 0
@@ -1261,7 +1265,7 @@ MonoBehaviour:
   m_FillClockwise: 1
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
-  m_PixelsPerUnitMultiplier: 4
+  m_PixelsPerUnitMultiplier: 1
 --- !u!114 &4689769460688413225
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1553,7 +1557,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Continue to hub
+  m_text: Continue to Hub
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
   m_sharedMaterial: {fileID: 3837557773144658646, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}

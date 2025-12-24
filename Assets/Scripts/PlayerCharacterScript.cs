@@ -23,6 +23,8 @@ public interface PlayerCharacterScript
     Transform utilitySkills { get; }
     int utilitySkillSlots { get; set; }
     GameObject[] equippedSkills { get; }
+    int MaxHealth { get; set; }
+    int CurrentHealth { get; set; }
 
     void MoveTo(Vector3 targetPosition);
 

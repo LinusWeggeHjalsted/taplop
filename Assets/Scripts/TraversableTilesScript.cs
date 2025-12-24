@@ -120,14 +120,6 @@ public class TraversableTilesScript : MonoBehaviour
                     {
                         continue;
                     }
-                    // check if tile is the respawn tile, if you're an enemy
-                    if (enemiesScript.enemyLookup.ContainsKey(startPosition))
-                    {
-                        if (tileLookup[neighborPosition].GetComponent<TileScript>().IsRespawn)
-                        {
-                            continue;
-                        }
-                    }
                     // update if neighbor has been checked already
                     if (openSetLookup.ContainsKey(neighborPosition))
                     {

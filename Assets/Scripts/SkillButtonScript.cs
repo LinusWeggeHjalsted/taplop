@@ -54,6 +54,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 canvas = GameObject.Find("Canvas").transform;
             }
             string skillName = skillScript.GetSkillName();
+            string tooltipHeader = $"{skillName} [{skillNumber + 1}]";
             string skillDescription = skillScript.GetDescription() + "\n";
             string skillType = skillScript.GetSkillType() + "\n";
             string skillRange = "";
@@ -106,7 +107,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 tooltipRectTransform.pivot = new Vector2(1f, 0);
                 tooltipRectTransform.position = buttonTopRightPosition;
                 TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-                StartCoroutine(tooltipScript.SetText(skillName, tooltipText));
+                StartCoroutine(tooltipScript.SetText(tooltipHeader, tooltipText));
                 tooltip.SetActive(true);
             }
         }

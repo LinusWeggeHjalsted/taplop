@@ -1,4 +1,6 @@
 using UnityEngine;
+using TMPro;
+using System.Collections;
 
 public class GameControllerScript : MonoBehaviour
 {
@@ -9,6 +11,8 @@ public class GameControllerScript : MonoBehaviour
     public GameObject missionLogic;
     public GameObject hubPrefab;
     public GameObject hub;
+    public GameObject hubSplashScreenPrefab;
+    public GameObject missionSplashScreenPrefab;
 
     public void MainMenu()
     {
@@ -31,7 +35,6 @@ public class GameControllerScript : MonoBehaviour
     public void StartMission(string missionName, int missionLength, string endHub)
     {
         Debug.Log($"starting mission {missionName}");
-        // to-do - start loading screen
         if (mainMenu != null)
         {
             Destroy(mainMenu);
@@ -55,11 +58,30 @@ public class GameControllerScript : MonoBehaviour
         missionLogicScript.missionName = missionName;
         missionLogicScript.missionLength = missionLength;
         missionLogicScript.endHub = endHub;
+        StartCoroutine(DisplayMissionSplashScreen(missionName));
+    }
+
+    IEnumerator DisplayMissionSplashScreen(string missionName)
+    {
+        GameObject level = null;
+        while (level == null)
+        {
+            level = GameObject.Find("Level(Clone)");
+            yield return null;
+        }
+        Transform canvas = level.transform.Find("Canvas");
+        if (canvas != null)
+        {
+            GameObject missionSplashScreen = Instantiate(missionSplashScreenPrefab, canvas);
+            Transform verticalLayout = missionSplashScreen.transform.Find("Vertical Layout");
+            TMP_Text splashText = verticalLayout.Find("Mission Splash Text").GetComponent<TMP_Text>();
+            splashText.text = missionName;
+            Destroy(missionSplashScreen, 1.5f);
+        }
     }
 
     public void EnterHub(string hubName)
     {
-        // to-do - start loading screen
         if (mainMenu != null)
         {
             Destroy(mainMenu);
@@ -82,6 +104,16 @@ public class GameControllerScript : MonoBehaviour
         {
             PlayerDataScript.Instance.discoveredHubs.Add(hubName);
         }
+        // display hub splash screen
+        Transform canvas = hub.transform.Find("Canvas");
+        if (canvas != null)
+        {
+            GameObject hubSplashScreen = Instantiate(hubSplashScreenPrefab, canvas);
+            Transform verticalLayout = hubSplashScreen.transform.Find("Vertical Layout");
+            TMP_Text splashText = verticalLayout.Find("Hub Splash Text").GetComponent<TMP_Text>();
+            splashText.text = hubName;
+            Destroy(hubSplashScreen, 1.5f);
+        }
     }
 
     void Awake()
@@ -102,6 +134,8 @@ public class GameControllerScript : MonoBehaviour
         mainMenuPrefab = Resources.Load<GameObject>("Prefabs/Main Menu");
         missionPrefab = Resources.Load<GameObject>("Prefabs/Mission Logic");
         hubPrefab = Resources.Load<GameObject>("Prefabs/Hub");
+        hubSplashScreenPrefab = Resources.Load<GameObject>("Prefabs/Hub Splash Screen");
+        missionSplashScreenPrefab = Resources.Load<GameObject>("Prefabs/Mission Splash Screen");
 #if UNITY_EDITOR
         GameObject devToolsPrefab = Resources.Load<GameObject>("Prefabs/Dev Tools");
         Instantiate(devToolsPrefab);

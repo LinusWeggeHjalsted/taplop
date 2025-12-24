@@ -8,7 +8,10 @@ public class RestartMissionButtonScript : MonoBehaviour
     public void OnActivate()
     {
         GameObject player = GameObject.Find("Player");
-        PlayerDataScript.Instance.BuildDataFromPlayer(player);
+        if (player != null)
+        {
+            PlayerDataScript.Instance.BuildDataFromPlayer(player);
+        }
 #if !UNITY_WEBGL || UNITY_EDITOR
         PlayerDataScript.Instance.SavePlayerData("Autosave");
 #endif

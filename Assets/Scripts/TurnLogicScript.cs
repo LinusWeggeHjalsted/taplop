@@ -125,22 +125,6 @@ public class TurnLogicScript : MonoBehaviour
             }
         }
     }
-    
-    public void RespawnPlayer()
-    {
-        Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
-        Vector3 respawnPosition = new Vector3();
-        foreach (GameObject tile in tileLookup.Values)
-        {
-            TileScript tileScript = tile.GetComponent<TileScript>();
-            if (tileScript.IsRespawn)
-            {
-                respawnPosition = tile.transform.position;
-            }
-        }
-        playerScript.MoveTo(respawnPosition);
-        playerScript.CurrentHealth = playerScript.MaxHealth;
-    }
 
     public IEnumerator PlayerTurnMove()
     {
@@ -283,18 +267,17 @@ public class TurnLogicScript : MonoBehaviour
                     if (!turnStarted)
                     {
                         turnStarted = true;
+                        // player death
                         if (playerScript.CurrentHealth <= 0)
                         {
-                            Debug.Log("player died, restarting mission");
+                            Debug.Log("player died");
                             PlayerDataScript.Instance.deaths += 1;
                             PlayerDataScript.Instance.BuildDataFromPlayer(player);
 #if !UNITY_WEBGL || UNITY_EDITOR
                             PlayerDataScript.Instance.SavePlayerData("Autosave");
 #endif
-                            string missionName = MissionLogicScript.Instance.missionName;
-                            int missionLength = MissionLogicScript.Instance.missionLength;
-                            string endHub = MissionLogicScript.Instance.endHub;
-                            GameControllerScript.Instance.StartMission(missionName, missionLength, endHub);
+                            MissionLogicScript.Instance.MissionDefeat();
+                            return;
                         }
                         playerScript.ReduceCooldowns(1);
                         playerScript.ReduceEffectDurations(1);

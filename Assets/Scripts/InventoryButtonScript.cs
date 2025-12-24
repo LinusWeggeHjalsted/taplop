@@ -41,7 +41,7 @@ public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPoint
             tooltipRectTransform.pivot = new Vector2(0, 0);
             tooltipRectTransform.position = buttonTopLeftPosition;
             TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-            StartCoroutine(tooltipScript.SetText("Inventory", ""));
+            StartCoroutine(tooltipScript.SetText("Inventory [i]", ""));
         }
     }
 

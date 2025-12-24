@@ -6,7 +6,7 @@ public class PlayerHealthBarScript : MonoBehaviour
 {
     public int stateCount;
     public GameObject player;
-    public EntityScript playerScript;
+    public PlayerCharacterScript playerScript;
     public Image image;
     public Sprite[] healthBarStates;
     public TMP_Text healthText;
@@ -36,7 +36,7 @@ public class PlayerHealthBarScript : MonoBehaviour
     {
         stateCount = 13;
         player = GameObject.Find("Player");
-        playerScript = player.GetComponent<EntityScript>();
+        playerScript = player.GetComponent<PlayerCharacterScript>();
         image = this.gameObject.GetComponent<Image>();
         healthBarStates = new Sprite[stateCount];
         healthBarStates = Resources.LoadAll<Sprite>("PlayerHealthBar");

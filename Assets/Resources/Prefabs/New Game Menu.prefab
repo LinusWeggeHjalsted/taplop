@@ -135,7 +135,7 @@ MonoBehaviour:
   m_CharacterValidation: 4
   m_RegexValue: 
   m_GlobalPointSize: 14
-  m_CharacterLimit: 0
+  m_CharacterLimit: 16
   m_OnEndEdit:
     m_PersistentCalls:
       m_Calls: []
@@ -1201,7 +1201,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Random seed
+  m_text: Random Seed Number
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
   m_sharedMaterial: {fileID: 3837557773144658646, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
@@ -1427,7 +1427,7 @@ MonoBehaviour:
   m_CharacterValidation: 2
   m_RegexValue: 
   m_GlobalPointSize: 14
-  m_CharacterLimit: 0
+  m_CharacterLimit: 16
   m_OnEndEdit:
     m_PersistentCalls:
       m_Calls: []

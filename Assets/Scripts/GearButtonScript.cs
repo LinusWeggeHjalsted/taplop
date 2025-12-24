@@ -41,7 +41,7 @@ public class GearButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
             tooltipRectTransform.pivot = new Vector2(0, 0);
             tooltipRectTransform.position = buttonTopLeftPosition;
             TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-            StartCoroutine(tooltipScript.SetText("Gear", ""));
+            StartCoroutine(tooltipScript.SetText("Gear [o]", ""));
         }
     }
 

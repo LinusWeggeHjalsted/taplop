@@ -41,7 +41,7 @@ public class SkillsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerE
             tooltipRectTransform.pivot = new Vector2(0, 0);
             tooltipRectTransform.position = buttonTopLeftPosition;
             TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-            StartCoroutine(tooltipScript.SetText("Skills", ""));
+            StartCoroutine(tooltipScript.SetText("Skills [p]", ""));
         }
     }
 

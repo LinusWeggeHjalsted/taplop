@@ -14,7 +14,6 @@
 - map
 - base damage stat for balancing with negative damage on enemies
 - enemy tried to use slice without targets in range (Forest 0)
-!- missing health text in hubs
 - ground item animation to grab attention
 - stuck tooltip on weapon skill
 - pathing behavior could be improved when no path is found
@@ -34,15 +33,17 @@
 - still bugginess with skillbar swapping
     in particular stuff still happens when dragging from weapon skills onto utility skills
 - wolf used blink away
-!- death screen
 - refactor turn logic
 - display picked up items
 !- display owned salvage
 - update salvage for all items
-!- clean up debugs
+- clean up debugs
 - redo parsing to split lines to get name and value separated in a more clean way
 - refactor gui overlay to be reusable between level and hub
 - load save on standalone builds
 - organize scripts and resources into folders
 - clean up unused scripts and assets
 - rename things not following a standard naming scheme
+!- rename TestHub
+- possible to use multiple instant cast attacks by pressing hotkeys simultaneously
+    it's kinda fun though

@@ -38,6 +38,8 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
     private int _inventorySize;
     private Transform _utilitySkills;
     private int _utilitySkillSlots;
+    private int _maxHealth;
+    private int _currentHealth;
 
     public Transform mainHand { get { return _mainHand; } }
     public Transform offHand { get { return _offHand; } }
@@ -175,6 +177,48 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
             return skillArray;
         }
     }
+    public int MaxHealth
+    {
+        get
+        {
+            int coatHealth = 0;
+            if (coat != null)
+            {
+                CoatScript coatScript = coat.GetComponent<CoatScript>();
+                coatHealth = coatScript.healthBonus;
+            }
+            return _maxHealth + coatHealth;
+        }
+        set
+        {
+            _maxHealth = value;
+        }
+    }
+    public int CurrentHealth
+    {
+        get
+        {
+            return _currentHealth;
+        }
+        set
+        {
+            if (value > MaxHealth)
+            {
+                _currentHealth = MaxHealth;
+            }
+            else
+            {
+                _currentHealth = value;
+            }
+            // Update player health bar if it exists
+            GameObject playerHealthBar = GameObject.Find("Player Health Bar");
+            if (playerHealthBar != null)
+            {
+                PlayerHealthBarScript playerHealthBarScript = playerHealthBar.GetComponent<PlayerHealthBarScript>();
+                playerHealthBarScript.UpdateHealthBar();
+            }
+        }
+    }
     private int speed = 1;
     public int Speed
     {    
@@ -263,6 +307,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         _inventory = this.transform.Find("Inventory");
         _inventorySize = 24;
         _utilitySkills = this.transform.Find("Utility Skills");
+        _maxHealth = 10;
         StartCoroutine(WaitForGear());
     }
 

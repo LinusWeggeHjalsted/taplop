@@ -39,7 +39,7 @@ public class OptionsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointer
             tooltipRectTransform.pivot = new Vector2(0, 1f);
             tooltipRectTransform.position = buttonBottomLeftPosition;
             TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-            StartCoroutine(tooltipScript.SetText("Options", ""));
+            StartCoroutine(tooltipScript.SetText("Options [esc]", ""));
         }
     }
 
