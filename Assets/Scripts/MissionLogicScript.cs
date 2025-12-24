@@ -99,7 +99,10 @@ public class MissionLogicScript : MonoBehaviour
             MonoBehaviour[] allMonoBehaviours = level.GetComponentsInChildren<MonoBehaviour>();
             foreach (MonoBehaviour monoBehavior in allMonoBehaviours)
             {
-                monoBehavior.StopAllCoroutines();
+                if (monoBehavior != null)
+                {
+                    monoBehavior.StopAllCoroutines();
+                }
             }
             DestroyImmediate(level);
         }
@@ -123,7 +126,10 @@ public class MissionLogicScript : MonoBehaviour
         MonoBehaviour[] allMonoBehaviours = level.GetComponentsInChildren<MonoBehaviour>();
         foreach (MonoBehaviour monoBehavior in allMonoBehaviours)
         {
-            monoBehavior.StopAllCoroutines();
+            if (monoBehavior != null)
+            {
+                monoBehavior.StopAllCoroutines();
+            }
         }
         DestroyImmediate(level);
         defeatScreen = Instantiate(defeatScreenPrefab, this.transform);

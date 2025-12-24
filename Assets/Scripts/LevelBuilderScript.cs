@@ -72,7 +72,6 @@ public class LevelBuilderScript : MonoBehaviour
     public GameObject missionLogic;
     public MissionLogicScript missionLogicScript;
     public GameObject level;
-    public LevelScript levelScript;
     public string levelName;
     public GameObject player;
     public GameObject enemies;
@@ -665,7 +664,7 @@ public class LevelBuilderScript : MonoBehaviour
             Transform enemyFeet = enemyGear.Find("Feet");
             Transform enemyUtilitySkills = newEnemy.transform.Find("Utility Skills");
             newEnemyScript.utilitySkillSlots = 5; // to-do - think about this
-            GameObject mainHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.mainHandWeapon);
+            GameObject mainHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/Items/" + preEnemy.mainHandWeapon);
             if (mainHandWeaponPrefab != null)
             {
                 GameObject enemyMainHandWeapon = Instantiate(mainHandWeaponPrefab, enemyMainHand);
@@ -673,7 +672,7 @@ public class LevelBuilderScript : MonoBehaviour
                 enemyMainHandWeaponScript.SetItemName(preEnemy.mainHandName);
                 enemyMainHandWeaponScript.SetDamage(preEnemy.mainHandDamage);
             }
-            GameObject offHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/" + preEnemy.offHandWeapon);
+            GameObject offHandWeaponPrefab = Resources.Load<GameObject>("Prefabs/Items/" + preEnemy.offHandWeapon);
             if (offHandWeaponPrefab != null)
             {
                 GameObject enemyOffHandWeapon = Instantiate(offHandWeaponPrefab, enemyOffHand);
@@ -683,7 +682,7 @@ public class LevelBuilderScript : MonoBehaviour
             }
             if (preEnemy.amuletName != null)
             {
-                GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Amulet");
+                GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Items/Amulet");
                 GameObject enemyAmulet = Instantiate(amuletPrefab, enemyNeck);
                 AmuletScript enemyAmuletScript = enemyAmulet.GetComponent<AmuletScript>();
                 enemyAmuletScript.itemName = preEnemy.amuletName;
@@ -691,7 +690,7 @@ public class LevelBuilderScript : MonoBehaviour
             }
             if (preEnemy.coatName != null)
             {
-                GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");
+                GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Items/Coat");
                 GameObject enemyCoat = Instantiate(coatPrefab, enemyBody);
                 CoatScript enemyCoatScript = enemyCoat.GetComponent<CoatScript>();
                 enemyCoatScript.itemName = preEnemy.coatName;
@@ -700,7 +699,7 @@ public class LevelBuilderScript : MonoBehaviour
             }
             if (preEnemy.glovesName != null)
             {
-                GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Gloves");
+                GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Items/Gloves");
                 GameObject enemyGloves = Instantiate(glovesPrefab, enemyHands);
                 GlovesScript enemyGlovesScript = enemyGloves.GetComponent<GlovesScript>();
                 enemyGlovesScript.itemName = preEnemy.glovesName;
@@ -709,7 +708,7 @@ public class LevelBuilderScript : MonoBehaviour
             }
             if (preEnemy.pantsName != null)
             {
-                GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Pants");
+                GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Items/Pants");
                 GameObject enemyPants = Instantiate(pantsPrefab, enemyLegs);
                 PantsScript enemyPantsScript = enemyPants.GetComponent<PantsScript>();
                 enemyPantsScript.itemName = preEnemy.pantsName;
@@ -718,7 +717,7 @@ public class LevelBuilderScript : MonoBehaviour
             }
             if (preEnemy.bootsName != null)
             {
-                GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");
+                GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Items/Boots");
                 GameObject enemyBoots = Instantiate(bootsPrefab, enemyFeet);
                 BootsScript enemyBootsScript = enemyBoots.GetComponent<BootsScript>();
                 enemyBootsScript.itemName = preEnemy.bootsName;
@@ -728,7 +727,7 @@ public class LevelBuilderScript : MonoBehaviour
             for (int i = 0; i < preEnemy.utilitySkills.Count; i++)
             {
                 string utilitySkill = preEnemy.utilitySkills[i];
-                GameObject utilitySkillPrefab = Resources.Load<GameObject>("Prefabs/" + utilitySkill);
+                GameObject utilitySkillPrefab = Resources.Load<GameObject>("Prefabs/Skills/" + utilitySkill);
                 if (utilitySkillPrefab != null)
                 {
                     GameObject skillObject = Instantiate(utilitySkillPrefab, enemyUtilitySkills);
@@ -757,7 +756,7 @@ public class LevelBuilderScript : MonoBehaviour
             switch (preItem.itemType)
             {
                 case "Weapon":
-                    GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/" + preItem.weaponType);
+                    GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/Items/" + preItem.weaponType);
                     if (weaponPrefab != null)
                     {
                         GameObject newWeapon = Instantiate(weaponPrefab, newGroundItems.transform);
@@ -771,14 +770,14 @@ public class LevelBuilderScript : MonoBehaviour
                     }
                     break;
                 case "Amulet":
-                    GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Amulet");
+                    GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Items/Amulet");
                     GameObject newAmulet = Instantiate(amuletPrefab, newGroundItems.transform);
                     AmuletScript amuletScript = newAmulet.GetComponent<AmuletScript>();
                     amuletScript.itemName = preItem.itemName;
                     amuletScript.spellDamage = preItem.spellDamage;
                     break;
                 case "Coat":
-                    GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");
+                    GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Items/Coat");
                     GameObject newCoat = Instantiate(coatPrefab, newGroundItems.transform);
                     CoatScript coatScript = newCoat.GetComponent<CoatScript>();
                     coatScript.itemName = preItem.itemName;
@@ -786,7 +785,7 @@ public class LevelBuilderScript : MonoBehaviour
                     coatScript.healthBonus = preItem.health;
                     break;
                 case "Gloves":
-                    GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Gloves");
+                    GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Items/Gloves");
                     GameObject newGloves = Instantiate(glovesPrefab, newGroundItems.transform);
                     GlovesScript glovesScript = newGloves.GetComponent<GlovesScript>();
                     glovesScript.itemName = preItem.itemName;
@@ -794,7 +793,7 @@ public class LevelBuilderScript : MonoBehaviour
                     glovesScript.damageBonus = preItem.damage;
                     break;
                 case "Pants":
-                    GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Pants");
+                    GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Items/Pants");
                     GameObject newPants = Instantiate(pantsPrefab, newGroundItems.transform);
                     PantsScript pantsScript = newPants.GetComponent<PantsScript>();
                     pantsScript.itemName = preItem.itemName;
@@ -802,7 +801,7 @@ public class LevelBuilderScript : MonoBehaviour
                     pantsScript.pickupRadius = preItem.pickupRadius;
                     break;
                 case "Boots":
-                    GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");
+                    GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Items/Boots");
                     GameObject newBoots = Instantiate(bootsPrefab, newGroundItems.transform);
                     BootsScript bootsScript = newBoots.GetComponent<BootsScript>();
                     bootsScript.itemName = preItem.itemName;

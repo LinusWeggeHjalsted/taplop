@@ -1093,7 +1093,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 int skillIndex = randomIndex - equippedGear.Count;
                 GameObject skillDrop = equippedUtilitySkills[skillIndex];
                 Skill skillScript = skillDrop.GetComponent<Skill>();
-                GameObject skillTomePrefab = Resources.Load<GameObject>("Prefabs/Skill Tome");
+                GameObject skillTomePrefab = Resources.Load<GameObject>("Prefabs/Items/Skill Tome");
                 GameObject tomeDrop = Instantiate(skillTomePrefab, groundItems.transform);
                 SkillTomeScript tomeScript = tomeDrop.GetComponent<SkillTomeScript>();
                 tomeScript.skillName = skillScript.GetSkillName();

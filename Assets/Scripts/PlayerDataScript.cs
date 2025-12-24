@@ -138,6 +138,87 @@ public class PlayerDataScript : MonoBehaviour
     {
     }
 
+    // validation helper methods
+    private bool ValidateSaveFileBasics(string fileText)
+    {
+        GlobalConstantsScript constants = GlobalConstantsScript.Instance;
+
+        // file size limit
+        if (fileText.Length > constants.maxSaveFileSize)
+        {
+            Debug.LogError("Save file too large: " + fileText.Length + " bytes (max: " + constants.maxSaveFileSize + ")");
+            return false;
+        }
+
+        // validate all required sections exist
+        string[] requiredSections = new string[] {
+            "Info", "Discovered Hubs", "Unlocked Skills",
+            "Main Hand Weapon", "Off Hand Weapon", "Amulet",
+            "Coat", "Gloves", "Pants", "Boots",
+            "Inventory", "Utility Skills", "Clone Data"
+        };
+
+        foreach (string section in requiredSections)
+        {
+            if (!fileText.Contains(section + "\n"))
+            {
+                Debug.LogError("Missing required section: " + section);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool ValidateIntInRange(int value, int min, int max, string fieldName)
+    {
+        if (value < min || value > max)
+        {
+            Debug.LogError(fieldName + " out of valid range (" + min + "-" + max + "): " + value);
+            return false;
+        }
+        return true;
+    }
+
+    private bool ValidateString(string value, int maxLength, string fieldName)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return true; // allow empty for optional fields
+        }
+
+        if (value.Length > maxLength)
+        {
+            Debug.LogError(fieldName + " exceeds max length of " + maxLength + ": " + value.Length);
+            return false;
+        }
+
+        // check for invalid characters
+        if (value.Contains("\0") || value.Contains("\r"))
+        {
+            Debug.LogError(fieldName + " contains invalid characters");
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool ValidateResourceName(string resourceName, string[] whitelist, string fieldName)
+    {
+        if (string.IsNullOrEmpty(resourceName))
+        {
+            return true; // allow empty for optional fields
+        }
+
+        if (System.Array.IndexOf(whitelist, resourceName) < 0)
+        {
+            Debug.LogError(fieldName + " contains invalid resource name: " + resourceName);
+            return false;
+        }
+
+        return true;
+    }
+
     public void LoadPlayerData(string savePath)
     {
         string fileText = null;
@@ -176,6 +257,13 @@ public class PlayerDataScript : MonoBehaviour
     {
         if (fileText != null)
         {
+            // validate basic save file structure
+            if (!ValidateSaveFileBasics(fileText))
+            {
+                Debug.LogError("Save file failed basic validation");
+                return;
+            }
+
             string[] fileLines = fileText.Split('\n');
             string[] sectionHeaders = new string[] {
                 "Info",
@@ -231,6 +319,7 @@ public class PlayerDataScript : MonoBehaviour
             }
             
             // parse info
+            GlobalConstantsScript constants = GlobalConstantsScript.Instance;
             string[] infoBlock = sectionBlocks[0];
             for (int i = 0; i < infoBlock.Length; i++)
             {
@@ -238,6 +327,10 @@ public class PlayerDataScript : MonoBehaviour
                 if (currentLine.StartsWith("playerName "))
                 {
                     playerName = currentLine.Substring("playerName ".Length);
+                    if (!ValidateString(playerName, constants.maxPlayerNameLength, "playerName"))
+                    {
+                        return;
+                    }
                 }
                 else if (currentLine.StartsWith("randomSeed "))
                 {
@@ -245,16 +338,25 @@ public class PlayerDataScript : MonoBehaviour
                     int randomSeedNumber;
                     if (Int32.TryParse(randomSeedString, out randomSeedNumber))
                     {
+                        if (!ValidateIntInRange(randomSeedNumber, constants.minRandomSeed, constants.maxRandomSeed, "randomSeed"))
+                        {
+                            return;
+                        }
                         randomSeed = randomSeedNumber;
                     }
                     else
                     {
                         Debug.LogError("randomSeed is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("lastHub "))
                 {
                     lastHub = currentLine.Substring("lastHub ".Length);
+                    if (!ValidateString(lastHub, constants.maxStringLength, "lastHub"))
+                    {
+                        return;
+                    }
                 }
                 else if (currentLine.StartsWith("turns "))
                 {
@@ -262,11 +364,16 @@ public class PlayerDataScript : MonoBehaviour
                     int turnsNumber;
                     if (Int32.TryParse(turnsString, out turnsNumber))
                     {
+                        if (!ValidateIntInRange(turnsNumber, constants.minTurns, constants.maxTurns, "turns"))
+                        {
+                            return;
+                        }
                         turns = turnsNumber;
                     }
                     else
                     {
                         Debug.LogError("turns is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("deaths "))
@@ -275,11 +382,16 @@ public class PlayerDataScript : MonoBehaviour
                     int deathsNumber;
                     if (Int32.TryParse(deathsString, out deathsNumber))
                     {
+                        if (!ValidateIntInRange(deathsNumber, constants.minDeaths, constants.maxDeaths, "deaths"))
+                        {
+                            return;
+                        }
                         deaths = deathsNumber;
                     }
                     else
                     {
                         Debug.LogError("deaths is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("defeatedEnemies "))
@@ -288,11 +400,16 @@ public class PlayerDataScript : MonoBehaviour
                     int defeatedEnemiesNumber;
                     if (Int32.TryParse(defeatedEnemiesString, out defeatedEnemiesNumber))
                     {
+                        if (!ValidateIntInRange(defeatedEnemiesNumber, constants.minDefeatedEnemies, constants.maxDefeatedEnemies, "defeatedEnemies"))
+                        {
+                            return;
+                        }
                         defeatedEnemies = defeatedEnemiesNumber;
                     }
                     else
                     {
                         Debug.LogError("defeatedEnemies is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("woodSalvage "))
@@ -301,11 +418,16 @@ public class PlayerDataScript : MonoBehaviour
                     int woodSalvageNumber;
                     if (Int32.TryParse(woodSalvageString, out woodSalvageNumber))
                     {
+                        if (!ValidateIntInRange(woodSalvageNumber, constants.minSalvage, constants.maxSalvage, "woodSalvage"))
+                        {
+                            return;
+                        }
                         collectedSalvage.wood = woodSalvageNumber;
                     }
                     else
                     {
                         Debug.LogError("woodSalvage is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("metalSalvage "))
@@ -314,11 +436,16 @@ public class PlayerDataScript : MonoBehaviour
                     int metalSalvageNumber;
                     if (Int32.TryParse(metalSalvageString, out metalSalvageNumber))
                     {
+                        if (!ValidateIntInRange(metalSalvageNumber, constants.minSalvage, constants.maxSalvage, "metalSalvage"))
+                        {
+                            return;
+                        }
                         collectedSalvage.metal = metalSalvageNumber;
                     }
                     else
                     {
                         Debug.LogError("metalSalvage is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("leatherSalvage "))
@@ -327,11 +454,16 @@ public class PlayerDataScript : MonoBehaviour
                     int leatherSalvageNumber;
                     if (Int32.TryParse(leatherSalvageString, out leatherSalvageNumber))
                     {
+                        if (!ValidateIntInRange(leatherSalvageNumber, constants.minSalvage, constants.maxSalvage, "leatherSalvage"))
+                        {
+                            return;
+                        }
                         collectedSalvage.leather = leatherSalvageNumber;
                     }
                     else
                     {
                         Debug.LogError("leatherSalvage is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("knowledge "))
@@ -340,11 +472,16 @@ public class PlayerDataScript : MonoBehaviour
                     int knowledgeNumber;
                     if (Int32.TryParse(knowledgeString, out knowledgeNumber))
                     {
+                        if (!ValidateIntInRange(knowledgeNumber, constants.minSalvage, constants.maxSalvage, "knowledge"))
+                        {
+                            return;
+                        }
                         collectedSalvage.knowledge = knowledgeNumber;
                     }
                     else
                     {
                         Debug.LogError("knowledge is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("utilitySkillSlots "))
@@ -353,28 +490,51 @@ public class PlayerDataScript : MonoBehaviour
                     int utilitySkillSlotsNumber;
                     if (Int32.TryParse(utilitySkillSlotsString, out utilitySkillSlotsNumber))
                     {
+                        if (!ValidateIntInRange(utilitySkillSlotsNumber, constants.minUtilitySkillSlots, constants.maxUtilitySkillSlots, "utilitySkillSlots"))
+                        {
+                            return;
+                        }
                         utilitySkillSlots = utilitySkillSlotsNumber;
                     }
                     else
                     {
                         Debug.LogError("utilitySkillSlots is not a number");
+                        return;
                     }
                 }
             }
             // parse discovered hubs
             string[] discoveredHubsBlock = sectionBlocks[1];
+            if (discoveredHubsBlock.Length > constants.maxDiscoveredHubs)
+            {
+                Debug.LogError("Too many discovered hubs: " + discoveredHubsBlock.Length + " (max: " + constants.maxDiscoveredHubs + ")");
+                return;
+            }
             discoveredHubs = new List<string>();
             for (int i = 0; i < discoveredHubsBlock.Length; i++)
             {
                 string hubName = discoveredHubsBlock[i];
+                if (!ValidateString(hubName, constants.maxStringLength, "hubName"))
+                {
+                    return;
+                }
                 discoveredHubs.Add(hubName);
             }
             // parse unlocked skills
             string[] unlockedSkillsBlock = sectionBlocks[2];
+            if (unlockedSkillsBlock.Length > constants.maxUnlockedSkills)
+            {
+                Debug.LogError("Too many unlocked skills: " + unlockedSkillsBlock.Length + " (max: " + constants.maxUnlockedSkills + ")");
+                return;
+            }
             unlockedSkills = new List<string>();
             for (int i = 0; i < unlockedSkillsBlock.Length; i++)
             {
                 string skillName = unlockedSkillsBlock[i];
+                if (!ValidateResourceName(skillName, constants.validSkillNames, "skillName"))
+                {
+                    return;
+                }
                 unlockedSkills.Add(skillName);
             }
             // parse main hand weapon
@@ -386,10 +546,18 @@ public class PlayerDataScript : MonoBehaviour
                 if (currentLine.StartsWith("itemName "))
                 {
                     mainHandWeapon.itemName = currentLine.Substring("itemName ".Length);
+                    if (!ValidateString(mainHandWeapon.itemName, constants.maxStringLength, "main hand itemName"))
+                    {
+                        return;
+                    }
                 }
                 else if (currentLine.StartsWith("weaponType "))
                 {
                     mainHandWeapon.weaponType = currentLine.Substring("weaponType ".Length);
+                    if (!ValidateResourceName(mainHandWeapon.weaponType, constants.validWeaponTypes, "main hand weaponType"))
+                    {
+                        return;
+                    }
                 }
                 else if (currentLine.StartsWith("damage "))
                 {
@@ -397,11 +565,16 @@ public class PlayerDataScript : MonoBehaviour
                     int damageNumber;
                     if (Int32.TryParse(damageString, out damageNumber))
                     {
+                        if (!ValidateIntInRange(damageNumber, constants.minWeaponDamage, constants.maxWeaponDamage, "main hand damage"))
+                        {
+                            return;
+                        }
                         mainHandWeapon.damage = damageNumber;
                     }
                     else
                     {
                         Debug.LogError("main hand damage is not a number");
+                        return;
                     }
                 }
             }
@@ -414,10 +587,18 @@ public class PlayerDataScript : MonoBehaviour
                 if (currentLine.StartsWith("itemName "))
                 {
                     offHandWeapon.itemName = currentLine.Substring("itemName ".Length);
+                    if (!ValidateString(offHandWeapon.itemName, constants.maxStringLength, "off hand itemName"))
+                    {
+                        return;
+                    }
                 }
                 else if (currentLine.StartsWith("weaponType "))
                 {
                     offHandWeapon.weaponType = currentLine.Substring("weaponType ".Length);
+                    if (!ValidateResourceName(offHandWeapon.weaponType, constants.validWeaponTypes, "off hand weaponType"))
+                    {
+                        return;
+                    }
                 }
                 else if (currentLine.StartsWith("damage "))
                 {
@@ -425,11 +606,16 @@ public class PlayerDataScript : MonoBehaviour
                     int damageNumber;
                     if (Int32.TryParse(damageString, out damageNumber))
                     {
+                        if (!ValidateIntInRange(damageNumber, constants.minWeaponDamage, constants.maxWeaponDamage, "off hand damage"))
+                        {
+                            return;
+                        }
                         offHandWeapon.damage = damageNumber;
                     }
                     else
                     {
                         Debug.LogError("off hand damage is not a number");
+                        return;
                     }
                 }
             }
@@ -442,6 +628,10 @@ public class PlayerDataScript : MonoBehaviour
                 if (currentLine.StartsWith("itemName "))
                 {
                     amulet.itemName = currentLine.Substring("itemName ".Length);
+                    if (!ValidateString(amulet.itemName, constants.maxStringLength, "amulet itemName"))
+                    {
+                        return;
+                    }
                 }
                 else if (currentLine.StartsWith("spellDamage "))
                 {
@@ -449,11 +639,16 @@ public class PlayerDataScript : MonoBehaviour
                     int spellDamageNumber;
                     if (Int32.TryParse(spellDamageString, out spellDamageNumber))
                     {
+                        if (!ValidateIntInRange(spellDamageNumber, constants.minSpellDamage, constants.maxSpellDamage, "amulet spellDamage"))
+                        {
+                            return;
+                        }
                         amulet.spellDamage = spellDamageNumber;
                     }
                     else
                     {
                         Debug.LogError("amulet spellDamage is not a number");
+                        return;
                     }
                 }
             }
@@ -466,6 +661,10 @@ public class PlayerDataScript : MonoBehaviour
                 if (currentLine.StartsWith("itemName "))
                 {
                     coat.itemName = currentLine.Substring("itemName ".Length);
+                    if (!ValidateString(coat.itemName, constants.maxStringLength, "coat itemName"))
+                    {
+                        return;
+                    }
                 }
                 else if (currentLine.StartsWith("armor "))
                 {
@@ -473,11 +672,16 @@ public class PlayerDataScript : MonoBehaviour
                     int armorNumber;
                     if (Int32.TryParse(armorString, out armorNumber))
                     {
+                        if (!ValidateIntInRange(armorNumber, constants.minArmor, constants.maxArmor, "coat armor"))
+                        {
+                            return;
+                        }
                         coat.armor = armorNumber;
                     }
                     else
                     {
                         Debug.LogError("coat armor is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("health "))
@@ -486,11 +690,16 @@ public class PlayerDataScript : MonoBehaviour
                     int healthNumber;
                     if (Int32.TryParse(healthString, out healthNumber))
                     {
+                        if (!ValidateIntInRange(healthNumber, constants.minHealthBonus, constants.maxHealthBonus, "coat health"))
+                        {
+                            return;
+                        }
                         coat.health = healthNumber;
                     }
                     else
                     {
                         Debug.LogError("coat health is not a number");
+                        return;
                     }
                 }
             }
@@ -503,6 +712,10 @@ public class PlayerDataScript : MonoBehaviour
                 if (currentLine.StartsWith("itemName "))
                 {
                     gloves.itemName = currentLine.Substring("itemName ".Length);
+                    if (!ValidateString(gloves.itemName, constants.maxStringLength, "gloves itemName"))
+                    {
+                        return;
+                    }
                 }
                 else if (currentLine.StartsWith("armor "))
                 {
@@ -510,11 +723,16 @@ public class PlayerDataScript : MonoBehaviour
                     int armorNumber;
                     if (Int32.TryParse(armorString, out armorNumber))
                     {
+                        if (!ValidateIntInRange(armorNumber, constants.minArmor, constants.maxArmor, "gloves armor"))
+                        {
+                            return;
+                        }
                         gloves.armor = armorNumber;
                     }
                     else
                     {
                         Debug.LogError("gloves armor is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("damage "))
@@ -523,11 +741,16 @@ public class PlayerDataScript : MonoBehaviour
                     int damageNumber;
                     if (Int32.TryParse(damageString, out damageNumber))
                     {
+                        if (!ValidateIntInRange(damageNumber, constants.minDamageBonus, constants.maxDamageBonus, "gloves damage"))
+                        {
+                            return;
+                        }
                         gloves.damage = damageNumber;
                     }
                     else
                     {
                         Debug.LogError("gloves damage is not a number");
+                        return;
                     }
                 }
             }
@@ -540,6 +763,10 @@ public class PlayerDataScript : MonoBehaviour
                 if (currentLine.StartsWith("itemName "))
                 {
                     pants.itemName = currentLine.Substring("itemName ".Length);
+                    if (!ValidateString(pants.itemName, constants.maxStringLength, "pants itemName"))
+                    {
+                        return;
+                    }
                 }
                 else if (currentLine.StartsWith("armor "))
                 {
@@ -547,11 +774,16 @@ public class PlayerDataScript : MonoBehaviour
                     int armorNumber;
                     if (Int32.TryParse(armorString, out armorNumber))
                     {
+                        if (!ValidateIntInRange(armorNumber, constants.minArmor, constants.maxArmor, "pants armor"))
+                        {
+                            return;
+                        }
                         pants.armor = armorNumber;
                     }
                     else
                     {
                         Debug.LogError("pants armor is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("pickupRadius "))
@@ -560,11 +792,16 @@ public class PlayerDataScript : MonoBehaviour
                     int pickupRadiusNumber;
                     if (Int32.TryParse(pickupRadiusString, out pickupRadiusNumber))
                     {
+                        if (!ValidateIntInRange(pickupRadiusNumber, constants.minPickupRadius, constants.maxPickupRadius, "pants pickupRadius"))
+                        {
+                            return;
+                        }
                         pants.pickupRadius = pickupRadiusNumber;
                     }
                     else
                     {
                         Debug.LogError("pants pickupRadius is not a number");
+                        return;
                     }
                 }
             }
@@ -577,6 +814,10 @@ public class PlayerDataScript : MonoBehaviour
                 if (currentLine.StartsWith("itemName "))
                 {
                     boots.itemName = currentLine.Substring("itemName ".Length);
+                    if (!ValidateString(boots.itemName, constants.maxStringLength, "boots itemName"))
+                    {
+                        return;
+                    }
                 }
                 else if (currentLine.StartsWith("armor "))
                 {
@@ -584,11 +825,16 @@ public class PlayerDataScript : MonoBehaviour
                     int armorNumber;
                     if (Int32.TryParse(armorString, out armorNumber))
                     {
+                        if (!ValidateIntInRange(armorNumber, constants.minArmor, constants.maxArmor, "boots armor"))
+                        {
+                            return;
+                        }
                         boots.armor = armorNumber;
                     }
                     else
                     {
                         Debug.LogError("boots armor is not a number");
+                        return;
                     }
                 }
                 else if (currentLine.StartsWith("speed "))
@@ -597,11 +843,16 @@ public class PlayerDataScript : MonoBehaviour
                     int speedNumber;
                     if (Int32.TryParse(speedString, out speedNumber))
                     {
+                        if (!ValidateIntInRange(speedNumber, constants.minSpeedBonus, constants.maxSpeedBonus, "boots speed"))
+                        {
+                            return;
+                        }
                         boots.speed = speedNumber;
                     }
                     else
                     {
                         Debug.LogError("boots speed is not a number");
+                        return;
                     }
                 }
             }
@@ -626,6 +877,11 @@ public class PlayerDataScript : MonoBehaviour
             {
                 inventoryItemBlocks.Add(currentSubArray.ToArray());
             }
+            if (inventoryItemBlocks.Count > constants.maxInventorySize)
+            {
+                Debug.LogError("Too many inventory items: " + inventoryItemBlocks.Count + " (max: " + constants.maxInventorySize + ")");
+                return;
+            }
             foreach (string[] itemBlock in inventoryItemBlocks)
             {
                 // first line should define itemType
@@ -633,6 +889,10 @@ public class PlayerDataScript : MonoBehaviour
                 if (firstLine.StartsWith("itemType "))
                 {
                     string itemType = firstLine.Substring("itemType ".Length);
+                    if (!ValidateResourceName(itemType, constants.validItemTypes, "itemType"))
+                    {
+                        return;
+                    }
                     switch (itemType)
                     {
                         case "Weapon":
@@ -643,10 +903,18 @@ public class PlayerDataScript : MonoBehaviour
                                 if (currentLine.StartsWith("itemName "))
                                 {
                                     inventoryWeapon.itemName = currentLine.Substring("itemName ".Length);
+                                    if (!ValidateString(inventoryWeapon.itemName, constants.maxStringLength, "inventory weapon itemName"))
+                                    {
+                                        return;
+                                    }
                                 }
                                 else if (currentLine.StartsWith("weaponType "))
                                 {
                                     inventoryWeapon.weaponType = currentLine.Substring("weaponType ".Length);
+                                    if (!ValidateResourceName(inventoryWeapon.weaponType, constants.validWeaponTypes, "inventory weapon weaponType"))
+                                    {
+                                        return;
+                                    }
                                 }
                                 else if (currentLine.StartsWith("damage "))
                                 {
@@ -654,11 +922,16 @@ public class PlayerDataScript : MonoBehaviour
                                     int damageNumber;
                                     if (Int32.TryParse(damageString, out damageNumber))
                                     {
+                                        if (!ValidateIntInRange(damageNumber, constants.minWeaponDamage, constants.maxWeaponDamage, "inventory weapon damage"))
+                                        {
+                                            return;
+                                        }
                                         inventoryWeapon.damage = damageNumber;
                                     }
                                     else
                                     {
                                         Debug.LogError("inventory weapon damage is not a number");
+                                        return;
                                     }
                                 }
                                 else if (currentLine.StartsWith("inventoryPosition "))
@@ -667,11 +940,16 @@ public class PlayerDataScript : MonoBehaviour
                                     int inventoryPositionNumber;
                                     if (Int32.TryParse(inventoryPositionString, out inventoryPositionNumber))
                                     {
+                                        if (!ValidateIntInRange(inventoryPositionNumber, constants.minInventoryPosition, constants.maxInventoryPosition, "inventory weapon inventoryPosition"))
+                                        {
+                                            return;
+                                        }
                                         inventoryWeapon.inventoryPosition = inventoryPositionNumber;
                                     }
                                     else
                                     {
                                         Debug.LogError("inventory weapon inventoryPosition is not a number");
+                                        return;
                                     }
                                 }
                             }
@@ -919,10 +1197,18 @@ public class PlayerDataScript : MonoBehaviour
                                 if (currentLine.StartsWith("itemName "))
                                 {
                                     inventoryTome.itemName = currentLine.Substring("itemName ".Length);
+                                    if (!ValidateString(inventoryTome.itemName, constants.maxStringLength, "inventory tome itemName"))
+                                    {
+                                        return;
+                                    }
                                 }
                                 else if (currentLine.StartsWith("skillName "))
                                 {
                                     inventoryTome.skillName = currentLine.Substring("skillName ".Length);
+                                    if (!ValidateResourceName(inventoryTome.skillName, constants.validSkillNames, "inventory tome skillName"))
+                                    {
+                                        return;
+                                    }
                                 }
                                 else if (currentLine.StartsWith("inventoryPosition "))
                                 {
@@ -930,11 +1216,16 @@ public class PlayerDataScript : MonoBehaviour
                                     int inventoryPositionNumber;
                                     if (Int32.TryParse(inventoryPositionString, out inventoryPositionNumber))
                                     {
+                                        if (!ValidateIntInRange(inventoryPositionNumber, constants.minInventoryPosition, constants.maxInventoryPosition, "inventory tome inventoryPosition"))
+                                        {
+                                            return;
+                                        }
                                         inventoryTome.inventoryPosition = inventoryPositionNumber;
                                     }
                                     else
                                     {
                                         Debug.LogError("inventory tome inventoryPosition is not a number");
+                                        return;
                                     }
                                 }
                             }
@@ -958,6 +1249,10 @@ public class PlayerDataScript : MonoBehaviour
                 {
                     string skillNumberString = currentLine.Substring(0, firstSpaceIndex);
                     string skillName = currentLine.Substring(firstSpaceIndex + 1);
+                    if (!ValidateResourceName(skillName, constants.validSkillNames, "utility skill skillName"))
+                    {
+                        return;
+                    }
                     int skillNumber;
                     if (Int32.TryParse(skillNumberString, out skillNumber))
                     {
@@ -965,6 +1260,16 @@ public class PlayerDataScript : MonoBehaviour
                         {
                             utilitySkills[skillNumber - 4] = skillName;
                         }
+                        else
+                        {
+                            Debug.LogError("utility skill number out of range: " + skillNumber);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogError("utility skill number is not a number");
+                        return;
                     }
                 }
             }
@@ -992,6 +1297,11 @@ public class PlayerDataScript : MonoBehaviour
             {
                 cloneDataItemBlocks.Add(currentCloneSubArray.ToArray());
             }
+            if (cloneDataItemBlocks.Count > constants.maxClones)
+            {
+                Debug.LogError("Too many clones: " + cloneDataItemBlocks.Count + " (max: " + constants.maxClones + ")");
+                return;
+            }
             foreach (string[] cloneBlock in cloneDataItemBlocks)
             {
                 string cloneName = null;
@@ -1004,6 +1314,10 @@ public class PlayerDataScript : MonoBehaviour
                     if (currentLine.StartsWith("cloneName "))
                     {
                         cloneName = currentLine.Substring("cloneName ".Length);
+                        if (!ValidateString(cloneName, constants.maxStringLength, "cloneName"))
+                        {
+                            return;
+                        }
                     }
                     else if (currentLine.StartsWith("wood "))
                     {
@@ -1011,11 +1325,16 @@ public class PlayerDataScript : MonoBehaviour
                         int woodNumber;
                         if (Int32.TryParse(woodString, out woodNumber))
                         {
+                            if (!ValidateIntInRange(woodNumber, constants.minSalvage, constants.maxSalvage, "clone data wood"))
+                            {
+                                return;
+                            }
                             cloneData.totalSalvage.wood = woodNumber;
                         }
                         else
                         {
                             Debug.LogError("clone data wood is not a number");
+                            return;
                         }
                     }
                     else if (currentLine.StartsWith("metal "))
@@ -1024,11 +1343,16 @@ public class PlayerDataScript : MonoBehaviour
                         int metalNumber;
                         if (Int32.TryParse(metalString, out metalNumber))
                         {
+                            if (!ValidateIntInRange(metalNumber, constants.minSalvage, constants.maxSalvage, "clone data metal"))
+                            {
+                                return;
+                            }
                             cloneData.totalSalvage.metal = metalNumber;
                         }
                         else
                         {
                             Debug.LogError("clone data metal is not a number");
+                            return;
                         }
                     }
                     else if (currentLine.StartsWith("leather "))
@@ -1037,11 +1361,16 @@ public class PlayerDataScript : MonoBehaviour
                         int leatherNumber;
                         if (Int32.TryParse(leatherString, out leatherNumber))
                         {
+                            if (!ValidateIntInRange(leatherNumber, constants.minSalvage, constants.maxSalvage, "clone data leather"))
+                            {
+                                return;
+                            }
                             cloneData.totalSalvage.leather = leatherNumber;
                         }
                         else
                         {
                             Debug.LogError("clone data leather is not a number");
+                            return;
                         }
                     }
                     else if (currentLine.StartsWith("cloth "))
@@ -1050,11 +1379,16 @@ public class PlayerDataScript : MonoBehaviour
                         int clothNumber;
                         if (Int32.TryParse(clothString, out clothNumber))
                         {
+                            if (!ValidateIntInRange(clothNumber, constants.minSalvage, constants.maxSalvage, "clone data cloth"))
+                            {
+                                return;
+                            }
                             cloneData.totalSalvage.cloth = clothNumber;
                         }
                         else
                         {
                             Debug.LogError("clone data cloth is not a number");
+                            return;
                         }
                     }
                     else if (currentLine.StartsWith("knowledge "))
@@ -1063,11 +1397,16 @@ public class PlayerDataScript : MonoBehaviour
                         int knowledgeNumber;
                         if (Int32.TryParse(knowledgeString, out knowledgeNumber))
                         {
+                            if (!ValidateIntInRange(knowledgeNumber, constants.minSalvage, constants.maxSalvage, "clone data knowledge"))
+                            {
+                                return;
+                            }
                             cloneData.totalSalvage.knowledge = knowledgeNumber;
                         }
                         else
                         {
                             Debug.LogError("clone data knowledge is not a number");
+                            return;
                         }
                     }
                     else if (currentLine.StartsWith("turnsToComplete "))
@@ -1076,11 +1415,16 @@ public class PlayerDataScript : MonoBehaviour
                         int turnsNumber;
                         if (Int32.TryParse(turnsString, out turnsNumber))
                         {
+                            if (!ValidateIntInRange(turnsNumber, constants.minTurns, constants.maxTurns, "clone data turnsToComplete"))
+                            {
+                                return;
+                            }
                             cloneData.turnsToComplete = turnsNumber;
                         }
                         else
                         {
                             Debug.LogError("clone data turnsToComplete is not a number");
+                            return;
                         }
                     }
                 }
@@ -1376,7 +1720,7 @@ public class PlayerDataScript : MonoBehaviour
         // create player gear
         if (mainHandWeapon.itemName != null)
         {
-            GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/" + mainHandWeapon.weaponType);
+            GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/Items/" + mainHandWeapon.weaponType);
             if (weaponPrefab != null)
             {
                 GameObject newWeapon = Instantiate(weaponPrefab, playerMainHand);
@@ -1391,7 +1735,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         if (offHandWeapon.itemName != null)
         {
-            GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/" + offHandWeapon.weaponType);
+            GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/Items/" + offHandWeapon.weaponType);
             if (weaponPrefab != null)
             {
                 GameObject newWeapon = Instantiate(weaponPrefab, playerOffHand);
@@ -1408,7 +1752,7 @@ public class PlayerDataScript : MonoBehaviour
         yield return null;
         if (amulet.itemName != null)
         {
-            GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Amulet");
+            GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Items/Amulet");
             GameObject newAmulet = Instantiate(amuletPrefab, playerNeck);
             AmuletScript amuletScript = newAmulet.GetComponent<AmuletScript>();
             amuletScript.itemName = amulet.itemName;
@@ -1416,7 +1760,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         if (coat.itemName != null)
         {
-            GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");
+            GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Items/Coat");
             GameObject newCoat = Instantiate(coatPrefab, playerBody);
             CoatScript coatScript = newCoat.GetComponent<CoatScript>();
             coatScript.itemName = coat.itemName;
@@ -1425,7 +1769,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         if (gloves.itemName != null)
         {
-            GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Gloves");
+            GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Items/Gloves");
             GameObject newGloves = Instantiate(glovesPrefab, playerHands);
             GlovesScript glovesScript = newGloves.GetComponent<GlovesScript>();
             glovesScript.itemName = gloves.itemName;
@@ -1434,7 +1778,7 @@ public class PlayerDataScript : MonoBehaviour
         }
         if (pants.itemName != null)
         {
-            GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Pants");
+            GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Items/Pants");
             GameObject newPants = Instantiate(pantsPrefab, playerLegs);
             PantsScript pantsScript = newPants.GetComponent<PantsScript>();
             pantsScript.itemName = pants.itemName;
@@ -1444,7 +1788,7 @@ public class PlayerDataScript : MonoBehaviour
 
         if (boots.itemName != null)
         {
-            GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");
+            GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Items/Boots");
             GameObject newBoots = Instantiate(bootsPrefab, playerFeet);
             BootsScript bootsScript = newBoots.GetComponent<BootsScript>();
             bootsScript.itemName = boots.itemName;
@@ -1457,7 +1801,7 @@ public class PlayerDataScript : MonoBehaviour
             if (inventoryItem is WeaponData)
             {
                 WeaponData inventoryWeapon = (WeaponData)inventoryItem;
-                GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/" + inventoryWeapon.weaponType);
+                GameObject weaponPrefab = Resources.Load<GameObject>("Prefabs/Items/" + inventoryWeapon.weaponType);
                 GameObject newWeapon = Instantiate(weaponPrefab, playerInventory);
                 WeaponScript weaponScript = newWeapon.GetComponent<WeaponScript>();
                 weaponScript.SetItemName(inventoryWeapon.itemName);
@@ -1468,7 +1812,7 @@ public class PlayerDataScript : MonoBehaviour
             else if (inventoryItem is AmuletData)
             {
                 AmuletData inventoryAmulet = (AmuletData)inventoryItem;
-                GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Amulet");
+                GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Items/Amulet");
                 GameObject newAmulet = Instantiate(amuletPrefab, playerInventory);
                 AmuletScript amuletScript = newAmulet.GetComponent<AmuletScript>();
                 amuletScript.itemName = inventoryAmulet.itemName;
@@ -1479,7 +1823,7 @@ public class PlayerDataScript : MonoBehaviour
             else if (inventoryItem is CoatData)
             {
                 CoatData inventoryCoat = (CoatData)inventoryItem;
-                GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Coat");
+                GameObject coatPrefab = Resources.Load<GameObject>("Prefabs/Items/Coat");
                 GameObject newCoat = Instantiate(coatPrefab, playerInventory);
                 CoatScript coatScript = newCoat.GetComponent<CoatScript>();
                 coatScript.itemName = inventoryCoat.itemName;
@@ -1491,7 +1835,7 @@ public class PlayerDataScript : MonoBehaviour
             else if (inventoryItem is GlovesData)
             {
                 GlovesData inventoryGloves = (GlovesData)inventoryItem;
-                GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Gloves");
+                GameObject glovesPrefab = Resources.Load<GameObject>("Prefabs/Items/Gloves");
                 GameObject newGloves = Instantiate(glovesPrefab, playerInventory);
                 GlovesScript glovesScript = newGloves.GetComponent<GlovesScript>();
                 glovesScript.itemName = inventoryGloves.itemName;
@@ -1503,7 +1847,7 @@ public class PlayerDataScript : MonoBehaviour
             else if (inventoryItem is PantsData)
             {
                 PantsData inventoryPants = (PantsData)inventoryItem;
-                GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Pants");
+                GameObject pantsPrefab = Resources.Load<GameObject>("Prefabs/Items/Pants");
                 GameObject newPants = Instantiate(pantsPrefab, playerInventory);
                 PantsScript pantsScript = newPants.GetComponent<PantsScript>();
                 pantsScript.itemName = inventoryPants.itemName;
@@ -1515,7 +1859,7 @@ public class PlayerDataScript : MonoBehaviour
             else if (inventoryItem is BootsData)
             {
                 BootsData inventoryBoots = (BootsData)inventoryItem;
-                GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Boots");
+                GameObject bootsPrefab = Resources.Load<GameObject>("Prefabs/Items/Boots");
                 GameObject newBoots = Instantiate(bootsPrefab, playerInventory);
                 BootsScript bootsScript = newBoots.GetComponent<BootsScript>();
                 bootsScript.itemName = inventoryBoots.itemName;
@@ -1527,7 +1871,7 @@ public class PlayerDataScript : MonoBehaviour
             else if (inventoryItem is TomeData)
             {
                 TomeData inventoryTome = (TomeData)inventoryItem;
-                GameObject tomePrefab = Resources.Load<GameObject>("Prefabs/Skill Tome");
+                GameObject tomePrefab = Resources.Load<GameObject>("Prefabs/Items/Skill Tome");
                 GameObject newTome = Instantiate(tomePrefab, playerInventory);
                 SkillTomeScript tomeScript = newTome.GetComponent<SkillTomeScript>();
                 tomeScript.skillName = inventoryTome.skillName;
@@ -1543,7 +1887,7 @@ public class PlayerDataScript : MonoBehaviour
                 string skillName = utilitySkills[i];
                 if (unlockedSkills.Contains(skillName))
                 {
-                    GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/" + skillName);
+                    GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/Skills/" + skillName);
                     GameObject newSkill = Instantiate(skillPrefab, playerUtilitySkills);
                     Skill skillScript = newSkill.GetComponent<Skill>();
                     skillScript.skillBarPosition = i + 4;

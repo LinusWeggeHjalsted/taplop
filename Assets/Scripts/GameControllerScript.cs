@@ -134,8 +134,8 @@ public class GameControllerScript : MonoBehaviour
         mainMenuPrefab = Resources.Load<GameObject>("Prefabs/Main Menu");
         missionPrefab = Resources.Load<GameObject>("Prefabs/Mission Logic");
         hubPrefab = Resources.Load<GameObject>("Prefabs/Hub");
-        hubSplashScreenPrefab = Resources.Load<GameObject>("Prefabs/Hub Splash Screen");
-        missionSplashScreenPrefab = Resources.Load<GameObject>("Prefabs/Mission Splash Screen");
+        hubSplashScreenPrefab = Resources.Load<GameObject>("Prefabs/UI/Hub Splash Screen");
+        missionSplashScreenPrefab = Resources.Load<GameObject>("Prefabs/UI/Mission Splash Screen");
 #if UNITY_EDITOR
         GameObject devToolsPrefab = Resources.Load<GameObject>("Prefabs/Dev Tools");
         Instantiate(devToolsPrefab);

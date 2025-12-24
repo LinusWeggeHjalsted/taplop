@@ -295,6 +295,8 @@ MonoBehaviour:
   missionLogic: {fileID: 0}
   hubPrefab: {fileID: 0}
   hub: {fileID: 0}
+  hubSplashScreenPrefab: {fileID: 0}
+  missionSplashScreenPrefab: {fileID: 0}
 --- !u!4 &886037724
 Transform:
   m_ObjectHideFlags: 0
@@ -339,15 +341,83 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 55236c1e000ebd30890dd9ab2e993645, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  maxSaveFileSize: 1000000
+  maxPlayerNameLength: 16
+  maxStringLength: 64
+  maxDiscoveredHubs: 64
+  maxUnlockedSkills: 64
+  maxInventorySize: 24
+  maxClones: 64
+  minRandomSeed: -2147483648
+  maxRandomSeed: 2147483647
+  minTurns: 0
+  maxTurns: 2147483647
+  minDeaths: 0
+  maxDeaths: 2147483647
+  minDefeatedEnemies: 0
+  maxDefeatedEnemies: 2147483647
+  minSalvage: 0
+  maxSalvage: 2147483647
+  minInventoryPosition: 1
+  maxInventoryPosition: 24
   maxWeaponDamage: 10
+  maxSpellDamage: 10
   maxArmor: 5
   maxHealthBonus: 20
   maxDamageBonus: 5
   maxPickupRadius: 2
   maxSpeedBonus: 2
   maxUtilitySkillSlots: 5
-  maxFullUpgradeCost: 0
-  maxSalvage: 0
+  minWeaponDamage: 0
+  minSpellDamage: 0
+  minArmor: 0
+  minHealthBonus: 0
+  minDamageBonus: 0
+  minPickupRadius: 0
+  minSpeedBonus: 0
+  minUtilitySkillSlots: 0
+  validWeaponTypes:
+  - Axe
+  - Dagger
+  - Shield
+  - Spear
+  - Sword
+  - Wand
+  validSkillNames:
+  - Bash
+  - Blink
+  - Blitz
+  - Chop
+  - Cleave
+  - Daze
+  - Flash Strike
+  - Focus
+  - Howl
+  - Impale
+  - Reflect
+  - Replenish
+  - Retreating Swipe
+  - Shadow Strike
+  - Skewer
+  - Slam
+  - Slice
+  - Spark
+  - Spinblade
+  - Stab
+  - Stone Form
+  - Swap
+  - That Which Lingers
+  - Throw
+  - Toss
+  - Vampiric Strike
+  validItemTypes:
+  - Weapon
+  - Amulet
+  - Coat
+  - Gloves
+  - Pants
+  - Boots
+  - Tome
 --- !u!4 &1502411078
 Transform:
   m_ObjectHideFlags: 0

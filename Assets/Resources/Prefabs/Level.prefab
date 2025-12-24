@@ -811,7 +811,6 @@ GameObject:
   m_Component:
   - component: {fileID: 9031370341824819560}
   - component: {fileID: 8876067908558058655}
-  - component: {fileID: 1163412539508361943}
   m_Layer: 0
   m_Name: Level
   m_TagString: Untagged
@@ -855,18 +854,6 @@ Grid:
   m_CellGap: {x: 0, y: 0, z: 0}
   m_CellLayout: 0
   m_CellSwizzle: 0
---- !u!114 &1163412539508361943
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1559855786323123651}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7ebf0cd236dfa93a3b7fc38dde1fa7cd, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: '::'
 --- !u!1 &1913695128579605000
 GameObject:
   m_ObjectHideFlags: 0
@@ -3106,7 +3093,6 @@ MonoBehaviour:
   missionLogic: {fileID: 0}
   missionLogicScript: {fileID: 0}
   level: {fileID: 0}
-  levelScript: {fileID: 0}
   levelName: 
   player: {fileID: 0}
   enemies: {fileID: 0}
@@ -3159,7 +3145,6 @@ GameObject:
   - component: {fileID: 9121807618707028281}
   - component: {fileID: 3745487207218539264}
   - component: {fileID: 435329778359273961}
-  - component: {fileID: 1872184939082604956}
   - component: {fileID: 3878633772549862863}
   m_Layer: 0
   m_Name: Main Camera
@@ -3310,18 +3295,6 @@ MonoBehaviour:
   m_CropFrameX: 0
   m_CropFrameY: 0
   m_StretchFill: 0
---- !u!114 &1872184939082604956
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7703037104913916439}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9f126ed374b93f3e7b22b7acb018efdd, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: '::'
 --- !u!114 &3878633772549862863
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3671,7 +3644,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4444773360443484230}
-  - component: {fileID: 1556926332662476565}
   m_Layer: 0
   m_Name: Inventory
   m_TagString: Untagged
@@ -3694,18 +3666,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 8200703806683987638}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1556926332662476565
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8714651664287574206}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d916de0eb164a29288d3ab8f3b1b38c2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::InventoryScript
 --- !u!1 &8800610951122520850
 GameObject:
   m_ObjectHideFlags: 0

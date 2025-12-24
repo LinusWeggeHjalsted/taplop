@@ -732,7 +732,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: '::'
   stateCount: 0
   player: {fileID: 0}
-  playerScript: {fileID: 0}
   image: {fileID: 0}
   healthBarStates: []
   healthText: {fileID: 0}
@@ -1483,7 +1482,6 @@ GameObject:
   - component: {fileID: 7349744901336696158}
   - component: {fileID: 5803345414549335554}
   - component: {fileID: 3363253269247958777}
-  - component: {fileID: 8023366869779095743}
   - component: {fileID: 4926200044609825651}
   m_Layer: 0
   m_Name: Main Camera
@@ -1634,18 +1632,6 @@ MonoBehaviour:
   m_CropFrameX: 0
   m_CropFrameY: 0
   m_StretchFill: 0
---- !u!114 &8023366869779095743
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3717266334107687696}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9f126ed374b93f3e7b22b7acb018efdd, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: '::'
 --- !u!114 &4926200044609825651
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2466,7 +2452,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 2377179660800645076}
-  - component: {fileID: 1904251891444450716}
   m_Layer: 0
   m_Name: Inventory
   m_TagString: Untagged
@@ -2489,18 +2474,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 8712606954518212440}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1904251891444450716
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5646032066430800795}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d916de0eb164a29288d3ab8f3b1b38c2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::InventoryScript
 --- !u!1 &6140475887333389856
 GameObject:
   m_ObjectHideFlags: 0
