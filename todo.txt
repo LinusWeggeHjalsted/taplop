@@ -40,3 +40,7 @@
     it's kinda fun though
 - look into framerate limiting
 - think about cursor hover on buttons in context menus
+- count highlighted squares and use this for player feedback in PrepareSkill
+    if 0 display something that notifies player that this skill can't be used
+    if 1 just automatically UseSkill with that target
+- error dialog
