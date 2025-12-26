@@ -99,7 +99,8 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
         {
             if (contextMenu != null)
             {
-
+                DestroyImmediate(contextMenu);
+                return;
             }
             RectTransform itemSlotRectTransform = currentParent.GetComponent<RectTransform>();
             Vector3[] itemCorners = new Vector3[4];
@@ -139,7 +140,6 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
 
     void OnDestroy()
     {
-
         if (tooltip != null)
         {
             Destroy(tooltip);

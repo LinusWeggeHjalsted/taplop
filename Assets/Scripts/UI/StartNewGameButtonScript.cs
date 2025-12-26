@@ -52,7 +52,7 @@ public class StartNewGameButtonScript : MonoBehaviour
         {
             PlayerDataScript.Instance.randomSeed = new System.Random().Next();
         }
-        GameControllerScript.Instance.StartMission("Beginnings", 3, "TestHub");
+        GameControllerScript.Instance.StartMission("Beginnings", 3, "Camp at the Crossroads");
     }
 
     void Start()

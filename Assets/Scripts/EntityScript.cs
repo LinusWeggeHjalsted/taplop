@@ -793,6 +793,14 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                         InventoryMenuScript inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
                         inventoryMenuScript.RefreshUI();
                     }
+                    // show pickup notification for player
+                    if (this.gameObject == player)
+                    {
+                        GameObject inventoryButton = GameObject.Find("Inventory Button");
+                        InventoryButtonScript inventoryButtonScript = inventoryButton.GetComponent<InventoryButtonScript>();
+                        Sprite itemSprite = itemScript.GetSprite();
+                        inventoryButtonScript.QueuePickupNotification(itemSprite);
+                    }
                 }
                 if (groundItems.transform.childCount == 0)
                 {

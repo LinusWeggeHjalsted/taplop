@@ -152,10 +152,19 @@ public class PlayerDataScript : MonoBehaviour
 
         // validate all required sections exist
         string[] requiredSections = new string[] {
-            "Info", "Discovered Hubs", "Unlocked Skills",
-            "Main Hand Weapon", "Off Hand Weapon", "Amulet",
-            "Coat", "Gloves", "Pants", "Boots",
-            "Inventory", "Utility Skills", "Clone Data"
+            "Info",
+            "Discovered Hubs",
+            "Unlocked Skills",
+            "Main Hand Weapon",
+            "Off Hand Weapon",
+            "Amulet",
+            "Coat",
+            "Gloves",
+            "Pants",
+            "Boots",
+            "Inventory",
+            "Utility Skills",
+            "Clone Data"
         };
 
         foreach (string section in requiredSections)

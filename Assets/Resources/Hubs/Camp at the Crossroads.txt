@@ -15,20 +15,20 @@ Exit Info
 0
 missionName Beginnings
 missionLength 3
-endHub TestHub
+endHub Camp at the Crossroads
 
 1
 missionName Forest
 missionLength 4
-endHub TestHub
+endHub Camp at the Crossroads
 
 2
 missionName Wetlands
 missionLength 3
-endHub TestHub
+endHub Camp at the Crossroads
 
 3
 missionName Seatown
 missionLength 2
-endHub TestHub
+endHub Camp at the Crossroads
 

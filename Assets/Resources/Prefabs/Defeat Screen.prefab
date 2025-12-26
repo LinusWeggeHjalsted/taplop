@@ -156,7 +156,7 @@ Camera:
   far clip plane: 1000
   field of view: 34
   orthographic: 1
-  orthographic size: 11.59375
+  orthographic size: 11.4375
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -665,7 +665,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 7777333083018540350}
-  - component: {fileID: 8449447486306007955}
   m_Layer: 0
   m_Name: Defeat Screen
   m_TagString: Untagged
@@ -691,25 +690,6 @@ Transform:
   - {fileID: 3946018065633773997}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &8449447486306007955
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3810870525293257398}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 24e91b5804f942b52b220ce7c12bf83d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: '::'
-  missionCompletionHeaderText: {fileID: 0}
-  newCloneInfoPanel: {fileID: 0}
-  newCloneInfoText: {fileID: 0}
-  existingCloneInfoText: {fileID: 0}
-  combatInfoText: {fileID: 0}
-  cloneRunPanel: {fileID: 0}
-  cloneRunBodyText: {fileID: 0}
 --- !u!1 &5890304863281787142
 GameObject:
   m_ObjectHideFlags: 0

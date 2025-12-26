@@ -1,6 +1,6 @@
 - more dev tools
 - level clear conditions
-- better enemy death
+!- better enemy death
     make death a trigger in CurrentHealth set method
     handle cases of enemies dying during their turn for turn logic
 - loading screen
@@ -25,24 +25,17 @@
 - display player enchantments above bottom ui
 - remember open menus between levels and hubs
 - dragging an item into nothing should salvage it maybe
-- autopickup within pickup radius
-    actually maybe not - need to think about this
 !- seatown
     more levels
-- still bugginess with skillbar swapping
-    in particular stuff still happens when dragging from weapon skills onto utility skills
 - wolf used blink away
 - refactor turn logic
-!- display picked up items
 !- display owned salvage
-- update salvage for all items
 - clean up debugs
 - redo parsing to split lines to get name and value separated in a more clean way
 - refactor gui overlay to be reusable between level and hub
 - load save on standalone builds
 - clean up unused scripts and assets
 - rename things not following a standard naming scheme
-!- rename TestHub
 - possible to use multiple instant cast attacks by pressing hotkeys simultaneously
     it's kinda fun though
 - look into framerate limiting

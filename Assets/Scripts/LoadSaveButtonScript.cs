@@ -28,7 +28,7 @@ public class LoadSaveButtonScript : MonoBehaviour
         PlayerDataScript.Instance.LoadPlayerDataFromText(fileContent);
         if (string.IsNullOrEmpty(PlayerDataScript.Instance.lastHub))
         {
-            GameControllerScript.Instance.StartMission("Beginnings", 3, "TestHub");
+            GameControllerScript.Instance.StartMission("Beginnings", 3, "Camp at the Crossroads");
         }
         else
         {

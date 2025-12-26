@@ -1,7 +1,7 @@
 Info
 playerName Dev
 randomSeed 0
-lastHub TestHub
+lastHub Camp at the Crossroads
 turns 0
 deaths 0
 defeatedEnemies 0
@@ -12,7 +12,7 @@ knowledge 0
 utilitySkillSlots 5
 
 Discovered Hubs
-TestHub
+Camp at the Crossroads
 
 Unlocked Skills
 Replenish

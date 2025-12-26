@@ -301,7 +301,25 @@ public class TurnLogicScript : MonoBehaviour
                     Keyboard keyboard = Keyboard.current;
                     if (keyboard != null)
                     {
-                        // press space to skip moving
+                        KeyControl[] numberKeys = {
+                            keyboard.digit1Key,
+                            keyboard.digit2Key,
+                            keyboard.digit3Key,
+                            keyboard.digit4Key,
+                            keyboard.digit5Key,
+                            keyboard.digit6Key,
+                            keyboard.digit7Key,
+                            keyboard.digit8Key
+                        };
+                        for (int i = 0; i < numberKeys.Length; i++)
+                        {
+                            if (numberKeys[i].wasPressedThisFrame)
+                            {
+                                GameObject skillButton = skillBarScript.skillButtons[i];
+                                SkillButtonScript skillButtonScript = skillButton.GetComponent<SkillButtonScript>();
+                                skillButtonScript.OnActivate();
+                            }
+                        }
                         if (keyboard.spaceKey.wasPressedThisFrame)
                         {
                             skipButtonScript.OnActivate();

@@ -2,6 +2,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
 using UnityEngine.EventSystems;
+using System.Collections;
+using System.Collections.Generic;
 
 public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
 {
@@ -13,6 +15,9 @@ public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPoint
     public GameObject inventoryMenu;
     public GameObject tooltipPrefab;
     public GameObject tooltip;
+    public Queue<Sprite> pickupQueue = new Queue<Sprite>();
+    public GameObject pickupNotification;
+    public bool isDisplayingPickup = false;
 
     public void OnPointerEnter(PointerEventData eventData)
     {
@@ -63,6 +68,36 @@ public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPoint
         {
             Destroy(inventoryMenu);
         }
+    }
+
+    public void QueuePickupNotification(Sprite itemSprite)
+    {
+        pickupQueue.Enqueue(itemSprite);
+        if (!isDisplayingPickup)
+        {
+            StartCoroutine(DisplayPickupNotifications());
+        }
+    }
+
+    IEnumerator DisplayPickupNotifications()
+    {
+        isDisplayingPickup = true;
+        while (pickupQueue.Count > 0)
+        {
+            Sprite itemSprite = pickupQueue.Dequeue();
+            // create pickup notification
+            pickupNotification = new GameObject("Pickup Notification");
+            pickupNotification.transform.parent = canvas;
+            RectTransform notificationRect = pickupNotification.AddComponent<RectTransform>();
+            notificationRect.sizeDelta = new Vector2(128f, 128f);
+            notificationRect.position = buttonRectTransform.position + new Vector3(0, buttonRectTransform.rect.height, 0);
+            Image notificationImage = pickupNotification.AddComponent<Image>();
+            notificationImage.sprite = itemSprite;
+            yield return new WaitForSeconds(0.5f);
+            Destroy(pickupNotification);
+            yield return new WaitForSeconds(0.125f);
+        }
+        isDisplayingPickup = false;
     }
 
     void Start()

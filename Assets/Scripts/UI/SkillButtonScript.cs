@@ -143,10 +143,41 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         }
     }
     
+    IEnumerator WaitForAttackStepThenPrepareSkill()
+    {
+        while (turnLogicScript.currentGameState != TurnLogicScript.GameState.PlayerTurnAttack)
+        {
+            yield return null;
+        }
+        while (!turnLogicScript.turnStarted)
+        {
+            yield return null;
+        }
+        skillScript.PrepareSkill(player.transform.position, player);
+        turnLogicScript.skillUsed = skill;
+    }
+
     public void OnActivate()
     {
+        if (turnLogic == null)
+        {
+            return;
+        }
         switch (turnLogicScript.currentGameState)
         {
+            case TurnLogicScript.GameState.PlayerTurnMove:
+                if (skillScript == null)
+                {
+                    break;
+                }
+                if (playerScript.GetSkillCooldown(skillName) > 0)
+                {
+                    Debug.Log("Skill is on cooldown");
+                    break;
+                }
+                turnLogicScript.hasMoved = true;
+                StartCoroutine(WaitForAttackStepThenPrepareSkill());
+                break;
             case TurnLogicScript.GameState.PlayerTurnAttack:
                 if (skillScript == null)
                 {
@@ -157,7 +188,6 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                     Debug.Log("Skill is on cooldown");
                     break;
                 }
-                Debug.Log("Skill " + (skillNumber + 1).ToString() + " was pressed");
                 skillScript.PrepareSkill(player.transform.position, player);
                 turnLogicScript.skillUsed = skill;
                 break;
@@ -249,6 +279,12 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         if (skillButtonScript == null)
         {
             Debug.Log("not a skill");
+            return;
+        }
+        // cannot swap weapon skills (slots 0-2)
+        if (skillButtonScript.skillNumber < 3)
+        {
+            Debug.Log("cannot swap weapon skills");
             return;
         }
         GameObject droppedSkill = skillButtonScript.skill;
