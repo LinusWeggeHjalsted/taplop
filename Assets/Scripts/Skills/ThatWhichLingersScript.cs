@@ -100,7 +100,7 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
         }
         else
         {
-            GameObject thatWhichLingersPrefab = Resources.Load<GameObject>("Prefabs/That Which Lingers");
+            GameObject thatWhichLingersPrefab = Resources.Load<GameObject>("Prefabs/Skills/That Which Lingers");
             thatWhichLingersEnchantment = Instantiate(thatWhichLingersPrefab, wielderEnchantments);
             thatWhichLingersEnchantment.name = "That Which Lingers";
         }

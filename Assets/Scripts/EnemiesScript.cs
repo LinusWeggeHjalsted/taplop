@@ -152,6 +152,10 @@ public class EnemiesScript : MonoBehaviour
         else
         {
             Debug.Log("no path found");
+            if (distanceToPlayer <= enemyMinRange)
+            {
+                return;
+            }
             Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
             List<Vector3> deltas = new List<Vector3>();
             for (float i = -enemySpeed; i <= enemySpeed; i++)

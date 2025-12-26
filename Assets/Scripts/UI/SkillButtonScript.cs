@@ -366,10 +366,10 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 Destroy(skill);
             }
             // instantiate new skill under player's Utility Skills
-            GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/" + droppedSkillName);
+            GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/Skills/" + droppedSkillName);
             if (skillPrefab == null)
             {
-                Debug.LogError("Could not find skill prefab: Prefabs/" + droppedSkillName);
+                Debug.LogError("Could not find skill prefab: Prefabs/Skills/" + droppedSkillName);
                 return;
             }
             Transform utilitySkills = playerScript.utilitySkills;

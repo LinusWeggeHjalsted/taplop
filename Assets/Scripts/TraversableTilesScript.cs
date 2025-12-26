@@ -40,6 +40,7 @@ public class TraversableTilesScript : MonoBehaviour
     public LevelBuilderScript levelBuilderScript;
     public GameObject enemies;
     public EnemiesScript enemiesScript;
+    public GameObject player;
     public Dictionary<Vector3, GameObject> tileLookup = new Dictionary<Vector3, GameObject>();
     
     public void ClearHighlights()
@@ -117,6 +118,11 @@ public class TraversableTilesScript : MonoBehaviour
                     }
                     // check if tile is occupied by an enemy
                     if (enemiesScript.enemyLookup.ContainsKey(neighborPosition))
+                    {
+                        continue;
+                    }
+                    // check if tile is occupied by player (unless it's the destination)
+                    if (player != null && neighborPosition == player.transform.position && neighborPosition != endPosition)
                     {
                         continue;
                     }
@@ -208,6 +214,7 @@ public class TraversableTilesScript : MonoBehaviour
         levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
         enemies = GameObject.Find("Enemies");
         enemiesScript = enemies.GetComponent<EnemiesScript>();
+        player = GameObject.Find("Player");
         // wait for LevelBuilder to finish building
         StartCoroutine(WaitForLevelBuilderBeforePopulating());
     }

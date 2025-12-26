@@ -105,7 +105,7 @@ public class StoneFormScript : MonoBehaviour, Skill, EnchantmentScript
         }
         else
         {
-            GameObject stoneFormPrefab = Resources.Load<GameObject>("Prefabs/Stone Form");
+            GameObject stoneFormPrefab = Resources.Load<GameObject>("Prefabs/Skills/Stone Form");
             stoneFormEnchantment = Instantiate(stoneFormPrefab, wielderEnchantments);
             stoneFormEnchantment.name = "Stone Form";
         }

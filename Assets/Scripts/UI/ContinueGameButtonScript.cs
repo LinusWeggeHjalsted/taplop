@@ -8,7 +8,10 @@ public class ContinueGameButtonScript : MonoBehaviour
 
     public void OnActivate()
     {
+#if !UNITY_WEBGL || UNITY_EDITOR
+        // Only load from file in non-WebGL builds
         PlayerDataScript.Instance.LoadPlayerData("Autosave");
+#endif
         if (string.IsNullOrEmpty(PlayerDataScript.Instance.lastHub))
         {
             GameControllerScript.Instance.StartMission("Beginnings", 3, "Camp at the Crossroads");
@@ -25,8 +28,11 @@ public class ContinueGameButtonScript : MonoBehaviour
         button.onClick.AddListener(OnActivate);
 
 #if UNITY_WEBGL && !UNITY_EDITOR
-        // hide button in WebGL builds
-        this.gameObject.SetActive(false);
+        // In WebGL, check if PlayerDataScript has valid data in memory
+        if (PlayerDataScript.Instance == null || string.IsNullOrEmpty(PlayerDataScript.Instance.lastHub))
+        {
+            this.gameObject.SetActive(false);
+        }
 #else
         // check if autosave file exists
         string autosavePath = Application.persistentDataPath + "/Autosave.txt";

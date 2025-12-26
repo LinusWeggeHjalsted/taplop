@@ -87,10 +87,13 @@ public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPoint
             Sprite itemSprite = pickupQueue.Dequeue();
             // create pickup notification
             pickupNotification = new GameObject("Pickup Notification");
-            pickupNotification.transform.parent = canvas;
+            pickupNotification.transform.SetParent(canvas, false);
+            pickupNotification.transform.SetAsFirstSibling();
             RectTransform notificationRect = pickupNotification.AddComponent<RectTransform>();
             notificationRect.sizeDelta = new Vector2(128f, 128f);
-            notificationRect.position = buttonRectTransform.position + new Vector3(0, buttonRectTransform.rect.height, 0);
+            Canvas canvasComponent = canvas.GetComponent<Canvas>();
+            float canvasScale = canvasComponent.scaleFactor;
+            notificationRect.position = buttonRectTransform.position + new Vector3(0, buttonRectTransform.rect.height * canvasScale, 0);
             Image notificationImage = pickupNotification.AddComponent<Image>();
             notificationImage.sprite = itemSprite;
             yield return new WaitForSeconds(0.5f);

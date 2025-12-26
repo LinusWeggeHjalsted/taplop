@@ -43,4 +43,5 @@
 - count highlighted squares and use this for player feedback in PrepareSkill
     if 0 display something that notifies player that this skill can't be used
     if 1 just automatically UseSkill with that target
-- error dialog
+- think about error dialog
+- make things private that should be private

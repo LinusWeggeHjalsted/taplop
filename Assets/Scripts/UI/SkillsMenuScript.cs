@@ -38,7 +38,7 @@ public class SkillsMenuScript : MonoBehaviour
                 }
 
                 // load the skill prefab to get its data for tooltip
-                GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/" + skillName);
+                GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/Skills/" + skillName);
                 if (skillPrefab != null)
                 {
                     GameObject skillInstance = Instantiate(skillPrefab, unlockedSkill.transform);

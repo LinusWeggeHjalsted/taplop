@@ -123,6 +123,14 @@ public class SwapScript : MonoBehaviour, Skill
             Vector3 wielderPosition = wielder.transform.position;
             wielderScript.MoveTo(targetPosition); // this should be safe because player
             targetScript.MoveTo(wielderPosition); // and enemies do not share any lookups
+            // fix isOccupied flags after both moves complete
+            Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
+            GameObject wielderNewTile = tileLookup[targetPosition];
+            GameObject targetNewTile = tileLookup[wielderPosition];
+            TileScript wielderNewTileScript = wielderNewTile.GetComponent<TileScript>();
+            TileScript targetNewTileScript = targetNewTile.GetComponent<TileScript>();
+            wielderNewTileScript.isOccupied = true;
+            targetNewTileScript.isOccupied = true;
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
     }

@@ -40,7 +40,7 @@ public class TurnLogicScript : MonoBehaviour
     public bool hasAttacked = false;
     public bool turnStarted = false;
     public Coroutine playerMoveCoroutine;
-    private InputAction clickAction;
+    private GameObject mouseDownTile = null;
 
     IEnumerator WaitForBuildingBeforeNewGameState()
     {
@@ -91,40 +91,11 @@ public class TurnLogicScript : MonoBehaviour
         skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         skipButton = GameObject.Find("Skip Button");
         skipButtonScript = skipButton.GetComponent<SkipButtonScript>();
-        // subscribe to click action
-        var playerInput = FindObjectOfType<PlayerInput>();
-        clickAction = playerInput.actions.FindAction("Click");
-        clickAction.performed += OnClick;
+        // we'll handle mouse clicks in Update() instead of using input action callbacks
         // wait for LevelBuilder to finish building
         StartCoroutine(WaitForBuildingBeforeNewGameState());
     }
 
-    void OnDestroy()
-    {
-        if (clickAction != null)
-        {
-            clickAction.performed -= OnClick;
-        }
-    }
-
-    private void OnClick(InputAction.CallbackContext context)
-    {
-        // don't process clicks if the pointer is over a UI element
-        if (isPointerOverUI)
-        {
-            return;
-        }
-        Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Mouse.current.position.ReadValue());
-        RaycastHit2D hit = Physics2D.Raycast(mousePosition, Vector2.zero);
-        if (hit.collider != null)
-        {
-            TileScript tileScript = hit.collider.GetComponent<TileScript>();
-            if (tileScript != null)
-            {
-                tileScript.OnTileClicked();
-            }
-        }
-    }
 
     public IEnumerator PlayerTurnMove()
     {
@@ -256,6 +227,61 @@ public class TurnLogicScript : MonoBehaviour
         else
         {
             isPointerOverUI = false;
+        }
+
+        // handle mouse down
+        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+        {
+            if (!isPointerOverUI)
+            {
+                Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Mouse.current.position.ReadValue());
+                RaycastHit2D hit = Physics2D.Raycast(mousePosition, Vector2.zero);
+                if (hit.collider != null)
+                {
+                    GameObject tile = hit.collider.gameObject;
+                    TileScript tileScript = tile.GetComponent<TileScript>();
+                    if (tileScript != null)
+                    {
+                        mouseDownTile = tile;
+                    }
+                    else
+                    {
+                        mouseDownTile = null;
+                    }
+                }
+                else
+                {
+                    mouseDownTile = null;
+                }
+            }
+            else
+            {
+                mouseDownTile = null;
+            }
+        }
+
+        // handle mouse up
+        if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
+        {
+            if (!isPointerOverUI && mouseDownTile != null)
+            {
+                Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Mouse.current.position.ReadValue());
+                RaycastHit2D hit = Physics2D.Raycast(mousePosition, Vector2.zero);
+                if (hit.collider != null)
+                {
+                    GameObject tile = hit.collider.gameObject;
+                    // only process click if mouse up is on the same tile as mouse down
+                    if (tile == mouseDownTile)
+                    {
+                        TileScript tileScript = tile.GetComponent<TileScript>();
+                        if (tileScript != null)
+                        {
+                            tileScript.OnTileClicked();
+                        }
+                    }
+                }
+            }
+            mouseDownTile = null;
         }
         switch (currentGameState)
         {
