@@ -18,7 +18,6 @@ public class LearnButtonScript : MonoBehaviour
         }
         if (playerDataScript.unlockedSkills.Contains(skillName))
         {
-            Debug.Log("this skill is already unlocked");
         }
         else
         {

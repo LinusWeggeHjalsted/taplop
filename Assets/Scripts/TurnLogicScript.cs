@@ -296,7 +296,6 @@ public class TurnLogicScript : MonoBehaviour
                         // player death
                         if (playerScript.CurrentHealth <= 0)
                         {
-                            Debug.Log("player died");
                             PlayerDataScript.Instance.deaths += 1;
                             PlayerDataScript.Instance.BuildDataFromPlayer(player);
 #if !UNITY_WEBGL || UNITY_EDITOR

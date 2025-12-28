@@ -85,7 +85,6 @@ public class LevelBuilderScript : MonoBehaviour
     {
         PreParse preParse = new PreParse();
         string filePath = "Levels/" + lvlName;
-        Debug.Log("Loading level file " + filePath);
         TextAsset levelFile = Resources.Load<TextAsset>(filePath);
         if (levelFile == null)
         {

@@ -41,15 +41,14 @@
         #unity-progress-bar-empty {
             width: 200px;
             height: 20px;
-            background: #333;
+            background: #2B053A;
             border-radius: 10px;
         }
 
         #unity-progress-bar-full {
             width: 0%;
             height: 100%;
-            background: #4CAF50;
-            border-radius: 10px;
+            background: #EA7FAF;
             transition: width 0.3s;
         }
 
@@ -58,7 +57,7 @@
             top: 20px;
             right: 20px;
             padding: 10px 20px;
-            background: #4CAF50;
+            background: #EA7FAF;
             color: white;
             border: none;
             border-radius: 5px;
@@ -68,12 +67,11 @@
         }
 
         #fullscreen-button:hover {
-            background: #45a049;
+            background: #79357B;
         }
 
         #unity-container.fullscreen {
-            width: 1920px;
-            height: 1080px;
+            /* Dimensions set dynamically via JavaScript for pixel-perfect scaling */
         }
     </style>
 </head>
@@ -120,11 +118,39 @@
             }).then((unityInstance) => {
                 loadingBar.style.display = "none";
 
-                // Fullscreen functionality
+                // Fullscreen functionality with pixel-perfect scaling
                 var fullscreenButton = document.querySelector("#fullscreen-button");
+
+                // Calculate optimal integer scale for pixel-perfect rendering
+                function calculatePixelPerfectScale() {
+                    const baseWidth = 960;
+                    const baseHeight = 540;
+                    const screenWidth = window.screen.width;
+                    const screenHeight = window.screen.height;
+
+                    // Find largest integer multiplier that fits the screen
+                    const scaleX = Math.floor(screenWidth / baseWidth);
+                    const scaleY = Math.floor(screenHeight / baseHeight);
+                    const scale = Math.min(scaleX, scaleY);
+
+                    return {
+                        scale: Math.max(1, scale), // Minimum 1x scale
+                        width: baseWidth * Math.max(1, scale),
+                        height: baseHeight * Math.max(1, scale)
+                    };
+                }
+
+                // Update button text with calculated dimensions
+                const scalingInfo = calculatePixelPerfectScale();
+                fullscreenButton.textContent = `Fullscreen (${scalingInfo.width}x${scalingInfo.height})`;
+
                 fullscreenButton.onclick = () => {
                     if (!document.fullscreenElement) {
+                        const scalingInfo = calculatePixelPerfectScale();
+                        container.style.width = scalingInfo.width + "px";
+                        container.style.height = scalingInfo.height + "px";
                         container.classList.add("fullscreen");
+
                         container.requestFullscreen().then(() => {
                             unityInstance.SetFullscreen(1);
                         }).catch((err) => {
@@ -136,9 +162,11 @@
                     }
                 };
 
-                // Handle fullscreen exit
+                // Handle fullscreen exit - reset to default size
                 document.addEventListener("fullscreenchange", () => {
                     if (!document.fullscreenElement) {
+                        container.style.width = "";
+                        container.style.height = "";
                         container.classList.remove("fullscreen");
                         unityInstance.SetFullscreen(0);
                     }

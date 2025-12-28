@@ -461,7 +461,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public GameObject reflectEffect;
     public Transform enchantments;
     private bool isDisplacing = false;
-    List<GameObject> activeEnchantments
+    public List<GameObject> activeEnchantments
     {
         get
         {
@@ -601,6 +601,10 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
 
     public void DisplayEnchantments()
     {
+        if (this.gameObject == player)
+        {
+            StartCoroutine(PlayerEnchantmentsScript.Instance.UpdateEnchantments());
+        }
         int enchantmentCount = activeEnchantments.Count;
         if (enchantmentCount == 0)
         {
@@ -807,10 +811,6 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                     dropsScript.groundItemsLookup.Remove(pickupPosition);
                     Destroy(groundItems);
                 }
-                else
-                {
-                    Debug.Log("inventory full");
-                }
             }
         }
         // update aggro and finish level if player is on level end
@@ -884,7 +884,6 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             DisplayDamage(actualDamage);
             CurrentHealth -= actualDamage;
-            Debug.Log(this.gameObject.name + " took " + actualDamage.ToString() + " damage from " + attacker.name);
             if (this.gameObject == player)
             {
                 MissionLogicScript.Instance.totalIncomingDamage += actualDamage;
@@ -1140,7 +1139,6 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
 
     void Start()
     {
-        Debug.Log("Hello World - I'm " + this.name);
         if (this.gameObject.name == "Player")
         {
             SpriteSheet = Resources.LoadAll<Sprite>("Player");

@@ -1,6 +1,6 @@
 - more dev tools
 - level clear conditions
-!- better enemy death
+- better enemy death
     make death a trigger in CurrentHealth set method
     handle cases of enemies dying during their turn for turn logic
 - loading screen
@@ -22,15 +22,13 @@
 - make things into singleton instances where applicable to clean up loading everywhere
 - consider form of x instead of x form
 - add menu titles and x button to close 
-- display player enchantments above bottom ui
 - remember open menus between levels and hubs
 - dragging an item into nothing should salvage it maybe
 !- seatown
     more levels
 - wolf used blink away
 - refactor turn logic
-!- display owned salvage
-- clean up debugs
+- display owned salvage
 - redo parsing to split lines to get name and value separated in a more clean way
 - refactor gui overlay to be reusable between level and hub
 - load save on standalone builds
@@ -45,3 +43,6 @@
     if 1 just automatically UseSkill with that target
 - think about error dialog
 - make things private that should be private
+- think about serialization for gamestate reversal and setting up for custom level validation
+- think about custom cursor(s)
+!- think about graphic settings

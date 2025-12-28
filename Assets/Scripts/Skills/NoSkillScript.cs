@@ -73,12 +73,10 @@ public class NoSkillScript : MonoBehaviour, Skill
 
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
-        Debug.Log("no skill equipped in this slot");
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
-        Debug.Log("no skill equipped in this slot");
     }
 
     void Start()

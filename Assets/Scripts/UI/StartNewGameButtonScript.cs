@@ -23,7 +23,6 @@ public class StartNewGameButtonScript : MonoBehaviour
             try
             {
                 File.Copy(autosavePath, backupPath);
-                Debug.Log("Autosave backed up to: " + backupPath);
             }
             catch (Exception e)
             {

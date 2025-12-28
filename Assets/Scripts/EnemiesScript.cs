@@ -151,7 +151,6 @@ public class EnemiesScript : MonoBehaviour
         }
         else
         {
-            Debug.Log("no path found");
             if (distanceToPlayer <= enemyMinRange)
             {
                 return;

@@ -39,7 +39,6 @@ public class HubBuilderScript : MonoBehaviour
     public PreParse LoadHubFile(string hubPath)
     {
         PreParse preParse = new PreParse();
-        Debug.Log("Loading hub file " + hubPath);
         TextAsset hubFile = Resources.Load<TextAsset>(hubPath);
         if (hubFile == null)
         {

@@ -174,7 +174,6 @@ public class TossScript : MonoBehaviour, Skill
                 }
             }
         }
-        Debug.Log("highlighted possible targets");
     }
 
     void Start()

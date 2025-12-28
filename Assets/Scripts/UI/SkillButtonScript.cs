@@ -172,7 +172,6 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 }
                 if (playerScript.GetSkillCooldown(skillName) > 0)
                 {
-                    Debug.Log("Skill is on cooldown");
                     break;
                 }
                 turnLogicScript.hasMoved = true;
@@ -185,7 +184,6 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 }
                 if (playerScript.GetSkillCooldown(skillName) > 0)
                 {
-                    Debug.Log("Skill is on cooldown");
                     break;
                 }
                 skillScript.PrepareSkill(player.transform.position, player);
@@ -258,12 +256,10 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         // cannot drop into weapon skill slots (0-2)
         if (skillNumber < 3)
         {
-            Debug.Log("cannot switch weaponskills");
             return;
         }
         if (skillNumber > playerScript.utilitySkillSlots + 2)
         {
-            Debug.Log("this skill slot is not unlocked yet");
             return;
         }
         GameObject droppedObject = eventData.pointerDrag;
@@ -278,19 +274,16 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         SkillButtonScript skillButtonScript = droppedObject.GetComponent<SkillButtonScript>();
         if (skillButtonScript == null)
         {
-            Debug.Log("not a skill");
             return;
         }
         // cannot swap weapon skills (slots 0-2)
         if (skillButtonScript.skillNumber < 3)
         {
-            Debug.Log("cannot swap weapon skills");
             return;
         }
         GameObject droppedSkill = skillButtonScript.skill;
         if (droppedSkill == null)
         {
-            Debug.Log("no skill to swap in");
             return;
         }
         Skill droppedSkillScript = droppedSkill.GetComponent<Skill>();

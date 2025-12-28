@@ -34,7 +34,6 @@ public class GameControllerScript : MonoBehaviour
 
     public void StartMission(string missionName, int missionLength, string endHub)
     {
-        Debug.Log($"starting mission {missionName}");
         if (mainMenu != null)
         {
             Destroy(mainMenu);

@@ -238,7 +238,6 @@ public class PlayerDataScript : MonoBehaviour
             try
             {
                 fileText = File.ReadAllText(persistentPath);
-                Debug.Log("Loaded player data from: " + persistentPath);
             }
             catch (Exception e)
             {
@@ -1673,14 +1672,12 @@ public class PlayerDataScript : MonoBehaviour
         // in WebGL, trigger a browser download
         string filename = savePath + ".txt";
         DownloadFile(filename, saveData);
-        Debug.Log("Player data download triggered: " + filename);
 #else
         // in standalone builds, save to file system
         string fullPath = Application.persistentDataPath + "/" + savePath + ".txt";
         try
         {
             File.WriteAllText(fullPath, saveData);
-            Debug.Log("Player data saved to " + fullPath);
         }
         catch (Exception e)
         {
