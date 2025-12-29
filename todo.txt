@@ -24,8 +24,6 @@
 - add menu titles and x button to close 
 - remember open menus between levels and hubs
 - dragging an item into nothing should salvage it maybe
-!- seatown
-    more levels
 - wolf used blink away
 - refactor turn logic
 - display owned salvage
@@ -45,4 +43,4 @@
 - make things private that should be private
 - think about serialization for gamestate reversal and setting up for custom level validation
 - think about custom cursor(s)
-!- think about graphic settings
+- migrate tile highlight to manual animation

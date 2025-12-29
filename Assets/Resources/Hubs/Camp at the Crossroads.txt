@@ -29,6 +29,6 @@ endHub Camp at the Crossroads
 
 3
 missionName Seatown
-missionLength 2
+missionLength 3
 endHub Camp at the Crossroads
 
