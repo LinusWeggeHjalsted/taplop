@@ -13,6 +13,7 @@ public class LoadSaveButtonScript : MonoBehaviour
 
     public void OnActivate()
     {
+        SoundControllerScript.Instance.PlayButtonClickSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
 #if UNITY_WEBGL && !UNITY_EDITOR
         // in WebGL, prompt user to upload a save file
         UploadFile(gameObject.name, "OnFileUploaded");

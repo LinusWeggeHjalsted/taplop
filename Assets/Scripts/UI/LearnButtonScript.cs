@@ -10,6 +10,7 @@ public class LearnButtonScript : MonoBehaviour
 
     public void OnActivate()
     {
+        SoundControllerScript.Instance.PlayLearnSkillSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
         PlayerDataScript playerDataScript = PlayerDataScript.Instance;
         if (skillName == null || selectedItem == null)
         {

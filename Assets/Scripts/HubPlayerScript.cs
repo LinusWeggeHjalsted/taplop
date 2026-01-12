@@ -240,7 +240,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
 
     public void MoveTo(Vector3 targetPosition)
     {
-        // flip sprite if moving left, unflip if moving right
+        SoundControllerScript.Instance.PlayMoveSound(targetPosition);
         Vector3 currentPosition = this.transform.position;
         float xDif = targetPosition.x - currentPosition.x;
         if (xDif < 0)

@@ -7,6 +7,7 @@ public class ExitToMainMenuButtonScript : MonoBehaviour
 
     public void OnActivate()
     {
+        SoundControllerScript.Instance.PlayButtonClickSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
         GameObject player = GameObject.Find("Player");
         PlayerDataScript.Instance.BuildDataFromPlayer(player);
 #if !UNITY_WEBGL || UNITY_EDITOR

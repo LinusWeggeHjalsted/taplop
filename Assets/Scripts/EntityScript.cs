@@ -696,8 +696,12 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         float healthPercentage = (float)currentHealth / (float)maxHealth;
         switch (healthPercentage)
         {
-            case < 0.125f:
+            case 0.0f:
                 healthBarSprite = healthBarStates[0];
+                break;
+            case < 0.125f:
+                // always leave a pixel of health if nonzero
+                healthBarSprite = healthBarStates[1];
                 break;
             case >= 0.125f and < 0.250f:
                 healthBarSprite = healthBarStates[1];
@@ -732,10 +736,10 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
 
     public void MoveTo(Vector3 targetPosition)
     {
+
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         GameObject targetTile = tileLookup[targetPosition];
         TileScript targetTileScript = targetTile.GetComponent<TileScript>();
-        // flip sprite if moving left, unflip if moving right
         Vector3 currentPosition = this.transform.position;
         FaceTowards(targetPosition);
         GameObject currentTile = tileLookup[currentPosition];
@@ -743,6 +747,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         targetTileScript.isOccupied = true;
         currentTileScript.isOccupied = false;
         previousPosition = currentPosition;
+        SoundControllerScript.Instance.PlayMoveSound(targetPosition);
         // update enemy lookups
         if (enemiesScript.enemyLookup.ContainsKey(currentPosition) && enemiesScript.enemyLookup[currentPosition] == this.gameObject)
         {
@@ -865,6 +870,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             EntityScript attackerScript = attacker.GetComponent<EntityScript>();
             attackerScript.IncomingDamage(damage, this.gameObject, true);
+            SoundControllerScript.Instance.PlayReflectSound(this.transform.position);
             return 0;
         }
         int effectiveDamage = damage + enchantmentModifiers.incomingDamage;

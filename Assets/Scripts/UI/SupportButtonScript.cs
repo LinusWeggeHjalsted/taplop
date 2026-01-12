@@ -9,6 +9,7 @@ public class SupportButtonScript : MonoBehaviour
 
     public void OnActivate()
     {
+        SoundControllerScript.Instance.PlayMenuSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
         if (supportMenu == null)
         {
             // close New Game Menu if it's open

@@ -42,6 +42,7 @@ public class SalvageButtonScript : MonoBehaviour
 
     public void OnActivate()
     {
+        SoundControllerScript.Instance.PlaySalvageSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
         if (salvageValue == null || selectedItem == null)
         {
             Debug.LogError("salvageValue or selectedItem not set yet");

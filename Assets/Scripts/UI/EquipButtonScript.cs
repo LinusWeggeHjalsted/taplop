@@ -51,6 +51,8 @@ public class EquipButtonScript : MonoBehaviour
         // set new skill cooldowns to max of the swapped skills in case a weapon was equipped
         if (selectedItemScript.ItemType() == "Weapon" && currentItemScript != null)
         {
+            SoundControllerScript.Instance.PlayEquipWeaponSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
+
             WeaponScript currentWeaponScript = currentItem.GetComponent<WeaponScript>();
             GameObject currentSecondSkill = currentWeaponScript.SecondSkill();
             Skill currentSecondSkillScript = currentSecondSkill.GetComponent<Skill>();
@@ -75,6 +77,10 @@ public class EquipButtonScript : MonoBehaviour
             int maxThirdCooldown = Math.Max(currentThirdCooldown, selectedThirdCooldown);
             playerScript.SetSkillCooldown(selectedSecondSkillName, maxSecondCooldown);
             playerScript.SetSkillCooldown(selectedThirdSkillName, maxThirdCooldown);
+        }
+        else
+        {
+            SoundControllerScript.Instance.PlayEquipArmorSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
         }
         // refresh open menus
         Transform characterUI = GameObject.Find("Character UI").transform;

@@ -55,6 +55,7 @@ public class SkillsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerE
 
     public void OnActivate()
     {
+        SoundControllerScript.Instance.PlayMenuSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
         if (skillsMenu == null)
         {
             skillsMenu = Instantiate(skillsMenuPrefab, characterUI);

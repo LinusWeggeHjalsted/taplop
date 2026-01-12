@@ -11,9 +11,9 @@ public class NewGameButtonScript : MonoBehaviour
 
     public void OnActivate()
     {
+        SoundControllerScript.Instance.PlayMenuSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
         if (newGameMenu == null)
         {
-            // close Support Menu if it's open
             GameObject supportMenu = GameObject.Find("Support Menu(Clone)");
             if (supportMenu != null)
             {

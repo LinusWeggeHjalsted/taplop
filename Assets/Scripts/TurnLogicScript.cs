@@ -34,12 +34,13 @@ public class TurnLogicScript : MonoBehaviour
     public Dictionary<Vector3, GameObject> tileLookup = new Dictionary<Vector3, GameObject>();
 
     public GameState currentGameState;
-    private bool isPointerOverUI = false;
     public GameObject skillUsed;
     public bool hasMoved = false;
     public bool hasAttacked = false;
     public bool turnStarted = false;
     public Coroutine playerMoveCoroutine;
+    private bool isPointerOverUI = false;
+    public GameObject tileCursor;
     private GameObject mouseDownTile = null;
 
     IEnumerator WaitForBuildingBeforeNewGameState()
@@ -195,7 +196,7 @@ public class TurnLogicScript : MonoBehaviour
         });
         foreach (GameObject enemy in sortedEnemies)
         {
-            yield return new WaitForSeconds(0.25f);
+            yield return new WaitForSeconds(0.5f);
             EntityScript enemyScript = enemy.GetComponent<EntityScript>();
             enemyScript.ReduceCooldowns(1);
             enemyScript.ReduceEffectDurations(1);
@@ -204,7 +205,7 @@ public class TurnLogicScript : MonoBehaviour
             if (enemyScript.stunDuration == 0)
             {
                 enemiesScript.EnemyTurnMove(enemy);
-                yield return new WaitForSeconds(0.25f);
+                yield return new WaitForSeconds(0.5f);
                 yield return enemiesScript.EnemyTurnAttack(enemy);
             }
             else
@@ -213,7 +214,7 @@ public class TurnLogicScript : MonoBehaviour
             }
             enemyScript.EndOfTurnEnchantmentEffects();
         }
-        yield return new WaitForSeconds(0.25f);
+    yield return new WaitForSeconds(0.5f);
         currentGameState = GameState.PlayerTurnMove;
         turnStarted = false;
     }
@@ -228,7 +229,64 @@ public class TurnLogicScript : MonoBehaviour
         {
             isPointerOverUI = false;
         }
-
+        // to-do - only raycast for cursor once in preparation for the following
+        // handle mouse over for tile cursor
+        if (Mouse.current != null)
+        {
+            if (!isPointerOverUI)
+            {
+                Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Mouse.current.position.ReadValue());
+                RaycastHit2D hit = Physics2D.Raycast(mousePosition, Vector2.zero);
+                if (hit.collider != null)
+                {
+                    GameObject tile = hit.collider.gameObject;
+                    TileScript tileScript = tile.GetComponent<TileScript>();
+                    if (tileScript != null)
+                    {
+                        if (tileCursor == null)
+                        {
+                            // create tile cursor
+                            tileCursor = new GameObject("Tile Cursor");
+                            tileCursor.transform.parent = this.transform.parent; // = level
+                            SpriteRenderer tileCursorRenderer = tileCursor.AddComponent<SpriteRenderer>();
+                            tileCursorRenderer.sortingOrder = 0;
+                            Sprite tileCursorSprite = Resources.Load<Sprite>("TileCursor");
+                            tileCursorRenderer.sprite = tileCursorSprite;
+                        }
+                        if (tileCursor != null)
+                        {
+                            tileCursor.transform.position = tile.transform.position; 
+                            SpriteRenderer tileCursorRenderer = tileCursor.GetComponent<SpriteRenderer>();
+                            Color tileCursorColor = tileCursorRenderer.color;
+                            if (tileScript.IsHighlighted)
+                            {
+                                tileCursorColor.a = 1.0f;
+                            }
+                            else
+                            {
+                                tileCursorColor.a = 0.125f;
+                            }
+                            tileCursorRenderer.color = tileCursorColor;
+                            tileCursor.SetActive(true);
+                        }
+                    }
+                    else
+                    {
+                        if (tileCursor != null)
+                        {
+                            tileCursor.SetActive(false);
+                        }
+                    }
+                }
+                else
+                {
+                    if (tileCursor != null)
+                    {
+                        tileCursor.SetActive(false);
+                    }
+                }
+            }
+        }
         // handle mouse down
         if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
         {
@@ -259,7 +317,6 @@ public class TurnLogicScript : MonoBehaviour
                 mouseDownTile = null;
             }
         }
-
         // handle mouse up
         if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
         {
@@ -283,6 +340,7 @@ public class TurnLogicScript : MonoBehaviour
             }
             mouseDownTile = null;
         }
+        // turn logic
         switch (currentGameState)
         {
             case GameState.BuildingLevel:

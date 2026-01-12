@@ -60,6 +60,7 @@ public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPoint
 
     public void OnActivate()
     {
+        SoundControllerScript.Instance.PlayMenuSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
         if (inventoryMenu == null)
         {
             inventoryMenu = Instantiate(inventoryMenuPrefab, characterUI);

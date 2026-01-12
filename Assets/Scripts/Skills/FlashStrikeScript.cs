@@ -122,6 +122,11 @@ public class FlashStrikeScript : MonoBehaviour, Skill
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.DisplayUsedSkill(skillSprite);
         wielderScript.MoveTo(targetPosition);
+        // moving can end the level in which case we stop
+        if (player == null)
+        {
+            return;
+        }
         List<Vector3> deltas = new List<Vector3>();
         for (float i = -1; i <= 1; i++)
         {

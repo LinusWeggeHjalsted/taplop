@@ -462,7 +462,7 @@ Camera:
   far clip plane: 1000
   field of view: 34
   orthographic: 1
-  orthographic size: 10.90625
+  orthographic size: 11.4375
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -851,14 +851,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Kills per turn: 0.7
-
-    Used skills per turn: 1.2
-
-    Outgoing damage
-    per turn: 2
-
-    Incoming damage per turn: 1.5'
+  m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
   m_sharedMaterial: {fileID: 3837557773144658646, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
@@ -1408,7 +1401,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Clone run rewards
+  m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
   m_sharedMaterial: {fileID: 3837557773144658646, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
@@ -1680,7 +1673,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Mission completed in 20 turns
+  m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
   m_sharedMaterial: {fileID: 3837557773144658646, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
@@ -1816,8 +1809,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Existing clone gathers 0.7 wood, 1.2 metal, 0.5 cloth, 0.5 leather, 0.5
-    knowledge per turn
+  m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
   m_sharedMaterial: {fileID: 3837557773144658646, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
@@ -1953,10 +1945,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Beginnings - 10 wood, 10 metal, 10 cloth, 10 leather, 10 knowledge
-
-    Forest
-    - 15 wood, 12 metal, 15 cloth, 12 leather, 15 knowledge'
+  m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
   m_sharedMaterial: {fileID: 3837557773144658646, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
@@ -2156,8 +2145,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: New clone gathers 1 wood, 1 metal, 1 cloth, 1 leather, 0.5 knowledge per
-    turn
+  m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}
   m_sharedMaterial: {fileID: 3837557773144658646, guid: 33308229daf08d37cb1bb4d7d6741075, type: 2}

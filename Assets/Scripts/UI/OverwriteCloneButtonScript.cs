@@ -52,6 +52,7 @@ public class OverwriteCloneButtonScript : MonoBehaviour, IPointerEnterHandler, I
 
     public void OnActivate()
     {
+        SoundControllerScript.Instance.PlayButtonClickSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
         PlayerDataScript.CloneData newCloneData = new PlayerDataScript.CloneData();
         newCloneData.totalSalvage = MissionLogicScript.Instance.totalSalvage;
         newCloneData.turnsToComplete = MissionLogicScript.Instance.totalTurns;

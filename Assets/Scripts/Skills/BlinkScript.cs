@@ -121,8 +121,8 @@ public class BlinkScript : MonoBehaviour, Skill
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.DisplayUsedSkill(skillSprite);
-        wielderScript.MoveTo(targetPosition);
         wielderScript.SetSkillCooldown(skillName, cooldown);
+        wielderScript.MoveTo(targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
