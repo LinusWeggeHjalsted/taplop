@@ -21,8 +21,7 @@
         }
 
         #unity-container {
-            width: 960px;
-            height: 540px;
+            /* Dimensions set dynamically via JavaScript for pixel-perfect scaling */
         }
 
         #unity-canvas {
@@ -90,6 +89,25 @@
         var loadingBar = document.querySelector("#unity-loading-bar");
         var progressBarFull = document.querySelector("#unity-progress-bar-full");
 
+        // Apply initial viewport scaling
+        function applyViewportScale() {
+            const baseWidth = 960;
+            const baseHeight = 540;
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+
+            // Calculate scale in 0.5 increments
+            const scaleX = Math.floor((viewportWidth / baseWidth) * 2) / 2;
+            const scaleY = Math.floor((viewportHeight / baseHeight) * 2) / 2;
+            const scale = Math.max(0.5, Math.min(scaleX, scaleY)); // Minimum 0.5x scale
+
+            container.style.width = (baseWidth * scale) + "px";
+            container.style.height = (baseHeight * scale) + "px";
+        }
+
+        // Apply scaling on load
+        applyViewportScale();
+
         var buildUrl = "Build";
         var loaderUrl = buildUrl + "/docs.loader.js";
         var config = {
@@ -99,7 +117,7 @@
             streamingAssetsUrl: "StreamingAssets",
             companyName: "LinusWH",
             productName: "taplop",
-            productVersion: "0.1 - gameplay demo",
+            productVersion: "0.1.1 - gameplay demo",
         };
 
         var script = document.createElement("script");

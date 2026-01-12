@@ -224,8 +224,13 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
     {    
         get
         {
-            BootsScript bootsScript = boots.GetComponent<BootsScript>();
-            return speed + bootsScript.speedBonus;
+            int bootsSpeed = 0;
+            if (boots != null)
+            {
+                BootsScript bootsScript = boots.GetComponent<BootsScript>();
+                bootsSpeed = bootsScript.speedBonus;
+            }
+            return speed + bootsSpeed;
         }
     }
     private float moveTimer = 0;

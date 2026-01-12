@@ -196,7 +196,7 @@ public class TurnLogicScript : MonoBehaviour
         });
         foreach (GameObject enemy in sortedEnemies)
         {
-            yield return new WaitForSeconds(0.5f);
+            yield return new WaitForSeconds(0.25f);
             EntityScript enemyScript = enemy.GetComponent<EntityScript>();
             enemyScript.ReduceCooldowns(1);
             enemyScript.ReduceEffectDurations(1);
@@ -205,7 +205,7 @@ public class TurnLogicScript : MonoBehaviour
             if (enemyScript.stunDuration == 0)
             {
                 enemiesScript.EnemyTurnMove(enemy);
-                yield return new WaitForSeconds(0.5f);
+                yield return new WaitForSeconds(0.25f);
                 yield return enemiesScript.EnemyTurnAttack(enemy);
             }
             else
@@ -214,7 +214,7 @@ public class TurnLogicScript : MonoBehaviour
             }
             enemyScript.EndOfTurnEnchantmentEffects();
         }
-    yield return new WaitForSeconds(0.5f);
+        yield return new WaitForSeconds(0.25f);
         currentGameState = GameState.PlayerTurnMove;
         turnStarted = false;
     }
