@@ -183,7 +183,7 @@ public class ThrowScript : MonoBehaviour, Skill
     {
         skillName = "Throw";
         skillType = "Off Hand Skill";
-        description = "Attack target";
+        description = "Attack target for 1.5x damage";
         range = 3f;
         duration = 0;
         cooldown = 4;

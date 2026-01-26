@@ -2,21 +2,20 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 
-public class OverwriteCloneButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+public class AttackStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
 {
     public RectTransform buttonRectTransform;
     public Button button;
+    public Sprite[] attackStepSprites = new Sprite[2];
+    public Image image;
+    public GameObject enemies;
+    public EnemiesScript enemiesScript;
     public Transform canvas;
     public GameObject tooltipPrefab;
     public GameObject tooltip;
 
     public void OnPointerEnter(PointerEventData eventData)
     {
-        // refresh canvas reference if it was destroyed
-        if (canvas == null)
-        {
-            canvas = GameObject.Find("Canvas").transform;
-        }
         Vector3[] buttonCorners = new Vector3[4];
         buttonRectTransform.GetWorldCorners(buttonCorners);
         Vector3 buttonTopRightPosition = buttonCorners[2];
@@ -37,8 +36,7 @@ public class OverwriteCloneButtonScript : MonoBehaviour, IPointerEnterHandler, I
             tooltipRectTransform.pivot = new Vector2(1f, 0);
             tooltipRectTransform.position = buttonTopRightPosition;
             TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-            StartCoroutine(tooltipScript.SetText("Overwrite Clone", ""));
-            tooltip.SetActive(true);
+            StartCoroutine(tooltipScript.SetText("Toggle autoskip attack step", ""));
         }
     }
 
@@ -50,18 +48,56 @@ public class OverwriteCloneButtonScript : MonoBehaviour, IPointerEnterHandler, I
         }
     }
 
+    public void ForceEnabledInCombat()
+    {
+        image.sprite = attackStepSprites[0];
+    }
+
+    public void DisplayCurrentToggle()
+    {
+        if (PlayerDataScript.Instance.skipAttackStep)
+        {
+            image.sprite = attackStepSprites[1];
+        }
+        else
+        {
+            image.sprite = attackStepSprites[0];
+        }
+    }
+
+    public void ToggleSkipAttackStep()
+    {
+        if (PlayerDataScript.Instance.skipAttackStep)
+        {
+            PlayerDataScript.Instance.skipAttackStep = false;
+            image.sprite = attackStepSprites[0];
+        }
+        else
+        {
+            PlayerDataScript.Instance.skipAttackStep = true;
+            image.sprite = attackStepSprites[1];
+        }
+    }
+
     public void OnActivate()
     {
-        SoundControllerScript.Instance.PlayButtonClickSound();
-        PlayerDataScript.CloneData newCloneData = new PlayerDataScript.CloneData();
-        newCloneData.totalSalvage = MissionLogicScript.Instance.totalSalvage;
-        newCloneData.turnsToComplete = MissionLogicScript.Instance.totalTurns;
-        string missionName = MissionLogicScript.Instance.missionName;
-        PlayerDataScript.Instance.allCloneData[missionName] = newCloneData;
-#if !UNITY_WEBGL || UNITY_EDITOR
-        PlayerDataScript.Instance.SavePlayerData("Autosave");
-#endif
-        // to-do - add popup to tell the player the new clone was saved
+        if (enemies == null)
+        {
+            enemies = GameObject.Find("Enemies");
+            enemiesScript = enemies.GetComponent<EnemiesScript>();
+        }
+        if (enemiesScript != null)
+        {
+            if (enemiesScript.activeEnemyLookup.Count > 0)
+            {
+                return;
+            }
+            else
+            {
+                SoundControllerScript.Instance.PlayButtonClickSound();
+                ToggleSkipAttackStep();
+            }
+        }
     }
 
     void Start()
@@ -69,7 +105,10 @@ public class OverwriteCloneButtonScript : MonoBehaviour, IPointerEnterHandler, I
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
+        attackStepSprites = Resources.LoadAll<Sprite>("AttackStep");
+        image = this.GetComponent<Image>();
         canvas = GameObject.Find("Canvas").transform;
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
+        DisplayCurrentToggle();
     }
 }

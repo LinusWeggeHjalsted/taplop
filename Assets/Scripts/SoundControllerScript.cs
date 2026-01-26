@@ -36,93 +36,111 @@ public class SoundControllerScript : MonoBehaviour
 
     }
 
-    public void PlayButtonClickSound(Vector3 position)
+    public void PlayButtonClickSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("button click sound");
     }
 
-    public void PlayMenuSound(Vector3 position)
+    public void PlayMenuSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("menu sound");
     }
 
-    public void PlayDefeatSound(Vector3 position)
+    public void PlayDefeatSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("defeat sound");
     }
 
-    public void PlayMissionCompletionSound(Vector3 position)
+    public void PlayMissionCompletionSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("mission completion sound");
     }
-    
-    public void PlayEquipWeaponSound(Vector3 position)
+
+    public void PlayEquipWeaponSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("equip weapon sound");
     }
 
-    public void PlayEquipArmorSound(Vector3 position)
+    public void PlayEquipArmorSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("equip armor sound");
     }
 
-    public void PlayLearnSkillSound(Vector3 position)
+    public void PlayLearnSkillSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("learn skill sound");
     }
 
-    public void PlaySalvageSound(Vector3 position)
+    public void PlaySalvageSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("salvage sound");
     }
-        
-    public void PlaySwapSkillSound(Vector3 position)
+
+    public void PlaySwapSkillSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("swap skill sound");
     }
 
-    public void PlayMoveSound(Vector3 position)
+    public void PlayMoveSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("move sound");
     }
 
-    public void PlayPickupSound(Vector3 position)
+    public void PlayPickupSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("pickup sound");
     }
 
-    public void PlayDamageSound(Vector3 position)
+    public void PlayDamageSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("damage sound");
     }
 
-    public void PlayAttackSound(Vector3 position)
+    public void PlayAttackSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("attack sound");
     }
 
-    public void PlaySpellSound(Vector3 position)
+    public void PlaySpellSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("spell sound");
     }
-    
-    public void PlayCantripSound(Vector3 position)
+
+    public void PlayCantripSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("cantrip sound");
     }
 
-    public void PlayEnchantmentSound(Vector3 position)
+    public void PlayEnchantmentSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("enchantment sound");
     }
 
-    public void PlayReflectSound(Vector3 position)
+    public void PlayReflectSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("reflect sound");
     }
 
-    public void PlayStunnedSound(Vector3 position)
+    public void PlayStunnedSound(Vector3? position = null)
     {
+        Vector3 pos = position ?? Camera.main.transform.position;
         Debug.Log("stunned sound");
     }
 }

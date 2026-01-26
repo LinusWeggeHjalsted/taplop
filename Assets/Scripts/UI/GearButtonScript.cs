@@ -55,7 +55,7 @@ public class GearButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
 
     public void OnActivate()
     {
-        SoundControllerScript.Instance.PlayMenuSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
+        SoundControllerScript.Instance.PlayMenuSound();
         if (gearMenu == null)
         {
             gearMenu = Instantiate(gearMenuPrefab, characterUI);

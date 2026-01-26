@@ -185,6 +185,10 @@ public class FlashStrikeScript : MonoBehaviour, Skill
         {
             for (float j = -effectiveRange; j <= effectiveRange; j++)
             {
+                if (i == 0 && j == 0)
+                {
+                    continue;
+                }
                 Vector3 delta = new Vector3(i, j, 0);
                 deltas.Add(delta);
             }

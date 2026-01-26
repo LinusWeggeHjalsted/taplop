@@ -11,6 +11,8 @@ public class EnemiesScript : MonoBehaviour
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject player;
+    public GameObject attackStepButton;
+    public AttackStepButtonScript attackStepButtonScript;
     public Dictionary<Vector3, GameObject> tileLookup = new Dictionary<Vector3, GameObject>();
     public Dictionary<Vector3, GameObject> enemyLookup = new Dictionary<Vector3, GameObject>();
     public Dictionary<Vector3, GameObject> activeEnemyLookup = new Dictionary<Vector3, GameObject>();
@@ -46,6 +48,8 @@ public class EnemiesScript : MonoBehaviour
         traversableTiles = GameObject.Find("Traversable Tiles");
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         player = GameObject.Find("Player");
+        attackStepButton = GameObject.Find("Attack Step Button");
+        attackStepButtonScript = attackStepButton.GetComponent<AttackStepButtonScript>();
         // wait for level builder
         StartCoroutine(WaitForLevelBuilderBeforePopulating());
     }
@@ -113,6 +117,10 @@ public class EnemiesScript : MonoBehaviour
                 PlayerDataScript.Instance.defeatedEnemies += 1;
                 MissionLogicScript.Instance.totalKills += 1;
             }
+        }
+        if (activeEnemyLookup.Count == 0)
+        {
+            attackStepButtonScript.DisplayCurrentToggle();
         }
     }
 

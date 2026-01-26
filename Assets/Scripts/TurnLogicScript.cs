@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
 using UnityEngine.EventSystems;
@@ -26,16 +27,22 @@ public class TurnLogicScript : MonoBehaviour
     public TraversableTilesScript traversableTilesScript;
     public GameObject levelBuilder;
     public LevelBuilderScript levelBuilderScript;
-    public TMP_Text turnStatusText;
     public GameObject skillsPanel;
     public SkillBarScript skillBarScript;
     public GameObject skipButton;
     public SkipButtonScript skipButtonScript;
+    public GameObject attackStepButton;
+    public AttackStepButtonScript attackStepButtonScript;
+    public GameObject moveStepHighlight;
+    public Image moveStepHighlightImage;
+    public GameObject attackStepHighlight;
+    public Image attackStepHighlightImage;
     public Dictionary<Vector3, GameObject> tileLookup = new Dictionary<Vector3, GameObject>();
 
     public GameState currentGameState;
     public GameObject skillUsed;
     public bool hasMoved = false;
+    public bool overrideSkipAttackStep = false;
     public bool hasAttacked = false;
     public bool turnStarted = false;
     public Coroutine playerMoveCoroutine;
@@ -87,12 +94,16 @@ public class TurnLogicScript : MonoBehaviour
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         levelBuilder = GameObject.Find("Level Builder");
         levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
-        turnStatusText = GameObject.Find("Turn Status Text").GetComponent<TMP_Text>();
         skillsPanel = GameObject.Find("Skills Panel");
         skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         skipButton = GameObject.Find("Skip Button");
         skipButtonScript = skipButton.GetComponent<SkipButtonScript>();
-        // we'll handle mouse clicks in Update() instead of using input action callbacks
+        attackStepButton = GameObject.Find("Attack Step Button");
+        attackStepButtonScript = attackStepButton.GetComponent<AttackStepButtonScript>();
+        moveStepHighlight = GameObject.Find("Move Step Highlight");
+        moveStepHighlightImage = moveStepHighlight.GetComponent<Image>();
+        attackStepHighlight = GameObject.Find("Attack Step Highlight");
+        attackStepHighlightImage = attackStepHighlight.GetComponent<Image>();
         // wait for LevelBuilder to finish building
         StartCoroutine(WaitForBuildingBeforeNewGameState());
     }
@@ -150,6 +161,7 @@ public class TurnLogicScript : MonoBehaviour
         currentGameState = GameState.PlayerTurnAttack;
         hasMoved = false;
         turnStarted = false;
+        moveStepHighlightImage.enabled = false;
     }
 
     public void RestartPlayerMoveStep()
@@ -181,6 +193,7 @@ public class TurnLogicScript : MonoBehaviour
         currentGameState = GameState.EnemiesTurn;
         hasAttacked = false;
         turnStarted = false;
+        attackStepHighlightImage.enabled = false;
     }
 
     IEnumerator EnemiesTurn()
@@ -367,7 +380,8 @@ public class TurnLogicScript : MonoBehaviour
                         playerScript.ReduceEnchantmentDurations(1);
                         playerScript.DisplayEnchantments();
                         traversableTilesScript.ClearHighlights();
-                        turnStatusText.text = "Player Move Step";
+                        moveStepHighlightImage.enabled = true;
+                        overrideSkipAttackStep = false;
                         if (playerScript.stunDuration == 0)
                         {
                             playerMoveCoroutine = StartCoroutine(PlayerTurnMove());
@@ -379,6 +393,8 @@ public class TurnLogicScript : MonoBehaviour
                             MissionLogicScript.Instance.totalTurns += 1;
                             currentGameState = GameState.EnemiesTurn;
                             turnStarted = false;
+                            moveStepHighlightImage.enabled = false;
+                            return;
                         }
                     }
                     Keyboard keyboard = Keyboard.current;
@@ -418,8 +434,27 @@ public class TurnLogicScript : MonoBehaviour
                         turnStarted = true;
                         traversableTilesScript.ClearHighlights();
                         skillUsed = null;
-                        turnStatusText.text = "Player Attack Step";
-                        StartCoroutine(PlayerTurnAttack());
+                        attackStepHighlightImage.enabled = true;
+                        if (overrideSkipAttackStep)
+                        {
+                            StartCoroutine(PlayerTurnAttack());
+                        }
+                        else
+                        {
+                            if (enemiesScript.activeEnemyLookup.Count == 0 && PlayerDataScript.Instance.skipAttackStep)
+                            {
+                                PlayerDataScript.Instance.turns += 1;
+                                MissionLogicScript.Instance.totalTurns += 1;
+                                currentGameState = GameState.EnemiesTurn;
+                                turnStarted = false;
+                                attackStepHighlightImage.enabled = false;
+                                return;
+                            }
+                            else
+                            {
+                                StartCoroutine(PlayerTurnAttack());
+                            }
+                        }
                     }
                     // check for keypresses
                     Keyboard keyboard = Keyboard.current;
@@ -458,7 +493,6 @@ public class TurnLogicScript : MonoBehaviour
                     turnStarted = true;
                     traversableTilesScript.ClearHighlights();
                     playerScript.EndOfTurnEnchantmentEffects();
-                    turnStatusText.text = "Enemies' turn...";
                     StartCoroutine(EnemiesTurn());
                 }
                 break;

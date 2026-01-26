@@ -12,7 +12,7 @@ public class StartNewGameButtonScript : MonoBehaviour
 
     public void OnActivate()
     {
-        SoundControllerScript.Instance.PlayButtonClickSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
+        SoundControllerScript.Instance.PlayButtonClickSound();
 #if !UNITY_WEBGL || UNITY_EDITOR
         // backup existing Autosave if it exists
         string autosavePath = Application.persistentDataPath + "/Autosave.txt";

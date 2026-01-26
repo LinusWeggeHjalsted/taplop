@@ -175,6 +175,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                     break;
                 }
                 turnLogicScript.hasMoved = true;
+                turnLogicScript.overrideSkipAttackStep = true;
                 StartCoroutine(WaitForAttackStepThenPrepareSkill());
                 break;
             case TurnLogicScript.GameState.PlayerTurnAttack:

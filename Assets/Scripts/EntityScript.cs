@@ -403,6 +403,13 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                     DisplayAggro();
                     FaceTowards(player.transform.position);
                     enemiesScript.activeEnemyLookup.Add(this.transform.position, this.gameObject);
+                    if (enemiesScript.activeEnemyLookup.Count == 1)
+                    {
+                        GameObject attackStepButton = GameObject.Find("Attack Step Button");
+                        AttackStepButtonScript attackStepButtonScript = attackStepButton.GetComponent<AttackStepButtonScript>();
+                        attackStepButtonScript.ForceEnabledInCombat();
+                        // until all active enemies are dead
+                    }
                 }
             }
             isActive = value;

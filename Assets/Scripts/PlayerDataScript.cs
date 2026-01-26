@@ -90,6 +90,7 @@ public class PlayerDataScript : MonoBehaviour
     }
 
     public bool finishedBuilding = false;
+    public bool skipAttackStep = true;
 
     public string playerName;
     

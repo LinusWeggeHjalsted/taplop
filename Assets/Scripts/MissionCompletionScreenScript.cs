@@ -100,7 +100,7 @@ public class MissionCompletionScreenScript : MonoBehaviour
 
     void Start()
     {
-        SoundControllerScript.Instance.PlayMissionCompletionSound(new Vector3(Screen.width / 2f, Screen.height / 2f, 0));
+        SoundControllerScript.Instance.PlayMissionCompletionSound();
         missionCompletionHeaderText = GameObject.Find("Mission Completion Header Text").GetComponent<TMP_Text>();
         newCloneInfoPanel = GameObject.Find("New Clone Info Panel");
         newCloneInfoText = GameObject.Find("New Clone Info Text").GetComponent<TMP_Text>();
