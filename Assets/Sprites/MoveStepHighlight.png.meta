@@ -1,13 +1,10 @@
 fileFormatVersion: 2
-guid: 83781b53ac0cfa2cb99407cad73667e1
+guid: dbbcfda096d1e5e0596ccf46a9d39bde
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -7458593736248047138
-    second: MouseAndSpace_0
-  - first:
-      213: -417640074371770186
-    second: MouseAndSpace_1
+      213: -3605506940293630410
+    second: MoveStepHighlight_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -99,17 +96,30 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: MouseAndSpace_0
+      name: MoveStepHighlight_0
       rect:
         serializedVersion: 2
         x: 0
-        y: 7
-        width: 28
-        height: 19
+        y: 0
+        width: 8
+        height: 8
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -118,30 +128,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: ed94bf2a380cd7890800000000000000
-      internalID: -7458593736248047138
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: MouseAndSpace_1
-      rect:
-        serializedVersion: 2
-        x: 21
-        y: 5
-        width: 11
-        height: 11
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 6b85a1ba09e343af0800000000000000
-      internalID: -417640074371770186
+      spriteID: 636b7946a8aa6fdc0800000000000000
+      internalID: -3605506940293630410
       vertices: []
       indices: 
       edges: []
@@ -160,8 +148,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      MouseAndSpace_0: -7458593736248047138
-      MouseAndSpace_1: -417640074371770186
+      MoveStepHighlight_0: -3605506940293630410
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
