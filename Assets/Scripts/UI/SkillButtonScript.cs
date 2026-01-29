@@ -19,6 +19,8 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     public TurnLogicScript turnLogicScript;
     public GameObject player;
     public PlayerCharacterScript playerScript;
+    public GameObject rangeOutline;
+    public SpriteRenderer rangeOutlineRenderer;
     public GameObject skill;
     public Skill skillScript;
     public string skillName
@@ -68,6 +70,10 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 }
                 float effectiveRange = skillScript.GetRange() + modifierRange;
                 skillRange = "Range " + effectiveRange.ToString() + "\n";
+                rangeOutline.transform.position = player.transform.position;
+                float rangeOutlineSize = (float)(2 * effectiveRange + 3);
+                rangeOutlineRenderer.size = new Vector2(rangeOutlineSize, rangeOutlineSize);
+                rangeOutlineRenderer.enabled = true;
             }
             string skillDuration = "";
             if (skillScript.GetDuration() > 0)
@@ -119,6 +125,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             tooltip.SetActive(false);
         }
+        rangeOutlineRenderer.enabled = false;
     }
 
     public void DisplayCooldown()
@@ -412,6 +419,8 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         }
         player = GameObject.Find("Player");
         playerScript = player.GetComponent<PlayerCharacterScript>();
+        rangeOutline = GameObject.Find("Range Outline");
+        rangeOutlineRenderer = rangeOutline.GetComponent<SpriteRenderer>();
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);

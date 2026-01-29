@@ -536,6 +536,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: '::'
   finishedBuilding: 0
+  skipAttackStep: 1
   playerName: 
   randomSeed: 0
   lastHub: 
