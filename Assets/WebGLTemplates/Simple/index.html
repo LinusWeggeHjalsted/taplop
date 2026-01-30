@@ -73,7 +73,7 @@
     </style>
 </head>
 <body>
-    <button id="fullscreen-button">Fullscreen (1920x1080)</button>
+    <button id="fullscreen-button">Fullscreen</button>
     <div id="unity-container">
         <canvas id="unity-canvas"></canvas>
         <div id="unity-loading-bar">
@@ -141,8 +141,8 @@
                 function calculatePixelPerfectScale() {
                     const baseWidth = 960;
                     const baseHeight = 540;
-                    const screenWidth = window.screen.width;
-                    const screenHeight = window.screen.height;
+                    const screenWidth = window.innerWidth;
+                    const screenHeight = window.innerHeight;
 
                     // Find largest integer multiplier that fits the screen
                     const scaleX = Math.floor(screenWidth / baseWidth);
@@ -156,9 +156,6 @@
                     };
                 }
 
-                // Update button text with calculated dimensions
-                const scalingInfo = calculatePixelPerfectScale();
-                fullscreenButton.textContent = `Fullscreen (${scalingInfo.width}x${scalingInfo.height})`;
 
                 fullscreenButton.onclick = () => {
                     if (!document.fullscreenElement) {
@@ -185,6 +182,7 @@
                         container.style.height = "";
                         container.classList.remove("fullscreen");
                         unityInstance.SetFullscreen(0);
+                        applyViewportScale();
                     }
                 });
             }).catch((message) => {
