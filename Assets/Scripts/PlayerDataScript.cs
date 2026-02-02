@@ -273,6 +273,28 @@ public class PlayerDataScript : MonoBehaviour
                 return;
             }
 
+            // reset all fields to default values before loading new save
+            playerName = "";
+            randomSeed = 0;
+            lastHub = "";
+            turns = 0;
+            deaths = 0;
+            defeatedEnemies = 0;
+            collectedSalvage = new Salvage();
+            utilitySkillSlots = 0;
+            discoveredHubs = new List<string>();
+            unlockedSkills = new List<string>();
+            mainHandWeapon = new WeaponData();
+            offHandWeapon = new WeaponData();
+            amulet = new AmuletData();
+            coat = new CoatData();
+            gloves = new GlovesData();
+            pants = new PantsData();
+            boots = new BootsData();
+            inventory = new List<InventoryItemData>();
+            utilitySkills = new string[5];
+            allCloneData = new Dictionary<string, CloneData>();
+
             string[] fileLines = fileText.Split('\n');
             string[] sectionHeaders = new string[] {
                 "Info",

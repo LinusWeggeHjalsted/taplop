@@ -612,6 +612,7 @@ public class LevelBuilderScript : MonoBehaviour
     public void BuildLevel(ParsedLevel parsedLevel)
     {
         player.transform.position = parsedLevel.playerPosition; 
+        CameraControllerScript.Instance.MoveToPlayer();
         // build tiles
         for (int i = 0; i < parsedLevel.tilePositions.Count; i++)
         {

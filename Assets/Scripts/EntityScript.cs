@@ -761,6 +761,10 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             enemiesScript.EnemyMoved(currentPosition, targetPosition);
         }
         this.transform.position = targetPosition;
+        if (this.gameObject == player)
+        {
+            CameraControllerScript.Instance.MoveToPlayer();
+        }
         // pick up ground items
         List<Vector3> pickupDeltas = new List<Vector3>();
         for (float i = -pickupRadius; i <= pickupRadius; i++)
@@ -801,17 +805,17 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                     {
                         break;
                     }
-                    // refresh open inventory menu
-                    Transform characterUI = GameObject.Find("Character UI").transform;
-                    Transform inventoryMenu = characterUI.Find("Inventory Menu(Clone)");
-                    if (inventoryMenu != null)
-                    {
-                        InventoryMenuScript inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
-                        inventoryMenuScript.RefreshUI();
-                    }
                     // show pickup notification for player
                     if (this.gameObject == player)
                     {
+                        // refresh open inventory menu
+                        Transform characterUI = GameObject.Find("Character UI").transform;
+                        Transform inventoryMenu = characterUI.Find("Inventory Menu(Clone)");
+                        if (inventoryMenu != null)
+                        {
+                            InventoryMenuScript inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
+                            inventoryMenuScript.RefreshUI();
+                        }
                         GameObject inventoryButton = GameObject.Find("Inventory Button");
                         InventoryButtonScript inventoryButtonScript = inventoryButton.GetComponent<InventoryButtonScript>();
                         Sprite itemSprite = itemScript.GetSprite();
@@ -826,7 +830,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             }
         }
         // update aggro and finish level if player is on level end
-        if (targetPosition == player.transform.position)
+        if (this.gameObject == player)
         {
             enemiesScript.UpdateAggro();
             if (enemiesScript.activeEnemyLookup.Count == 0 && targetTileScript.IsEnd)

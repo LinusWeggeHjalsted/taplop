@@ -257,6 +257,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
             spriteRenderer.flipX = false;
         }
         this.transform.position = targetPosition;
+        CameraControllerScript.Instance.MoveToPlayer();
         // start mission if standing on exit
         if (hubExitsScript.exitLookup.ContainsKey(targetPosition))
         {

@@ -51,6 +51,7 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
     public void OnActivate()
     {
         SoundControllerScript.Instance.PlayButtonClickSound();
+        CameraControllerScript.Instance.MoveToPlayer();
         switch (turnLogicScript.currentGameState)
         {
             case TurnLogicScript.GameState.PlayerTurnMove:

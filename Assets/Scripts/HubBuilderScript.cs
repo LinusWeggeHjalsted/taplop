@@ -203,6 +203,7 @@ public class HubBuilderScript : MonoBehaviour
     public void BuildHub(ParsedHub parsedHub)
     {
         player.transform.position = parsedHub.playerPosition;
+        CameraControllerScript.Instance.MoveToPlayer();
         // build tiles
         for (int i = 0; i < parsedHub.tilePositions.Count; i++)
         {

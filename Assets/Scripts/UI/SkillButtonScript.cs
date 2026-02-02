@@ -166,6 +166,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
 
     public void OnActivate()
     {
+        CameraControllerScript.Instance.MoveToPlayer();
         if (turnLogic == null)
         {
             return;

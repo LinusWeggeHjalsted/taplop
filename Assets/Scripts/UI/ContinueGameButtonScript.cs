@@ -30,7 +30,7 @@ public class ContinueGameButtonScript : MonoBehaviour
 
 #if UNITY_WEBGL && !UNITY_EDITOR
         // In WebGL, check if PlayerDataScript has valid data in memory
-        if (PlayerDataScript.Instance == null || string.IsNullOrEmpty(PlayerDataScript.Instance.lastHub))
+        if (PlayerDataScript.Instance == null || PlayerDataScript.Instance.turns == 0)
         {
             this.gameObject.SetActive(false);
         }
