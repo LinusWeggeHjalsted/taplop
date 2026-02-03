@@ -180,7 +180,7 @@ public class TraversableTilesScript : MonoBehaviour
         }
     }
 
-    public int WalkingDistance(Vector3 startPosition, Vector3 endPosition)
+    public float WalkingDistance(Vector3 startPosition, Vector3 endPosition)
     {
         List<Vector3> shortestPath = ShortestPath(startPosition, endPosition);
         if (shortestPath != null)
@@ -189,7 +189,7 @@ public class TraversableTilesScript : MonoBehaviour
         }
         else
         {
-            return Int32.MaxValue;
+            return float.MaxValue;
         }
     }
 

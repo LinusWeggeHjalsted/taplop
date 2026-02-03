@@ -112,7 +112,18 @@ public class BlinkScript : MonoBehaviour, Skill
             }
         }
         // sort targetPositions by distance to player
-        targetPositions = targetPositions.OrderBy(pos => traversableTilesScript.WalkingDistance(pos, player.transform.position)).ToList();
+        // use walking distance when path exists, otherwise fall back to straight-line distance
+        targetPositions = targetPositions.OrderBy(pos => {
+            float walkingDist = traversableTilesScript.WalkingDistance(pos, player.transform.position);
+            if (walkingDist == float.MaxValue)
+            {
+                return traversableTilesScript.Distance(pos, player.transform.position);
+            }
+            else
+            {
+                return walkingDist;
+            }
+        }).ToList();
         return targetPositions[0];
     }
 
