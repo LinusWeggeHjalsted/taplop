@@ -10,7 +10,7 @@ public class GlobalConstantsScript : MonoBehaviour
     public int maxStringLength = 64;
     public int maxDiscoveredHubs = 64;
     public int maxUnlockedSkills = 64;
-    public int maxInventorySize = 24;
+    public int maxInventorySize = 24 * 4;
     public int maxClones = 64;
 
     // min/max ranges for player stats
@@ -25,7 +25,7 @@ public class GlobalConstantsScript : MonoBehaviour
     public int minSalvage = 0;
     public int maxSalvage = int.MaxValue;
     public int minInventoryPosition = 1;
-    public int maxInventoryPosition = 24;
+    public int maxInventoryPosition = 24 * 4;
 
     // max values for gear stats
     public int maxWeaponDamage = 10;

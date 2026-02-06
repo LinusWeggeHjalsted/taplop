@@ -1187,7 +1187,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         _legs = gear.transform.Find("Legs");
         _feet = gear.transform.Find("Feet");
         _inventory = this.transform.Find("Inventory");
-        _inventorySize = 24;
+        _inventorySize = 24 * 4;
         _utilitySkills = this.transform.Find("Utility Skills");
         enchantments = this.transform.Find("Enchantments");
         StartCoroutine(WaitForGearBeforePopulating());

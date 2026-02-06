@@ -42,16 +42,15 @@ public class TraversableTilesScript : MonoBehaviour
     public EnemiesScript enemiesScript;
     public GameObject player;
     public Dictionary<Vector3, GameObject> tileLookup = new Dictionary<Vector3, GameObject>();
-    
+    public Dictionary<Vector3, GameObject> highlightedTileLookup = new Dictionary<Vector3, GameObject>();
+
     public void ClearHighlights()
     {
-        foreach (GameObject tileObject in tileLookup.Values)
+        List<GameObject> highlightedTiles = new List<GameObject>(highlightedTileLookup.Values);
+        foreach (GameObject tileObject in highlightedTiles)
         {
             TileScript tileScript = tileObject.GetComponent<TileScript>();
-            if (tileScript.IsHighlighted)
-            {
-                tileScript.IsHighlighted = false;
-            }
+            tileScript.IsHighlighted = false;
         }
     }
 

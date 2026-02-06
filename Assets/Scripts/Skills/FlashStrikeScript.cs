@@ -83,36 +83,28 @@ public class FlashStrikeScript : MonoBehaviour, Skill
     {
         EntityScript enemyScript = enemy.GetComponent<EntityScript>();
         float effectiveRange = range + enemyScript.enchantmentModifiers.range;
-        Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
-        List<Vector3> deltas = new List<Vector3>();
-        for (float i = -effectiveRange; i <= effectiveRange; i++)
-        {
-            for (float j = -effectiveRange; j <= effectiveRange; j++)
-            {
-                Vector3 delta = new Vector3(i, j, 0);
-                deltas.Add(delta);
-            }
-        }
+        Dictionary<Vector3, GameObject> highlightedTileLookup = traversableTilesScript.highlightedTileLookup;
         List<Vector3> targetPositions = new List<Vector3>();
-        foreach (Vector3 delta in deltas)
+        foreach (Vector3 targetPosition in highlightedTileLookup.Keys)
         {
-            Vector3 targetPosition = fromPosition + delta;
-            if (!tileLookup.ContainsKey(targetPosition))
+            if (traversableTilesScript.Distance(fromPosition, targetPosition) <= effectiveRange)
             {
-                continue;
-            }
-            else
-            {
-                GameObject targetTile = tileLookup[targetPosition];
-                TileScript targetTileScript = targetTile.GetComponent<TileScript>();
-                if (targetTileScript.IsHighlighted)
-                {
-                    targetPositions.Add(targetPosition);
-                }
+                targetPositions.Add(targetPosition);
             }
         }
         // sort targetPositions by distance to player
-        targetPositions = targetPositions.OrderBy(pos => traversableTilesScript.Distance(pos, player.transform.position)).ToList();
+        // use walking distance when path exists, otherwise fall back to straight-line distance
+        targetPositions = targetPositions.OrderBy(pos => {
+            float walkingDist = traversableTilesScript.WalkingDistance(pos, player.transform.position);
+            if (walkingDist == float.MaxValue)
+            {
+                return traversableTilesScript.Distance(pos, player.transform.position);
+            }
+            else
+            {
+                return walkingDist;
+            }
+        }).ToList();
         return targetPositions[0];
     }
 

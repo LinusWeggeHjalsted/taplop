@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 
 public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
 {
@@ -57,6 +58,11 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
             case TurnLogicScript.GameState.PlayerTurnMove:
                 traversableTilesScript.ClearHighlights();
                 turnLogicScript.skillUsed = null;
+                Keyboard keyboard = Keyboard.current;
+                if (keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed)
+                {
+                    turnLogicScript.overrideSkipAttackStep = true;
+                }
                 turnLogicScript.currentGameState = TurnLogicScript.GameState.PlayerTurnAttack;
                 turnLogicScript.hasMoved = true;
                 break;

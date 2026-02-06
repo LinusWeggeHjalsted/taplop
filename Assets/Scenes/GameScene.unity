@@ -346,7 +346,7 @@ MonoBehaviour:
   maxStringLength: 64
   maxDiscoveredHubs: 64
   maxUnlockedSkills: 64
-  maxInventorySize: 24
+  maxInventorySize: 96
   maxClones: 64
   minRandomSeed: -2147483648
   maxRandomSeed: 2147483647
@@ -359,7 +359,7 @@ MonoBehaviour:
   minSalvage: 0
   maxSalvage: 2147483647
   minInventoryPosition: 1
-  maxInventoryPosition: 24
+  maxInventoryPosition: 96
   maxWeaponDamage: 10
   maxSpellDamage: 10
   maxArmor: 5

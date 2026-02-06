@@ -497,6 +497,24 @@ public class PlayerDataScript : MonoBehaviour
                         return;
                     }
                 }
+                else if (currentLine.StartsWith("clothSalvage "))
+                {
+                    string clothSalvageString = currentLine.Substring("clothSalvage ".Length);
+                    int clothSalvageNumber;
+                    if (Int32.TryParse(clothSalvageString, out clothSalvageNumber))
+                    {
+                        if (!ValidateIntInRange(clothSalvageNumber, constants.minSalvage, constants.maxSalvage, "clothSalvage"))
+                        {
+                            return;
+                        }
+                        collectedSalvage.cloth = clothSalvageNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("clothSalvage is not a number");
+                        return;
+                    }
+                }
                 else if (currentLine.StartsWith("knowledge "))
                 {
                     string knowledgeString = currentLine.Substring("knowledge ".Length);
@@ -1487,6 +1505,7 @@ public class PlayerDataScript : MonoBehaviour
         saveData += "woodSalvage " + collectedSalvage.wood.ToString() + "\n";
         saveData += "metalSalvage " + collectedSalvage.metal.ToString() + "\n";
         saveData += "leatherSalvage " + collectedSalvage.leather.ToString() + "\n";
+        saveData += "clothSalvage " + collectedSalvage.cloth.ToString() + "\n";
         saveData += "knowledge " + collectedSalvage.knowledge.ToString() + "\n";
         saveData += "utilitySkillSlots " + utilitySkillSlots.ToString() + "\n";
         saveData += "\n";

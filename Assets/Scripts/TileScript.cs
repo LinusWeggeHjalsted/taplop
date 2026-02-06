@@ -8,11 +8,13 @@ public class TileScript : MonoBehaviour
     public PlayerCharacterScript playerScript;
     public GameObject turnLogic;
     public TurnLogicScript turnLogicScript;
+    public GameObject traversableTiles;
+    public TraversableTilesScript traversableTilesScript;
     public GameObject highlight;
     public Animator highlightAnimator;
     public bool isOccupied = false;
     private bool isHighlighted = false;
-    public bool IsHighlighted 
+    public bool IsHighlighted
     {
         get
         {
@@ -20,6 +22,22 @@ public class TileScript : MonoBehaviour
         }
         set
         {
+            if (turnLogic == null)
+            {
+                return;
+            }
+            // add to highlightedTileLookup when highlighting
+            if (value && !this.isHighlighted)
+            {
+                Vector3 position = this.transform.position;
+                traversableTilesScript.highlightedTileLookup.Add(position, this.gameObject);
+            }
+            // remove from highlightedTileLookup when unhighlighting
+            else if (!value && this.isHighlighted)
+            {
+                Vector3 position = this.transform.position;
+                traversableTilesScript.highlightedTileLookup.Remove(position);
+            }
             this.isHighlighted = value;
             highlightAnimator.SetBool("isHighlighted", isHighlighted);
         }
@@ -56,6 +74,11 @@ public class TileScript : MonoBehaviour
         {
             turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
         }
+        traversableTiles = GameObject.Find("Traversable Tiles");
+        if (traversableTiles != null)
+        {
+            traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
+        }
         highlight = this.transform.Find("Highlight").gameObject;
         highlightAnimator = highlight.GetComponent<Animator>();
     }
@@ -70,6 +93,11 @@ public class TileScript : MonoBehaviour
         {
             case TurnLogicScript.GameState.PlayerTurnMove:
                 playerScript.MoveTo(this.transform.position);
+                Keyboard keyboard = Keyboard.current;
+                if (keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed)
+                {
+                    turnLogicScript.overrideSkipAttackStep = true;
+                }
                 turnLogicScript.hasMoved = true;
                 break;
             case TurnLogicScript.GameState.PlayerTurnAttack:
