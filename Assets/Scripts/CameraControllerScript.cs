@@ -104,8 +104,11 @@ public class CameraControllerScript : MonoBehaviour
                 }
             }
         }
-        // convert screen space width to world space offset
         float halfMenuWidth = totalMenuWidth / 2f;
+        if (mainCamera == null)
+        {
+            mainCamera = Camera.main;
+        }
         Vector3 screenPointLeft = new Vector3(0, Screen.height / 2f, Mathf.Abs(mainCamera.transform.position.z));
         Vector3 screenPointRight = new Vector3(halfMenuWidth, Screen.height / 2f, Mathf.Abs(mainCamera.transform.position.z));
         Vector3 worldPointLeft = mainCamera.ScreenToWorldPoint(screenPointLeft);
