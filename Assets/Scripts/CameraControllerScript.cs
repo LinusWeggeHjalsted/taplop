@@ -88,6 +88,9 @@ public class CameraControllerScript : MonoBehaviour
     public void MoveToPlayer()
     {
         Transform characterUI = GameObject.Find("Character UI").transform;
+        GameObject canvas = GameObject.Find("Canvas");
+        Canvas canvasComponent = canvas.GetComponent<Canvas>();
+        float canvasScaleFactor = canvasComponent.scaleFactor;
         float totalMenuWidth = 0;
         for (int i = 0; i < characterUI.childCount; i++)
         {
@@ -97,7 +100,7 @@ public class CameraControllerScript : MonoBehaviour
                 RectTransform menuRect = menu.GetComponent<RectTransform>();
                 if (menuRect != null)
                 {
-                    totalMenuWidth += menuRect.rect.width;
+                    totalMenuWidth += menuRect.rect.width * canvasScaleFactor;
                 }
             }
         }
