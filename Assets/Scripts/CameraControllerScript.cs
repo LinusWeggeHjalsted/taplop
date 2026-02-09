@@ -10,6 +10,7 @@ public class CameraControllerScript : MonoBehaviour
     private Vector2 lastMousePosition;
     private bool isPointerOverUI = false;
     private bool isDragging = false;
+    public bool draggedSinceLastCenter = false;
 
     void Awake()
     {
@@ -57,6 +58,7 @@ public class CameraControllerScript : MonoBehaviour
         }
         if (Mouse.current != null && Mouse.current.rightButton.isPressed && isDragging)
         {
+            draggedSinceLastCenter = true;
             Vector2 currentMousePosition = Mouse.current.position.ReadValue();
             Vector2 mouseDelta = currentMousePosition - lastMousePosition;
             Vector3 worldDelta = ScreenToWorldDelta(mouseDelta);
@@ -85,6 +87,29 @@ public class CameraControllerScript : MonoBehaviour
 
     public void MoveToPlayer()
     {
-        this.transform.position = player.transform.position;
+        Transform characterUI = GameObject.Find("Character UI").transform;
+        float totalMenuWidth = 0;
+        for (int i = 0; i < characterUI.childCount; i++)
+        {
+            Transform menu = characterUI.GetChild(i);
+            if (menu != null && menu.gameObject.activeSelf)
+            {
+                RectTransform menuRect = menu.GetComponent<RectTransform>();
+                if (menuRect != null)
+                {
+                    totalMenuWidth += menuRect.rect.width;
+                }
+            }
+        }
+        // convert screen space width to world space offset
+        float halfMenuWidth = totalMenuWidth / 2f;
+        Vector3 screenPointLeft = new Vector3(0, Screen.height / 2f, Mathf.Abs(mainCamera.transform.position.z));
+        Vector3 screenPointRight = new Vector3(halfMenuWidth, Screen.height / 2f, Mathf.Abs(mainCamera.transform.position.z));
+        Vector3 worldPointLeft = mainCamera.ScreenToWorldPoint(screenPointLeft);
+        Vector3 worldPointRight = mainCamera.ScreenToWorldPoint(screenPointRight);
+        float worldOffsetX = worldPointRight.x - worldPointLeft.x;
+        Vector3 openMenuOffset = new Vector3(worldOffsetX, 0, 0);
+        this.transform.position = player.transform.position - openMenuOffset;
+        draggedSinceLastCenter = false;
     }
 }

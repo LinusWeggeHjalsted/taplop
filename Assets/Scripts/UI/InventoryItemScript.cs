@@ -270,6 +270,12 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
             int maxThirdCooldown = System.Math.Max(currentThirdCooldown, selectedThirdCooldown);
             playerScript.SetSkillCooldown(selectedSecondSkillName, maxSecondCooldown);
             playerScript.SetSkillCooldown(selectedThirdSkillName, maxThirdCooldown);
+
+            if (currentItem.transform.parent != playerScript.inventory)
+            {
+                playerScript.SetSkillCooldown(currentSecondSkillName, maxSecondCooldown);
+                playerScript.SetSkillCooldown(currentThirdSkillName, maxThirdCooldown);
+            }
         }
         else
         {

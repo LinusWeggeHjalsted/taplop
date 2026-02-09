@@ -31,7 +31,7 @@ public class AmuletScript : MonoBehaviour, ItemScript
 
     public string ItemDescription()
     {
-        string spellDamageString = "Spell Damage +" + spellDamage.ToString();
+        string spellDamageString = "Spell Damage " + spellDamage.ToString();
         return spellDamageString;
     }
 

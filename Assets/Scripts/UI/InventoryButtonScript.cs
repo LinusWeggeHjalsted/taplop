@@ -67,7 +67,11 @@ public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPoint
         }
         else
         {
-            Destroy(inventoryMenu);
+            DestroyImmediate(inventoryMenu);
+        }
+        if (!CameraControllerScript.Instance.draggedSinceLastCenter)
+        {
+            CameraControllerScript.Instance.MoveToPlayer();
         }
     }
 

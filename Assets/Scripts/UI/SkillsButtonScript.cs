@@ -62,7 +62,11 @@ public class SkillsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerE
         }
         else
         {
-            Destroy(skillsMenu);
+            DestroyImmediate(skillsMenu);
+        }
+        if (!CameraControllerScript.Instance.draggedSinceLastCenter)
+        {
+            CameraControllerScript.Instance.MoveToPlayer();
         }
     }
 

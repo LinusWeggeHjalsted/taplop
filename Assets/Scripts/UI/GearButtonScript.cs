@@ -62,7 +62,11 @@ public class GearButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
         }
         else
         {
-            Destroy(gearMenu);
+            DestroyImmediate(gearMenu);
+        }
+        if (!CameraControllerScript.Instance.draggedSinceLastCenter)
+        {
+            CameraControllerScript.Instance.MoveToPlayer();
         }
     }
 
