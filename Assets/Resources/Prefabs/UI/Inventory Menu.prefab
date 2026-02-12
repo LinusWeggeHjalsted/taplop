@@ -753,7 +753,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_RaycastTarget: 1
+  m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
@@ -1756,6 +1756,7 @@ MonoBehaviour:
   player: {fileID: 0}
   playerInventory: {fileID: 0}
   selectionHighlight: {fileID: 0}
+  canvas: {fileID: 0}
   inventorySlots: {fileID: 0}
   itemSlotPrefab: {fileID: 0}
   inventoryItemPrefab: {fileID: 0}
@@ -1764,5 +1765,6 @@ MonoBehaviour:
   leatherSalvageText: {fileID: 0}
   clothSalvageText: {fileID: 0}
   knowledgeSalvageText: {fileID: 0}
+  isShiftDragging: 0
   _beginDragCornerIndex: 0
   _endDragCornerIndex: 0
