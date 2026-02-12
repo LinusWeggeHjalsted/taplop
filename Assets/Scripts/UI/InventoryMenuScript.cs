@@ -8,6 +8,7 @@ public class InventoryMenuScript : MonoBehaviour
     public PlayerCharacterScript playerScript;
     public Transform playerInventory;
     public Transform selectionHighlight;
+    public Canvas canvas;
     public Transform inventorySlots;
     public GameObject itemSlotPrefab;
     public GameObject inventoryItemPrefab;
@@ -84,19 +85,22 @@ public class InventoryMenuScript : MonoBehaviour
         float height = Mathf.Abs(lastCornerCoordinates.y - firstCornerCoordinates.y);
 
         // get the size of a single item slot to account for slot dimensions
+        // multiply by canvas scaleFactor to get actual screen-space size at current resolution
         Transform firstItemSlot = inventorySlots.GetChild(beginDragCornerIndex - 1);
         RectTransform firstItemSlotRect = firstItemSlot.GetComponent<RectTransform>();
-        float slotWidth = firstItemSlotRect.rect.width;
-        float slotHeight = firstItemSlotRect.rect.height;
+        float canvasScale = canvas.scaleFactor;
+        float slotWidth = firstItemSlotRect.rect.width * canvasScale;
+        float slotHeight = firstItemSlotRect.rect.height * canvasScale;
 
         // add one slot size to width and height to properly cover the area
         width += slotWidth;
         height += slotHeight;
 
         // position and resize the selection highlight
+        // sizeDelta is in local space, so divide by canvas scale to convert from screen pixels
         RectTransform highlightRect = selectionHighlight.GetComponent<RectTransform>();
         highlightRect.position = centerPosition;
-        highlightRect.sizeDelta = new Vector2(width, height);
+        highlightRect.sizeDelta = new Vector2(width / canvasScale, height / canvasScale);
 
         selectionHighlight.gameObject.SetActive(true);
     }
@@ -210,6 +214,7 @@ public class InventoryMenuScript : MonoBehaviour
         playerScript = player.GetComponent<PlayerCharacterScript>();
         playerInventory = player.transform.Find("Inventory");
         selectionHighlight = this.transform.Find("Selection Highlight");
+        canvas = GameObject.Find("Canvas").GetComponent<Canvas>();
         Transform horizontalLayout = this.transform.Find("Horizontal Layout");
         inventorySlots = horizontalLayout.Find("Inventory Slots");
         Transform inventorySidebar = horizontalLayout.Find("Inventory Sidebar");
