@@ -808,14 +808,6 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                     // show pickup notification for player
                     if (this.gameObject == player)
                     {
-                        // refresh open inventory menu
-                        Transform characterUI = GameObject.Find("Character UI").transform;
-                        Transform inventoryMenu = characterUI.Find("Inventory Menu(Clone)");
-                        if (inventoryMenu != null)
-                        {
-                            InventoryMenuScript inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
-                            inventoryMenuScript.RefreshUI();
-                        }
                         GameObject inventoryButton = GameObject.Find("Inventory Button");
                         InventoryButtonScript inventoryButtonScript = inventoryButton.GetComponent<InventoryButtonScript>();
                         Sprite itemSprite = itemScript.GetSprite();
@@ -826,6 +818,17 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 {
                     dropsScript.groundItemsLookup.Remove(pickupPosition);
                     Destroy(groundItems);
+                }
+                if (this.gameObject == player)
+                {
+                    // refresh open inventory menu
+                    Transform characterUI = GameObject.Find("Character UI").transform;
+                    Transform inventoryMenu = characterUI.Find("Inventory Menu(Clone)");
+                    if (inventoryMenu != null)
+                    {
+                        InventoryMenuScript inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
+                        inventoryMenuScript.RefreshUI();
+                    }
                 }
             }
         }
@@ -1067,7 +1070,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             inventoryItem.parent = groundItems.transform;
         }
-        // prepare to drop random item
+        // find equipped gear
         List<GameObject> equippedGear = new List<GameObject>();
         if (mainHandWeapon != null)
         {
@@ -1102,26 +1105,19 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             equippedUtilitySkills.Add(utilitySkills.GetChild(i).gameObject);
         }
-        // pick 1 random gear piece or utility skill to drop
-        if (equippedGear.Count > 0 || equippedUtilitySkills.Count > 0)
+        // drop all equipped gear
+        foreach (GameObject gearDrop in equippedGear)
         {
-            int totalCount = equippedGear.Count + equippedUtilitySkills.Count;
-            int randomIndex = Random.Range(0, totalCount);
-            if (randomIndex < equippedGear.Count)
-            {
-                GameObject gearDrop = equippedGear[randomIndex];
-                gearDrop.transform.parent = groundItems.transform;
-            }
-            else
-            {
-                int skillIndex = randomIndex - equippedGear.Count;
-                GameObject skillDrop = equippedUtilitySkills[skillIndex];
-                Skill skillScript = skillDrop.GetComponent<Skill>();
-                GameObject skillTomePrefab = Resources.Load<GameObject>("Prefabs/Items/Skill Tome");
-                GameObject tomeDrop = Instantiate(skillTomePrefab, groundItems.transform);
-                SkillTomeScript tomeScript = tomeDrop.GetComponent<SkillTomeScript>();
-                tomeScript.skillName = skillScript.GetSkillName();
-            }
+            gearDrop.transform.parent = groundItems.transform;
+        }
+        // drop tome for each equipped utility skill
+        foreach (GameObject skillDrop in equippedUtilitySkills)
+        {
+            Skill skillScript = skillDrop.GetComponent<Skill>();
+            GameObject skillTomePrefab = Resources.Load<GameObject>("Prefabs/Items/Skill Tome");
+            GameObject tomeDrop = Instantiate(skillTomePrefab, groundItems.transform);
+            SkillTomeScript tomeScript = tomeDrop.GetComponent<SkillTomeScript>();
+            tomeScript.skillName = skillScript.GetSkillName();
         }
     }
 

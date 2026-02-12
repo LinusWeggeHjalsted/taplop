@@ -2,12 +2,15 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using System.Collections.Generic;
 
 public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
 {
     public GameObject item;
     public Transform currentParent;
     public Transform canvas;
+    public GameObject inventoryMenu;
+    public InventoryMenuScript inventoryMenuScript;
     public GameObject tooltipPrefab;
     public GameObject tooltip;
     public GameObject contextMenuPrefab;
@@ -35,6 +38,38 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
 
     public void OnBeginDrag(PointerEventData eventData)
     {
+        if (inventoryMenu == null)
+        {
+            inventoryMenu = GameObject.Find("Inventory Menu(Clone)");
+        }
+        if (inventoryMenu != null)
+        {
+            inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
+        }
+        if (inventoryMenuScript != null)
+        {
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null)
+            {
+                inventoryMenuScript.isShiftDragging = false;
+            }
+            else
+            {
+                bool shiftPressed = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
+                if (shiftPressed)
+                {
+                    // set beginDragCornerIndex for multi-select salvage
+                    ItemScript itemScript = item.GetComponent<ItemScript>();
+                    inventoryMenuScript.isShiftDragging = true;
+                    inventoryMenuScript.beginDragCornerIndex = itemScript.inventoryPosition;
+                    return;
+                }
+                else
+                {
+                    inventoryMenuScript.isShiftDragging = false;
+                }
+            }
+        }
         this.transform.parent = canvas;
         this.transform.SetAsLastSibling();
         Image itemImage = GetComponent<Image>();
@@ -43,11 +78,54 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
 
     public void OnDrag(PointerEventData eventData)
     {
+        if (inventoryMenuScript != null && inventoryMenuScript.isShiftDragging)
+        {
+            // check if shift is still being held
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard != null)
+            {
+                bool shiftPressed = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
+                if (!shiftPressed)
+                {
+                    inventoryMenuScript.endDragCornerIndex = 0;
+                    return;
+                }
+            }
+            // find the Item Slot under cursor
+            List<RaycastResult> results = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(eventData, results);
+            foreach (RaycastResult result in results)
+            {
+                ItemSlotScript itemSlot = result.gameObject.GetComponent<ItemSlotScript>();
+                if (itemSlot != null)
+                {
+                    inventoryMenuScript.endDragCornerIndex = itemSlot.inventoryPosition;
+                    break;
+                }
+            }
+            return;
+        }
         this.transform.position = eventData.position;
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
+        if (inventoryMenuScript != null && inventoryMenuScript.isShiftDragging)
+        {
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard != null)
+            {
+                bool shiftPressed = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
+                if (shiftPressed)
+                {
+                    inventoryMenuScript.SalvageSelection();
+                }
+            }
+            inventoryMenuScript.isShiftDragging = false;
+            inventoryMenuScript.beginDragCornerIndex = 0;
+            inventoryMenuScript.endDragCornerIndex = 0;
+            return;
+        }
         this.transform.parent = currentParent;
         this.transform.localPosition = new Vector3(0, 0, 0);
         Image itemImage = GetComponent<Image>();
@@ -364,6 +442,11 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
     {
         currentParent = this.transform.parent;
         canvas = GameObject.Find("Canvas").transform;
+        inventoryMenu = GameObject.Find("Inventory Menu(Clone)");
+        if (inventoryMenu != null)
+        {
+            inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
+        }
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
         contextMenuPrefab = Resources.Load<GameObject>("Prefabs/UI/Context Menu");
         player = GameObject.Find("Player");

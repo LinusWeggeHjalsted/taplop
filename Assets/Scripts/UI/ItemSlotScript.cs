@@ -1,9 +1,13 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using System;
+using System.Collections.Generic;
 
-public class ItemSlotScript : MonoBehaviour, IDropHandler
+public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
+    public GameObject inventoryMenu;
+    public InventoryMenuScript inventoryMenuScript;
     public GameObject player;
     public PlayerCharacterScript playerScript;
     public Transform playerGear;
@@ -15,12 +19,105 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
 
     void Start()
     {
+        inventoryMenu = GameObject.Find("Inventory Menu(Clone)");
+        if (inventoryMenu != null)
+        {
+            inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
+        }
         player = GameObject.Find("Player");
         playerScript = player.GetComponent<PlayerCharacterScript>();
         playerGear = player.transform.Find("Gear");
         playerInventory = player.transform.Find("Inventory");
         skillsPanel = GameObject.Find("Skills Panel");
         skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
+    }
+
+    public void OnBeginDrag(PointerEventData eventData)
+    {
+        if (inventoryMenu == null)
+        {
+            inventoryMenu = GameObject.Find("Inventory Menu(Clone)");
+        }
+        if (inventoryMenu != null)
+        {
+            inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
+        }
+        if (inventoryMenuScript != null)
+        {
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard == null)
+            {
+                inventoryMenuScript.isShiftDragging = false;
+                return;
+            }
+            bool shiftPressed = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
+            if (!shiftPressed)
+            {
+                inventoryMenuScript.isShiftDragging = false;
+                return;
+            }
+            inventoryMenuScript.isShiftDragging = true;
+            inventoryMenuScript.beginDragCornerIndex = inventoryPosition;
+        }
+    }
+
+    public void OnDrag(PointerEventData eventData)
+    {
+        if (inventoryMenu == null)
+        {
+            return;
+        }
+        if (!inventoryMenuScript.isShiftDragging)
+        {
+            inventoryMenuScript.endDragCornerIndex = 0;
+            return;
+        }
+        // check if shift is still being held
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard != null)
+        {
+            bool shiftPressed = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
+            if (!shiftPressed)
+            {
+                inventoryMenuScript.endDragCornerIndex = 0;
+                return;
+            }
+        }
+        // find the Item Slot under cursor
+        List<RaycastResult> results = new List<RaycastResult>();
+        EventSystem.current.RaycastAll(eventData, results);
+        foreach (RaycastResult result in results)
+        {
+            ItemSlotScript itemSlot = result.gameObject.GetComponent<ItemSlotScript>();
+            if (itemSlot != null)
+            {
+                inventoryMenuScript.endDragCornerIndex = itemSlot.inventoryPosition;
+                break;
+            }
+        }
+    }
+
+    public void OnEndDrag(PointerEventData eventData)
+    {
+        if (inventoryMenu == null)
+        {
+            return;
+        }
+        if (inventoryMenuScript.isShiftDragging)
+        {
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard != null)
+            {
+                bool shiftPressed = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
+                if (shiftPressed)
+                {
+                    inventoryMenuScript.SalvageSelection();
+                }
+            }
+        }
+        inventoryMenuScript.isShiftDragging = false;
+        inventoryMenuScript.beginDragCornerIndex = 0;
+        inventoryMenuScript.endDragCornerIndex = 0;
     }
 
     public void SwapWithOtherSlot(GameObject otherItemSlot, GameObject otherItem)
@@ -201,6 +298,20 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler
 
     public void OnDrop(PointerEventData eventData)
     {
+        // block item swapping if this was a shift-drag (for multi-select salvage)
+        if (inventoryMenu == null)
+        {
+            inventoryMenu = GameObject.Find("Inventory Menu(Clone)");
+        }
+        if (inventoryMenu != null)
+        {
+            inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
+        }
+        if (inventoryMenuScript != null && inventoryMenuScript.isShiftDragging)
+        {
+            return;
+        }
+
         GameObject droppedItem = eventData.pointerDrag;
         InventoryItemScript itemScript = droppedItem.GetComponent<InventoryItemScript>();
         if (itemScript == null)
