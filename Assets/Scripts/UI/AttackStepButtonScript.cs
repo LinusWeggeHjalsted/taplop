@@ -83,7 +83,7 @@ public class AttackStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPoin
     {
         if (enemies == null)
         {
-            enemies = GameObject.Find("Enemies");
+            enemies = GameReferences.GetEnemies();
             enemiesScript = enemies.GetComponent<EnemiesScript>();
         }
         if (enemiesScript != null)
@@ -100,15 +100,19 @@ public class AttackStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPoin
         }
     }
 
-    void Start()
+    void Awake()
     {
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
         attackStepSprites = Resources.LoadAll<Sprite>("AttackStep");
         image = this.GetComponent<Image>();
-        canvas = GameObject.Find("Canvas").transform;
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
+    }
+
+    void Start()
+    {
+        canvas = GameReferences.GetCanvasTransform();
         DisplayCurrentToggle();
     }
 }

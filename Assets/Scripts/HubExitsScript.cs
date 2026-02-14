@@ -26,8 +26,11 @@ public class HubExitsScript : MonoBehaviour
 
     void Start()
     {
-        hubBuilder = GameObject.Find("Hub Builder");
-        hubBuilderScript = hubBuilder.GetComponent<HubBuilderScript>();
+        if (HubScript.Instance != null)
+        {
+            hubBuilder = HubScript.Instance.hubBuilder;
+            hubBuilderScript = HubScript.Instance.hubBuilderScript;
+        }
         StartCoroutine(WaitForHubBuilder());
     }
 }

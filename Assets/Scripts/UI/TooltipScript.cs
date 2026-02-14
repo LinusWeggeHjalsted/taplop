@@ -43,7 +43,7 @@ public class TooltipScript : MonoBehaviour
         this.gameObject.SetActive(true);
     }
 
-    void Start()
+    void Awake()
     {
         this.gameObject.SetActive(false);
         tooltipHeader = this.transform.Find("Tooltip Header").gameObject.GetComponent<TMP_Text>();

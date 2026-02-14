@@ -7,7 +7,10 @@ public class RetreatingSwipeScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private int duration;
+    private float radius;
+    private float distance;
+    private int skillDuration;
+    private int stunDuration;
     private int cooldown;
     private Sprite skillSprite;
     public GameObject traversableTiles;
@@ -50,9 +53,24 @@ public class RetreatingSwipeScript : MonoBehaviour, Skill
         return range;
     }
 
-    public int GetDuration()
+    public float GetRadius()
     {
-        return duration;
+        return radius;
+    }
+
+    public float GetDistance()
+    {
+        return distance;
+    }
+
+    public int GetSkillDuration()
+    {
+        return skillDuration;
+    }
+
+    public int GetStunDuration()
+    {
+        return stunDuration;
     }
 
     public Sprite GetSprite()
@@ -121,24 +139,51 @@ public class RetreatingSwipeScript : MonoBehaviour, Skill
         {
             float preciseDamage = 1.5f * (float)wielderScript.offHandDamage;
             wielderScript.Attack((int)preciseDamage, target);
-            // retreat 2 tiles
+            // retreat as far as possible without going through obstacles
+            float effectiveDistance = distance + wielderScript.enchantmentModifiers.distance;
             Vector3 wielderPosition = wielder.transform.position;
             Vector3 positionDelta = target.transform.position - wielderPosition;
-            Vector3 furthestRetreat = wielderPosition - 2 * positionDelta;
-            Vector3 closestRetreat = wielderPosition - positionDelta;
-            List<Vector3> furthestPath = traversableTilesScript.ShortestPath(wielderPosition, furthestRetreat);
-            List<Vector3> closestPath = traversableTilesScript.ShortestPath(wielderPosition, closestRetreat);
-            if (furthestPath != null)
+            // Normalize to single tile direction
+            if (positionDelta.x != 0)
             {
-                // allow one sidestep
-                if (furthestPath.Count < 3)
+                positionDelta.x = positionDelta.x / Mathf.Abs(positionDelta.x);
+            }
+            if (positionDelta.y != 0)
+            {
+                positionDelta.y = positionDelta.y / Mathf.Abs(positionDelta.y);
+            }
+            Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
+            Vector3 retreatDestination = wielderPosition;
+
+            for (int i = 1; i <= effectiveDistance; i++)
+            {
+                Vector3 retreatPosition = wielderPosition - i * positionDelta;
+                // check if tile exists, is traversable, and not occupied
+                if (tileLookup.ContainsKey(retreatPosition))
                 {
-                    wielderScript.MoveTo(furthestRetreat);
+                    GameObject tile = tileLookup[retreatPosition];
+                    TileScript tileScript = tile.GetComponent<TileScript>();
+                    bool isOccupied = enemyLookup.ContainsKey(retreatPosition) || (retreatPosition == player.transform.position);
+                    if (!tileScript.isOccupied && !isOccupied)
+                    {
+                        retreatDestination = retreatPosition;
+                    }
+                    else
+                    {
+                        // hit an obstacle, stop checking
+                        break;
+                    }
+                }
+                else
+                {
+                    // tile doesn't exist, stop checking
+                    break;
                 }
             }
-            else if (closestPath != null)
+
+            if (retreatDestination != wielderPosition)
             {
-                wielderScript.MoveTo(closestRetreat);
+                wielderScript.MoveTo(retreatDestination);
             }
         }
         if (wielder == player)
@@ -198,30 +243,31 @@ public class RetreatingSwipeScript : MonoBehaviour, Skill
         }
     }
 
-    void Start()
+    void Awake()
     {
         skillName = "Retreating Swipe";
         skillType = "Off Hand Skill";
-        description = "Attack target for 1.5x damage and retreat 2 tiles";
+        description = "Attack target for 1.5x damage and retreat";
         range = 1f;
-        duration = 0;
+        radius = 0;
+        distance = 2;
+        skillDuration = 0;
+        stunDuration = 0;
         cooldown = 3;
         skillSprite = Resources.Load<Sprite>("Skills/RetreatingSwipe");
-        traversableTiles = GameObject.Find("Traversable Tiles");
-        if (traversableTiles != null)
+    }
+
+    void Start()
+    {
+        if (LevelScript.Instance != null)
         {
-            traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
-        }
-        enemies = GameObject.Find("Enemies");
-        if (enemies != null)
-        {
-            enemiesScript = enemies.GetComponent<EnemiesScript>();
-        }
-        player = GameObject.Find("Player");
-        turnLogic = GameObject.Find("Turn Logic");
-        if (turnLogic != null)
-        {
-            turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+            traversableTiles = LevelScript.Instance.traversableTiles;
+            traversableTilesScript = LevelScript.Instance.traversableTilesScript;
+            enemies = LevelScript.Instance.enemies;
+            enemiesScript = LevelScript.Instance.enemiesScript;
+            player = LevelScript.Instance.player;
+            turnLogic = LevelScript.Instance.turnLogic;
+            turnLogicScript = LevelScript.Instance.turnLogicScript;
         }
     }
 }

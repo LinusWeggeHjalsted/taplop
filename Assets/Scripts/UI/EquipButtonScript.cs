@@ -83,7 +83,7 @@ public class EquipButtonScript : MonoBehaviour
             SoundControllerScript.Instance.PlayEquipArmorSound();
         }
         // refresh open menus
-        Transform characterUI = GameObject.Find("Character UI").transform;
+        Transform characterUI = GameReferences.GetCharacterUI().transform;
         Transform gearMenu = characterUI.Find("Gear Menu(Clone)");
         if (gearMenu != null)
         {
@@ -97,22 +97,22 @@ public class EquipButtonScript : MonoBehaviour
             inventoryMenuScript.RefreshUI();
         }
         // refresh skills panel in case weapons changed
-        GameObject skillsPanel = GameObject.Find("Skills Panel");
+        GameObject skillsPanel = GameReferences.GetSkillsPanel();
         SkillBarScript skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         skillBarScript.UpdateButtons();
         // refresh health bar in case max health changed
-        GameObject playerHealthBar = GameObject.Find("Player Health Bar");
+        GameObject playerHealthBar = GameReferences.GetPlayerHealthBar();
         PlayerHealthBarScript playerHealthBarScript = playerHealthBar.GetComponent<PlayerHealthBarScript>();
         playerHealthBarScript.UpdateHealthBar();
         // restart move step in case speed changed (only exists in missions, not hub)
-        GameObject turnLogic = GameObject.Find("Turn Logic");
+        GameObject turnLogic = GameReferences.GetTurnLogic();
         if (turnLogic != null)
         {
             TurnLogicScript turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
             turnLogicScript.RestartPlayerMoveStep();
         }
         // close context menu
-        Transform canvas = GameObject.Find("Canvas").transform;
+        Transform canvas = GameReferences.GetCanvasTransform();
         Transform contextMenu = canvas.Find("Context Menu");
         if (contextMenu != null)
         {
@@ -120,12 +120,16 @@ public class EquipButtonScript : MonoBehaviour
         }
     }
 
-    void Start()
+    void Awake()
     {
         equipText = this.transform.Find("Equip Button Text").gameObject.GetComponent<TMP_Text>();
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerCharacterScript>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
+    }
+
+    void Start()
+    {
+        player = GameReferences.GetPlayer();
+        playerScript = player.GetComponent<PlayerCharacterScript>();
     }
 }

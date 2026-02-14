@@ -211,11 +211,14 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 currentHealth = value;
             }
             DisplayHealth();
-            if (this.gameObject == player)
+            if (this.gameObject == player && LevelScript.Instance != null)
             {
-                GameObject playerHealthBar = GameObject.Find("Player Health Bar");
-                PlayerHealthBarScript playerHealthBarScript = playerHealthBar.GetComponent<PlayerHealthBarScript>();
-                playerHealthBarScript.UpdateHealthBar();
+                GameObject playerHealthBar = LevelScript.Instance.playerHealthBar;
+                if (playerHealthBar != null)
+                {
+                    PlayerHealthBarScript playerHealthBarScript = playerHealthBar.GetComponent<PlayerHealthBarScript>();
+                    playerHealthBarScript.UpdateHealthBar();
+                }
             }
         }
     }
@@ -403,11 +406,14 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                     DisplayAggro();
                     FaceTowards(player.transform.position);
                     enemiesScript.activeEnemyLookup.Add(this.transform.position, this.gameObject);
-                    if (enemiesScript.activeEnemyLookup.Count == 1)
+                    if (enemiesScript.activeEnemyLookup.Count == 1 && LevelScript.Instance != null)
                     {
-                        GameObject attackStepButton = GameObject.Find("Attack Step Button");
-                        AttackStepButtonScript attackStepButtonScript = attackStepButton.GetComponent<AttackStepButtonScript>();
-                        attackStepButtonScript.ForceEnabledInCombat();
+                        GameObject attackStepButton = LevelScript.Instance.attackStepButton;
+                        if (attackStepButton != null)
+                        {
+                            AttackStepButtonScript attackStepButtonScript = attackStepButton.GetComponent<AttackStepButtonScript>();
+                            attackStepButtonScript.ForceEnabledInCombat();
+                        }
                         // until all active enemies are dead
                     }
                 }
@@ -491,7 +497,10 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         public int incomingDamage;
         public int speed;
         public float range;
-        public int duration;
+        public float radius;
+        public float distance;
+        public int skillDuration;
+        public int stunDuration;
         public int outgoingStunDuration;
         public int incomingStunDuration;
         public int pickupRadius;
@@ -510,7 +519,10 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 totalModifiers.incomingDamage += modifiers.incomingDamage;
                 totalModifiers.speed += modifiers.speed;
                 totalModifiers.range += modifiers.range;
-                totalModifiers.duration += modifiers.duration;
+                totalModifiers.radius += modifiers.radius;
+                totalModifiers.distance += modifiers.distance;
+                totalModifiers.skillDuration += modifiers.skillDuration;
+                totalModifiers.stunDuration += modifiers.stunDuration;
                 totalModifiers.outgoingStunDuration += modifiers.outgoingStunDuration;
                 totalModifiers.incomingStunDuration += modifiers.incomingStunDuration;
                 totalModifiers.pickupRadius += modifiers.pickupRadius;
@@ -806,12 +818,15 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                         break;
                     }
                     // show pickup notification for player
-                    if (this.gameObject == player)
+                    if (this.gameObject == player && LevelScript.Instance != null)
                     {
-                        GameObject inventoryButton = GameObject.Find("Inventory Button");
-                        InventoryButtonScript inventoryButtonScript = inventoryButton.GetComponent<InventoryButtonScript>();
-                        Sprite itemSprite = itemScript.GetSprite();
-                        inventoryButtonScript.QueuePickupNotification(itemSprite);
+                        GameObject inventoryButton = LevelScript.Instance.inventoryButton;
+                        if (inventoryButton != null)
+                        {
+                            InventoryButtonScript inventoryButtonScript = inventoryButton.GetComponent<InventoryButtonScript>();
+                            Sprite itemSprite = itemScript.GetSprite();
+                            inventoryButtonScript.QueuePickupNotification(itemSprite);
+                        }
                     }
                 }
                 if (groundItems.transform.childCount == 0)
@@ -819,15 +834,18 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                     dropsScript.groundItemsLookup.Remove(pickupPosition);
                     Destroy(groundItems);
                 }
-                if (this.gameObject == player)
+                if (this.gameObject == player && LevelScript.Instance != null)
                 {
                     // refresh open inventory menu
-                    Transform characterUI = GameObject.Find("Character UI").transform;
-                    Transform inventoryMenu = characterUI.Find("Inventory Menu(Clone)");
-                    if (inventoryMenu != null)
+                    GameObject characterUI = LevelScript.Instance.characterUI;
+                    if (characterUI != null)
                     {
-                        InventoryMenuScript inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
-                        inventoryMenuScript.RefreshUI();
+                        Transform inventoryMenu = characterUI.transform.Find("Inventory Menu(Clone)");
+                        if (inventoryMenu != null)
+                        {
+                            InventoryMenuScript inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
+                            inventoryMenuScript.RefreshUI();
+                        }
                     }
                 }
             }
@@ -916,28 +934,68 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
-    public void Knockback(Vector3 fromPosition, GameObject attacker, int collisionDamage)
+    public void Knockback(Vector3 fromPosition, GameObject attacker, int collisionDamage, float distance)
     {
         EntityScript attackerScript = attacker.GetComponent<EntityScript>();
-        Vector3 difference = this.transform.position - fromPosition;
-        Vector3 targetPosition = this.transform.position + difference;
-        Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
-        if (tileLookup.ContainsKey(targetPosition))
+        Vector3 entityPosition = this.transform.position;
+        Vector3 positionDelta = entityPosition - fromPosition;
+        // Normalize to single tile direction
+        if (positionDelta.x != 0)
         {
-            GameObject tile = tileLookup[targetPosition];
-            TileScript tileScript = tile.GetComponent<TileScript>();
-            if (tileScript.isOccupied)
+            positionDelta.x = positionDelta.x / Mathf.Abs(positionDelta.x);
+        }
+        if (positionDelta.y != 0)
+        {
+            positionDelta.y = positionDelta.y / Mathf.Abs(positionDelta.y);
+        }
+
+        Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
+        Vector3 knockbackDestination = entityPosition;
+        bool hitObstacle = false;
+
+        // Check each position from nearest to farthest
+        for (int i = 1; i <= distance; i++)
+        {
+            Vector3 checkPosition = entityPosition + i * positionDelta;
+            if (tileLookup.ContainsKey(checkPosition))
             {
-                attackerScript.Attack(collisionDamage, this.gameObject);
+                GameObject tile = tileLookup[checkPosition];
+                TileScript tileScript = tile.GetComponent<TileScript>();
+                bool isOccupied = tileScript.isOccupied;
+                // Also check if an enemy is at this position
+                if (enemiesScript != null)
+                {
+                    Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
+                    if (enemyLookup.ContainsKey(checkPosition))
+                    {
+                        isOccupied = true;
+                    }
+                }
+                if (!isOccupied)
+                {
+                    knockbackDestination = checkPosition;
+                }
+                else
+                {
+                    hitObstacle = true;
+                    break;
+                }
             }
             else
             {
-                MoveTo(targetPosition);
+                // Hit edge of map
+                hitObstacle = true;
+                break;
             }
         }
-        else
+
+        if (hitObstacle)
         {
             attackerScript.Attack(collisionDamage, this.gameObject);
+        }
+        if (knockbackDestination != entityPosition)
+        {
+            MoveTo(knockbackDestination);
         }
     }
 
@@ -1148,25 +1206,12 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             spriteRenderer.sortingOrder = oldRenderer.sortingOrder;
             Destroy(oldRenderer);
         }
-    }
 
-    void Start()
-    {
         if (this.gameObject.name == "Player")
         {
             SpriteSheet = Resources.LoadAll<Sprite>("Player");
             maxHealth = 10;
         }
-        levelBuilder = GameObject.Find("Level Builder");
-        levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
-        levelBuilderLoaded = true;
-        traversableTiles = GameObject.Find("Traversable Tiles");
-        traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
-        player = GameObject.Find("Player");
-        enemies = GameObject.Find("Enemies");
-        enemiesScript = enemies.GetComponent<EnemiesScript>();
-        drops = GameObject.Find("Drops");
-        dropsScript = drops.GetComponent<DropsScript>();
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
         hitSprite = Resources.Load<Sprite>("Hit");
@@ -1186,6 +1231,23 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         _inventorySize = 24 * 4;
         _utilitySkills = this.transform.Find("Utility Skills");
         enchantments = this.transform.Find("Enchantments");
+        levelBuilderLoaded = true;
+    }
+
+    void Start()
+    {
+        if (LevelScript.Instance != null)
+        {
+            levelBuilder = LevelScript.Instance.levelBuilder;
+            levelBuilderScript = LevelScript.Instance.levelBuilderScript;
+            traversableTiles = LevelScript.Instance.traversableTiles;
+            traversableTilesScript = LevelScript.Instance.traversableTilesScript;
+            player = LevelScript.Instance.player;
+            enemies = LevelScript.Instance.enemies;
+            enemiesScript = LevelScript.Instance.enemiesScript;
+            drops = LevelScript.Instance.drops;
+            dropsScript = LevelScript.Instance.dropsScript;
+        }
         StartCoroutine(WaitForGearBeforePopulating());
     }
 

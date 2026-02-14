@@ -32,14 +32,22 @@ public class PlayerHealthBarScript : MonoBehaviour
         healthText.text = currentHealth.ToString();
     }
 
-    void Start()
+    void Awake()
     {
         stateCount = 13;
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerCharacterScript>();
         image = this.gameObject.GetComponent<Image>();
         healthBarStates = new Sprite[stateCount];
         healthBarStates = Resources.LoadAll<Sprite>("PlayerHealthBar");
         healthText = this.transform.Find("Health Text").gameObject.GetComponent<TMP_Text>();
+    }
+
+    void Start()
+    {
+        // Use GameReferences helper for clean lookup
+        player = GameReferences.GetPlayer();
+        if (player != null)
+        {
+            playerScript = player.GetComponent<PlayerCharacterScript>();
+        }
     }
 }

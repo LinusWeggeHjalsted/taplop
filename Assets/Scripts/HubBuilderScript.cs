@@ -242,13 +242,20 @@ public class HubBuilderScript : MonoBehaviour
         finishedBuilding = true;
     }
 
-    void Start()
+    void Awake()
     {
-        player = GameObject.Find("Player");
-        hubTiles = GameObject.Find("Hub Tiles");
-        hubExits = GameObject.Find("Hub Exits");
         tilePrefab = Resources.Load<GameObject>("Prefabs/Tile");
         exitPrefab = Resources.Load<GameObject>("Prefabs/Exit");
+    }
+
+    void Start()
+    {
+        if (HubScript.Instance != null)
+        {
+            player = HubScript.Instance.player;
+            hubTiles = HubScript.Instance.hubTiles;
+            hubExits = HubScript.Instance.hubExits;
+        }
         StartCoroutine(WaitForGameController());
     }
 }

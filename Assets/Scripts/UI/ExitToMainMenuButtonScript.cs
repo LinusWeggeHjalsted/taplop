@@ -8,7 +8,7 @@ public class ExitToMainMenuButtonScript : MonoBehaviour
     public void OnActivate()
     {
         SoundControllerScript.Instance.PlayButtonClickSound();
-        GameObject player = GameObject.Find("Player");
+        GameObject player = GameReferences.GetPlayer();
         PlayerDataScript.Instance.BuildDataFromPlayer(player);
 #if !UNITY_WEBGL || UNITY_EDITOR
         PlayerDataScript.Instance.SavePlayerData("Autosave");

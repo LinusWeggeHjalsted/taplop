@@ -17,7 +17,7 @@ public class OptionsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointer
     {
         if (canvas == null)
         {
-            canvas = GameObject.Find("Canvas").transform;
+            canvas = GameReferences.GetCanvasTransform();
         }
         Vector3[] buttonCorners = new Vector3[4];
         buttonRectTransform.GetWorldCorners(buttonCorners);
@@ -60,7 +60,7 @@ public class OptionsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointer
         SoundControllerScript.Instance.PlayMenuSound();
         if (canvas == null)
         {
-            canvas = GameObject.Find("Canvas").transform;
+            canvas = GameReferences.GetCanvasTransform();
         }
         if (optionsMenu == null)
         {
@@ -72,14 +72,18 @@ public class OptionsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointer
         }
     }
 
-    void Start()
+    void Awake()
     {
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
-        canvas = GameObject.Find("Canvas").transform;
         optionsMenuPrefab = Resources.Load<GameObject>("Prefabs/UI/Options Menu");
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
+    }
+
+    void Start()
+    {
+        canvas = GameReferences.GetCanvasTransform();
     }
 
     void Update()

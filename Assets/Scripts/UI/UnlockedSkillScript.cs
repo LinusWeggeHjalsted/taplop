@@ -33,21 +33,47 @@ public class UnlockedSkillScript : MonoBehaviour, IPointerEnterHandler, IPointer
                 float effectiveRange = skillScript.GetRange();
                 skillRange = "Range " + effectiveRange.ToString() + "\n";
             }
-            string skillDuration = "";
-            if (skillScript.GetDuration() > 0)
+            string skillRadius = "";
+            if (skillScript.GetRadius() > 0)
             {
-                int effectiveDuration = skillScript.GetDuration();
-                skillDuration = "Duration " + effectiveDuration.ToString() + "\n";
+                float effectiveRadius = skillScript.GetRadius();
+                skillRadius = "Radius " + effectiveRadius.ToString() + "\n";
+            }
+            string skillDistance = "";
+            if (skillScript.GetDistance() > 0)
+            {
+                float effectiveDistance = skillScript.GetDistance();
+                skillDistance = "Distance " + effectiveDistance.ToString() + "\n";
+            }
+            string skillDuration = "";
+            if (skillScript.GetSkillDuration() > 0)
+            {
+                int effectiveDuration = skillScript.GetSkillDuration();
+                skillDuration = "Skill Duration " + effectiveDuration.ToString() + "\n";
+            }
+            string skillStunDuration = "";
+            if (skillScript.GetStunDuration() > 0)
+            {
+                int effectiveStunDuration = skillScript.GetStunDuration();
+                skillStunDuration = "Stun Duration " + effectiveStunDuration.ToString() + "\n";
             }
             string skillCooldown = "";
             if (skillScript.GetCooldown() > 0)
             {
                 skillCooldown = "Cooldown " + skillScript.GetCooldown().ToString() + "\n";
             }
-            string tooltipText = skillDescription + skillType + skillRange + skillDuration + skillCooldown;
+            string tooltipText = skillDescription + skillType + skillRange + skillRadius + skillDistance + skillDuration + skillStunDuration + skillCooldown;
             Vector3[] corners = new Vector3[4];
             rectTransform.GetWorldCorners(corners);
             Vector3 topRightPosition = corners[2];
+
+            // Refresh canvas reference if null
+            if (canvas == null)
+            {
+                canvas = GameReferences.GetCanvasTransform();
+            }
+            if (canvas == null) return;
+
             Transform tooltipTransform = canvas.Find("Tooltip");
             if (tooltipTransform != null)
             {
@@ -81,6 +107,13 @@ public class UnlockedSkillScript : MonoBehaviour, IPointerEnterHandler, IPointer
 
     public void OnBeginDrag(PointerEventData eventData)
     {
+        // Refresh canvas reference if null
+        if (canvas == null)
+        {
+            canvas = GameReferences.GetCanvasTransform();
+        }
+        if (canvas == null) return;
+
         currentSiblingIndex = this.transform.GetSiblingIndex();
         this.transform.parent = canvas;
         this.transform.SetAsLastSibling();
@@ -139,16 +172,22 @@ public class UnlockedSkillScript : MonoBehaviour, IPointerEnterHandler, IPointer
         }
     }
 
-    void Start()
+    void Awake()
     {
         currentParent = this.transform.parent;
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerCharacterScript>();
         rectTransform = this.GetComponent<RectTransform>();
         image = this.GetComponent<Image>();
-        canvas = GameObject.Find("Canvas").transform;
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
         unlockedSkillPrefab = Resources.Load<GameObject>("Prefabs/UI/Unlocked Skill");
+    }
+
+    void Start()
+    {
+        // Use GameReferences helper for clean lookups
+        player = GameReferences.GetPlayer();
+        if (player != null) playerScript = player.GetComponent<PlayerCharacterScript>();
+        canvas = GameReferences.GetCanvasTransform();
+
         StartCoroutine(WaitForPlayerLoadout());
     }
 }

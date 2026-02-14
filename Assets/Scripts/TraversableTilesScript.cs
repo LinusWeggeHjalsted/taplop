@@ -209,11 +209,14 @@ public class TraversableTilesScript : MonoBehaviour
 
     void Start()
     {
-        levelBuilder = GameObject.Find("Level Builder");
-        levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
-        enemies = GameObject.Find("Enemies");
-        enemiesScript = enemies.GetComponent<EnemiesScript>();
-        player = GameObject.Find("Player");
+        if (LevelScript.Instance != null)
+        {
+            levelBuilder = LevelScript.Instance.levelBuilder;
+            levelBuilderScript = LevelScript.Instance.levelBuilderScript;
+            enemies = LevelScript.Instance.enemies;
+            enemiesScript = LevelScript.Instance.enemiesScript;
+            player = LevelScript.Instance.player;
+        }
         // wait for LevelBuilder to finish building
         StartCoroutine(WaitForLevelBuilderBeforePopulating());
     }

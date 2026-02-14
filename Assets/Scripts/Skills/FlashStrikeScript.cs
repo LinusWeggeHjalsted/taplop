@@ -8,7 +8,10 @@ public class FlashStrikeScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private int duration;
+    private float radius;
+    private float distance;
+    private int skillDuration;
+    private int stunDuration;
     private int cooldown;
     private Sprite skillSprite;
     public GameObject traversableTiles;
@@ -51,9 +54,24 @@ public class FlashStrikeScript : MonoBehaviour, Skill
         return range;
     }
 
-    public int GetDuration()
+    public float GetRadius()
     {
-        return duration;
+        return radius;
+    }
+
+    public float GetDistance()
+    {
+        return distance;
+    }
+
+    public int GetSkillDuration()
+    {
+        return skillDuration;
+    }
+
+    public int GetStunDuration()
+    {
+        return stunDuration;
     }
 
     public Sprite GetSprite()
@@ -119,10 +137,11 @@ public class FlashStrikeScript : MonoBehaviour, Skill
         {
             return;
         }
+        float effectiveRadius = radius + wielderScript.enchantmentModifiers.radius;
         List<Vector3> deltas = new List<Vector3>();
-        for (float i = -1; i <= 1; i++)
+        for (float i = -effectiveRadius; i <= effectiveRadius; i++)
         {
-            for (float j = -1; j <= 1; j++)
+            for (float j = -effectiveRadius; j <= effectiveRadius; j++)
             {
                 if (i == 0 && j == 0)
                 {
@@ -205,30 +224,31 @@ public class FlashStrikeScript : MonoBehaviour, Skill
         }
     }
 
-    void Start()
+    void Awake()
     {
         skillName = "Flash Strike";
         skillType = "Off Hand Skill";
-        description = "Teleport then attack each adjacent target";
+        description = "Teleport then attack each target within radius";
         range = 3f;
-        duration = 0;
+        radius = 1;
+        distance = 0;
+        skillDuration = 0;
+        stunDuration = 0;
         cooldown = 3;
         skillSprite = Resources.Load<Sprite>("Skills/FlashStrike");
-        traversableTiles = GameObject.Find("Traversable Tiles");
-        if (traversableTiles != null)
+    }
+
+    void Start()
+    {
+        if (LevelScript.Instance != null)
         {
-            traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
-        }
-        enemies = GameObject.Find("Enemies");
-        if (enemies != null)
-        {
-            enemiesScript = enemies.GetComponent<EnemiesScript>();
-        }
-        player = GameObject.Find("Player");
-        turnLogic = GameObject.Find("Turn Logic");
-        if (turnLogic != null)
-        {
-            turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+            traversableTiles = LevelScript.Instance.traversableTiles;
+            traversableTilesScript = LevelScript.Instance.traversableTilesScript;
+            enemies = LevelScript.Instance.enemies;
+            enemiesScript = LevelScript.Instance.enemiesScript;
+            player = LevelScript.Instance.player;
+            turnLogic = LevelScript.Instance.turnLogic;
+            turnLogicScript = LevelScript.Instance.turnLogicScript;
         }
     }
 }

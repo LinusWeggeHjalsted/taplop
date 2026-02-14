@@ -25,7 +25,7 @@ public class LearnButtonScript : MonoBehaviour
             playerDataScript.unlockedSkills.Add(skillName);
             DestroyImmediate(selectedItem);
             // refresh open menus
-            Transform characterUI = GameObject.Find("Character UI").transform;
+            Transform characterUI = GameReferences.GetCharacterUI().transform;
             Transform inventoryMenu = characterUI.Find("Inventory Menu(Clone)");
             if (inventoryMenu != null)
             {
@@ -39,7 +39,7 @@ public class LearnButtonScript : MonoBehaviour
                 skillsMenuScript.RefreshUI();
             }
             // close context menu
-            Transform canvas = GameObject.Find("Canvas").transform;
+            Transform canvas = GameReferences.GetCanvasTransform();
             Transform contextMenu = canvas.Find("Context Menu");
             if (contextMenu != null)
             {
@@ -48,7 +48,7 @@ public class LearnButtonScript : MonoBehaviour
         }
     }
 
-    void Start()
+    void Awake()
     {
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);

@@ -6,7 +6,10 @@ public class ReflectScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private int duration;
+    private float radius;
+    private float distance;
+    private int skillDuration;
+    private int stunDuration;
     private int cooldown;
     private Sprite skillSprite;
     public GameObject shield;
@@ -51,9 +54,24 @@ public class ReflectScript : MonoBehaviour, Skill
         return range;
     }
 
-    public int GetDuration()
+    public float GetRadius()
     {
-        return duration;
+        return radius;
+    }
+
+    public float GetDistance()
+    {
+        return distance;
+    }
+
+    public int GetSkillDuration()
+    {
+        return skillDuration;
+    }
+
+    public int GetStunDuration()
+    {
+        return stunDuration;
     }
 
     public Sprite GetSprite()
@@ -100,8 +118,8 @@ public class ReflectScript : MonoBehaviour, Skill
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.DisplayUsedSkill(skillSprite);
-        int effectiveDuration = duration + wielderScript.enchantmentModifiers.duration;
-        wielderScript.reflectDuration += effectiveDuration;
+        int effectiveSkillDuration = skillDuration + wielderScript.enchantmentModifiers.skillDuration;
+        wielderScript.reflectDuration += effectiveSkillDuration;
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;
@@ -109,32 +127,33 @@ public class ReflectScript : MonoBehaviour, Skill
         wielderScript.SetSkillCooldown(skillName, cooldown);
     }
 
-    void Start()
+    void Awake()
     {
         skillName = "Reflect";
         skillType = "Off Hand Skill";
         description = "Incoming damage is prevented and dealt to the attacker";
         range = 0;
-        duration = 1;
+        radius = 0;
+        distance = 0;
+        skillDuration = 1;
+        stunDuration = 0;
         cooldown = 4;
         skillSprite = Resources.Load<Sprite>("Skills/Reflect");
         shield = this.transform.parent.gameObject;
         shieldScript = shield.GetComponent<ShieldScript>();
-        traversableTiles = GameObject.Find("Traversable Tiles");
-        if (traversableTiles != null)
+    }
+
+    void Start()
+    {
+        if (LevelScript.Instance != null)
         {
-            traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
-        }
-        enemies = GameObject.Find("Enemies");
-        if (enemies != null)
-        {
-            enemiesScript = enemies.GetComponent<EnemiesScript>();
-        }
-        player = GameObject.Find("Player");
-        turnLogic = GameObject.Find("Turn Logic");
-        if (turnLogic != null)
-        {
-            turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+            traversableTiles = LevelScript.Instance.traversableTiles;
+            traversableTilesScript = LevelScript.Instance.traversableTilesScript;
+            enemies = LevelScript.Instance.enemies;
+            enemiesScript = LevelScript.Instance.enemiesScript;
+            player = LevelScript.Instance.player;
+            turnLogic = LevelScript.Instance.turnLogic;
+            turnLogicScript = LevelScript.Instance.turnLogicScript;
         }
     }
 }

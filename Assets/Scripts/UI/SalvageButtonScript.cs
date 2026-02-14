@@ -51,7 +51,7 @@ public class SalvageButtonScript : MonoBehaviour
         PlayerDataScript.Instance.collectedSalvage += salvageValue;
         DestroyImmediate(selectedItem);
         // refresh open menus
-        Transform characterUI = GameObject.Find("Character UI").transform;
+        Transform characterUI = GameReferences.GetCharacterUI().transform;
         Transform gearMenu = characterUI.Find("Gear Menu(Clone)");
         if (gearMenu != null)
         {
@@ -69,7 +69,7 @@ public class SalvageButtonScript : MonoBehaviour
         SkillBarScript skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         skillBarScript.UpdateButtons();
         // close context menu
-        Transform canvas = GameObject.Find("Canvas").transform;
+        Transform canvas = GameReferences.GetCanvasTransform();
         Transform contextMenu = canvas.Find("Context Menu");
         if (contextMenu != null)
         {
@@ -77,7 +77,7 @@ public class SalvageButtonScript : MonoBehaviour
         }
     }
 
-    void Start()
+    void Awake()
     {
         salvageText = this.transform.Find("Salvage Button Text").gameObject.GetComponent<TMP_Text>();
         button = this.GetComponent<Button>();

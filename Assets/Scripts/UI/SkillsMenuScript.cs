@@ -55,12 +55,16 @@ public class SkillsMenuScript : MonoBehaviour
         }
     }
 
+    void Awake()
+    {
+        unlockedSkillPrefab = Resources.Load<GameObject>("Prefabs/UI/Unlocked Skill");
+    }
+
     void Start()
     {
-        player = GameObject.Find("Player");
+        player = GameReferences.GetPlayer();
         playerScript = player.GetComponent<PlayerCharacterScript>();
         playerDataScript = PlayerDataScript.Instance;
-        unlockedSkillPrefab = Resources.Load<GameObject>("Prefabs/UI/Unlocked Skill");
         RefreshUI();
     }
 }

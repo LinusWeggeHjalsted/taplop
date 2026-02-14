@@ -812,18 +812,25 @@ public class LevelBuilderScript : MonoBehaviour
         }
     }
 
-    void Start()
+    void Awake()
     {
-        missionLogic = GameObject.Find("Mission Logic");
-        missionLogicScript = missionLogic.GetComponent<MissionLogicScript>();
-        levelName = missionLogicScript.currentLevelName;
-        player = GameObject.Find("Player");
-        enemies = GameObject.Find("Enemies");
-        drops = GameObject.Find("Drops");
-        traversableTiles = GameObject.Find("Traversable Tiles");
         tilePrefab = Resources.Load<GameObject>("Prefabs/Tile");
         enemyPrefab = Resources.Load<GameObject>("Prefabs/Enemy");
         groundItemsPrefab = Resources.Load<GameObject>("Prefabs/Ground Items");
+    }
+
+    void Start()
+    {
+        missionLogic = MissionLogicScript.Instance.gameObject;
+        missionLogicScript = MissionLogicScript.Instance;
+        levelName = missionLogicScript.currentLevelName;
+        if (LevelScript.Instance != null)
+        {
+            player = LevelScript.Instance.player;
+            enemies = LevelScript.Instance.enemies;
+            drops = LevelScript.Instance.drops;
+            traversableTiles = LevelScript.Instance.traversableTiles;
+        }
 
         BuildLevel(ParseLevel(LoadLevelFile(levelName)));
         StartCoroutine(PlayerDataScript.Instance.BuildPlayerFromData(player));

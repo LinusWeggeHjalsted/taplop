@@ -5,10 +5,9 @@ public class DevToolsScript : MonoBehaviour
 {
     public void CompleteLevel()
     {
-        GameObject missionLogic = GameObject.Find("Mission Logic");
-        if (missionLogic != null)
+        if (MissionLogicScript.Instance != null)
         {
-            MissionLogicScript missionLogicScript = missionLogic.GetComponent<MissionLogicScript>();
+            MissionLogicScript missionLogicScript = MissionLogicScript.Instance;
             missionLogicScript.currentLevel += 1;
             missionLogicScript.NextLevel();
         }

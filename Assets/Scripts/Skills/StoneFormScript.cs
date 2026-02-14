@@ -6,7 +6,10 @@ public class StoneFormScript : MonoBehaviour, Skill, EnchantmentScript
     private string skillType;
     private string description;
     private float range;
-    private int duration;
+    private float radius;
+    private float distance;
+    private int skillDuration;
+    private int stunDuration;
     private int cooldown;
     private Sprite skillSprite;
     public GameObject traversableTiles;
@@ -49,9 +52,24 @@ public class StoneFormScript : MonoBehaviour, Skill, EnchantmentScript
         return range;
     }
 
-    public int GetDuration()
+    public float GetRadius()
     {
-        return duration;
+        return radius;
+    }
+
+    public float GetDistance()
+    {
+        return distance;
+    }
+
+    public int GetSkillDuration()
+    {
+        return skillDuration;
+    }
+
+    public int GetStunDuration()
+    {
+        return stunDuration;
     }
 
     public int GetCooldown()
@@ -110,8 +128,8 @@ public class StoneFormScript : MonoBehaviour, Skill, EnchantmentScript
             stoneFormEnchantment.name = "Stone Form";
         }
         EnchantmentScript enchantmentScript = stoneFormEnchantment.GetComponent<EnchantmentScript>();
-        int effectiveDuration = duration + wielderScript.enchantmentModifiers.duration;
-        enchantmentScript.currentDuration += effectiveDuration;
+        int effectiveSkillDuration = skillDuration + wielderScript.enchantmentModifiers.skillDuration;
+        enchantmentScript.currentDuration += effectiveSkillDuration;
         wielderScript.DisplayEnchantments();
         wielderScript.SetSkillCooldown(skillName, cooldown);
     }
@@ -156,30 +174,31 @@ public class StoneFormScript : MonoBehaviour, Skill, EnchantmentScript
     {
     }
 
-    void Start()
+    void Awake()
     {
         skillName = "Stone Form";
         skillType = "Enchantment";
         description = "Reduce incoming stun durations by 1, increase outgoing stun durations by 1, and heal 20% of max health at end of turn";
         range = 0;
-        duration = 5;
+        radius = 0;
+        distance = 0;
+        skillDuration = 5;
+        stunDuration = 0;
         cooldown = 10;
         skillSprite = Resources.Load<Sprite>("Skills/StoneForm");
-        traversableTiles = GameObject.Find("Traversable Tiles");
-        if (traversableTiles != null)
+    }
+
+    void Start()
+    {
+        if (LevelScript.Instance != null)
         {
-            traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
-        }
-        enemies = GameObject.Find("Enemies");
-        if (enemies != null)
-        {
-            enemiesScript = enemies.GetComponent<EnemiesScript>();
-        }
-        player = GameObject.Find("Player");
-        turnLogic = GameObject.Find("Turn Logic");
-        if (turnLogic != null)
-        {
-            turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+            traversableTiles = LevelScript.Instance.traversableTiles;
+            traversableTilesScript = LevelScript.Instance.traversableTilesScript;
+            enemies = LevelScript.Instance.enemies;
+            enemiesScript = LevelScript.Instance.enemiesScript;
+            player = LevelScript.Instance.player;
+            turnLogic = LevelScript.Instance.turnLogic;
+            turnLogicScript = LevelScript.Instance.turnLogicScript;
         }
     }
 }

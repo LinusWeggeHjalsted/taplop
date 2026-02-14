@@ -208,13 +208,9 @@ public class InventoryMenuScript : MonoBehaviour
         }
     }
 
-    void Start()
+    void Awake()
     {
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerCharacterScript>();
-        playerInventory = player.transform.Find("Inventory");
         selectionHighlight = this.transform.Find("Selection Highlight");
-        canvas = GameObject.Find("Canvas").GetComponent<Canvas>();
         Transform horizontalLayout = this.transform.Find("Horizontal Layout");
         inventorySlots = horizontalLayout.Find("Inventory Slots");
         Transform inventorySidebar = horizontalLayout.Find("Inventory Sidebar");
@@ -225,6 +221,14 @@ public class InventoryMenuScript : MonoBehaviour
         knowledgeSalvageText = inventorySidebar.Find("Knowledge Salvage/Knowledge Salvage Text").GetComponent<TextMeshProUGUI>();
         itemSlotPrefab = Resources.Load<GameObject>("Prefabs/UI/Item Slot");
         inventoryItemPrefab = Resources.Load<GameObject>("Prefabs/UI/Inventory Item");
+    }
+
+    void Start()
+    {
+        player = GameReferences.GetPlayer();
+        playerScript = player.GetComponent<PlayerCharacterScript>();
+        playerInventory = player.transform.Find("Inventory");
+        canvas = GameReferences.GetCanvas().GetComponent<Canvas>();
         RefreshUI();
     }
 }

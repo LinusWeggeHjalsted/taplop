@@ -6,7 +6,10 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
     private string skillType;
     private string description;
     private float range;
-    private int duration;
+    private float radius;
+    private float distance;
+    private int skillDuration;
+    private int stunDuration;
     private int cooldown;
     private Sprite skillSprite;
     public GameObject traversableTiles;
@@ -49,9 +52,24 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
         return range;
     }
 
-    public int GetDuration()
+    public float GetRadius()
     {
-        return duration;
+        return radius;
+    }
+
+    public float GetDistance()
+    {
+        return distance;
+    }
+
+    public int GetSkillDuration()
+    {
+        return skillDuration;
+    }
+
+    public int GetStunDuration()
+    {
+        return stunDuration;
     }
 
     public int GetCooldown()
@@ -89,7 +107,7 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.DisplayUsedSkill(skillSprite);
-        int effectiveDuration = duration + wielderScript.enchantmentModifiers.duration;
+        int effectiveSkillDuration = skillDuration + wielderScript.enchantmentModifiers.skillDuration;
         // create or extend enchantment
         Transform wielderEnchantments = wielderScript.enchantments;
         GameObject thatWhichLingersEnchantment;
@@ -105,7 +123,7 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
             thatWhichLingersEnchantment.name = "That Which Lingers";
         }
         EnchantmentScript enchantmentScript = thatWhichLingersEnchantment.GetComponent<EnchantmentScript>();
-        enchantmentScript.currentDuration += effectiveDuration;
+        enchantmentScript.currentDuration += effectiveSkillDuration;
         wielderScript.DisplayEnchantments();
         wielderScript.SetSkillCooldown(skillName, cooldown);
     }
@@ -131,7 +149,7 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
     public EntityScript.Modifiers ModifierEffects()
     {
         EntityScript.Modifiers modifiers = new EntityScript.Modifiers();
-        modifiers.duration = 1;
+        modifiers.skillDuration = 1;
         return modifiers;
     }
 
@@ -147,30 +165,31 @@ public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
     {
     }
 
-    void Start()
+    void Awake()
     {
         skillName = "That Which Lingers";
         skillType = "Enchantment";
-        description = "Increase all non-stun durations by 1";
+        description = "Increase all skill durations by 1";
         range = 0;
-        duration = 2;
+        radius = 0;
+        distance = 0;
+        skillDuration = 2;
+        stunDuration = 0;
         cooldown = 5;
         skillSprite = Resources.Load<Sprite>("Skills/ThatWhichLingers");
-        traversableTiles = GameObject.Find("Traversable Tiles");
-        if (traversableTiles != null)
+    }
+
+    void Start()
+    {
+        if (LevelScript.Instance != null)
         {
-            traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
-        }
-        enemies = GameObject.Find("Enemies");
-        if (enemies != null)
-        {
-            enemiesScript = enemies.GetComponent<EnemiesScript>();
-        }
-        player = GameObject.Find("Player");
-        turnLogic = GameObject.Find("Turn Logic");
-        if (turnLogic != null)
-        {
-            turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+            traversableTiles = LevelScript.Instance.traversableTiles;
+            traversableTilesScript = LevelScript.Instance.traversableTilesScript;
+            enemies = LevelScript.Instance.enemies;
+            enemiesScript = LevelScript.Instance.enemiesScript;
+            player = LevelScript.Instance.player;
+            turnLogic = LevelScript.Instance.turnLogic;
+            turnLogicScript = LevelScript.Instance.turnLogicScript;
         }
     }
 }

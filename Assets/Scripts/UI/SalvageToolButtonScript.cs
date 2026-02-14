@@ -43,6 +43,11 @@ public class SalvageToolButtonScript : MonoBehaviour, IPointerEnterHandler, IPoi
         {
             Destroy(this.gameObject);
         }
+        buttonRectTransform = this.GetComponent<RectTransform>();
+        button = this.GetComponent<Button>();
+        button.onClick.AddListener(OnActivate);
+        highlight = this.transform.Find("Highlight").gameObject;
+        tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
     }
 
     void OnDestroy()
@@ -101,12 +106,7 @@ public class SalvageToolButtonScript : MonoBehaviour, IPointerEnterHandler, IPoi
 
     void Start()
     {
-        buttonRectTransform = this.GetComponent<RectTransform>();
-        button = this.GetComponent<Button>();
-        button.onClick.AddListener(OnActivate);
-        highlight = this.transform.Find("Highlight").gameObject;
-        canvas = GameObject.Find("Canvas").transform;
-        tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
+        canvas = GameReferences.GetCanvasTransform();
     }
 
     void Update()

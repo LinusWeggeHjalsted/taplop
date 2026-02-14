@@ -91,13 +91,17 @@ public class ContextMenuScript : MonoBehaviour
         StartCoroutine(salvageButtonScript.SetText(itemSalvage));
     }
 
-    void Start()
+    void Awake()
     {
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerCharacterScript>();
         equipButtonPrefab = Resources.Load<GameObject>("Prefabs/UI/Equip Button");
         learnButtonPrefab = Resources.Load<GameObject>("Prefabs/UI/Learn Button");
         salvageButtonPrefab = Resources.Load<GameObject>("Prefabs/UI/Salvage Button");
         finishedBuilding = true;
+    }
+
+    void Start()
+    {
+        player = GameReferences.GetPlayer();
+        playerScript = player.GetComponent<PlayerCharacterScript>();
     }
 }

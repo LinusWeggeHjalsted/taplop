@@ -74,16 +74,20 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
         }
     }
 
-    void Start()
+    void Awake()
     {
-        turnLogic = GameObject.Find("Turn Logic");
-        turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
-        traversableTiles = GameObject.Find("Traversable Tiles");
-        traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
-        canvas = GameObject.Find("Canvas").transform;
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
+    }
+
+    void Start()
+    {
+        turnLogic = GameReferences.GetTurnLogic();
+        turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+        traversableTiles = GameReferences.GetTraversableTiles();
+        traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
+        canvas = GameReferences.GetCanvasTransform();
     }
 }

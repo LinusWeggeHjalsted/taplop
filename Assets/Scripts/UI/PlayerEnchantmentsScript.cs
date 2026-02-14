@@ -21,6 +21,7 @@ public class PlayerEnchantmentsScript : MonoBehaviour
         {
             Destroy(this.gameObject);
         }
+        activeEnchantmentPrefab = Resources.Load<GameObject>("Prefabs/UI/Active Enchantment");
     }
 
     void OnDestroy()
@@ -60,8 +61,7 @@ public class PlayerEnchantmentsScript : MonoBehaviour
 
     void Start()
     {
-        player = GameObject.Find("Player");
+        player = GameReferences.GetPlayer();
         playerScript = player.GetComponent<EntityScript>();
-        activeEnchantmentPrefab = Resources.Load<GameObject>("Prefabs/UI/Active Enchantment");
     }
 }

@@ -24,11 +24,11 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, ID
         {
             inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
         }
-        player = GameObject.Find("Player");
+        player = GameReferences.GetPlayer();
         playerScript = player.GetComponent<PlayerCharacterScript>();
         playerGear = player.transform.Find("Gear");
         playerInventory = player.transform.Find("Inventory");
-        skillsPanel = GameObject.Find("Skills Panel");
+        skillsPanel = GameReferences.GetSkillsPanel();
         skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
     }
 
@@ -279,7 +279,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, ID
             actualOtherItemScript.inventoryPosition = ownPosition;
             // update skill bar in case skills changed
             skillBarScript.UpdateButtons();
-            GameObject playerHealthBar = GameObject.Find("Player Health Bar");
+            GameObject playerHealthBar = GameReferences.GetPlayerHealthBar();
             // update player health bar in case max health changed
             if (playerHealthBar != null)
             {
@@ -287,7 +287,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, ID
                 playerHealthBarScript.UpdateHealthBar();
             }
             // restart player move step in case speed changed
-            GameObject turnLogic = GameObject.Find("Turn Logic");
+            GameObject turnLogic = GameReferences.GetTurnLogic();
             if (turnLogic != null)
             {
                 TurnLogicScript turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();

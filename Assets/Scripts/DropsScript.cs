@@ -23,11 +23,18 @@ public class DropsScript : MonoBehaviour
         finishedBuilding = true;
     }
 
+    void Awake()
+    {
+        groundItemsLookup = new Dictionary<Vector3, GameObject>();
+    }
+
     void Start()
     {
-        levelBuilder = GameObject.Find("Level Builder");
-        levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
-        groundItemsLookup = new Dictionary<Vector3, GameObject>();
+        if (LevelScript.Instance != null)
+        {
+            levelBuilder = LevelScript.Instance.levelBuilder;
+            if (levelBuilder != null) levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
+        }
         StartCoroutine(WaitForLevelBuilderBeforePopulating());
     }
 }

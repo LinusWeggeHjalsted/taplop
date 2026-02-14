@@ -65,22 +65,23 @@ public class TileScript : MonoBehaviour
         }
     }
 
-    void Start()
+    void Awake()
     {
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerCharacterScript>();
-        turnLogic = GameObject.Find("Turn Logic");
-        if (turnLogic != null)
-        {
-            turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
-        }
-        traversableTiles = GameObject.Find("Traversable Tiles");
-        if (traversableTiles != null)
-        {
-            traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
-        }
         highlight = this.transform.Find("Highlight").gameObject;
         highlightAnimator = highlight.GetComponent<Animator>();
+    }
+
+    void Start()
+    {
+        if (LevelScript.Instance != null)
+        {
+            player = LevelScript.Instance.player;
+            if (player != null) playerScript = player.GetComponent<PlayerCharacterScript>();
+            turnLogic = LevelScript.Instance.turnLogic;
+            if (turnLogic != null) turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+            traversableTiles = LevelScript.Instance.traversableTiles;
+            if (traversableTiles != null) traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
+        }
     }
 
     public void OnTileClicked()

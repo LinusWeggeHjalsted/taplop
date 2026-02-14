@@ -37,7 +37,22 @@ public class NoSkillScript : MonoBehaviour, Skill
         return 0;
     }
 
-    public int GetDuration()
+    public float GetRadius()
+    {
+        return 0;
+    }
+
+    public float GetDistance()
+    {
+        return 0;
+    }
+
+    public int GetSkillDuration()
+    {
+        return 0;
+    }
+
+    public int GetStunDuration()
     {
         return 0;
     }
@@ -79,7 +94,7 @@ public class NoSkillScript : MonoBehaviour, Skill
     {
     }
 
-    void Start()
+    void Awake()
     {
         skillSprite = Resources.Load<Sprite>("Skills/NoSkill");
     }

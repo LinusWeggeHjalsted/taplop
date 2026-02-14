@@ -46,7 +46,7 @@ public class ExitButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
 
     public void OnActivate()
     {
-        GameObject player = GameObject.Find("Player");
+        GameObject player = GameReferences.GetPlayer();
         PlayerDataScript.Instance.BuildDataFromPlayer(player);
 #if !UNITY_WEBGL || UNITY_EDITOR
         PlayerDataScript.Instance.SavePlayerData("Autosave");
@@ -66,7 +66,7 @@ public class ExitButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
-        canvas = GameObject.Find("Canvas").transform;
+        canvas = GameReferences.GetCanvasTransform();
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
     }
 }

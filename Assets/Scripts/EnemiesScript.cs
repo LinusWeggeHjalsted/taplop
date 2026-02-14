@@ -43,13 +43,16 @@ public class EnemiesScript : MonoBehaviour
 
     void Start()
     {
-        levelBuilder = GameObject.Find("Level Builder");
-        levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
-        traversableTiles = GameObject.Find("Traversable Tiles");
-        traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
-        player = GameObject.Find("Player");
-        attackStepButton = GameObject.Find("Attack Step Button");
-        attackStepButtonScript = attackStepButton.GetComponent<AttackStepButtonScript>();
+        if (LevelScript.Instance != null)
+        {
+            levelBuilder = LevelScript.Instance.levelBuilder;
+            if (levelBuilder != null) levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
+            traversableTiles = LevelScript.Instance.traversableTiles;
+            if (traversableTiles != null) traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
+            player = LevelScript.Instance.player;
+            attackStepButton = LevelScript.Instance.attackStepButton;
+            if (attackStepButton != null) attackStepButtonScript = attackStepButton.GetComponent<AttackStepButtonScript>();
+        }
         // wait for level builder
         StartCoroutine(WaitForLevelBuilderBeforePopulating());
     }

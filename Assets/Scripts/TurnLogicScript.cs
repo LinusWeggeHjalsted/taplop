@@ -83,27 +83,34 @@ public class TurnLogicScript : MonoBehaviour
         tileLookup = traversableTilesScript.tileLookup;
     }
 
-    void Start()
+    void Awake()
     {
         currentGameState = GameState.BuildingLevel;
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<EntityScript>();
-        enemies = GameObject.Find("Enemies");
-        enemiesScript = enemies.GetComponent<EnemiesScript>();
-        traversableTiles = GameObject.Find("Traversable Tiles");
-        traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
-        levelBuilder = GameObject.Find("Level Builder");
-        levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
-        skillsPanel = GameObject.Find("Skills Panel");
-        skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
-        skipButton = GameObject.Find("Skip Button");
-        skipButtonScript = skipButton.GetComponent<SkipButtonScript>();
-        attackStepButton = GameObject.Find("Attack Step Button");
-        attackStepButtonScript = attackStepButton.GetComponent<AttackStepButtonScript>();
-        moveStepHighlight = GameObject.Find("Move Step Highlight");
-        moveStepHighlightImage = moveStepHighlight.GetComponent<Image>();
-        attackStepHighlight = GameObject.Find("Attack Step Highlight");
-        attackStepHighlightImage = attackStepHighlight.GetComponent<Image>();
+    }
+
+    void Start()
+    {
+        if (LevelScript.Instance != null)
+        {
+            player = LevelScript.Instance.player;
+            if (player != null) playerScript = player.GetComponent<EntityScript>();
+            enemies = LevelScript.Instance.enemies;
+            if (enemies != null) enemiesScript = enemies.GetComponent<EnemiesScript>();
+            traversableTiles = LevelScript.Instance.traversableTiles;
+            if (traversableTiles != null) traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
+            levelBuilder = LevelScript.Instance.levelBuilder;
+            if (levelBuilder != null) levelBuilderScript = levelBuilder.GetComponent<LevelBuilderScript>();
+            skillsPanel = LevelScript.Instance.skillsPanel;
+            if (skillsPanel != null) skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
+            skipButton = LevelScript.Instance.skipButton;
+            if (skipButton != null) skipButtonScript = skipButton.GetComponent<SkipButtonScript>();
+            attackStepButton = LevelScript.Instance.attackStepButton;
+            if (attackStepButton != null) attackStepButtonScript = attackStepButton.GetComponent<AttackStepButtonScript>();
+            moveStepHighlight = LevelScript.Instance.moveStepHighlight;
+            if (moveStepHighlight != null) moveStepHighlightImage = moveStepHighlight.GetComponent<Image>();
+            attackStepHighlight = LevelScript.Instance.attackStepHighlight;
+            if (attackStepHighlight != null) attackStepHighlightImage = attackStepHighlight.GetComponent<Image>();
+        }
         // wait for LevelBuilder to finish building
         StartCoroutine(WaitForBuildingBeforeNewGameState());
     }

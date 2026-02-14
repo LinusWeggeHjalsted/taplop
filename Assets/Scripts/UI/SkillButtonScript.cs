@@ -53,7 +53,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             // refresh canvas reference if it was destroyed
             if (canvas == null)
             {
-                canvas = GameObject.Find("Canvas").transform;
+                canvas = GameReferences.GetCanvasTransform();
             }
             string skillName = skillScript.GetSkillName();
             string tooltipHeader = $"{skillName} [{skillNumber + 1}]";
@@ -75,27 +75,75 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
                 rangeOutlineRenderer.size = new Vector2(rangeOutlineSize, rangeOutlineSize);
                 rangeOutlineRenderer.enabled = true;
             }
+            string skillRadius = "";
+            if (skillScript.GetRadius() > 0)
+            {
+                float modifierRadius = 0;
+                if (turnLogic != null)
+                {
+                    EntityScript playerEntityScript = player.GetComponent<EntityScript>();
+                    modifierRadius = playerEntityScript.enchantmentModifiers.radius;
+                }
+                float effectiveRadius = skillScript.GetRadius() + modifierRadius;
+                skillRadius = "Radius " + effectiveRadius.ToString() + "\n";
+                // If range is 0, show outline for radius instead
+                if (skillScript.GetRange() == 0)
+                {
+                    rangeOutline.transform.position = player.transform.position;
+                    float rangeOutlineSize = (float)(2 * effectiveRadius + 3);
+                    rangeOutlineRenderer.size = new Vector2(rangeOutlineSize, rangeOutlineSize);
+                    rangeOutlineRenderer.enabled = true;
+                }
+            }
+            string skillDistance = "";
+            if (skillScript.GetDistance() > 0)
+            {
+                float modifierDistance = 0;
+                if (turnLogic != null)
+                {
+                    EntityScript playerEntityScript = player.GetComponent<EntityScript>();
+                    modifierDistance = playerEntityScript.enchantmentModifiers.distance;
+                }
+                float effectiveDistance = skillScript.GetDistance() + modifierDistance;
+                skillDistance = "Distance " + effectiveDistance.ToString() + "\n";
+            }
             string skillDuration = "";
-            if (skillScript.GetDuration() > 0)
+            if (skillScript.GetSkillDuration() > 0)
             {
                 int modifierDuration = 0;
                 if (turnLogic != null)
                 {
                     EntityScript playerEntityScript = player.GetComponent<EntityScript>();
-                    modifierDuration = playerEntityScript.enchantmentModifiers.duration;
+                    modifierDuration = playerEntityScript.enchantmentModifiers.skillDuration;
                 }
-                int effectiveDuration = skillScript.GetDuration() + modifierDuration;
-                skillDuration = "Duration " + effectiveDuration.ToString() + "\n";
+                int effectiveDuration = skillScript.GetSkillDuration() + modifierDuration;
+                skillDuration = "Skill Duration " + effectiveDuration.ToString() + "\n";
+            }
+            string skillStunDuration = "";
+            if (skillScript.GetStunDuration() > 0)
+            {
+                int modifierStunDuration = 0;
+                if (turnLogic != null)
+                {
+                    EntityScript playerEntityScript = player.GetComponent<EntityScript>();
+                    modifierStunDuration = playerEntityScript.enchantmentModifiers.stunDuration + playerEntityScript.enchantmentModifiers.outgoingStunDuration;
+                }
+                int effectiveStunDuration = skillScript.GetStunDuration() + modifierStunDuration;
+                skillStunDuration = "Stun Duration " + effectiveStunDuration.ToString() + "\n";
             }
             string skillCooldown = "";
             if (skillScript.GetCooldown() > 0)
             {
                 skillCooldown = "Cooldown " + skillScript.GetCooldown().ToString() + "\n";
             }
-            string tooltipText = skillDescription + skillType + skillRange + skillDuration + skillCooldown;
+            string tooltipText = skillDescription + skillType + skillRange + skillRadius + skillDistance + skillDuration + skillStunDuration + skillCooldown;
             Vector3[] buttonCorners = new Vector3[4];
             buttonRectTransform.GetWorldCorners(buttonCorners);
             Vector3 buttonTopRightPosition = buttonCorners[2];
+
+            // Ensure canvas is valid
+            if (canvas == null) return;
+
             Transform tooltipTransform = canvas.Find("Tooltip");
             if (tooltipTransform != null)
             {
@@ -224,7 +272,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         // refresh canvas reference if it was destroyed
         if (canvas == null)
         {
-            canvas = GameObject.Find("Canvas").transform;
+            canvas = GameReferences.GetCanvasTransform();
         }
         this.transform.parent = canvas;
         this.transform.SetAsLastSibling();
@@ -410,29 +458,32 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         finishedBuilding = true;
     }
 
-    void Start()
+    void Awake()
     {
         currentParent = this.transform.parent;
-        turnLogic = GameObject.Find("Turn Logic");
-        if (turnLogic != null)
-        {
-            turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
-        }
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerCharacterScript>();
-        rangeOutline = GameObject.Find("Range Outline");
-        rangeOutlineRenderer = rangeOutline.GetComponent<SpriteRenderer>();
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
-        button.onClick.AddListener(OnActivate);
         image = this.GetComponent<Image>();
-        canvas = GameObject.Find("Canvas").transform;
         skillsPanel = this.transform.parent.gameObject;
         skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         noSkillSprite = Resources.Load<Sprite>("Skills/NoSkill");
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
         cooldownPrefab = Resources.Load<GameObject>("Prefabs/UI/Cooldown Overlay Panel");
         skillButtonPrefab = Resources.Load<GameObject>("Prefabs/UI/Skill Button");
+    }
+
+    void Start()
+    {
+        // Use GameReferences helper for clean lookups
+        turnLogic = GameReferences.GetTurnLogic();
+        if (turnLogic != null) turnLogicScript = GameReferences.GetTurnLogicScript();
+        player = GameReferences.GetPlayer();
+        if (player != null) playerScript = player.GetComponent<PlayerCharacterScript>();
+        rangeOutline = GameReferences.GetRangeOutline();
+        if (rangeOutline != null) rangeOutlineRenderer = rangeOutline.GetComponent<SpriteRenderer>();
+        canvas = GameReferences.GetCanvasTransform();
+
+        button.onClick.AddListener(OnActivate);
         StartCoroutine(WaitForPlayerLoadout());
     }
 }

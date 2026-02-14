@@ -24,7 +24,7 @@ public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPoint
         // refresh canvas reference if it was destroyed
         if (canvas == null)
         {
-            canvas = GameObject.Find("Canvas").transform;
+            canvas = GameReferences.GetCanvasTransform();
         }
         Vector3[] buttonCorners = new Vector3[4];
         buttonRectTransform.GetWorldCorners(buttonCorners);
@@ -108,15 +108,19 @@ public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPoint
         isDisplayingPickup = false;
     }
 
-    void Start()
+    void Awake()
     {
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
-        canvas = GameObject.Find("Canvas").transform;
-        characterUI = GameObject.Find("Character UI").transform;
         inventoryMenuPrefab = Resources.Load<GameObject>("Prefabs/UI/Inventory Menu");
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
+    }
+
+    void Start()
+    {
+        canvas = GameReferences.GetCanvasTransform();
+        characterUI = GameReferences.GetCharacterUI().transform;
     }
 
     void Update()

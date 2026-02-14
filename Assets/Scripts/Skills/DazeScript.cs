@@ -8,7 +8,10 @@ public class DazeScript : MonoBehaviour, Skill
     private string skillType;
     private string description;
     private float range;
-    private int duration;
+    private float radius;
+    private float distance;
+    private int skillDuration;
+    private int stunDuration;
     private int cooldown;
     private Sprite skillSprite;
     public GameObject traversableTiles;
@@ -51,9 +54,24 @@ public class DazeScript : MonoBehaviour, Skill
         return range;
     }
 
-    public int GetDuration()
+    public float GetRadius()
     {
-        return duration;
+        return radius;
+    }
+
+    public float GetDistance()
+    {
+        return distance;
+    }
+
+    public int GetSkillDuration()
+    {
+        return skillDuration;
+    }
+
+    public int GetStunDuration()
+    {
+        return stunDuration;
     }
 
     public Sprite GetSprite()
@@ -123,8 +141,8 @@ public class DazeScript : MonoBehaviour, Skill
             EntityScript targetScript = target.GetComponent<EntityScript>();
             int incomingModifier = targetScript.enchantmentModifiers.incomingStunDuration;
             int outgoingModifier = wielderScript.enchantmentModifiers.outgoingStunDuration;
-            int effectiveDuration = duration + outgoingModifier + incomingModifier;
-            targetScript.stunDuration = Math.Max(effectiveDuration, targetScript.stunDuration);
+            int effectiveStunDuration = stunDuration + outgoingModifier + incomingModifier;
+            targetScript.stunDuration = Math.Max(effectiveStunDuration, targetScript.stunDuration);
         }
         if (wielder == player)
         {
@@ -183,30 +201,31 @@ public class DazeScript : MonoBehaviour, Skill
         }
     }
 
-    void Start()
+    void Awake()
     {
         skillName = "Daze";
         skillType = "Main Hand Skill";
         description = "Stun target";
         range = 3f;
-        duration = 1;
+        radius = 0;
+        distance = 0;
+        skillDuration = 0;
+        stunDuration = 1;
         cooldown = 3;
         skillSprite = Resources.Load<Sprite>("Skills/Daze");
-        traversableTiles = GameObject.Find("Traversable Tiles");
-        if (traversableTiles != null)
+    }
+
+    void Start()
+    {
+        if (LevelScript.Instance != null)
         {
-            traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
-        }
-        enemies = GameObject.Find("Enemies");
-        if (enemies != null)
-        {
-            enemiesScript = enemies.GetComponent<EnemiesScript>();
-        }
-        player = GameObject.Find("Player");
-        turnLogic = GameObject.Find("Turn Logic");
-        if (turnLogic != null)
-        {
-            turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
+            traversableTiles = LevelScript.Instance.traversableTiles;
+            traversableTilesScript = LevelScript.Instance.traversableTilesScript;
+            enemies = LevelScript.Instance.enemies;
+            enemiesScript = LevelScript.Instance.enemiesScript;
+            player = LevelScript.Instance.player;
+            turnLogic = LevelScript.Instance.turnLogic;
+            turnLogicScript = LevelScript.Instance.turnLogicScript;
         }
     }
 }

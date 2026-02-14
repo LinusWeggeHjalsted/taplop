@@ -8,7 +8,7 @@ public class SaveButtonScript : MonoBehaviour
     public void OnActivate()
     {
         SoundControllerScript.Instance.PlayButtonClickSound();
-        GameObject player = GameObject.Find("Player");
+        GameObject player = GameReferences.GetPlayer();
         PlayerDataScript.Instance.BuildDataFromPlayer(player);
         string savePath = PlayerDataScript.Instance.playerName;
         PlayerDataScript.Instance.SavePlayerData(savePath);

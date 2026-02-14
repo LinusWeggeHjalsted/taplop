@@ -211,11 +211,14 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
                 _currentHealth = value;
             }
             // Update player health bar if it exists
-            GameObject playerHealthBar = GameObject.Find("Player Health Bar");
-            if (playerHealthBar != null)
+            if (HubScript.Instance != null)
             {
-                PlayerHealthBarScript playerHealthBarScript = playerHealthBar.GetComponent<PlayerHealthBarScript>();
-                playerHealthBarScript.UpdateHealthBar();
+                GameObject playerHealthBar = HubScript.Instance.playerHealthBar;
+                if (playerHealthBar != null)
+                {
+                    PlayerHealthBarScript playerHealthBarScript = playerHealthBar.GetComponent<PlayerHealthBarScript>();
+                    playerHealthBarScript.UpdateHealthBar();
+                }
             }
         }
     }
@@ -292,14 +295,8 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         finishedBuilding = true;
     }
 
-    void Start()
+    void Awake()
     {
-        hubBuilder = GameObject.Find("Hub Builder");
-        hubBuilderScript = hubBuilder.GetComponent<HubBuilderScript>();
-        hubTiles = GameObject.Find("Hub Tiles");
-        hubTilesScript = hubTiles.GetComponent<HubTilesScript>();
-        hubExits = GameObject.Find("Hub Exits");
-        hubExitsScript = hubExits.GetComponent<HubExitsScript>();
         spriteRenderer = this.gameObject.GetComponent<SpriteRenderer>();
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
@@ -314,6 +311,19 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         _inventorySize = 24 * 4;
         _utilitySkills = this.transform.Find("Utility Skills");
         _maxHealth = 10;
+    }
+
+    void Start()
+    {
+        if (HubScript.Instance != null)
+        {
+            hubBuilder = HubScript.Instance.hubBuilder;
+            hubBuilderScript = HubScript.Instance.hubBuilderScript;
+            hubTiles = HubScript.Instance.hubTiles;
+            hubTilesScript = HubScript.Instance.hubTilesScript;
+            hubExits = HubScript.Instance.hubExits;
+            hubExitsScript = HubScript.Instance.hubExitsScript;
+        }
         StartCoroutine(WaitForGear());
     }
 

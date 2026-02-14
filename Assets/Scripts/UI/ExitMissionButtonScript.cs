@@ -8,7 +8,7 @@ public class ExitMissionButtonScript : MonoBehaviour
     public void OnActivate()
     {
         SoundControllerScript.Instance.PlayButtonClickSound();
-        GameObject player = GameObject.Find("Player");
+        GameObject player = GameReferences.GetPlayer();
         if (player != null)
         {
             PlayerDataScript.Instance.BuildDataFromPlayer(player);

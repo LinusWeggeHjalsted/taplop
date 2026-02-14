@@ -35,10 +35,13 @@ public class HubTilesScript : MonoBehaviour
 
     void Start()
     {
-        hubBuilder = GameObject.Find("Hub Builder");
-        hubBuilderScript = hubBuilder.GetComponent<HubBuilderScript>();
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<HubPlayerScript>();
+        if (HubScript.Instance != null)
+        {
+            hubBuilder = HubScript.Instance.hubBuilder;
+            hubBuilderScript = HubScript.Instance.hubBuilderScript;
+            player = HubScript.Instance.player;
+            if (player != null) playerScript = player.GetComponent<HubPlayerScript>();
+        }
         StartCoroutine(WaitForHubBuilder());
     }
 

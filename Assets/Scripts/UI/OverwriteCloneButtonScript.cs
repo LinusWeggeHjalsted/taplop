@@ -15,7 +15,7 @@ public class OverwriteCloneButtonScript : MonoBehaviour, IPointerEnterHandler, I
         // refresh canvas reference if it was destroyed
         if (canvas == null)
         {
-            canvas = GameObject.Find("Canvas").transform;
+            canvas = GameReferences.GetCanvasTransform();
         }
         Vector3[] buttonCorners = new Vector3[4];
         buttonRectTransform.GetWorldCorners(buttonCorners);
@@ -69,7 +69,7 @@ public class OverwriteCloneButtonScript : MonoBehaviour, IPointerEnterHandler, I
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);
-        canvas = GameObject.Find("Canvas").transform;
+        canvas = GameReferences.GetCanvasTransform();
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
     }
 }

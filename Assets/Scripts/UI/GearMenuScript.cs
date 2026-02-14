@@ -125,10 +125,8 @@ public class GearMenuScript : MonoBehaviour
         }
     }
 
-    void Start()
+    void Awake()
     {
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerCharacterScript>();
         inventoryItemPrefab = Resources.Load<GameObject>("Prefabs/UI/Inventory Item");
         Transform gearSlots = this.transform.Find("Gear Slots");
         Transform weapons = gearSlots.Find("Weapons");
@@ -167,7 +165,12 @@ public class GearMenuScript : MonoBehaviour
 
         ItemSlotScript feetItemSlotScript = feetItemSlot.GetComponent<ItemSlotScript>();
         feetItemSlotScript.itemType = "Boots";
+    }
 
+    void Start()
+    {
+        player = GameReferences.GetPlayer();
+        playerScript = player.GetComponent<PlayerCharacterScript>();
         RefreshUI();
     }
 }

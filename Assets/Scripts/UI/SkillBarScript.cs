@@ -21,6 +21,17 @@ public class SkillBarScript : MonoBehaviour
         {
             Destroy(this.gameObject);
         }
+
+        int totalSkills = 8;
+        skillButtons = new GameObject[totalSkills];
+        for (int i = 0; i < totalSkills; i++)
+        {
+            GameObject skillButton = this.transform.GetChild(i).gameObject;
+            skillButtons[i] = skillButton;
+            SkillButtonScript skillButtonScript = skillButton.GetComponent<SkillButtonScript>();
+            skillButtonScript.skillNumber = i;
+        }
+        finishedAssigning = true;
     }
 
     void OnDestroy()
@@ -40,17 +51,18 @@ public class SkillBarScript : MonoBehaviour
             buttonScript.UpdateButton();
         }
         DisplayCooldowns();
-        // clear used skill and highlights
-        GameObject turnLogic = GameObject.Find("Turn Logic");
-        if (turnLogic != null)
+        // clear used skill and highlights (only in level context)
+        if (GameReferences.IsInLevel())
         {
-            TurnLogicScript turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
-            if (turnLogicScript.currentGameState == TurnLogicScript.GameState.PlayerTurnAttack)
+            TurnLogicScript turnLogicScript = GameReferences.GetTurnLogicScript();
+            if (turnLogicScript != null && turnLogicScript.currentGameState == TurnLogicScript.GameState.PlayerTurnAttack)
             {
                 turnLogicScript.skillUsed = null;
-                GameObject traversableTiles = GameObject.Find("Traversable Tiles");
-                TraversableTilesScript traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
-                traversableTilesScript.ClearHighlights();
+                TraversableTilesScript traversableTilesScript = GameReferences.GetTraversableTilesScript();
+                if (traversableTilesScript != null)
+                {
+                    traversableTilesScript.ClearHighlights();
+                }
             }
         }
     }
@@ -81,18 +93,12 @@ public class SkillBarScript : MonoBehaviour
 
     void Start()
     {
-        player = GameObject.Find("Player");
-        playerScript = player.GetComponent<PlayerCharacterScript>();
-        int totalSkills = 8;
-        skillButtons = new GameObject[totalSkills];
-        for (int i = 0; i < totalSkills; i++)
+        // Use GameReferences helper for clean lookup
+        player = GameReferences.GetPlayer();
+        if (player != null)
         {
-            GameObject skillButton = this.transform.GetChild(i).gameObject;
-            skillButtons[i] = skillButton;
-            SkillButtonScript skillButtonScript = skillButton.GetComponent<SkillButtonScript>();
-            skillButtonScript.skillNumber = i;
+            playerScript = player.GetComponent<PlayerCharacterScript>();
         }
-        finishedAssigning = true;
         StartCoroutine(WaitForSkillButtons());
     }
 }

@@ -22,6 +22,7 @@ public class CameraControllerScript : MonoBehaviour
         {
             Destroy(this.gameObject);
         }
+        mainCamera = Camera.main;
     }
 
     void OnDestroy()
@@ -34,12 +35,18 @@ public class CameraControllerScript : MonoBehaviour
 
     void Start()
     {
-        mainCamera = Camera.main;
-        player = GameObject.Find("Player");
+        // Use GameReferences helper for clean lookup
+        player = GameReferences.GetPlayer();
     }
 
     void Update()
     {
+        // Refresh player reference if null (can happen on scene transitions)
+        if (player == null)
+        {
+            player = GameReferences.GetPlayer();
+        }
+
         if (EventSystem.current.IsPointerOverGameObject())
         {
             isPointerOverUI = true;
@@ -87,8 +94,12 @@ public class CameraControllerScript : MonoBehaviour
 
     public void MoveToPlayer()
     {
-        Transform characterUI = GameObject.Find("Character UI").transform;
-        GameObject canvas = GameObject.Find("Canvas");
+        // Use GameReferences helper for clean lookups
+        GameObject characterUIObj = GameReferences.GetCharacterUI();
+        GameObject canvas = GameReferences.GetCanvas();
+
+        if (characterUIObj == null || canvas == null) return;
+        Transform characterUI = characterUIObj.transform;
         Canvas canvasComponent = canvas.GetComponent<Canvas>();
         float canvasScaleFactor = canvasComponent.scaleFactor;
         float totalMenuWidth = 0;
@@ -109,6 +120,14 @@ public class CameraControllerScript : MonoBehaviour
         {
             mainCamera = Camera.main;
         }
+
+        // Refresh player reference if null
+        if (player == null)
+        {
+            player = GameReferences.GetPlayer();
+        }
+        if (player == null) return; // Can't move to player if player doesn't exist
+
         Vector3 screenPointLeft = new Vector3(0, Screen.height / 2f, Mathf.Abs(mainCamera.transform.position.z));
         Vector3 screenPointRight = new Vector3(halfMenuWidth, Screen.height / 2f, Mathf.Abs(mainCamera.transform.position.z));
         Vector3 worldPointLeft = mainCamera.ScreenToWorldPoint(screenPointLeft);

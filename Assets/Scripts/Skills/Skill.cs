@@ -7,7 +7,10 @@ public interface Skill
     string GetSkillType();
     string GetDescription();
     float GetRange();
-    int GetDuration();
+    float GetRadius();
+    float GetDistance();
+    int GetSkillDuration();
+    int GetStunDuration();
     Sprite GetSprite();
     int GetCooldown();
     int EnemyPriority(Vector3 fromPosition, GameObject enemy);

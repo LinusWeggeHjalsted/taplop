@@ -402,7 +402,7 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
     private void RefreshUI()
     {
         // refresh open menus
-        Transform characterUI = GameObject.Find("Character UI").transform;
+        Transform characterUI = GameReferences.GetCharacterUI().transform;
         Transform gearMenu = characterUI.Find("Gear Menu(Clone)");
         if (gearMenu != null)
         {
@@ -422,15 +422,15 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
             skillsMenuScript.RefreshUI();
         }
         // refresh skillbar in case weapons changed
-        GameObject skillsPanel = GameObject.Find("Skills Panel");
+        GameObject skillsPanel = GameReferences.GetSkillsPanel();
         SkillBarScript skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         skillBarScript.UpdateButtons();
         // refresh health bar in case max health changed
-        GameObject playerHealthBar = GameObject.Find("Player Health Bar");
+        GameObject playerHealthBar = GameReferences.GetPlayerHealthBar();
         PlayerHealthBarScript playerHealthBarScript = playerHealthBar.GetComponent<PlayerHealthBarScript>();
         playerHealthBarScript.UpdateHealthBar();
         // restart move step in case speed changed (only exists in missions, not hub)
-        GameObject turnLogic = GameObject.Find("Turn Logic");
+        GameObject turnLogic = GameReferences.GetTurnLogic();
         if (turnLogic != null)
         {
             TurnLogicScript turnLogicScript = turnLogic.GetComponent<TurnLogicScript>();
@@ -438,18 +438,22 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
         }
     }
 
-    void Start()
+    void Awake()
     {
         currentParent = this.transform.parent;
-        canvas = GameObject.Find("Canvas").transform;
+        tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
+        contextMenuPrefab = Resources.Load<GameObject>("Prefabs/UI/Context Menu");
+    }
+
+    void Start()
+    {
+        canvas = GameReferences.GetCanvasTransform();
         inventoryMenu = GameObject.Find("Inventory Menu(Clone)");
         if (inventoryMenu != null)
         {
             inventoryMenuScript = inventoryMenu.GetComponent<InventoryMenuScript>();
         }
-        tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
-        contextMenuPrefab = Resources.Load<GameObject>("Prefabs/UI/Context Menu");
-        player = GameObject.Find("Player");
+        player = GameReferences.GetPlayer();
         playerScript = player.GetComponent<PlayerCharacterScript>();
     }
 

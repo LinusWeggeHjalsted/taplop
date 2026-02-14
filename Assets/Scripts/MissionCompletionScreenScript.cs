@@ -14,8 +14,7 @@ public class MissionCompletionScreenScript : MonoBehaviour
 
     public void GetInfo()
     {
-        GameObject missionLogic = GameObject.Find("Mission Logic");
-        MissionLogicScript missionLogicScript = missionLogic.GetComponent<MissionLogicScript>();
+        MissionLogicScript missionLogicScript = MissionLogicScript.Instance;
         string missionName = missionLogicScript.missionName;
         int totalTurns = missionLogicScript.totalTurns;
         missionCompletionHeaderText.text = $"{missionName} completed in {totalTurns} turns";
@@ -101,13 +100,13 @@ public class MissionCompletionScreenScript : MonoBehaviour
     void Start()
     {
         SoundControllerScript.Instance.PlayMissionCompletionSound();
-        missionCompletionHeaderText = GameObject.Find("Mission Completion Header Text").GetComponent<TMP_Text>();
-        newCloneInfoPanel = GameObject.Find("New Clone Info Panel");
-        newCloneInfoText = GameObject.Find("New Clone Info Text").GetComponent<TMP_Text>();
-        existingCloneInfoText = GameObject.Find("Existing Clone Info Text").GetComponent<TMP_Text>();
-        combatInfoText = GameObject.Find("Combat Info Text").GetComponent<TMP_Text>();
-        cloneRunPanel = GameObject.Find("Clone Run Panel");
-        cloneRunBodyText = GameObject.Find("Clone Run Body Text").GetComponent<TMP_Text>();
+        missionCompletionHeaderText = this.transform.Find("Canvas/Background Panel/Mission Completion Header Text").GetComponent<TMP_Text>();
+        newCloneInfoPanel = this.transform.Find("Canvas/Background Panel/New Clone Info Panel").gameObject;
+        newCloneInfoText = this.transform.Find("Canvas/Background Panel/New Clone Info Panel/Vertical Layout/New Clone Info Text").GetComponent<TMP_Text>();
+        existingCloneInfoText = this.transform.Find("Canvas/Background Panel/New Clone Info Panel/Vertical Layout/Existing Clone Info Text").GetComponent<TMP_Text>();
+        combatInfoText = this.transform.Find("Canvas/Background Panel/Horizontal Layout/Vertical Layout/Combat Info Text").GetComponent<TMP_Text>();
+        cloneRunPanel = this.transform.Find("Canvas/Background Panel/Horizontal Layout/Clone Run Panel").gameObject;
+        cloneRunBodyText = this.transform.Find("Canvas/Background Panel/Horizontal Layout/Clone Run Panel/Clone Run Body Text").GetComponent<TMP_Text>();
         GetInfo();
     }
 }

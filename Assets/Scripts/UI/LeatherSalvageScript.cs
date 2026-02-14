@@ -43,10 +43,14 @@ public class LeatherSalvageScript : MonoBehaviour, IPointerEnterHandler, IPointe
         }
     }
 
-    void Start()
+    void Awake()
     {
         salvageRectTransform = this.GetComponent<RectTransform>();
-        canvas = GameObject.Find("Canvas").transform;
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
+    }
+
+    void Start()
+    {
+        canvas = GameReferences.GetCanvasTransform();
     }
 }
