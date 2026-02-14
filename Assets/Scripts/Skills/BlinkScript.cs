@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
-public class BlinkScript : MonoBehaviour, Skill
+public class BlinkScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

@@ -2,7 +2,7 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 
-public class CleaveScript : MonoBehaviour, Skill
+public class CleaveScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

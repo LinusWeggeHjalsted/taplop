@@ -138,44 +138,54 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
             return itemArray;
         }
     }
+    private GameObject[] _equippedSkillsCache = null;
     public GameObject[] equippedSkills
     {
         get
         {
-            GameObject[] skillArray = new GameObject[8];
-            if (mainHandWeapon != null)
+            if (_equippedSkillsCache == null)
             {
-                WeaponScript mainHandWeaponScript = mainHandWeapon.GetComponent<WeaponScript>();
-                skillArray[0] = mainHandWeaponScript.FirstSkill();
-                skillArray[1] = mainHandWeaponScript.SecondSkill();
+                UpdateEquippedSkills();
             }
-            if (offHandWeapon != null)
+            return _equippedSkillsCache;
+        }
+    }
+
+    public void UpdateEquippedSkills()
+    {
+        GameObject[] skillArray = new GameObject[8];
+        if (mainHandWeapon != null)
+        {
+            WeaponScript mainHandWeaponScript = mainHandWeapon.GetComponent<WeaponScript>();
+            skillArray[0] = mainHandWeaponScript.FirstSkill();
+            skillArray[1] = mainHandWeaponScript.SecondSkill();
+        }
+        if (offHandWeapon != null)
+        {
+            WeaponScript offHandWeaponScript = offHandWeapon.GetComponent<WeaponScript>();
+            skillArray[2] = offHandWeaponScript.ThirdSkill();
+        }
+        if (utilitySkills.childCount > 0)
+        {
+            for (int i = 0; i < utilitySkills.childCount; i++)
             {
-                WeaponScript offHandWeaponScript = offHandWeapon.GetComponent<WeaponScript>();
-                skillArray[2] = offHandWeaponScript.ThirdSkill();
-            }
-            if (utilitySkills.childCount > 0)
-            {
-                for (int i = 0; i < utilitySkills.childCount; i++)
+                if (i < utilitySkillSlots)
                 {
-                    if (i < utilitySkillSlots)
+                    GameObject utilitySkill = utilitySkills.GetChild(i).gameObject;
+                    SkillScript skillScript = utilitySkill.GetComponent<SkillScript>();
+                    int skillIndex = skillScript.skillBarPosition - 1;
+                    if (skillArray[skillIndex] != null)
                     {
-                        GameObject utilitySkill = utilitySkills.GetChild(i).gameObject;
-                        Skill skillScript = utilitySkill.GetComponent<Skill>();
-                        int skillIndex = skillScript.skillBarPosition - 1;
-                        if (skillArray[skillIndex] != null)
-                        {
-                            Debug.LogError($"there is already a skill in slot {skillIndex}");
-                        }
-                        else
-                        {
-                            skillArray[skillIndex] = utilitySkill;
-                        }
+                        Debug.LogError($"there is already a skill in slot {skillIndex}");
+                    }
+                    else
+                    {
+                        skillArray[skillIndex] = utilitySkill;
                     }
                 }
             }
-            return skillArray;
         }
+        _equippedSkillsCache = skillArray;
     }
     public int MaxHealth
     {

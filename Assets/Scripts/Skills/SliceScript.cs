@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class SliceScript : MonoBehaviour, Skill
+public class SliceScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

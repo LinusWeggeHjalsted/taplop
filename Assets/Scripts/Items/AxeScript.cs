@@ -98,7 +98,7 @@ public class AxeScript : MonoBehaviour, WeaponScript, ItemScript
         return salvage;
     }
 
-    void Start()
+    void Awake()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Skills/Chop");
         firstSkill = Instantiate(firstSkillPrefab, this.transform);

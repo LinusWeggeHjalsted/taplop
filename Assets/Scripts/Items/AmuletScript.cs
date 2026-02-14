@@ -48,7 +48,7 @@ public class AmuletScript : MonoBehaviour, ItemScript
         return salvage;
     }
 
-    void Start()
+    void Awake()
     {
         itemSprite = Resources.Load<Sprite>("Items/AmuletItem");
         itemType = "Amulet";

@@ -731,7 +731,7 @@ public class LevelBuilderScript : MonoBehaviour
                 if (utilitySkillPrefab != null)
                 {
                     GameObject skillObject = Instantiate(utilitySkillPrefab, enemyUtilitySkills);
-                    Skill skillScript = skillObject.GetComponent<Skill>();
+                    SkillScript skillScript = skillObject.GetComponent<SkillScript>();
                     skillScript.skillBarPosition = i + 4;
                 }
                 else

@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
-public class FlashStrikeScript : MonoBehaviour, Skill
+public class FlashStrikeScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

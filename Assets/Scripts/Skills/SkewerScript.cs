@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class SkewerScript : MonoBehaviour, Skill
+public class SkewerScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

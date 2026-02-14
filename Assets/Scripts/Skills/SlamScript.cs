@@ -2,7 +2,7 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 
-public class SlamScript : MonoBehaviour, Skill
+public class SlamScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

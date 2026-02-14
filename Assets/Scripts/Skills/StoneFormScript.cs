@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class StoneFormScript : MonoBehaviour, Skill, EnchantmentScript
+public class StoneFormScript : MonoBehaviour, SkillScript, EnchantmentScript
 {
     private string skillName;
     private string skillType;

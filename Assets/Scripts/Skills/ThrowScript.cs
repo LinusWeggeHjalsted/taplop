@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class ThrowScript : MonoBehaviour, Skill
+public class ThrowScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

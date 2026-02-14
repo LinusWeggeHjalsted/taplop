@@ -12,7 +12,7 @@ public class UnlockedSkillScript : MonoBehaviour, IPointerEnterHandler, IPointer
     public GameObject player;
     public PlayerCharacterScript playerScript;
     public GameObject skill;
-    public Skill skillScript;
+    public SkillScript skillScript;
     public GameObject tooltipPrefab;
     public GameObject tooltip;
     public GameObject unlockedSkillPrefab;
@@ -146,7 +146,7 @@ public class UnlockedSkillScript : MonoBehaviour, IPointerEnterHandler, IPointer
             Debug.LogError("UnlockedSkillScript has no skill assigned");
             return;
         }
-        skillScript = skill.GetComponent<Skill>();
+        skillScript = skill.GetComponent<SkillScript>();
         image.sprite = skillScript.GetSprite();
         skillName = skillScript.GetSkillName();
     }

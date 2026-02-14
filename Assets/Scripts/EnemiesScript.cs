@@ -220,7 +220,7 @@ public class EnemiesScript : MonoBehaviour
             GameObject skill = enemySkills[i];
             if (skill != null)
             {
-                Skill skillScript = skill.GetComponent<Skill>();
+                SkillScript skillScript = skill.GetComponent<SkillScript>();
                 int enemyPriority = skillScript.EnemyPriority(enemyPosition, enemy);
                 if (enemyPriority == 0)
                 {
@@ -238,7 +238,7 @@ public class EnemiesScript : MonoBehaviour
         if (priority0Skills.Count > 0)
         {
             GameObject skill = priority0Skills[0];
-            Skill skillScript = skill.GetComponent<Skill>();
+            SkillScript skillScript = skill.GetComponent<SkillScript>();
             skillScript.PrepareSkill(enemyPosition, enemy);
             Vector3 selectedTarget = skillScript.EnemySelectTarget(enemyPosition, enemy);
             skillScript.UseSkill(selectedTarget, enemy);
@@ -250,7 +250,7 @@ public class EnemiesScript : MonoBehaviour
         else if (sortedSkillPriorities.Count > 0)
         {
             GameObject selectedAttack = sortedSkillPriorities[0].Key;
-            Skill attackScript = selectedAttack.GetComponent<Skill>();
+            SkillScript attackScript = selectedAttack.GetComponent<SkillScript>();
             attackScript.PrepareSkill(enemyPosition, enemy);
             Vector3 attackTarget = attackScript.EnemySelectTarget(enemyPosition, enemy);
             attackScript.UseSkill(attackTarget, enemy);

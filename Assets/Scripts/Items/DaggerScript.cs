@@ -98,7 +98,7 @@ public class DaggerScript : MonoBehaviour, WeaponScript, ItemScript
         return salvage;
     }
 
-    void Start()
+    void Awake()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Skills/Stab");
         firstSkill = Instantiate(firstSkillPrefab, this.transform);

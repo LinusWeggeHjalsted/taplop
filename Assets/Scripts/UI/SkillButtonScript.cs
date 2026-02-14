@@ -22,7 +22,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
     public GameObject rangeOutline;
     public SpriteRenderer rangeOutlineRenderer;
     public GameObject skill;
-    public Skill skillScript;
+    public SkillScript skillScript;
     public string skillName
     {
         get
@@ -258,7 +258,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         }
         else
         {
-            skillScript = skill.GetComponent<Skill>();
+            skillScript = skill.GetComponent<SkillScript>();
             image.sprite = skillScript.GetSprite();
         }
     }
@@ -343,11 +343,11 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             return;
         }
-        Skill droppedSkillScript = droppedSkill.GetComponent<Skill>();
-        Skill skillScript = null;
+        SkillScript droppedSkillScript = droppedSkill.GetComponent<SkillScript>();
+        SkillScript skillScript = null;
         if (skill != null)
         {
-            skillScript = skill.GetComponent<Skill>();
+            skillScript = skill.GetComponent<SkillScript>();
         }
         int droppedSkillPosition = droppedSkillScript.skillBarPosition;
         int ownPosition = skillNumber + 1;
@@ -356,7 +356,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             skillScript.skillBarPosition = droppedSkillPosition;
         }
-        StartCoroutine(DelayedUpdateButtons());
+        StartCoroutine(DeferredUpdateButtons());
     }
 
     private void HandleUnlockedSkillDrop(GameObject unlockedSkill)
@@ -371,13 +371,14 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         // check if this skill already exists on the bar
         bool skillExists = false;
         GameObject foundSkill = null;
-        Skill foundSkillScript = null;
-        for (int i = 3; i < playerScript.equippedSkills.Length; i++)
+        SkillScript foundSkillScript = null;
+        GameObject[] equippedSkills = playerScript.equippedSkills;
+        for (int i = 3; i < equippedSkills.Length; i++)
         {
-            GameObject equippedSkill = playerScript.equippedSkills[i];
+            GameObject equippedSkill = equippedSkills[i];
             if (equippedSkill != null)
             {
-                Skill equippedSkillScript = equippedSkill.GetComponent<Skill>();
+                SkillScript equippedSkillScript = equippedSkill.GetComponent<SkillScript>();
                 if (equippedSkillScript.GetSkillName() == droppedSkillName)
                 {
                     skillExists = true;
@@ -393,7 +394,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             int foundPosition = foundSkillScript.skillBarPosition;
             if (skill != null)
             {
-                Skill ownSkillScript = skill.GetComponent<Skill>();
+                SkillScript ownSkillScript = skill.GetComponent<SkillScript>();
                 int ownPosition = ownSkillScript.skillBarPosition;
                 foundSkillScript.skillBarPosition = ownPosition;
                 ownSkillScript.skillBarPosition = foundPosition;
@@ -413,7 +414,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             // remove old skill from this slot if present
             if (skill != null)
             {
-                Destroy(skill);
+                DestroyImmediate(skill);
             }
             // instantiate new skill under player's Utility Skills
             GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/Skills/" + droppedSkillName);
@@ -424,16 +425,16 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             }
             Transform utilitySkills = playerScript.utilitySkills;
             GameObject newSkill = Instantiate(skillPrefab, utilitySkills);
-            Skill newSkillScript = newSkill.GetComponent<Skill>();
+            SkillScript newSkillScript = newSkill.GetComponent<SkillScript>();
             newSkillScript.skillBarPosition = skillNumber + 1;
         }
-        // Wait a frame for the new skill to initialize before updating the UI
-        StartCoroutine(DelayedUpdateButtons());
+        StartCoroutine(DeferredUpdateButtons());
     }
 
-    IEnumerator DelayedUpdateButtons()
+    IEnumerator DeferredUpdateButtons()
     {
         yield return null;
+        playerScript.UpdateEquippedSkills();
         skillBarScript.UpdateButtons();
     }
 

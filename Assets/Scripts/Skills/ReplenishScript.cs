@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
-public class ReplenishScript : MonoBehaviour, Skill
+public class ReplenishScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

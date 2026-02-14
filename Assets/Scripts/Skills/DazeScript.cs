@@ -2,7 +2,7 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 
-public class DazeScript : MonoBehaviour, Skill
+public class DazeScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

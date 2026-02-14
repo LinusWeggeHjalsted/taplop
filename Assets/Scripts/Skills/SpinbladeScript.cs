@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class SpinbladeScript : MonoBehaviour, Skill
+public class SpinbladeScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

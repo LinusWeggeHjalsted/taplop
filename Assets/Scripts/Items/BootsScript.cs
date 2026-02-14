@@ -52,7 +52,7 @@ public class BootsScript : MonoBehaviour, ItemScript
         return salvage;
     }
 
-    void Start()
+    void Awake()
     {
         itemSprite = Resources.Load<Sprite>("Items/BootsItem");
         itemType = "Boots";

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class NoSkillScript : MonoBehaviour, Skill
+public class NoSkillScript : MonoBehaviour, SkillScript
 {
     private int currentCooldown = 0;
     private Sprite skillSprite;

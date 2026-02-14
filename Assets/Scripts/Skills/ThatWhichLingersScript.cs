@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class ThatWhichLingersScript : MonoBehaviour, Skill, EnchantmentScript
+public class ThatWhichLingersScript : MonoBehaviour, SkillScript, EnchantmentScript
 {
     private string skillName;
     private string skillType;

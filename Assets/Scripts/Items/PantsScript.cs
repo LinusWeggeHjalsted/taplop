@@ -52,7 +52,7 @@ public class PantsScript : MonoBehaviour, ItemScript
         return salvage;
     }
 
-    void Start()
+    void Awake()
     {
         itemSprite = Resources.Load<Sprite>("Items/PantsItem");
         itemType = "Pants";

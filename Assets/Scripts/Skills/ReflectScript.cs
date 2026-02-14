@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public class ReflectScript : MonoBehaviour, Skill
+public class ReflectScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

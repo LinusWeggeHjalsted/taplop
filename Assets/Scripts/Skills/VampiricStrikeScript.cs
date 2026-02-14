@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class VampiricStrikeScript : MonoBehaviour, Skill
+public class VampiricStrikeScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

@@ -26,6 +26,7 @@ public interface PlayerCharacterScript
     int MaxHealth { get; set; }
     int CurrentHealth { get; set; }
 
+    void UpdateEquippedSkills();
     void MoveTo(Vector3 targetPosition);
 
     int GetSkillCooldown(string skillName);

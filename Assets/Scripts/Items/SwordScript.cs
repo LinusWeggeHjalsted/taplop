@@ -98,7 +98,7 @@ public class SwordScript : MonoBehaviour, WeaponScript, ItemScript
         return salvage;
     }
 
-    void Start()
+    void Awake()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Skills/Slice");
         firstSkill = Instantiate(firstSkillPrefab, this.transform);

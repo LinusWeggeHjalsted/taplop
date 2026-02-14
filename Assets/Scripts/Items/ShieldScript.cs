@@ -98,7 +98,7 @@ public class ShieldScript : MonoBehaviour, WeaponScript, ItemScript
         return salvage;
     }
 
-    void Start()
+    void Awake()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Skills/Bash");
         firstSkill = Instantiate(firstSkillPrefab, this.transform);

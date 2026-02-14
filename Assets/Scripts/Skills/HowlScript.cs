@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class HowlScript : MonoBehaviour, Skill
+public class HowlScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

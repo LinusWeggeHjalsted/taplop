@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class SparkScript : MonoBehaviour, Skill
+public class SparkScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

@@ -44,7 +44,7 @@ public class SkillsMenuScript : MonoBehaviour
                     GameObject skillInstance = Instantiate(skillPrefab, unlockedSkill.transform);
                     unlockedSkillScript.skill = skillInstance;
 
-                    Skill skillScript = skillInstance.GetComponent<Skill>();
+                    SkillScript skillScript = skillInstance.GetComponent<SkillScript>();
                     if (skillScript != null)
                     {
                         unlockedSkillScript.skillScript = skillScript;

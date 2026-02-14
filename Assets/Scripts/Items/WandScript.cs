@@ -98,7 +98,7 @@ public class WandScript : MonoBehaviour, WeaponScript, ItemScript
         return salvage;
     }
 
-    void Start()
+    void Awake()
     {
         firstSkillPrefab = Resources.Load<GameObject>("Prefabs/Skills/Spark");
         firstSkill = Instantiate(firstSkillPrefab, this.transform);

@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class BashScript : MonoBehaviour, Skill
+public class BashScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

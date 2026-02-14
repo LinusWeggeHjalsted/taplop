@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
-public class FocusScript : MonoBehaviour, Skill
+public class FocusScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;
@@ -103,7 +103,7 @@ public class FocusScript : MonoBehaviour, Skill
                 }
                 if (i == 1 || i == 2) // currently only place where weapon skills with cooldowns exist
                 {
-                    Skill equippedSkillScript = equippedSkill.GetComponent<Skill>();
+                    SkillScript equippedSkillScript = equippedSkill.GetComponent<SkillScript>();
                     if (enemyScript.GetSkillCooldown(equippedSkillScript.GetSkillName()) > 0)
                     {
                         return 0;
@@ -137,7 +137,7 @@ public class FocusScript : MonoBehaviour, Skill
             {
                 continue;
             }
-            Skill equippedSkillScript = equippedSkill.GetComponent<Skill>();
+            SkillScript equippedSkillScript = equippedSkill.GetComponent<SkillScript>();
             if (i == 1 || i == 2) // currently only place where weapon skills with cooldowns exist
             {
                 wielderScript.SetSkillCooldown(equippedSkillScript.GetSkillName(), 0);

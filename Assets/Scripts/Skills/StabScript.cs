@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class StabScript : MonoBehaviour, Skill
+public class StabScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

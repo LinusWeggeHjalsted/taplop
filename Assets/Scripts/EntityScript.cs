@@ -349,44 +349,54 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     }
     public int aggroRange;
     public Vector3 previousPosition = new Vector3();
+    private GameObject[] _equippedSkillsCache = null;
     public GameObject[] equippedSkills
     {
         get
         {
-            GameObject[] skillArray = new GameObject[8];
-            if (mainHandWeapon != null)
+            if (_equippedSkillsCache == null)
             {
-                WeaponScript mainHandWeaponScript = mainHandWeapon.GetComponent<WeaponScript>();
-                skillArray[0] = mainHandWeaponScript.FirstSkill();
-                skillArray[1] = mainHandWeaponScript.SecondSkill();
+                UpdateEquippedSkills();
             }
-            if (offHandWeapon != null)
+            return _equippedSkillsCache;
+        }
+    }
+
+    public void UpdateEquippedSkills()
+    {
+        GameObject[] skillArray = new GameObject[8];
+        if (mainHandWeapon != null)
+        {
+            WeaponScript mainHandWeaponScript = mainHandWeapon.GetComponent<WeaponScript>();
+            skillArray[0] = mainHandWeaponScript.FirstSkill();
+            skillArray[1] = mainHandWeaponScript.SecondSkill();
+        }
+        if (offHandWeapon != null)
+        {
+            WeaponScript offHandWeaponScript = offHandWeapon.GetComponent<WeaponScript>();
+            skillArray[2] = offHandWeaponScript.ThirdSkill();
+        }
+        if (utilitySkills.childCount > 0)
+        {
+            for (int i = 0; i < utilitySkills.childCount; i++)
             {
-                WeaponScript offHandWeaponScript = offHandWeapon.GetComponent<WeaponScript>();
-                skillArray[2] = offHandWeaponScript.ThirdSkill();
-            }
-            if (utilitySkills.childCount > 0)
-            {
-                for (int i = 0; i < utilitySkills.childCount; i++)
+                if (i < utilitySkillSlots)
                 {
-                    if (i < utilitySkillSlots)
+                    GameObject utilitySkill = utilitySkills.GetChild(i).gameObject;
+                    SkillScript skillScript = utilitySkill.GetComponent<SkillScript>();
+                    int skillIndex = skillScript.skillBarPosition - 1;
+                    if (skillArray[skillIndex] != null)
                     {
-                        GameObject utilitySkill = utilitySkills.GetChild(i).gameObject;
-                        Skill skillScript = utilitySkill.GetComponent<Skill>();
-                        int skillIndex = skillScript.skillBarPosition - 1;
-                        if (skillArray[skillIndex] != null)
-                        {
-                            Debug.LogError($"there is already a skill in slot {skillIndex}");
-                        }
-                        else
-                        {
-                            skillArray[skillIndex] = utilitySkill;
-                        }
+                        Debug.LogError($"there is already a skill in slot {skillIndex}");
+                    }
+                    else
+                    {
+                        skillArray[skillIndex] = utilitySkill;
                     }
                 }
             }
-            return skillArray;
         }
+        _equippedSkillsCache = skillArray;
     }
     public Dictionary<string, int> cooldownTracker = new Dictionary<string, int>();
     private bool isActive = false;
@@ -426,12 +436,13 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         get
         {
             List<float> skillRanges = new List<float>();
-            for (int i = 0; i < equippedSkills.Length; i++)
+            GameObject[] skills = equippedSkills;
+            for (int i = 0; i < skills.Length; i++)
             {
-                GameObject skill = equippedSkills[i];
+                GameObject skill = skills[i];
                 if (skill != null)
                 {
-                    Skill skillScript = skill.GetComponent<Skill>();
+                    SkillScript skillScript = skill.GetComponent<SkillScript>();
                     float skillRange = skillScript.GetRange();
                     if (skillRange > 0)
                     {
@@ -622,7 +633,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     {
         if (this.gameObject == player)
         {
-            StartCoroutine(PlayerEnchantmentsScript.Instance.UpdateEnchantments());
+            PlayerEnchantmentsScript.Instance.UpdateEnchantments();
         }
         int enchantmentCount = activeEnchantments.Count;
         if (enchantmentCount == 0)
@@ -1171,7 +1182,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         // drop tome for each equipped utility skill
         foreach (GameObject skillDrop in equippedUtilitySkills)
         {
-            Skill skillScript = skillDrop.GetComponent<Skill>();
+            SkillScript skillScript = skillDrop.GetComponent<SkillScript>();
             GameObject skillTomePrefab = Resources.Load<GameObject>("Prefabs/Items/Skill Tome");
             GameObject tomeDrop = Instantiate(skillTomePrefab, groundItems.transform);
             SkillTomeScript tomeScript = tomeDrop.GetComponent<SkillTomeScript>();

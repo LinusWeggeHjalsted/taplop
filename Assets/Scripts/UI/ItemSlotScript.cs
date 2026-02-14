@@ -163,21 +163,21 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, ID
                         // set skill cooldowns
                         WeaponScript ownWeaponScript = actualOwnItem.GetComponent<WeaponScript>();
                         GameObject ownSecondSkill = ownWeaponScript.SecondSkill();
-                        Skill ownSecondSkillScript = ownSecondSkill.GetComponent<Skill>();
+                        SkillScript ownSecondSkillScript = ownSecondSkill.GetComponent<SkillScript>();
                         string ownSecondSkillName = ownSecondSkillScript.GetSkillName();
                         int ownSecondCooldown = playerScript.GetSkillCooldown(ownSecondSkillName);
                         GameObject ownThirdSkill = ownWeaponScript.ThirdSkill();
-                        Skill ownThirdSkillScript = ownThirdSkill.GetComponent<Skill>();
+                        SkillScript ownThirdSkillScript = ownThirdSkill.GetComponent<SkillScript>();
                         string ownThirdSkillName = ownThirdSkillScript.GetSkillName();
                         int ownThirdCooldown = playerScript.GetSkillCooldown(ownThirdSkillName);
                         
                         WeaponScript otherWeaponScript = actualOtherItem.GetComponent<WeaponScript>();
                         GameObject otherSecondSkill = otherWeaponScript.SecondSkill();
-                        Skill otherSecondSkillScript = otherSecondSkill.GetComponent<Skill>();
+                        SkillScript otherSecondSkillScript = otherSecondSkill.GetComponent<SkillScript>();
                         string otherSecondSkillName = otherSecondSkillScript.GetSkillName();
                         int otherSecondCooldown = playerScript.GetSkillCooldown(otherSecondSkillName);
                         GameObject otherThirdSkill = otherWeaponScript.ThirdSkill();
-                        Skill otherThirdSkillScript = otherThirdSkill.GetComponent<Skill>();
+                        SkillScript otherThirdSkillScript = otherThirdSkill.GetComponent<SkillScript>();
                         string otherThirdSkillName = otherThirdSkillScript.GetSkillName();
                         int otherThirdCooldown = playerScript.GetSkillCooldown(otherThirdSkillName);
 
@@ -227,21 +227,21 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, ID
                         // set skill cooldowns
                         WeaponScript ownWeaponScript = actualOwnItem.GetComponent<WeaponScript>();
                         GameObject ownSecondSkill = ownWeaponScript.SecondSkill();
-                        Skill ownSecondSkillScript = ownSecondSkill.GetComponent<Skill>();
+                        SkillScript ownSecondSkillScript = ownSecondSkill.GetComponent<SkillScript>();
                         string ownSecondSkillName = ownSecondSkillScript.GetSkillName();
                         int ownSecondCooldown = playerScript.GetSkillCooldown(ownSecondSkillName);
                         GameObject ownThirdSkill = ownWeaponScript.ThirdSkill();
-                        Skill ownThirdSkillScript = ownThirdSkill.GetComponent<Skill>();
+                        SkillScript ownThirdSkillScript = ownThirdSkill.GetComponent<SkillScript>();
                         string ownThirdSkillName = ownThirdSkillScript.GetSkillName();
                         int ownThirdCooldown = playerScript.GetSkillCooldown(ownThirdSkillName);
                         
                         WeaponScript otherWeaponScript = actualOtherItem.GetComponent<WeaponScript>();
                         GameObject otherSecondSkill = otherWeaponScript.SecondSkill();
-                        Skill otherSecondSkillScript = otherSecondSkill.GetComponent<Skill>();
+                        SkillScript otherSecondSkillScript = otherSecondSkill.GetComponent<SkillScript>();
                         string otherSecondSkillName = otherSecondSkillScript.GetSkillName();
                         int otherSecondCooldown = playerScript.GetSkillCooldown(otherSecondSkillName);
                         GameObject otherThirdSkill = otherWeaponScript.ThirdSkill();
-                        Skill otherThirdSkillScript = otherThirdSkill.GetComponent<Skill>();
+                        SkillScript otherThirdSkillScript = otherThirdSkill.GetComponent<SkillScript>();
                         string otherThirdSkillName = otherThirdSkillScript.GetSkillName();
                         int otherThirdCooldown = playerScript.GetSkillCooldown(otherThirdSkillName);
 
@@ -278,6 +278,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, ID
             actualOwnItemScript.inventoryPosition = otherPosition;
             actualOtherItemScript.inventoryPosition = ownPosition;
             // update skill bar in case skills changed
+            playerScript.UpdateEquippedSkills();
             skillBarScript.UpdateButtons();
             GameObject playerHealthBar = GameReferences.GetPlayerHealthBar();
             // update player health bar in case max health changed
@@ -361,6 +362,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, ID
                             actualItem.transform.parent = playerScript.feet;
                             break;
                     }
+                    playerScript.UpdateEquippedSkills();
                     skillBarScript.UpdateButtons();
                 }
             }
@@ -371,6 +373,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, ID
                 if (originalItemSlotScript.itemType != "")
                 {
                     actualItem.transform.parent = playerScript.inventory;
+                    playerScript.UpdateEquippedSkills();
                     skillBarScript.UpdateButtons();
                 }
                 itemScript.currentParent = this.transform;

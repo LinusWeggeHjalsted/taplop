@@ -52,7 +52,7 @@ public class GlovesScript : MonoBehaviour, ItemScript
         return salvage;
     }
 
-    void Start()
+    void Awake()
     {
         itemSprite = Resources.Load<Sprite>("Items/GlovesItem");
         itemType = "Gloves";

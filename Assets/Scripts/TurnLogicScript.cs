@@ -78,6 +78,7 @@ public class TurnLogicScript : MonoBehaviour
         }
         enemiesScript.FillEnemyHealth();
         playerScript.CurrentHealth = playerScript.MaxHealth;
+        playerScript.UpdateEquippedSkills();
         skillBarScript.UpdateButtons();
         currentGameState = GameState.PlayerTurnMove;
         tileLookup = traversableTilesScript.tileLookup;

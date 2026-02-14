@@ -45,7 +45,7 @@ public class SkillTomeScript : MonoBehaviour, ItemScript
         return salvage;
     }
 
-    void Start()
+    void Awake()
     {
         itemSprite = Resources.Load<Sprite>("Items/SkillTome");
     }

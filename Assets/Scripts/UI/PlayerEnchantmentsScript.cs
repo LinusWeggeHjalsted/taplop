@@ -32,10 +32,8 @@ public class PlayerEnchantmentsScript : MonoBehaviour
         }
     }
 
-    public IEnumerator UpdateEnchantments()
+    public void UpdateEnchantments()
     {
-        // wait a frame for enchantment sprites to be loaded
-        yield return null;
         // clear displayed enchantments
         for (int i = this.transform.childCount - 1; i >= 0; i--)
         {

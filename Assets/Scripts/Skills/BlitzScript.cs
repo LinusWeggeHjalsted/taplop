@@ -2,7 +2,7 @@ using UnityEngine;
 using System;
 using System.Collections.Generic;
 
-public class BlitzScript : MonoBehaviour, Skill
+public class BlitzScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

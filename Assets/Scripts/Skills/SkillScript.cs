@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public interface Skill
+public interface SkillScript
 {
     int skillBarPosition { get; set; }
     string GetSkillName();

@@ -65,7 +65,10 @@ public class SalvageButtonScript : MonoBehaviour
             inventoryMenuScript.RefreshUI();
         }
         // refresh skills panel in case equipped weapon was salvaged
-        GameObject skillsPanel = GameObject.Find("Skills Panel");
+        GameObject player = GameReferences.GetPlayer();
+        PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
+        playerScript.UpdateEquippedSkills();
+        GameObject skillsPanel = GameReferences.GetSkillsPanel();
         SkillBarScript skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         skillBarScript.UpdateButtons();
         // close context menu

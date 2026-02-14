@@ -326,21 +326,21 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
 
             WeaponScript currentWeaponScript = currentItem.GetComponent<WeaponScript>();
             GameObject currentSecondSkill = currentWeaponScript.SecondSkill();
-            Skill currentSecondSkillScript = currentSecondSkill.GetComponent<Skill>();
+            SkillScript currentSecondSkillScript = currentSecondSkill.GetComponent<SkillScript>();
             string currentSecondSkillName = currentSecondSkillScript.GetSkillName();
             int currentSecondCooldown = playerScript.GetSkillCooldown(currentSecondSkillName);
             GameObject currentThirdSkill = currentWeaponScript.ThirdSkill();
-            Skill currentThirdSkillScript = currentThirdSkill.GetComponent<Skill>();
+            SkillScript currentThirdSkillScript = currentThirdSkill.GetComponent<SkillScript>();
             string currentThirdSkillName = currentThirdSkillScript.GetSkillName();
             int currentThirdCooldown = playerScript.GetSkillCooldown(currentThirdSkillName);
 
             WeaponScript selectedWeaponScript = item.GetComponent<WeaponScript>();
             GameObject selectedSecondSkill = selectedWeaponScript.SecondSkill();
-            Skill selectedSecondSkillScript = selectedSecondSkill.GetComponent<Skill>();
+            SkillScript selectedSecondSkillScript = selectedSecondSkill.GetComponent<SkillScript>();
             string selectedSecondSkillName = selectedSecondSkillScript.GetSkillName();
             int selectedSecondCooldown = playerScript.GetSkillCooldown(selectedSecondSkillName);
             GameObject selectedThirdSkill = selectedWeaponScript.ThirdSkill();
-            Skill selectedThirdSkillScript = selectedThirdSkill.GetComponent<Skill>();
+            SkillScript selectedThirdSkillScript = selectedThirdSkill.GetComponent<SkillScript>();
             string selectedThirdSkillName = selectedThirdSkillScript.GetSkillName();
             int selectedThirdCooldown = playerScript.GetSkillCooldown(selectedThirdSkillName);
 
@@ -424,6 +424,7 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
         // refresh skillbar in case weapons changed
         GameObject skillsPanel = GameReferences.GetSkillsPanel();
         SkillBarScript skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
+        playerScript.UpdateEquippedSkills();
         skillBarScript.UpdateButtons();
         // refresh health bar in case max health changed
         GameObject playerHealthBar = GameReferences.GetPlayerHealthBar();

@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class ChopScript : MonoBehaviour, Skill
+public class ChopScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class SwapScript : MonoBehaviour, Skill
+public class SwapScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;

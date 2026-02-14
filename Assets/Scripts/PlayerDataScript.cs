@@ -1796,8 +1796,6 @@ public class PlayerDataScript : MonoBehaviour
                 Debug.LogError("unrecognized main hand weapon type");
             }
         }
-        // wait one frame for weapons' Start() methods to run and create their skills
-        yield return null;
         if (amulet.itemName != null)
         {
             GameObject amuletPrefab = Resources.Load<GameObject>("Prefabs/Items/Amulet");
@@ -1937,7 +1935,7 @@ public class PlayerDataScript : MonoBehaviour
                 {
                     GameObject skillPrefab = Resources.Load<GameObject>("Prefabs/Skills/" + skillName);
                     GameObject newSkill = Instantiate(skillPrefab, playerUtilitySkills);
-                    Skill skillScript = newSkill.GetComponent<Skill>();
+                    SkillScript skillScript = newSkill.GetComponent<SkillScript>();
                     skillScript.skillBarPosition = i + 4;
                 }
                 else
@@ -1946,11 +1944,10 @@ public class PlayerDataScript : MonoBehaviour
                 }
             }
         }
-        // wait one frame for utility skills' Start() methods to run and load their sprites
-        yield return null;
+        playerScript.UpdateEquippedSkills();
         finishedBuilding = true;
     }
-    
+
     public void BuildDataFromPlayer(GameObject player)
     {
         PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
@@ -2126,7 +2123,7 @@ public class PlayerDataScript : MonoBehaviour
         for (int i = 0; i < playerUtilitySkills.childCount; i++)
         {
             GameObject playerSkill = playerUtilitySkills.GetChild(i).gameObject;
-            Skill playerSkillScript = playerSkill.GetComponent<Skill>();
+            SkillScript playerSkillScript = playerSkill.GetComponent<SkillScript>();
             int skillIndex = playerSkillScript.skillBarPosition - 4;
             if (utilitySkills[skillIndex] != null)
             {

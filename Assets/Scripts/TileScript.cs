@@ -107,7 +107,7 @@ public class TileScript : MonoBehaviour
                 {
                     return;
                 }
-                Skill skillScript = skillUsed.GetComponent<Skill>();
+                SkillScript skillScript = skillUsed.GetComponent<SkillScript>();
                 skillScript.UseSkill(this.transform.position, player);
                 break;
         }

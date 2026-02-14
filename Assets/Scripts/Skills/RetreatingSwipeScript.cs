@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-public class RetreatingSwipeScript : MonoBehaviour, Skill
+public class RetreatingSwipeScript : MonoBehaviour, SkillScript
 {
     private string skillName;
     private string skillType;
