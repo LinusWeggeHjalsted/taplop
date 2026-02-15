@@ -105,8 +105,10 @@ public class MoveStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPointe
         traversableTilesScript.ClearHighlights();
 
         // Reset to PlayerTurnMove state (following EnemiesTurn pattern)
+        turnLogicScript.turnStarted = true;
+        turnLogicScript.hasMoved = false;
         turnLogicScript.currentGameState = TurnLogicScript.GameState.PlayerTurnMove;
-        turnLogicScript.turnStarted = false;
+        turnLogicScript.playerMoveCoroutine = StartCoroutine(turnLogicScript.PlayerTurnMove());
 
         // Disable attack step highlight
         turnLogicScript.attackStepHighlightImage.enabled = false;
