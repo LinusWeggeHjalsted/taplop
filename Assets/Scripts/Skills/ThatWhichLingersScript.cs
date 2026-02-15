@@ -126,6 +126,10 @@ public class ThatWhichLingersScript : MonoBehaviour, SkillScript, EnchantmentScr
         enchantmentScript.currentDuration += effectiveSkillDuration;
         wielderScript.DisplayEnchantments();
         wielderScript.SetSkillCooldown(skillName, cooldown);
+        if (wielder == player)
+        {
+            turnLogicScript.hasUsedAnySkill = true;
+        }
     }
 
     // enchantment functions

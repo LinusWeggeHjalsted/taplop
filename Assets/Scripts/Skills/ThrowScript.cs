@@ -143,6 +143,7 @@ public class ThrowScript : MonoBehaviour, SkillScript
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;
+            turnLogicScript.hasUsedAnySkill = true;
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
     }

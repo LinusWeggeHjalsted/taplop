@@ -171,6 +171,7 @@ public class SlamScript : MonoBehaviour, SkillScript
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;
+            turnLogicScript.hasUsedAnySkill = true;
         }
     }
 

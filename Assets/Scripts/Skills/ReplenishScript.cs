@@ -123,6 +123,10 @@ public class ReplenishScript : MonoBehaviour, SkillScript
         wielderScript.DisplayUsedSkill(skillSprite);
         wielderScript.CurrentHealth = wielderScript.MaxHealth;
         wielderScript.SetSkillCooldown(skillName, cooldown);
+        if (wielder == player)
+        {
+            turnLogicScript.hasUsedAnySkill = true;
+        }
     }
 
     void Awake()

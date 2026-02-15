@@ -42,7 +42,9 @@ public class TurnLogicScript : MonoBehaviour
     public GameState currentGameState;
     public GameObject skillUsed;
     public bool hasMoved = false;
+    public bool didMove = false;
     public bool overrideSkipAttackStep = false;
+    public bool hasUsedAnySkill = false;
     public bool hasAttacked = false;
     public bool turnStarted = false;
     public Coroutine playerMoveCoroutine;
@@ -120,6 +122,7 @@ public class TurnLogicScript : MonoBehaviour
     public IEnumerator PlayerTurnMove()
     {
         hasMoved = false;
+        didMove = false;
         // find reachable tiles
         int playerSpeed = playerScript.Speed;
         Vector3 playerPosition = player.transform.position;
@@ -190,6 +193,7 @@ public class TurnLogicScript : MonoBehaviour
     IEnumerator PlayerTurnAttack()
     {
         hasAttacked = false;
+        hasUsedAnySkill = false;
         while (!hasAttacked)
         {
             yield return null;

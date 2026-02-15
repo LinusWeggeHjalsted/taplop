@@ -151,6 +151,10 @@ public class SwapScript : MonoBehaviour, SkillScript
             targetNewTileScript.isOccupied = true;
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
+        if (wielder == player)
+        {
+            turnLogicScript.hasUsedAnySkill = true;
+        }
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)

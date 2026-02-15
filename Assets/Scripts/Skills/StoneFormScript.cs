@@ -132,6 +132,10 @@ public class StoneFormScript : MonoBehaviour, SkillScript, EnchantmentScript
         enchantmentScript.currentDuration += effectiveSkillDuration;
         wielderScript.DisplayEnchantments();
         wielderScript.SetSkillCooldown(skillName, cooldown);
+        if (wielder == player)
+        {
+            turnLogicScript.hasUsedAnySkill = true;
+        }
     }
 
     // enchantment functions

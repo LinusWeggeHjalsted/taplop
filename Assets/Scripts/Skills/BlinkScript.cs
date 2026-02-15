@@ -133,6 +133,10 @@ public class BlinkScript : MonoBehaviour, SkillScript
         wielderScript.DisplayUsedSkill(skillSprite);
         wielderScript.SetSkillCooldown(skillName, cooldown);
         wielderScript.MoveTo(targetPosition);
+        if (wielder == player)
+        {
+            turnLogicScript.hasUsedAnySkill = true;
+        }
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)

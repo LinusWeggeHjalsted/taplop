@@ -163,6 +163,7 @@ public class SpinbladeScript : MonoBehaviour, SkillScript
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;
+            turnLogicScript.hasUsedAnySkill = true;
         }
     }
 

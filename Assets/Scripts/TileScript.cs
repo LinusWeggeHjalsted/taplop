@@ -99,12 +99,14 @@ public class TileScript : MonoBehaviour
                 {
                     turnLogicScript.overrideSkipAttackStep = true;
                 }
+                turnLogicScript.didMove = true;
                 turnLogicScript.hasMoved = true;
                 break;
             case TurnLogicScript.GameState.PlayerTurnAttack:
                 GameObject skillUsed = turnLogicScript.skillUsed;
                 if (skillUsed == null)
                 {
+                    // this should never happen I think
                     return;
                 }
                 SkillScript skillScript = skillUsed.GetComponent<SkillScript>();

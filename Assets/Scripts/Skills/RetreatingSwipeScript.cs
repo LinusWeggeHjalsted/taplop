@@ -189,6 +189,7 @@ public class RetreatingSwipeScript : MonoBehaviour, SkillScript
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;
+            turnLogicScript.hasUsedAnySkill = true;
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
     }

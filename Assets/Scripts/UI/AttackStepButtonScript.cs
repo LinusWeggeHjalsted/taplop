@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 
 public class AttackStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
 {
@@ -13,6 +14,7 @@ public class AttackStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPoin
     public Transform canvas;
     public GameObject tooltipPrefab;
     public GameObject tooltip;
+    private bool wasCtrlHeld = false;
 
     public void OnPointerEnter(PointerEventData eventData)
     {
@@ -36,7 +38,14 @@ public class AttackStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPoin
             tooltipRectTransform.pivot = new Vector2(1f, 0);
             tooltipRectTransform.position = buttonTopRightPosition;
             TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-            StartCoroutine(tooltipScript.SetText("Toggle autoskip attack step", ""));
+            if (enemiesScript.activeEnemyLookup.Count == 0)
+            {
+                StartCoroutine(tooltipScript.SetText("Toggle Autoskip Attack Step", ""));
+            }
+            else
+            {
+                StartCoroutine(tooltipScript.SetText("Attack Step", ""));
+            }
         }
     }
 
@@ -113,6 +122,39 @@ public class AttackStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPoin
     void Start()
     {
         canvas = GameReferences.GetCanvasTransform();
+        enemies = GameReferences.GetEnemies();
+        enemiesScript = GameReferences.GetEnemiesScript();
         DisplayCurrentToggle();
+    }
+
+    void Update()
+    {
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard == null) return;
+
+        bool ctrlHeld = keyboard.leftCtrlKey.isPressed || keyboard.rightCtrlKey.isPressed;
+
+        // Only update on state change
+        if (ctrlHeld && !wasCtrlHeld)
+        {
+            // Ctrl just pressed - show enabled sprite
+            image.sprite = attackStepSprites[0];
+        }
+        else if (!ctrlHeld && wasCtrlHeld)
+        {
+            // Ctrl just released - restore appropriate state
+            if (enemiesScript != null && enemiesScript.activeEnemyLookup.Count > 0)
+            {
+                // In combat - force enabled sprite
+                image.sprite = attackStepSprites[0];
+            }
+            else
+            {
+                // Not in combat - show toggle state
+                DisplayCurrentToggle();
+            }
+        }
+
+        wasCtrlHeld = ctrlHeld;
     }
 }

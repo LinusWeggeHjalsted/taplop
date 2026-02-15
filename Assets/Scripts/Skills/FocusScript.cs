@@ -145,6 +145,10 @@ public class FocusScript : MonoBehaviour, SkillScript
             // to-do - this is unnecessarily going through all skills but it's fine for now
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
+        if (wielder == player)
+        {
+            turnLogicScript.hasUsedAnySkill = true;
+        }
     }
 
     void Awake()

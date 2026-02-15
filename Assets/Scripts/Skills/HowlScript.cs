@@ -139,6 +139,10 @@ public class HowlScript : MonoBehaviour, SkillScript
             }
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
+        if (wielder == player)
+        {
+            turnLogicScript.hasUsedAnySkill = true;
+        }
     }
 
     void Awake()
