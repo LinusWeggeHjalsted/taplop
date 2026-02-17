@@ -444,10 +444,16 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 {
                     SkillScript skillScript = skill.GetComponent<SkillScript>();
                     float skillRange = skillScript.GetRange();
+                    float skillRadius = skillScript.GetRadius();
                     if (skillRange > 0)
                     {
                         float effectiveRange = skillRange + enchantmentModifiers.range;
                         skillRanges.Add(effectiveRange);
+                    }
+                    else if (skillRadius > 0)
+                    {
+                        float effectiveRadius = skillRadius + enchantmentModifiers.radius;
+                        skillRanges.Add(effectiveRadius);
                     }
                 }
             }

@@ -32,8 +32,50 @@ public class CoatScript : MonoBehaviour, ItemScript
 
     public string ItemDescription()
     {
-        string armorString = "Armor +" + armorBonus.ToString();
-        string healthString = "Health +" + healthBonus.ToString();
+        GameObject player = GameReferences.GetPlayer();
+        PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
+        GameObject equippedCoat = playerScript.coat;
+        string armorDifferenceString = "";
+        string healthDifferenceString = "";
+
+        if (equippedCoat == null)
+        {
+            armorDifferenceString = $"<color=#00FF00>+{armorBonus.ToString()}</color>";
+            healthDifferenceString = $"<color=#00FF00>+{healthBonus.ToString()}</color>";
+        }
+        else
+        {
+            CoatScript coatScript = equippedCoat.GetComponent<CoatScript>();
+            int armorDifference = armorBonus - coatScript.armorBonus;
+            int healthDifference = healthBonus - coatScript.healthBonus;
+            if (armorDifference > 0)
+            {
+                armorDifferenceString = $"<color=#00FF00>+{armorDifference.ToString()}</color>";
+            }
+            else if (armorDifference < 0)
+            {
+                armorDifferenceString = $"<color=#FF0000>{armorDifference.ToString()}</color>";
+            }
+            else
+            {
+                armorDifferenceString = "<color=#FFFFFF80>0</color>";
+            }
+            if (healthDifference > 0)
+            {
+                healthDifferenceString = $"<color=#00FF00>+{healthDifference.ToString()}</color>";
+            }
+            else if (healthDifference < 0)
+            {
+                healthDifferenceString = $"<color=#FF0000>{healthDifference.ToString()}</color>";
+            }
+            else
+            {
+                healthDifferenceString = "<color=#FFFFFF80>0</color>";
+            }
+        }
+
+        string armorString = $"Armor +{armorBonus.ToString()} <color=#FFFFFF80>[</color>{armorDifferenceString}<color=#FFFFFF80>]</color>";
+        string healthString = $"Health +{healthBonus.ToString()} <color=#FFFFFF80>[</color>{healthDifferenceString}<color=#FFFFFF80>]</color>";
         return armorString + "\n" + healthString;
     }
 

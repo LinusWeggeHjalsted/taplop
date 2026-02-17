@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using UnityEngine.InputSystem;
 using TMPro;
 using System.Collections;
+using System.Text.RegularExpressions;
 
 public class TooltipScript : MonoBehaviour
 {
@@ -22,9 +23,11 @@ public class TooltipScript : MonoBehaviour
         int maxWidth = 0;
         foreach (string line in splitContent)
         {
-            if (line.Length > maxWidth)
+            // Strip rich text tags for length calculation
+            string strippedLine = Regex.Replace(line, "<.*?>", "");
+            if (strippedLine.Length > maxWidth)
             {
-                maxWidth = line.Length;
+                maxWidth = strippedLine.Length;
             }
         }
         if (maxWidth >= charLimit)
@@ -49,7 +52,7 @@ public class TooltipScript : MonoBehaviour
         tooltipHeader = this.transform.Find("Tooltip Header").gameObject.GetComponent<TMP_Text>();
         tooltipContent = this.transform.Find("Tooltip Content").gameObject.GetComponent<TMP_Text>();
         layoutElement = this.GetComponent<LayoutElement>();
-        charLimit = 24;
+        charLimit = 20;
         finishedBuilding = true;
     }
 }

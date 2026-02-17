@@ -11,7 +11,8 @@ public class TileScript : MonoBehaviour
     public GameObject traversableTiles;
     public TraversableTilesScript traversableTilesScript;
     public GameObject highlight;
-    public Animator highlightAnimator;
+    public SpriteRenderer highlightSpriteRenderer;
+    public Sprite[] highlightAnimationSprites = new Sprite[4];
     public bool isOccupied = false;
     private bool isHighlighted = false;
     public bool IsHighlighted
@@ -39,9 +40,12 @@ public class TileScript : MonoBehaviour
                 traversableTilesScript.highlightedTileLookup.Remove(position);
             }
             this.isHighlighted = value;
-            highlightAnimator.SetBool("isHighlighted", isHighlighted);
         }
     }
+    public float highlightAnimationTimer = 0f;
+    public float highlightAnimationInterval = 0.25f;
+    public int currentHighlightFrame = 0;
+    public bool wasAnimating = false;
     private bool isEnd = false;
     public bool IsEnd
     {
@@ -68,7 +72,8 @@ public class TileScript : MonoBehaviour
     void Awake()
     {
         highlight = this.transform.Find("Highlight").gameObject;
-        highlightAnimator = highlight.GetComponent<Animator>();
+        highlightSpriteRenderer = highlight.GetComponent<SpriteRenderer>();
+        highlightAnimationSprites = Resources.LoadAll<Sprite>("TileHighlight");
     }
 
     void Start()
@@ -112,6 +117,35 @@ public class TileScript : MonoBehaviour
                 SkillScript skillScript = skillUsed.GetComponent<SkillScript>();
                 skillScript.UseSkill(this.transform.position, player);
                 break;
+        }
+    }
+
+    void Update()
+    {
+        if (isHighlighted)
+        {
+            highlightAnimationTimer += Time.deltaTime;
+            if (!wasAnimating)
+            {
+                wasAnimating = true;
+                highlightAnimationTimer = 0;
+                highlightSpriteRenderer.enabled = true;
+            }
+            if (highlightAnimationTimer >= highlightAnimationInterval)
+            {
+                // step to next animation frame
+                currentHighlightFrame = (currentHighlightFrame + 1) % 4;
+                highlightSpriteRenderer.sprite = highlightAnimationSprites[currentHighlightFrame];
+                highlightAnimationTimer -= highlightAnimationInterval;
+            }
+        }
+        else
+        {
+            if (wasAnimating)
+            {
+                wasAnimating = false;
+                highlightSpriteRenderer.enabled = false;
+            }
         }
     }
 }

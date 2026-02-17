@@ -69,7 +69,58 @@ public class WandScript : MonoBehaviour, WeaponScript, ItemScript
 
     public string ItemDescription()
     {
-        string damageString = "Damage " + damage.ToString();
+        GameObject player = GameReferences.GetPlayer();
+        PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
+        GameObject equippedMainHand = playerScript.mainHandWeapon;
+        GameObject equippedOffHand = playerScript.offHandWeapon;
+        string mainHandDifferenceString = "";
+        string offHandDifferenceString = "";
+
+        if (equippedMainHand == null)
+        {
+            mainHandDifferenceString = $"<color=#00FF00>+{damage.ToString()}</color>";
+        }
+        else
+        {
+            WeaponScript mainHandScript = equippedMainHand.GetComponent<WeaponScript>();
+            int mainHandDifference = damage - mainHandScript.GetDamage();
+            if (mainHandDifference > 0)
+            {
+                mainHandDifferenceString = $"<color=#00FF00>+{mainHandDifference.ToString()}</color>";
+            }
+            else if (mainHandDifference < 0)
+            {
+                mainHandDifferenceString = $"<color=#FF0000>-{Mathf.Abs(mainHandDifference).ToString()}</color>";
+            }
+            else
+            {
+                mainHandDifferenceString = "<color=#FFFFFF80>0</color>";
+            }
+        }
+
+        if (equippedOffHand == null)
+        {
+            offHandDifferenceString = $"<color=#00FF00>+{damage.ToString()}</color>";
+        }
+        else
+        {
+            WeaponScript offHandScript = equippedOffHand.GetComponent<WeaponScript>();
+            int offHandDifference = damage - offHandScript.GetDamage();
+            if (offHandDifference > 0)
+            {
+                offHandDifferenceString = $"<color=#00FF00>+{offHandDifference.ToString()}</color>";
+            }
+            else if (offHandDifference < 0)
+            {
+                offHandDifferenceString = $"<color=#FF0000>-{Mathf.Abs(offHandDifference).ToString()}</color>";
+            }
+            else
+            {
+                offHandDifferenceString = "<color=#FFFFFF80>0</color>";
+            }
+        }
+
+        string damageString = $"Damage {damage.ToString()} <color=#FFFFFF80>[</color>{mainHandDifferenceString}<color=#FFFFFF80>,</color> {offHandDifferenceString}<color=#FFFFFF80>]</color>";
         return damageString;
     }
 

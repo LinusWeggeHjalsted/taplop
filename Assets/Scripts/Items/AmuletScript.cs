@@ -31,7 +31,34 @@ public class AmuletScript : MonoBehaviour, ItemScript
 
     public string ItemDescription()
     {
-        string spellDamageString = "Spell Damage " + spellDamage.ToString();
+        GameObject player = GameReferences.GetPlayer();
+        PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
+        GameObject equippedAmulet = playerScript.amulet;
+        string differenceString = "";
+
+        if (equippedAmulet == null)
+        {
+            differenceString = $"<color=#00FF00>+{spellDamage.ToString()}</color>";
+        }
+        else
+        {
+            AmuletScript amuletScript = equippedAmulet.GetComponent<AmuletScript>();
+            int difference = spellDamage - amuletScript.spellDamage;
+            if (difference > 0)
+            {
+                differenceString = $"<color=#00FF00>+{difference.ToString()}</color>";
+            }
+            else if (difference < 0)
+            {
+                differenceString = $"<color=#FF0000>{difference.ToString()}</color>";
+            }
+            else
+            {
+                differenceString = "<color=#FFFFFF80>0</color>";
+            }
+        }
+
+        string spellDamageString = $"Spell Damage {spellDamage.ToString()} <color=#FFFFFF80>[</color>{differenceString}<color=#FFFFFF80>]</color>";
         return spellDamageString;
     }
 

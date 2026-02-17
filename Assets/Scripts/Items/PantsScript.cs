@@ -32,8 +32,50 @@ public class PantsScript : MonoBehaviour, ItemScript
 
     public string ItemDescription()
     {
-        string armorString = "Armor +" + armorBonus.ToString();
-        string pickupRadiusString = "Pickup Radius +" + pickupRadius.ToString();
+        GameObject player = GameReferences.GetPlayer();
+        PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
+        GameObject equippedPants = playerScript.pants;
+        string armorDifferenceString = "";
+        string pickupRadiusDifferenceString = "";
+
+        if (equippedPants == null)
+        {
+            armorDifferenceString = $"<color=#00FF00>+{armorBonus.ToString()}</color>";
+            pickupRadiusDifferenceString = $"<color=#00FF00>+{pickupRadius.ToString()}</color>";
+        }
+        else
+        {
+            PantsScript pantsScript = equippedPants.GetComponent<PantsScript>();
+            int armorDifference = armorBonus - pantsScript.armorBonus;
+            int pickupRadiusDifference = pickupRadius - pantsScript.pickupRadius;
+            if (armorDifference > 0)
+            {
+                armorDifferenceString = $"<color=#00FF00>+{armorDifference.ToString()}</color>";
+            }
+            else if (armorDifference < 0)
+            {
+                armorDifferenceString = $"<color=#FF0000>{armorDifference.ToString()}</color>";
+            }
+            else
+            {
+                armorDifferenceString = "<color=#FFFFFF80>0</color>";
+            }
+            if (pickupRadiusDifference > 0)
+            {
+                pickupRadiusDifferenceString = $"<color=#00FF00>+{pickupRadiusDifference.ToString()}</color>";
+            }
+            else if (pickupRadiusDifference < 0)
+            {
+                pickupRadiusDifferenceString = $"<color=#FF0000>{pickupRadiusDifference.ToString()}</color>";
+            }
+            else
+            {
+                pickupRadiusDifferenceString = "<color=#FFFFFF80>0</color>";
+            }
+        }
+
+        string armorString = $"Armor +{armorBonus.ToString()} <color=#FFFFFF80>[</color>{armorDifferenceString}<color=#FFFFFF80>]</color>";
+        string pickupRadiusString = $"Pickup Radius +{pickupRadius.ToString()} <color=#FFFFFF80>[</color>{pickupRadiusDifferenceString}<color=#FFFFFF80>]</color>";
         return armorString + "\n" + pickupRadiusString;
     }
 

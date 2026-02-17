@@ -32,8 +32,50 @@ public class BootsScript : MonoBehaviour, ItemScript
 
     public string ItemDescription()
     {
-        string armorString = "Armor +" + armorBonus.ToString();
-        string speedString = "Speed +" + speedBonus.ToString();
+        GameObject player = GameReferences.GetPlayer();
+        PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
+        GameObject equippedBoots = playerScript.boots;
+        string armorDifferenceString = "";
+        string speedDifferenceString = "";
+
+        if (equippedBoots == null)
+        {
+            armorDifferenceString = $"<color=#00FF00>+{armorBonus.ToString()}</color>";
+            speedDifferenceString = $"<color=#00FF00>+{speedBonus.ToString()}</color>";
+        }
+        else
+        {
+            BootsScript bootsScript = equippedBoots.GetComponent<BootsScript>();
+            int armorDifference = armorBonus - bootsScript.armorBonus;
+            int speedDifference = speedBonus - bootsScript.speedBonus;
+            if (armorDifference > 0)
+            {
+                armorDifferenceString = $"<color=#00FF00>+{armorDifference.ToString()}</color>";
+            }
+            else if (armorDifference < 0)
+            {
+                armorDifferenceString = $"<color=#FF0000>{armorDifference.ToString()}</color>";
+            }
+            else
+            {
+                armorDifferenceString = "<color=#FFFFFF80>0</color>";
+            }
+            if (speedDifference > 0)
+            {
+                speedDifferenceString = $"<color=#00FF00>+{speedDifference.ToString()}</color>";
+            }
+            else if (speedDifference < 0)
+            {
+                speedDifferenceString = $"<color=#FF0000>{speedDifference.ToString()}</color>";
+            }
+            else
+            {
+                speedDifferenceString = "<color=#FFFFFF80>0</color>";
+            }
+        }
+
+        string armorString = $"Armor +{armorBonus.ToString()} <color=#FFFFFF80>[</color>{armorDifferenceString}<color=#FFFFFF80>]</color>";
+        string speedString = $"Speed +{speedBonus.ToString()} <color=#FFFFFF80>[</color>{speedDifferenceString}<color=#FFFFFF80>]</color>";
         return armorString + "\n" + speedString;
     }
     

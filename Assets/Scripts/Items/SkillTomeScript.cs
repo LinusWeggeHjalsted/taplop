@@ -29,7 +29,17 @@ public class SkillTomeScript : MonoBehaviour, ItemScript
 
     public string ItemDescription()
     {
-        return "Learn " + skillName;
+        PlayerDataScript playerDataScript = PlayerDataScript.Instance;
+        string statusString = "";
+        if (playerDataScript.unlockedSkills.Contains(skillName))
+        {
+            statusString = " [<color=#00FF00>Already learned</color>]";
+        }
+        else
+        {
+            statusString = " [<color=#FF0000>Not learned yet</color>]";
+        }
+        return "Learn " + skillName + statusString;
     }
 
     public string ItemType()

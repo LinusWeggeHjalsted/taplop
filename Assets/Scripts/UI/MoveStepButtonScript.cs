@@ -62,7 +62,7 @@ public class MoveStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPointe
             {
                 // Toggle highlight on/off
                 highlightImage.enabled = !highlightImage.enabled;
-                blinkTimer = blinkInterval;
+                blinkTimer += blinkInterval;
             }
         }
         else
