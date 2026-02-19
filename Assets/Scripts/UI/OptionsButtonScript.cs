@@ -39,11 +39,7 @@ public class OptionsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointer
             tooltipRectTransform.pivot = new Vector2(0, 1f);
             tooltipRectTransform.position = buttonBottomLeftPosition;
             TooltipScript tooltipScript = tooltip.GetComponent<TooltipScript>();
-#if UNITY_WEBGL && !UNITY_EDITOR
-            StartCoroutine(tooltipScript.SetText("Options [tab]", ""));
-#else
             StartCoroutine(tooltipScript.SetText("Options [esc]", ""));
-#endif
         }
     }
 
@@ -91,11 +87,7 @@ public class OptionsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointer
         Keyboard keyboard = Keyboard.current;
         if (keyboard != null)
         {
-#if UNITY_WEBGL && !UNITY_EDITOR
-            if (keyboard.tabKey.wasPressedThisFrame)
-#else
             if (keyboard.escapeKey.wasPressedThisFrame)
-#endif
             {
                 OnActivate();
             }

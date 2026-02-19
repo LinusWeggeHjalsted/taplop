@@ -8,7 +8,6 @@ public class StartNewGameButtonScript : MonoBehaviour
 {
     Button button;
     TMP_InputField playerNameInput;
-    TMP_InputField playerSeedInput;
 
     public void OnActivate()
     {
@@ -36,22 +35,6 @@ public class StartNewGameButtonScript : MonoBehaviour
         {
             PlayerDataScript.Instance.playerName = playerNameInput.text;
         }
-        if (playerSeedInput != null && !string.IsNullOrEmpty(playerSeedInput.text))
-        {
-            int seed;
-            if (int.TryParse(playerSeedInput.text, out seed))
-            {
-                PlayerDataScript.Instance.randomSeed = seed;
-            }
-            else
-            {
-                PlayerDataScript.Instance.randomSeed = new System.Random().Next();
-            }
-        }
-        else
-        {
-            PlayerDataScript.Instance.randomSeed = new System.Random().Next();
-        }
         GameControllerScript.Instance.StartMission("Beginnings", 3, "Camp at the Crossroads");
     }
 
@@ -61,14 +44,9 @@ public class StartNewGameButtonScript : MonoBehaviour
         button.onClick.AddListener(OnActivate);
         Transform verticalLayout = this.transform.parent;
         Transform nameInput = verticalLayout.Find("New Player Name Input");
-        Transform seedInput = verticalLayout.Find("New Player Seed Input");
         if (nameInput != null)
         {
             playerNameInput = nameInput.GetComponent<TMP_InputField>();
-        }
-        if (seedInput != null)
-        {
-            playerSeedInput = seedInput.GetComponent<TMP_InputField>();
         }
     }
 }
