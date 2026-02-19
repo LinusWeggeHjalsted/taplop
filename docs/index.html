@@ -49,31 +49,9 @@
             background: #EA7FAF;
             transition: width 0.3s;
         }
-
-        #fullscreen-button {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 10px 20px;
-            background: #EA7FAF;
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-            z-index: 1000;
-        }
-
-        #fullscreen-button:hover {
-            background: #79357B;
-        }
-
-        #unity-container.fullscreen {
-            /* Dimensions set dynamically via JavaScript for pixel-perfect scaling */
-        }
     </style>
 </head>
 <body>
-    <button id="fullscreen-button">Fullscreen</button>
     <div id="unity-container">
         <canvas id="unity-canvas"></canvas>
         <div id="unity-loading-bar">
@@ -108,6 +86,9 @@
         // Apply scaling on load
         applyViewportScale();
 
+        // Add window resize listener for automatic resizing
+        window.addEventListener('resize', applyViewportScale);
+
         var buildUrl = "Build";
         var loaderUrl = buildUrl + "/docs.loader.js";
         var config = {
@@ -117,7 +98,7 @@
             streamingAssetsUrl: "StreamingAssets",
             companyName: "LinusWH",
             productName: "taplop",
-            productVersion: "v0.1.9 - gameplay demo",
+            productVersion: "v0.1.10 - gameplay demo",
         };
 
         var script = document.createElement("script");
@@ -127,58 +108,6 @@
                 progressBarFull.style.width = 100 * progress + "%";
             }).then((unityInstance) => {
                 loadingBar.style.display = "none";
-
-                // Fullscreen functionality with pixel-perfect scaling
-                var fullscreenButton = document.querySelector("#fullscreen-button");
-
-                // Calculate optimal integer scale for pixel-perfect rendering
-                function calculatePixelPerfectScale() {
-                    const baseWidth = 960;
-                    const baseHeight = 540;
-                    const screenWidth = window.innerWidth;
-                    const screenHeight = window.innerHeight;
-
-                    // Find largest integer multiplier that fits the screen
-                    const scaleX = Math.floor(screenWidth / baseWidth);
-                    const scaleY = Math.floor(screenHeight / baseHeight);
-                    const scale = Math.min(scaleX, scaleY);
-
-                    return {
-                        scale: Math.max(1, scale), // Minimum 1x scale
-                        width: baseWidth * Math.max(1, scale),
-                        height: baseHeight * Math.max(1, scale)
-                    };
-                }
-
-
-                fullscreenButton.onclick = () => {
-                    if (!document.fullscreenElement) {
-                        const scalingInfo = calculatePixelPerfectScale();
-                        container.style.width = scalingInfo.width + "px";
-                        container.style.height = scalingInfo.height + "px";
-                        container.classList.add("fullscreen");
-
-                        container.requestFullscreen().then(() => {
-                            unityInstance.SetFullscreen(1);
-                        }).catch((err) => {
-                            console.error("Error attempting to enable fullscreen:", err);
-                            container.classList.remove("fullscreen");
-                        });
-                    } else {
-                        document.exitFullscreen();
-                    }
-                };
-
-                // Handle fullscreen exit - reset to default size
-                document.addEventListener("fullscreenchange", () => {
-                    if (!document.fullscreenElement) {
-                        container.style.width = "";
-                        container.style.height = "";
-                        container.classList.remove("fullscreen");
-                        unityInstance.SetFullscreen(0);
-                        applyViewportScale();
-                    }
-                });
             }).catch((message) => {
                 alert(message);
             });
