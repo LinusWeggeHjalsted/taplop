@@ -62,6 +62,15 @@ public class TraversableTilesScript : MonoBehaviour
         return Math.Max(dX, dY);
     }
 
+    public float Heuristic(Vector3 startPosition, Vector3 endPosition)
+    {
+        // Use Manhattan distance for heuristic to prefer orthogonal movement
+        // when multiple paths have the same actual distance (Chebyshev)
+        float dX = Math.Abs(startPosition.x - endPosition.x);
+        float dY = Math.Abs(startPosition.y - endPosition.y);
+        return dX + dY;
+    }
+
     public List<Vector3> ShortestPath(Vector3 startPosition, Vector3 endPosition)
     {
         PathNode startNode = new PathNode(startPosition);
@@ -144,7 +153,7 @@ public class TraversableTilesScript : MonoBehaviour
                     {
                         PathNode newNeighborNode = new PathNode(neighborPosition, focusedNode);
                         newNeighborNode.gCost = focusedNode.gCost + Distance(focusedNode.position, neighborPosition);
-                        newNeighborNode.hCost = Distance(neighborPosition, endPosition);
+                        newNeighborNode.hCost = Heuristic(neighborPosition, endPosition);
                         openSet.Add(newNeighborNode);
                         openSetLookup.Add(neighborPosition, newNeighborNode);
                     } 

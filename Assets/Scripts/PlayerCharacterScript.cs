@@ -27,7 +27,7 @@ public interface PlayerCharacterScript
     int CurrentHealth { get; set; }
 
     void UpdateEquippedSkills();
-    void MoveTo(Vector3 targetPosition);
+    void MoveTo(Vector3 targetPosition, bool isTeleport = false);
 
     int GetSkillCooldown(string skillName);
     void SetSkillCooldown(string skillName, int number);

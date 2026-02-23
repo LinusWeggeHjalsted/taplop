@@ -139,8 +139,8 @@ public class SwapScript : MonoBehaviour, SkillScript
         {
             EntityScript targetScript = target.GetComponent<EntityScript>();
             Vector3 wielderPosition = wielder.transform.position;
-            wielderScript.MoveTo(targetPosition); // this should be safe because player
-            targetScript.MoveTo(wielderPosition); // and enemies do not share any lookups
+            wielderScript.MoveTo(targetPosition, true); // this should be safe because player
+            targetScript.MoveTo(wielderPosition, true); // and enemies do not share any lookups
             // fix isOccupied flags after both moves complete
             Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
             GameObject wielderNewTile = tileLookup[targetPosition];

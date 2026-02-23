@@ -729,7 +729,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             healthBarRenderer.sortingOrder = 2;
         }
         Sprite healthBarSprite = null;
-        float healthPercentage = (float)currentHealth / (float)maxHealth;
+        float healthPercentage = (float)CurrentHealth / (float)MaxHealth;
         switch (healthPercentage)
         {
             case 0.0f:
@@ -770,9 +770,8 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
-    public void MoveTo(Vector3 targetPosition)
+    public void MoveTo(Vector3 targetPosition, bool isTeleport = false)
     {
-
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         GameObject targetTile = tileLookup[targetPosition];
         TileScript targetTileScript = targetTile.GetComponent<TileScript>();
@@ -784,12 +783,44 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         currentTileScript.isOccupied = false;
         previousPosition = currentPosition;
         SoundControllerScript.Instance.PlayMoveSound(targetPosition);
+        this.transform.position = targetPosition; // to-do - should this happen earlier
+        if (!isTeleport)
+        {
+            GameObject afterimagePrefab = Resources.Load<GameObject>("Prefabs/Afterimage");
+            List<Vector3> shortestPath = traversableTilesScript.ShortestPath(currentPosition, targetPosition);
+            shortestPath.Add(currentPosition);
+            shortestPath.Reverse();
+            GameObject afterimages = GameReferences.GetAfterimages();
+            for (int i = 0; i < shortestPath.Count - 1; i++)
+            {
+                GameObject afterimage = Instantiate(afterimagePrefab, afterimages.transform);
+                SpriteRenderer afterimageRenderer = afterimage.GetComponent<SpriteRenderer>();
+                afterimage.transform.position = shortestPath[i];
+                float xDif = (shortestPath[i + 1] - shortestPath[i]).x;
+                if (xDif < 0)
+                {
+                    afterimageRenderer.sprite = SpriteSheet[1];
+                }
+                else if (xDif > 0)
+                {
+                    afterimageRenderer.sprite = SpriteSheet[0];
+                }
+                else
+                {
+                    afterimageRenderer.sprite = spriteRenderer.sprite;
+                }
+                float alpha = (float)(i + 1) / (float)(shortestPath.Count);
+                Color afterimageColor = afterimageRenderer.color;
+                afterimageColor.a = alpha;
+                afterimageRenderer.color = afterimageColor;
+                Destroy(afterimage, 0.5f);
+            }
+        }
         // update enemy lookups
         if (enemiesScript.enemyLookup.ContainsKey(currentPosition) && enemiesScript.enemyLookup[currentPosition] == this.gameObject)
         {
             enemiesScript.EnemyMoved(currentPosition, targetPosition);
         }
-        this.transform.position = targetPosition;
         if (this.gameObject == player)
         {
             CameraControllerScript.Instance.MoveToPlayer();
@@ -1211,19 +1242,8 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
 
     void Awake()
     {
-        // create sprite object child and move renderer to it
-        spriteObject = new GameObject("Sprite Object");
-        spriteObject.transform.parent = this.transform;
-        spriteObject.transform.localPosition = Vector3.zero;
-        SpriteRenderer oldRenderer = this.gameObject.GetComponent<SpriteRenderer>();
-        spriteRenderer = spriteObject.AddComponent<SpriteRenderer>();
-        if (oldRenderer != null)
-        {
-            spriteRenderer.sortingLayerName = oldRenderer.sortingLayerName;
-            spriteRenderer.sortingOrder = oldRenderer.sortingOrder;
-            Destroy(oldRenderer);
-        }
-
+        spriteObject = this.transform.Find("Sprite Object").gameObject;
+        spriteRenderer = spriteObject.GetComponent<SpriteRenderer>();
         if (this.gameObject.name == "Player")
         {
             SpriteSheet = Resources.LoadAll<Sprite>("Player");
@@ -1266,9 +1286,5 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             dropsScript = LevelScript.Instance.dropsScript;
         }
         StartCoroutine(WaitForGearBeforePopulating());
-    }
-
-    void OnDestroy()
-    {
     }
 }

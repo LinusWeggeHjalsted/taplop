@@ -131,7 +131,7 @@ public class FlashStrikeScript : MonoBehaviour, SkillScript
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.DisplayUsedSkill(skillSprite);
-        wielderScript.MoveTo(targetPosition);
+        wielderScript.MoveTo(targetPosition, true);
         // moving can end the level in which case we stop
         if (player == null)
         {

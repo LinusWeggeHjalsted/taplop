@@ -7,6 +7,7 @@ public class LevelScript : MonoBehaviour
     // Core game objects
     public GameObject player;
     public GameObject enemies;
+    public GameObject afterimages;
     public GameObject traversableTiles;
     public GameObject turnLogic;
     public GameObject levelBuilder;
@@ -58,6 +59,7 @@ public class LevelScript : MonoBehaviour
         // Find core game objects
         player = GameObject.Find("Player");
         enemies = GameObject.Find("Enemies");
+        afterimages = GameObject.Find("Afterimages");
         traversableTiles = GameObject.Find("Traversable Tiles");
         turnLogic = GameObject.Find("Turn Logic");
         levelBuilder = GameObject.Find("Level Builder");

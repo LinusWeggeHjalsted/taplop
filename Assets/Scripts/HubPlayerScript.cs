@@ -22,8 +22,21 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
     public HubTilesScript hubTilesScript;
     public GameObject hubExits;
     public HubExitsScript hubExitsScript;
+    public GameObject spriteObject;
     public SpriteRenderer spriteRenderer;
-
+    private Sprite[] spriteSheet = new Sprite[2];
+    public Sprite[] SpriteSheet
+    {
+        get
+        {
+            return spriteSheet;
+        }
+        set
+        {
+            spriteSheet = value;
+            spriteRenderer.sprite = spriteSheet[0];
+        }
+    }
     public GameObject gear;
     public GearScript gearScript;
 
@@ -256,18 +269,18 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
-    public void MoveTo(Vector3 targetPosition)
+    public void MoveTo(Vector3 targetPosition, bool isTeleport = false)
     {
         SoundControllerScript.Instance.PlayMoveSound(targetPosition);
         Vector3 currentPosition = this.transform.position;
         float xDif = targetPosition.x - currentPosition.x;
         if (xDif < 0)
         {
-            spriteRenderer.flipX = true;
+            spriteRenderer.sprite = SpriteSheet[1];
         }
-        if (xDif > 0)
+        else if (xDif > 0)
         {
-            spriteRenderer.flipX = false;
+            spriteRenderer.sprite = SpriteSheet[0];
         }
         this.transform.position = targetPosition;
         CameraControllerScript.Instance.MoveToPlayer();
@@ -307,7 +320,9 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
 
     void Awake()
     {
-        spriteRenderer = this.gameObject.GetComponent<SpriteRenderer>();
+        spriteObject = this.transform.Find("Sprite Object").gameObject;
+        spriteRenderer = spriteObject.GetComponent<SpriteRenderer>();
+        SpriteSheet = Resources.LoadAll<Sprite>("Player");
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
         _mainHand = gear.transform.Find("Main Hand");

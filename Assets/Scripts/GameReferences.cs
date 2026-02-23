@@ -88,6 +88,13 @@ public static class GameReferences
         return null;
     }
 
+    public static GameObject GetAfterimages()
+    {
+        if (LevelScript.Instance != null)
+            return LevelScript.Instance.afterimages;
+        return GameObject.Find("Afterimages");
+    }
+
     public static GameObject GetTraversableTiles()
     {
         if (LevelScript.Instance != null && LevelScript.Instance.traversableTiles != null)

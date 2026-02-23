@@ -132,7 +132,7 @@ public class BlinkScript : MonoBehaviour, SkillScript
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         wielderScript.DisplayUsedSkill(skillSprite);
         wielderScript.SetSkillCooldown(skillName, cooldown);
-        wielderScript.MoveTo(targetPosition);
+        wielderScript.MoveTo(targetPosition, true);
         if (wielder == player)
         {
             turnLogicScript.hasUsedAnySkill = true;
