@@ -5,7 +5,7 @@ using UnityEngine.EventSystems;
 using System.Collections;
 using System.Collections.Generic;
 
-public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler
 {
     public RectTransform buttonRectTransform;
     public Button button;
@@ -58,6 +58,11 @@ public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPoint
         }
     }
 
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
+    }
+
     public void OnActivate()
     {
         SoundControllerScript.Instance.PlayMenuSound();
@@ -100,6 +105,7 @@ public class InventoryButtonScript : MonoBehaviour, IPointerEnterHandler, IPoint
             float canvasScale = canvasComponent.scaleFactor;
             notificationRect.position = buttonRectTransform.position + new Vector3(0, buttonRectTransform.rect.height * canvasScale, 0);
             Image notificationImage = pickupNotification.AddComponent<Image>();
+            notificationImage.color = MissionLogicScript.Instance.interfaceColors[1];
             notificationImage.sprite = itemSprite;
             yield return new WaitForSeconds(0.5f);
             Destroy(pickupNotification);

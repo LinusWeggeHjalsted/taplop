@@ -99,7 +99,15 @@ public class SliceScript : MonoBehaviour, SkillScript
         }
         else
         {
-            return 3;
+            EntityScript playerScript = player.GetComponent<EntityScript>();
+            if ((float)playerScript.CurrentHealth < ((float)playerScript.MaxHealth / 2))
+            {
+                return 2;
+            }
+            else
+            {
+                return 3;
+            }
         }
     }
 
@@ -124,7 +132,6 @@ public class SliceScript : MonoBehaviour, SkillScript
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -137,13 +144,24 @@ public class SliceScript : MonoBehaviour, SkillScript
         }
         if (target != null)
         {
-            wielderScript.Attack(wielderScript.mainHandDamage, target);
+            SoundControllerScript.Instance.PlayAttackSound();
+            EntityScript targetScript = target.GetComponent<EntityScript>();
+            if ((float)targetScript.CurrentHealth < ((float)targetScript.MaxHealth / 2))
+            {
+                float preciseDamage = 1.5f * (float)wielderScript.mainHandDamage;
+                wielderScript.Attack((int)preciseDamage, target);
+            }
+            else
+            {
+                wielderScript.Attack(wielderScript.mainHandDamage, target);
+            }
         }
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
@@ -200,7 +218,7 @@ public class SliceScript : MonoBehaviour, SkillScript
     {
         skillName = "Slice";
         skillType = "Main Hand Skill";
-        description = "Attack target";
+        description = "Attack target, dealing 1.5x damage if they have less than half health";
         range = 1f;
         radius = 0;
         distance = 0;

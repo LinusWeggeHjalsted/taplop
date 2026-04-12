@@ -2,24 +2,27 @@ Metadata
 creator Strider
 
 Layout
-
-    =        1
-     ....    .
-       .......
-        .. .....1
-        .   ...
-!..   ..   ..  ..
-  ...      ..  ...
-  ....      . ..
-   ....     2.
-    ..... ...
-       ....
+            AAA
+    =G AAA AA1AA
+   F ....AAAA.A
+   AAEB.......AAA
+   AAAAA..D.....1AA
+  AAAAAA.BAE...CBA
+!..AAA..CAA..A ..AA
+  ...ABAAAA..AA...A
+ A....AAAAAA.A..ABA
+ AC....AAAAA2.CBAA
+ AAB.....A...EAA
+   AADE....BCAA
+   A AABECDAA
+            AA
 
 Enemy Info
 1
-name Brown Bear
-sprite BrownBear
-maxHealth 10
+name Bear
+sprite Bear
+usesWeapons 0
+maxHealth 20
 armor 0
 speed 1
 aggroRange 3
@@ -27,27 +30,57 @@ mainHandWeapon Shield
 mainHandName Bear Shield
 mainHandDamage 5
 coatName Bear Coat
-coatArmor 2
 coatHealth 2
+coatArmor 2
 glovesName Bear Gloves
-glovesArmor 2
+glovesHealth 2
 glovesDamage 2
 
 2
-name Brown Wolf
-sprite BrownWolf
-maxHealth 10
-armor -1
+name Wolf
+sprite Wolf
+usesWeapons 0
+maxHealth 20
+armor 0
 speed 1
 aggroRange 6
 mainHandWeapon Sword
 mainHandName Wolf Sword
 mainHandDamage 5
 bootsName Wolf Boots
-bootsArmor 2
+bootsHealth 2
 bootsSpeed 1
 utilitySkill Blink
 utilitySkill Howl
+
+Decoration Info
+A
+sprite Tree1
+colorCode 4
+
+B
+sprite Stone2
+colorCode 5
+
+C
+sprite Stone3
+colorCode 5
+
+D
+sprite Stone4
+colorCode 5
+
+E
+sprite Stone6
+colorCode 5
+
+F
+sprite Ruin5
+colorCode 0
+
+G
+sprite Ruin9
+colorCode 0
 
 Item Info
 

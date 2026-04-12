@@ -3,36 +3,79 @@ creator Strider
 
 Layout
        1.. 
-       .1..
+    ECD.1..
     ....
-   .....      .
+   .....H     .
    !......   .=.
-  .    ...   1.
-   a   ...   .
-        .....
+  .   F...   1.
+   aB  ...G J.
+  A     .....
+           I
 
 Enemy Info
 1
-name Invader Warrior
-sprite InvaderSwordNone
-maxHealth 10
-armor -2
+name Skeleton Warrior
+sprite Skeleton1
+usesWeapons 1
+maxHealth 20
+armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Sword
-mainHandName Invader Sword
+mainHandName Skeleton Sword
 mainHandDamage 4
-coatName Invader Coat
-coatArmor 1
+coatName Skeleton Coat
 coatHealth 1
-pantsName Invader Pants
-pantsArmor 1
+coatArmor 1
+pantsName Skeleton Pants
+pantsHealth 1
 pantsPickupRadius 1
+
+Decoration Info
+A
+sprite Ruin11
+colorCode 0
+
+B
+sprite Ruin8
+colorCode 0
+
+C
+sprite Stone2
+colorCode 5
+
+D
+sprite Stone6
+colorCode 5
+
+E
+sprite Stone1
+colorCode 5
+
+F
+sprite Statue4
+colorCode 0
+
+G
+sprite Ruin10
+colorCode 0
+
+H
+sprite Ruin1
+colorCode 0
+
+I
+sprite Ruin4
+colorCode 0
+
+J
+sprite Stone4
+colorCode 5
 
 Item Info
 a
 name Comfortable Boots
 type Boots
-armor 1
+health 1
 speed 1
 

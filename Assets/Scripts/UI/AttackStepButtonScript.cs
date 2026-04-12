@@ -3,7 +3,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
-public class AttackStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+public class AttackStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler
 {
     public RectTransform buttonRectTransform;
     public Button button;
@@ -15,6 +15,11 @@ public class AttackStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPoin
     public GameObject tooltipPrefab;
     public GameObject tooltip;
     private bool wasCtrlHeld = false;
+
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
+    }
 
     public void OnPointerEnter(PointerEventData eventData)
     {
@@ -103,7 +108,7 @@ public class AttackStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPoin
             }
             else
             {
-                SoundControllerScript.Instance.PlayButtonClickSound();
+                SoundControllerScript.Instance.PlayButtonClickUpSound();
                 ToggleSkipAttackStep();
             }
         }

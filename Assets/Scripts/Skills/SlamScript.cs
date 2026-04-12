@@ -100,7 +100,54 @@ public class SlamScript : MonoBehaviour, SkillScript
         }
         else
         {
-            return 2;
+            // Check if knockback would cause collision with player (same logic as Knockback in EntityScript)
+            float effectiveDistance = distance + enemyScript.enchantmentModifiers.distance;
+            Vector3 positionDelta = playerPosition - fromPosition;
+            // Normalize to single tile direction
+            if (positionDelta.x != 0)
+            {
+                positionDelta.x = positionDelta.x / Mathf.Abs(positionDelta.x);
+            }
+            if (positionDelta.y != 0)
+            {
+                positionDelta.y = positionDelta.y / Mathf.Abs(positionDelta.y);
+            }
+
+            Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
+            bool hitObstacle = false;
+
+            // Check each position from nearest to farthest
+            for (int i = 1; i <= effectiveDistance; i++)
+            {
+                Vector3 checkPosition = playerPosition + i * positionDelta;
+                if (tileLookup.ContainsKey(checkPosition))
+                {
+                    GameObject tile = tileLookup[checkPosition];
+                    TileScript tileScript = tile.GetComponent<TileScript>();
+                    bool isOccupied = tileScript.isOccupied;
+                    // Also check if an enemy is at this position
+                    if (enemiesScript != null)
+                    {
+                        Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
+                        if (enemyLookup.ContainsKey(checkPosition))
+                        {
+                            isOccupied = true;
+                        }
+                    }
+                    if (isOccupied)
+                    {
+                        hitObstacle = true;
+                        break;
+                    }
+                }
+                else
+                {
+                    // Hit edge of map
+                    hitObstacle = true;
+                    break;
+                }
+            }
+            return hitObstacle ? 1 : 2;
         }
     }
 
@@ -116,9 +163,9 @@ public class SlamScript : MonoBehaviour, SkillScript
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
+        SoundControllerScript.Instance.PlayAttackSound();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
         float effectiveRadius = radius + wielderScript.enchantmentModifiers.radius;
-        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
         for (float i = -effectiveRadius; i <= effectiveRadius; i++)
@@ -158,9 +205,8 @@ public class SlamScript : MonoBehaviour, SkillScript
             if (target != null)
             {
                 EntityScript targetScript = target.GetComponent<EntityScript>();
-                float preciseDamage = 1.5f * (float)wielderScript.mainHandDamage;
                 float effectiveDistance = distance + wielderScript.enchantmentModifiers.distance;
-                targetScript.Knockback(fromPosition, wielder, (int)preciseDamage, effectiveDistance);
+                targetScript.Knockback(fromPosition, wielder, wielderScript.mainHandDamage, effectiveDistance);
                 int outgoingModifier = wielderScript.enchantmentModifiers.outgoingStunDuration;
                 int incomingModifier = targetScript.enchantmentModifiers.incomingStunDuration;
                 int effectiveStunDuration = stunDuration + outgoingModifier + incomingModifier;
@@ -173,13 +219,14 @@ public class SlamScript : MonoBehaviour, SkillScript
             turnLogicScript.hasAttacked = true;
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, null);
     }
 
     void Awake()
     {
         skillName = "Slam";
         skillType = "Main Hand Skill";
-        description = "Knockback and stun each target within radius, dealing 1.5x damage to targets on collision";
+        description = "Knockback and stun each target within radius, dealing 1x damage to targets on collision";
         range = 0;
         radius = 1;
         distance = 2;

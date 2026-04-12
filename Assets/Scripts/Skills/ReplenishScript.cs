@@ -119,14 +119,15 @@ public class ReplenishScript : MonoBehaviour, SkillScript
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
+        SoundControllerScript.Instance.PlaySpellSound();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         wielderScript.CurrentHealth = wielderScript.MaxHealth;
         wielderScript.SetSkillCooldown(skillName, cooldown);
         if (wielder == player)
         {
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, null);
     }
 
     void Awake()

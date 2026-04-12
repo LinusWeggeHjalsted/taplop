@@ -2,33 +2,52 @@ Metadata
 creator Strider
 
 Layout
- .
-  ..   ...
-  ....... .
-  ..1.1.
-  ...=..
-   .....
-   ....
-    ..
-     !
+  AA
+ A.AAA  AAAA
+AAC..AAA...AAA
+ AA...=...B.A
+ AA..1.1.DAAA
+  A......AA
+  AD.....A
+ A A....CA
+    A..BAAA
+      !
 
 Enemy Info
 1
-name Invader Javelineer
-sprite InvaderSpearNone
-maxHealth 10
-armor -2
+name Skeleton Javelineer
+sprite Skeleton1
+usesWeapons 1
+maxHealth 20
+armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Spear
-mainHandName Invader Spear
+mainHandName Skeleton Spear
 mainHandDamage 5
-coatName Invader Coat
-coatArmor 2
-coatHealth 1
-pantsName Invader Pants
-pantsArmor 2
+coatName Skeleton Coat
+coatHealth 2
+coatArmor 1
+pantsName Skeleton Pants
+pantsHealth 2
 pantsPickupRadius 1
+
+Decoration Info
+A
+sprite Tree1
+colorCode 4
+
+B
+sprite Stone2
+colorCode 5
+
+C
+sprite Stone4
+colorCode 5
+
+D
+sprite Stone6
+colorCode 5
 
 Item Info
 

@@ -123,7 +123,6 @@ public class ImpaleScript : MonoBehaviour, SkillScript
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -136,7 +135,8 @@ public class ImpaleScript : MonoBehaviour, SkillScript
         }
         if (target != null)
         {
-            float preciseDamage = 1.5f * (float)wielderScript.mainHandDamage;
+            SoundControllerScript.Instance.PlayAttackSound();
+            float preciseDamage = 1.5f * (float)wielderScript.mainHandDamage + (float)wielderScript.convertedMomentum;
             wielderScript.Attack((int)preciseDamage, target);
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
@@ -145,6 +145,7 @@ public class ImpaleScript : MonoBehaviour, SkillScript
             turnLogicScript.hasAttacked = true;
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
@@ -201,7 +202,7 @@ public class ImpaleScript : MonoBehaviour, SkillScript
     {
         skillName = "Impale";
         skillType = "Main Hand Skill";
-        description = "Attack target for 1.5x damage";
+        description = "Attack target for 1.5x damage with double converted momentum bonus";
         range = 1f;
         radius = 0;
         distance = 0;

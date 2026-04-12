@@ -62,19 +62,19 @@ public class PlayerDataScript : MonoBehaviour
 
     public class GlovesData : InventoryItemData
     {
-        public int armor;
+        public int health;
         public int damage;
     }
 
     public class PantsData : InventoryItemData
     {
-        public int armor;
+        public int health;
         public int pickupRadius;
     }
 
     public class BootsData : InventoryItemData
     {
-        public int armor;
+        public int health;
         public int speed;
     }
 
@@ -766,21 +766,21 @@ public class PlayerDataScript : MonoBehaviour
                         return;
                     }
                 }
-                else if (currentLine.StartsWith("armor "))
+                else if (currentLine.StartsWith("health "))
                 {
-                    string armorString = currentLine.Substring("armor ".Length);
-                    int armorNumber;
-                    if (Int32.TryParse(armorString, out armorNumber))
+                    string healthString = currentLine.Substring("health ".Length);
+                    int healthNumber;
+                    if (Int32.TryParse(healthString, out healthNumber))
                     {
-                        if (!ValidateIntInRange(armorNumber, constants.minArmor, constants.maxArmor, "gloves armor"))
+                        if (!ValidateIntInRange(healthNumber, constants.minHealthBonus, constants.maxHealthBonus, "gloves health"))
                         {
                             return;
                         }
-                        gloves.armor = armorNumber;
+                        gloves.health = healthNumber;
                     }
                     else
                     {
-                        Debug.LogError("gloves armor is not a number");
+                        Debug.LogError("gloves health is not a number");
                         return;
                     }
                 }
@@ -817,21 +817,21 @@ public class PlayerDataScript : MonoBehaviour
                         return;
                     }
                 }
-                else if (currentLine.StartsWith("armor "))
+                else if (currentLine.StartsWith("health "))
                 {
-                    string armorString = currentLine.Substring("armor ".Length);
-                    int armorNumber;
-                    if (Int32.TryParse(armorString, out armorNumber))
+                    string healthString = currentLine.Substring("health ".Length);
+                    int healthNumber;
+                    if (Int32.TryParse(healthString, out healthNumber))
                     {
-                        if (!ValidateIntInRange(armorNumber, constants.minArmor, constants.maxArmor, "pants armor"))
+                        if (!ValidateIntInRange(healthNumber, constants.minHealthBonus, constants.maxHealthBonus, "pants health"))
                         {
                             return;
                         }
-                        pants.armor = armorNumber;
+                        pants.health = healthNumber;
                     }
                     else
                     {
-                        Debug.LogError("pants armor is not a number");
+                        Debug.LogError("pants health is not a number");
                         return;
                     }
                 }
@@ -868,21 +868,21 @@ public class PlayerDataScript : MonoBehaviour
                         return;
                     }
                 }
-                else if (currentLine.StartsWith("armor "))
+                else if (currentLine.StartsWith("health "))
                 {
-                    string armorString = currentLine.Substring("armor ".Length);
-                    int armorNumber;
-                    if (Int32.TryParse(armorString, out armorNumber))
+                    string healthString = currentLine.Substring("health ".Length);
+                    int healthNumber;
+                    if (Int32.TryParse(healthString, out healthNumber))
                     {
-                        if (!ValidateIntInRange(armorNumber, constants.minArmor, constants.maxArmor, "boots armor"))
+                        if (!ValidateIntInRange(healthNumber, constants.minHealthBonus, constants.maxHealthBonus, "boots health"))
                         {
                             return;
                         }
-                        boots.armor = armorNumber;
+                        boots.health = healthNumber;
                     }
                     else
                     {
-                        Debug.LogError("boots armor is not a number");
+                        Debug.LogError("boots health is not a number");
                         return;
                     }
                 }
@@ -1012,6 +1012,10 @@ public class PlayerDataScript : MonoBehaviour
                                 if (currentLine.StartsWith("itemName "))
                                 {
                                     inventoryAmulet.itemName = currentLine.Substring("itemName ".Length);
+                                    if (!ValidateString(inventoryAmulet.itemName, constants.maxStringLength, "inventory amulet itemName"))
+                                    {
+                                        return;
+                                    }
                                 }
                                 else if (currentLine.StartsWith("spellDamage "))
                                 {
@@ -1019,11 +1023,16 @@ public class PlayerDataScript : MonoBehaviour
                                     int spellDamageNumber;
                                     if (Int32.TryParse(spellDamageString, out spellDamageNumber))
                                     {
+                                        if (!ValidateIntInRange(spellDamageNumber, constants.minSpellDamage, constants.maxSpellDamage, "inventory amulet spellDamage"))
+                                        {
+                                            return;
+                                        }
                                         inventoryAmulet.spellDamage = spellDamageNumber;
                                     }
                                     else
                                     {
                                         Debug.LogError("inventory amulet spellDamage is not a number");
+                                        return;
                                     }
                                 }
                                 else if (currentLine.StartsWith("inventoryPosition "))
@@ -1032,11 +1041,16 @@ public class PlayerDataScript : MonoBehaviour
                                     int inventoryPositionNumber;
                                     if (Int32.TryParse(inventoryPositionString, out inventoryPositionNumber))
                                     {
+                                        if (!ValidateIntInRange(inventoryPositionNumber, constants.minInventoryPosition, constants.maxInventoryPosition, "inventory amulet inventoryPosition"))
+                                        {
+                                            return;
+                                        }
                                         inventoryAmulet.inventoryPosition = inventoryPositionNumber;
                                     }
                                     else
                                     {
                                         Debug.LogError("inventory amulet inventoryPosition is not a number");
+                                        return;
                                     }
                                 }
                             }
@@ -1050,6 +1064,10 @@ public class PlayerDataScript : MonoBehaviour
                                 if (currentLine.StartsWith("itemName "))
                                 {
                                     inventoryCoat.itemName = currentLine.Substring("itemName ".Length);
+                                    if (!ValidateString(inventoryCoat.itemName, constants.maxStringLength, "inventory coat itemName"))
+                                    {
+                                        return;
+                                    }
                                 }
                                 else if (currentLine.StartsWith("armor "))
                                 {
@@ -1057,11 +1075,16 @@ public class PlayerDataScript : MonoBehaviour
                                     int armorNumber;
                                     if (Int32.TryParse(armorString, out armorNumber))
                                     {
+                                        if (!ValidateIntInRange(armorNumber, constants.minArmor, constants.maxArmor, "inventory coat armor"))
+                                        {
+                                            return;
+                                        }
                                         inventoryCoat.armor = armorNumber;
                                     }
                                     else
                                     {
                                         Debug.LogError("inventory coat armor is not a number");
+                                        return;
                                     }
                                 }
                                 else if (currentLine.StartsWith("health "))
@@ -1070,11 +1093,16 @@ public class PlayerDataScript : MonoBehaviour
                                     int healthNumber;
                                     if (Int32.TryParse(healthString, out healthNumber))
                                     {
+                                        if (!ValidateIntInRange(healthNumber, constants.minHealthBonus, constants.maxHealthBonus, "inventory coat health"))
+                                        {
+                                            return;
+                                        }
                                         inventoryCoat.health = healthNumber;
                                     }
                                     else
                                     {
                                         Debug.LogError("inventory coat health is not a number");
+                                        return;
                                     }
                                 }
                                 else if (currentLine.StartsWith("inventoryPosition "))
@@ -1083,11 +1111,16 @@ public class PlayerDataScript : MonoBehaviour
                                     int inventoryPositionNumber;
                                     if (Int32.TryParse(inventoryPositionString, out inventoryPositionNumber))
                                     {
+                                        if (!ValidateIntInRange(inventoryPositionNumber, constants.minInventoryPosition, constants.maxInventoryPosition, "inventory coat inventoryPosition"))
+                                        {
+                                            return;
+                                        }
                                         inventoryCoat.inventoryPosition = inventoryPositionNumber;
                                     }
                                     else
                                     {
                                         Debug.LogError("inventory coat inventoryPosition is not a number");
+                                        return;
                                     }
                                 }
                             }
@@ -1101,18 +1134,26 @@ public class PlayerDataScript : MonoBehaviour
                                 if (currentLine.StartsWith("itemName "))
                                 {
                                     inventoryGloves.itemName = currentLine.Substring("itemName ".Length);
-                                }
-                                else if (currentLine.StartsWith("armor "))
-                                {
-                                    string armorString = currentLine.Substring("armor ".Length);
-                                    int armorNumber;
-                                    if (Int32.TryParse(armorString, out armorNumber))
+                                    if (!ValidateString(inventoryGloves.itemName, constants.maxStringLength, "inventory gloves itemName"))
                                     {
-                                        inventoryGloves.armor = armorNumber;
+                                        return;
+                                    }
+                                }
+                                else if (currentLine.StartsWith("health "))
+                                {
+                                    string healthString = currentLine.Substring("health ".Length);
+                                    int healthNumber;
+                                    if (Int32.TryParse(healthString, out healthNumber))
+                                    {
+                                        if (!ValidateIntInRange(healthNumber, constants.minHealthBonus, constants.maxHealthBonus, "inventory gloves health"))
+                                        {
+                                            return;
+                                        }
+                                        inventoryGloves.health = healthNumber;
                                     }
                                     else
                                     {
-                                        Debug.LogError("inventory gloves armor is not a number");
+                                        Debug.LogError("inventory gloves health is not a number");
                                     }
                                 }
                                 else if (currentLine.StartsWith("damage "))
@@ -1121,7 +1162,16 @@ public class PlayerDataScript : MonoBehaviour
                                     int damageNumber;
                                     if (Int32.TryParse(damageString, out damageNumber))
                                     {
+                                        if (!ValidateIntInRange(damageNumber, constants.minDamageBonus, constants.maxDamageBonus, "inventory gloves damage"))
+                                        {
+                                            return;
+                                        }
                                         inventoryGloves.damage = damageNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory gloves damage is not a number");
+                                        return;
                                     }
                                 }
                                 else if (currentLine.StartsWith("inventoryPosition "))
@@ -1148,18 +1198,26 @@ public class PlayerDataScript : MonoBehaviour
                                 if (currentLine.StartsWith("itemName "))
                                 {
                                     inventoryPants.itemName = currentLine.Substring("itemName ".Length);
-                                }
-                                else if (currentLine.StartsWith("armor "))
-                                {
-                                    string armorString = currentLine.Substring("armor ".Length);
-                                    int armorNumber;
-                                    if (Int32.TryParse(armorString, out armorNumber))
+                                    if (!ValidateString(inventoryPants.itemName, constants.maxStringLength, "inventory pants itemName"))
                                     {
-                                        inventoryPants.armor = armorNumber;
+                                        return;
+                                    }
+                                }
+                                else if (currentLine.StartsWith("health "))
+                                {
+                                    string healthString = currentLine.Substring("health ".Length);
+                                    int healthNumber;
+                                    if (Int32.TryParse(healthString, out healthNumber))
+                                    {
+                                        if (!ValidateIntInRange(healthNumber, constants.minHealthBonus, constants.maxHealthBonus, "inventory pants health"))
+                                        {
+                                            return;
+                                        }
+                                        inventoryPants.health = healthNumber;
                                     }
                                     else
                                     {
-                                        Debug.LogError("inventory pants armor is not a number");
+                                        Debug.LogError("inventory pants health is not a number");
                                     }
                                 }
                                 else if (currentLine.StartsWith("pickupRadius "))
@@ -1168,7 +1226,16 @@ public class PlayerDataScript : MonoBehaviour
                                     int pickupRadiusNumber;
                                     if (Int32.TryParse(pickupRadiusString, out pickupRadiusNumber))
                                     {
+                                        if (!ValidateIntInRange(pickupRadiusNumber, constants.minPickupRadius, constants.maxPickupRadius, "inventory pants pickupRadius"))
+                                        {
+                                            return;
+                                        }
                                         inventoryPants.pickupRadius = pickupRadiusNumber;
+                                    }
+                                    else
+                                    {
+                                        Debug.LogError("inventory pants pickupRadius is not a number");
+                                        return;
                                     }
                                 }
                                 else if (currentLine.StartsWith("inventoryPosition "))
@@ -1195,18 +1262,26 @@ public class PlayerDataScript : MonoBehaviour
                                 if (currentLine.StartsWith("itemName "))
                                 {
                                     inventoryBoots.itemName = currentLine.Substring("itemName ".Length);
-                                }
-                                else if (currentLine.StartsWith("armor "))
-                                {
-                                    string armorString = currentLine.Substring("armor ".Length);
-                                    int armorNumber;
-                                    if (Int32.TryParse(armorString, out armorNumber))
+                                    if (!ValidateString(inventoryBoots.itemName, constants.maxStringLength, "inventory boots itemName"))
                                     {
-                                        inventoryBoots.armor = armorNumber;
+                                        return;
+                                    }
+                                }
+                                else if (currentLine.StartsWith("health "))
+                                {
+                                    string healthString = currentLine.Substring("health ".Length);
+                                    int healthNumber;
+                                    if (Int32.TryParse(healthString, out healthNumber))
+                                    {
+                                        if (!ValidateIntInRange(healthNumber, constants.minHealthBonus, constants.maxHealthBonus, "inventory boots health"))
+                                        {
+                                            return;
+                                        }
+                                        inventoryBoots.health = healthNumber;
                                     }
                                     else
                                     {
-                                        Debug.LogError("inventory boots armor is not a number");
+                                        Debug.LogError("inventory boots health is not a number");
                                     }
                                 }
                                 else if (currentLine.StartsWith("speed "))
@@ -1215,6 +1290,10 @@ public class PlayerDataScript : MonoBehaviour
                                     int speedNumber;
                                     if (Int32.TryParse(speedString, out speedNumber))
                                     {
+                                        if (!ValidateIntInRange(speedNumber, constants.minSpeedBonus, constants.maxSpeedBonus, "inventory boots speed"))
+                                        {
+                                            return;
+                                        }
                                         inventoryBoots.speed = speedNumber;
                                     }
                                     else
@@ -1570,7 +1649,7 @@ public class PlayerDataScript : MonoBehaviour
         if (gloves != null && gloves.itemName != null)
         {
             saveData += "itemName " + gloves.itemName + "\n";
-            saveData += "armor " + gloves.armor.ToString() + "\n";
+            saveData += "health " + gloves.health.ToString() + "\n";
             saveData += "damage " + gloves.damage.ToString() + "\n";
         }
         saveData += "\n";
@@ -1580,7 +1659,7 @@ public class PlayerDataScript : MonoBehaviour
         if (pants != null && pants.itemName != null)
         {
             saveData += "itemName " + pants.itemName + "\n";
-            saveData += "armor " + pants.armor.ToString() + "\n";
+            saveData += "health " + pants.health.ToString() + "\n";
             saveData += "pickupRadius " + pants.pickupRadius.ToString() + "\n";
         }
         saveData += "\n";
@@ -1590,7 +1669,7 @@ public class PlayerDataScript : MonoBehaviour
         if (boots != null && boots.itemName != null)
         {
             saveData += "itemName " + boots.itemName + "\n";
-            saveData += "armor " + boots.armor.ToString() + "\n";
+            saveData += "health " + boots.health.ToString() + "\n";
             saveData += "speed " + boots.speed.ToString() + "\n";
         }
         saveData += "\n";
@@ -1634,7 +1713,7 @@ public class PlayerDataScript : MonoBehaviour
                 GlovesData glovesItem = (GlovesData)item;
                 saveData += "itemType Gloves\n";
                 saveData += "itemName " + glovesItem.itemName + "\n";
-                saveData += "armor " + glovesItem.armor.ToString() + "\n";
+                saveData += "health " + glovesItem.health.ToString() + "\n";
                 saveData += "damage " + glovesItem.damage.ToString() + "\n";
                 saveData += "inventoryPosition " + glovesItem.inventoryPosition.ToString() + "\n";
                 saveData += "\n";
@@ -1644,7 +1723,7 @@ public class PlayerDataScript : MonoBehaviour
                 PantsData pantsItem = (PantsData)item;
                 saveData += "itemType Pants\n";
                 saveData += "itemName " + pantsItem.itemName + "\n";
-                saveData += "armor " + pantsItem.armor.ToString() + "\n";
+                saveData += "health " + pantsItem.health.ToString() + "\n";
                 saveData += "pickupRadius " + pantsItem.pickupRadius.ToString() + "\n";
                 saveData += "inventoryPosition " + pantsItem.inventoryPosition.ToString() + "\n";
                 saveData += "\n";
@@ -1654,7 +1733,7 @@ public class PlayerDataScript : MonoBehaviour
                 BootsData bootsItem = (BootsData)item;
                 saveData += "itemType Boots\n";
                 saveData += "itemName " + bootsItem.itemName + "\n";
-                saveData += "armor " + bootsItem.armor.ToString() + "\n";
+                saveData += "health " + bootsItem.health.ToString() + "\n";
                 saveData += "speed " + bootsItem.speed.ToString() + "\n";
                 saveData += "inventoryPosition " + bootsItem.inventoryPosition.ToString() + "\n";
                 saveData += "\n";
@@ -1819,7 +1898,7 @@ public class PlayerDataScript : MonoBehaviour
             GameObject newGloves = Instantiate(glovesPrefab, playerHands);
             GlovesScript glovesScript = newGloves.GetComponent<GlovesScript>();
             glovesScript.itemName = gloves.itemName;
-            glovesScript.armorBonus = gloves.armor;
+            glovesScript.healthBonus = gloves.health;
             glovesScript.damageBonus = gloves.damage;
         }
         if (pants.itemName != null)
@@ -1828,7 +1907,7 @@ public class PlayerDataScript : MonoBehaviour
             GameObject newPants = Instantiate(pantsPrefab, playerLegs);
             PantsScript pantsScript = newPants.GetComponent<PantsScript>();
             pantsScript.itemName = pants.itemName;
-            pantsScript.armorBonus = pants.armor;
+            pantsScript.healthBonus = pants.health;
             pantsScript.pickupRadius = pants.pickupRadius;
         }
 
@@ -1838,7 +1917,7 @@ public class PlayerDataScript : MonoBehaviour
             GameObject newBoots = Instantiate(bootsPrefab, playerFeet);
             BootsScript bootsScript = newBoots.GetComponent<BootsScript>();
             bootsScript.itemName = boots.itemName;
-            bootsScript.armorBonus = boots.armor;
+            bootsScript.healthBonus = boots.health;
             bootsScript.speedBonus = boots.speed;
         }
         // create player inventory
@@ -1885,7 +1964,7 @@ public class PlayerDataScript : MonoBehaviour
                 GameObject newGloves = Instantiate(glovesPrefab, playerInventory);
                 GlovesScript glovesScript = newGloves.GetComponent<GlovesScript>();
                 glovesScript.itemName = inventoryGloves.itemName;
-                glovesScript.armorBonus = inventoryGloves.armor;
+                glovesScript.healthBonus = inventoryGloves.health;
                 glovesScript.damageBonus = inventoryGloves.damage;
                 ItemScript itemScript = newGloves.GetComponent<ItemScript>();
                 itemScript.inventoryPosition = inventoryGloves.inventoryPosition;
@@ -1897,7 +1976,7 @@ public class PlayerDataScript : MonoBehaviour
                 GameObject newPants = Instantiate(pantsPrefab, playerInventory);
                 PantsScript pantsScript = newPants.GetComponent<PantsScript>();
                 pantsScript.itemName = inventoryPants.itemName;
-                pantsScript.armorBonus = inventoryPants.armor;
+                pantsScript.healthBonus = inventoryPants.health;
                 pantsScript.pickupRadius = inventoryPants.pickupRadius;
                 ItemScript itemScript = newPants.GetComponent<ItemScript>();
                 itemScript.inventoryPosition = inventoryPants.inventoryPosition;
@@ -1909,7 +1988,7 @@ public class PlayerDataScript : MonoBehaviour
                 GameObject newBoots = Instantiate(bootsPrefab, playerInventory);
                 BootsScript bootsScript = newBoots.GetComponent<BootsScript>();
                 bootsScript.itemName = inventoryBoots.itemName;
-                bootsScript.armorBonus = inventoryBoots.armor;
+                bootsScript.healthBonus = inventoryBoots.health;
                 bootsScript.speedBonus = inventoryBoots.speed;
                 ItemScript itemScript = newBoots.GetComponent<ItemScript>();
                 itemScript.inventoryPosition = inventoryBoots.inventoryPosition;
@@ -1945,6 +2024,7 @@ public class PlayerDataScript : MonoBehaviour
             }
         }
         playerScript.UpdateEquippedSkills();
+        playerScript.DisplayWeapons();
         finishedBuilding = true;
     }
 
@@ -2011,7 +2091,7 @@ public class PlayerDataScript : MonoBehaviour
             GlovesScript playerGlovesScript = playerGloves.GetComponent<GlovesScript>();
             gloves = new GlovesData();
             gloves.itemName = playerGlovesScript.itemName;
-            gloves.armor = playerGlovesScript.armorBonus;
+            gloves.health = playerGlovesScript.healthBonus;
             gloves.damage = playerGlovesScript.damageBonus;
         }
         else
@@ -2024,7 +2104,7 @@ public class PlayerDataScript : MonoBehaviour
             PantsScript playerPantsScript = playerPants.GetComponent<PantsScript>();
             pants = new PantsData();
             pants.itemName = playerPantsScript.itemName;
-            pants.armor = playerPantsScript.armorBonus;
+            pants.health = playerPantsScript.healthBonus;
             pants.pickupRadius = playerPantsScript.pickupRadius;
         }
         else
@@ -2037,7 +2117,7 @@ public class PlayerDataScript : MonoBehaviour
             BootsScript playerBootsScript = playerBoots.GetComponent<BootsScript>();
             boots = new BootsData();
             boots.itemName = playerBootsScript.itemName;
-            boots.armor = playerBootsScript.armorBonus;
+            boots.health = playerBootsScript.healthBonus;
             boots.speed = playerBootsScript.speedBonus;
         }
         else
@@ -2085,7 +2165,7 @@ public class PlayerDataScript : MonoBehaviour
                     GlovesData glovesData = new GlovesData();
                     glovesData.itemName = playerInventoryGlovesScript.itemName;
                     glovesData.inventoryPosition = playerInventoryGlovesScript.inventoryPosition;
-                    glovesData.armor = playerInventoryGlovesScript.armorBonus;
+                    glovesData.health = playerInventoryGlovesScript.healthBonus;
                     glovesData.damage = playerInventoryGlovesScript.damageBonus;
                     inventory.Add(glovesData);
                     break;
@@ -2094,7 +2174,7 @@ public class PlayerDataScript : MonoBehaviour
                     PantsData pantsData = new PantsData();
                     pantsData.itemName = playerInventoryPantsScript.itemName;
                     pantsData.inventoryPosition = playerInventoryPantsScript.inventoryPosition;
-                    pantsData.armor = playerInventoryPantsScript.armorBonus;
+                    pantsData.health = playerInventoryPantsScript.healthBonus;
                     pantsData.pickupRadius = playerInventoryPantsScript.pickupRadius;
                     inventory.Add(pantsData);
                     break;
@@ -2103,7 +2183,7 @@ public class PlayerDataScript : MonoBehaviour
                     BootsData bootsData = new BootsData();
                     bootsData.itemName = playerInventoryBootsScript.itemName;
                     bootsData.inventoryPosition = playerInventoryBootsScript.inventoryPosition;
-                    bootsData.armor = playerInventoryBootsScript.armorBonus;
+                    bootsData.health = playerInventoryBootsScript.healthBonus;
                     bootsData.speed = playerInventoryBootsScript.speedBonus;
                     inventory.Add(bootsData);
                     break;

@@ -5,7 +5,7 @@ public class PantsScript : MonoBehaviour, ItemScript
     public Sprite itemSprite;
     public string itemName = "";
     public string itemType;
-    public int armorBonus = 0;
+    public int healthBonus = 0;
     public int pickupRadius = 0;
     private int _inventoryPosition;
     public int inventoryPosition
@@ -35,30 +35,30 @@ public class PantsScript : MonoBehaviour, ItemScript
         GameObject player = GameReferences.GetPlayer();
         PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
         GameObject equippedPants = playerScript.pants;
-        string armorDifferenceString = "";
+        string healthDifferenceString = "";
         string pickupRadiusDifferenceString = "";
 
         if (equippedPants == null)
         {
-            armorDifferenceString = $"<color=#00FF00>+{armorBonus.ToString()}</color>";
+            healthDifferenceString = $"<color=#00FF00>+{healthBonus.ToString()}</color>";
             pickupRadiusDifferenceString = $"<color=#00FF00>+{pickupRadius.ToString()}</color>";
         }
         else
         {
             PantsScript pantsScript = equippedPants.GetComponent<PantsScript>();
-            int armorDifference = armorBonus - pantsScript.armorBonus;
+            int healthDifference = healthBonus - pantsScript.healthBonus;
             int pickupRadiusDifference = pickupRadius - pantsScript.pickupRadius;
-            if (armorDifference > 0)
+            if (healthDifference > 0)
             {
-                armorDifferenceString = $"<color=#00FF00>+{armorDifference.ToString()}</color>";
+                healthDifferenceString = $"<color=#00FF00>+{healthDifference.ToString()}</color>";
             }
-            else if (armorDifference < 0)
+            else if (healthDifference < 0)
             {
-                armorDifferenceString = $"<color=#FF0000>{armorDifference.ToString()}</color>";
+                healthDifferenceString = $"<color=#FF0000>{healthDifference.ToString()}</color>";
             }
             else
             {
-                armorDifferenceString = "<color=#FFFFFF80>0</color>";
+                healthDifferenceString = "<color=#FFFFFF80>0</color>";
             }
             if (pickupRadiusDifference > 0)
             {
@@ -74,9 +74,9 @@ public class PantsScript : MonoBehaviour, ItemScript
             }
         }
 
-        string armorString = $"Armor +{armorBonus.ToString()} <color=#FFFFFF80>[</color>{armorDifferenceString}<color=#FFFFFF80>]</color>";
+        string healthString = $"Health +{healthBonus.ToString()} <color=#FFFFFF80>[</color>{healthDifferenceString}<color=#FFFFFF80>]</color>";
         string pickupRadiusString = $"Pickup Radius +{pickupRadius.ToString()} <color=#FFFFFF80>[</color>{pickupRadiusDifferenceString}<color=#FFFFFF80>]</color>";
-        return armorString + "\n" + pickupRadiusString;
+        return healthString + "\n" + pickupRadiusString;
     }
 
     public string ItemType()
@@ -87,7 +87,7 @@ public class PantsScript : MonoBehaviour, ItemScript
     public PlayerDataScript.Salvage SalvageValue()
     {
         PlayerDataScript.Salvage salvage = new PlayerDataScript.Salvage();
-        int totalValue = armorBonus + pickupRadius;
+        int totalValue = healthBonus + pickupRadius;
         int fractionValue = totalValue / 2;
         salvage.leather = fractionValue;
         salvage.cloth = totalValue - fractionValue;

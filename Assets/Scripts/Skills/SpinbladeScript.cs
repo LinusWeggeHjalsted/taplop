@@ -115,8 +115,8 @@ public class SpinbladeScript : MonoBehaviour, SkillScript
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
+        SoundControllerScript.Instance.PlayAttackSound();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         float effectiveRadius = radius + wielderScript.enchantmentModifiers.radius;
         Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
         List<Vector3> deltas = new List<Vector3>();
@@ -165,6 +165,7 @@ public class SpinbladeScript : MonoBehaviour, SkillScript
             turnLogicScript.hasAttacked = true;
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, null);
     }
 
     void Awake()

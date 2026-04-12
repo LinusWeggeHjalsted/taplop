@@ -59,7 +59,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 0.9529412, g: 0.64705884, b: 0.42352942, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -91,7 +91,10 @@ MonoBehaviour:
   item: {fileID: 0}
   currentParent: {fileID: 0}
   canvas: {fileID: 0}
+  inventoryMenu: {fileID: 0}
+  inventoryMenuScript: {fileID: 0}
   tooltipPrefab: {fileID: 0}
   tooltip: {fileID: 0}
   contextMenuPrefab: {fileID: 0}
   contextMenu: {fileID: 0}
+  player: {fileID: 0}

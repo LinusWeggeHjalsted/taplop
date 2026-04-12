@@ -4,10 +4,14 @@ public class LevelScript : MonoBehaviour
 {
     public static LevelScript Instance { get; private set; }
 
+    // system objects
+    public GameObject mainCamera;
+
     // Core game objects
     public GameObject player;
     public GameObject enemies;
     public GameObject afterimages;
+    public GameObject decorations;
     public GameObject traversableTiles;
     public GameObject turnLogic;
     public GameObject levelBuilder;
@@ -24,6 +28,7 @@ public class LevelScript : MonoBehaviour
     public GameObject moveStepHighlight;
     public GameObject attackStepHighlight;
     public GameObject inventoryButton;
+    public GameObject momentumUI;
 
     // Scripts (cached references)
     public PlayerCharacterScript playerScript;
@@ -54,12 +59,15 @@ public class LevelScript : MonoBehaviour
         }
     }
 
-    private void CacheReferences()
+    public void CacheReferences()
     {
+        mainCamera = GameObject.Find("Main Camera");
+
         // Find core game objects
         player = GameObject.Find("Player");
         enemies = GameObject.Find("Enemies");
         afterimages = GameObject.Find("Afterimages");
+        decorations = GameObject.Find("Decorations");
         traversableTiles = GameObject.Find("Traversable Tiles");
         turnLogic = GameObject.Find("Turn Logic");
         levelBuilder = GameObject.Find("Level Builder");
@@ -76,6 +84,7 @@ public class LevelScript : MonoBehaviour
         moveStepHighlight = GameObject.Find("Move Step Highlight");
         attackStepHighlight = GameObject.Find("Attack Step Highlight");
         inventoryButton = GameObject.Find("Inventory Button");
+        momentumUI = GameObject.Find("Momentum UI");
 
         // Cache script references
         if (player != null)

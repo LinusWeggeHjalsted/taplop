@@ -116,8 +116,8 @@ public class ReflectScript : MonoBehaviour, SkillScript
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
+        SoundControllerScript.Instance.PlaySpellSound();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         int effectiveSkillDuration = skillDuration + wielderScript.enchantmentModifiers.skillDuration;
         wielderScript.reflectDuration += effectiveSkillDuration;
         if (wielder == player)
@@ -126,6 +126,7 @@ public class ReflectScript : MonoBehaviour, SkillScript
             turnLogicScript.hasUsedAnySkill = true;
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
+        wielderScript.UsedSkill(this, null);
     }
 
     void Awake()

@@ -108,8 +108,8 @@ public class HowlScript : MonoBehaviour, SkillScript
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
+        SoundControllerScript.Instance.PlaySpellSound();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         float effectiveRadius = radius + wielderScript.enchantmentModifiers.radius;
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         List<Vector3> deltas = new List<Vector3>();
@@ -143,6 +143,7 @@ public class HowlScript : MonoBehaviour, SkillScript
         {
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, null);
     }
 
     void Awake()

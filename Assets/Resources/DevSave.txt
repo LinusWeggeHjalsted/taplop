@@ -38,17 +38,17 @@ health 1
 
 Gloves
 itemName Dev Gloves
-armor 2
+health 2
 damage 1
 
 Pants
 itemName Dev Pants
-armor 2
+health 2
 pickupRadius 1
 
 Boots
 itemName Dev Boots
-armor 2
+health 2
 speed 1
 
 Inventory

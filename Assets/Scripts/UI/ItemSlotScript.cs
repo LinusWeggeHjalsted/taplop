@@ -278,6 +278,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, ID
             actualOwnItemScript.inventoryPosition = otherPosition;
             actualOtherItemScript.inventoryPosition = ownPosition;
             // update skill bar in case skills changed
+            playerScript.DisplayWeapons();
             playerScript.UpdateEquippedSkills();
             skillBarScript.UpdateButtons();
             GameObject playerHealthBar = GameReferences.GetPlayerHealthBar();
@@ -362,6 +363,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, ID
                             actualItem.transform.parent = playerScript.feet;
                             break;
                     }
+                    playerScript.DisplayWeapons();
                     playerScript.UpdateEquippedSkills();
                     skillBarScript.UpdateButtons();
                 }
@@ -373,6 +375,7 @@ public class ItemSlotScript : MonoBehaviour, IDropHandler, IBeginDragHandler, ID
                 if (originalItemSlotScript.itemType != "")
                 {
                     actualItem.transform.parent = playerScript.inventory;
+                    playerScript.DisplayWeapons();
                     playerScript.UpdateEquippedSkills();
                     skillBarScript.UpdateButtons();
                 }

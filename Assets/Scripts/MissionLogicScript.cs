@@ -9,6 +9,8 @@ public class MissionLogicScript : MonoBehaviour
     public GameControllerScript gameControllerScript;
     public string missionName;
     public int missionLength;
+    public Color[] missionColors = new Color[6];
+    public Color[] interfaceColors = new Color[6];
     public string endHub;
     public List<string> levelNames
     {
@@ -52,6 +54,47 @@ public class MissionLogicScript : MonoBehaviour
         else
         {
             Destroy(this.gameObject);
+        }
+        // hardcoded colors for prototype
+        string[] missionHexColors = new string[6]{
+            "#f5f8d4",
+            "#d6da7b",
+            "#bec761",
+            "#aaae56",
+            "#969446",
+            "#767253"
+        };
+        string[] interfaceHexColors = new string[6]{
+            "#fef1e8",
+            "#f3a56c",
+            "#ee9159",
+            "#d57f4f",
+            "#af6e50",
+            "#845d4c"
+        };
+        for (int i = 0; i < 6; i++)
+        {
+            Color newColor;
+            if (ColorUtility.TryParseHtmlString(missionHexColors[i], out newColor))
+            {
+                missionColors[i] = newColor;
+            }
+            else
+            {
+                Debug.LogError("invalid hex color");
+            }
+        }
+        for (int i = 0; i < 6; i++)
+        {
+            Color newColor;
+            if (ColorUtility.TryParseHtmlString(interfaceHexColors[i], out newColor))
+            {
+                interfaceColors[i] = newColor;
+            }
+            else
+            {
+                Debug.LogError("invalid hex color");
+            }
         }
     }
 

@@ -7,7 +7,8 @@ public class PlayerHealthBarScript : MonoBehaviour
     public int stateCount;
     public GameObject player;
     public PlayerCharacterScript playerScript;
-    public Image image;
+    public GameObject healthBarStateSprite;
+    public Image stateImage;
     public Sprite[] healthBarStates;
     public TMP_Text healthText;
 
@@ -26,7 +27,7 @@ public class PlayerHealthBarScript : MonoBehaviour
         {
             if (incrementArray[i] <= healthRatio && healthRatio < incrementArray[i + 1])
             {
-                image.sprite = healthBarStates[i];
+                stateImage.sprite = healthBarStates[i];
             }
         }
         healthText.text = currentHealth.ToString();
@@ -35,15 +36,15 @@ public class PlayerHealthBarScript : MonoBehaviour
     void Awake()
     {
         stateCount = 13;
-        image = this.gameObject.GetComponent<Image>();
+        healthBarStateSprite = this.transform.Find("Health Bar State Sprite").gameObject;
+        stateImage = healthBarStateSprite.GetComponent<Image>();
         healthBarStates = new Sprite[stateCount];
-        healthBarStates = Resources.LoadAll<Sprite>("PlayerHealthBar");
+        healthBarStates = Resources.LoadAll<Sprite>("PlayerHealthBarStates");
         healthText = this.transform.Find("Health Text").gameObject.GetComponent<TMP_Text>();
     }
 
     void Start()
     {
-        // Use GameReferences helper for clean lookup
         player = GameReferences.GetPlayer();
         if (player != null)
         {

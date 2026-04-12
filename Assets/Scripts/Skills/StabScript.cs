@@ -100,9 +100,9 @@ public class StabScript : MonoBehaviour, SkillScript
         else
         {
             EntityScript playerScript = player.GetComponent<EntityScript>();
-            if (playerScript.CurrentHealth == playerScript.MaxHealth)
+            if ((float)playerScript.CurrentHealth > ((float)playerScript.MaxHealth / 2))
             {
-                return 1;
+                return 2;
             }
             else
             {
@@ -132,7 +132,6 @@ public class StabScript : MonoBehaviour, SkillScript
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -145,8 +144,9 @@ public class StabScript : MonoBehaviour, SkillScript
         }
         if (target != null)
         {
+            SoundControllerScript.Instance.PlayAttackSound();
             EntityScript targetScript = target.GetComponent<EntityScript>();
-            if (targetScript.CurrentHealth == targetScript.MaxHealth)
+            if ((float)targetScript.CurrentHealth > ((float)targetScript.MaxHealth / 2))
             {
                 float preciseDamage = 1.5f * (float)wielderScript.mainHandDamage;
                 wielderScript.Attack((int)preciseDamage, target);
@@ -161,6 +161,7 @@ public class StabScript : MonoBehaviour, SkillScript
             turnLogicScript.hasAttacked = true;
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
@@ -217,7 +218,7 @@ public class StabScript : MonoBehaviour, SkillScript
     {
         skillName = "Stab";
         skillType = "Main Hand Skill";
-        description = "Attack target, dealing 1.5x damage if target has full health";
+        description = "Attack target, dealing 1.5x damage if they have more than half health";
         range = 1f;
         radius = 0;
         distance = 0;

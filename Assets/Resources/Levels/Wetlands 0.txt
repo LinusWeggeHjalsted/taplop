@@ -4,41 +4,42 @@ creator Strider
 Layout
            .
 !..       ..
-.....    ...2   ..=
-... ..1     ......
- ..... . ... ...
- ...  .....    2
-  ....  .. .  .
- .. .......2..
-  ..2..  ...
+.....    ...2  F..=
+...A..1  ECD......G
+ .....B. ...D...
+ ...CD.....AEBD2
+  ....AC..D.DC.
+ ..D.......2..
+  ..2..BC...
     ....2.
 
 Enemy Info
 1
-name Invader Warrior
-sprite InvaderSwordNone
-maxHealth 10
-armor -4
+name Skeleton Warrior
+sprite Skeleton1
+usesWeapons 1
+maxHealth 20
+armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Sword
-mainHandName Invader Sword
+mainHandName Skeleton Sword
 mainHandDamage 5
-coatName Invader Coat
-coatArmor 2
-coatHealth 1
-glovesName Invader Gloves
-glovesArmor 2
+coatName Skeleton Coat
+coatHealth 2
+coatArmor 1
+glovesName Skeleton Gloves
+glovesHealth 2
 glovesDamage 1
-pantsName Invader Pants
-pantsArmor 2
+pantsName Skeleton Pants
+pantsHealth 2
 pantsPickupRadius 1
 
 2
 name Crab
 sprite Crab
-maxHealth 10
-armor -2
+maxHealth 20
+armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Sword
@@ -48,9 +49,38 @@ offHandWeapon Shield
 offHandName Crab Shield
 offHandDamage 5
 glovesName Crab Gloves
-glovesArmor 2
+glovesHealth 2
 glovesDamage 1
 utilitySkill Stone Form
+
+Decoration Info
+A
+sprite Stone6
+colorCode 5
+
+B
+sprite Stone4
+colorCode 5
+
+C
+sprite Stone2
+colorCode 5
+
+D
+sprite Stone1
+colorCode 5
+
+E
+sprite Tree1
+colorCode 4
+
+F
+sprite Ruin1
+colorCode 0
+
+G
+sprite Ruin9
+colorCode 0
 
 Item Info
 

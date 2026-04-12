@@ -123,7 +123,6 @@ public class SparkScript : MonoBehaviour, SkillScript
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -136,13 +135,17 @@ public class SparkScript : MonoBehaviour, SkillScript
         }
         if (target != null)
         {
+            SoundControllerScript.Instance.PlaySpellSound();
             wielderScript.Attack(wielderScript.mainHandDamage, target);
+            EntityScript targetScript = target.GetComponent<EntityScript>();
+            targetScript.Momentum -= 1;
         }
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
@@ -199,7 +202,7 @@ public class SparkScript : MonoBehaviour, SkillScript
     {
         skillName = "Spark";
         skillType = "Main Hand Skill";
-        description = "Attack target";
+        description = "Attack target and remove 1 momentum from them";
         range = 3f;
         radius = 0;
         distance = 0;

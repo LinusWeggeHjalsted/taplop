@@ -129,8 +129,8 @@ public class FlashStrikeScript : MonoBehaviour, SkillScript
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
+        SoundControllerScript.Instance.PlayAttackSound();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         wielderScript.MoveTo(targetPosition, true);
         // moving can end the level in which case we stop
         if (player == null)
@@ -184,6 +184,7 @@ public class FlashStrikeScript : MonoBehaviour, SkillScript
             turnLogicScript.hasAttacked = true;
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)

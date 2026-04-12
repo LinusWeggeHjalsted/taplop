@@ -1,14 +1,20 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using System.IO;
 
-public class ContinueGameButtonScript : MonoBehaviour
+public class ContinueGameButtonScript : MonoBehaviour, IPointerDownHandler
 {
     Button button;
 
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
+    }
+
     public void OnActivate()
     {
-        SoundControllerScript.Instance.PlayButtonClickSound();
+        SoundControllerScript.Instance.PlayButtonClickUpSound();
 #if !UNITY_WEBGL || UNITY_EDITOR
         // Only load from file in non-WebGL builds
         PlayerDataScript.Instance.LoadPlayerData("Autosave");

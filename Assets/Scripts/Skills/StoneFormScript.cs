@@ -111,8 +111,8 @@ public class StoneFormScript : MonoBehaviour, SkillScript, EnchantmentScript
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
+        SoundControllerScript.Instance.PlaySpellSound();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         // create or extend enchantment
         Transform wielderEnchantments = wielderScript.enchantments;
         GameObject stoneFormEnchantment;
@@ -136,6 +136,7 @@ public class StoneFormScript : MonoBehaviour, SkillScript, EnchantmentScript
         {
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, null);
     }
 
     // enchantment functions

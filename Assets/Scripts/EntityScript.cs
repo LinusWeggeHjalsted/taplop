@@ -30,6 +30,10 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public DropsScript dropsScript;
     public GameObject spriteObject;
     public SpriteRenderer spriteRenderer;
+    public GameObject mainHandWeaponSprite;
+    public SpriteRenderer mainHandWeaponSpriteRenderer;
+    public GameObject offHandWeaponSprite;
+    public SpriteRenderer offHandWeaponSpriteRenderer;
     private Sprite[] spriteSheet = new Sprite[2];
     public Sprite[] SpriteSheet
     {
@@ -174,7 +178,42 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     public GameObject displayedEnchantments;
     public SpriteRenderer enchantmentRenderer;
 
-    public string currentBuildTemplate = "00000000";
+    private int momentum;
+    public int Momentum
+    {
+        get
+        {
+            return momentum;
+        }
+        set
+        {
+            momentum = value;
+            if (momentum < 0)
+            {
+                momentum = 0;
+            }
+            if (this.gameObject == player)
+            {
+                GameObject momentumUI = LevelScript.Instance.momentumUI;
+                MomentumUIScript momentumScript = momentumUI.GetComponent<MomentumUIScript>();
+                momentumScript.UpdateMomentum();
+            }
+        }
+    }
+    public int convertedMomentum
+    {
+        get
+        {
+            if (Momentum <= 1)
+            {
+                return 0;
+            }
+            else
+            {
+                return (int)Mathf.Log(Momentum, 2);
+            }
+        }
+    }
     private int maxHealth;
     public int MaxHealth
     {
@@ -186,7 +225,25 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 CoatScript coatScript = coat.GetComponent<CoatScript>();
                 coatHealth = coatScript.healthBonus;
             }
-            return maxHealth + coatHealth;
+            int glovesHealth = 0;
+            if (gloves != null)
+            {
+                GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
+                glovesHealth = glovesScript.healthBonus;
+            }
+            int pantsHealth = 0;
+            if (pants != null)
+            {
+                PantsScript pantsScript = pants.GetComponent<PantsScript>();
+                pantsHealth = pantsScript.healthBonus;
+            }
+            int bootsHealth = 0;
+            if (boots != null)
+            {
+                BootsScript bootsScript = boots.GetComponent<BootsScript>();
+                bootsHealth = bootsScript.healthBonus;
+            }
+            return maxHealth + coatHealth + glovesHealth + pantsHealth + bootsHealth;
         }
         set
         {
@@ -233,25 +290,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 CoatScript coatScript = coat.GetComponent<CoatScript>();
                 coatArmor = coatScript.armorBonus;
             }
-            int glovesArmor = 0;
-            if (gloves != null)
-            {
-                GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
-                glovesArmor = glovesScript.armorBonus;
-            }
-            int pantsArmor = 0;
-            if (pants != null)
-            {
-                PantsScript pantsScript = pants.GetComponent<PantsScript>();
-                pantsArmor = pantsScript.armorBonus;
-            }
-            int bootsArmor = 0;
-            if (boots != null)
-            {
-                BootsScript bootsScript = boots.GetComponent<BootsScript>();
-                bootsArmor = bootsScript.armorBonus;
-            }
-            return armor + coatArmor + glovesArmor + pantsArmor + bootsArmor;
+            return armor + coatArmor;
         }
         set
         {
@@ -548,14 +587,49 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
+    public void DisplayWeapons()
+    {
+        string mainHandType = "none";
+        string offHandType = "none";
+        if (mainHandWeapon != null)
+        {
+            WeaponScript mainHandScript = mainHandWeapon.GetComponent<WeaponScript>();
+            mainHandType = mainHandScript.ItemSubType();
+        }
+        if (offHandWeapon != null)
+        {
+            WeaponScript offHandScript = offHandWeapon.GetComponent<WeaponScript>();
+            offHandType = offHandScript.ItemSubType();
+        }
+        if (mainHandType != "none")
+        {
+            if (this.gameObject != player)
+            {
+                mainHandType = "Enemy" + mainHandType;
+            }
+            Sprite[] mainHandSprites = Resources.LoadAll<Sprite>($"Weapons/{mainHandType}");
+            mainHandWeaponSpriteRenderer.sprite = mainHandSprites[0];
+        }
+        if (offHandType != "none")
+        {
+            if (this.gameObject != player)
+            {
+                offHandType = "Enemy" + offHandType;
+            }
+            Sprite[] offHandSprites = Resources.LoadAll<Sprite>($"Weapons/{offHandType}");
+            offHandWeaponSpriteRenderer.sprite = offHandSprites[0];
+        }
+    }
+
     public void DisplayDamage(int damage)
     {
+        float spriteTopLocal = spriteRenderer.bounds.max.y - spriteObject.transform.position.y;
         // create black outline/shadow text
         GameObject shadowTextObject = new GameObject("Damage Shadow Text Object");
         shadowTextObject.transform.parent = spriteObject.transform;
-        shadowTextObject.transform.localPosition = new Vector3(0.55f, 1.45f, 0);
+        shadowTextObject.transform.localPosition = new Vector3(0.55f, spriteTopLocal + 0.45f, 0);
         TextMeshPro shadowTextMesh = shadowTextObject.AddComponent<TextMeshPro>();
-        TMP_FontAsset pixelFont = Resources.Load<TMP_FontAsset>("fs-pixel-sans-unicode-regular");
+        TMP_FontAsset pixelFont = Resources.Load<TMP_FontAsset>("FreeZilla-Regular SDF");
         if (pixelFont != null)
         {
             shadowTextMesh.font = pixelFont;
@@ -570,7 +644,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         // create white text on top
         GameObject damageTextObject = new GameObject("Damage Text Object");
         damageTextObject.transform.parent = spriteObject.transform;
-        damageTextObject.transform.localPosition = new Vector3(0.5f, 1.5f, 0);
+        damageTextObject.transform.localPosition = new Vector3(0.5f, spriteTopLocal + 0.5f, 0);
         TextMeshPro damageTextMesh = damageTextObject.AddComponent<TextMeshPro>();
         if (pixelFont != null)
         {
@@ -593,9 +667,10 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             if (stunEffect == null)
             {
+                float spriteTopLocal = spriteRenderer.bounds.max.y - spriteObject.transform.position.y;
                 stunEffect = new GameObject("Stun Sprite Object");
                 stunEffect.transform.parent = spriteObject.transform;
-                stunEffect.transform.localPosition = new Vector3(0, 1f, 0);
+                stunEffect.transform.localPosition = new Vector3(0, spriteTopLocal, 0);
                 SpriteRenderer stunRenderer = stunEffect.AddComponent<SpriteRenderer>();
                 stunRenderer.sortingLayerName = "Effects";
                 stunRenderer.sortingOrder = 1;
@@ -647,13 +722,14 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             Destroy(displayedEnchantments);
             return;
         }
+        float spriteTopLocal = spriteRenderer.bounds.max.y - spriteObject.transform.position.y;
         if (displayedEnchantments == null)
         {
             displayedEnchantments = new GameObject("Displayed Enchantments Sprite Object");
             displayedEnchantments.transform.parent = spriteObject.transform;
-            displayedEnchantments.transform.localPosition = new Vector3(1f, 0.5f, 0);
             enchantmentRenderer = displayedEnchantments.AddComponent<SpriteRenderer>();
         }
+        displayedEnchantments.transform.localPosition = new Vector3(1f, spriteTopLocal - 0.5f, 0);
         if (displayedEnchantments != null)
         {
             enchantmentRenderer.sortingLayerName = "Effects";
@@ -668,20 +744,28 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
 
     public void DisplayUsedSkill(Sprite skillSprite)
     {
+        if (spriteObject == null)
+        {
+            return;
+        }
+        float spriteTopLocal = spriteRenderer.bounds.max.y - spriteObject.transform.position.y;
         GameObject usedSkillObject = new GameObject("Used Skill Sprite Object");
         usedSkillObject.transform.parent = spriteObject.transform;
-        usedSkillObject.transform.localPosition = new Vector3(0, 1.5f, 0);
+        usedSkillObject.transform.localPosition = new Vector3(0, spriteTopLocal + 0.5f, 0);
         SpriteRenderer usedSkillRenderer = usedSkillObject.AddComponent<SpriteRenderer>();
-        usedSkillRenderer.sortingOrder = 3;
+        usedSkillRenderer.sortingLayerName = "Effects";
+        usedSkillRenderer.sortingOrder = 1;
         usedSkillRenderer.sprite = skillSprite;
+        usedSkillRenderer.color = MissionLogicScript.Instance.interfaceColors[1];
         Destroy(usedSkillObject, 0.5f);
     }
 
     public void DisplayAggro()
     {
+        float spriteTopLocal = spriteRenderer.bounds.max.y - spriteObject.transform.position.y;
         GameObject aggroObject = new GameObject("Aggro Sprite Object");
         aggroObject.transform.parent = spriteObject.transform;
-        aggroObject.transform.localPosition = new Vector3(0, 1.125f, 0);
+        aggroObject.transform.localPosition = new Vector3(0, spriteTopLocal + 0.125f, 0);
         SpriteRenderer aggroRenderer = aggroObject.AddComponent<SpriteRenderer>();
         aggroRenderer.sortingLayerName = "Effects";
         aggroRenderer.sortingOrder = 2;
@@ -693,7 +777,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     {
         GameObject hitObject = new GameObject("Hit Sprite Object");
         hitObject.transform.parent = spriteObject.transform;
-        hitObject.transform.localPosition = new Vector3(0, 0.375f, 0);
+        hitObject.transform.localPosition = new Vector3(0, 0.625f, 0);
         SpriteRenderer hitRenderer = hitObject.AddComponent<SpriteRenderer>();
         hitRenderer.sortingLayerName = "Effects";
         hitRenderer.sortingOrder = 2;
@@ -706,7 +790,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         float xDif = targetPosition.x - this.transform.position.x;
         if (xDif < 0)
         {
-            spriteRenderer.sprite = SpriteSheet[1];
+            spriteRenderer.sprite = SpriteSheet[0];
         }
         else if (xDif > 0)
         {
@@ -723,11 +807,12 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             healthBar = new GameObject("Entity Health Bar");
             healthBar.transform.parent = spriteObject.transform;
-            healthBar.transform.localPosition = new Vector3(0, 1.5f, 0);
             healthBarRenderer = healthBar.AddComponent<SpriteRenderer>();
             healthBarRenderer.sortingLayerName = "Effects";
             healthBarRenderer.sortingOrder = 2;
         }
+        float spriteTopLocal = spriteRenderer.bounds.max.y - spriteObject.transform.position.y;
+        healthBar.transform.localPosition = new Vector3(0, spriteTopLocal, 0);
         Sprite healthBarSprite = null;
         float healthPercentage = (float)CurrentHealth / (float)MaxHealth;
         switch (healthPercentage)
@@ -782,8 +867,11 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         targetTileScript.isOccupied = true;
         currentTileScript.isOccupied = false;
         previousPosition = currentPosition;
-        SoundControllerScript.Instance.PlayMoveSound(targetPosition);
         this.transform.position = targetPosition; // to-do - should this happen earlier
+        spriteRenderer.sortingOrder = 10 * (int)-targetPosition.y;
+        mainHandWeaponSpriteRenderer.sortingOrder = 10 * (int)-targetPosition.y + 1;
+        offHandWeaponSpriteRenderer.sortingOrder = 10 * (int)-targetPosition.y + 1;
+        SoundControllerScript.Instance.PlayMoveSound(targetPosition);
         if (!isTeleport)
         {
             GameObject afterimagePrefab = Resources.Load<GameObject>("Prefabs/Afterimage");
@@ -796,6 +884,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 GameObject afterimage = Instantiate(afterimagePrefab, afterimages.transform);
                 SpriteRenderer afterimageRenderer = afterimage.GetComponent<SpriteRenderer>();
                 afterimage.transform.position = shortestPath[i];
+                afterimageRenderer.sortingOrder = 10 * (int)-shortestPath[i].y;
                 float xDif = (shortestPath[i + 1] - shortestPath[i]).x;
                 if (xDif < 0)
                 {
@@ -840,6 +929,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             Vector3 pickupPosition = this.transform.position + delta;
             if (dropsScript.groundItemsLookup.ContainsKey(pickupPosition))
             {
+                SoundControllerScript.Instance.PlayPickupSound(); // to-do - only play once
                 GameObject groundItems = dropsScript.groundItemsLookup[pickupPosition];
                 while (groundItems.transform.childCount > 0 && inventory.childCount <= inventorySize)
                 {
@@ -898,6 +988,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
                 }
             }
         }
+        Momentum += 1;
         // update aggro and finish level if player is on level end
         if (this.gameObject == player)
         {
@@ -910,6 +1001,15 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
+    public void UsedSkill(SkillScript skillScript, Vector3? targetPosition)
+    {
+        Sprite skillSprite = skillScript.GetSprite();
+        DisplayUsedSkill(skillSprite);
+        // to-do - OnSkillUsedEnchantmentEffects();
+        Momentum += 1;
+        // to-do - save information to combat log
+    }
+
     public int Attack(int damage, GameObject defender)
     {
         OnAttackEnchantmentEffects(defender);
@@ -918,7 +1018,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             StartCoroutine(AttackDisplacement(defender));
         }
-        return OutgoingDamage(damage, defender);
+        return OutgoingDamage(damage + convertedMomentum, defender);
     }
 
     IEnumerator AttackDisplacement(GameObject defender)
@@ -1164,6 +1264,8 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             GameObject groundItemsPrefab = Resources.Load<GameObject>("Prefabs/Ground Items");
             groundItems = Instantiate(groundItemsPrefab, drops.transform);
             groundItems.transform.position = this.transform.position;
+            SpriteRenderer groundItemsRenderer = groundItems.GetComponent<SpriteRenderer>();
+            groundItemsRenderer.sortingOrder = 10 * (int)-groundItems.transform.position.y;
             dropsScript.groundItemsLookup.Add(this.transform.position, groundItems);
         }
         // drop inventory
@@ -1237,6 +1339,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
         {
             yield return null;
         }
+        DisplayWeapons();
         finishedBuilding = true;
     }
 
@@ -1244,10 +1347,14 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     {
         spriteObject = this.transform.Find("Sprite Object").gameObject;
         spriteRenderer = spriteObject.GetComponent<SpriteRenderer>();
+        mainHandWeaponSprite = spriteObject.transform.Find("Main Hand Weapon Sprite").gameObject;
+        mainHandWeaponSpriteRenderer = mainHandWeaponSprite.GetComponent<SpriteRenderer>();
+        offHandWeaponSprite = spriteObject.transform.Find("Off Hand Weapon Sprite").gameObject;
+        offHandWeaponSpriteRenderer = offHandWeaponSprite.GetComponent<SpriteRenderer>();
         if (this.gameObject.name == "Player")
         {
             SpriteSheet = Resources.LoadAll<Sprite>("Player");
-            maxHealth = 10;
+            maxHealth = 20;
         }
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();

@@ -3,7 +3,7 @@ using UnityEngine.UI;
 using UnityEngine.InputSystem;
 using UnityEngine.EventSystems;
 
-public class OptionsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+public class OptionsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler
 {
     public RectTransform buttonRectTransform;
     public Button button;
@@ -49,6 +49,11 @@ public class OptionsButtonScript : MonoBehaviour, IPointerEnterHandler, IPointer
         {
             tooltip.SetActive(false);
         }
+    }
+
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
     }
 
     public void OnActivate()

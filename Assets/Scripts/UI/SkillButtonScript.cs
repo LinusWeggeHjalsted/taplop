@@ -5,13 +5,15 @@ using TMPro;
 using System;
 using System.Collections;
 
-public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IDropHandler
+public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IDropHandler
 {
     public bool finishedBuilding = false;
     public int skillNumber;
     public RectTransform buttonRectTransform;
     public Button button;
-    public Image image;
+    public Image buttonImage;
+    public GameObject skillIcon;
+    public Image skillImage;
     public Transform canvas;
     public GameObject skillsPanel;
     public SkillBarScript skillBarScript;
@@ -38,6 +40,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         }
     }
     public Sprite noSkillSprite;
+    public Sprite skillButtonSprite;
     public GameObject tooltipPrefab;
     public GameObject tooltip;
     public GameObject cooldownPrefab;
@@ -58,7 +61,16 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             string skillName = skillScript.GetSkillName();
             string tooltipHeader = $"{skillName} [{skillNumber + 1}]";
             string skillDescription = skillScript.GetDescription() + "\n";
-            string skillType = skillScript.GetSkillType() + "\n";
+            string skillType = skillScript.GetSkillType();
+            string skillTypeString = "";
+            if (skillType == "Main Hand Skill" || skillType == "Off Hand Skill" || skillType == "Spell")
+            {
+                skillTypeString = skillType + " (ends turn)\n";
+            }
+            else if (skillType == "Cantrip" || skillType == "Enchantment" || skillType == "Curse")
+            {
+                skillTypeString = skillType + " (doesn't end turn)\n";
+            }
             string skillRange = "";
             if (skillScript.GetRange() > 0)
             {
@@ -136,7 +148,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             {
                 skillCooldown = "Cooldown " + skillScript.GetCooldown().ToString() + "\n";
             }
-            string tooltipText = skillDescription + skillType + skillRange + skillRadius + skillDistance + skillDuration + skillStunDuration + skillCooldown;
+            string tooltipText = skillDescription + skillTypeString + skillRange + skillRadius + skillDistance + skillDuration + skillStunDuration + skillCooldown;
             Vector3[] buttonCorners = new Vector3[4];
             buttonRectTransform.GetWorldCorners(buttonCorners);
             Vector3 buttonTopRightPosition = buttonCorners[2];
@@ -174,6 +186,11 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             tooltip.SetActive(false);
         }
         rangeOutlineRenderer.enabled = false;
+    }
+
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
     }
 
     public void DisplayCooldown()
@@ -254,12 +271,15 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         skill = playerScript.equippedSkills[skillNumber];
         if (skill == null)
         {
-            image.sprite = noSkillSprite;
+            buttonImage.sprite = noSkillSprite;
+            skillImage.enabled = false;
         }
         else
         {
+            skillImage.enabled = true;
+            buttonImage.sprite = skillButtonSprite;
             skillScript = skill.GetComponent<SkillScript>();
-            image.sprite = skillScript.GetSprite();
+            skillImage.sprite = skillScript.GetSprite();
         }
     }
     
@@ -343,6 +363,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         {
             return;
         }
+        SoundControllerScript.Instance.PlaySwapSkillSound();
         SkillScript droppedSkillScript = droppedSkill.GetComponent<SkillScript>();
         SkillScript skillScript = null;
         if (skill != null)
@@ -368,6 +389,7 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
             Debug.LogError("UnlockedSkillScript has no skill name");
             return;
         }
+        SoundControllerScript.Instance.PlaySwapSkillSound();
         // check if this skill already exists on the bar
         bool skillExists = false;
         GameObject foundSkill = null;
@@ -464,10 +486,13 @@ public class SkillButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerEx
         currentParent = this.transform.parent;
         buttonRectTransform = this.GetComponent<RectTransform>();
         button = this.GetComponent<Button>();
-        image = this.GetComponent<Image>();
+        buttonImage = this.GetComponent<Image>();
+        skillIcon = this.transform.Find("Skill Icon").gameObject;
+        skillImage = skillIcon.GetComponent<Image>();
         skillsPanel = this.transform.parent.gameObject;
         skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
         noSkillSprite = Resources.Load<Sprite>("Skills/NoSkill");
+        skillButtonSprite = Resources.Load<Sprite>("Skills/SkillButton");
         tooltipPrefab = Resources.Load<GameObject>("Prefabs/UI/Tooltip");
         cooldownPrefab = Resources.Load<GameObject>("Prefabs/UI/Cooldown Overlay Panel");
         skillButtonPrefab = Resources.Load<GameObject>("Prefabs/UI/Skill Button");

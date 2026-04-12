@@ -31,7 +31,8 @@ public class SkillsMenuScript : MonoBehaviour
                 // load the sprite directly from Resources (remove spaces from skill name for sprite path)
                 string spriteNameNoSpaces = skillName.Replace(" ", "");
                 Sprite skillSprite = Resources.Load<Sprite>("Skills/" + spriteNameNoSpaces);
-                Image skillImage = unlockedSkill.GetComponent<Image>();
+                GameObject skillIcon = unlockedSkill.transform.Find("Skill Icon").gameObject;
+                Image skillImage = skillIcon.GetComponent<Image>();
                 if (skillImage != null && skillSprite != null)
                 {
                     skillImage.sprite = skillSprite;

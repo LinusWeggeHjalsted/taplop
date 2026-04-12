@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 
-public class MoveStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+public class MoveStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler
 {
 
     public RectTransform buttonRectTransform;
@@ -37,6 +37,11 @@ public class MoveStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPointe
         traversableTiles = GameReferences.GetTraversableTiles();
         traversableTilesScript = traversableTiles.GetComponent<TraversableTilesScript>();
         canvas = GameReferences.GetCanvasTransform();
+    }
+
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
     }
 
     void Update()
@@ -98,7 +103,7 @@ public class MoveStepButtonScript : MonoBehaviour, IPointerEnterHandler, IPointe
         }
 
         // Undo is allowed - return to move step
-        SoundControllerScript.Instance.PlayButtonClickSound();
+        SoundControllerScript.Instance.PlayButtonClickUpSound();
         CameraControllerScript.Instance.MoveToPlayer();
 
         // Clear any highlights

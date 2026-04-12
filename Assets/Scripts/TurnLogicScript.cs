@@ -239,7 +239,6 @@ public class TurnLogicScript : MonoBehaviour
             }
             enemyScript.EndOfTurnEnchantmentEffects();
         }
-        yield return new WaitForSeconds(0.25f);
         currentGameState = GameState.PlayerTurnMove;
         turnStarted = false;
     }

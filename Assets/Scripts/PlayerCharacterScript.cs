@@ -26,6 +26,7 @@ public interface PlayerCharacterScript
     int MaxHealth { get; set; }
     int CurrentHealth { get; set; }
 
+    void DisplayWeapons();
     void UpdateEquippedSkills();
     void MoveTo(Vector3 targetPosition, bool isTeleport = false);
 

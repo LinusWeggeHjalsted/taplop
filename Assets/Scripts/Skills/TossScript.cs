@@ -123,7 +123,6 @@ public class TossScript : MonoBehaviour, SkillScript
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -136,6 +135,7 @@ public class TossScript : MonoBehaviour, SkillScript
         }
         if (target != null)
         {
+            SoundControllerScript.Instance.PlayAttackSound();
             wielderScript.Attack(wielderScript.mainHandDamage, target);
         }
         if (wielder == player)
@@ -143,6 +143,8 @@ public class TossScript : MonoBehaviour, SkillScript
             turnLogicScript.hasAttacked = true;
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.Momentum += 1;
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
@@ -199,7 +201,7 @@ public class TossScript : MonoBehaviour, SkillScript
     {
         skillName = "Toss";
         skillType = "Main Hand Skill";
-        description = "Attack target";
+        description = "Attack target and gain 1 momentum";
         range = 3f;
         radius = 0;
         distance = 0;

@@ -99,7 +99,54 @@ public class BashScript : MonoBehaviour, SkillScript
         }
         else
         {
-            return 3;
+            // Check if knockback would cause collision (same logic as Knockback in EntityScript)
+            float effectiveDistance = distance + enemyScript.enchantmentModifiers.distance;
+            Vector3 positionDelta = playerPosition - fromPosition;
+            // Normalize to single tile direction
+            if (positionDelta.x != 0)
+            {
+                positionDelta.x = positionDelta.x / Mathf.Abs(positionDelta.x);
+            }
+            if (positionDelta.y != 0)
+            {
+                positionDelta.y = positionDelta.y / Mathf.Abs(positionDelta.y);
+            }
+
+            Dictionary<Vector3, GameObject> tileLookup = traversableTilesScript.tileLookup;
+            bool hitObstacle = false;
+
+            // Check each position from nearest to farthest
+            for (int i = 1; i <= effectiveDistance; i++)
+            {
+                Vector3 checkPosition = playerPosition + i * positionDelta;
+                if (tileLookup.ContainsKey(checkPosition))
+                {
+                    GameObject tile = tileLookup[checkPosition];
+                    TileScript tileScript = tile.GetComponent<TileScript>();
+                    bool isOccupied = tileScript.isOccupied;
+                    // Also check if an enemy is at this position
+                    if (enemiesScript != null)
+                    {
+                        Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
+                        if (enemyLookup.ContainsKey(checkPosition))
+                        {
+                            isOccupied = true;
+                        }
+                    }
+                    if (isOccupied)
+                    {
+                        hitObstacle = true;
+                        break;
+                    }
+                }
+                else
+                {
+                    // Hit edge of map
+                    hitObstacle = true;
+                    break;
+                }
+            }
+            return hitObstacle ? 2 : 3;
         }
     }
 
@@ -123,7 +170,6 @@ public class BashScript : MonoBehaviour, SkillScript
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -136,13 +182,19 @@ public class BashScript : MonoBehaviour, SkillScript
         }
         if (target != null)
         {
+            SoundControllerScript.Instance.PlayAttackSound();
             wielderScript.Attack(wielderScript.mainHandDamage, target);
+            float preciseCollisionDamage = (float)wielderScript.mainHandDamage / 2;
+            float effectiveDistance = distance + wielderScript.enchantmentModifiers.distance;
+            EntityScript targetScript = target.GetComponent<EntityScript>();
+            targetScript.Knockback(wielder.transform.position, wielder, (int)preciseCollisionDamage, effectiveDistance);
         }
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
@@ -199,10 +251,10 @@ public class BashScript : MonoBehaviour, SkillScript
     {
         skillName = "Bash";
         skillType = "Main Hand Skill";
-        description = "Attack target";
+        description = "Attack and knockback target, dealing +0.5x damage on collision";
         range = 1f;
         radius = 0;
-        distance = 0;
+        distance = 1f;
         skillDuration = 0;
         stunDuration = 0;
         cooldown = 0;

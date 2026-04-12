@@ -424,6 +424,7 @@ public class InventoryItemScript : MonoBehaviour, IBeginDragHandler, IDragHandle
         // refresh skillbar in case weapons changed
         GameObject skillsPanel = GameReferences.GetSkillsPanel();
         SkillBarScript skillBarScript = skillsPanel.GetComponent<SkillBarScript>();
+        playerScript.DisplayWeapons();
         playerScript.UpdateEquippedSkills();
         skillBarScript.UpdateButtons();
         // refresh health bar in case max health changed

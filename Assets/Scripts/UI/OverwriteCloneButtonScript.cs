@@ -2,13 +2,18 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 
-public class OverwriteCloneButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+public class OverwriteCloneButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler
 {
     public RectTransform buttonRectTransform;
     public Button button;
     public Transform canvas;
     public GameObject tooltipPrefab;
     public GameObject tooltip;
+
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
+    }
 
     public void OnPointerEnter(PointerEventData eventData)
     {
@@ -52,7 +57,7 @@ public class OverwriteCloneButtonScript : MonoBehaviour, IPointerEnterHandler, I
 
     public void OnActivate()
     {
-        SoundControllerScript.Instance.PlayButtonClickSound();
+        SoundControllerScript.Instance.PlayButtonClickUpSound();
         PlayerDataScript.CloneData newCloneData = new PlayerDataScript.CloneData();
         newCloneData.totalSalvage = MissionLogicScript.Instance.totalSalvage;
         newCloneData.turnsToComplete = MissionLogicScript.Instance.totalTurns;

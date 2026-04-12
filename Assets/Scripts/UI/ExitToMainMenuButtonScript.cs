@@ -1,13 +1,19 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
-public class ExitToMainMenuButtonScript : MonoBehaviour
+public class ExitToMainMenuButtonScript : MonoBehaviour, IPointerDownHandler
 {
     public Button button;
 
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
+    }
+
     public void OnActivate()
     {
-        SoundControllerScript.Instance.PlayButtonClickSound();
+        SoundControllerScript.Instance.PlayButtonClickUpSound();
         GameObject player = GameReferences.GetPlayer();
         PlayerDataScript.Instance.BuildDataFromPlayer(player);
 #if !UNITY_WEBGL || UNITY_EDITOR

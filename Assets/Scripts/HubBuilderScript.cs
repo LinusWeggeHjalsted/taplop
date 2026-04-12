@@ -10,7 +10,14 @@ public class HubBuilderScript : MonoBehaviour
     {
         public string[] hubMetadata;
         public char[][] hubLayout;
+        public List<string[]> decorationInfo;
         public List<string[]> exitInfo;
+    }
+
+    public class PreDecoration
+    {
+        public string decorationSprite;
+        public int colorCode;
     }
 
     public class PreExit
@@ -24,6 +31,8 @@ public class HubBuilderScript : MonoBehaviour
     {
         public List<Vector3> tilePositions;
         public Vector3 playerPosition;
+        public Dictionary<Vector3, char> decorationPositions;
+        public Dictionary<char, PreDecoration> preDecorations;
         public Dictionary<Vector3, char> exitPositions;
         public Dictionary<char, PreExit> preExits;
     }
@@ -32,8 +41,10 @@ public class HubBuilderScript : MonoBehaviour
     public string hubName;
     public GameObject player;
     public GameObject hubTiles;
+    public GameObject decorations;
     public GameObject hubExits;
     public GameObject tilePrefab;
+    public GameObject decorationPrefab;
     public GameObject exitPrefab;
 
     public PreParse LoadHubFile(string hubPath)
@@ -50,6 +61,7 @@ public class HubBuilderScript : MonoBehaviour
             string[] sectionHeaders = new string[] {
                 "Metadata",
                 "Layout",
+                "Decoration Info",
                 "Exit Info"
             };
             int sectionCount = sectionHeaders.Length;
@@ -94,10 +106,31 @@ public class HubBuilderScript : MonoBehaviour
                 layout[i] = layoutBlock[i].ToCharArray();
             }
 
-            // exit info
-            string[] exitInfoBlock = sectionBlocks[2];
-            List<string[]> exitInfo = new List<string[]>();
+            // decoration info
+            string[] decorationInfoBlock = sectionBlocks[2];
+            List<string[]> decorationInfo = new List<string[]>();
             List<string> currentSubArray = new List<string>();
+            foreach (string line in decorationInfoBlock)
+            {
+                if (line == "")
+                {
+                    decorationInfo.Add(currentSubArray.ToArray());
+                    currentSubArray.Clear();
+                }
+                else
+                {
+                    currentSubArray.Add(line);
+                }
+            }
+            if (currentSubArray.Count > 0)
+            {
+                decorationInfo.Add(currentSubArray.ToArray());
+            }
+
+            // exit info
+            string[] exitInfoBlock = sectionBlocks[3];
+            List<string[]> exitInfo = new List<string[]>();
+            currentSubArray = new List<string>();
             foreach (string line in exitInfoBlock)
             {
                 if (line == "")
@@ -114,9 +147,10 @@ public class HubBuilderScript : MonoBehaviour
             {
                 exitInfo.Add(currentSubArray.ToArray());
             }
-            
+
             preParse.hubMetadata = metadataBlock;
             preParse.hubLayout = layout;
+            preParse.decorationInfo = decorationInfo;
             preParse.exitInfo = exitInfo;
         }
         return preParse;
@@ -126,8 +160,44 @@ public class HubBuilderScript : MonoBehaviour
     {
         ParsedHub parsedHub = new ParsedHub();
         parsedHub.tilePositions = new List<Vector3>();
+        parsedHub.decorationPositions = new Dictionary<Vector3, char>();
+        parsedHub.preDecorations = new Dictionary<char, PreDecoration>();
         parsedHub.exitPositions = new Dictionary<Vector3, char>();
         parsedHub.preExits = new Dictionary<char, PreExit>();
+        // parse individual decoration information
+        foreach (string[] decorationStrings in preParse.decorationInfo)
+        {
+            PreDecoration preDecoration = new PreDecoration();
+            if (decorationStrings[0].Length > 1)
+            {
+                Debug.LogError("bad decoration info, first line should be a single character");
+                continue;
+            }
+            char decorationCode = decorationStrings[0][0];
+            for (int i = 1; i < decorationStrings.Length; i++)
+            {
+                string currentLine = decorationStrings[i];
+                if (currentLine.StartsWith("sprite "))
+                {
+                    string decorationSprite = currentLine.Substring("sprite ".Length);
+                    preDecoration.decorationSprite = decorationSprite;
+                }
+                else if (currentLine.StartsWith("colorCode "))
+                {
+                    string colorCode = currentLine.Substring("colorCode ".Length);
+                    int colorCodeNumber;
+                    if (Int32.TryParse(colorCode, out colorCodeNumber))
+                    {
+                        preDecoration.colorCode = colorCodeNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("colorCode is not a number");
+                    }
+                }
+            }
+            parsedHub.preDecorations.Add(decorationCode, preDecoration);
+        }
         // parse individual exit information
         foreach (string[] exitStrings in preParse.exitInfo)
         {
@@ -189,6 +259,11 @@ public class HubBuilderScript : MonoBehaviour
                     }
                     else
                     {
+                        if (parsedHub.preDecorations.ContainsKey(tileCode))
+                        {
+                            parsedHub.decorationPositions.Add(position, tileCode);
+                            parsedHub.tilePositions.Remove(position);
+                        }
                         if (parsedHub.preExits.ContainsKey(tileCode))
                         {
                             parsedHub.exitPositions.Add(position, tileCode);
@@ -203,12 +278,55 @@ public class HubBuilderScript : MonoBehaviour
     public void BuildHub(ParsedHub parsedHub)
     {
         player.transform.position = parsedHub.playerPosition;
+        HubPlayerScript playerScript = player.GetComponent<HubPlayerScript>();
+        playerScript.spriteRenderer.sortingOrder = 10 * (int)-parsedHub.playerPosition.y;
+        playerScript.mainHandWeaponSpriteRenderer.sortingOrder = 10 * (int)-parsedHub.playerPosition.y + 1;
+        playerScript.offHandWeaponSpriteRenderer.sortingOrder = 10 * (int)-parsedHub.playerPosition.y + 1;
         CameraControllerScript.Instance.MoveToPlayer();
         // build tiles
         for (int i = 0; i < parsedHub.tilePositions.Count; i++)
         {
             GameObject newTile = Instantiate(tilePrefab, hubTiles.transform);
             newTile.transform.position = parsedHub.tilePositions[i];
+            SpriteRenderer tileRenderer = newTile.GetComponent<SpriteRenderer>();
+            switch ((newTile.transform.position.x + newTile.transform.position.y) % 2)
+            {
+                case 0:
+                    tileRenderer.color = HubScript.Instance.hubColors[1];
+                    break;
+                case 1:
+                    tileRenderer.color = HubScript.Instance.hubColors[3];
+                    break;
+            }
+        }
+        // build decorations
+        foreach (Vector3 decorationPosition in parsedHub.decorationPositions.Keys)
+        {
+            char decorationCode = parsedHub.decorationPositions[decorationPosition];
+            if (!parsedHub.preDecorations.ContainsKey(decorationCode))
+            {
+                Debug.LogError($"no decoration info for decoration code {decorationCode}");
+                continue;
+            }
+            PreDecoration preDecoration = parsedHub.preDecorations[decorationCode];
+            GameObject newDecoration = Instantiate(decorationPrefab, decorations.transform);
+            newDecoration.transform.position = decorationPosition;
+            SpriteRenderer decorationRenderer = newDecoration.GetComponent<SpriteRenderer>();
+            decorationRenderer.sortingOrder = 10 * (int)-decorationPosition.y;
+            decorationRenderer.color = HubScript.Instance.hubColors[preDecoration.colorCode];
+            DecorationScript newDecorationScript = newDecoration.GetComponent<DecorationScript>();
+            if (preDecoration.decorationSprite != null)
+            {
+                Sprite[] decorationSpriteSheet = Resources.LoadAll<Sprite>("Decorations/" + preDecoration.decorationSprite);
+                if (decorationSpriteSheet == null)
+                {
+                    Debug.LogError($"no decoration sprite found called {preDecoration.decorationSprite}");
+                }
+                else
+                {
+                    newDecorationScript.SpriteSheet = decorationSpriteSheet;
+                }
+            }
         }
         // build exits
         foreach (Vector3 exitPosition in parsedHub.exitPositions.Keys)
@@ -222,6 +340,8 @@ public class HubBuilderScript : MonoBehaviour
             PreExit preExit = parsedHub.preExits[exitCode];
             GameObject newExit = Instantiate(exitPrefab, hubExits.transform);
             newExit.transform.position = exitPosition;
+            SpriteRenderer exitRenderer = newExit.GetComponent<SpriteRenderer>();
+            exitRenderer.sortingOrder = 10 * (int)-exitPosition.y;
             ExitScript exitScript = newExit.GetComponent<ExitScript>();
             exitScript.missionName = preExit.missionName;
             exitScript.missionLength = preExit.missionLength;
@@ -245,6 +365,7 @@ public class HubBuilderScript : MonoBehaviour
     void Awake()
     {
         tilePrefab = Resources.Load<GameObject>("Prefabs/Tile");
+        decorationPrefab = Resources.Load<GameObject>("Prefabs/Decoration");
         exitPrefab = Resources.Load<GameObject>("Prefabs/Exit");
     }
 
@@ -254,7 +375,9 @@ public class HubBuilderScript : MonoBehaviour
         {
             player = HubScript.Instance.player;
             hubTiles = HubScript.Instance.hubTiles;
+            decorations = HubScript.Instance.decorations;
             hubExits = HubScript.Instance.hubExits;
+            HubScript.Instance.mainCamera.GetComponent<Camera>().backgroundColor = HubScript.Instance.hubColors[2];
         }
         StartCoroutine(WaitForGameController());
     }

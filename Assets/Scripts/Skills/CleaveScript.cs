@@ -125,7 +125,6 @@ public class CleaveScript : MonoBehaviour, SkillScript
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -138,6 +137,7 @@ public class CleaveScript : MonoBehaviour, SkillScript
         }
         if (target != null)
         {
+            SoundControllerScript.Instance.PlayAttackSound();
             EntityScript targetScript = target.GetComponent<EntityScript>();
             int incomingModifier = targetScript.enchantmentModifiers.incomingStunDuration;
             int outgoingModifier = wielderScript.enchantmentModifiers.outgoingStunDuration;
@@ -151,6 +151,7 @@ public class CleaveScript : MonoBehaviour, SkillScript
             turnLogicScript.hasUsedAnySkill = true;
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)

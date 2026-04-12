@@ -131,7 +131,6 @@ public class VampiricStrikeScript : MonoBehaviour, SkillScript
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -144,6 +143,7 @@ public class VampiricStrikeScript : MonoBehaviour, SkillScript
         }
         if (target != null)
         {
+            SoundControllerScript.Instance.PlayAttackSound();
             int dealtDamage = wielderScript.Attack(wielderScript.mainHandDamage, target);
             wielderScript.CurrentHealth += dealtDamage;
         }
@@ -153,6 +153,7 @@ public class VampiricStrikeScript : MonoBehaviour, SkillScript
             turnLogicScript.hasUsedAnySkill = true;
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)

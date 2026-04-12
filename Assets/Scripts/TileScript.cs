@@ -61,9 +61,20 @@ public class TileScript : MonoBehaviour
                 endOverlay.transform.parent = this.transform;
                 endOverlay.transform.localPosition = new Vector3(0, 0, 0);
                 SpriteRenderer endRenderer = endOverlay.AddComponent<SpriteRenderer>();
-                endRenderer.sortingOrder = 1;
-                Sprite endSprite = Resources.Load<Sprite>("Flag");
+                endRenderer.color = MissionLogicScript.Instance.interfaceColors[5];
+                endRenderer.sortingLayerName = "World Objects";
+                endRenderer.sortingOrder = 10 * (int)-this.transform.position.y;
+                Sprite endSprite = Resources.Load<Sprite>("FlagPole");
                 endRenderer.sprite = endSprite;
+                GameObject flagSpriteObject = new GameObject("Flag Sprite");
+                flagSpriteObject.transform.parent = endOverlay.transform;
+                flagSpriteObject.transform.localPosition = new Vector3(0, 0, 0);
+                SpriteRenderer flagRenderer = flagSpriteObject.AddComponent<SpriteRenderer>();
+                flagRenderer.color = MissionLogicScript.Instance.interfaceColors[0];
+                flagRenderer.sortingLayerName = "World Objects";
+                flagRenderer.sortingOrder = 10 * (int)-this.transform.position.y;
+                Sprite[] flagSprites = Resources.LoadAll<Sprite>("Flag");
+                flagRenderer.sprite = flagSprites[0];
             }
             isEnd = value;
         }

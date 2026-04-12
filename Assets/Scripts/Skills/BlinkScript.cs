@@ -129,14 +129,15 @@ public class BlinkScript : MonoBehaviour, SkillScript
     public void UseSkill(Vector3 targetPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
+        SoundControllerScript.Instance.PlaySpellSound();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         wielderScript.SetSkillCooldown(skillName, cooldown);
         wielderScript.MoveTo(targetPosition, true);
         if (wielder == player)
         {
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)

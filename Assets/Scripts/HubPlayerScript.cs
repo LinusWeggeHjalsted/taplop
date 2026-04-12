@@ -24,6 +24,10 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
     public HubExitsScript hubExitsScript;
     public GameObject spriteObject;
     public SpriteRenderer spriteRenderer;
+    public GameObject mainHandWeaponSprite;
+    public SpriteRenderer mainHandWeaponSpriteRenderer;
+    public GameObject offHandWeaponSprite;
+    public SpriteRenderer offHandWeaponSpriteRenderer;
     private Sprite[] spriteSheet = new Sprite[2];
     public Sprite[] SpriteSheet
     {
@@ -164,6 +168,32 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         }
     }
 
+    public void DisplayWeapons()
+    {
+        string mainHandType = "none";
+        string offHandType = "none";
+        if (mainHandWeapon != null)
+        {
+            WeaponScript mainHandScript = mainHandWeapon.GetComponent<WeaponScript>();
+            mainHandType = mainHandScript.ItemSubType();
+        }
+        if (offHandWeapon != null)
+        {
+            WeaponScript offHandScript = offHandWeapon.GetComponent<WeaponScript>();
+            offHandType = offHandScript.ItemSubType();
+        }
+        if (mainHandType != "none")
+        {
+            Sprite[] mainHandSprites = Resources.LoadAll<Sprite>($"Weapons/{mainHandType}");
+            mainHandWeaponSpriteRenderer.sprite = mainHandSprites[0];
+        }
+        if (offHandType != "none")
+        {
+            Sprite[] offHandSprites = Resources.LoadAll<Sprite>($"Weapons/{offHandType}");
+            offHandWeaponSpriteRenderer.sprite = offHandSprites[0];
+        }
+    }
+
     public void UpdateEquippedSkills()
     {
         GameObject[] skillArray = new GameObject[8];
@@ -210,7 +240,25 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
                 CoatScript coatScript = coat.GetComponent<CoatScript>();
                 coatHealth = coatScript.healthBonus;
             }
-            return _maxHealth + coatHealth;
+            int glovesHealth = 0;
+            if (gloves != null)
+            {
+                GlovesScript glovesScript = gloves.GetComponent<GlovesScript>();
+                glovesHealth = glovesScript.healthBonus;
+            }
+            int pantsHealth = 0;
+            if (pants != null)
+            {
+                PantsScript pantsScript = pants.GetComponent<PantsScript>();
+                pantsHealth = pantsScript.healthBonus;
+            }
+            int bootsHealth = 0;
+            if (boots != null)
+            {
+                BootsScript bootsScript = boots.GetComponent<BootsScript>();
+                bootsHealth = bootsScript.healthBonus;
+            }
+            return _maxHealth + coatHealth + glovesHealth + pantsHealth + bootsHealth;
         }
         set
         {
@@ -276,13 +324,16 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         float xDif = targetPosition.x - currentPosition.x;
         if (xDif < 0)
         {
-            spriteRenderer.sprite = SpriteSheet[1];
+            spriteRenderer.sprite = SpriteSheet[0];
         }
         else if (xDif > 0)
         {
             spriteRenderer.sprite = SpriteSheet[0];
         }
         this.transform.position = targetPosition;
+        spriteRenderer.sortingOrder = 10 * (int)-targetPosition.y;
+        mainHandWeaponSpriteRenderer.sortingOrder = 10 * (int)-targetPosition.y + 1;
+        offHandWeaponSpriteRenderer.sortingOrder = 10 * (int)-targetPosition.y + 1;
         CameraControllerScript.Instance.MoveToPlayer();
         // start mission if standing on exit
         if (hubExitsScript.exitLookup.ContainsKey(targetPosition))
@@ -315,6 +366,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         {
             yield return null;
         }
+        DisplayWeapons();
         finishedBuilding = true;
     }
 
@@ -322,6 +374,10 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
     {
         spriteObject = this.transform.Find("Sprite Object").gameObject;
         spriteRenderer = spriteObject.GetComponent<SpriteRenderer>();
+        mainHandWeaponSprite = spriteObject.transform.Find("Main Hand Weapon Sprite").gameObject;
+        mainHandWeaponSpriteRenderer = mainHandWeaponSprite.GetComponent<SpriteRenderer>();
+        offHandWeaponSprite = spriteObject.transform.Find("Off Hand Weapon Sprite").gameObject;
+        offHandWeaponSpriteRenderer = offHandWeaponSprite.GetComponent<SpriteRenderer>();
         SpriteSheet = Resources.LoadAll<Sprite>("Player");
         gear = this.transform.Find("Gear").gameObject;
         gearScript = gear.GetComponent<GearScript>();
@@ -335,7 +391,7 @@ public class HubPlayerScript : MonoBehaviour, PlayerCharacterScript
         _inventory = this.transform.Find("Inventory");
         _inventorySize = 24 * 4;
         _utilitySkills = this.transform.Find("Utility Skills");
-        _maxHealth = 10;
+        _maxHealth = 20;
     }
 
     void Start()

@@ -3,7 +3,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
-public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler
 {
     public RectTransform buttonRectTransform;
     public Button button;
@@ -14,6 +14,11 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
     public TraversableTilesScript traversableTilesScript;
     public GameObject tooltipPrefab;
     public GameObject tooltip;
+
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
+    }
 
     public void OnPointerEnter(PointerEventData eventData)
     { 
@@ -51,7 +56,7 @@ public class SkipButtonScript : MonoBehaviour, IPointerEnterHandler, IPointerExi
 
     public void OnActivate()
     {
-        SoundControllerScript.Instance.PlayButtonClickSound();
+        SoundControllerScript.Instance.PlaySkipSound();
         CameraControllerScript.Instance.MoveToPlayer();
         switch (turnLogicScript.currentGameState)
         {

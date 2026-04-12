@@ -4,22 +4,23 @@ creator Strider
 Layout
      !
      .
-    ..
+   D..
   .....
- . ....
- .... 2.
- .. ...
-... ..
- ..=..
+ .C....
+ ....B2.
+D..E...
+...A..C
+ .....
  .121.
-  ...
+ F.=.G
+ H  I
 
 Enemy Info
 1
 name Crab
 sprite Crab
-maxHealth 10
-armor -2
+maxHealth 20
+armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Sword
@@ -29,15 +30,15 @@ offHandWeapon Shield
 offHandName Crab Shield
 offHandDamage 5
 glovesName Crab Gloves
-glovesArmor 2
+glovesHealth 2
 glovesDamage 1
 utilitySkill Stone Form
 
 2
 name Giant Crab
 sprite GiantCrab
-maxHealth 14
-armor 2
+maxHealth 20
+armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Axe
@@ -48,6 +49,43 @@ offHandName Crab Shield
 offHandDamage 6
 utilitySkill That Which Lingers
 utilitySkill Stone Form
+
+Decoration Info
+A
+sprite Stone6
+colorCode 5
+
+B
+sprite Stone4
+colorCode 5
+
+C
+sprite Stone2
+colorCode 5
+
+D
+sprite Stone1
+colorCode 5
+
+E
+sprite Tree1
+colorCode 4
+
+F
+sprite Ruin8
+colorCode 0
+
+G
+sprite Ruin9
+colorCode 0
+
+H
+sprite Ruin5
+colorCode 0
+
+I
+sprite Ruin6
+colorCode 0
 
 Item Info
 

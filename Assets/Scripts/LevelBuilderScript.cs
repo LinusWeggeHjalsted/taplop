@@ -1,5 +1,6 @@
 using UnityEngine;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -10,6 +11,7 @@ public class LevelBuilderScript : MonoBehaviour
         public string[] levelMetadata;
         public char[][] levelLayout;
         public List<string[]> enemyInfo;
+        public List<string[]> decorationInfo;
         public List<string[]> itemInfo;
     }
 
@@ -17,6 +19,8 @@ public class LevelBuilderScript : MonoBehaviour
     {
         public string enemyName;
         public string enemySprite;
+        public int enemyColor;
+        public bool usesWeapons;
         public int maxHealth;
         public int armor;
         public int speed;
@@ -33,15 +37,21 @@ public class LevelBuilderScript : MonoBehaviour
         public int coatArmor;
         public int coatHealth;
         public string glovesName;
-        public int glovesArmor;
+        public int glovesHealth;
         public int glovesDamage;
         public string pantsName;
-        public int pantsArmor;
+        public int pantsHealth;
         public int pantsPickupRadius;
         public string bootsName;
-        public int bootsArmor;
+        public int bootsHealth;
         public int bootsSpeed;
         public List<string> utilitySkills;
+    }
+
+    public class PreDecoration
+    {
+        public string decorationSprite;
+        public int colorCode;
     }
 
     public class PreItem
@@ -64,6 +74,8 @@ public class LevelBuilderScript : MonoBehaviour
         public Vector3 playerPosition;
         public Dictionary<Vector3, char> enemyPositions;
         public Dictionary<char, PreEnemy> preEnemies;
+        public Dictionary<Vector3, char> decorationPositions;
+        public Dictionary<char, PreDecoration> preDecorations;
         public Dictionary<Vector3, char> itemPositions;
         public Dictionary<char, PreItem> preItems;
     }
@@ -75,10 +87,12 @@ public class LevelBuilderScript : MonoBehaviour
     public string levelName;
     public GameObject player;
     public GameObject enemies;
+    public GameObject decorations;
     public GameObject drops;
     public GameObject traversableTiles;
     public GameObject tilePrefab;
     public GameObject enemyPrefab;
+    public GameObject decorationPrefab;
     public GameObject groundItemsPrefab;
 
     public PreParse LoadLevelFile(string lvlName)
@@ -97,6 +111,7 @@ public class LevelBuilderScript : MonoBehaviour
                 "Metadata",
                 "Layout",
                 "Enemy Info",
+                "Decoration Info",
                 "Item Info"
             };
             int sectionCount = sectionHeaders.Length;
@@ -162,8 +177,29 @@ public class LevelBuilderScript : MonoBehaviour
                 enemyInfo.Add(currentSubArray.ToArray());
             }
 
+            // decoration info
+            string[] decorationInfoBlock = sectionBlocks[3];
+            List<string[]> decorationInfo = new List<string[]>();
+            currentSubArray = new List<string>();
+            foreach (string line in decorationInfoBlock)
+            {
+                if (line == "")
+                {
+                    decorationInfo.Add(currentSubArray.ToArray());
+                    currentSubArray.Clear();
+                }
+                else
+                {
+                    currentSubArray.Add(line);
+                }
+            }
+            if (currentSubArray.Count > 0)
+            {
+                decorationInfo.Add(currentSubArray.ToArray());
+            }
+
             // item info
-            string[] itemInfoBlock = sectionBlocks[3];
+            string[] itemInfoBlock = sectionBlocks[4];
             List<string[]> itemInfo = new List<string[]>();
             currentSubArray = new List<string>();
             foreach (string line in itemInfoBlock)
@@ -186,6 +222,7 @@ public class LevelBuilderScript : MonoBehaviour
             preParse.levelMetadata = metadataBlock;
             preParse.levelLayout = layout;
             preParse.enemyInfo = enemyInfo;
+            preParse.decorationInfo = decorationInfo;
             preParse.itemInfo = itemInfo;
         }   
         return preParse;
@@ -197,6 +234,8 @@ public class LevelBuilderScript : MonoBehaviour
         parsedLevel.tilePositions = new List<Vector3>();
         parsedLevel.enemyPositions = new Dictionary<Vector3, char>();
         parsedLevel.preEnemies = new Dictionary<char, PreEnemy>();
+        parsedLevel.decorationPositions = new Dictionary<Vector3, char>();
+        parsedLevel.preDecorations = new Dictionary<char, PreDecoration>();
         parsedLevel.itemPositions = new Dictionary<Vector3, char>();
         parsedLevel.preItems = new Dictionary<char, PreItem>();
         // parse individual enemy information
@@ -217,6 +256,30 @@ public class LevelBuilderScript : MonoBehaviour
                 {
                     string enemyName = currentLine.Substring("name ".Length);
                     preEnemy.enemyName = enemyName;
+                }
+                if (currentLine.StartsWith("usesWeapons "))
+                {
+                    string usesWeapons = currentLine.Substring("usesWeapons ".Length);
+                    int usesWeaponsNumber;
+                    if (Int32.TryParse(usesWeapons, out usesWeaponsNumber))
+                    {
+                        if (usesWeaponsNumber == 1)
+                        {
+                            preEnemy.usesWeapons = true;
+                        }
+                        else if (usesWeaponsNumber == 0)
+                        {
+                            preEnemy.usesWeapons = false;
+                        }
+                        else
+                        {
+                            Debug.LogError("usesWeapons is not 0 or 1");
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogError("usesWeapons is not 0 or 1");
+                    }
                 }
                 if (currentLine.StartsWith("sprite "))
                 {
@@ -375,17 +438,17 @@ public class LevelBuilderScript : MonoBehaviour
                     string glovesName = currentLine.Substring("glovesName ".Length);
                     preEnemy.glovesName = glovesName;
                 }
-                else if (currentLine.StartsWith("glovesArmor "))
+                else if (currentLine.StartsWith("glovesHealth "))
                 {
-                    string glovesArmor = currentLine.Substring("glovesArmor ".Length);
-                    int glovesArmorNumber;
-                    if (Int32.TryParse(glovesArmor, out glovesArmorNumber))
+                    string glovesHealth = currentLine.Substring("glovesHealth ".Length);
+                    int glovesHealthNumber;
+                    if (Int32.TryParse(glovesHealth, out glovesHealthNumber))
                     {
-                        preEnemy.glovesArmor = glovesArmorNumber;
+                        preEnemy.glovesHealth = glovesHealthNumber;
                     }
                     else
                     {
-                        Debug.LogError("glovesArmor is not a number");
+                        Debug.LogError("glovesHealth is not a number");
                     }
                 }
                 else if (currentLine.StartsWith("glovesDamage "))
@@ -406,17 +469,17 @@ public class LevelBuilderScript : MonoBehaviour
                     string pantsName = currentLine.Substring("pantsName ".Length);
                     preEnemy.pantsName = pantsName;
                 }
-                else if (currentLine.StartsWith("pantsArmor "))
+                else if (currentLine.StartsWith("pantsHealth "))
                 {
-                    string pantsArmor = currentLine.Substring("pantsArmor ".Length);
-                    int pantsArmorNumber;
-                    if (Int32.TryParse(pantsArmor, out pantsArmorNumber))
+                    string pantsHealth = currentLine.Substring("pantsHealth ".Length);
+                    int pantsHealthNumber;
+                    if (Int32.TryParse(pantsHealth, out pantsHealthNumber))
                     {
-                        preEnemy.pantsArmor = pantsArmorNumber;
+                        preEnemy.pantsHealth = pantsHealthNumber;
                     }
                     else
                     {
-                        Debug.LogError("pantsArmor is not a number");
+                        Debug.LogError("pantsHealth is not a number");
                     }
                 }
                 else if (currentLine.StartsWith("pantsPickupRadius "))
@@ -437,17 +500,17 @@ public class LevelBuilderScript : MonoBehaviour
                     string bootsName = currentLine.Substring("bootsName ".Length);
                     preEnemy.bootsName = bootsName;
                 }
-                else if (currentLine.StartsWith("bootsArmor "))
+                else if (currentLine.StartsWith("bootsHealth "))
                 {
-                    string bootsArmor = currentLine.Substring("bootsArmor ".Length);
-                    int bootsArmorNumber;
-                    if (Int32.TryParse(bootsArmor, out bootsArmorNumber))
+                    string bootsHealth = currentLine.Substring("bootsHealth ".Length);
+                    int bootsHealthNumber;
+                    if (Int32.TryParse(bootsHealth, out bootsHealthNumber))
                     {
-                        preEnemy.bootsArmor = bootsArmorNumber;
+                        preEnemy.bootsHealth = bootsHealthNumber;
                     }
                     else
                     {
-                        Debug.LogError("bootsArmor is not a number");
+                        Debug.LogError("bootsHealth is not a number");
                     }
                 }
                 else if (currentLine.StartsWith("bootsSpeed "))
@@ -470,6 +533,40 @@ public class LevelBuilderScript : MonoBehaviour
                 }
             }
             parsedLevel.preEnemies.Add(enemyCode, preEnemy);
+        }
+        // parse individual decoration information
+        foreach (string[] decorationStrings in preParse.decorationInfo)
+        {
+            PreDecoration preDecoration = new PreDecoration();
+            if (decorationStrings[0].Length > 1)
+            {
+                Debug.LogError("bad decoration info, first line should be a single character");
+                continue;
+            }
+            char decorationCode = decorationStrings[0][0];
+            for (int i = 1; i < decorationStrings.Length; i++)
+            {
+                string currentLine = decorationStrings[i];
+                if (currentLine.StartsWith("sprite "))
+                {
+                    string decorationSprite = currentLine.Substring("sprite ".Length);
+                    preDecoration.decorationSprite = decorationSprite;
+                }
+                else if (currentLine.StartsWith("colorCode "))
+                {
+                    string colorCode = currentLine.Substring("colorCode ".Length);
+                    int colorCodeNumber;
+                    if (Int32.TryParse(colorCode, out colorCodeNumber))
+                    {
+                        preDecoration.colorCode = colorCodeNumber;
+                    }
+                    else
+                    {
+                        Debug.LogError("colorCode is not a number");
+                    }
+                }
+            }
+            parsedLevel.preDecorations.Add(decorationCode, preDecoration);
         }
         // parse individual item information
         foreach (string[] itemStrings in preParse.itemInfo)
@@ -598,6 +695,11 @@ public class LevelBuilderScript : MonoBehaviour
                         {
                             parsedLevel.enemyPositions.Add(position, tileCode);
                         }
+                        if (parsedLevel.preDecorations.ContainsKey(tileCode))
+                        {
+                            parsedLevel.decorationPositions.Add(position, tileCode);
+                            parsedLevel.tilePositions.Remove(position);
+                        }
                         if (parsedLevel.preItems.ContainsKey(tileCode))
                         {
                             parsedLevel.itemPositions.Add(position, tileCode);
@@ -611,7 +713,11 @@ public class LevelBuilderScript : MonoBehaviour
 
     public void BuildLevel(ParsedLevel parsedLevel)
     {
-        player.transform.position = parsedLevel.playerPosition; 
+        player.transform.position = parsedLevel.playerPosition;
+        EntityScript playerScript = player.GetComponent<EntityScript>();
+        playerScript.spriteRenderer.sortingOrder = 10 * (int)-parsedLevel.playerPosition.y;
+        playerScript.mainHandWeaponSpriteRenderer.sortingOrder = 10 * (int)-parsedLevel.playerPosition.y + 1;
+        playerScript.offHandWeaponSpriteRenderer.sortingOrder = 10 * (int)-parsedLevel.playerPosition.y + 1;
         CameraControllerScript.Instance.MoveToPlayer();
         // build tiles
         for (int i = 0; i < parsedLevel.tilePositions.Count; i++)
@@ -631,6 +737,16 @@ public class LevelBuilderScript : MonoBehaviour
             {
                 tileScript.IsEnd = true;
             }
+            SpriteRenderer tileRenderer = newTile.GetComponent<SpriteRenderer>();
+            switch ((newTile.transform.position.x + newTile.transform.position.y) % 2)
+            {
+                case 0:
+                    tileRenderer.color = MissionLogicScript.Instance.missionColors[1];
+                    break;
+                case 1:
+                    tileRenderer.color = MissionLogicScript.Instance.missionColors[3];
+                    break;
+            }
         }
         // build enemies
         foreach (Vector3 enemyPosition in parsedLevel.enemyPositions.Keys)
@@ -646,6 +762,14 @@ public class LevelBuilderScript : MonoBehaviour
             newEnemy.transform.position = enemyPosition;
             newEnemy.name = preEnemy.enemyName;
             EntityScript newEnemyScript = newEnemy.GetComponent<EntityScript>();
+            newEnemyScript.spriteRenderer.sortingOrder = 10 * (int)-enemyPosition.y;
+            if (preEnemy.usesWeapons)
+            {
+                newEnemyScript.mainHandWeaponSpriteRenderer.sortingOrder = 10 * (int)-enemyPosition.y + 1;
+                newEnemyScript.offHandWeaponSpriteRenderer.sortingOrder = 10 * (int)-enemyPosition.y + 1;
+                newEnemyScript.mainHandWeaponSpriteRenderer.enabled = true;
+                newEnemyScript.offHandWeaponSpriteRenderer.enabled = true;
+            }
             if (preEnemy.enemySprite != null)
             {
                 newEnemyScript.SpriteSheet = Resources.LoadAll<Sprite>("Enemies/" + preEnemy.enemySprite);
@@ -703,7 +827,7 @@ public class LevelBuilderScript : MonoBehaviour
                 GameObject enemyGloves = Instantiate(glovesPrefab, enemyHands);
                 GlovesScript enemyGlovesScript = enemyGloves.GetComponent<GlovesScript>();
                 enemyGlovesScript.itemName = preEnemy.glovesName;
-                enemyGlovesScript.armorBonus = preEnemy.glovesArmor;
+                enemyGlovesScript.healthBonus = preEnemy.glovesHealth;
                 enemyGlovesScript.damageBonus = preEnemy.glovesDamage;
             }
             if (preEnemy.pantsName != null)
@@ -712,7 +836,7 @@ public class LevelBuilderScript : MonoBehaviour
                 GameObject enemyPants = Instantiate(pantsPrefab, enemyLegs);
                 PantsScript enemyPantsScript = enemyPants.GetComponent<PantsScript>();
                 enemyPantsScript.itemName = preEnemy.pantsName;
-                enemyPantsScript.armorBonus = preEnemy.pantsArmor;
+                enemyPantsScript.healthBonus = preEnemy.pantsHealth;
                 enemyPantsScript.pickupRadius = preEnemy.pantsPickupRadius;
             }
             if (preEnemy.bootsName != null)
@@ -721,7 +845,7 @@ public class LevelBuilderScript : MonoBehaviour
                 GameObject enemyBoots = Instantiate(bootsPrefab, enemyFeet);
                 BootsScript enemyBootsScript = enemyBoots.GetComponent<BootsScript>();
                 enemyBootsScript.itemName = preEnemy.bootsName;
-                enemyBootsScript.armorBonus = preEnemy.bootsArmor;
+                enemyBootsScript.healthBonus = preEnemy.bootsHealth;
                 enemyBootsScript.speedBonus = preEnemy.bootsSpeed;
             }
             for (int i = 0; i < preEnemy.utilitySkills.Count; i++)
@@ -740,6 +864,35 @@ public class LevelBuilderScript : MonoBehaviour
                 }
             }
         }
+        // build decorations
+        foreach (Vector3 decorationPosition in parsedLevel.decorationPositions.Keys)
+        {
+            char decorationCode = parsedLevel.decorationPositions[decorationPosition];
+            if (!parsedLevel.preDecorations.ContainsKey(decorationCode))
+            {
+                Debug.LogError($"no decoration info for decoration code {decorationCode}");
+                continue;
+            }
+            PreDecoration preDecoration = parsedLevel.preDecorations[decorationCode];
+            GameObject newDecoration = Instantiate(decorationPrefab, decorations.transform);
+            newDecoration.transform.position = decorationPosition;
+            SpriteRenderer decorationRenderer = newDecoration.GetComponent<SpriteRenderer>();
+            decorationRenderer.sortingOrder = 10 * (int)-decorationPosition.y;
+            decorationRenderer.color = MissionLogicScript.Instance.missionColors[preDecoration.colorCode];
+            DecorationScript newDecorationScript = newDecoration.GetComponent<DecorationScript>();
+            if (preDecoration.decorationSprite != null)
+            {
+                Sprite[] decorationSpriteSheet = Resources.LoadAll<Sprite>("Decorations/" + preDecoration.decorationSprite);
+                if (decorationSpriteSheet == null)
+                {
+                    Debug.LogError($"no decoration sprite found called {preDecoration.decorationSprite}");
+                }
+                else
+                {
+                    newDecorationScript.SpriteSheet = decorationSpriteSheet;
+                }
+            }
+        }
         // build items
         foreach (Vector3 itemPosition in parsedLevel.itemPositions.Keys)
         {
@@ -753,6 +906,8 @@ public class LevelBuilderScript : MonoBehaviour
 
             GameObject newGroundItems = Instantiate(groundItemsPrefab, drops.transform);
             newGroundItems.transform.position = itemPosition;
+            SpriteRenderer groundItemsRenderer = newGroundItems.GetComponent<SpriteRenderer>();
+            groundItemsRenderer.sortingOrder = 10 * (int)-itemPosition.y;
             switch (preItem.itemType)
             {
                 case "Weapon":
@@ -789,7 +944,7 @@ public class LevelBuilderScript : MonoBehaviour
                     GameObject newGloves = Instantiate(glovesPrefab, newGroundItems.transform);
                     GlovesScript glovesScript = newGloves.GetComponent<GlovesScript>();
                     glovesScript.itemName = preItem.itemName;
-                    glovesScript.armorBonus = preItem.armor;
+                    glovesScript.healthBonus = preItem.health;
                     glovesScript.damageBonus = preItem.damage;
                     break;
                 case "Pants":
@@ -797,7 +952,7 @@ public class LevelBuilderScript : MonoBehaviour
                     GameObject newPants = Instantiate(pantsPrefab, newGroundItems.transform);
                     PantsScript pantsScript = newPants.GetComponent<PantsScript>();
                     pantsScript.itemName = preItem.itemName;
-                    pantsScript.armorBonus = preItem.armor;
+                    pantsScript.healthBonus = preItem.health;
                     pantsScript.pickupRadius = preItem.pickupRadius;
                     break;
                 case "Boots":
@@ -805,7 +960,7 @@ public class LevelBuilderScript : MonoBehaviour
                     GameObject newBoots = Instantiate(bootsPrefab, newGroundItems.transform);
                     BootsScript bootsScript = newBoots.GetComponent<BootsScript>();
                     bootsScript.itemName = preItem.itemName;
-                    bootsScript.armorBonus = preItem.armor;
+                    bootsScript.healthBonus = preItem.health;
                     bootsScript.speedBonus = preItem.speed;
                     break;
             }
@@ -816,6 +971,7 @@ public class LevelBuilderScript : MonoBehaviour
     {
         tilePrefab = Resources.Load<GameObject>("Prefabs/Tile");
         enemyPrefab = Resources.Load<GameObject>("Prefabs/Enemy");
+        decorationPrefab = Resources.Load<GameObject>("Prefabs/Decoration");
         groundItemsPrefab = Resources.Load<GameObject>("Prefabs/Ground Items");
     }
 
@@ -826,12 +982,14 @@ public class LevelBuilderScript : MonoBehaviour
         levelName = missionLogicScript.currentLevelName;
         if (LevelScript.Instance != null)
         {
+            LevelScript.Instance.CacheReferences();
             player = LevelScript.Instance.player;
             enemies = LevelScript.Instance.enemies;
+            decorations = LevelScript.Instance.decorations;
             drops = LevelScript.Instance.drops;
             traversableTiles = LevelScript.Instance.traversableTiles;
+            LevelScript.Instance.mainCamera.GetComponent<Camera>().backgroundColor = MissionLogicScript.Instance.missionColors[2];
         }
-
         BuildLevel(ParseLevel(LoadLevelFile(levelName)));
         StartCoroutine(PlayerDataScript.Instance.BuildPlayerFromData(player));
         finishedBuilding = true;

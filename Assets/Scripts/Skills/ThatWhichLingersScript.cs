@@ -105,8 +105,8 @@ public class ThatWhichLingersScript : MonoBehaviour, SkillScript, EnchantmentScr
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
+        SoundControllerScript.Instance.PlaySpellSound();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         int effectiveSkillDuration = skillDuration + wielderScript.enchantmentModifiers.skillDuration;
         // create or extend enchantment
         Transform wielderEnchantments = wielderScript.enchantments;
@@ -130,6 +130,7 @@ public class ThatWhichLingersScript : MonoBehaviour, SkillScript, EnchantmentScr
         {
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, null);
     }
 
     // enchantment functions

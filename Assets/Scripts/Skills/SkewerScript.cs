@@ -124,7 +124,6 @@ public class SkewerScript : MonoBehaviour, SkillScript
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -137,7 +136,8 @@ public class SkewerScript : MonoBehaviour, SkillScript
         }
         if (target != null)
         {
-            wielderScript.Attack(2 * wielderScript.offHandDamage, target);
+            SoundControllerScript.Instance.PlayAttackSound();
+            wielderScript.Attack(2 * wielderScript.offHandDamage + wielderScript.convertedMomentum, target);
         }
         wielderScript.SetSkillCooldown(skillName, cooldown);
         if (wielder == player)
@@ -145,6 +145,7 @@ public class SkewerScript : MonoBehaviour, SkillScript
             turnLogicScript.hasAttacked = true;
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
@@ -201,7 +202,7 @@ public class SkewerScript : MonoBehaviour, SkillScript
     {
         skillName = "Skewer";
         skillType = "Off Hand Skill";
-        description = "Attack target for 2x damage";
+        description = "Attack target for 2x damage with double converted momentum bonus";
         range = 1f;
         radius = 0;
         distance = 0;

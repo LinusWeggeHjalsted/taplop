@@ -2,14 +2,51 @@ Metadata
 
 Layout
           1
-     ... ..
-   ......
- ........
+   A ...F..
+   ......B
+G........C
 0 ...!....
-   ........
-    ....   .2
-     .
+   ........I
+ E  ....  D.2
+    H. A
     3
+
+Decoration Info
+A
+sprite Ruin10
+colorCode 0
+
+B
+sprite Ruin8
+colorCode 0
+
+C
+sprite Ruin9
+colorCode 0
+
+D
+sprite Ruin7
+colorCode 0
+
+E
+sprite Ruin3
+colorCode 0
+
+F
+sprite Stone4
+colorCode 5
+
+G
+sprite Stone6
+colorCode 5
+
+H
+sprite Stone2
+colorCode 5
+
+I
+sprite Stone3
+colorCode 5
 
 Exit Info
 0

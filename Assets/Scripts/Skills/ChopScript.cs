@@ -99,7 +99,14 @@ public class ChopScript : MonoBehaviour, SkillScript
         }
         else
         {
-            return 3;
+            if ((float)enemyScript.CurrentHealth > ((float)enemyScript.MaxHealth / 2))
+            {
+                return 2;
+            }
+            else
+            {
+                return 3;
+            }
         }
     }
 
@@ -124,7 +131,6 @@ public class ChopScript : MonoBehaviour, SkillScript
     {
         traversableTilesScript.ClearHighlights();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         Dictionary<Vector3, GameObject> enemyLookup = enemiesScript.enemyLookup;
         GameObject target = null;
         if (enemyLookup.ContainsKey(targetPosition))
@@ -137,13 +143,23 @@ public class ChopScript : MonoBehaviour, SkillScript
         }
         if (target != null)
         {
-            wielderScript.Attack(wielderScript.mainHandDamage, target);
+            SoundControllerScript.Instance.PlayAttackSound();
+            if ((float)wielderScript.CurrentHealth > ((float)wielderScript.MaxHealth / 2))
+            {
+                float preciseDamage = 1.5f * (float)wielderScript.mainHandDamage;
+                wielderScript.Attack((int)preciseDamage, target);
+            }
+            else
+            {
+                wielderScript.Attack(wielderScript.mainHandDamage, target);
+            }
         }
         if (wielder == player)
         {
             turnLogicScript.hasAttacked = true;
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, targetPosition);
     }
 
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
@@ -200,7 +216,7 @@ public class ChopScript : MonoBehaviour, SkillScript
     {
         skillName = "Chop";
         skillType = "Main Hand Skill";
-        description = "Attack target";
+        description = "Attack target, dealing 1.5x damage if you have more than half health";
         range = 1f;
         radius = 0;
         distance = 0;

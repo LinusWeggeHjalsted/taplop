@@ -1,13 +1,19 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using System;
 using System.IO;
 
-public class NewGameButtonScript : MonoBehaviour
+public class NewGameButtonScript : MonoBehaviour, IPointerDownHandler
 {
     Button button;
     GameObject newGameMenuPrefab;
     GameObject newGameMenu;
+
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
+    }
 
     public void OnActivate()
     {
@@ -17,7 +23,12 @@ public class NewGameButtonScript : MonoBehaviour
             GameObject supportMenu = GameObject.Find("Support Menu(Clone)");
             if (supportMenu != null)
             {
-                Destroy(supportMenu);
+                DestroyImmediate(supportMenu);
+            }
+            GameObject creditsMenu = GameObject.Find("Credits Menu(Clone)");
+            if (creditsMenu != null)
+            {
+                DestroyImmediate(creditsMenu);
             }
             newGameMenu = Instantiate(newGameMenuPrefab, this.transform.parent.parent);
         }
@@ -27,7 +38,7 @@ public class NewGameButtonScript : MonoBehaviour
         }
     }
 
-    void Start()
+    void Awake()
     {
         button = this.GetComponent<Button>();
         button.onClick.AddListener(OnActivate);

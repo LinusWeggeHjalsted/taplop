@@ -5,8 +5,8 @@ public class CoatScript : MonoBehaviour, ItemScript
     public Sprite itemSprite;
     public string itemName = "";
     public string itemType;
-    public int armorBonus = 0;
     public int healthBonus = 0;
+    public int armorBonus = 0;
     private int _inventoryPosition;
     public int inventoryPosition
     {
@@ -35,19 +35,19 @@ public class CoatScript : MonoBehaviour, ItemScript
         GameObject player = GameReferences.GetPlayer();
         PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
         GameObject equippedCoat = playerScript.coat;
-        string armorDifferenceString = "";
         string healthDifferenceString = "";
+        string armorDifferenceString = "";
 
         if (equippedCoat == null)
         {
-            armorDifferenceString = $"<color=#00FF00>+{armorBonus.ToString()}</color>";
             healthDifferenceString = $"<color=#00FF00>+{healthBonus.ToString()}</color>";
+            armorDifferenceString = $"<color=#00FF00>+{armorBonus.ToString()}</color>";
         }
         else
         {
             CoatScript coatScript = equippedCoat.GetComponent<CoatScript>();
-            int armorDifference = armorBonus - coatScript.armorBonus;
             int healthDifference = healthBonus - coatScript.healthBonus;
+            int armorDifference = armorBonus - coatScript.armorBonus;
             if (armorDifference > 0)
             {
                 armorDifferenceString = $"<color=#00FF00>+{armorDifference.ToString()}</color>";
@@ -76,7 +76,7 @@ public class CoatScript : MonoBehaviour, ItemScript
 
         string armorString = $"Armor +{armorBonus.ToString()} <color=#FFFFFF80>[</color>{armorDifferenceString}<color=#FFFFFF80>]</color>";
         string healthString = $"Health +{healthBonus.ToString()} <color=#FFFFFF80>[</color>{healthDifferenceString}<color=#FFFFFF80>]</color>";
-        return armorString + "\n" + healthString;
+        return healthString + "\n" + armorString;
     }
 
     public string ItemType()

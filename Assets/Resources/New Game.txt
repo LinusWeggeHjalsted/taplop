@@ -31,22 +31,22 @@ spellDamage 3
 
 Coat
 itemName Starter Coat
-armor 1
-health 0
+health 1
+armor 0
 
 Gloves
 itemName Starter Gloves
-armor 1
+health 1
 damage 0
 
 Pants
 itemName Starter Pants
-armor 1
+health 1
 pickupRadius 0
 
 Boots
 itemName Starter Boots
-armor 1
+health 1
 speed 0
 
 Inventory

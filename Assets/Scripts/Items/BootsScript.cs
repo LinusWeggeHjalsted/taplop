@@ -5,7 +5,7 @@ public class BootsScript : MonoBehaviour, ItemScript
     public Sprite itemSprite;
     public string itemName = "";
     public string itemType;
-    public int armorBonus = 0;
+    public int healthBonus = 0;
     public int speedBonus = 0;
     private int _inventoryPosition;
     public int inventoryPosition
@@ -35,30 +35,30 @@ public class BootsScript : MonoBehaviour, ItemScript
         GameObject player = GameReferences.GetPlayer();
         PlayerCharacterScript playerScript = player.GetComponent<PlayerCharacterScript>();
         GameObject equippedBoots = playerScript.boots;
-        string armorDifferenceString = "";
+        string healthDifferenceString = "";
         string speedDifferenceString = "";
 
         if (equippedBoots == null)
         {
-            armorDifferenceString = $"<color=#00FF00>+{armorBonus.ToString()}</color>";
+            healthDifferenceString = $"<color=#00FF00>+{healthBonus.ToString()}</color>";
             speedDifferenceString = $"<color=#00FF00>+{speedBonus.ToString()}</color>";
         }
         else
         {
             BootsScript bootsScript = equippedBoots.GetComponent<BootsScript>();
-            int armorDifference = armorBonus - bootsScript.armorBonus;
+            int healthDifference = healthBonus - bootsScript.healthBonus;
             int speedDifference = speedBonus - bootsScript.speedBonus;
-            if (armorDifference > 0)
+            if (healthDifference > 0)
             {
-                armorDifferenceString = $"<color=#00FF00>+{armorDifference.ToString()}</color>";
+                healthDifferenceString = $"<color=#00FF00>+{healthDifference.ToString()}</color>";
             }
-            else if (armorDifference < 0)
+            else if (healthDifference < 0)
             {
-                armorDifferenceString = $"<color=#FF0000>{armorDifference.ToString()}</color>";
+                healthDifferenceString = $"<color=#FF0000>{healthDifference.ToString()}</color>";
             }
             else
             {
-                armorDifferenceString = "<color=#FFFFFF80>0</color>";
+                healthDifferenceString = "<color=#FFFFFF80>0</color>";
             }
             if (speedDifference > 0)
             {
@@ -74,9 +74,9 @@ public class BootsScript : MonoBehaviour, ItemScript
             }
         }
 
-        string armorString = $"Armor +{armorBonus.ToString()} <color=#FFFFFF80>[</color>{armorDifferenceString}<color=#FFFFFF80>]</color>";
+        string healthString = $"Health +{healthBonus.ToString()} <color=#FFFFFF80>[</color>{healthDifferenceString}<color=#FFFFFF80>]</color>";
         string speedString = $"Speed +{speedBonus.ToString()} <color=#FFFFFF80>[</color>{speedDifferenceString}<color=#FFFFFF80>]</color>";
-        return armorString + "\n" + speedString;
+        return healthString + "\n" + speedString;
     }
     
     public string ItemType()
@@ -87,7 +87,7 @@ public class BootsScript : MonoBehaviour, ItemScript
     public PlayerDataScript.Salvage SalvageValue()
     {
         PlayerDataScript.Salvage salvage = new PlayerDataScript.Salvage();
-        int totalValue = armorBonus + speedBonus;
+        int totalValue = healthBonus + speedBonus;
         int fractionValue = totalValue / 2;
         salvage.cloth = fractionValue;
         salvage.leather = totalValue - fractionValue;

@@ -2,57 +2,86 @@ Metadata
 creator Strider
 
 Layout
-               ..=
-    .2  ..   ...  ..
-   2....  .....    .a
-     ...     ...  .2.
-     ..     .  . . ..2
-       ..   .  ..    ..
-        .    ...
-         ......
-        .....
-       .1..
+                 A
+     AA    AA  AA
+    AA  AAAAAAA..=FA
+ A A.2AA..AAA...E ..A  A
+  A2....AA.....AAAA.aAA
+  AAA...AAAAA...AA.2.A
+   AA..AAA.A.AA.A.B..2A
+    AAC..AAA.AA..BAAA..A
+   AA  A.AAAA...AAA  AAAA
+        D......A
+        .....   A
+       .1..C
         ....
-        ..
+       B..
       ..
       !
 
 Enemy Info
 1
-name Invader Warrior
-sprite InvaderSwordNone
-maxHealth 10
-armor -4
+name Skeleton Warrior
+sprite Skeleton1
+usesWeapons 1
+maxHealth 20
+armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Sword
-mainHandName Invader Sword
+mainHandName Skeleton Sword
 mainHandDamage 5
-coatName Invader Coat
-coatArmor 2
-coatHealth 1
-glovesName Invader Gloves
-glovesArmor 2
+coatName Skeleton Coat
+coatHealth 2
+coatArmor 1
+glovesName Skeleton Gloves
+glovesHealth 2
 glovesDamage 1
-pantsName Invader Pants
-pantsArmor 2
+pantsName Skeleton Pants
+pantsHealth 2
 pantsPickupRadius 1
 
 2
-name Brown Wolf
-sprite BrownWolf
-maxHealth 10
-armor -1
+name Wolf
+sprite Wolf
+usesWeapons 0
+maxHealth 20
+armor 0
 speed 1
 aggroRange 6
 mainHandWeapon Sword
 mainHandName Wolf Sword
 mainHandDamage 5
 bootsName Wolf Boots
-bootsArmor 2
+bootsHealth 2
 bootsSpeed 1
 utilitySkill Blink
 utilitySkill Howl
+
+Decoration Info
+A
+sprite Tree1
+colorCode 4
+
+B
+sprite Stone4
+colorCode 5
+
+C
+sprite Stone2
+colorCode 5
+
+D
+sprite Stone1
+colorCode 5
+
+E
+sprite Ruin5
+colorCode 0
+
+F
+sprite Ruin9
+colorCode 0
 
 Item Info
 a

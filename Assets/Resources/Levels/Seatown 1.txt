@@ -17,63 +17,68 @@ Layout
 
 Enemy Info
 1
-name Invader Warrior
-sprite InvaderSwordNone
-maxHealth 10
-armor -2
+name Skeleton Warrior
+sprite Skeleton1
+usesWeapons 1
+maxHealth 20
+armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Sword
-mainHandName Invader Sword
+mainHandName Skeleton Sword
 mainHandDamage 5
-coatName Invader Coat
-coatArmor 2
-coatHealth 1
-glovesName Invader Gloves
-glovesArmor 2
+coatName Skeleton Coat
+coatHealth 2
+coatArmor 1
+glovesName Skeleton Gloves
+glovesHealth 2
 glovesDamage 1
-pantsName Invader Pants
-pantsArmor 2
+pantsName Skeleton Pants
+pantsHealth 2
 pantsPickupRadius 1
 
 2
-name Invader Wizard
-sprite InvaderWandNone
-maxHealth 10
+name Skeleton Wizard
+sprite Skeleton2
+usesWeapons 1
+maxHealth 20
 armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Wand
-mainHandName Invader Wand
+mainHandName Skeleton Wand
 mainHandDamage 5
-coatName Invader Coat
-coatArmor 2
-coatHealth 1
-pantsName Invader Pants
-pantsArmor 2
+coatName Skeleton Coat
+coatHealth 2
+coatArmor 1
+pantsName Skeleton Pants
+pantsHealth 2
 pantsPickupRadius 1
 utilitySkill Swap
 
 3
-name Invader Rogue
-sprite InvaderDaggerDagger
-maxHealth 10
+name Skeleton Rogue
+sprite Skeleton3
+usesWeapons 1
+maxHealth 20
 armor 0
 speed 1
 aggroRange 3
 mainHandWeapon Dagger
-mainHandName Invader Dagger
+mainHandName Skeleton Dagger
 mainHandDamage 5
 offHandWeapon Dagger
-offHandName Invader Dagger
+offHandName Skeleton Dagger
 offHandDamage 5
-pantsName Invader Pants
-pantsArmor 2
+pantsName Skeleton Pants
+pantsHealth 2
 pantsPickupRadius 1
-bootsName Invader Boots
-bootsArmor 2
+bootsName Skeleton Boots
+bootsHealth 2
 bootsSpeed 1
 utilitySkill Focus
+
+Decoration Info
 
 Item Info
 a

@@ -1,10 +1,16 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using System.Runtime.InteropServices;
 
-public class LoadSaveButtonScript : MonoBehaviour
+public class LoadSaveButtonScript : MonoBehaviour, IPointerDownHandler
 {
     Button button;
+
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
+    }
 
 #if UNITY_WEBGL && !UNITY_EDITOR
     [DllImport("__Internal")]
@@ -13,7 +19,7 @@ public class LoadSaveButtonScript : MonoBehaviour
 
     public void OnActivate()
     {
-        SoundControllerScript.Instance.PlayButtonClickSound();
+        SoundControllerScript.Instance.PlayButtonClickUpSound();
 #if UNITY_WEBGL && !UNITY_EDITOR
         // in WebGL, prompt user to upload a save file
         UploadFile(gameObject.name, "OnFileUploaded");

@@ -1,17 +1,23 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using System;
 using System.IO;
 using TMPro;
 
-public class StartNewGameButtonScript : MonoBehaviour
+public class StartNewGameButtonScript : MonoBehaviour, IPointerDownHandler
 {
     Button button;
     TMP_InputField playerNameInput;
 
+    public void OnPointerDown(PointerEventData eventData)
+    {
+        SoundControllerScript.Instance.PlayButtonClickDownSound();
+    }
+
     public void OnActivate()
     {
-        SoundControllerScript.Instance.PlayButtonClickSound();
+        SoundControllerScript.Instance.PlayButtonClickUpSound();
 #if !UNITY_WEBGL || UNITY_EDITOR
         // backup existing Autosave if it exists
         string autosavePath = Application.persistentDataPath + "/Autosave.txt";

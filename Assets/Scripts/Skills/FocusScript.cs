@@ -127,8 +127,8 @@ public class FocusScript : MonoBehaviour, SkillScript
     public void PrepareSkill(Vector3 fromPosition, GameObject wielder)
     {
         traversableTilesScript.ClearHighlights();
+        SoundControllerScript.Instance.PlaySpellSound();
         EntityScript wielderScript = wielder.GetComponent<EntityScript>();
-        wielderScript.DisplayUsedSkill(skillSprite);
         GameObject[] equippedSkills = wielderScript.equippedSkills;
         for (int i = 0; i < equippedSkills.Length; i++)
         {
@@ -149,6 +149,7 @@ public class FocusScript : MonoBehaviour, SkillScript
         {
             turnLogicScript.hasUsedAnySkill = true;
         }
+        wielderScript.UsedSkill(this, null);
     }
 
     void Awake()
