@@ -9,6 +9,7 @@ public class MissionLogicScript : MonoBehaviour
     public GameControllerScript gameControllerScript;
     public string missionName;
     public int missionLength;
+    public Color[] universalColors = new Color[2];
     public Color[] missionColors = new Color[6];
     public Color[] interfaceColors = new Color[6];
     public string endHub;
@@ -56,6 +57,10 @@ public class MissionLogicScript : MonoBehaviour
             Destroy(this.gameObject);
         }
         // hardcoded colors for prototype
+        string[] universalHexColors = new string[2]{
+            "#fef9ee",
+            "#4c3f4e"
+        };
         string[] missionHexColors = new string[6]{
             "#f5f8d4",
             "#d6da7b",
@@ -72,6 +77,18 @@ public class MissionLogicScript : MonoBehaviour
             "#af6e50",
             "#845d4c"
         };
+        for (int i = 0; i < 2; i++)
+        {
+            Color newColor;
+            if (ColorUtility.TryParseHtmlString(universalHexColors[i], out newColor))
+            {
+                universalColors[i] = newColor;
+            }
+            else
+            {
+                Debug.LogError("invalid hex color");
+            }
+        }
         for (int i = 0; i < 6; i++)
         {
             Color newColor;

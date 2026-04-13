@@ -169,7 +169,7 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
     }
     public GameObject healthBar;
     public SpriteRenderer healthBarRenderer;
-    public Sprite[] healthBarStates = new Sprite[8];
+    public Sprite[] healthBarStates = new Sprite[13];
     public Sprite hitSprite;
     public Sprite aggroSprite;
     public Sprite stunSprite;
@@ -810,49 +810,46 @@ public class EntityScript : MonoBehaviour, PlayerCharacterScript
             healthBarRenderer = healthBar.AddComponent<SpriteRenderer>();
             healthBarRenderer.sortingLayerName = "Effects";
             healthBarRenderer.sortingOrder = 2;
+            healthBarRenderer.color = MissionLogicScript.Instance.interfaceColors[1];
+            GameObject healthBarBackground = new GameObject("Entity Health Bar Background");
+            healthBarBackground.transform.parent = healthBar.transform;
+            SpriteRenderer healthBarBackgroundRenderer = healthBarBackground.AddComponent<SpriteRenderer>();
+            healthBarBackgroundRenderer.sortingLayerName = "Effects";
+            healthBarBackgroundRenderer.sortingOrder = 1;
+            Sprite healthBarBackgroundSprite = Resources.Load<Sprite>("EntityHealthBarBackground");
+            healthBarBackgroundRenderer.sprite = healthBarBackgroundSprite;
+            healthBarBackgroundRenderer.color = MissionLogicScript.Instance.universalColors[1];
+
         }
         float spriteTopLocal = spriteRenderer.bounds.max.y - spriteObject.transform.position.y;
         healthBar.transform.localPosition = new Vector3(0, spriteTopLocal, 0);
-        Sprite healthBarSprite = null;
-        float healthPercentage = (float)CurrentHealth / (float)MaxHealth;
-        switch (healthPercentage)
+        int stateCount = 13;
+        float healthRatio = (float)CurrentHealth / (float)MaxHealth;
+        float increment = 1f / (float)(stateCount - 1);
+        float[] incrementArray = new float[stateCount + 1];
+        for (int i = 0; i < stateCount + 1; i++)
         {
-            case 0.0f:
-                healthBarSprite = healthBarStates[0];
-                break;
-            case < 0.125f:
-                // always leave a pixel of health if nonzero
-                healthBarSprite = healthBarStates[1];
-                break;
-            case >= 0.125f and < 0.250f:
-                healthBarSprite = healthBarStates[1];
-                break;
-            case >= 0.250f and < 0.375f:
-                healthBarSprite = healthBarStates[2];
-                break;
-            case >= 0.375f and < 0.500f:
-                healthBarSprite = healthBarStates[3];
-                break;
-            case >= 0.500f and < 0.625f:
-                healthBarSprite = healthBarStates[4];
-                break;
-            case >= 0.625f and < 0.750f:
-                healthBarSprite = healthBarStates[5];
-                break;
-            case >= 0.750f and < 0.875f:
-                healthBarSprite = healthBarStates[6];
-                break;
-            case >= 0.875f and < 1:
-                healthBarSprite = healthBarStates[7];
-                break;
-            case >= 1:
-                healthBarSprite = healthBarStates[8];
-                break;
+            incrementArray[i] = i * increment;
         }
-        if (healthBarSprite != null)
+        int spriteIndex = 0;
+        for (int i = 0; i < stateCount; i++)
         {
-            healthBarRenderer.sprite = healthBarSprite;
+            if (incrementArray[i] <= healthRatio && healthRatio < incrementArray[i + 1])
+            {
+                spriteIndex = i;
+                break;
+            }
         }
+        if (healthRatio >= 1f)
+        {
+            spriteIndex = stateCount - 1;
+        }
+        // always leave a pixel of health if nonzero
+        if (CurrentHealth > 0 && spriteIndex == 0)
+        {
+            spriteIndex = 1;
+        }
+        healthBarRenderer.sprite = healthBarStates[spriteIndex];
     }
 
     public void MoveTo(Vector3 targetPosition, bool isTeleport = false)
