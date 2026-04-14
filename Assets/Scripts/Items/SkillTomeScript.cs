@@ -37,7 +37,7 @@ public class SkillTomeScript : MonoBehaviour, ItemScript
         }
         else
         {
-            statusString = " [<color=#FF0000>Not learned yet</color>]";
+            statusString = " [<color=#FF0000>Double click to learn</color>]";
         }
         return "Learn " + skillName + statusString;
     }
