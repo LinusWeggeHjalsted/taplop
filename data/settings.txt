@@ -1,0 +1,94 @@
+Audio
+music_volume 0.5
+sound_effects_volume 0.5
+
+Display
+vsync true
+camera_zoom 1.0
+
+Gameplay
+auto_skip_attack_step_out_of_combat true
+auto_target_at_cursor true
+
+InputBindings
+input_type key
+input_name KeyZ
+ctrl true
+action undo
+
+input_type key
+input_name KeyY
+ctrl true
+action redo
+
+input_type key
+input_name Escape
+action toggle_options_menu
+
+input_type key
+input_name KeyI
+action toggle_inventory
+
+input_type key
+input_name KeyG
+action toggle_gear
+
+input_type key
+input_name KeyS
+action toggle_skills
+
+input_type key
+input_name KeyM
+action toggle_world_map
+
+input_type key
+input_name Enter
+action confirm
+
+input_type mouse_button
+input_name left
+action confirm
+
+input_type key
+input_name Backspace
+action cancel
+
+input_type mouse_button
+input_name right
+action cancel
+
+input_type key
+input_name Space
+action skip
+
+input_type key
+input_name Digit1
+action skill_slot_1
+
+input_type key
+input_name Digit2
+action skill_slot_2
+
+input_type key
+input_name Digit3
+action skill_slot_3
+
+input_type key
+input_name Digit4
+action skill_slot_4
+
+input_type key
+input_name Digit5
+action skill_slot_5
+
+input_type key
+input_name Digit6
+action skill_slot_6
+
+input_type key
+input_name Digit7
+action skill_slot_7
+
+input_type key
+input_name Digit8
+action skill_slot_8

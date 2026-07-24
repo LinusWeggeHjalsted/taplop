@@ -1,0 +1,228 @@
+Functional Prototype TODO
+=========================
+
+The goal is to load into a hub, walk into a mission, fight through a
+level, and return to the hub — with visible output in a browser.
+
+Parsing [DONE]
+  [x] Generic config file parser (parser.zig)
+  [x] Settings parser (loadSettings)
+  [x] Weapon type definition parser (loadWeaponTypeDefinition)
+  [x] Color theme parser (loadColorTheme, data/color_themes.txt)
+  [x] Level parser with layout grid (loadLevel)
+  [x] Hub parser with layout grid (loadHub)
+  [x] Campaign parser (loadCampaign)
+  [x] Mission parser (loadMission)
+  [x] Save file parser (loadPlayerSave)
+  [x] Save file writer (writePlayerSave, writePlayerSaveToFile)
+  [x] New game template (data/new_player.txt)
+
+Game State Initialization [DONE]
+  [x] DebugAllocator in debug, page_allocator in release
+  [x] Load settings from data/settings.txt (defaults on failure)
+  [x] Load weapon type definitions from data/weapon_types/
+  [x] Load color themes from data/color_themes.txt
+  [x] Initial GameState with open_main_menu queued
+  [x] Screen enum (main_menu, hub, level, editor, replay_viewer)
+  [x] Io and Dir stored on GameStateHistory for file access
+
+Event Processing — Meta/Super [DONE]
+  [x] open_main_menu → transitionScreen(.main_menu)
+  [x] start_new_game → load new_player.txt → load campaign → queue start_hub
+  [x] load_save → load save file → load campaign → queue start_hub
+  [x] save_game → write player data to file
+  [x] start_hub → load hub file → transitionScreen(.hub) → queue build_player_from_data
+  [x] end_hub (cleanup via transitionScreen on next start_*)
+  [x] start_mission → load mission → queue start_level (level 1)
+  [x] end_mission → queue start_hub (end_hub)
+  [x] start_level → load level → transitionScreen(.level) → queue build_player_from_data
+  [x] end_level → queue next start_level or end_mission
+  [x] build_player_from_data → sync gear/skills from PlayerData to Entity
+  [x] build_data_from_player → sync gear/skills from Entity to PlayerData
+
+Infrastructure [DONE]
+  [x] A* shortest path (Chebyshev distance, Manhattan heuristic, entity blocking)
+  [x] walkingDistance helper
+  [x] Combat log scaffolding (CombatLogEntry union on Level)
+  [x] Fixed-size inventory (8x12 = 96 slots, ?Item array)
+  [x] Fixed-size utility skills (utility_skill_count = 5)
+  [x] PlayerData tracks current_campaign and current_hub
+  [x] Mission tracks path and current_level_index for multi-level flow
+  [x] Event stack (LIFO) with queueEvents helper for appending
+  [x] Screen.scope() + transitionScreen() for clean screen transitions
+  [x] CLAUDE.md for session context
+
+Event Processing — Level/SubLevel [DONE]
+  [x] LevelEvent: turn_start, turn_end, player_turn_move,
+      player_turn_attack, enemy_turn_move, enemy_turn_attack,
+      move_entity, player_prepare_skill, use_skill,
+      highlight_tiles, clear_highlights
+  [x] SubLevelEvent: pickup_around, aggro_around, attack, stun,
+      knockback, retreat, create_effect, end_effect, death
+  [x] Turn sequencing (player → enemies sorted by distance → repeat)
+  [x] Dead entity guards (turn_start, attack, stun, knockback)
+  [x] Auto-skip attack step out of combat
+  [x] Level-end check after player aggro_around
+  [x] Initial aggro_around for all entities on level start
+  [x] Event stack cleared on screen transition
+  - Hook combat log entries into relevant events
+
+Event Processing — Player [DONE]
+  [x] PlayerEvent: swap_hands, learn_skill, salvage_item, equip_item
+  [x] swap_hands: swaps weapons, cancels prepared skill if in level
+  [x] Moved from LevelEvent to PlayerEvent (works in hub and level)
+  [x] swap_weapons input moved from IdleInput to AnytimeInput.InGameInput
+  - learn_skill, salvage_item, equip_item handlers (not yet implemented)
+
+Event Processing — Hub [DONE]
+  [x] HubEvent: move_player, interact_with_npc
+  [x] move_player: moves player, checks mission exits → queues start_mission
+  [x] Hub idle input: click NPC → interact_with_npc, click tile → move_player
+  [x] NPC click takes priority over tile movement
+  - interact_with_npc handler (not yet implemented)
+
+Idle Input → Event Translation (handleIdleInput) [DONE]
+  [x] tile_clicked: pathfind and queue move_entity during player_move phase (level)
+  [x] tile_clicked: move to tile or interact with NPC (hub)
+  [x] skill_slot_selected: resolve slot → SkillId, begin targeting or auto-target
+  [x] confirm: simulated tile click at cursor position
+  [x] cancel: deselect skill, clear highlights
+  [x] skip: end current turn / skip move or attack step
+
+Enemy AI [DONE]
+  [x] Basic aggro/chase/attack behavior (enemy_turn_move, enemy_turn_attack)
+  [x] Enemy turn sequencing (sorted by distance in turn_end)
+  [x] Movement: pathfind toward nearest opposing entity, respect minRange
+  [x] Attack: use non-turn-ending skills first (by priority), then best turn-ending skill
+
+Build-time Lookups [DONE]
+  [x] Generated src/generated_lookups.zig with getEffectDefinition / getSkillDefinition
+  [x] Comptime enum + exhaustive switch, auto-wired from file names
+  [x] Skill files standardized on `pub const skill`, effect defs in src/effects/
+
+Skill Logic
+  - Implement skill function pointers for each skill file
+  - Targeting (range, valid tiles, team filtering)
+  - Damage calculation with modifiers and effects
+  [x] Effective stat methods on Entity (getEffectiveRange, etc.)
+  [x] resolveSkillSlot (slots 1-2 main hand, slot 3 off hand, 4-8 utility)
+  [x] computeMinRange for enemy AI movement
+
+Color Theming [DONE]
+  [x] Color type (r, g, b), ColorGradient (6 colors), ColorTheme
+  [x] ActiveColorTheme (lightest, darkest, world/enemy/player gradients)
+  [x] color_themes.txt config file with 9 gradients around a color wheel
+  [x] Hex color parsing (asColor, #RRGGBB format)
+  [x] loadColorTheme parser (GlobalColors + Gradients sections)
+  [x] deriveActiveColorTheme (world index → enemy/player at 1/3 offsets)
+  [x] color_wheel_index on Level and Hub, parsed from Metadata
+  [x] ColorTheme loaded at startup, stored on GameStateHistory
+
+View State Types [DONE]
+  [x] ViewState struct — output of view(), input to renderer
+  [x] 3840x2160 reference resolution, ScreenPosition (integer)
+  [x] Layer 0: background color
+  [x] Layer 1: TileDrawable (position + checkerboard color)
+  [x] Layer 2: TileOverlayDrawable (highlight, outline, cursor + color)
+  [x] Layer 3: GroundDrawable union (entity, decoration piece, ground items, level end)
+      [x] EntityDrawable sub-layers: back effects, base, weapons, gear, front effects, health bar
+      [x] DecorationPieceDrawable with source_rectangle + draw_offset for footprint splitting
+      [x] SpriteDrawable with color tint (grayscale × theme color)
+  [x] Layer 4+5: flat ui_elements slice (UiElement union, sorted back to front)
+  [x] view() returns ViewState, game loop stores previous_view_state
+
+UI Framework — Types [DONE]
+  [x] UiState on GameState (open panels, overlays, tooltips, scroll offsets)
+  [x] MiddlePanelId (inventory, gear, skills, enemy_inspect)
+  [x] FullScreenOverlayId (world_map, full_combat_log)
+  [x] toggleMiddlePanel / toggleFullScreenOverlay with open-order preservation
+  [x] Options menu flag (separate, always on top, locks input)
+  [x] Options menu pauses game (blocks event processing + idle input)
+  [x] UiState reset on screen transition (prevents stale inspect targets etc.)
+  [x] UI element types: NineSlicePanel, Slot, Button, TextLabel, Bar, Image
+  [x] Button carries Action enum (same as keybinds — one input path for everything)
+  [x] UiElement tagged union for flat rendering
+  [x] Layout constants (bar heights, slot sizes, panel widths, border thickness)
+  [x] Tooltip corner selection (selectTooltipCorners — keeps tooltip on screen)
+  [x] Wired up toggle inputs in handleAnytimeInput
+  [x] Entity inspect toggle (open/close/switch target)
+
+--- Next up ---
+
+View Function Implementation
+  - Derive ActiveColorTheme from level/hub color_wheel_index
+  - Convert tile positions to screen positions (camera + zoom)
+  - Build TileDrawable slice with checkerboard coloring (world gradient indices 1 and 3)
+  - Build TileOverlayDrawable slice (highlighted tiles, cursor)
+  - Build GroundDrawable slice from entities, decorations, ground items, level end
+  - Sort GroundDrawable by y-then-x for correct occlusion
+  - Decoration footprint splitting (per-tile pieces with source rectangles)
+  - Entity sub-layer assembly (sprites, gear, effects, health bars)
+  - Sprite asset metadata (dimensions) needed for decoration splitting
+
+UI Framework — Panel Builders
+  - buildTopBar: options button (top-left), combat log summary
+  - buildBottomBar: inventory/gear/skills buttons, player health, skill bar (8 slots),
+    weapon swap button, skip button
+  - buildGearPanel: equipped gear slots (weapons, amulet, coat, gloves, pants, boots)
+  - buildInventoryPanel: 8x12 grid, material counts on right side
+  - buildSkillsPanel: learned skills grid (draggable for swapping utility slots)
+  - buildEnemyInspectPanel: entity stats, skill bar with cooldowns, active effects
+  - buildWorldMap: campaign graph visualization, clickable hubs/missions
+  - buildFullCombatLog: scrollable detailed combat log
+  - buildOptionsMenu: settings controls (volume, gameplay toggles)
+  - buildMainMenu: new game / load game / options buttons
+  - buildMissionComplete: statistics, clone rewards, continue/retry
+  - buildMissionFail: header text, exit/retry buttons
+  - buildTooltip: header + body text, auto-sized background panel
+  - 9-slice panel splitting (corners, edges, center fill → sprite draws)
+  - Middle section horizontal scroll when panels exceed width
+
+Decoration Footprint
+  - Add footprint data to decoration config format (relative offsets from anchor)
+  - Parse footprint from level/hub files
+  - Multi-tile layout characters for decorations
+  - View function splits decorations into per-tile DecorationPieceDrawable
+
+Input Resolution from ViewState
+  - Use previous_view_state to resolve screen position → tile coordinate
+  - Use previous_view_state to resolve screen position → UI element (slots, buttons)
+  - Button clicks → resolve Action from Button.action, feed into PlayerInput
+  - Tooltip activation on hover (set active_tooltip from UI element hover)
+  - Replace direct camera math in translateInput
+  [x] Options menu locks out game input when open
+
+Player Events
+  - learn_skill handler (add to learned_skills, consume skill tome)
+  - salvage_item handler (remove item, add materials)
+  - equip_item handler (swap equipped gear with inventory item)
+
+NPC Interaction
+  - interact_with_npc handler (dialogue, shop, quest, etc.)
+  - NPC dialogue system
+  - NPC types (shopkeeper, quest giver, etc.)
+
+Combat Log
+  - Hook combat log entries into relevant event handlers
+    (attack, death, stun, knockback, skill use, movement, etc.)
+
+Mission Flow
+  - mission_fail screen (triggered on player death)
+  - mission_complete screen (triggered on mission end)
+  - New Screen variants and transition events
+
+Platform Layer (raylib)
+  - Raylib integration for windowing, input, and rendering
+  - Map raylib input events to PlatformInputEvent
+  - Render ViewState layers using raylib drawing functions
+  - Scale from reference resolution to actual viewport
+  - Grayscale sprite × Color multiplication (shader or CPU)
+  - Sprite source rectangle cropping (decoration pieces)
+  - Draw offset support (decoration overhang)
+  - 9-slice panel rendering
+  - Text rendering (font loading, size scaling)
+  - WASM build target (raylib supports Emscripten)
+
+Audio
+  - Play music and sound effects via raylib audio API
+  - Hook into events (attack → hit sound, etc.)

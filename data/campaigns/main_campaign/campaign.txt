@@ -1,0 +1,3 @@
+Metadata
+name Main Campaign
+start_hub starting_village

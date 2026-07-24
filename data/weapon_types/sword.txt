@@ -1,0 +1,4 @@
+Skills
+skill_1 slice
+skill_2 spinblade
+skill_3 flash_strike

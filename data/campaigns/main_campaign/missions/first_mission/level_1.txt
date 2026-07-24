@@ -1,0 +1,26 @@
+Metadata
+name Level 1
+
+Layout
+   1..
+ ..!..
+   ..=
+
+Enemies
+character_code 1
+name Skeleton Warrior
+sprite Skeleton1
+max_health 20
+defense 0
+speed 1
+aggro_range 3
+main_hand_weapon_type sword
+main_hand_weapon_name Skeleton Sword
+main_hand_weapon_damage 4
+off_hand_weapon_type shield
+off_hand_weapon_name Skeleton Shield
+off_hand_weapon_damage 3
+
+Decorations
+
+Items

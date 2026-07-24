@@ -1,0 +1,4 @@
+Metadata
+name First Mission
+start_hub starting_village
+end_hub starting_village

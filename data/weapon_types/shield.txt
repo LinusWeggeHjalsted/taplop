@@ -1,0 +1,4 @@
+Skills
+skill_1 bash
+skill_2 slam
+skill_3 reflect

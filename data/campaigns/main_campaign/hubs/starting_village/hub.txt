@@ -1,0 +1,10 @@
+Metadata
+name Starting Village
+
+Layout
+
+NPCs
+
+Decorations
+
+Exits

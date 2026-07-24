@@ -1,0 +1,189 @@
+Info
+player_name New Player
+current_campaign main_campaign
+current_hub starting_village
+turns 390
+deaths 8
+defeated_enemies 89
+wood_salvage 173
+metal_salvage 315
+leather_salvage 213
+cloth_salvage 204
+knowledge 170
+
+DiscoveredHubs
+name Camp at the Crossroads
+
+UnlockedSkills
+name replenish
+
+name howl
+
+name blink
+
+name stone_form
+
+name focus
+
+name swap
+
+name that_which_lingers
+
+MainHandWeapon
+item_name Skeleton Staff
+weapon_type staff
+damage 5
+
+OffHandWeapon
+item_name Crab Axe
+weapon_type axe
+damage 6
+
+Amulet
+item_name Starter Amulet
+spell_damage 3
+
+Coat
+item_name Bear Coat
+armor 2
+health 2
+
+Gloves
+item_name Bear Gloves
+health 2
+damage 2
+
+Pants
+item_name Skeleton Pants
+health 2
+pickup_radius 1
+
+Boots
+item_name Wolf Boots
+health 2
+speed 1
+
+Inventory
+item_type weapon
+item_name Rusty Dagger
+weapon_type dagger
+damage 5
+slot 94
+
+item_type weapon
+item_name Crab Sword
+weapon_type sword
+damage 5
+slot 96
+
+item_type weapon
+item_name Skeleton Sword
+weapon_type sword
+damage 5
+slot 1
+
+item_type coat
+item_name Skeleton Coat
+armor 1
+health 2
+slot 2
+
+item_type pants
+item_name Skeleton Pants
+health 2
+pickup_radius 1
+slot 3
+
+item_type gloves
+item_name Skeleton Gloves
+health 2
+damage 1
+slot 4
+
+item_type weapon
+item_name Crab Sword
+weapon_type sword
+damage 5
+slot 5
+
+item_type weapon
+item_name Crab Shield
+weapon_type shield
+damage 5
+slot 6
+
+item_type gloves
+item_name Crab Gloves
+health 2
+damage 1
+slot 7
+
+item_type skill_tome
+item_name Stone Form Tome
+skill_name stone_form
+slot 8
+
+item_type weapon
+item_name Crab Sword
+weapon_type sword
+damage 5
+slot 9
+
+item_type weapon
+item_name Crab Shield
+weapon_type shield
+damage 5
+slot 10
+
+item_type gloves
+item_name Crab Gloves
+health 2
+damage 1
+slot 11
+
+item_type skill_tome
+item_name Stone Form Tome
+skill_name stone_form
+slot 12
+
+item_type weapon
+item_name Crab Shield
+weapon_type shield
+damage 6
+slot 93
+
+item_type weapon
+item_name Bamboo Spear
+weapon_type spear
+damage 4
+slot 95
+
+item_type boots
+item_name Comfortable Boots
+health 1
+speed 1
+slot 13
+
+UtilitySkills
+slot_4 blink
+slot_5 focus
+slot_6 that_which_lingers
+slot_7 stone_form
+slot_8 replenish
+
+CloneData
+clone_name Beginnings
+wood 25
+metal 35
+leather 27
+cloth 27
+knowledge 0
+turns_to_complete 33
+
+clone_name Forest
+wood 1
+metal 4
+leather 4
+cloth 5
+knowledge 0
+turns_to_complete 6
