@@ -2,7 +2,6 @@ const types = @import("types.zig");
 
 const Vector2 = types.Vector2;
 const SkillId = types.SkillId;
-const Entity = types.Entity;
 const Item = types.Item;
 const Materials = types.Materials;
 const EffectId = types.EffectId;
@@ -76,15 +75,14 @@ pub const PlayerEvent = union(enum) {
     // scope: hub or level
     swap_hands: void,
     learn_skill: struct {
-        skill: SkillId,
+        inventory_slot_index: u32,
     },
     salvage_item: struct {
-        // only possible for inventory items
-        item: Item,
+        inventory_slot_index: u32,
     },
     equip_item: struct {
-        unequipped_item: Item,
-        equipped_item: ?Item,
+        inventory_slot_index: u32,
+        main_hand: bool = true,
     },
 };
 

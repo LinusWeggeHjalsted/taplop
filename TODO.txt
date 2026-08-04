@@ -72,7 +72,7 @@ Event Processing — Player [DONE]
   [x] swap_hands: swaps weapons, cancels prepared skill if in level
   [x] Moved from LevelEvent to PlayerEvent (works in hub and level)
   [x] swap_weapons input moved from IdleInput to AnytimeInput.InGameInput
-  - learn_skill, salvage_item, equip_item handlers (not yet implemented)
+  [x] learn_skill, salvage_item, equip_item handlers
 
 Event Processing — Hub [DONE]
   [x] HubEvent: move_player, interact_with_npc
@@ -192,10 +192,13 @@ Input Resolution from ViewState
   - Replace direct camera math in translateInput
   [x] Options menu locks out game input when open
 
-Player Events
-  - learn_skill handler (add to learned_skills, consume skill tome)
-  - salvage_item handler (remove item, add materials)
-  - equip_item handler (swap equipped gear with inventory item)
+Player Events [DONE]
+  [x] learn_skill handler (consume skill tome by inventory slot, add to learned_skills)
+  [x] salvage_item handler (remove item by inventory slot, compute materials from data-driven splits)
+  [x] equip_item handler (swap gear by inventory slot, main_hand bool for weapon slot selection)
+  [x] Salvage system: data/salvage.txt config, SalvageDefinitions loaded at startup
+  [x] computeSalvageValue in functions.zig (last material gets remainder, zero-loss rounding)
+  [x] Removed salvage_conversion placeholder from item structs, added value field to SkillTome
 
 NPC Interaction
   - interact_with_npc handler (dialogue, shop, quest, etc.)

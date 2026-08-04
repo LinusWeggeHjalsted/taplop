@@ -160,7 +160,8 @@ fn useSkill(
         if (entity.team == caster.team) continue;
         if (entity.position.x == target_position.x and entity.position.y == target_position.y) {
             // Calculate damage: 1.5x if target below half health
-            var damage: u32 = caster.getEffectiveOutgoingDamage(caster.main_hand_weapon.weapon_damage);
+            const base_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
+            var damage: u32 = caster.getEffectiveOutgoingDamage(base_damage);
             if (entity.current_health * 2 < entity.max_health) {
                 damage = damage + damage / 2; // 1.5x, integer math
             }

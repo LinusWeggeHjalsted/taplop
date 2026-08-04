@@ -81,7 +81,7 @@ pub const ColorGradient = struct {
     colors: [gradient_color_count]Color,
 };
 
-pub const ColorTheme = struct {
+pub const ColorThemeDefinitions = struct {
     lightest: Color,
     darkest: Color,
     gradients: []const ColorGradient,
@@ -146,46 +146,40 @@ pub const Weapon = struct {
     name: []const u8 = &.{},
     weapon_type: WeaponType = .sword,
     weapon_damage: u32 = 0,
-    salvage_conversion: Materials = .{},
 };
 
 pub const Amulet = struct {
     name: []const u8 = &.{},
     spell_damage: u32 = 0,
-    salvage_conversion: Materials = .{},
 };
 
 pub const Coat = struct {
     name: []const u8 = &.{},
     health_bonus: u32 = 0,
     defense_bonus: u32 = 0,
-    salvage_conversion: Materials = .{},
 };
 
 pub const Gloves = struct {
     name: []const u8 = &.{},
     health_bonus: u32 = 0,
     damage_bonus: u32 = 0,
-    salvage_conversion: Materials = .{},
 };
 
 pub const Pants = struct {
     name: []const u8 = &.{},
     health_bonus: u32 = 0,
     pickup_radius_bonus: u32 = 0,
-    salvage_conversion: Materials = .{},
 };
 
 pub const Boots = struct {
     name: []const u8 = &.{},
     health_bonus: u32 = 0,
     speed_bonus: u32 = 0,
-    salvage_conversion: Materials = .{},
 };
 
 pub const SkillTome = struct {
     skill: SkillId = .slice,
-    salvage_conversion: Materials = .{},
+    value: u32 = 5,
 };
 
 pub const Item = union(enum) {
@@ -233,13 +227,13 @@ pub const Entity = struct {
     is_active: bool = false,
     stun_duration: u32 = 0,
 
-    main_hand_weapon: Weapon = .{},
-    off_hand_weapon: Weapon = .{},
-    amulet: Amulet = .{},
-    coat: Coat = .{},
-    gloves: Gloves = .{},
-    pants: Pants = .{},
-    boots: Boots = .{},
+    main_hand_weapon: ?Weapon = null,
+    off_hand_weapon: ?Weapon = null,
+    amulet: ?Amulet = null,
+    coat: ?Coat = null,
+    gloves: ?Gloves = null,
+    pants: ?Pants = null,
+    boots: ?Boots = null,
 
     equipped_utility_skills: [utility_skill_count]SkillId = .{.slice} ** utility_skill_count,
     inventory: Inventory = .{},
@@ -271,8 +265,9 @@ pub const Entity = struct {
     }
 
     pub fn getEffectiveOutgoingDamage(self: Entity, base_damage: u32) u32 {
+        const gloves_bonus: u32 = if (self.gloves) |gloves| gloves.damage_bonus else 0;
         const modifier = self.sumEffectModifier(.outgoing_damage) +
-            @as(i32, @intCast(self.gloves.damage_bonus)) +
+            @as(i32, @intCast(gloves_bonus)) +
             @as(i32, @intCast(self.getConvertedMomentum()));
         return applyModifier(base_damage, modifier);
     }
@@ -316,20 +311,23 @@ pub const Entity = struct {
     }
 
     pub fn getEffectiveSpeed(self: Entity) u32 {
+        const boots_bonus: u32 = if (self.boots) |boots| boots.speed_bonus else 0;
         const modifier = self.sumEffectModifier(.speed) +
-            @as(i32, @intCast(self.boots.speed_bonus));
+            @as(i32, @intCast(boots_bonus));
         return applyModifier(self.speed, modifier);
     }
 
     pub fn getEffectivePickupRadius(self: Entity, base_radius: u32) u32 {
+        const pants_bonus: u32 = if (self.pants) |pants| pants.pickup_radius_bonus else 0;
         const modifier = self.sumEffectModifier(.pickup_radius) +
-            @as(i32, @intCast(self.pants.pickup_radius_bonus));
+            @as(i32, @intCast(pants_bonus));
         return applyModifier(base_radius, modifier);
     }
 
     pub fn getEffectiveDefense(self: Entity) u32 {
+        const coat_bonus: u32 = if (self.coat) |coat| coat.defense_bonus else 0;
         const modifier = self.sumEffectModifier(.defense) +
-            @as(i32, @intCast(self.coat.defense_bonus));
+            @as(i32, @intCast(coat_bonus));
         return applyModifier(self.defense, modifier);
     }
 };
@@ -339,12 +337,53 @@ pub const GroundItems = struct {
     items: []const Item,
 };
 
+pub const MaterialType = enum {
+    wood,
+    metal,
+    leather,
+    cloth,
+    knowledge,
+};
+
 pub const Materials = struct {
     wood: u32 = 0,
     metal: u32 = 0,
     leather: u32 = 0,
     cloth: u32 = 0,
     knowledge: u32 = 0,
+
+    pub fn add(self: *Materials, other: Materials) void {
+        self.wood += other.wood;
+        self.metal += other.metal;
+        self.leather += other.leather;
+        self.cloth += other.cloth;
+        self.knowledge += other.knowledge;
+    }
+};
+
+pub const SalvageSplit = struct {
+    material: MaterialType,
+    parts: u32,
+};
+
+pub const SalvageDefinition = struct {
+    splits: []const SalvageSplit,
+};
+
+pub const item_type_count = @typeInfo(ItemType).@"union".fields.len;
+pub const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
+
+/// Salvage definitions for all item types.
+/// Non-weapon items are indexed by their position in the ItemType union
+/// (skipping .weapon, which uses per-weapon-type definitions).
+pub const SalvageDefinitions = struct {
+    weapon: [weapon_type_count]SalvageDefinition,
+    amulet: SalvageDefinition,
+    coat: SalvageDefinition,
+    gloves: SalvageDefinition,
+    pants: SalvageDefinition,
+    boots: SalvageDefinition,
+    skill_tome: SalvageDefinition,
 };
 
 pub const inventory_columns = 8;

@@ -27,19 +27,19 @@ pub fn deepCopy(comptime T: type, value: T, allocator: std.mem.Allocator) T {
                 else => @compileError("deepCopy does not support non-slice pointer: " ++ @typeName(T)),
             }
         },
-        .optional => |opt| {
-            if (value) |v| {
-                return deepCopy(opt.child, v, allocator);
+        .optional => |optional| {
+            if (value) |unwrapped| {
+                return deepCopy(optional.child, unwrapped, allocator);
             } else {
                 return null;
             }
         },
-        .@"union" => |u| {
-            if (u.tag_type) |_| {
+        .@"union" => |union_info| {
+            if (union_info.tag_type) |_| {
                 // Tagged union: switch on the active field and deep-copy its payload
                 return switch (value) {
                     inline else => |payload, tag| {
-                        const field_info = u.fields[@intFromEnum(tag)];
+                        const field_info = union_info.fields[@intFromEnum(tag)];
                         if (field_info.type == void) {
                             return @unionInit(T, field_info.name, {});
                         } else {
@@ -51,9 +51,9 @@ pub fn deepCopy(comptime T: type, value: T, allocator: std.mem.Allocator) T {
                 @compileError("deepCopy does not support untagged unions: " ++ @typeName(T));
             }
         },
-        .@"struct" => |s| {
+        .@"struct" => |struct_info| {
             var result: T = undefined;
-            inline for (s.fields) |field| {
+            inline for (struct_info.fields) |field| {
                 @field(result, field.name) = deepCopy(field.type, @field(value, field.name), allocator);
             }
             return result;
@@ -61,10 +61,10 @@ pub fn deepCopy(comptime T: type, value: T, allocator: std.mem.Allocator) T {
         .@"enum", .int, .comptime_int, .float, .comptime_float, .bool, .void => {
             return value;
         },
-        .array => |arr| {
+        .array => |array_info| {
             var result: T = undefined;
             for (&result, value) |*destination, source| {
-                destination.* = deepCopy(arr.child, source, allocator);
+                destination.* = deepCopy(array_info.child, source, allocator);
             }
             return result;
         },

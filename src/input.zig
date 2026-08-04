@@ -68,7 +68,7 @@ pub const InputState = struct {
     keys_held: [max_held_keys]?[]const u8 = .{null} ** max_held_keys,
     mouse_buttons_held: [max_held_mouse]?[]const u8 = .{null} ** max_held_mouse,
     gamepad_buttons_held: [max_held_gamepad]?[]const u8 = .{null} ** max_held_gamepad,
-    mouse_screen_positionition: ScreenPosition = .{ .x = 0, .y = 0 },
+    mouse_screen_position: ScreenPosition = .{ .x = 0, .y = 0 },
     active_touches: [max_touch_points]?ActiveTouch = .{null} ** max_touch_points,
 
     pub const max_held_keys = 16;
@@ -216,9 +216,9 @@ fn checkAction(
 
         // Check if the bound input was just pressed
         const pressed = switch (binding.input) {
-            .key => |k| InputState.isHeld(keys_pressed, k),
-            .mouse_button => |m| InputState.isHeld(mouse_pressed, m),
-            .gamepad_button => |g| InputState.isHeld(gamepad_pressed, g),
+            .key => |key| InputState.isHeld(keys_pressed, key),
+            .mouse_button => |button| InputState.isHeld(mouse_pressed, button),
+            .gamepad_button => |gamepad| InputState.isHeld(gamepad_pressed, gamepad),
         };
 
         if (pressed) return true;
@@ -245,61 +245,61 @@ pub fn translateInput(
     // Process each raw event
     for (platform.events) |event| {
         switch (event) {
-            .key_down => |k| {
-                if (!InputState.isHeld(&state.keys_held, k)) {
-                    InputState.addHeld(&keys_pressed, k);
+            .key_down => |key| {
+                if (!InputState.isHeld(&state.keys_held, key)) {
+                    InputState.addHeld(&keys_pressed, key);
                 }
-                InputState.addHeld(&state.keys_held, k);
+                InputState.addHeld(&state.keys_held, key);
             },
-            .key_up => |k| {
-                InputState.removeHeld(&state.keys_held, k);
+            .key_up => |key| {
+                InputState.removeHeld(&state.keys_held, key);
             },
-            .mouse_button_down => |m| {
-                if (!InputState.isHeld(&state.mouse_buttons_held, m)) {
-                    InputState.addHeld(&mouse_pressed, m);
+            .mouse_button_down => |button| {
+                if (!InputState.isHeld(&state.mouse_buttons_held, button)) {
+                    InputState.addHeld(&mouse_pressed, button);
                 }
-                InputState.addHeld(&state.mouse_buttons_held, m);
+                InputState.addHeld(&state.mouse_buttons_held, button);
             },
-            .mouse_button_up => |m| {
-                InputState.removeHeld(&state.mouse_buttons_held, m);
+            .mouse_button_up => |button| {
+                InputState.removeHeld(&state.mouse_buttons_held, button);
             },
             .mouse_move => |position| {
-                state.mouse_screen_positionition = position;
+                state.mouse_screen_position = position;
             },
             .mouse_scroll => |delta| {
                 scroll_delta += delta;
             },
-            .gamepad_button_down => |g| {
-                if (!InputState.isHeld(&state.gamepad_buttons_held, g)) {
-                    InputState.addHeld(&gamepad_pressed, g);
+            .gamepad_button_down => |gamepad| {
+                if (!InputState.isHeld(&state.gamepad_buttons_held, gamepad)) {
+                    InputState.addHeld(&gamepad_pressed, gamepad);
                 }
-                InputState.addHeld(&state.gamepad_buttons_held, g);
+                InputState.addHeld(&state.gamepad_buttons_held, gamepad);
             },
-            .gamepad_button_up => |g| {
-                InputState.removeHeld(&state.gamepad_buttons_held, g);
+            .gamepad_button_up => |gamepad| {
+                InputState.removeHeld(&state.gamepad_buttons_held, gamepad);
             },
-            .touch_start => |t| {
+            .touch_start => |touch| {
                 for (&state.active_touches) |*slot| {
                     if (slot.* == null) {
-                        slot.* = .{ .id = t.id, .position = t.position };
+                        slot.* = .{ .id = touch.id, .position = touch.position };
                         break;
                     }
                 }
             },
-            .touch_move => |t| {
+            .touch_move => |touch| {
                 for (&state.active_touches) |*slot| {
                     if (slot.*) |*active| {
-                        if (active.id == t.id) {
-                            active.position = t.position;
+                        if (active.id == touch.id) {
+                            active.position = touch.position;
                             break;
                         }
                     }
                 }
             },
-            .touch_end => |t| {
+            .touch_end => |touch| {
                 for (&state.active_touches) |*slot| {
                     if (slot.*) |active| {
-                        if (active.id == t.id) {
+                        if (active.id == touch.id) {
                             slot.* = null;
                             break;
                         }
@@ -330,7 +330,7 @@ pub fn translateInput(
     result.anytime.in_game.swap_weapons = checkAction(.swap_weapons, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
 
     // Mouse move → tile cursor
-    result.anytime.in_game.move_tile_cursor_to = screenToTile(state.mouse_screen_positionition, camera, zoom, platform.viewport);
+    result.anytime.in_game.move_tile_cursor_to = screenToTile(state.mouse_screen_position, camera, zoom, platform.viewport);
 
     // Idle actions
     result.idle.confirm = checkAction(.confirm, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
@@ -351,7 +351,7 @@ pub fn translateInput(
 
     // Left mouse click → tile_clicked
     if (InputState.isHeld(&mouse_pressed, "left")) {
-        result.idle.tile_clicked = screenToTile(state.mouse_screen_positionition, camera, zoom, platform.viewport);
+        result.idle.tile_clicked = screenToTile(state.mouse_screen_position, camera, zoom, platform.viewport);
     }
 
     return result;

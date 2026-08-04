@@ -22,7 +22,7 @@ const ReplayViewer = types.ReplayViewer;
 const Level = types.Level;
 const WeaponType = types.WeaponType;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
-const ColorTheme = types.ColorTheme;
+const ColorThemeDefinitions = types.ColorThemeDefinitions;
 const Settings = types.Settings;
 const Skill = @import("skills/skill.zig").Skill;
 const SkillType = types.SkillType;
@@ -302,9 +302,9 @@ fn resolveSkillSlot(
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
 ) ?SkillId {
     return switch (slot) {
-        1 => weapon_type_definitions[@intFromEnum(entity.main_hand_weapon.weapon_type)].skill_1,
-        2 => weapon_type_definitions[@intFromEnum(entity.main_hand_weapon.weapon_type)].skill_2,
-        3 => weapon_type_definitions[@intFromEnum(entity.off_hand_weapon.weapon_type)].skill_3,
+        1 => if (entity.main_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_1 else null,
+        2 => if (entity.main_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_2 else null,
+        3 => if (entity.off_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_3 else null,
         4 => entity.equipped_utility_skills[0],
         5 => entity.equipped_utility_skills[1],
         6 => entity.equipped_utility_skills[2],
@@ -321,14 +321,25 @@ fn resolveSkillSlot(
 fn collectEntitySkillIds(
     entity: Entity,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
-) [utility_skill_count + 3]SkillId {
-    const main_hand_def = weapon_type_definitions[@intFromEnum(entity.main_hand_weapon.weapon_type)];
-    const off_hand_def = weapon_type_definitions[@intFromEnum(entity.off_hand_weapon.weapon_type)];
-    return .{
-        main_hand_def.skill_1,
-        main_hand_def.skill_2,
-        off_hand_def.skill_3,
-    } ++ entity.equipped_utility_skills;
+) [utility_skill_count + 3]?SkillId {
+    const main_hand_skills: [2]?SkillId = if (entity.main_hand_weapon) |weapon| blk: {
+        const definition = weapon_type_definitions[@intFromEnum(weapon.weapon_type)];
+        break :blk .{ definition.skill_1, definition.skill_2 };
+    } else .{ null, null };
+
+    const off_hand_skill: ?SkillId = if (entity.off_hand_weapon) |weapon|
+        weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_3
+    else
+        null;
+
+    var result: [utility_skill_count + 3]?SkillId = undefined;
+    result[0] = main_hand_skills[0];
+    result[1] = main_hand_skills[1];
+    result[2] = off_hand_skill;
+    for (entity.equipped_utility_skills, 0..) |skill, index| {
+        result[3 + index] = skill;
+    }
+    return result;
 }
 
 /// Compute the minimum effective range across all off-cooldown skills an entity has.
@@ -342,7 +353,8 @@ fn computeMinRange(
     const skill_ids = collectEntitySkillIds(entity, weapon_type_definitions);
     var min_range: ?u32 = null;
 
-    for (&skill_ids) |skill_id| {
+    for (&skill_ids) |maybe_skill_id| {
+        const skill_id = maybe_skill_id orelse continue;
         if (entity.skill_cooldowns.get(skill_id) > 0) continue;
 
         const skill_definition = lookups.getSkillDefinition(skill_id) orelse continue;
@@ -512,8 +524,8 @@ fn processEvent(
     switch (next_event) {
         .meta_event => |meta| {
             const should_checkpoint = switch (meta) {
-                .start_level => |l| l.sets_checkpoint,
-                .start_hub => |h| h.sets_checkpoint,
+                .start_level => |level| level.sets_checkpoint,
+                .start_hub => |hub| hub.sets_checkpoint,
                 else => false,
             };
             if (should_checkpoint) {
@@ -702,13 +714,13 @@ fn processEvent(
                     const player_entity = getPlayerEntity(current, sync.entity_index);
 
                     player_entity.name = player_data.player_name;
-                    player_entity.main_hand_weapon = player_data.main_hand_weapon orelse .{};
-                    player_entity.off_hand_weapon = player_data.off_hand_weapon orelse .{};
-                    player_entity.amulet = player_data.amulet orelse .{};
-                    player_entity.coat = player_data.coat orelse .{};
-                    player_entity.gloves = player_data.gloves orelse .{};
-                    player_entity.pants = player_data.pants orelse .{};
-                    player_entity.boots = player_data.boots orelse .{};
+                    player_entity.main_hand_weapon = player_data.main_hand_weapon;
+                    player_entity.off_hand_weapon = player_data.off_hand_weapon;
+                    player_entity.amulet = player_data.amulet;
+                    player_entity.coat = player_data.coat;
+                    player_entity.gloves = player_data.gloves;
+                    player_entity.pants = player_data.pants;
+                    player_entity.boots = player_data.boots;
                     player_entity.equipped_utility_skills = player_data.equipped_utility_skills;
                     player_entity.inventory = player_data.inventory;
                 },
@@ -734,9 +746,9 @@ fn processEvent(
             switch (player_event) {
                 .swap_hands => {
                     const player = getPlayerEntity(current, 0);
-                    const temp = player.main_hand_weapon;
+                    const held_weapon = player.main_hand_weapon;
                     player.main_hand_weapon = player.off_hand_weapon;
-                    player.off_hand_weapon = temp;
+                    player.off_hand_weapon = held_weapon;
 
                     // If in a level with a prepared skill, cancel targeting
                     if (current.level) |*level| {
@@ -746,9 +758,87 @@ fn processEvent(
                         }
                     }
                 },
-                .learn_skill => {},
-                .salvage_item => {},
-                .equip_item => {},
+                .learn_skill => |learn| {
+                    const player = getPlayerEntity(current, 0);
+                    const slot = &player.inventory.slots[learn.inventory_slot_index];
+
+                    // Validate the slot contains a skill tome
+                    const item = slot.* orelse return;
+                    const skill_id = switch (item) {
+                        .skill_tome => |tome| tome.skill,
+                        else => return,
+                    };
+
+                    // Check if already learned
+                    for (current.player_data.learned_skills) |learned| {
+                        if (learned == skill_id) return;
+                    }
+
+                    // Remove the tome from inventory
+                    slot.* = null;
+
+                    // Add to learned skills
+                    var updated_skills: std.ArrayList(SkillId) = .empty;
+                    updated_skills.appendSlice(allocator, current.player_data.learned_skills) catch
+                        @panic("failed to copy learned skills");
+                    updated_skills.append(allocator, skill_id) catch
+                        @panic("failed to append learned skill");
+                    current.player_data.learned_skills = updated_skills.toOwnedSlice(allocator) catch
+                        @panic("failed to allocate learned skills");
+                },
+                .salvage_item => |salvage| {
+                    const player = getPlayerEntity(current, 0);
+                    const slot = &player.inventory.slots[salvage.inventory_slot_index];
+
+                    const item = slot.* orelse return;
+
+                    // Compute salvage value and add to player materials
+                    const materials = functions.computeSalvageValue(item, history.salvage_definitions);
+                    current.player_data.materials.add(materials);
+
+                    // Remove the item from inventory
+                    slot.* = null;
+                },
+                .equip_item => |equip| {
+                    const player = getPlayerEntity(current, 0);
+                    const slot = &player.inventory.slots[equip.inventory_slot_index];
+
+                    const item = slot.* orelse return;
+
+                    // Swap the inventory item with the appropriate gear slot
+                    switch (item) {
+                        .weapon => |weapon| {
+                            if (equip.main_hand) {
+                                slot.* = if (player.main_hand_weapon) |old| .{ .weapon = old } else null;
+                                player.main_hand_weapon = weapon;
+                            } else {
+                                slot.* = if (player.off_hand_weapon) |old| .{ .weapon = old } else null;
+                                player.off_hand_weapon = weapon;
+                            }
+                        },
+                        .amulet => |amulet| {
+                            slot.* = if (player.amulet) |old| .{ .amulet = old } else null;
+                            player.amulet = amulet;
+                        },
+                        .coat => |coat| {
+                            slot.* = if (player.coat) |old| .{ .coat = old } else null;
+                            player.coat = coat;
+                        },
+                        .gloves => |gloves| {
+                            slot.* = if (player.gloves) |old| .{ .gloves = old } else null;
+                            player.gloves = gloves;
+                        },
+                        .pants => |pants| {
+                            slot.* = if (player.pants) |old| .{ .pants = old } else null;
+                            player.pants = pants;
+                        },
+                        .boots => |boots| {
+                            slot.* = if (player.boots) |old| .{ .boots = old } else null;
+                            player.boots = boots;
+                        },
+                        .skill_tome => return,
+                    }
+                },
             }
         },
         .hub_event => |hub_event| {
@@ -1085,7 +1175,8 @@ fn processEvent(
                     var best_ending_priority: f32 = 0;
                     var best_ending_definition: ?Skill = null;
 
-                    for (&skill_ids) |skill_id| {
+                    for (&skill_ids) |maybe_skill_id| {
+                        const skill_id = maybe_skill_id orelse continue;
                         if (entity.skill_cooldowns.get(skill_id) > 0) continue;
                         const skill_definition = lookups.getSkillDefinition(skill_id) orelse continue;
 
@@ -1585,20 +1676,20 @@ fn processEvent(
                         var dropped_items: std.ArrayList(types.Item) = .empty;
 
                         // Drop equipped gear
-                        if (entity.main_hand_weapon.weapon_damage > 0 or entity.main_hand_weapon.name.len > 0)
-                            dropped_items.append(allocator, .{ .weapon = entity.main_hand_weapon }) catch @panic("failed to append dropped item");
-                        if (entity.off_hand_weapon.weapon_damage > 0 or entity.off_hand_weapon.name.len > 0)
-                            dropped_items.append(allocator, .{ .weapon = entity.off_hand_weapon }) catch @panic("failed to append dropped item");
-                        if (entity.amulet.name.len > 0)
-                            dropped_items.append(allocator, .{ .amulet = entity.amulet }) catch @panic("failed to append dropped item");
-                        if (entity.coat.name.len > 0)
-                            dropped_items.append(allocator, .{ .coat = entity.coat }) catch @panic("failed to append dropped item");
-                        if (entity.gloves.name.len > 0)
-                            dropped_items.append(allocator, .{ .gloves = entity.gloves }) catch @panic("failed to append dropped item");
-                        if (entity.pants.name.len > 0)
-                            dropped_items.append(allocator, .{ .pants = entity.pants }) catch @panic("failed to append dropped item");
-                        if (entity.boots.name.len > 0)
-                            dropped_items.append(allocator, .{ .boots = entity.boots }) catch @panic("failed to append dropped item");
+                        if (entity.main_hand_weapon) |weapon|
+                            dropped_items.append(allocator, .{ .weapon = weapon }) catch @panic("failed to append dropped item");
+                        if (entity.off_hand_weapon) |weapon|
+                            dropped_items.append(allocator, .{ .weapon = weapon }) catch @panic("failed to append dropped item");
+                        if (entity.amulet) |amulet|
+                            dropped_items.append(allocator, .{ .amulet = amulet }) catch @panic("failed to append dropped item");
+                        if (entity.coat) |coat|
+                            dropped_items.append(allocator, .{ .coat = coat }) catch @panic("failed to append dropped item");
+                        if (entity.gloves) |gloves|
+                            dropped_items.append(allocator, .{ .gloves = gloves }) catch @panic("failed to append dropped item");
+                        if (entity.pants) |pants|
+                            dropped_items.append(allocator, .{ .pants = pants }) catch @panic("failed to append dropped item");
+                        if (entity.boots) |boots|
+                            dropped_items.append(allocator, .{ .boots = boots }) catch @panic("failed to append dropped item");
 
                         // Drop inventory contents
                         for (&entity.inventory.slots) |slot| {
@@ -1763,10 +1854,10 @@ fn update(
 /// Build a ViewState describing what to render for the current game state.
 fn view(
     current_state: *const GameState,
-    color_theme: types.ColorTheme,
+    color_theme_definitions: types.ColorThemeDefinitions,
 ) types.ViewState {
     _ = current_state;
-    _ = color_theme;
+    _ = color_theme_definitions;
     return .{
         .background_color = .{ .r = 0, .g = 0, .b = 0 },
         .active_color_theme = .{
@@ -1787,8 +1878,9 @@ fn gameLoop(
     allocator: std.mem.Allocator,
     starting_game_state: GameState,
     settings: Settings,
-    weapon_type_defs: *const [weapon_type_count]WeaponTypeDefinition,
-    color_theme: ColorTheme,
+    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    color_theme_definitions: ColorThemeDefinitions,
+    salvage_definitions: types.SalvageDefinitions,
     directory: std.Io.Dir,
     io: std.Io,
 ) void {
@@ -1796,8 +1888,9 @@ fn gameLoop(
         allocator,
         starting_game_state,
         settings,
-        weapon_type_defs,
-        color_theme,
+        weapon_type_definitions,
+        color_theme_definitions,
+        salvage_definitions,
         directory,
         io,
     );
@@ -1835,7 +1928,7 @@ fn gameLoop(
 
         // Check if it's time to render
         if (time_since_last_view >= frame_length) {
-            previous_view_state = view(&history.current_state, history.color_theme);
+            previous_view_state = view(&history.current_state, history.color_theme_definitions);
             // TODO: pass previous_view_state to renderer
             time_since_last_view -= frame_length;
         }
@@ -1863,13 +1956,13 @@ fn loadSettingsFromDisk(
     return parser.loadSettings(parsed.sections, allocator) catch .{ .input_bindings = &.{} };
 }
 
-/// Load color theme from data/color_themes.txt.
-/// Returns a default theme with no gradients on failure.
-fn loadColorThemeFromDisk(
+/// Load color theme definitions from data/color_themes.txt.
+/// Returns a default with no gradients on failure.
+fn loadColorThemeDefinitionsFromDisk(
     directory: std.Io.Dir,
     io: std.Io,
     allocator: std.mem.Allocator,
-) ColorTheme {
+) ColorThemeDefinitions {
     const parsed = parser.parseConfigFileFromPath(
         directory,
         io,
@@ -1881,7 +1974,7 @@ fn loadColorThemeFromDisk(
         .gradients = &.{},
     };
 
-    return parser.loadColorTheme(
+    return parser.loadColorThemeDefinitions(
         parsed.sections,
         allocator,
     ) catch .{
@@ -1918,6 +2011,26 @@ fn loadWeaponTypeDefinitions(
     return definitions;
 }
 
+/// Load salvage definitions from data/salvage.txt.
+/// Panics on failure since salvage data is required.
+fn loadSalvageDefinitionsFromDisk(
+    directory: std.Io.Dir,
+    io: std.Io,
+    allocator: std.mem.Allocator,
+) types.SalvageDefinitions {
+    const parsed = parser.parseConfigFileFromPath(
+        directory,
+        io,
+        "data/salvage.txt",
+        allocator,
+    ) catch @panic("failed to read salvage.txt");
+
+    return parser.loadSalvageDefinitions(
+        parsed.sections,
+        allocator,
+    ) catch @panic("failed to parse salvage.txt");
+}
+
 /// Called once to start the game loop.
 pub fn main() void {
     var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
@@ -1930,7 +2043,8 @@ pub fn main() void {
 
     const settings = loadSettingsFromDisk(directory, io, allocator);
     const weapon_type_definitions = loadWeaponTypeDefinitions(directory, io, allocator);
-    const color_theme = loadColorThemeFromDisk(directory, io, allocator);
+    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(directory, io, allocator);
+    const salvage_definitions = loadSalvageDefinitionsFromDisk(directory, io, allocator);
 
     const starting_game_state = GameState{
         .screen = .main_menu,
@@ -1952,7 +2066,8 @@ pub fn main() void {
         starting_game_state,
         settings,
         &weapon_type_definitions,
-        color_theme,
+        color_theme_definitions,
+        salvage_definitions,
         directory,
         io,
     );

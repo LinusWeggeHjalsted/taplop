@@ -1,0 +1,53 @@
+Sword
+wood 1
+metal 3
+
+Shield
+metal 1
+wood 3
+
+Spear
+metal 1
+wood 3
+
+Dagger
+wood 1
+metal 1
+
+Axe
+wood 1
+metal 1
+
+Staff
+knowledge 1
+wood 2
+
+Crossbow
+wood 1
+metal 1
+
+Idol
+knowledge 1
+metal 1
+
+Amulet
+knowledge 1
+
+Coat
+leather 1
+cloth 1
+
+Gloves
+cloth 1
+leather 1
+
+Pants
+leather 1
+cloth 1
+
+Boots
+cloth 1
+leather 1
+
+SkillTome
+knowledge 1

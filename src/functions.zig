@@ -411,3 +411,151 @@ test "shortestPath allows moving onto a tile occupied by destination entity" {
     try std.testing.expectEqual(1, path.?[0].x);
     try std.testing.expectEqual(0, path.?[0].y);
 }
+
+// ============================================================
+// Salvage
+// ============================================================
+
+const Item = types.Item;
+const Materials = types.Materials;
+const MaterialType = types.MaterialType;
+const SalvageDefinition = types.SalvageDefinition;
+const SalvageDefinitions = types.SalvageDefinitions;
+
+fn computeTotalValue(item: Item) u32 {
+    return switch (item) {
+        .weapon => |weapon| weapon.weapon_damage,
+        .amulet => |amulet| amulet.spell_damage,
+        .coat => |coat| coat.health_bonus + coat.defense_bonus,
+        .gloves => |gloves| gloves.health_bonus + gloves.damage_bonus,
+        .pants => |pants| pants.health_bonus + pants.pickup_radius_bonus,
+        .boots => |boots| boots.health_bonus + boots.speed_bonus,
+        .skill_tome => |skill_tome| skill_tome.value,
+    };
+}
+
+fn getSalvageDefinition(
+    item: Item,
+    salvage_definitions: SalvageDefinitions,
+) SalvageDefinition {
+    return switch (item) {
+        .weapon => |weapon| salvage_definitions.weapon[@intFromEnum(weapon.weapon_type)],
+        .amulet => salvage_definitions.amulet,
+        .coat => salvage_definitions.coat,
+        .gloves => salvage_definitions.gloves,
+        .pants => salvage_definitions.pants,
+        .boots => salvage_definitions.boots,
+        .skill_tome => salvage_definitions.skill_tome,
+    };
+}
+
+fn setMaterial(
+    materials: *Materials,
+    material_type: MaterialType,
+    value: u32,
+) void {
+    switch (material_type) {
+        .wood => materials.wood = value,
+        .metal => materials.metal = value,
+        .leather => materials.leather = value,
+        .cloth => materials.cloth = value,
+        .knowledge => materials.knowledge = value,
+    }
+}
+
+pub fn computeSalvageValue(
+    item: Item,
+    salvage_definitions: SalvageDefinitions,
+) Materials {
+    const total_value = computeTotalValue(item);
+    if (total_value == 0) return .{};
+
+    const definition = getSalvageDefinition(item, salvage_definitions);
+    if (definition.splits.len == 0) return .{};
+
+    // Sum all parts to get the denominator
+    var denominator: u32 = 0;
+    for (definition.splits) |split| {
+        denominator += split.parts;
+    }
+    if (denominator == 0) return .{};
+
+    // Compute each split's share with integer division.
+    // Last split gets the remainder to guarantee no loss.
+    var result: Materials = .{};
+    var allocated: u32 = 0;
+
+    for (definition.splits, 0..) |split, index| {
+        if (index == definition.splits.len - 1) {
+            setMaterial(&result, split.material, total_value - allocated);
+        } else {
+            const share = total_value * split.parts / denominator;
+            setMaterial(&result, split.material, share);
+            allocated += share;
+        }
+    }
+
+    return result;
+}
+
+test "computeSalvageValue sword" {
+    const sword_item: Item = .{ .weapon = .{
+        .weapon_damage = 5,
+        .weapon_type = .sword,
+    } };
+
+    const definitions = SalvageDefinitions{
+        .weapon = blk: {
+            var weapon_definitions: [types.weapon_type_count]SalvageDefinition = undefined;
+            for (&weapon_definitions) |*entry| entry.* = .{ .splits = &.{} };
+            weapon_definitions[@intFromEnum(types.WeaponType.sword)] = .{
+                .splits = &.{
+                    .{ .material = .wood, .parts = 1 },
+                    .{ .material = .metal, .parts = 3 },
+                },
+            };
+            break :blk weapon_definitions;
+        },
+        .amulet = .{ .splits = &.{} },
+        .coat = .{ .splits = &.{} },
+        .gloves = .{ .splits = &.{} },
+        .pants = .{ .splits = &.{} },
+        .boots = .{ .splits = &.{} },
+        .skill_tome = .{ .splits = &.{} },
+    };
+
+    const result = computeSalvageValue(sword_item, definitions);
+    try std.testing.expectEqual(@as(u32, 1), result.wood);
+    try std.testing.expectEqual(@as(u32, 4), result.metal);
+    try std.testing.expectEqual(@as(u32, 0), result.leather);
+    try std.testing.expectEqual(@as(u32, 0), result.cloth);
+    try std.testing.expectEqual(@as(u32, 0), result.knowledge);
+}
+
+test "computeSalvageValue skill tome" {
+    const tome_item: Item = .{ .skill_tome = .{
+        .value = 5,
+    } };
+
+    const definitions = SalvageDefinitions{
+        .weapon = blk: {
+            var weapon_definitions: [types.weapon_type_count]SalvageDefinition = undefined;
+            for (&weapon_definitions) |*entry| entry.* = .{ .splits = &.{} };
+            break :blk weapon_definitions;
+        },
+        .amulet = .{ .splits = &.{} },
+        .coat = .{ .splits = &.{} },
+        .gloves = .{ .splits = &.{} },
+        .pants = .{ .splits = &.{} },
+        .boots = .{ .splits = &.{} },
+        .skill_tome = .{
+            .splits = &.{
+                .{ .material = .knowledge, .parts = 1 },
+            },
+        },
+    };
+
+    const result = computeSalvageValue(tome_item, definitions);
+    try std.testing.expectEqual(@as(u32, 5), result.knowledge);
+    try std.testing.expectEqual(@as(u32, 0), result.wood);
+}

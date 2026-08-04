@@ -16,7 +16,8 @@ const WeaponTypeDefinition = types.WeaponTypeDefinition;
 const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
 const PlayerData = types.PlayerData;
 const Camera = types.Camera;
-const ColorTheme = types.ColorTheme;
+const ColorThemeDefinitions = types.ColorThemeDefinitions;
+const SalvageDefinitions = types.SalvageDefinitions;
 const Editor = types.Editor;
 const ReplayViewer = types.ReplayViewer;
 const Campaign = types.Campaign;
@@ -106,7 +107,8 @@ pub const GameStateHistory = struct {
 
     // Static game data loaded once at startup.
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
-    color_theme: ColorTheme,
+    color_theme_definitions: ColorThemeDefinitions,
+    salvage_definitions: SalvageDefinitions,
 
     // File I/O handles for standalone mode. On web, file loading goes
     // through JS — these are not used.
@@ -152,14 +154,16 @@ pub const GameStateHistory = struct {
         initial_state: GameState,
         settings: Settings,
         weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
-        color_theme: ColorTheme,
+        color_theme_definitions: ColorThemeDefinitions,
+        salvage_definitions: SalvageDefinitions,
         directory: std.Io.Dir,
         io: std.Io,
     ) GameStateHistory {
         return .{
             .settings = settings,
             .weapon_type_definitions = weapon_type_definitions,
-            .color_theme = color_theme,
+            .color_theme_definitions = color_theme_definitions,
+            .salvage_definitions = salvage_definitions,
             .directory = directory,
             .io = io,
             .initial_state = initial_state,
@@ -261,8 +265,8 @@ pub const GameStateHistory = struct {
             for (buffer) |*slot| {
                 if (slot.*) |*saved| {
                     if (saved.event_index <= target_event_index) {
-                        if (best) |b| {
-                            if (saved.event_index > b.event_index) {
+                        if (best) |best_saved| {
+                            if (saved.event_index > best_saved.event_index) {
                                 best = saved;
                             }
                         } else {

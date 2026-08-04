@@ -11,8 +11,12 @@ const WeaponType = types.WeaponType;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 const Color = types.Color;
 const ColorGradient = types.ColorGradient;
-const ColorTheme = types.ColorTheme;
+const ColorThemeDefinitions = types.ColorThemeDefinitions;
 const ActiveColorTheme = types.ActiveColorTheme;
+const MaterialType = types.MaterialType;
+const SalvageSplit = types.SalvageSplit;
+const SalvageDefinition = types.SalvageDefinition;
+const SalvageDefinitions = types.SalvageDefinitions;
 
 // ============================================================
 // Generic config file parser
@@ -64,6 +68,15 @@ const valid_section_headers = [_][]const u8{
     "CloneData",
     "GlobalColors",
     "Gradients",
+    "Sword",
+    "Shield",
+    "Spear",
+    "Dagger",
+    "Axe",
+    "Staff",
+    "Crossbow",
+    "Idol",
+    "SkillTome",
 };
 
 fn isValidSectionHeader(line: []const u8) bool {
@@ -488,40 +501,58 @@ pub fn loadLevel(
             if (findValue(pairs, "aggro_range")) |value| entity.aggro_range = asU32(value) orelse 3;
 
             // Main hand weapon
-            if (findValue(pairs, "main_hand_weapon_name")) |value| entity.main_hand_weapon.name = value;
-            if (findValue(pairs, "main_hand_weapon_type")) |value| {
-                entity.main_hand_weapon.weapon_type = parseEnum(types.WeaponType, value) orelse .sword;
-            }
-            if (findValue(pairs, "main_hand_weapon_damage")) |value| {
-                entity.main_hand_weapon.weapon_damage = asU32(value) orelse 0;
+            if (findValue(pairs, "main_hand_weapon_name")) |name| {
+                entity.main_hand_weapon = .{
+                    .name = name,
+                    .weapon_type = if (findValue(pairs, "main_hand_weapon_type")) |value| parseEnum(types.WeaponType, value) orelse .sword else .sword,
+                    .weapon_damage = if (findValue(pairs, "main_hand_weapon_damage")) |value| asU32(value) orelse 0 else 0,
+                };
             }
 
             // Off hand weapon
-            if (findValue(pairs, "off_hand_weapon_name")) |value| entity.off_hand_weapon.name = value;
-            if (findValue(pairs, "off_hand_weapon_type")) |value| {
-                entity.off_hand_weapon.weapon_type = parseEnum(types.WeaponType, value) orelse .sword;
-            }
-            if (findValue(pairs, "off_hand_weapon_damage")) |value| {
-                entity.off_hand_weapon.weapon_damage = asU32(value) orelse 0;
+            if (findValue(pairs, "off_hand_weapon_name")) |name| {
+                entity.off_hand_weapon = .{
+                    .name = name,
+                    .weapon_type = if (findValue(pairs, "off_hand_weapon_type")) |value| parseEnum(types.WeaponType, value) orelse .sword else .sword,
+                    .weapon_damage = if (findValue(pairs, "off_hand_weapon_damage")) |value| asU32(value) orelse 0 else 0,
+                };
             }
 
             // Gear
-            if (findValue(pairs, "amulet_name")) |value| entity.amulet.name = value;
-            if (findValue(pairs, "amulet_spell_damage")) |value| {
-                entity.amulet.spell_damage = asU32(value) orelse 0;
+            if (findValue(pairs, "amulet_name")) |name| {
+                entity.amulet = .{
+                    .name = name,
+                    .spell_damage = if (findValue(pairs, "amulet_spell_damage")) |value| asU32(value) orelse 0 else 0,
+                };
             }
-            if (findValue(pairs, "coat_name")) |value| entity.coat.name = value;
-            if (findValue(pairs, "coat_defense_bonus")) |value| entity.coat.defense_bonus = asU32(value) orelse 0;
-            if (findValue(pairs, "coat_health_bonus")) |value| entity.coat.health_bonus = asU32(value) orelse 0;
-            if (findValue(pairs, "gloves_name")) |value| entity.gloves.name = value;
-            if (findValue(pairs, "gloves_damage_bonus")) |value| entity.gloves.damage_bonus = asU32(value) orelse 0;
-            if (findValue(pairs, "gloves_health_bonus")) |value| entity.gloves.health_bonus = asU32(value) orelse 0;
-            if (findValue(pairs, "pants_name")) |value| entity.pants.name = value;
-            if (findValue(pairs, "pants_pickup_radius_bonus")) |value| entity.pants.pickup_radius_bonus = asU32(value) orelse 0;
-            if (findValue(pairs, "pants_health_bonus")) |value| entity.pants.health_bonus = asU32(value) orelse 0;
-            if (findValue(pairs, "boots_name")) |value| entity.boots.name = value;
-            if (findValue(pairs, "boots_speed_bonus")) |value| entity.boots.speed_bonus = asU32(value) orelse 0;
-            if (findValue(pairs, "boots_health_bonus")) |value| entity.boots.health_bonus = asU32(value) orelse 0;
+            if (findValue(pairs, "coat_name")) |name| {
+                entity.coat = .{
+                    .name = name,
+                    .defense_bonus = if (findValue(pairs, "coat_defense_bonus")) |value| asU32(value) orelse 0 else 0,
+                    .health_bonus = if (findValue(pairs, "coat_health_bonus")) |value| asU32(value) orelse 0 else 0,
+                };
+            }
+            if (findValue(pairs, "gloves_name")) |name| {
+                entity.gloves = .{
+                    .name = name,
+                    .damage_bonus = if (findValue(pairs, "gloves_damage_bonus")) |value| asU32(value) orelse 0 else 0,
+                    .health_bonus = if (findValue(pairs, "gloves_health_bonus")) |value| asU32(value) orelse 0 else 0,
+                };
+            }
+            if (findValue(pairs, "pants_name")) |name| {
+                entity.pants = .{
+                    .name = name,
+                    .pickup_radius_bonus = if (findValue(pairs, "pants_pickup_radius_bonus")) |value| asU32(value) orelse 0 else 0,
+                    .health_bonus = if (findValue(pairs, "pants_health_bonus")) |value| asU32(value) orelse 0 else 0,
+                };
+            }
+            if (findValue(pairs, "boots_name")) |name| {
+                entity.boots = .{
+                    .name = name,
+                    .speed_bonus = if (findValue(pairs, "boots_speed_bonus")) |value| asU32(value) orelse 0 else 0,
+                    .health_bonus = if (findValue(pairs, "boots_health_bonus")) |value| asU32(value) orelse 0 else 0,
+                };
+            }
 
             try enemy_definitions.put(code_string[0], entity);
         }
@@ -1071,13 +1102,13 @@ pub fn loadWeaponTypeDefinition(
 
 const color_theme_sections = [_][]const u8{ "GlobalColors", "Gradients" };
 
-pub fn loadColorTheme(
+pub fn loadColorThemeDefinitions(
     sections: []const Section,
     allocator: std.mem.Allocator,
-) !ColorTheme {
+) !ColorThemeDefinitions {
     try validateSections(sections, &color_theme_sections);
 
-    var theme: ColorTheme = .{
+    var theme: ColorThemeDefinitions = .{
         .lightest = .{ .r = 255, .g = 255, .b = 240 },
         .darkest = .{ .r = 20, .g = 15, .b = 25 },
         .gradients = &.{},
@@ -1133,14 +1164,14 @@ pub fn loadColorTheme(
 /// The world gradient is at the given index, enemy and player gradients
 /// are evenly spaced around the wheel (at 1/3 and 2/3 offsets).
 pub fn deriveActiveColorTheme(
-    color_theme: ColorTheme,
+    color_theme_definitions: ColorThemeDefinitions,
     color_wheel_index: u32,
 ) ActiveColorTheme {
-    const gradient_count: u32 = @intCast(color_theme.gradients.len);
+    const gradient_count: u32 = @intCast(color_theme_definitions.gradients.len);
     if (gradient_count == 0) {
         return .{
-            .lightest = color_theme.lightest,
-            .darkest = color_theme.darkest,
+            .lightest = color_theme_definitions.lightest,
+            .darkest = color_theme_definitions.darkest,
             .world_gradient = .{ .colors = .{Color{ .r = 128, .g = 128, .b = 128 }} ** types.gradient_color_count },
             .enemy_gradient = .{ .colors = .{Color{ .r = 128, .g = 128, .b = 128 }} ** types.gradient_color_count },
             .player_gradient = .{ .colors = .{Color{ .r = 128, .g = 128, .b = 128 }} ** types.gradient_color_count },
@@ -1152,11 +1183,11 @@ pub fn deriveActiveColorTheme(
     const player_index = (color_wheel_index + 2 * gradient_count / 3) % gradient_count;
 
     return .{
-        .lightest = color_theme.lightest,
-        .darkest = color_theme.darkest,
-        .world_gradient = color_theme.gradients[world_index],
-        .enemy_gradient = color_theme.gradients[enemy_index],
-        .player_gradient = color_theme.gradients[player_index],
+        .lightest = color_theme_definitions.lightest,
+        .darkest = color_theme_definitions.darkest,
+        .world_gradient = color_theme_definitions.gradients[world_index],
+        .enemy_gradient = color_theme_definitions.gradients[enemy_index],
+        .player_gradient = color_theme_definitions.gradients[player_index],
     };
 }
 
@@ -1702,8 +1733,8 @@ test "loadLevel parses a complete level" {
     try std.testing.expectEqual(1, level.entities[1].team);
     try std.testing.expectEqual(10, level.entities[1].max_health);
     try std.testing.expectEqual(2, level.entities[1].speed);
-    try std.testing.expectEqualStrings("Bone Sword", level.entities[1].main_hand_weapon.name);
-    try std.testing.expectEqual(3, level.entities[1].main_hand_weapon.weapon_damage);
+    try std.testing.expectEqualStrings("Bone Sword", level.entities[1].main_hand_weapon.?.name);
+    try std.testing.expectEqual(3, level.entities[1].main_hand_weapon.?.weapon_damage);
 
     // Tiles: all '.' and '!' and '=' positions, plus enemy position
     // Layout (flipped Y):
@@ -2235,7 +2266,7 @@ test "asColor parses hex color codes" {
     try std.testing.expectEqual(null, asColor("#GGGGGG")); // invalid hex digits
 }
 
-test "loadColorTheme parses global colors and gradients" {
+test "loadColorThemeDefinitions parses global colors and gradients" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\GlobalColors
@@ -2263,7 +2294,7 @@ test "loadColorTheme parses global colors and gradients" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const theme = try loadColorTheme(sections, allocator);
+    const theme = try loadColorThemeDefinitions(sections, allocator);
     defer allocator.free(theme.gradients);
 
     // Global colors
@@ -2303,7 +2334,7 @@ test "deriveActiveColorTheme picks evenly spaced gradients" {
         };
     }
 
-    const theme = ColorTheme{
+    const theme = ColorThemeDefinitions{
         .lightest = .{ .r = 255, .g = 255, .b = 240 },
         .darkest = .{ .r = 20, .g = 15, .b = 25 },
         .gradients = &gradients,
@@ -2331,7 +2362,7 @@ test "color_themes.txt parses from disk" {
     defer allocator.free(parsed.raw_text);
     defer freeParsedSections(parsed.sections, allocator);
 
-    const theme = try loadColorTheme(parsed.sections, allocator);
+    const theme = try loadColorThemeDefinitions(parsed.sections, allocator);
     defer allocator.free(theme.gradients);
 
     // Should have 9 gradients
@@ -2340,4 +2371,77 @@ test "color_themes.txt parses from disk" {
     // Lightest and darkest should be parsed
     try std.testing.expectEqual(255, theme.lightest.r);
     try std.testing.expectEqual(20, theme.darkest.r);
+}
+
+// ============================================================
+// Salvage definitions
+// ============================================================
+
+const salvage_sections = [_][]const u8{
+    "Sword",  "Shield", "Spear",    "Dagger",
+    "Axe",    "Staff",  "Crossbow", "Idol",
+    "Amulet", "Coat",   "Gloves",   "Pants",
+    "Boots",  "SkillTome",
+};
+
+fn parseSalvageSplits(
+    section: Section,
+    allocator: std.mem.Allocator,
+) !SalvageDefinition {
+    if (section.entry_groups.len == 0) return .{ .splits = &.{} };
+
+    var splits: std.ArrayList(SalvageSplit) = .empty;
+    for (section.entry_groups) |group| {
+        for (group.pairs) |pair| {
+            const material = parseEnum(MaterialType, pair.key) orelse return error.InvalidData;
+            const parts = asU32(pair.value) orelse return error.InvalidData;
+            splits.append(allocator, .{
+                .material = material,
+                .parts = parts,
+            }) catch return error.OutOfMemory;
+        }
+    }
+
+    return .{
+        .splits = splits.toOwnedSlice(allocator) catch return error.OutOfMemory,
+    };
+}
+
+fn loadWeaponSalvage(
+    sections: []const Section,
+    comptime header: []const u8,
+    allocator: std.mem.Allocator,
+) !SalvageDefinition {
+    const section = findSection(sections, header) orelse return .{ .splits = &.{} };
+    return parseSalvageSplits(section, allocator);
+}
+
+pub fn loadSalvageDefinitions(
+    sections: []const Section,
+    allocator: std.mem.Allocator,
+) !SalvageDefinitions {
+    try validateSections(sections, &salvage_sections);
+
+    const weapon_type_fields = @typeInfo(WeaponType).@"enum".fields;
+    var weapon_definitions: [types.weapon_type_count]SalvageDefinition = undefined;
+
+    inline for (weapon_type_fields, 0..) |field, index| {
+        const capitalized = comptime blk: {
+            var name: [field.name.len]u8 = undefined;
+            @memcpy(&name, field.name);
+            name[0] = std.ascii.toUpper(name[0]);
+            break :blk name;
+        };
+        weapon_definitions[index] = try loadWeaponSalvage(sections, &capitalized, allocator);
+    }
+
+    return .{
+        .weapon = weapon_definitions,
+        .amulet = try parseSalvageSplits(findSection(sections, "Amulet") orelse return error.InvalidData, allocator),
+        .coat = try parseSalvageSplits(findSection(sections, "Coat") orelse return error.InvalidData, allocator),
+        .gloves = try parseSalvageSplits(findSection(sections, "Gloves") orelse return error.InvalidData, allocator),
+        .pants = try parseSalvageSplits(findSection(sections, "Pants") orelse return error.InvalidData, allocator),
+        .boots = try parseSalvageSplits(findSection(sections, "Boots") orelse return error.InvalidData, allocator),
+        .skill_tome = try parseSalvageSplits(findSection(sections, "SkillTome") orelse return error.InvalidData, allocator),
+    };
 }
