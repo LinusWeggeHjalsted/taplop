@@ -16,7 +16,7 @@ const Event = events.Event;
 ///
 /// All callback function pointers follow the same pattern:
 ///   (entity_index, game_state, allocator) -> ?[]const Event
-/// They return null if no events should be queued, or a slice of events.
+/// They return null if no events should be pushed, or a slice of events.
 pub const Effect = struct {
     name: []const u8,
     description: []const u8,

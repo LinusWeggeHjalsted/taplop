@@ -1,3 +1,4 @@
 .zig-cache/
 zig-out/
 src/generated_lookups.zig
+src/generated_test_root.zig

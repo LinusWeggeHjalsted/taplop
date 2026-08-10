@@ -95,6 +95,19 @@ Enemy AI [DONE]
   [x] Movement: pathfind toward nearest opposing entity, respect minRange
   [x] Attack: use non-turn-ending skills first (by priority), then best turn-ending skill
 
+Turn Flow Pacing (wait event)
+  [x] wait MetaEvent carries duration_milliseconds only (cosmetic, non-skippable)
+  [x] GameState.waiting (?WaitState, microseconds) drained by update() each
+      tick; event processing stalls until it elapses, no skip path
+  [x] replayTo() clears waiting after replay so reconstruction never lands mid-wait
+  [x] update() takes delta_microseconds; anytime input (undo/redo/options) and
+      drag still run mid-wait
+  [x] Enemy turns inject waits (turn_flow_wait_milliseconds = 500): before each
+      move (enemy_turn_move) and before each skill (enemy_turn_attack)
+  - Feed a real frame delta into update() from raylib GetFrameTime (currently a
+      placeholder frame_length; waits are correct in logic but not felt until
+      the loop has a real clock + frame throttling — see Platform Layer)
+
 Build-time Lookups [DONE]
   [x] Generated src/generated_lookups.zig with getEffectDefinition / getSkillDefinition
   [x] Comptime enum + exhaustive switch, auto-wired from file names
@@ -105,7 +118,8 @@ Skill Logic
   - Targeting (range, valid tiles, team filtering)
   - Damage calculation with modifiers and effects
   [x] Effective stat methods on Entity (getEffectiveRange, etc.)
-  [x] resolveSkillSlot (slots 1-2 main hand, slot 3 off hand, 4-8 utility)
+  [x] Entity.skillInSlot / collectSkillSlots (slots 1-2 main hand, slot 3
+      off hand, 4-8 utility) — single source of truth
   [x] computeMinRange for enemy AI movement
 
 Color Theming [DONE]
@@ -144,6 +158,22 @@ UI Framework — Types [DONE]
   [x] UiElement tagged union for flat rendering
   [x] Layout constants (bar heights, slot sizes, panel widths, border thickness)
   [x] Tooltip corner selection (selectTooltipCorners — keeps tooltip on screen)
+  [x] Tooltip content model: Span (text + color/bold/italic), TooltipRow
+      ([]const Span), Tooltip { header, body }; text/colored/bold/italic
+      span constructors; tooltip: ?Tooltip on every UiElement variant
+  [x] Generic hit-testing: boundsOf (geometry per variant, single source of
+      truth), tooltipOf/blocksInputOf (inline else); Rectangle.contains added
+      in types.zig
+  [x] Occlusion model: blocks_input: bool (default true) on every UiElement;
+      one hitTest primitive walks top-to-bottom, passes through transparent
+      (blocks_input=false) elements, halts at the first blocker. slotAt/
+      slotRefAt (drag) and tooltipAt (hover) are predicate wrappers over it;
+      opaque surfaces both capture their own input and shield what's behind.
+      Decorative overlays opt out (cooldown/centered numbers, cooldown overlay,
+      tooltip panel+labels, drag ghost). Future click/panel hit-testing routes
+      through hitTest with an action predicate for the same occlusion.
+  [x] TextLabel gained bold/italic; removed stale active_tooltip/TooltipState
+      (tooltip is derived per-frame from pointer, view is const)
   [x] Wired up toggle inputs in handleAnytimeInput
   [x] Entity inspect toggle (open/close/switch target)
 
@@ -161,9 +191,23 @@ View Function Implementation
   - Sprite asset metadata (dimensions) needed for decoration splitting
 
 UI Framework — Panel Builders
+  [x] Layout infrastructure: per-frame arena feeding view(); builders take
+      a bounds Rectangle and append to a shared []UiElement
+  [x] Rect algebra: Rectangle methods (position/right/bottom/centerX/centerY,
+      translate, inset, 3x3 place* anchors) + screenRect/rowWidth/Row/Grid
+  [x] Screen-space dimensions switched to i32 (positions, widths, sizes)
+  [x] FillSprite element (two-sprite vertical/directional fill) for health globe;
+      removed rectangular Bar; cooldown = overlay image + centered number text
+  [x] buildBottomBar: centered content row (no background) — inventory/gear/skills
+      buttons, health globe, weapon skills (1-3), weapon swap (128, level+hub),
+      utility skills (4-8), skip (levels only); skill buttons carry skill_slot_N
+      actions with cooldown overlays; reshifts to re-center in hubs
+  [x] Bottom-bar indicators (above bar, 128x128, 16px gap): momentum counter
+      (levels only, above health globe), active effects grid (spans skill bars,
+      fills right-to-left/oldest-rightmost then wraps upward), turn-step icons
+      (levels only, move+attack above skip, active phase highlighted)
+  [x] highlighted:bool on Button/Image for reusable edge highlight (renderer TODO)
   - buildTopBar: options button (top-left), combat log summary
-  - buildBottomBar: inventory/gear/skills buttons, player health, skill bar (8 slots),
-    weapon swap button, skip button
   - buildGearPanel: equipped gear slots (weapons, amulet, coat, gloves, pants, boots)
   - buildInventoryPanel: 8x12 grid, material counts on right side
   - buildSkillsPanel: learned skills grid (draggable for swapping utility slots)
@@ -174,9 +218,42 @@ UI Framework — Panel Builders
   - buildMainMenu: new game / load game / options buttons
   - buildMissionComplete: statistics, clone rewards, continue/retry
   - buildMissionFail: header text, exit/retry buttons
-  - buildTooltip: header + body text, auto-sized background panel
+  [x] buildTooltip: measures/wraps rows to the padded content area (max 1024,
+      over-long words overflow), sizes+places the panel via selectTooltipCorners
+      and clamps on screen, emits NineSlicePanel + one styled TextLabel per span
+  [x] buildSkillTooltip: name (header) / description / skill type / one row per
+      non-null skill variable (Range/Radius/Distance/Duration/Stun Duration/
+      Cooldown); wired into skill buttons
+  [x] Bottom-bar element tooltips authored: inventory/gear/skills labels, health
+      "{cur} / {max}", swap weapons, skip turn step, momentum (value + converted
+      damage), active effects (name/description/current duration), move/attack
+      step icons
   - 9-slice panel splitting (corners, edges, center fill → sprite draws)
   - Middle section horizontal scroll when panels exceed width
+  - Add icon_sprite_id to Skill, Item, and Effect definitions (bottom bar
+    temporarily uses their name as placeholder icon id)
+  - Move UI sprite assets from Unity project (ui/icon_*, ui/health_globe_*,
+    ui/cooldown_overlay, ui/skill_slot_empty, ui/panel are placeholder ids)
+  - Center cooldown/label text using measured text width — can now reuse the
+    tooltip measurement seam (measureSpanWidth/lineHeight in ui.zig)
+  - Real font metrics: export a per-glyph advance table (per style if bold/
+    italic are separate faces) at font-finalization time and read it inside
+    the measurement seam (measureSpanWidth/lineHeight), replacing the fixed-
+    advance placeholder; make it UTF-8-aware (glyph count, not byte length)
+  - tooltip_panel 9-slice sprite asset (buildTooltip uses placeholder id
+    "ui/tooltip_panel")
+  - Author real tooltips on elements (skills: range/radius/cooldown rows;
+    items; effects) using the span constructors
+  - text_label hover bounds are a placeholder (boundsOf reports a font_size
+    square, no measurement) — fine while no text label has a tooltip, but a
+    tooltip on a standalone label would hover with the wrong region. Wire
+    boundsOf for text_label to measureSpanWidth once the real font lands, if/
+    when we want tooltips on text elements
+  - Tooltip can overlap its own source: selectTooltipCorners picks a corner
+    purely by the source's screen quadrant and buildTooltip only clamps on
+    screen — it never checks the panel doesn't cover the hovered element
+    (worse for center-screen sources / large tooltips). Make corner selection
+    size- and overflow-aware (also covers the earlier size-aware TODO)
 
 Decoration Footprint
   - Add footprint data to decoration config format (relative offsets from anchor)
@@ -186,16 +263,52 @@ Decoration Footprint
 
 Input Resolution from ViewState
   - Use previous_view_state to resolve screen position → tile coordinate
-  - Use previous_view_state to resolve screen position → UI element (slots, buttons)
+  [x] Use previous_view_state to resolve screen position → UI slot (slotAt/
+      slotRefAt, used by drag; buttons still TODO)
   - Button clicks → resolve Action from Button.action, feed into PlayerInput
-  - Tooltip activation on hover (set active_tooltip from UI element hover)
+  - World/UI input arbitration: the tile-click path (screenToTile in the idle
+    input) ignores UI occlusion, so clicking a UI element also acts on the
+    world behind it (and an open panel would leak clicks to the level). Gate
+    the world click on hitTest: if a blocking UI element is under the pointer,
+    the world receives no click. Route button clicks through hitTest with an
+    action predicate (same occlusion primitive as slotAt/tooltipAt). Decide
+    before building panels / wiring button clicks
+  [x] Tooltip activation on hover (view() finds topmost element under pointer
+      via elementAt/tooltipOf, appends buildTooltip last; suppressed while
+      dragging)
   - Replace direct camera math in translateInput
   [x] Options menu locks out game input when open
+
+Drag & Drop
+  [x] SlotRef (inventory/gear/skill_bar/learned_skill) + DragState on UiState
+      (auto-cancelled on screen transition); Slot.ref carries identity
+  [x] PlayerInput.pointer (pressed/released/position in reference space) from
+      translateInput; mouse release edge now tracked
+  [x] slotAt/slotRefAt hit-testing (reverse-scan, topmost ref-bearing slot)
+  [x] handleDrag lifecycle (anytime, not idle-gated): press begins drag on a
+      filled slot, release resolves the drop; hit-tests previous frame's UI
+  [x] dragToEvent resolver — one switch enforces item/skill domain split,
+      maps to equip_item/unequip_item/equip_utility_skill/swap_utility_skills/
+      unequip_utility_skill; cross-domain drops no-op
+  [x] Drag ghost rendered following the pointer (drawn last)
+  - Cancel drag / snap item back when the pointer release is lost outside the
+    game (focus loss, pointer leaves window) — currently a lost mouse-up leaves
+    the drag latched to the cursor
+  - Click vs drag disambiguation: movement threshold 0 (any move = drag), pure
+    press-release = click; items get double-click (L/R) and modifier+click for
+    different behaviors (needs a time source for double-click)
+  - inventory → inventory move/swap event + handler (dragToEvent returns null
+    for now)
+  - Panel builders must emit ref-bearing Slots before drag is usable in-game
+    (buildInventoryPanel/buildGearPanel/buildSkillsPanel — see UI section)
+  - Coordinate-space reconciliation with renderer: pointer→reference-space
+    conversion and screenToTile share an unverified assumption (see rendering)
 
 Player Events [DONE]
   [x] learn_skill handler (consume skill tome by inventory slot, add to learned_skills)
   [x] salvage_item handler (remove item by inventory slot, compute materials from data-driven splits)
-  [x] equip_item handler (swap gear by inventory slot, main_hand bool for weapon slot selection)
+  [x] equip_item / unequip_item handlers (GearSlot-based; equip no-ops on
+      type mismatch, unequip supports empty-slot move and matching swap)
   [x] Salvage system: data/salvage.txt config, SalvageDefinitions loaded at startup
   [x] computeSalvageValue in functions.zig (last material gets remainder, zero-loss rounding)
   [x] Removed salvage_conversion placeholder from item structs, added value field to SkillTome
@@ -219,13 +332,96 @@ Platform Layer (raylib)
   - Map raylib input events to PlatformInputEvent
   - Render ViewState layers using raylib drawing functions
   - Scale from reference resolution to actual viewport
+  - Feed GetFrameTime() (as microseconds) into update() as delta_microseconds,
+    replacing the placeholder frame_length — makes turn-flow waits real-time
   - Grayscale sprite × Color multiplication (shader or CPU)
   - Sprite source rectangle cropping (decoration pieces)
   - Draw offset support (decoration overhang)
   - 9-slice panel rendering
-  - Text rendering (font loading, size scaling)
+  - FillSprite rendering (draw background, crop fill sprite to fraction/direction)
+  - Programmatic edge highlight for highlighted Button/Image (shader outline of
+    opaque pixels, or fallback highlight sprite)
+  - Text rendering (font loading, size scaling); honor TextLabel bold/italic
+    and color (needed for styled tooltip spans)
   - WASM build target (raylib supports Emscripten)
 
 Audio
   - Play music and sound effects via raylib audio API
   - Hook into events (attack → hit sound, etc.)
+
+Memory / Budget (decisions, revisit with real measurements)
+  - Arenas are NOT fixed size: they grow from a backing allocator
+    (ArenaAllocator -> DebugAllocator -> page_allocator -> OS/wasm). Allocation
+    fails only when the backing fails: OS OOM (native, rare) or wasm memory.grow
+    hitting the module maximum / 4 GiB wasm32 ceiling (the realistic case).
+  - History keeps ~26 full GameState deep copies resident (16 snapshot slots +
+    8 checkpoints + current + initial). Per-copy size ~= entities x ~4.2 KB
+    (~90% is the inlined 96-slot inventory) + tiles x 8 bytes.
+  - Decision: DON'T lazy-init enemy inventories. Inventory dominates Entity size
+    but only matters at huge entity counts, which level caps prevent anyway;
+    keep the simple inline array + uniform enemy pickup behavior.
+  - Decision: level caps to bound worst case. max_entities = 256 for now
+    (official levels ~16, but the level editor + level sharing will let players
+    build massive levels). max_tiles ~10k as a starting estimate. Worst case
+    ~= 26 x (max_entities x entity_size + max_tiles x 8) ~= tens of MB.
+  - Decision: estimate caps now, tune with measurement later. Add peak-usage
+    reporting via DebugAllocator once the renderer + a real level exist, then
+    set the true wasm budget + caps from real numbers.
+  - Decision: leave memory growable but set a generous safety ceiling
+    (~256-512 MB) so runaway bugs (infinite event push, bad deep copy) fail
+    fast at a @panic instead of killing the tab. Not a tight fit — real
+    non-asset usage is single-digit MB for normal levels.
+  - event_history grows unbounded (every event, tens of bytes each) to power
+    infinite undo. Accepted: growth is tiny, feature is worth it, extreme
+    sessions would fail-fast rather than corrupt.
+
+Asset Memory (decisions, from Unity project audit ~/Development/taplop)
+  - Disk size is NOT memory size. Current assets: 122 PNGs = 4.1 MB on disk but
+    ~325 MB decoded RGBA (~433 MB w/ mipmaps); 16 WAVs = 34.8 MB (one 33.5 MB
+    Ambient music track, all SFX ~1.3 MB combined).
+  - Textures are the dominant consumer (~80x the PNG folder once decoded), not
+    gamestate. PNG compression is irrelevant to VRAM: GPU needs raw RGBA =
+    w*h*4. Source art is oversized (Flag 4096x1024 = 16 MB; every weapon
+    2048x1280 = 10 MB) for a grid game rendering at ~256px.
+  - Two separate budgets: wasm linear heap (gamestate/events/decoded SFX/temp,
+    small) vs GPU/texture memory (browser-managed on WebGL, large, art-driven,
+    off the wasm heap). Streamed music also stays off the wasm heap; fully
+    decoded audio lands on it.
+  - In-memory lossless compression is NOT the lever. Levers, in impact order:
+    1. Downscale source sprites to display resolution (~325 MB -> <50 MB, no
+       perceptible loss). Biggest memory + web-download win. NOTE: confirm
+       whether sprites are animation sheets first — affects how far we can shrink.
+    2. Stream music as OGG (raylib LoadMusicStream): ~33 MB -> tiny ring buffer
+       + decoder; disk ~33 MB -> ~3-4 MB.
+    3. SFX: fully decode to PCM (memory trivial); OGG only helps download size.
+    4. GPU texture compression (ASTC/ETC2/BC via KTX2/Basis) only if later
+       measurements demand it — lossy, WebGL/raylib support fiddly.
+  - Web download budget: PNG (lossless) for art + OGG for audio takes asset
+    download from ~39 MB to ~8 MB, mostly art.
+
+Tech Debt / Refactoring
+  [x] Enemy AI skill priority is integer (u32, 0 = don't use) not float — keeps
+      gameplay logic integer-only for deterministic replay/RTA (skill.zig,
+      slice.zig)
+  [x] Event-stack terminology: pushEvents/pushPlayerSkillUse, "push"/"stack"
+      in comments (pathfinding queues in functions.zig are real queues, left
+      as-is)
+  [x] Error-handling policy: unrecoverable errors fail fast via
+      catch @panic("..."), never silent catch {} (see AGENTS.md)
+  - Test coverage for processEvent handlers: main.zig is ~2200 lines with
+    essentially one test. processEvent is state-in/state-out and testable.
+    Cover the event logic (equip/unequip, utility-skill events, boots
+    move-range refresh, prepared-skill cancel) before wiring up UI drag.
+  - Consistent slot-index bounds checking: utility-skill handlers guard
+    slot_index < utility_skill_count, but equip_item/unequip_item/learn_skill/
+    salvage_item index inventory.slots[...] directly (panic on out-of-range).
+    Pick one convention (guard everywhere, or trust the source everywhere),
+    keeping in mind events can also originate from save/replay data.
+  - Consider splitting processEvent handlers by scope (player/level/hub/meta)
+    into separate files for readability once it grows further.
+  - UNDECIDED: the ~26 `current.level.?` force-unwraps in level/sub-level
+    handlers. Currently safe by invariant (those events only run in a level;
+    event stack cleared on screen transition), so they act as fail-fast
+    assertions. Leaving as-is for now; options if revisited: (A) keep, (B) one
+    guard at dispatch that returns (risks hiding bugs), (C) a levelPtr() helper
+    with a descriptive @panic. See AGENTS.md Architecture note.

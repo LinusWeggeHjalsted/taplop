@@ -1047,15 +1047,18 @@ pub fn loadPlayerSave(
     }
 
     // UtilitySkills
+    // Keys are "slot_N" where N starts at 4 (bar slots 4-8). We place each
+    // skill at its explicit index so empty (null) slots keep their position.
     if (findSection(sections, "UtilitySkills")) |section| {
         if (section.entry_groups.len > 0) {
-            var slot_index: usize = 0;
             for (section.entry_groups[0].pairs) |pair| {
+                if (!std.mem.startsWith(u8, pair.key, "slot_")) continue;
+                const slot_number = asU32(pair.key["slot_".len..]) orelse continue;
+                if (slot_number < 4) continue;
+                const slot_index = slot_number - 4;
+                if (slot_index >= types.utility_skill_count) continue;
                 if (parseEnum(types.SkillId, pair.value)) |skill_id| {
-                    if (slot_index < types.utility_skill_count) {
-                        player_data.equipped_utility_skills[slot_index] = skill_id;
-                        slot_index += 1;
-                    }
+                    player_data.equipped_utility_skills[slot_index] = skill_id;
                 }
             }
         }
@@ -1302,10 +1305,14 @@ pub fn writePlayerSave(
     }
 
     // UtilitySkills
+    // Only filled slots are written, keyed by their bar slot number (4-8), so
+    // empty (null) slots are simply omitted and reload to null.
     try buffer.appendSlice(allocator, "\nUtilitySkills\n");
-    for (player_data.equipped_utility_skills, 0..) |skill_id, index| {
-        const slot_number = index + 4; // slots start at 4
-        try buffer.print(allocator, "slot_{d} {s}\n", .{ slot_number, @tagName(skill_id) });
+    for (player_data.equipped_utility_skills, 0..) |slot, index| {
+        if (slot) |skill_id| {
+            const slot_number = index + 4; // slots start at 4
+            try buffer.print(allocator, "slot_{d} {s}\n", .{ slot_number, @tagName(skill_id) });
+        }
     }
 
     // CloneData
@@ -2096,7 +2103,9 @@ test "writePlayerSave round-trips through loadPlayerSave" {
             .health_bonus = 2,
         },
         .learned_skills = &.{ .slice, .replenish },
-        .equipped_utility_skills = .{ .replenish, .slice, .slice, .slice, .slice },
+        // Gap in the middle: slots 5 and 7-8 empty, to verify the save writer
+        // and loader preserve slot positions instead of compacting.
+        .equipped_utility_skills = .{ .replenish, null, .slice, null, null },
         .clones = &.{.{
             .name = "Test Clone",
             .turns_to_complete = 25,
@@ -2174,7 +2183,10 @@ test "writePlayerSave round-trips through loadPlayerSave" {
     try std.testing.expectEqual(.slice, loaded.learned_skills[0]);
     try std.testing.expectEqual(.replenish, loaded.learned_skills[1]);
     try std.testing.expectEqual(.replenish, loaded.equipped_utility_skills[0]);
-    try std.testing.expectEqual(.slice, loaded.equipped_utility_skills[1]);
+    try std.testing.expectEqual(null, loaded.equipped_utility_skills[1]);
+    try std.testing.expectEqual(.slice, loaded.equipped_utility_skills[2]);
+    try std.testing.expectEqual(null, loaded.equipped_utility_skills[3]);
+    try std.testing.expectEqual(null, loaded.equipped_utility_skills[4]);
 
     // Inventory — items at slots 0, 1, 2
     try std.testing.expect(loaded.inventory.slots[0] != null);

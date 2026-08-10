@@ -142,6 +142,18 @@ pub const ItemType = union(enum) {
     skill_tome: SkillId,
 };
 
+/// The equippable gear slots on an entity. Weapons occupy main_hand/off_hand;
+/// the rest map one-to-one to their gear fields.
+pub const GearSlot = enum {
+    main_hand,
+    off_hand,
+    amulet,
+    coat,
+    gloves,
+    pants,
+    boots,
+};
+
 pub const Weapon = struct {
     name: []const u8 = &.{},
     weapon_type: WeaponType = .sword,
@@ -235,7 +247,7 @@ pub const Entity = struct {
     pants: ?Pants = null,
     boots: ?Boots = null,
 
-    equipped_utility_skills: [utility_skill_count]SkillId = .{.slice} ** utility_skill_count,
+    equipped_utility_skills: [utility_skill_count]?SkillId = .{null} ** utility_skill_count,
     inventory: Inventory = .{},
     skill_cooldowns: std.EnumArray(SkillId, u32) = std.EnumArray(SkillId, u32).initFill(0),
     active_effects: []const Effect = &.{},
@@ -330,6 +342,35 @@ pub const Entity = struct {
             @as(i32, @intCast(coat_bonus));
         return applyModifier(self.defense, modifier);
     }
+
+    /// Resolve a skill bar slot (1-8) to a SkillId for this entity.
+    /// Slots 1-2 are main-hand weapon skills, slot 3 the off-hand weapon
+    /// skill, slots 4-8 the equipped utility skills (indices 0-4).
+    pub fn skillInSlot(
+        self: Entity,
+        slot: u8,
+        weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    ) ?SkillId {
+        return switch (slot) {
+            1 => if (self.main_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_1 else null,
+            2 => if (self.main_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_2 else null,
+            3 => if (self.off_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_3 else null,
+            4, 5, 6, 7, 8 => self.equipped_utility_skills[slot - 4],
+            else => null,
+        };
+    }
+
+    /// All skill bar slots (1-8) collected in order at indices 0-7.
+    pub fn collectSkillSlots(
+        self: Entity,
+        weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    ) [utility_skill_count + 3]?SkillId {
+        var result: [utility_skill_count + 3]?SkillId = undefined;
+        for (&result, 0..) |*entry, index| {
+            entry.* = self.skillInSlot(@intCast(index + 1), weapon_type_definitions);
+        }
+        return result;
+    }
 };
 
 pub const GroundItems = struct {
@@ -422,7 +463,7 @@ pub const PlayerData = struct {
     pants: ?Pants = null,
     boots: ?Boots = null,
     inventory: Inventory = .{},
-    equipped_utility_skills: [utility_skill_count]SkillId = .{.slice} ** utility_skill_count,
+    equipped_utility_skills: [utility_skill_count]?SkillId = .{null} ** utility_skill_count,
 };
 
 pub const Editor = struct {
@@ -578,8 +619,8 @@ pub const NPC = struct {
 
 /// Fixed reference resolution. The view function produces coordinates
 /// in this space; the renderer scales to the actual viewport.
-pub const reference_width: u32 = 3840;
-pub const reference_height: u32 = 2160;
+pub const reference_width: i32 = 3840;
+pub const reference_height: i32 = 2160;
 
 /// Screen-space position in the reference resolution coordinate system.
 /// Integer because we work in a fixed logical resolution.
@@ -588,12 +629,116 @@ pub const ScreenPosition = struct {
     y: i32,
 };
 
+/// Horizontal or vertical alignment of a child within a parent.
+pub const Align = enum { start, center, end };
+
 /// Axis-aligned rectangle in screen space.
+///
+/// Layout is expressed by deriving new rectangles from existing ones:
+/// shrink a panel to its content area with `inset`, slide a group with
+/// `translate`, and drop a fixed-size child into a region with the
+/// `place*` family (a 3\u00d73 grid of named anchors). Every method is pure
+/// \u2014 it returns a new value and never mutates the receiver.
 pub const Rectangle = struct {
     x: i32,
     y: i32,
-    width: u32,
-    height: u32,
+    width: i32,
+    height: i32,
+
+    // -- derived coordinates --
+
+    pub fn position(self: Rectangle) ScreenPosition {
+        return .{ .x = self.x, .y = self.y };
+    }
+    pub fn right(self: Rectangle) i32 {
+        return self.x + self.width;
+    }
+    pub fn bottom(self: Rectangle) i32 {
+        return self.y + self.height;
+    }
+    pub fn centerX(self: Rectangle) i32 {
+        return self.x + @divTrunc(self.width, 2);
+    }
+    pub fn centerY(self: Rectangle) i32 {
+        return self.y + @divTrunc(self.height, 2);
+    }
+    /// True when `point` lies inside the rectangle. Right/bottom edges are
+    /// exclusive, matching the hit-testing convention used elsewhere.
+    pub fn contains(self: Rectangle, point: ScreenPosition) bool {
+        return point.x >= self.x and point.x < self.right() and
+            point.y >= self.y and point.y < self.bottom();
+    }
+
+    // -- transforms --
+
+    /// Slide the rectangle by an offset (used to scroll a group as one).
+    pub fn translate(self: Rectangle, delta_x: i32, delta_y: i32) Rectangle {
+        return .{ .x = self.x + delta_x, .y = self.y + delta_y, .width = self.width, .height = self.height };
+    }
+
+    /// Shrink inward on all four sides (e.g. panel border \u2192 content area).
+    pub fn inset(self: Rectangle, amount: i32) Rectangle {
+        return .{
+            .x = self.x + amount,
+            .y = self.y + amount,
+            .width = self.width - 2 * amount,
+            .height = self.height - 2 * amount,
+        };
+    }
+
+    // -- child placement (3\u00d73 named anchors) --
+    // Each drops a `child_width`\u00d7`child_height` box inside self at the
+    // named anchor. `margin` insets from whichever edges are used; the
+    // center axis ignores it.
+
+    fn placeChild(
+        self: Rectangle,
+        child_width: i32,
+        child_height: i32,
+        horizontal: Align,
+        vertical: Align,
+        margin: i32,
+    ) Rectangle {
+        const x = switch (horizontal) {
+            .start => self.x + margin,
+            .center => self.x + @divTrunc(self.width - child_width, 2),
+            .end => self.right() - child_width - margin,
+        };
+        const y = switch (vertical) {
+            .start => self.y + margin,
+            .center => self.y + @divTrunc(self.height - child_height, 2),
+            .end => self.bottom() - child_height - margin,
+        };
+        return .{ .x = x, .y = y, .width = child_width, .height = child_height };
+    }
+
+    pub fn placeTopLeft(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
+        return self.placeChild(w, h, .start, .start, margin);
+    }
+    pub fn placeTopCenter(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
+        return self.placeChild(w, h, .center, .start, margin);
+    }
+    pub fn placeTopRight(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
+        return self.placeChild(w, h, .end, .start, margin);
+    }
+    pub fn placeCenterLeft(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
+        return self.placeChild(w, h, .start, .center, margin);
+    }
+    pub fn placeCenter(self: Rectangle, w: i32, h: i32) Rectangle {
+        return self.placeChild(w, h, .center, .center, 0);
+    }
+    pub fn placeCenterRight(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
+        return self.placeChild(w, h, .end, .center, margin);
+    }
+    pub fn placeBottomLeft(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
+        return self.placeChild(w, h, .start, .end, margin);
+    }
+    pub fn placeBottomCenter(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
+        return self.placeChild(w, h, .center, .end, margin);
+    }
+    pub fn placeBottomRight(self: Rectangle, w: i32, h: i32, margin: i32) Rectangle {
+        return self.placeChild(w, h, .end, .end, margin);
+    }
 };
 
 // -- Layer 1: Tiles --
@@ -634,7 +779,7 @@ pub const SpriteDrawable = struct {
 
 pub const HealthBarDrawable = struct {
     screen_position: ScreenPosition,
-    width: u32,
+    width: i32,
     current_health: u32,
     max_health: u32,
 };

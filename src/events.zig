@@ -2,6 +2,7 @@ const types = @import("types.zig");
 
 const Vector2 = types.Vector2;
 const SkillId = types.SkillId;
+const GearSlot = types.GearSlot;
 const Item = types.Item;
 const Materials = types.Materials;
 const EffectId = types.EffectId;
@@ -9,10 +10,12 @@ const EffectId = types.EffectId;
 pub const MetaEvent = union(enum) {
     // scope: all
     // transitions between game scopes and file io
+    // Pause turn flow for a fixed real-time duration (cosmetic pacing, not
+    // skippable). Handled by update() stalling on GameState.waiting; a no-op
+    // during replay (see GameStateHistory.replayTo).
     wait: struct {
-        start_time: u32,
-        duration: u32,
-    }, 
+        duration_milliseconds: u32,
+    },
     open_main_menu: void,
     close_main_menu: void,
     start_new_game: void,
@@ -80,9 +83,34 @@ pub const PlayerEvent = union(enum) {
     salvage_item: struct {
         inventory_slot_index: u32,
     },
+    // Equip an inventory item into a gear slot. The previously equipped piece
+    // (if any) drops back into the same inventory slot. No-op if the item does
+    // not fit the target slot.
     equip_item: struct {
         inventory_slot_index: u32,
-        main_hand: bool = true,
+        gear_slot: GearSlot,
+    },
+    // Move a gear piece into an inventory slot. Empty target: plain unequip.
+    // Filled target: swap only if the inventory item fits the gear slot,
+    // otherwise no-op.
+    unequip_item: struct {
+        gear_slot: GearSlot,
+        inventory_slot_index: u32,
+    },
+    // Assign a learned skill to a utility bar slot (0-4), overwriting whatever
+    // was there. Skills come from the learned pool, so nothing is swapped back.
+    equip_utility_skill: struct {
+        skill_id: SkillId,
+        slot_index: u32,
+    },
+    // Reorder two utility bar slots by swapping their contents.
+    swap_utility_skills: struct {
+        slot_a_index: u32,
+        slot_b_index: u32,
+    },
+    // Clear a utility bar slot (drag a skill off the bar).
+    unequip_utility_skill: struct {
+        slot_index: u32,
     },
 };
 

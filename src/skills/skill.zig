@@ -39,11 +39,13 @@ pub const Skill = struct {
     ) ?[]const Vector2,
 
     /// AI priority: how much an enemy wants to use this skill right now.
-    /// Higher value = higher priority, 0 if shouldn't be used now, max float if it's a skill to be used that doesn't end turn (i.e. cast all max priority skills one at a time until there's a turn-ending skill to cast)
+    /// Higher value = higher priority; 0 means the skill should not be used now.
+    /// Turn-ending vs non-turn-ending is decided by skill_type at the call site
+    /// (see enemy_turn_attack), not by the priority magnitude.
     priority_fn: *const fn (
         caster_index: u32,
         game_state: GameState,
-    ) f32,
+    ) u32,
 
     /// AI target selection - enemy picks a target after getValidTargets provides the options
     /// should return null if valid_targets is null
@@ -60,7 +62,7 @@ pub const Skill = struct {
         allocator: std.mem.Allocator,
     ) ?Event,
 
-    /// queues skill effects.
+    /// pushes skill effects.
     use_skill_fn: *const fn (
         caster_index: u32,
         target: ?Vector2,
@@ -83,7 +85,7 @@ pub const Skill = struct {
         self: Skill,
         caster_index: u32,
         game_state: GameState,
-    ) f32 {
+    ) u32 {
         return self.priority_fn(caster_index, game_state);
     }
 

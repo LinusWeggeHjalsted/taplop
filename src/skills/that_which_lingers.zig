@@ -38,7 +38,7 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 }
 
 /// AI priority: 0 if on cooldown, otherwise low priority (cast when nothing better to do).
-fn priority(caster_index: u32, game_state: GameState) f32 {
+fn priority(caster_index: u32, game_state: GameState) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
 
@@ -54,7 +54,7 @@ fn selectTarget(caster_index: u32, _: ?[]const Vector2, game_state: GameState) ?
     return level.entities[caster_index].position;
 }
 
-/// Self-cast enchantment — no tile highlighting, just queue the effect creation.
+/// Self-cast enchantment — no tile highlighting, just push the effect creation.
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,
@@ -72,7 +72,7 @@ fn playerPrepareSkill(
     } } };
 }
 
-/// Queue the create_effect event on the caster.
+/// Push the create_effect event on the caster.
 fn useSkill(
     caster_index: u32,
     _: ?Vector2,

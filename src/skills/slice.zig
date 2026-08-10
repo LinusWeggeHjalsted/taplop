@@ -73,7 +73,7 @@ fn getValidTargets(
 /// Returns 0 if on cooldown or no targets in range.
 /// Returns 3 normally, 2 if target (nearest hostile) is below half health
 /// (prefer a different finisher skill for wounded targets).
-fn priority(caster_index: u32, game_state: GameState) f32 {
+fn priority(caster_index: u32, game_state: GameState) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
 
@@ -82,26 +82,25 @@ fn priority(caster_index: u32, game_state: GameState) f32 {
 
     const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
 
-    // Find nearest hostile in range
+    // Find hostiles in range; note whether any is below half health (integer
+    // compare: current * 2 < max), which is when Slice's 1.5x bonus pays off.
     var found_target = false;
-    var nearest_health_ratio: f32 = 1.0;
+    var found_wounded_target = false;
     for (level.entities, 0..) |entity, entity_index| {
         if (entity_index == caster_index) continue;
         if (entity.team == caster.team) continue;
         if (functions.chebyshevDistance(caster.position, entity.position) <= range) {
             found_target = true;
-            const ratio = @as(f32, @floatFromInt(entity.current_health)) /
-                @as(f32, @floatFromInt(entity.max_health));
-            if (ratio < nearest_health_ratio) {
-                nearest_health_ratio = ratio;
+            if (entity.current_health * 2 < entity.max_health) {
+                found_wounded_target = true;
             }
         }
     }
 
     if (!found_target) return 0;
 
-    // Higher priority when target is wounded — that's when Slice's 1.5x bonus kicks in
-    if (nearest_health_ratio < 0.5) return 3;
+    // Higher priority when a target is wounded — that's when Slice's bonus kicks in.
+    if (found_wounded_target) return 3;
     return 2;
 }
 
@@ -142,7 +141,7 @@ fn playerPrepareSkill(
     } } };
 }
 
-/// Use the skill: queue an attack event against the target.
+/// Use the skill: push an attack event against the target.
 /// Deals 1.5x main hand damage if target is below half health.
 fn useSkill(
     caster_index: u32,

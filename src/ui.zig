@@ -1,9 +1,20 @@
+const std = @import("std");
 const types = @import("types.zig");
+const state = @import("state.zig");
+const lookups = @import("generated_lookups.zig");
+const Skill = @import("skills/skill.zig").Skill;
 
 const Action = types.Action;
 const ScreenPosition = types.ScreenPosition;
 const Rectangle = types.Rectangle;
 const Color = types.Color;
+const Entity = types.Entity;
+const SkillId = types.SkillId;
+const GearSlot = types.GearSlot;
+const WeaponTypeDefinition = types.WeaponTypeDefinition;
+const GameState = state.GameState;
+
+const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
 
 // ============================================================
 // UI state — lives on GameState, tracks what's open
@@ -43,8 +54,8 @@ pub const UiState = struct {
     /// Combat log scroll offset (for full combat log view).
     combat_log_scroll_offset: i32 = 0,
 
-    /// Active tooltip, if any.
-    active_tooltip: ?TooltipState = null,
+    /// In-progress pointer drag of an inventory item / gear piece / skill.
+    drag: ?DragState = null,
 
     pub fn toggleMiddlePanel(self: *UiState, panel_id: MiddlePanelId) void {
         // If already open, close it
@@ -83,28 +94,217 @@ pub const UiState = struct {
     }
 };
 
-pub const TooltipState = struct {
-    /// Screen position of the element that spawned the tooltip.
-    source_position: ScreenPosition,
-    source_width: u32,
-    source_height: u32,
-    header: []const u8,
-    body: []const u8,
+/// Identity of a slot the pointer can start a drag from or drop onto. The
+/// two item variants (inventory/gear) and two skill variants (skill_bar/
+/// learned_skill) form the item and skill "domains"; drag resolution routes
+/// on the source domain and rejects cross-domain drops, so skills and items
+/// never interact.
+pub const SlotRef = union(enum) {
+    inventory: u32, // inventory slot index
+    gear: GearSlot, // equipped gear slot
+    skill_bar: u32, // utility bar slot index (0-4)
+    learned_skill: SkillId, // an entry in the skills-menu pool
 };
+
+/// An in-progress drag. Lives on UiState so it is auto-cancelled on screen
+/// transition (UiState is reset there). The ghost follows the pointer using
+/// InputState.mouse_screen_position — no pointer position is stored here.
+pub const DragState = struct {
+    source: SlotRef,
+    icon_sprite_id: []const u8,
+};
+
+// ============================================================
+// Tooltip content model
+// ============================================================
+// A tooltip is a stack of rows plus an optional header row. A row is a
+// sequence of inline-styled spans; wrapping happens per row and preserves
+// each span's styling. Stat lines like "Range 3" are just ordinary rows
+// (value is text after a space) — no special alignment or wrapping rules.
+// All of this is built per-frame in the view arena.
+
+/// A run of text sharing one style within a row.
+pub const Span = struct {
+    text: []const u8,
+    color: Color = default_tint,
+    bold: bool = false,
+    italic: bool = false,
+};
+
+/// One logical line of a tooltip; wraps into visual lines during layout.
+pub const TooltipRow = []const Span;
+
+/// Unlaid-out tooltip content carried by a UI element. `header` is a
+/// distinct row only so layout can give it separator/extra spacing; its
+/// styling still comes from its spans.
+pub const Tooltip = struct {
+    header: ?TooltipRow = null,
+    body: []const TooltipRow = &.{},
+};
+
+// -- span constructors (readable authoring at call sites) --
+
+/// A plain span in the default color.
+pub fn text(value: []const u8) Span {
+    return .{ .text = value };
+}
+
+/// A span in a specific color.
+pub fn colored(value: []const u8, color: Color) Span {
+    return .{ .text = value, .color = color };
+}
+
+/// A bold span in the default color.
+pub fn bold(value: []const u8) Span {
+    return .{ .text = value, .bold = true };
+}
+
+/// An italic span in the default color.
+pub fn italic(value: []const u8) Span {
+    return .{ .text = value, .italic = true };
+}
+
+// ============================================================
+// Tooltip text measurement
+// ============================================================
+// The ONLY font-dependent code in tooltip layout. Everything else (wrapping,
+// panel sizing, corner selection) is written against these two functions and
+// will not change when the real font arrives — at that point their innards
+// read the font's exported per-glyph advance table instead of assuming a
+// fixed advance.
+//
+// PLACEHOLDER metrics: the current font is placeholder, so we assume a fixed
+// advance of ~0.5em per byte (bold a touch wider) and 1.2em line spacing.
+// Byte length stands in for glyph count until real (UTF-8-aware) metrics land.
+
+/// Advance width of a span at `font_size`, in reference pixels.
+pub fn measureSpanWidth(span: Span, font_size: i32) i32 {
+    const advance_percent_of_em: i32 = if (span.bold) 55 else 50;
+    const byte_count: i32 = @intCast(span.text.len);
+    return @divTrunc(byte_count * font_size * advance_percent_of_em, 100);
+}
+
+/// Total width of a row's spans laid out on one line, in reference pixels.
+pub fn measureRowWidth(row: TooltipRow, font_size: i32) i32 {
+    var total: i32 = 0;
+    for (row) |span| total += measureSpanWidth(span, font_size);
+    return total;
+}
+
+/// Baseline-to-baseline height for one line at `font_size`, in reference pixels.
+pub fn lineHeight(font_size: i32) i32 {
+    return @divTrunc(font_size * 120, 100);
+}
+
+test "measurement seam: row width sums spans, bold is wider" {
+    const font_size: i32 = 100;
+    // Plain: 4 bytes * 100px * 0.50 = 200.
+    try std.testing.expectEqual(@as(i32, 200), measureSpanWidth(text("abcd"), font_size));
+    // Bold is wider than plain for the same text.
+    try std.testing.expect(measureSpanWidth(bold("abcd"), font_size) > measureSpanWidth(text("abcd"), font_size));
+    // A row's width is the sum of its spans.
+    const row: TooltipRow = &.{ text("ab"), colored("cd", default_tint) };
+    try std.testing.expectEqual(measureSpanWidth(text("abcd"), font_size), measureRowWidth(row, font_size));
+    // Line height exceeds the font size (leading).
+    try std.testing.expect(lineHeight(font_size) > font_size);
+}
+
+
 
 // ============================================================
 // Layout constants — fixed sizes in reference resolution
 // ============================================================
 
-pub const top_bar_height: u32 = 100;
-pub const bottom_bar_height: u32 = 160;
-pub const slot_size: u32 = 120;
-pub const slot_padding: u32 = 8;
-pub const panel_border: u32 = 16; // 9-slice border thickness
-pub const gear_panel_width: u32 = 200;
-pub const inventory_panel_width: u32 = 1100;
-pub const skills_panel_width: u32 = 800;
-pub const enemy_inspect_panel_width: u32 = 600;
+pub const top_bar_height: i32 = 100;
+pub const bottom_bar_height: i32 = 256;
+/// Standard gameplay button/slot size (128×128 at 1080p → 256×256 at the
+/// 2160p reference resolution).
+pub const slot_size: i32 = 256;
+/// Weapon-swap button — half a normal button, centered vertically.
+pub const swap_button_size: i32 = 128;
+/// Secondary indicator icons above the bar (momentum, effects, turn steps).
+pub const small_icon_size: i32 = 128;
+/// Gap between top-level UI items (e.g. bottom-bar segments).
+pub const ui_gap: i32 = 16;
+pub const slot_padding: i32 = 8;
+pub const panel_border: i32 = 16; // 9-slice border thickness
+pub const gear_panel_width: i32 = 200;
+pub const inventory_panel_width: i32 = 1100;
+pub const skills_panel_width: i32 = 800;
+pub const enemy_inspect_panel_width: i32 = 600;
+
+/// Default tint until colors are wired to the active color theme.
+pub const default_tint: Color = .{ .r = 255, .g = 255, .b = 255 };
+
+// ============================================================
+// Layout helpers
+// ============================================================
+
+/// The full reference-resolution canvas — the root region everything
+/// else is placed within.
+pub fn screenRect() Rectangle {
+    return .{ .x = 0, .y = 0, .width = types.reference_width, .height = types.reference_height };
+}
+
+/// Total width of `count` items of `item_width` separated by `gap`.
+/// Handy for sizing a group before centering or right-aligning it.
+pub fn rowWidth(count: i32, item_width: i32, gap: i32) i32 {
+    if (count <= 0) return 0;
+    return count * item_width + (count - 1) * gap;
+}
+
+/// Lays out fixed-height cells left-to-right from an origin, advancing a
+/// cursor after each. Call `next(width)` for each cell in order.
+pub const Row = struct {
+    origin: ScreenPosition,
+    height: i32,
+    gap: i32,
+    cursor_x: i32 = 0,
+
+    pub fn init(origin: ScreenPosition, height: i32, gap: i32) Row {
+        return .{ .origin = origin, .height = height, .gap = gap };
+    }
+
+    pub fn next(self: *Row, width: i32) Rectangle {
+        const rect: Rectangle = .{
+            .x = self.origin.x + self.cursor_x,
+            .y = self.origin.y,
+            .width = width,
+            .height = self.height,
+        };
+        self.cursor_x += width + self.gap;
+        return rect;
+    }
+};
+
+/// A uniform grid of cells (e.g. the inventory). `cell(index)` returns
+/// the rectangle for the nth cell, filling row by row.
+pub const Grid = struct {
+    origin: ScreenPosition,
+    cell_width: i32,
+    cell_height: i32,
+    gap: i32,
+    columns: i32,
+
+    pub fn cell(self: Grid, index: i32) Rectangle {
+        const column = @mod(index, self.columns);
+        const row = @divFloor(index, self.columns);
+        return .{
+            .x = self.origin.x + column * (self.cell_width + self.gap),
+            .y = self.origin.y + row * (self.cell_height + self.gap),
+            .width = self.cell_width,
+            .height = self.cell_height,
+        };
+    }
+
+    pub fn totalWidth(self: Grid) i32 {
+        return rowWidth(self.columns, self.cell_width, self.gap);
+    }
+
+    pub fn totalHeight(self: Grid, rows: i32) i32 {
+        return rowWidth(rows, self.cell_height, self.gap);
+    }
+};
 
 // ============================================================
 // UI elements — building blocks for the view function
@@ -115,24 +315,26 @@ pub const enemy_inspect_panel_width: u32 = 600;
 pub const NineSlicePanel = struct {
     sprite_id: []const u8,
     screen_position: ScreenPosition,
-    width: u32,
-    height: u32,
-    border: u32,
-    color: Color,
+    width: i32,
+    height: i32,
+    border: i32 = panel_border,
+    color: Color = default_tint,
+    tooltip: ?Tooltip = null,
+    blocks_input: bool = true,
 };
 
 /// A clickable slot (inventory cell, gear slot, skill bar slot).
 pub const Slot = struct {
     screen_position: ScreenPosition,
-    size: u32,
+    size: i32 = slot_size,
     /// The icon inside the slot, if any.
     icon_sprite_id: ?[]const u8 = null,
-    icon_color: Color = .{ .r = 255, .g = 255, .b = 255 },
-    /// Cooldown overlay (0 = no cooldown, fraction of slot filled).
-    cooldown_fraction: f32 = 0,
+    icon_color: Color = default_tint,
+    /// Semantic identity, if this slot can be dragged from / dropped onto.
+    ref: ?SlotRef = null,
     /// Tooltip shown on hover.
-    tooltip_header: ?[]const u8 = null,
-    tooltip_body: ?[]const u8 = null,
+    tooltip: ?Tooltip = null,
+    blocks_input: bool = true,
 };
 
 /// A clickable button with a sprite. Clicking triggers the same
@@ -140,40 +342,59 @@ pub const Slot = struct {
 pub const Button = struct {
     sprite_id: []const u8,
     screen_position: ScreenPosition,
-    width: u32,
-    height: u32,
-    color: Color,
+    width: i32 = slot_size,
+    height: i32 = slot_size,
+    color: Color = default_tint,
     action: Action,
-    tooltip_header: ?[]const u8 = null,
-    tooltip_body: ?[]const u8 = null,
+    /// Renderer draws a programmatic edge highlight around the sprite's
+    /// opaque pixels when set (e.g. selected panel button).
+    highlighted: bool = false,
+    tooltip: ?Tooltip = null,
+    blocks_input: bool = true,
 };
 
 /// A text label.
 pub const TextLabel = struct {
     text: []const u8,
     screen_position: ScreenPosition,
-    color: Color,
-    font_size: u32,
+    color: Color = default_tint,
+    font_size: i32,
+    bold: bool = false,
+    italic: bool = false,
+    tooltip: ?Tooltip = null,
+    blocks_input: bool = true,
 };
 
-/// A horizontal bar (health, cooldown).
-pub const Bar = struct {
+/// A partially-filled sprite, e.g. the circular health globe. Draws
+/// `background_sprite_id` in full, then `fill_sprite_id` cropped to
+/// `fill_fraction` from the given direction (e.g. `.up` keeps the
+/// bottom portion). Generalizes to mana, radial cooldowns, etc.
+pub const FillSprite = struct {
+    background_sprite_id: []const u8,
+    fill_sprite_id: []const u8,
     screen_position: ScreenPosition,
-    width: u32,
-    height: u32,
-    current_value: u32,
-    max_value: u32,
-    fill_color: Color,
-    background_color: Color,
+    width: i32,
+    height: i32,
+    /// 0 = empty, 1 = full.
+    fill_fraction: f32,
+    fill_direction: enum { up, down, left, right } = .up,
+    color: Color = default_tint,
+    tooltip: ?Tooltip = null,
+    blocks_input: bool = true,
 };
 
 /// A sprite image (icon, decoration, etc.).
 pub const Image = struct {
     sprite_id: []const u8,
     screen_position: ScreenPosition,
-    width: u32,
-    height: u32,
-    color: Color,
+    width: i32,
+    height: i32,
+    color: Color = default_tint,
+    /// Renderer draws a programmatic edge highlight around the sprite's
+    /// opaque pixels when set (e.g. the active turn-step indicator).
+    highlighted: bool = false,
+    tooltip: ?Tooltip = null,
+    blocks_input: bool = true,
 };
 
 /// Any UI element that can appear in a panel.
@@ -182,9 +403,150 @@ pub const UiElement = union(enum) {
     slot: Slot,
     button: Button,
     text_label: TextLabel,
-    bar: Bar,
+    fill_sprite: FillSprite,
     image: Image,
 };
+
+// ============================================================
+// Pointer hit-testing
+// ============================================================
+
+/// The screen rectangle an element occupies, derived from its own geometry
+/// (single source of truth — no bounds stored alongside the element).
+/// A `text_label` has no measured extent yet, so it reports a `font_size`
+/// square placeholder until text measurement lands.
+pub fn boundsOf(element: UiElement) Rectangle {
+    return switch (element) {
+        .nine_slice_panel => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
+        .slot => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.size, .height = e.size },
+        .button => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
+        .text_label => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.font_size, .height = e.font_size },
+        .fill_sprite => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
+        .image => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
+    };
+}
+
+/// The tooltip an element carries, if any. All variants share a `tooltip`
+/// field, so one `inline else` reads them uniformly.
+pub fn tooltipOf(element: UiElement) ?Tooltip {
+    return switch (element) {
+        inline else => |e| e.tooltip,
+    };
+}
+
+/// Whether an element occludes the pointer — i.e. hit-testing stops here
+/// instead of falling through to elements drawn behind it. Solid surfaces
+/// (panels, buttons, slots) block; decorative overlays (cooldown numbers,
+/// the drag ghost, the tooltip itself) opt out with `blocks_input = false`.
+pub fn blocksInputOf(element: UiElement) bool {
+    return switch (element) {
+        inline else => |e| e.blocks_input,
+    };
+}
+
+/// The one hit-testing primitive shared by every pointer query (tooltips,
+/// clicks, drags, …). Walks elements top-to-bottom (reverse of draw order).
+/// Non-blocking elements are transparent and skipped; the walk halts at the
+/// first blocking element. Returns the topmost element under `position` that
+/// satisfies `matches`, provided it is reached before any blocker — so an
+/// opaque element on top both captures its own input and shields whatever it
+/// covers.
+fn hitTest(
+    ui_elements: []const UiElement,
+    position: ScreenPosition,
+    comptime matches: fn (UiElement) bool,
+) ?UiElement {
+    var index = ui_elements.len;
+    while (index > 0) {
+        index -= 1;
+        const element = ui_elements[index];
+        if (!boundsOf(element).contains(position)) continue;
+        if (matches(element)) return element;
+        if (blocksInputOf(element)) return null;
+    }
+    return null;
+}
+
+fn hasTooltip(element: UiElement) bool {
+    return tooltipOf(element) != null;
+}
+
+fn isRefSlot(element: UiElement) bool {
+    return switch (element) {
+        .slot => |slot| slot.ref != null,
+        else => false,
+    };
+}
+
+/// The topmost tooltip-bearing element under `position` (respecting
+/// occlusion), or null. Used by the hover pass in view().
+pub fn tooltipAt(
+    ui_elements: []const UiElement,
+    position: ScreenPosition,
+) ?UiElement {
+    return hitTest(ui_elements, position, hasTooltip);
+}
+
+/// The topmost ref-bearing slot under `position` (respecting occlusion),
+/// or null. Used by drag.
+pub fn slotAt(
+    ui_elements: []const UiElement,
+    position: ScreenPosition,
+) ?Slot {
+    return if (hitTest(ui_elements, position, isRefSlot)) |element| element.slot else null;
+}
+
+/// The SlotRef of the topmost ref-bearing slot under `position`, or null.
+pub fn slotRefAt(
+    ui_elements: []const UiElement,
+    position: ScreenPosition,
+) ?SlotRef {
+    return if (slotAt(ui_elements, position)) |slot| slot.ref else null;
+}
+
+test "slotRefAt returns the topmost slot under the point" {
+    const elements = [_]UiElement{
+        // A non-slot element is ignored.
+        .{ .image = .{ .sprite_id = "x", .screen_position = .{ .x = 0, .y = 0 }, .width = 100, .height = 100 } },
+        // Bottom slot: inventory 3 at (0,0) size 100.
+        .{ .slot = .{ .screen_position = .{ .x = 0, .y = 0 }, .size = 100, .ref = .{ .inventory = 3 } } },
+        // Top slot overlapping it: gear boots at (50,50) size 100.
+        .{ .slot = .{ .screen_position = .{ .x = 50, .y = 50 }, .size = 100, .ref = .{ .gear = .boots } } },
+        // A slot with no ref is skipped.
+        .{ .slot = .{ .screen_position = .{ .x = 200, .y = 200 }, .size = 100 } },
+    };
+
+    // Inside only the bottom slot.
+    try std.testing.expectEqual(SlotRef{ .inventory = 3 }, slotRefAt(&elements, .{ .x = 10, .y = 10 }).?);
+    // Overlap region resolves to the topmost (gear).
+    try std.testing.expectEqual(SlotRef{ .gear = .boots }, slotRefAt(&elements, .{ .x = 60, .y = 60 }).?);
+    // Over the ref-less slot: no hit.
+    try std.testing.expectEqual(@as(?SlotRef, null), slotRefAt(&elements, .{ .x = 250, .y = 250 }));
+    // Right edge is exclusive.
+    try std.testing.expectEqual(@as(?SlotRef, null), slotRefAt(&elements, .{ .x = 150, .y = 60 }));
+    // Empty space.
+    try std.testing.expectEqual(@as(?SlotRef, null), slotRefAt(&elements, .{ .x = 500, .y = 500 }));
+}
+
+test "tooltipAt: overlays pass through, blockers shield what is behind" {
+    const tip = Tooltip{ .header = &.{text("hi")} };
+    const elements = [_]UiElement{
+        // Bottom: a button with a tooltip.
+        .{ .button = .{ .sprite_id = "b", .screen_position = .{ .x = 0, .y = 0 }, .action = .skip, .tooltip = tip } },
+        // A non-blocking overlay on top (e.g. cooldown number) — pass through.
+        .{ .text_label = .{ .text = "3", .screen_position = .{ .x = 0, .y = 0 }, .font_size = 100, .blocks_input = false } },
+    };
+    // The overlay is transparent, so the button's tooltip is found beneath it.
+    try std.testing.expect(tooltipAt(&elements, .{ .x = 10, .y = 10 }) != null);
+
+    // Now cover the button with a blocking, tooltip-less panel (e.g. an open
+    // full-screen overlay): hovering it must not reveal the button's tooltip.
+    const blocked = [_]UiElement{
+        .{ .button = .{ .sprite_id = "b", .screen_position = .{ .x = 0, .y = 0 }, .action = .skip, .tooltip = tip } },
+        .{ .nine_slice_panel = .{ .sprite_id = "p", .screen_position = .{ .x = 0, .y = 0 }, .width = slot_size, .height = slot_size } },
+    };
+    try std.testing.expect(tooltipAt(&blocked, .{ .x = 10, .y = 10 }) == null);
+}
 
 // ============================================================
 // Tooltip corner selection
@@ -203,15 +565,15 @@ pub const Corner = enum {
 /// that should meet.
 pub fn selectTooltipCorners(
     source_position: ScreenPosition,
-    source_width: u32,
-    source_height: u32,
-    tooltip_width: u32,
-    tooltip_height: u32,
+    source_width: i32,
+    source_height: i32,
+    tooltip_width: i32,
+    tooltip_height: i32,
 ) struct { source_corner: Corner, tooltip_corner: Corner } {
-    const source_center_x = source_position.x + @as(i32, @intCast(source_width / 2));
-    const source_center_y = source_position.y + @as(i32, @intCast(source_height / 2));
-    const screen_center_x: i32 = @intCast(types.reference_width / 2);
-    const screen_center_y: i32 = @intCast(types.reference_height / 2);
+    const source_center_x = source_position.x + @divTrunc(source_width, 2);
+    const source_center_y = source_position.y + @divTrunc(source_height, 2);
+    const screen_center_x: i32 = @divTrunc(types.reference_width, 2);
+    const screen_center_y: i32 = @divTrunc(types.reference_height, 2);
 
     // Place tooltip away from the nearest screen edge.
     // If source is in the left half, tooltip goes to the right (and vice versa).
@@ -240,23 +602,585 @@ pub fn selectTooltipCorners(
 }
 
 // ============================================================
+// Tooltip layout
+// ============================================================
+// Measures and wraps a Tooltip's rows against the padded content area, then
+// positions a background panel plus one TextLabel per span. Written entirely
+// against the measurement seam (measureSpanWidth / lineHeight), so it is
+// deterministic and testable regardless of the eventual font.
+
+pub const tooltip_max_width: i32 = 1024;
+pub const tooltip_padding: i32 = 24; // inner padding around content
+pub const tooltip_row_gap: i32 = 8; // vertical gap between rows
+pub const tooltip_header_gap: i32 = 16; // extra gap below the header
+pub const tooltip_header_font_size: i32 = 64;
+pub const tooltip_body_font_size: i32 = 56;
+pub const tooltip_panel_sprite = "ui/tooltip_panel";
+
+fn cornerPoint(rect: Rectangle, corner: Corner) ScreenPosition {
+    return switch (corner) {
+        .top_left => .{ .x = rect.x, .y = rect.y },
+        .top_right => .{ .x = rect.right(), .y = rect.y },
+        .bottom_left => .{ .x = rect.x, .y = rect.bottom() },
+        .bottom_right => .{ .x = rect.right(), .y = rect.bottom() },
+    };
+}
+
+/// Wrap one logical row into visual lines that each fit `content_width`.
+/// Text is split on spaces (the only break opportunities); each word keeps
+/// its span's style, so styling survives wrapping. Spaces at a wrap point
+/// (and at the start of a line) are dropped; a single word wider than
+/// `content_width` sits alone on its line and is allowed to overflow.
+fn wrapRow(
+    allocator: std.mem.Allocator,
+    row: TooltipRow,
+    font_size: i32,
+    content_width: i32,
+) ![]const TooltipRow {
+    var lines: std.ArrayList(TooltipRow) = .empty;
+    var current: std.ArrayList(Span) = .empty;
+    var current_width: i32 = 0;
+    var pending_space: ?Span = null;
+
+    for (row) |span| {
+        var index: usize = 0;
+        while (index < span.text.len) {
+            const is_space = span.text[index] == ' ';
+            const start = index;
+            while (index < span.text.len and (span.text[index] == ' ') == is_space) index += 1;
+            const piece = Span{
+                .text = span.text[start..index],
+                .color = span.color,
+                .bold = span.bold,
+                .italic = span.italic,
+            };
+            if (is_space) {
+                pending_space = piece;
+                continue;
+            }
+            const word_width = measureSpanWidth(piece, font_size);
+            const space_width = if (pending_space) |s| measureSpanWidth(s, font_size) else 0;
+            if (current.items.len > 0 and current_width + space_width + word_width > content_width) {
+                // Break before this word: flush the line, drop the pending space.
+                try lines.append(allocator, try current.toOwnedSlice(allocator));
+                current = .empty;
+                current_width = 0;
+                pending_space = null;
+                try current.append(allocator, piece);
+                current_width = word_width;
+            } else {
+                // Keep any pending space only mid-line (drop leading spaces).
+                if (pending_space) |s| {
+                    if (current.items.len > 0) {
+                        try current.append(allocator, s);
+                        current_width += space_width;
+                    }
+                    pending_space = null;
+                }
+                try current.append(allocator, piece);
+                current_width += word_width;
+            }
+        }
+    }
+    if (current.items.len > 0) try lines.append(allocator, try current.toOwnedSlice(allocator));
+    return lines.toOwnedSlice(allocator);
+}
+
+/// One wrapped row ready to size and draw: its font size, its visual lines,
+/// and whether it is the header (which gets extra spacing below).
+const WrappedRow = struct {
+    font_size: i32,
+    lines: []const TooltipRow,
+    is_header: bool,
+};
+
+/// Append a tooltip (background panel + positioned text) for `tooltip`,
+/// anchored to the element at the given source bounds. No-op for empty
+/// tooltips.
+pub fn buildTooltip(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    source_position: ScreenPosition,
+    source_width: i32,
+    source_height: i32,
+    tooltip: Tooltip,
+) !void {
+    const content_width_limit = tooltip_max_width - 2 * tooltip_padding;
+
+    // Wrap every row up front so the panel can be sized before placement.
+    var wrapped: std.ArrayList(WrappedRow) = .empty;
+    if (tooltip.header) |header| {
+        try wrapped.append(allocator, .{
+            .font_size = tooltip_header_font_size,
+            .lines = try wrapRow(allocator, header, tooltip_header_font_size, content_width_limit),
+            .is_header = true,
+        });
+    }
+    for (tooltip.body) |body_row| {
+        try wrapped.append(allocator, .{
+            .font_size = tooltip_body_font_size,
+            .lines = try wrapRow(allocator, body_row, tooltip_body_font_size, content_width_limit),
+            .is_header = false,
+        });
+    }
+    if (wrapped.items.len == 0) return;
+
+    // Size: widest visual line (capped) for width; stacked line heights plus
+    // inter-row and header gaps for height. This loop mirrors the emit loop.
+    var content_width: i32 = 0;
+    var content_height: i32 = 0;
+    for (wrapped.items, 0..) |wrapped_row, row_index| {
+        if (row_index > 0) content_height += tooltip_row_gap;
+        for (wrapped_row.lines) |line| {
+            const line_width = @min(measureRowWidth(line, wrapped_row.font_size), content_width_limit);
+            if (line_width > content_width) content_width = line_width;
+            content_height += lineHeight(wrapped_row.font_size);
+        }
+        if (wrapped_row.is_header) content_height += tooltip_header_gap;
+    }
+
+    const panel_width = content_width + 2 * tooltip_padding;
+    const panel_height = content_height + 2 * tooltip_padding;
+
+    // Place the chosen tooltip corner at the chosen source corner, then clamp
+    // the whole panel on screen.
+    const corners = selectTooltipCorners(source_position, source_width, source_height, panel_width, panel_height);
+    const source_rect = Rectangle{ .x = source_position.x, .y = source_position.y, .width = source_width, .height = source_height };
+    const anchor = cornerPoint(source_rect, corners.source_corner);
+    const panel_x = std.math.clamp(switch (corners.tooltip_corner) {
+        .top_left, .bottom_left => anchor.x,
+        .top_right, .bottom_right => anchor.x - panel_width,
+    }, 0, types.reference_width - panel_width);
+    const panel_y = std.math.clamp(switch (corners.tooltip_corner) {
+        .top_left, .top_right => anchor.y,
+        .bottom_left, .bottom_right => anchor.y - panel_height,
+    }, 0, types.reference_height - panel_height);
+
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = tooltip_panel_sprite,
+        .screen_position = .{ .x = panel_x, .y = panel_y },
+        .width = panel_width,
+        .height = panel_height,
+        // The tooltip is a passive overlay; it never captures the pointer.
+        .blocks_input = false,
+    } });
+
+    const content_x = panel_x + tooltip_padding;
+    var y = panel_y + tooltip_padding;
+    for (wrapped.items, 0..) |wrapped_row, row_index| {
+        if (row_index > 0) y += tooltip_row_gap;
+        for (wrapped_row.lines) |line| {
+            var x = content_x;
+            for (line) |span| {
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = span.text,
+                    .screen_position = .{ .x = x, .y = y },
+                    .color = span.color,
+                    .font_size = wrapped_row.font_size,
+                    .bold = span.bold,
+                    .italic = span.italic,
+                    .blocks_input = false,
+                } });
+                x += measureSpanWidth(span, wrapped_row.font_size);
+            }
+            y += lineHeight(wrapped_row.font_size);
+        }
+        if (wrapped_row.is_header) y += tooltip_header_gap;
+    }
+}
+
+/// A one-span row, arena-allocated so it outlives the builder.
+fn spanRow(allocator: std.mem.Allocator, span: Span) !TooltipRow {
+    return allocator.dupe(Span, &.{span});
+}
+
+/// Display name for a skill type (e.g. .weapon_skill -> "Weapon Skill").
+fn skillTypeName(skill_type: types.SkillType) []const u8 {
+    return switch (skill_type) {
+        .weapon_skill => "Weapon Skill",
+        .spell => "Spell",
+        .cantrip => "Cantrip",
+        .enchantment => "Enchantment",
+        .curse => "Curse",
+    };
+}
+
+/// Build the standard skill tooltip:
+///   name (header)
+///   description
+///   skill type
+///   one "Label N" row per non-null skill variable, in interface order
+/// No span styling yet — every row is a single plain span.
+pub fn buildSkillTooltip(allocator: std.mem.Allocator, skill: Skill) !Tooltip {
+    var body: std.ArrayList(TooltipRow) = .empty;
+    try body.append(allocator, try spanRow(allocator, text(skill.description)));
+    try body.append(allocator, try spanRow(allocator, text(skillTypeName(skill.skill_type))));
+
+    const variables = [_]struct { label: []const u8, value: ?u32 }{
+        .{ .label = "Range", .value = skill.range },
+        .{ .label = "Radius", .value = skill.radius },
+        .{ .label = "Distance", .value = skill.distance },
+        .{ .label = "Duration", .value = skill.skill_duration },
+        .{ .label = "Stun Duration", .value = skill.stun_duration },
+        .{ .label = "Cooldown", .value = skill.cooldown },
+    };
+    for (variables) |variable| {
+        if (variable.value) |value| {
+            const line = try std.fmt.allocPrint(allocator, "{s} {d}", .{ variable.label, value });
+            try body.append(allocator, try spanRow(allocator, text(line)));
+        }
+    }
+
+    return .{
+        .header = try spanRow(allocator, text(skill.name)),
+        .body = try body.toOwnedSlice(allocator),
+    };
+}
+
+test "buildSkillTooltip lays out name, description, type, then non-null vars" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const slice = @import("skills/slice.zig").skill;
+    const tooltip = try buildSkillTooltip(arena.allocator(), slice);
+    try std.testing.expectEqualStrings("Slice", tooltip.header.?[0].text);
+    // description, Weapon Skill, Range 1 (other vars are null)
+    try std.testing.expectEqual(@as(usize, 3), tooltip.body.len);
+    try std.testing.expectEqualStrings("Attack target, dealing 1.5x damage if they have less than half health", tooltip.body[0][0].text);
+    try std.testing.expectEqualStrings("Weapon Skill", tooltip.body[1][0].text);
+    try std.testing.expectEqualStrings("Range 1", tooltip.body[2][0].text);
+}
+
+test "wrapRow breaks at spaces and drops the break space" {
+    const font_size: i32 = 100; // 1 char = 50px plain
+    const row: TooltipRow = &.{text("aa bb cc")};
+
+    // content_width 260 fits "aa bb" (100+50+100=250) but not a third word.
+    const lines = try wrapRow(std.testing.allocator, row, font_size, 260);
+    defer {
+        for (lines) |line| std.testing.allocator.free(line);
+        std.testing.allocator.free(lines);
+    }
+    try std.testing.expectEqual(@as(usize, 2), lines.len);
+    // First visual line keeps the interior space span: ["aa", " ", "bb"].
+    try std.testing.expectEqual(@as(usize, 3), lines[0].len);
+    try std.testing.expectEqualStrings("aa", lines[0][0].text);
+    try std.testing.expectEqualStrings(" ", lines[0][1].text);
+    try std.testing.expectEqualStrings("bb", lines[0][2].text);
+    // Second line starts at "cc" with no leading space.
+    try std.testing.expectEqualStrings("cc", lines[1][0].text);
+}
+
+// ============================================================
 // Panel content builders — called by the view function
 // ============================================================
 
-// These will be implemented to build UiElement slices for each
-// panel type. The view function calls the relevant builder based
-// on game state and assembles the full UI layout.
+// Builders append UiElements into a shared list in back-to-front draw
+// order. The view function calls each relevant builder based on game
+// state; the flat list is what the renderer walks.
 
-// buildTopBar(game_state) → []UiElement
-// buildBottomBar(game_state) → []UiElement
-// buildGearPanel(game_state) → []UiElement
-// buildInventoryPanel(game_state) → []UiElement
-// buildSkillsPanel(game_state) → []UiElement
-// buildEnemyInspectPanel(game_state, entity_index) → []UiElement
-// buildWorldMap(game_state) → []UiElement
-// buildFullCombatLog(game_state) → []UiElement
-// buildOptionsMenu(game_state) → []UiElement
-// buildMainMenu() → []UiElement
-// buildMissionComplete(game_state) → []UiElement
-// buildMissionFail(game_state) → []UiElement
-// buildTooltip(tooltip_state) → []UiElement
+const UiElementList = std.ArrayList(UiElement);
+
+/// The player entity is index 0 in a level, or the dedicated hub player.
+fn playerEntity(game_state: *const GameState) ?Entity {
+    if (game_state.level) |level| {
+        if (level.entities.len > 0) return level.entities[0];
+        return null;
+    }
+    if (game_state.hub) |hub| return hub.player;
+    return null;
+}
+
+const cooldown_font_size: i32 = 96;
+const overlay_font_size: i32 = 64;
+
+/// Emit a centered integer label inside `cell` (cooldowns, momentum,
+/// effect durations). Uses a square `font_size` box for centering — real
+/// centering awaits measured text width once fonts exist.
+fn emitCenteredNumber(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    value: u32,
+    font_size: i32,
+) !void {
+    try elements.append(allocator, .{ .text_label = .{
+        .text = try std.fmt.allocPrint(allocator, "{d}", .{value}),
+        .screen_position = cell.placeCenter(font_size, font_size).position(),
+        .font_size = font_size,
+        // Sits on top of its parent icon/button; let its tooltip win the hover.
+        .blocks_input = false,
+    } });
+}
+
+/// Map a skill bar slot (1-8) to its input Action, so clicking a skill
+/// button triggers the same path as the keybind.
+fn skillSlotAction(slot: u8) Action {
+    return switch (slot) {
+        1 => .skill_slot_1,
+        2 => .skill_slot_2,
+        3 => .skill_slot_3,
+        4 => .skill_slot_4,
+        5 => .skill_slot_5,
+        6 => .skill_slot_6,
+        7 => .skill_slot_7,
+        8 => .skill_slot_8,
+        else => unreachable,
+    };
+}
+
+/// Emit one skill button into `cell`. If the slot resolves to a skill,
+/// draws the icon button (with tooltip) plus a cooldown overlay and
+/// remaining-turns number when on cooldown. Empty slots (e.g. a missing
+/// off-hand weapon) draw an empty-slot placeholder so the row keeps its
+/// width.
+fn emitSkillButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    slot: u8,
+    player: Entity,
+    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+) !void {
+    const skill_id = player.skillInSlot(slot, weapon_type_definitions);
+    const definition = if (skill_id) |id| lookups.getSkillDefinition(id) else null;
+
+    if (skill_id == null or definition == null) {
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = "ui/skill_slot_empty",
+            .screen_position = cell.position(),
+            .width = cell.width,
+            .height = cell.height,
+        } });
+        return;
+    }
+
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = definition.?.name, // TODO: real skill icon id
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = skillSlotAction(slot),
+        .tooltip = try buildSkillTooltip(allocator, definition.?),
+    } });
+
+    const cooldown = player.skill_cooldowns.get(skill_id.?);
+    if (cooldown > 0) {
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = "ui/cooldown_overlay",
+            .screen_position = cell.position(),
+            .width = cell.width,
+            .height = cell.height,
+            // Overlay on the skill button — pass hover through to the button.
+            .blocks_input = false,
+        } });
+        try emitCenteredNumber(elements, allocator, cell, cooldown, cooldown_font_size);
+    }
+}
+
+/// The bottom bar: one horizontally-centered row anchored to the bottom
+/// of `screen`, laid out left-to-right as
+///   inventory, gear, skills, health, weapon-skills, swap, utility-skills, skip
+/// with `ui_gap` between top-level items. The two skill sub-bars pack
+/// their buttons flush (no gap). Skip appears only in levels. The bar has
+/// no background of its own \u2014 it is purely a layout region.
+pub fn buildBottomBar(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    screen: Rectangle,
+    game_state: *const GameState,
+    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+) !void {
+    const player = playerEntity(game_state) orelse return;
+    const in_level = game_state.screen == .level;
+
+    const weapon_skills_width = 3 * slot_size;
+    const utility_skills_width = 5 * slot_size;
+
+    // Total content width, to size and center the row.
+    var top_level_count: i32 = 7; // inventory,gear,skills,health,wpn,swap,util
+    var content_width = slot_size * 4 // inventory, gear, skills, health
+        + weapon_skills_width + swap_button_size + utility_skills_width;
+    if (in_level) {
+        top_level_count += 1;
+        content_width += slot_size;
+    }
+    content_width += ui_gap * (top_level_count - 1);
+
+    const bar = screen.placeBottomCenter(content_width, bottom_bar_height, 0);
+    var row = Row.init(bar.position(), bottom_bar_height, ui_gap);
+
+    // Panel toggle buttons.
+    const toggles = [_]struct { sprite: []const u8, action: Action, label: []const u8 }{
+        .{ .sprite = "ui/icon_inventory", .action = .toggle_inventory, .label = "Inventory" },
+        .{ .sprite = "ui/icon_gear", .action = .toggle_gear, .label = "Gear" },
+        .{ .sprite = "ui/icon_skills", .action = .toggle_skills, .label = "Skills" },
+    };
+    for (toggles) |toggle| {
+        try elements.append(allocator, .{ .button = .{
+            .sprite_id = toggle.sprite,
+            .screen_position = row.next(slot_size).position(),
+            .action = toggle.action,
+            .tooltip = .{ .header = try spanRow(allocator, text(toggle.label)) },
+        } });
+    }
+
+    // Health globe (vertical fill).
+    const health_cell = row.next(slot_size);
+    try elements.append(allocator, .{ .fill_sprite = .{
+        .background_sprite_id = "ui/health_globe_empty",
+        .fill_sprite_id = "ui/health_globe_full",
+        .screen_position = health_cell.position(),
+        .width = slot_size,
+        .height = slot_size,
+        .fill_fraction = if (player.max_health == 0)
+            0
+        else
+            @as(f32, @floatFromInt(player.current_health)) /
+                @as(f32, @floatFromInt(player.max_health)),
+        .fill_direction = .up,
+        .tooltip = .{ .header = try spanRow(allocator, text(
+            try std.fmt.allocPrint(allocator, "{d} / {d}", .{ player.current_health, player.max_health }),
+        )) },
+    } });
+
+    // Weapon skills sub-bar (slots 1-3, packed flush).
+    const weapon_sub_bar = row.next(weapon_skills_width);
+    {
+        var inner = Row.init(weapon_sub_bar.position(), bottom_bar_height, 0);
+        var slot: u8 = 1;
+        while (slot <= 3) : (slot += 1) {
+            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions);
+        }
+    }
+
+    // Weapon swap button (128, centered vertically in its cell).
+    {
+        const cell = row.next(swap_button_size);
+        try elements.append(allocator, .{ .button = .{
+            .sprite_id = "ui/icon_swap",
+            .screen_position = cell.placeCenter(swap_button_size, swap_button_size).position(),
+            .width = swap_button_size,
+            .height = swap_button_size,
+            .action = .swap_weapons,
+            .tooltip = .{ .header = try spanRow(allocator, text("Swap weapons")) },
+        } });
+    }
+
+    // Utility skills sub-bar (slots 4-8, packed flush).
+    const utility_sub_bar = row.next(utility_skills_width);
+    {
+        var inner = Row.init(utility_sub_bar.position(), bottom_bar_height, 0);
+        var slot: u8 = 4;
+        while (slot <= 8) : (slot += 1) {
+            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions);
+        }
+    }
+
+    // Skip button — levels only.
+    var skip_cell: ?Rectangle = null;
+    if (in_level) {
+        const cell = row.next(slot_size);
+        skip_cell = cell;
+        try elements.append(allocator, .{ .button = .{
+            .sprite_id = "ui/icon_skip",
+            .screen_position = cell.position(),
+            .action = .skip,
+            .tooltip = .{ .header = try spanRow(allocator, text("Skip turn step")) },
+        } });
+    }
+
+    // --- Indicators above the bar (16px gap, 128×128) ---
+
+    // Momentum: centered above the health globe (levels only).
+    if (in_level) {
+        const momentum_cell = health_cell
+            .placeTopCenter(small_icon_size, small_icon_size, 0)
+            .translate(0, -(ui_gap + small_icon_size));
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = "ui/momentum",
+            .screen_position = momentum_cell.position(),
+            .width = small_icon_size,
+            .height = small_icon_size,
+            .tooltip = .{
+                .header = try spanRow(allocator, text(
+                    try std.fmt.allocPrint(allocator, "{d} momentum", .{player.momentum}),
+                )),
+                .body = try allocator.dupe(TooltipRow, &.{
+                    try spanRow(allocator, text(
+                        try std.fmt.allocPrint(allocator, "+{d} damage", .{player.getConvertedMomentum()}),
+                    )),
+                }),
+            },
+        } });
+        try emitCenteredNumber(elements, allocator, momentum_cell, player.momentum, overlay_font_size);
+    }
+
+    // Active effects: flush 128 grid spanning the skill bars, filling
+    // right-to-left (oldest rightmost) then wrapping upward.
+    if (player.active_effects.len > 0) {
+        const span_right = utility_sub_bar.right();
+        const span_width = utility_sub_bar.right() - weapon_sub_bar.x;
+        const columns = @max(1, @divFloor(span_width, small_icon_size));
+        const bottom_row_top = bar.y - ui_gap - small_icon_size;
+        for (player.active_effects, 0..) |effect, index| {
+            const ordinal: i32 = @intCast(index);
+            const column = @mod(ordinal, columns);
+            const grid_row = @divFloor(ordinal, columns);
+            const cell: Rectangle = .{
+                .x = span_right - (column + 1) * small_icon_size,
+                .y = bottom_row_top - grid_row * small_icon_size,
+                .width = small_icon_size,
+                .height = small_icon_size,
+            };
+            const definition = lookups.getEffectDefinition(effect.effect_id);
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = definition.name, // TODO: real effect icon id
+                .screen_position = cell.position(),
+                .width = small_icon_size,
+                .height = small_icon_size,
+                .tooltip = .{
+                    .header = try spanRow(allocator, text(definition.name)),
+                    .body = try allocator.dupe(TooltipRow, &.{
+                        try spanRow(allocator, text(definition.description)),
+                        try spanRow(allocator, text(
+                            try std.fmt.allocPrint(allocator, "Current duration {d}", .{effect.duration}),
+                        )),
+                    }),
+                },
+            } });
+            try emitCenteredNumber(elements, allocator, cell, effect.duration, overlay_font_size);
+        }
+    }
+
+    // Turn-step icons: move + attack above the skip button (levels only),
+    // combined width equal to the skip button. The current phase is
+    // highlighted; neither is highlighted during enemy turns.
+    if (skip_cell) |skip| {
+        const turn_phase = if (game_state.level) |level| level.turn_phase else null;
+        const strip: Rectangle = .{
+            .x = skip.x,
+            .y = bar.y - ui_gap - small_icon_size,
+            .width = skip.width,
+            .height = small_icon_size,
+        };
+        var inner = Row.init(strip.position(), small_icon_size, 0);
+        const move_cell = inner.next(small_icon_size);
+        const attack_cell = inner.next(small_icon_size);
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = "ui/turn_move",
+            .screen_position = move_cell.position(),
+            .width = small_icon_size,
+            .height = small_icon_size,
+            .highlighted = turn_phase == .player_move,
+            .tooltip = .{ .header = try spanRow(allocator, text("Move step")) },
+        } });
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = "ui/turn_attack",
+            .screen_position = attack_cell.position(),
+            .width = small_icon_size,
+            .height = small_icon_size,
+            .highlighted = turn_phase == .player_attack,
+            .tooltip = .{ .header = try spanRow(allocator, text("Attack step")) },
+        } });
+    }
+}

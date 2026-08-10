@@ -6,6 +6,7 @@ const functions = @import("functions.zig");
 const input = @import("input.zig");
 const parser = @import("parser.zig");
 const lookups = @import("generated_lookups.zig");
+const ui = @import("ui.zig");
 
 const computeFrameLength = functions.computeFrameLength;
 
@@ -28,6 +29,11 @@ const Skill = @import("skills/skill.zig").Skill;
 const SkillType = types.SkillType;
 const utility_skill_count = types.utility_skill_count;
 
+// Real-time pause inserted between enemy turn actions (before moving, before
+// each skill) so enemy turns don't resolve instantly. Not skippable — see the
+// wait handling in update().
+const turn_flow_wait_milliseconds: u32 = 500;
+
 // ============================================================
 // Core functions
 // ============================================================
@@ -35,7 +41,84 @@ const utility_skill_count = types.utility_skill_count;
 // `export` makes these visible to JS when compiled to WASM.
 // The build.zig `export_symbol_names` list must include them too.
 
-/// Handle inputs that can interrupt regardless of queue state.
+/// Handle inputs that can interrupt regardless of event stack state.
+/// Map a completed drag (source slot → target slot) to the player event it
+/// produces, or null for an invalid / no-op drop. The switch on the source
+/// enforces the item/skill domain split: item sources (inventory/gear) only
+/// yield events for item targets, skill sources (skill_bar/learned_skill) only
+/// for skill targets — everything cross-domain or nonsensical falls to null.
+fn dragToEvent(from: ui.SlotRef, to: ui.SlotRef) ?Event {
+    return switch (from) {
+        .inventory => |inventory_index| switch (to) {
+            .gear => |gear_slot| .{ .player_event = .{ .equip_item = .{
+                .inventory_slot_index = inventory_index,
+                .gear_slot = gear_slot,
+            } } },
+            else => null, // inventory→inventory move (future) + skill targets
+        },
+        .gear => |gear_slot| switch (to) {
+            .inventory => |inventory_index| .{ .player_event = .{ .unequip_item = .{
+                .gear_slot = gear_slot,
+                .inventory_slot_index = inventory_index,
+            } } },
+            else => null,
+        },
+        .learned_skill => |skill_id| switch (to) {
+            .skill_bar => |slot_index| .{ .player_event = .{ .equip_utility_skill = .{
+                .skill_id = skill_id,
+                .slot_index = slot_index,
+            } } },
+            else => null,
+        },
+        .skill_bar => |from_index| switch (to) {
+            .skill_bar => |to_index| .{ .player_event = .{ .swap_utility_skills = .{
+                .slot_a_index = from_index,
+                .slot_b_index = to_index,
+            } } },
+            // Dropping a bar skill back onto the skills menu clears the slot.
+            .learned_skill => .{ .player_event = .{ .unequip_utility_skill = .{
+                .slot_index = from_index,
+            } } },
+            else => null,
+        },
+    };
+}
+
+/// Pointer-driven drag lifecycle. Runs every tick (anytime): press over a
+/// slot with content begins a drag; release hit-tests the target slot and
+/// pushes the resolved event. Hit-tests against the previous frame's UI.
+fn handleDrag(
+    current: *GameState,
+    pointer: input.PointerInput,
+    ui_elements: []const ui.UiElement,
+    allocator: std.mem.Allocator,
+) void {
+    const ui_state = &current.ui_state;
+
+    if (pointer.pressed) {
+        // Begin a drag only when the pointer goes down on a slot that both has
+        // an identity and holds something (icon present).
+        if (ui.slotAt(ui_elements, pointer.position)) |slot| {
+            if (slot.ref) |ref| {
+                if (slot.icon_sprite_id) |icon| {
+                    ui_state.drag = .{ .source = ref, .icon_sprite_id = icon };
+                }
+            }
+        }
+    }
+
+    if (pointer.released) {
+        if (ui_state.drag) |drag| {
+            if (ui.slotRefAt(ui_elements, pointer.position)) |target| {
+                if (dragToEvent(drag.source, target)) |event| {
+                    pushEvents(current, &.{event}, allocator);
+                }
+            }
+            ui_state.drag = null;
+        }
+    }
+}
+
 fn handleAnytimeInput(
     history: *GameStateHistory,
     anytime: input.AnytimeInput,
@@ -103,14 +186,14 @@ fn handleAnytimeInput(
         }
 
         if (in_game.swap_weapons) {
-            queueEvents(current, &.{
+            pushEvents(current, &.{
                 .{ .player_event = .swap_hands },
             }, allocator);
         }
     }
 }
 
-/// Handle inputs that are only accepted when the event queue is empty.
+/// Handle inputs that are only accepted when the event stack is empty.
 fn handleIdleInput(
     history: *GameStateHistory,
     idle: input.IdleInput,
@@ -135,7 +218,7 @@ fn handleIdleInput(
                         if (is_reachable) {
                             level.highlighted_tiles = &.{};
                             level.turn_phase = null;
-                            queueEvents(current, &.{
+                            pushEvents(current, &.{
                                 .{ .level_event = .player_turn_attack },
                                 .{ .level_event = .{ .move_entity = .{
                                     .entity_index = 0,
@@ -149,7 +232,7 @@ fn handleIdleInput(
                         // Skip movement, go straight to attack phase
                         level.highlighted_tiles = &.{};
                         level.turn_phase = null;
-                        queueEvents(current, &.{
+                        pushEvents(current, &.{
                             .{ .level_event = .player_turn_attack },
                         }, allocator);
                     }
@@ -157,7 +240,7 @@ fn handleIdleInput(
                 .player_attack => {
                     if (idle.skill_slot_selected) |slot| {
                         const player = level.entities[0];
-                        if (resolveSkillSlot(slot, player, history.weapon_type_definitions)) |skill_id| {
+                        if (player.skillInSlot(slot, history.weapon_type_definitions)) |skill_id| {
                             // Check cooldown
                             if (player.skill_cooldowns.get(skill_id) > 0) return;
 
@@ -170,7 +253,7 @@ fn handleIdleInput(
                                             if (valid_targets) |targets| {
                                                 for (targets) |target| {
                                                     if (target.x == cursor_position.x and target.y == cursor_position.y) {
-                                                        queuePlayerSkillUse(current, level, skill_id, skill_definition, cursor_position, allocator);
+                                                        pushPlayerSkillUse(current, level, skill_id, skill_definition, cursor_position, allocator);
                                                         return;
                                                     }
                                                 }
@@ -178,9 +261,9 @@ fn handleIdleInput(
                                         }
                                     }
 
-                                    // Begin targeting — queue player_prepare_skill
+                                    // Begin targeting — push player_prepare_skill
                                     level.prepared_skill = skill_id;
-                                    queueEvents(current, &.{
+                                    pushEvents(current, &.{
                                         .{ .level_event = .{ .player_prepare_skill = .{
                                             .caster_index = 0,
                                             .skill_id = skill_id,
@@ -188,7 +271,7 @@ fn handleIdleInput(
                                     }, allocator);
                                 } else {
                                     // No targeting — use immediately
-                                    queuePlayerSkillUse(current, level, skill_id, skill_definition, null, allocator);
+                                    pushPlayerSkillUse(current, level, skill_id, skill_definition, null, allocator);
                                 }
                             }
                         }
@@ -208,7 +291,7 @@ fn handleIdleInput(
                                 }
                                 if (is_valid) {
                                     if (lookups.getSkillDefinition(skill_id)) |skill_definition| {
-                                        queuePlayerSkillUse(current, level, skill_id, skill_definition, cursor_position, allocator);
+                                        pushPlayerSkillUse(current, level, skill_id, skill_definition, cursor_position, allocator);
                                     }
                                 }
                             }
@@ -229,7 +312,7 @@ fn handleIdleInput(
                         level.turn_phase = null;
                         level.prepared_skill = null;
                         level.highlighted_tiles = &.{};
-                        queueEvents(current, &.{
+                        pushEvents(current, &.{
                             .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
                         }, allocator);
                     }
@@ -253,7 +336,7 @@ fn handleIdleInput(
             }
 
             if (clicked_npc) |npc_index| {
-                queueEvents(current, &.{
+                pushEvents(current, &.{
                     .{ .hub_event = .{ .interact_with_npc = .{
                         .npc_index = npc_index,
                     } } },
@@ -268,7 +351,7 @@ fn handleIdleInput(
                     }
                 }
                 if (is_walkable) {
-                    queueEvents(current, &.{
+                    pushEvents(current, &.{
                         .{ .hub_event = .{ .move_player = .{
                             .destination = clicked_position,
                         } } },
@@ -279,7 +362,7 @@ fn handleIdleInput(
     }
 
     if (idle.skill_slot_selected) |_| {
-        // TODO: resolve slot to SkillId, begin skill targeting or queue skill use
+        // TODO: resolve slot to SkillId, begin skill targeting or push skill use
         // if Settings.auto_target_at_cursor, check tile cursor position and use skill immediately if valid target
     }
 
@@ -292,56 +375,6 @@ fn handleIdleInput(
     }
 }
 
-/// Resolve a skill bar slot (1-8) to a SkillId for the given entity.
-/// Slots 1-2: main hand weapon skills (skill_1, skill_2 from weapon type definition)
-/// Slot 3: off hand weapon skill (skill_3 from off hand weapon type definition)
-/// Slots 4-8: equipped utility skills (indices 0-4)
-fn resolveSkillSlot(
-    slot: u8,
-    entity: Entity,
-    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
-) ?SkillId {
-    return switch (slot) {
-        1 => if (entity.main_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_1 else null,
-        2 => if (entity.main_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_2 else null,
-        3 => if (entity.off_hand_weapon) |weapon| weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_3 else null,
-        4 => entity.equipped_utility_skills[0],
-        5 => entity.equipped_utility_skills[1],
-        6 => entity.equipped_utility_skills[2],
-        7 => entity.equipped_utility_skills[3],
-        8 => entity.equipped_utility_skills[4],
-        else => null,
-    };
-}
-
-/// Queue a skill use for the player, followed by either turn_end (for
-/// weapon_skill/spell) or player_turn_attack (for cantrip/enchantment/curse).
-/// Collect all SkillIds available to an entity (weapon skills + utility skills).
-/// Main hand contributes skill_1 and skill_2, off hand contributes skill_3.
-fn collectEntitySkillIds(
-    entity: Entity,
-    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
-) [utility_skill_count + 3]?SkillId {
-    const main_hand_skills: [2]?SkillId = if (entity.main_hand_weapon) |weapon| blk: {
-        const definition = weapon_type_definitions[@intFromEnum(weapon.weapon_type)];
-        break :blk .{ definition.skill_1, definition.skill_2 };
-    } else .{ null, null };
-
-    const off_hand_skill: ?SkillId = if (entity.off_hand_weapon) |weapon|
-        weapon_type_definitions[@intFromEnum(weapon.weapon_type)].skill_3
-    else
-        null;
-
-    var result: [utility_skill_count + 3]?SkillId = undefined;
-    result[0] = main_hand_skills[0];
-    result[1] = main_hand_skills[1];
-    result[2] = off_hand_skill;
-    for (entity.equipped_utility_skills, 0..) |skill, index| {
-        result[3 + index] = skill;
-    }
-    return result;
-}
-
 /// Compute the minimum effective range across all off-cooldown skills an entity has.
 /// This is the closest distance the entity needs to be to use at least one skill.
 /// Uses range if the skill has it, radius if not.
@@ -350,7 +383,7 @@ fn computeMinRange(
     entity: Entity,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
 ) ?u32 {
-    const skill_ids = collectEntitySkillIds(entity, weapon_type_definitions);
+    const skill_ids = entity.collectSkillSlots(weapon_type_definitions);
     var min_range: ?u32 = null;
 
     for (&skill_ids) |maybe_skill_id| {
@@ -378,11 +411,11 @@ fn computeMinRange(
     return min_range;
 }
 
-/// Queue a skill use for the player, followed by turn_end if the skill
+/// Push a skill use for the player, followed by turn_end if the skill
 /// type ends the turn (weapon_skill/spell). For non-turn-ending skills
 /// (cantrip/enchantment/curse), turn_phase stays as player_attack so
 /// idle input picks up again after use_skill processes.
-fn queuePlayerSkillUse(
+fn pushPlayerSkillUse(
     current: *GameState,
     level: *types.Level,
     skill_id: SkillId,
@@ -398,7 +431,7 @@ fn queuePlayerSkillUse(
 
     if (ends_turn) {
         level.turn_phase = null;
-        queueEvents(current, &.{
+        pushEvents(current, &.{
             .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
             .{ .level_event = .{ .use_skill = .{
                 .caster_index = 0,
@@ -409,7 +442,7 @@ fn queuePlayerSkillUse(
     } else {
         // Don't clear turn_phase — stays as player_attack.
         // Stack empties after use_skill, idle input resumes.
-        queueEvents(current, &.{
+        pushEvents(current, &.{
             .{ .level_event = .{ .use_skill = .{
                 .caster_index = 0,
                 .skill_id = skill_id,
@@ -419,9 +452,9 @@ fn queuePlayerSkillUse(
     }
 }
 
-/// Push events onto the event queue (stack). Events are processed from
-/// the back, so the last event pushed is processed first.
-fn queueEvents(
+/// Push events onto the event stack. Events are processed from the back
+/// (top of stack), so the last event pushed is processed first.
+fn pushEvents(
     current: *GameState,
     new_events: []const Event,
     allocator: std.mem.Allocator,
@@ -432,14 +465,14 @@ fn queueEvents(
         current.event_stack = allocator.dupe(
             Event,
             new_events,
-        ) catch @panic("failed to allocate event queue");
+        ) catch @panic("failed to allocate event stack");
         return;
     }
 
     const combined = allocator.alloc(
         Event,
         current.event_stack.len + new_events.len,
-    ) catch @panic("failed to allocate event queue");
+    ) catch @panic("failed to allocate event stack");
 
     @memcpy(combined[0..current.event_stack.len], current.event_stack);
     @memcpy(combined[current.event_stack.len..], new_events);
@@ -459,6 +492,105 @@ fn getPlayerEntity(
     @panic("getPlayerEntity called with no level or hub");
 }
 
+/// Recompute the reachable tiles shown during the player's move step.
+/// No-op unless we're in a level and currently in the .player_move phase
+/// (e.g. changing boots in the hub or during the attack step should not
+/// touch highlighted_tiles).
+fn refreshMoveHighlights(
+    current: *GameState,
+    allocator: std.mem.Allocator,
+) void {
+    const level = if (current.level) |*level| level else return;
+    if (level.turn_phase != .player_move) return;
+
+    const player = level.entities[0];
+    level.highlighted_tiles = functions.reachableTiles(
+        level.*,
+        player.position,
+        player.getEffectiveSpeed(),
+        allocator,
+    );
+}
+
+/// Cancel any in-progress skill targeting during the player's attack step.
+/// No-op unless we're in a level with a prepared skill. Call this whenever
+/// the player's available skills change mid-attack-step (swapping or equipping
+/// weapons rewrites the first three skill slots), so a skill prepared from the
+/// old weapon does not linger with stale targeting highlights.
+fn cancelPreparedSkill(current: *GameState) void {
+    const level = if (current.level) |*level| level else return;
+    if (level.prepared_skill == null) return;
+
+    level.prepared_skill = null;
+    level.highlighted_tiles = &.{};
+}
+
+/// Return the piece currently in a gear slot as an Item, or null if empty.
+fn gearSlotItem(player: *Entity, gear_slot: types.GearSlot) ?types.Item {
+    return switch (gear_slot) {
+        .main_hand => if (player.main_hand_weapon) |weapon| .{ .weapon = weapon } else null,
+        .off_hand => if (player.off_hand_weapon) |weapon| .{ .weapon = weapon } else null,
+        .amulet => if (player.amulet) |amulet| .{ .amulet = amulet } else null,
+        .coat => if (player.coat) |coat| .{ .coat = coat } else null,
+        .gloves => if (player.gloves) |gloves| .{ .gloves = gloves } else null,
+        .pants => if (player.pants) |pants| .{ .pants = pants } else null,
+        .boots => if (player.boots) |boots| .{ .boots = boots } else null,
+    };
+}
+
+/// Whether an inventory item can be equipped into the given gear slot.
+fn itemFitsGearSlot(item: types.Item, gear_slot: types.GearSlot) bool {
+    return switch (gear_slot) {
+        .main_hand, .off_hand => item == .weapon,
+        .amulet => item == .amulet,
+        .coat => item == .coat,
+        .gloves => item == .gloves,
+        .pants => item == .pants,
+        .boots => item == .boots,
+    };
+}
+
+/// Write an item into a gear slot. The caller must ensure the item fits the
+/// slot (see itemFitsGearSlot); the union access panics otherwise.
+fn setGearSlot(player: *Entity, gear_slot: types.GearSlot, item: types.Item) void {
+    switch (gear_slot) {
+        .main_hand => player.main_hand_weapon = item.weapon,
+        .off_hand => player.off_hand_weapon = item.weapon,
+        .amulet => player.amulet = item.amulet,
+        .coat => player.coat = item.coat,
+        .gloves => player.gloves = item.gloves,
+        .pants => player.pants = item.pants,
+        .boots => player.boots = item.boots,
+    }
+}
+
+/// Empty a gear slot.
+fn clearGearSlot(player: *Entity, gear_slot: types.GearSlot) void {
+    switch (gear_slot) {
+        .main_hand => player.main_hand_weapon = null,
+        .off_hand => player.off_hand_weapon = null,
+        .amulet => player.amulet = null,
+        .coat => player.coat = null,
+        .gloves => player.gloves = null,
+        .pants => player.pants = null,
+        .boots => player.boots = null,
+    }
+}
+
+/// Re-apply the mid-turn side effects of a gear change: weapons rewrite the
+/// first three skills (cancel targeting), boots change speed (refresh range).
+fn applyGearChangeSideEffects(
+    current: *GameState,
+    gear_slot: types.GearSlot,
+    allocator: std.mem.Allocator,
+) void {
+    switch (gear_slot) {
+        .main_hand, .off_hand => cancelPreparedSkill(current),
+        .boots => refreshMoveHighlights(current, allocator),
+        else => {},
+    }
+}
+
 /// Get a mutable pointer to an entity in the current level.
 fn getLevelEntity(
     current: *GameState,
@@ -470,9 +602,9 @@ fn getLevelEntity(
     @panic("getLevelEntity called with no level");
 }
 
-/// Load the campaign from player_data.current_campaign and queue a start_hub
+/// Load the campaign from player_data.current_campaign and push a start_hub
 /// event for player_data.current_hub.
-fn loadCampaignAndQueueHub(
+fn loadCampaignAndPushHub(
     current: *GameState,
     history: *GameStateHistory,
     allocator: std.mem.Allocator,
@@ -496,14 +628,14 @@ fn loadCampaignAndQueueHub(
         allocator,
     ) catch @panic("failed to parse campaign file");
 
-    // Queue start_hub with the player's current hub
+    // Push start_hub with the player's current hub
     const hub_id = current.player_data.current_hub;
-    queueEvents(current, &.{.{ .meta_event = .{ .start_hub = .{
+    pushEvents(current, &.{.{ .meta_event = .{ .start_hub = .{
         .hub_id = hub_id,
     } } }}, allocator);
 }
 
-/// Process a single event from the queue. Applies the event to the current
+/// Process a single event from the stack. Applies the event to the current
 /// state and records it in event history. Also used by undo/redo replay.
 fn processEvent(
     history: *GameStateHistory,
@@ -513,7 +645,7 @@ fn processEvent(
 
     if (current.event_stack.len == 0) return;
 
-    // Pop the last event from the queue
+    // Pop the last event from the stack
     const next_event = current.event_stack[current.event_stack.len - 1];
     current.event_stack = current.event_stack[0 .. current.event_stack.len - 1];
 
@@ -549,7 +681,7 @@ fn processEvent(
                         allocator,
                     ) catch @panic("failed to parse new_player.txt");
 
-                    loadCampaignAndQueueHub(current, history, allocator);
+                    loadCampaignAndPushHub(current, history, allocator);
                 },
                 .load_save => |load| {
                     const parsed = parser.parseConfigFileFromPath(
@@ -564,7 +696,7 @@ fn processEvent(
                         allocator,
                     ) catch @panic("failed to parse save file");
 
-                    loadCampaignAndQueueHub(current, history, allocator);
+                    loadCampaignAndPushHub(current, history, allocator);
                 },
                 .save_game => |save| {
                     parser.writePlayerSaveToFile(
@@ -599,7 +731,7 @@ fn processEvent(
                     current.transitionScreen(.hub);
 
                     // Sync player entity from PlayerData
-                    queueEvents(current, &.{.{ .super_event = .{ .build_player_from_data = .{
+                    pushEvents(current, &.{.{ .super_event = .{ .build_player_from_data = .{
                         .entity_index = 0,
                     } } }}, allocator);
                 },
@@ -626,8 +758,8 @@ fn processEvent(
                     current.mission.?.path = start.mission_path;
                     current.mission.?.current_level_index = 1;
 
-                    // Queue the first level
-                    queueEvents(current, &.{.{ .meta_event = .{ .start_level = .{
+                    // Push the first level
+                    pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
                         .mission_path = start.mission_path,
                         .level_index = 1,
                     } } }}, allocator);
@@ -635,7 +767,7 @@ fn processEvent(
                 .end_mission => |end| {
                     // Return to the destination hub
                     if (end.hub_id) |hub_id| {
-                        queueEvents(current, &.{.{ .meta_event = .{ .start_hub = .{
+                        pushEvents(current, &.{.{ .meta_event = .{ .start_hub = .{
                             .hub_id = hub_id,
                         } } }}, allocator);
                     }
@@ -685,24 +817,31 @@ fn processEvent(
                         .entity_index = 0,
                     } } }) catch @panic("failed to append build_player_from_data");
 
-                    queueEvents(current, start_events.items, allocator);
+                    pushEvents(current, start_events.items, allocator);
                 },
                 .end_level => {
                     if (current.mission) |mission| {
                         if (mission.current_level_index < mission.level_count) {
-                            // More levels — queue the next one
+                            // More levels — push the next one
                             const next_index = mission.current_level_index + 1;
-                            queueEvents(current, &.{.{ .meta_event = .{ .start_level = .{
+                            pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
                                 .mission_path = mission.path,
                                 .level_index = next_index,
                             } } }}, allocator);
                         } else {
                             // Last level done — end the mission
-                            queueEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
+                            pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
                                 .hub_id = mission.end_hub,
                             } } }}, allocator);
                         }
                     }
+                },
+                .wait => |wait_event| {
+                    // Begin a real-time pause; update() drains it as frames
+                    // elapse before the next event is processed.
+                    current.waiting = .{
+                        .remaining_microseconds = @as(u64, wait_event.duration_milliseconds) * 1000,
+                    };
                 },
                 else => {},
             }
@@ -750,13 +889,9 @@ fn processEvent(
                     player.main_hand_weapon = player.off_hand_weapon;
                     player.off_hand_weapon = held_weapon;
 
-                    // If in a level with a prepared skill, cancel targeting
-                    if (current.level) |*level| {
-                        if (level.prepared_skill != null) {
-                            level.prepared_skill = null;
-                            level.highlighted_tiles = &.{};
-                        }
-                    }
+                    // Swapping hands changes the first three skills, so cancel
+                    // any skill prepared from the previous configuration.
+                    cancelPreparedSkill(current);
                 },
                 .learn_skill => |learn| {
                     const player = getPlayerEntity(current, 0);
@@ -804,40 +939,57 @@ fn processEvent(
                     const slot = &player.inventory.slots[equip.inventory_slot_index];
 
                     const item = slot.* orelse return;
+                    if (!itemFitsGearSlot(item, equip.gear_slot)) return;
 
-                    // Swap the inventory item with the appropriate gear slot
-                    switch (item) {
-                        .weapon => |weapon| {
-                            if (equip.main_hand) {
-                                slot.* = if (player.main_hand_weapon) |old| .{ .weapon = old } else null;
-                                player.main_hand_weapon = weapon;
-                            } else {
-                                slot.* = if (player.off_hand_weapon) |old| .{ .weapon = old } else null;
-                                player.off_hand_weapon = weapon;
-                            }
-                        },
-                        .amulet => |amulet| {
-                            slot.* = if (player.amulet) |old| .{ .amulet = old } else null;
-                            player.amulet = amulet;
-                        },
-                        .coat => |coat| {
-                            slot.* = if (player.coat) |old| .{ .coat = old } else null;
-                            player.coat = coat;
-                        },
-                        .gloves => |gloves| {
-                            slot.* = if (player.gloves) |old| .{ .gloves = old } else null;
-                            player.gloves = gloves;
-                        },
-                        .pants => |pants| {
-                            slot.* = if (player.pants) |old| .{ .pants = old } else null;
-                            player.pants = pants;
-                        },
-                        .boots => |boots| {
-                            slot.* = if (player.boots) |old| .{ .boots = old } else null;
-                            player.boots = boots;
-                        },
-                        .skill_tome => return,
+                    // Old gear (if any) drops back into the inventory slot.
+                    slot.* = gearSlotItem(player, equip.gear_slot);
+                    setGearSlot(player, equip.gear_slot, item);
+
+                    applyGearChangeSideEffects(current, equip.gear_slot, allocator);
+                },
+                .unequip_item => |unequip| {
+                    const player = getPlayerEntity(current, 0);
+                    const piece = gearSlotItem(player, unequip.gear_slot) orelse return;
+                    const slot = &player.inventory.slots[unequip.inventory_slot_index];
+
+                    if (slot.*) |existing| {
+                        // Filled target: swap only if the item fits this slot.
+                        if (!itemFitsGearSlot(existing, unequip.gear_slot)) return;
+                        setGearSlot(player, unequip.gear_slot, existing);
+                        slot.* = piece;
+                    } else {
+                        // Empty target: move the piece out and clear the slot.
+                        slot.* = piece;
+                        clearGearSlot(player, unequip.gear_slot);
                     }
+
+                    applyGearChangeSideEffects(current, unequip.gear_slot, allocator);
+                },
+                .equip_utility_skill => |equip| {
+                    if (equip.slot_index >= utility_skill_count) return;
+                    const player = getPlayerEntity(current, 0);
+                    player.equipped_utility_skills[equip.slot_index] = equip.skill_id;
+
+                    // Changing utility skills can invalidate a prepared skill.
+                    cancelPreparedSkill(current);
+                },
+                .swap_utility_skills => |swap| {
+                    if (swap.slot_a_index >= utility_skill_count) return;
+                    if (swap.slot_b_index >= utility_skill_count) return;
+                    const player = getPlayerEntity(current, 0);
+                    const held = player.equipped_utility_skills[swap.slot_a_index];
+                    player.equipped_utility_skills[swap.slot_a_index] =
+                        player.equipped_utility_skills[swap.slot_b_index];
+                    player.equipped_utility_skills[swap.slot_b_index] = held;
+
+                    cancelPreparedSkill(current);
+                },
+                .unequip_utility_skill => |unequip| {
+                    if (unequip.slot_index >= utility_skill_count) return;
+                    const player = getPlayerEntity(current, 0);
+                    player.equipped_utility_skills[unequip.slot_index] = null;
+
+                    cancelPreparedSkill(current);
                 },
             }
         },
@@ -858,7 +1010,7 @@ fn processEvent(
                                     .{ current.player_data.current_campaign, exit.mission_id },
                                 ) catch @panic("failed to allocate mission path");
 
-                                queueEvents(current, &.{.{ .meta_event = .{ .start_mission = .{
+                                pushEvents(current, &.{.{ .meta_event = .{ .start_mission = .{
                                     .mission_path = mission_path,
                                     .start_hub_id = current.player_data.current_hub,
                                     .end_hub_id = null,
@@ -904,15 +1056,15 @@ fn processEvent(
                     for (entity.active_effects) |active_effect| {
                         const definition = lookups.getEffectDefinition(active_effect.effect_id);
                         if (definition.onStartTurn(turn.entity_index, current.*, allocator)) |effect_events| {
-                            queueEvents(current, effect_events, allocator);
+                            pushEvents(current, effect_events, allocator);
                         }
                     }
 
-                    // 3. Reduce all effect durations by 1, queue end_effect for expired effects
+                    // 3. Reduce all effect durations by 1, push end_effect for expired effects
                     var remaining_effects: std.ArrayList(types.Effect) = .empty;
                     for (entity.active_effects) |active_effect| {
                         if (active_effect.duration <= 1) {
-                            queueEvents(current, &.{.{ .sub_level_event = .{ .end_effect = .{
+                            pushEvents(current, &.{.{ .sub_level_event = .{ .end_effect = .{
                                 .entity_index = turn.entity_index,
                                 .effect_id = active_effect.effect_id,
                             } } }}, allocator);
@@ -929,15 +1081,15 @@ fn processEvent(
                     // 4. If stunned, reduce stun and skip turn
                     if (entity.stun_duration > 0) {
                         entity.stun_duration -= 1;
-                        queueEvents(current, &.{.{ .level_event = .{ .turn_end = .{
+                        pushEvents(current, &.{.{ .level_event = .{ .turn_end = .{
                             .entity_index = turn.entity_index,
                         } } }}, allocator);
                     } else if (turn.entity_index == 0) {
                         // Player turn
-                        queueEvents(current, &.{.{ .level_event = .player_turn_move }}, allocator);
+                        pushEvents(current, &.{.{ .level_event = .player_turn_move }}, allocator);
                     } else {
                         // Enemy turn
-                        queueEvents(current, &.{.{ .level_event = .{ .enemy_turn_move = .{
+                        pushEvents(current, &.{.{ .level_event = .{ .enemy_turn_move = .{
                             .entity_index = turn.entity_index,
                         } } }}, allocator);
                     }
@@ -949,11 +1101,11 @@ fn processEvent(
                     for (entity.active_effects) |active_effect| {
                         const definition = lookups.getEffectDefinition(active_effect.effect_id);
                         if (definition.onEndTurn(turn.entity_index, current.*, allocator)) |effect_events| {
-                            queueEvents(current, effect_events, allocator);
+                            pushEvents(current, effect_events, allocator);
                         }
                     }
 
-                    // If this is the player's turn ending, queue the full next round:
+                    // If this is the player's turn ending, push the full next round:
                     // all active/alive enemy turn_starts sorted by distance (closest first),
                     // plus the next player turn_start at the bottom (processed last).
                     if (turn.entity_index == 0) {
@@ -1003,22 +1155,14 @@ fn processEvent(
                             } } }) catch @panic("failed to append enemy turn_start");
                         }
 
-                        queueEvents(current, round_events.items, allocator);
+                        pushEvents(current, round_events.items, allocator);
                     }
-                    // Non-player turn_end: no queuing needed, next turn_start is already on the stack
+                    // Non-player turn_end: no pushing needed, next turn_start is already on the stack
                 },
                 .player_turn_move => {
                     const level = &current.level.?;
-                    const player = level.entities[0];
-                    const reachable = functions.reachableTiles(
-                        level.*,
-                        player.position,
-                        player.getEffectiveSpeed(),
-                        allocator,
-                    );
-
-                    level.highlighted_tiles = reachable;
                     level.turn_phase = .player_move;
+                    refreshMoveHighlights(current, allocator);
 
                     // Event stack is now empty — handleIdleInput will pick up
                     // tile clicks and skip actions based on turn_phase.
@@ -1040,7 +1184,7 @@ fn processEvent(
                             }
                         }
                         if (!has_active_enemies) {
-                            queueEvents(current, &.{
+                            pushEvents(current, &.{
                                 .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
                             }, allocator);
                             return;
@@ -1077,7 +1221,7 @@ fn processEvent(
                         // If already within min range, don't move
                         if (nearest_distance <= min_range) {
                             // Skip to attack
-                            queueEvents(current, &.{.{ .level_event = .{ .enemy_turn_attack = .{
+                            pushEvents(current, &.{.{ .level_event = .{ .enemy_turn_attack = .{
                                 .entity_index = enemy_move.entity_index,
                             } } }}, allocator);
                         } else {
@@ -1103,7 +1247,8 @@ fn processEvent(
                                 }
 
                                 if (destination.x != entity.position.x or destination.y != entity.position.y) {
-                                    queueEvents(current, &.{
+                                    // Order (LIFO, last runs first): wait, then move, then attack.
+                                    pushEvents(current, &.{
                                         .{ .level_event = .{ .enemy_turn_attack = .{
                                             .entity_index = enemy_move.entity_index,
                                         } } },
@@ -1111,9 +1256,10 @@ fn processEvent(
                                             .entity_index = enemy_move.entity_index,
                                             .destination = destination,
                                         } } },
+                                        .{ .meta_event = .{ .wait = .{ .duration_milliseconds = turn_flow_wait_milliseconds } } },
                                     }, allocator);
                                 } else {
-                                    queueEvents(current, &.{.{ .level_event = .{ .enemy_turn_attack = .{
+                                    pushEvents(current, &.{.{ .level_event = .{ .enemy_turn_attack = .{
                                         .entity_index = enemy_move.entity_index,
                                     } } }}, allocator);
                                 }
@@ -1137,7 +1283,8 @@ fn processEvent(
                                 }
 
                                 if (best_tile) |destination| {
-                                    queueEvents(current, &.{
+                                    // Order (LIFO, last runs first): wait, then move, then attack.
+                                    pushEvents(current, &.{
                                         .{ .level_event = .{ .enemy_turn_attack = .{
                                             .entity_index = enemy_move.entity_index,
                                         } } },
@@ -1145,10 +1292,11 @@ fn processEvent(
                                             .entity_index = enemy_move.entity_index,
                                             .destination = destination,
                                         } } },
+                                        .{ .meta_event = .{ .wait = .{ .duration_milliseconds = turn_flow_wait_milliseconds } } },
                                     }, allocator);
                                 } else {
                                     // Can't improve position — just attack
-                                    queueEvents(current, &.{.{ .level_event = .{ .enemy_turn_attack = .{
+                                    pushEvents(current, &.{.{ .level_event = .{ .enemy_turn_attack = .{
                                         .entity_index = enemy_move.entity_index,
                                     } } }}, allocator);
                                 }
@@ -1156,7 +1304,7 @@ fn processEvent(
                         }
                     } else {
                         // No targets — skip to turn end
-                        queueEvents(current, &.{.{ .level_event = .{ .turn_end = .{
+                        pushEvents(current, &.{.{ .level_event = .{ .turn_end = .{
                             .entity_index = enemy_move.entity_index,
                         } } }}, allocator);
                     }
@@ -1164,15 +1312,15 @@ fn processEvent(
                 .enemy_turn_attack => |enemy_attack| {
                     const level = &current.level.?;
                     const entity = level.entities[enemy_attack.entity_index];
-                    const skill_ids = collectEntitySkillIds(entity, history.weapon_type_definitions);
+                    const skill_ids = entity.collectSkillSlots(history.weapon_type_definitions);
 
                     // Evaluate all off-cooldown skills, partitioned by turn-ending vs not
                     var best_non_ending_id: ?SkillId = null;
-                    var best_non_ending_priority: f32 = 0;
+                    var best_non_ending_priority: u32 = 0;
                     var best_non_ending_definition: ?Skill = null;
 
                     var best_ending_id: ?SkillId = null;
-                    var best_ending_priority: f32 = 0;
+                    var best_ending_priority: u32 = 0;
                     var best_ending_definition: ?Skill = null;
 
                     for (&skill_ids) |maybe_skill_id| {
@@ -1181,7 +1329,7 @@ fn processEvent(
                         const skill_definition = lookups.getSkillDefinition(skill_id) orelse continue;
 
                         const skill_priority = skill_definition.priority(enemy_attack.entity_index, current.*);
-                        if (skill_priority <= 0) continue;
+                        if (skill_priority == 0) continue;
 
                         const ends_turn = skill_definition.skill_type == .weapon_skill or
                             skill_definition.skill_type == .spell;
@@ -1215,8 +1363,9 @@ fn processEvent(
                             current.*,
                         );
 
-                        // Queue another enemy_turn_attack after use_skill to re-evaluate
-                        queueEvents(current, &.{
+                        // Push another enemy_turn_attack after use_skill to re-evaluate.
+                        // Order (LIFO, last runs first): wait, then skill, then re-evaluate.
+                        pushEvents(current, &.{
                             .{ .level_event = .{ .enemy_turn_attack = .{
                                 .entity_index = enemy_attack.entity_index,
                             } } },
@@ -1225,6 +1374,7 @@ fn processEvent(
                                 .skill_id = skill_id,
                                 .target = target,
                             } } },
+                            .{ .meta_event = .{ .wait = .{ .duration_milliseconds = turn_flow_wait_milliseconds } } },
                         }, allocator);
                     } else if (best_ending_id) |skill_id| {
                         const skill_definition = best_ending_definition.?;
@@ -1239,7 +1389,8 @@ fn processEvent(
                             current.*,
                         );
 
-                        queueEvents(current, &.{
+                        // Order (LIFO, last runs first): wait, then skill, then turn_end.
+                        pushEvents(current, &.{
                             .{ .level_event = .{ .turn_end = .{
                                 .entity_index = enemy_attack.entity_index,
                             } } },
@@ -1248,10 +1399,11 @@ fn processEvent(
                                 .skill_id = skill_id,
                                 .target = target,
                             } } },
+                            .{ .meta_event = .{ .wait = .{ .duration_milliseconds = turn_flow_wait_milliseconds } } },
                         }, allocator);
                     } else {
                         // No usable skills — end turn
-                        queueEvents(current, &.{.{ .level_event = .{ .turn_end = .{
+                        pushEvents(current, &.{.{ .level_event = .{ .turn_end = .{
                             .entity_index = enemy_attack.entity_index,
                         } } }}, allocator);
                     }
@@ -1259,7 +1411,7 @@ fn processEvent(
                 .player_prepare_skill => |prepare| {
                     if (lookups.getSkillDefinition(prepare.skill_id)) |skill_definition| {
                         if (skill_definition.playerPrepareSkill(prepare.caster_index, current.*, allocator)) |event| {
-                            queueEvents(current, &.{event}, allocator);
+                            pushEvents(current, &.{event}, allocator);
                         }
                     }
                 },
@@ -1268,14 +1420,14 @@ fn processEvent(
                     entity.momentum += 1;
 
                     if (lookups.getSkillDefinition(use.skill_id)) |skill_definition| {
-                        // Queue the skill's events
+                        // Push the skill's events
                         const skill_events = skill_definition.useSkill(
                             use.caster_index,
                             use.target,
                             current.*,
                             allocator,
                         );
-                        queueEvents(current, skill_events, allocator);
+                        pushEvents(current, skill_events, allocator);
 
                         // Set cooldown
                         if (skill_definition.cooldown) |base_cooldown| {
@@ -1299,8 +1451,8 @@ fn processEvent(
                     entity.position = move.destination;
                     entity.momentum += 1;
 
-                    // Queue pickup and aggro checks after movement
-                    queueEvents(current, &.{
+                    // Push pickup and aggro checks after movement
+                    pushEvents(current, &.{
                         .{ .sub_level_event = .{ .aggro_around = .{
                             .entity_index = move.entity_index,
                         } } },
@@ -1345,7 +1497,7 @@ fn processEvent(
                                     }
                                 }
                                 if (!has_active_enemies) {
-                                    queueEvents(current, &.{
+                                    pushEvents(current, &.{
                                         .{ .meta_event = .end_level },
                                     }, allocator);
                                 }
@@ -1415,13 +1567,13 @@ fn processEvent(
                         for (attacker.active_effects) |active_effect| {
                             const definition = lookups.getEffectDefinition(active_effect.effect_id);
                             if (definition.onOutgoingStun(stun.attacker_index, current.*, allocator)) |effect_events| {
-                                queueEvents(current, effect_events, allocator);
+                                pushEvents(current, effect_events, allocator);
                             }
                         }
                         for (defender.active_effects) |active_effect| {
                             const definition = lookups.getEffectDefinition(active_effect.effect_id);
                             if (definition.onIncomingStun(stun.defender_index, current.*, allocator)) |effect_events| {
-                                queueEvents(current, effect_events, allocator);
+                                pushEvents(current, effect_events, allocator);
                             }
                         }
                     }
@@ -1438,13 +1590,13 @@ fn processEvent(
                     for (attacker.active_effects) |active_effect| {
                         const definition = lookups.getEffectDefinition(active_effect.effect_id);
                         if (definition.onOutgoingKnockback(knockback.attacker_index, current.*, allocator)) |effect_events| {
-                            queueEvents(current, effect_events, allocator);
+                            pushEvents(current, effect_events, allocator);
                         }
                     }
                     for (defender.active_effects) |active_effect| {
                         const definition = lookups.getEffectDefinition(active_effect.effect_id);
                         if (definition.onIncomingKnockback(knockback.defender_index, current.*, allocator)) |effect_events| {
-                            queueEvents(current, effect_events, allocator);
+                            pushEvents(current, effect_events, allocator);
                         }
                     }
 
@@ -1486,7 +1638,7 @@ fn processEvent(
 
                     // Move entity if position changed
                     if (destination.x != defender.position.x or destination.y != defender.position.y) {
-                        queueEvents(current, &.{
+                        pushEvents(current, &.{
                             .{ .level_event = .{ .move_entity = .{
                                 .entity_index = knockback.defender_index,
                                 .destination = destination,
@@ -1500,13 +1652,13 @@ fn processEvent(
                         for (attacker.active_effects) |active_effect| {
                             const definition = lookups.getEffectDefinition(active_effect.effect_id);
                             if (definition.onOutgoingCollision(knockback.attacker_index, current.*, allocator)) |effect_events| {
-                                queueEvents(current, effect_events, allocator);
+                                pushEvents(current, effect_events, allocator);
                             }
                         }
                         for (defender.active_effects) |active_effect| {
                             const definition = lookups.getEffectDefinition(active_effect.effect_id);
                             if (definition.onIncomingCollision(knockback.defender_index, current.*, allocator)) |effect_events| {
-                                queueEvents(current, effect_events, allocator);
+                                pushEvents(current, effect_events, allocator);
                             }
                         }
 
@@ -1523,18 +1675,18 @@ fn processEvent(
                             for (attacker.active_effects) |active_effect| {
                                 const definition = lookups.getEffectDefinition(active_effect.effect_id);
                                 if (definition.onOutgoingDamage(knockback.attacker_index, current.*, allocator)) |effect_events| {
-                                    queueEvents(current, effect_events, allocator);
+                                    pushEvents(current, effect_events, allocator);
                                 }
                             }
                             for (defender.active_effects) |active_effect| {
                                 const definition = lookups.getEffectDefinition(active_effect.effect_id);
                                 if (definition.onIncomingDamage(knockback.defender_index, current.*, allocator)) |effect_events| {
-                                    queueEvents(current, effect_events, allocator);
+                                    pushEvents(current, effect_events, allocator);
                                 }
                             }
 
                             if (defender.current_health == 0) {
-                                queueEvents(current, &.{
+                                pushEvents(current, &.{
                                     .{ .sub_level_event = .{ .death = .{
                                         .entity_index = knockback.defender_index,
                                     } } },
@@ -1555,7 +1707,7 @@ fn processEvent(
                         for (attacker.active_effects) |active_effect| {
                             const definition = lookups.getEffectDefinition(active_effect.effect_id);
                             if (definition.onAttack(attack.attacker_index, current.*, allocator)) |effect_events| {
-                                queueEvents(current, effect_events, allocator);
+                                pushEvents(current, effect_events, allocator);
                             }
                         }
                     }
@@ -1576,20 +1728,20 @@ fn processEvent(
                             for (attacker.active_effects) |active_effect| {
                                 const definition = lookups.getEffectDefinition(active_effect.effect_id);
                                 if (definition.onOutgoingDamage(attack.attacker_index, current.*, allocator)) |effect_events| {
-                                    queueEvents(current, effect_events, allocator);
+                                    pushEvents(current, effect_events, allocator);
                                 }
                             }
                             for (defender.active_effects) |active_effect| {
                                 const definition = lookups.getEffectDefinition(active_effect.effect_id);
                                 if (definition.onIncomingDamage(attack.defender_index, current.*, allocator)) |effect_events| {
-                                    queueEvents(current, effect_events, allocator);
+                                    pushEvents(current, effect_events, allocator);
                                 }
                             }
                         }
 
-                        // Queue death if defender health reached 0
+                        // Push death if defender health reached 0
                         if (defender.current_health == 0) {
-                            queueEvents(current, &.{
+                            pushEvents(current, &.{
                                 .{ .sub_level_event = .{ .death = .{
                                     .entity_index = attack.defender_index,
                                 } } },
@@ -1611,7 +1763,7 @@ fn processEvent(
                     for (caster.active_effects) |active_effect| {
                         const definition = lookups.getEffectDefinition(active_effect.effect_id);
                         if (definition.onOutgoingEffect(create.caster_index, current.*, allocator)) |effect_events| {
-                            queueEvents(current, effect_events, allocator);
+                            pushEvents(current, effect_events, allocator);
                         }
                     }
 
@@ -1619,7 +1771,7 @@ fn processEvent(
                     for (receiver.active_effects) |active_effect| {
                         const definition = lookups.getEffectDefinition(active_effect.effect_id);
                         if (definition.onIncomingEffect(create.receiver_index, current.*, allocator)) |effect_events| {
-                            queueEvents(current, effect_events, allocator);
+                            pushEvents(current, effect_events, allocator);
                         }
                     }
 
@@ -1650,7 +1802,7 @@ fn processEvent(
 
                     // Trigger on_effect_creation for the effect
                     if (effect_definition.onEffectCreation(create.receiver_index, current.*, allocator)) |creation_events| {
-                        queueEvents(current, creation_events, allocator);
+                        pushEvents(current, creation_events, allocator);
                     }
                 },
                 .death => |death| {
@@ -1666,7 +1818,7 @@ fn processEvent(
                         for (other_entity.active_effects) |active_effect| {
                             const definition = lookups.getEffectDefinition(active_effect.effect_id);
                             if (definition.onOpponentDeath(@intCast(other_index), current.*, allocator)) |effect_events| {
-                                queueEvents(current, effect_events, allocator);
+                                pushEvents(current, effect_events, allocator);
                             }
                         }
                     }
@@ -1699,10 +1851,12 @@ fn processEvent(
                         }
 
                         // Drop skill tomes for each equipped utility skill
-                        for (&entity.equipped_utility_skills) |skill_id| {
-                            dropped_items.append(allocator, .{ .skill_tome = .{
-                                .skill = skill_id,
-                            } }) catch @panic("failed to append dropped skill tome");
+                        for (&entity.equipped_utility_skills) |slot| {
+                            if (slot) |skill_id| {
+                                dropped_items.append(allocator, .{ .skill_tome = .{
+                                    .skill = skill_id,
+                                } }) catch @panic("failed to append dropped skill tome");
+                            }
                         }
 
                         if (dropped_items.items.len > 0) {
@@ -1752,7 +1906,7 @@ fn processEvent(
                     // Trigger on_effect_end callback
                     const definition = lookups.getEffectDefinition(end.effect_id);
                     if (definition.onEffectEnd(end.entity_index, current.*, allocator)) |effect_events| {
-                        queueEvents(current, effect_events, allocator);
+                        pushEvents(current, effect_events, allocator);
                     }
 
                     // Remove the effect from active_effects
@@ -1776,7 +1930,7 @@ fn processEvent(
                     for (entity.active_effects) |active_effect| {
                         const definition = lookups.getEffectDefinition(active_effect.effect_id);
                         if (definition.onRetreat(retreat.entity_index, current.*, allocator)) |effect_events| {
-                            queueEvents(current, effect_events, allocator);
+                            pushEvents(current, effect_events, allocator);
                         }
                     }
 
@@ -1816,7 +1970,7 @@ fn processEvent(
 
                     // Move entity if position changed
                     if (destination.x != entity.position.x or destination.y != entity.position.y) {
-                        queueEvents(current, &.{
+                        pushEvents(current, &.{
                             .{ .level_event = .{ .move_entity = .{
                                 .entity_index = retreat.entity_index,
                                 .destination = destination,
@@ -1829,10 +1983,12 @@ fn processEvent(
     }
 }
 
-/// Process the next event in the queue, with player input handling.
+/// Process the next event on the stack, with player input handling.
 fn update(
     history: *GameStateHistory,
     player_input: PlayerInput,
+    previous_view_state: ?types.ViewState,
+    delta_microseconds: u64,
     allocator: std.mem.Allocator,
 ) void {
     // Always handle anytime input first (toggle_options_menu always works,
@@ -1842,22 +1998,97 @@ fn update(
     // Options menu pauses the game
     if (history.current_state.ui_state.options_menu_open) return;
 
+    // Drag lifecycle runs anytime (not gated on the event stack) so the player
+    // can rearrange inventory / gear / skills even while turns resolve. Hit-
+    // tested against the previous frame's UI.
+    const ui_elements: []const ui.UiElement =
+        if (previous_view_state) |view_state| view_state.ui_elements else &.{};
+    handleDrag(&history.current_state, player_input.pointer, ui_elements, allocator);
+
+    // Turn-flow pause: while waiting, drain the timer and stall event
+    // processing until it elapses. Anytime input and drag above still run, so
+    // undo/redo/options remain responsive mid-wait (undo rebuilds state and
+    // clears the wait via replay). Not skippable: no input can shorten it.
+    if (history.current_state.waiting) |*wait_state| {
+        if (wait_state.remaining_microseconds > delta_microseconds) {
+            wait_state.remaining_microseconds -= delta_microseconds;
+            return;
+        }
+        history.current_state.waiting = null;
+        // Wait elapsed this tick; fall through to process the next event.
+    }
+
     if (history.current_state.event_stack.len > 0) {
-        // Process next queued event
+        // Process next pushed event
         processEvent(history, allocator);
     } else {
-        // Queue empty — accept gameplay input
+        // Stack empty — accept gameplay input
         handleIdleInput(history, player_input.idle, allocator);
     }
 }
 
 /// Build a ViewState describing what to render for the current game state.
+/// The frame_allocator is a per-frame arena — everything the ViewState
+/// points at is allocated from it and lives until the next frame.
 fn view(
     current_state: *const GameState,
     color_theme_definitions: types.ColorThemeDefinitions,
+    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    frame_allocator: std.mem.Allocator,
 ) types.ViewState {
-    _ = current_state;
     _ = color_theme_definitions;
+
+    var ui_elements: std.ArrayList(ui.UiElement) = .empty;
+
+    if (current_state.screen == .level or current_state.screen == .hub) {
+        ui.buildBottomBar(
+            &ui_elements,
+            frame_allocator,
+            ui.screenRect(),
+            current_state,
+            weapon_type_definitions,
+        ) catch @panic("failed to build bottom bar");
+    }
+
+    // Drag ghost: the dragged icon follows the pointer, drawn last (on top).
+    // Pointer position is in reference-resolution space (see translateInput).
+    if (current_state.ui_state.drag) |drag| {
+        const pointer = current_state.input_state.mouse_screen_position;
+        ui_elements.append(frame_allocator, .{ .image = .{
+            .sprite_id = drag.icon_sprite_id,
+            .screen_position = .{
+                .x = @as(i32, @intFromFloat(pointer.x)) - @divTrunc(ui.slot_size, 2),
+                .y = @as(i32, @intFromFloat(pointer.y)) - @divTrunc(ui.slot_size, 2),
+            },
+            .width = ui.slot_size,
+            .height = ui.slot_size,
+            // Follows the pointer; must not occlude drop-target hit-testing.
+            .blocks_input = false,
+        } }) catch @panic("failed to append drag ghost");
+    }
+
+    // Hover tooltip: the topmost element under the pointer that carries
+    // tooltip content spawns a tooltip, appended last so it draws on top.
+    // Suppressed while dragging.
+    if (current_state.ui_state.drag == null) {
+        const pointer = current_state.input_state.mouse_screen_position;
+        const point = types.ScreenPosition{
+            .x = @intFromFloat(pointer.x),
+            .y = @intFromFloat(pointer.y),
+        };
+        if (ui.tooltipAt(ui_elements.items, point)) |hovered| {
+            const bounds = ui.boundsOf(hovered);
+            ui.buildTooltip(
+                &ui_elements,
+                frame_allocator,
+                bounds.position(),
+                bounds.width,
+                bounds.height,
+                ui.tooltipOf(hovered).?,
+            ) catch @panic("failed to build tooltip");
+        }
+    }
+
     return .{
         .background_color = .{ .r = 0, .g = 0, .b = 0 },
         .active_color_theme = .{
@@ -1870,7 +2101,7 @@ fn view(
         .tiles = &.{},
         .tile_overlays = &.{},
         .ground_drawables = &.{},
-        .ui_elements = &.{},
+        .ui_elements = ui_elements.items,
     };
 }
 
@@ -1897,6 +2128,11 @@ fn gameLoop(
     var time_since_last_view: u32 = 0;
     var previous_view_state: ?types.ViewState = null;
 
+    // Per-frame arena: everything a ViewState points at is allocated here
+    // and freed (reset) at the start of the next render.
+    var frame_arena = std.heap.ArenaAllocator.init(allocator);
+    defer frame_arena.deinit();
+
     var needs_snapshot = false;
 
     while (true) {
@@ -1912,30 +2148,38 @@ fn gameLoop(
             history.current_state.camera orelse .{ .position = .{ .x = 0, .y = 0 } },
         );
 
+        // Placeholder frame delta until raylib drives the loop, at which point
+        // this becomes GetFrameTime() converted to microseconds. Wait-timer
+        // logic is correct against this, but real-time pacing won't be felt
+        // until raylib provides a real clock and frame throttling.
+        const frame_length_milliseconds = computeFrameLength(history.settings);
+        const delta_microseconds: u64 = @as(u64, frame_length_milliseconds) * 1000;
+
         const had_events = history.current_state.event_stack.len > 0;
-        update(&history, player_input, allocator);
+        update(&history, player_input, previous_view_state, delta_microseconds, allocator);
         const has_events = history.current_state.event_stack.len > 0;
 
         if (had_events and !has_events) {
-            // Queue just emptied — save a snapshot
+            // Stack just emptied — save a snapshot
             history.takeSnapshot(allocator);
             needs_snapshot = false;
         } else if (had_events) {
             needs_snapshot = true;
         }
 
-        const frame_length = computeFrameLength(history.settings);
-
         // Check if it's time to render
-        if (time_since_last_view >= frame_length) {
-            previous_view_state = view(&history.current_state, history.color_theme_definitions);
+        if (time_since_last_view >= frame_length_milliseconds) {
+            _ = frame_arena.reset(.retain_capacity);
+            previous_view_state = view(
+                &history.current_state,
+                history.color_theme_definitions,
+                history.weapon_type_definitions,
+                frame_arena.allocator(),
+            );
             // TODO: pass previous_view_state to renderer
-            time_since_last_view -= frame_length;
+            time_since_last_view -= frame_length_milliseconds;
         }
     }
-
-    // Suppress unused local warning until input resolution uses previous_view_state
-    _ = &previous_view_state;
 }
 
 const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
@@ -2073,8 +2317,42 @@ pub fn main() void {
     );
 }
 
-test {
-    _ = @import("parser.zig");
-    _ = @import("functions.zig");
+test "dragToEvent maps valid drags and blocks cross-domain drops" {
+    // inventory → gear = equip
+    {
+        const event = dragToEvent(.{ .inventory = 2 }, .{ .gear = .boots }).?;
+        try std.testing.expectEqual(@as(u32, 2), event.player_event.equip_item.inventory_slot_index);
+        try std.testing.expectEqual(types.GearSlot.boots, event.player_event.equip_item.gear_slot);
+    }
+    // gear → inventory = unequip
+    {
+        const event = dragToEvent(.{ .gear = .amulet }, .{ .inventory = 5 }).?;
+        try std.testing.expectEqual(types.GearSlot.amulet, event.player_event.unequip_item.gear_slot);
+        try std.testing.expectEqual(@as(u32, 5), event.player_event.unequip_item.inventory_slot_index);
+    }
+    // learned skill → skill bar = equip utility skill
+    {
+        const event = dragToEvent(.{ .learned_skill = .replenish }, .{ .skill_bar = 1 }).?;
+        try std.testing.expectEqual(types.SkillId.replenish, event.player_event.equip_utility_skill.skill_id);
+        try std.testing.expectEqual(@as(u32, 1), event.player_event.equip_utility_skill.slot_index);
+    }
+    // skill bar → skill bar = swap
+    {
+        const event = dragToEvent(.{ .skill_bar = 0 }, .{ .skill_bar = 3 }).?;
+        try std.testing.expectEqual(@as(u32, 0), event.player_event.swap_utility_skills.slot_a_index);
+        try std.testing.expectEqual(@as(u32, 3), event.player_event.swap_utility_skills.slot_b_index);
+    }
+    // skill bar → learned skill (skills menu) = unequip utility skill
+    {
+        const event = dragToEvent(.{ .skill_bar = 2 }, .{ .learned_skill = .slice }).?;
+        try std.testing.expectEqual(@as(u32, 2), event.player_event.unequip_utility_skill.slot_index);
+    }
+    // Cross-domain and nonsensical drops are no-ops.
+    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .inventory = 0 }, .{ .skill_bar = 0 }));
+    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .learned_skill = .slice }, .{ .gear = .coat }));
+    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .gear = .coat }, .{ .gear = .boots }));
+    // inventory → inventory move is not implemented yet.
+    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .inventory = 0 }, .{ .inventory = 1 }));
 }
+
 

@@ -124,9 +124,20 @@ pub const InputState = struct {
 pub const PlayerInput = struct {
     anytime: AnytimeInput = .{},
     idle: IdleInput = .{},
+    pointer: PointerInput = .{},
 };
 
-/// Actions that can be handled regardless of event queue state.
+/// Raw primary-pointer facts for the UI-resolution step (hit-testing, drag
+/// lifecycle). Deliberately semantic-free: main.zig decides what a press/
+/// release over a given position means. Position is in reference-resolution
+/// space (types.ScreenPosition), matching where ui_elements are laid out.
+pub const PointerInput = struct {
+    pressed: bool = false, // primary button went down this tick
+    released: bool = false, // primary button went up this tick
+    position: types.ScreenPosition = .{ .x = 0, .y = 0 },
+};
+
+/// Actions that can be handled regardless of event stack state.
 pub const AnytimeInput = struct {
     undo: bool = false,
     redo: bool = false,
@@ -148,7 +159,7 @@ pub const InGameInput = struct {
     move_tile_cursor_to: ?Vector2 = null,
 };
 
-/// Actions that are only handled when the event queue is empty
+/// Actions that are only handled when the event stack is empty
 /// (i.e. the game is waiting for player input).
 pub const IdleInput = struct {
     tile_clicked: ?Vector2 = null,
@@ -237,6 +248,7 @@ pub fn translateInput(
     // Track which inputs were just pressed this tick (edge detection)
     var keys_pressed: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;
     var mouse_pressed: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
+    var mouse_released: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
     var gamepad_pressed: [InputState.max_held_gamepad]?[]const u8 = .{null} ** InputState.max_held_gamepad;
 
     // Accumulate scroll delta across all events this tick
@@ -261,6 +273,7 @@ pub fn translateInput(
                 InputState.addHeld(&state.mouse_buttons_held, button);
             },
             .mouse_button_up => |button| {
+                InputState.addHeld(&mouse_released, button);
                 InputState.removeHeld(&state.mouse_buttons_held, button);
             },
             .mouse_move => |position| {
@@ -353,6 +366,18 @@ pub fn translateInput(
     if (InputState.isHeld(&mouse_pressed, "left")) {
         result.idle.tile_clicked = screenToTile(state.mouse_screen_position, camera, zoom, platform.viewport);
     }
+
+    // Primary-pointer facts for the UI-resolution step. The pointer is assumed
+    // to already be in reference-resolution space (same assumption screenToTile
+    // makes); update alongside it if the platform viewport mapping changes.
+    result.pointer = .{
+        .pressed = InputState.isHeld(&mouse_pressed, "left"),
+        .released = InputState.isHeld(&mouse_released, "left"),
+        .position = .{
+            .x = @intFromFloat(state.mouse_screen_position.x),
+            .y = @intFromFloat(state.mouse_screen_position.y),
+        },
+    };
 
     return result;
 }

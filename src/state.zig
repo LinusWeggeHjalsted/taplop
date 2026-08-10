@@ -53,9 +53,19 @@ pub const Screen = enum {
     }
 };
 
+// Transient real-time pacing state, set when a `wait` event is processed and
+// drained by update() as frames elapse. Purely cosmetic: never affects
+// gameplay outcomes and is nulled out during replay reconstruction. Stored in
+// microseconds to avoid truncation drift when accumulating small frame deltas.
+pub const WaitState = struct {
+    remaining_microseconds: u64,
+};
+
 pub const GameState = struct {
     screen: Screen,
     event_stack: []const Event,
+    // Non-null while turn flow is paused (see WaitState).
+    waiting: ?WaitState = null,
     player_data: PlayerData,
     camera: ?Camera,
     input_state: input.InputState,
@@ -130,12 +140,12 @@ pub const GameStateHistory = struct {
     checkpoint_ring_index: u32, // next slot to write in ring buffer
 
     // Ring buffer of snapshots around the current position, for fast undo/redo
-    // without replaying. Only taken when the event queue is empty
+    // without replaying. Only taken when the event stack is empty
     // (i.e. waiting for player input).
     snapshots: [snapshot_count * 2]?SavedState,
     snapshot_ring_index: u32, // next slot to write in ring buffer
 
-    // Event indices where the event queue was empty (waiting for player input).
+    // Event indices where the event stack was empty (waiting for player input).
     // These are the only points that undo/redo will stop at.
     idle_points: std.ArrayList(u32),
 
@@ -181,7 +191,7 @@ pub const GameStateHistory = struct {
         };
     }
 
-    /// Save a snapshot at the current position (call when event queue is empty).
+    /// Save a snapshot at the current position (call when event stack is empty).
     /// Also records this as an idle point for undo/redo.
     pub fn takeSnapshot(
         self: *GameStateHistory,
@@ -308,6 +318,11 @@ pub const GameStateHistory = struct {
             self.current_state.event_stack = &.{event};
             apply_event(self, allocator);
         }
+
+        // Waits are live-play pacing only. Replay streams events straight
+        // through processEvent, which would leave `waiting` set by the last
+        // wait event; clear it so the reconstructed idle state isn't stalled.
+        self.current_state.waiting = null;
     }
 
     /// Restore from a saved state, or replay if no exact match exists.
