@@ -2,7 +2,62 @@ Functional Prototype TODO
 =========================
 
 The goal is to load into a hub, walk into a mission, fight through a
-level, and return to the hub — with visible output in a browser.
+level, and return to the hub — with visible output (native raylib now;
+web via emscripten later).
+
+============================================================
+CURRENT STATUS / SESSION HANDOFF  (update at end of each session)
+============================================================
+The target loop RUNS end-to-end natively: main menu -> New Game -> hub ->
+walk onto the mission-start flag -> level -> move/skill/skip + enemy turns.
+The rendering + platform plan (original Phases 1-7) is essentially complete
+for the happy path. Combat CORRECTNESS is the main gap (bugs deferred until
+logging exists). Test by running `zig build run` and clicking through.
+
+DONE (see detailed sections below for specifics):
+  - Phase 1  Platform seam + raylib: window, real GetFrameTime clock, input
+             polling. main.zig raylib-free; backend in raylib_backend.zig;
+             entry in native.zig. (see "Platform Layer", AGENTS.md)
+  - Phase 2  UI renderer: all 6 UiElement types, reference-res RenderTexture
+             blitted letterboxed, texture cache, magenta fallback for missing
+             art. (main menu renders + is clickable)
+  - Phase 3  Button clicks -> Action (ui.buttonAt + input.applyAction) +
+             world/UI click arbitration. New Game works.
+  - Phase 4/5  view() world-building + world rendering (done as vertical
+             slices): camera centered on player (computeCamera), color theme
+             from color_wheel_index, checkerboard tiles, entities (base sprite
+             + weapons, off-hand mirrored, player vs enemy_ variants), level-end
+             + hub mission-start flag poles, move-range highlights + hover
+             cursor. tile_size_pixels = 256.
+  - Phase 6  Camera + tile-click movement (hub walk, level move); hub -> mission
+             -> level transition.
+  - Phase 7  Playable: move / skill / skip / enemy turns with real-time waits.
+
+NEXT UP (priority order):
+  A. LOGGING FIRST, then combat bugs. No logging exists; it is the key enabler
+     for troubleshooting the combat-flow bugs (which are deferred until then).
+     Then hook events -> CombatLogEntry (scaffolding exists, unpopulated).
+  B. Mission end states: mission_complete / mission_fail screens + player-death
+     path (see "Mission Flow"). Verify level-end flag -> end_level -> end_mission
+     -> start_hub actually returns to the hub. This closes the loop.
+  C. Phase 4b combat readability: entity HEALTH BARS + grayscale x gradient
+     TINTING (player vs enemy color; today everything is white/grayscale).
+  D. Remaining 4b visuals: gear + effect sprites, sprite animation (8fps) +
+     animated flag banner, ground items, decorations (footprint splitting).
+  E. Input/camera leftovers: right-click-drag camera pan (wanted for big
+     levels); GameState.tile_cursor wiring for auto_target_at_cursor (unset);
+     occlude cursor overlay / world clicks under the bottom bar.
+  F. Cross-cutting polish: real TTF font (text is blurry default font), 9-slice
+     TILING (currently stretched), `highlighted` edge outlines, missing art
+     (ui/icon_swap, ui/momentum, ui/cooldown_overlay draw magenta).
+  G. Larger systems (beyond MVP): middle panels (inventory/gear/skills/enemy
+     inspect) + overlays (world map, full combat log) + options/settings/top bar
+     (drag-drop needs panels to be usable); NPC interaction/dialogue; audio;
+     web (wasm32-emscripten) build reusing raylib_backend + gameLoop.
+
+KNOWN DEFERRED BUGS: enemy/combat turn-flow issues seen in playtesting; do NOT
+  chase individually — land logging (A) first.
+============================================================
 
 Parsing [DONE]
   [x] Generic config file parser (parser.zig)
@@ -39,6 +94,12 @@ Event Processing — Meta/Super [DONE]
   [x] end_level → queue next start_level or end_mission
   [x] build_player_from_data → sync gear/skills from PlayerData to Entity
   [x] build_data_from_player → sync gear/skills from Entity to PlayerData
+  [x] end_level / end_hub own the entity→PlayerData sync (push
+      build_data_from_player{0} on top, while old world still live). end_hub
+      activated (was no-op) + pushed on the hub mission-exit path. All
+      level/hub exits must route through these (see AGENTS.md).
+  [x] save_game orchestrates: build_data_from_player (in hub/level) then
+      write_save (pure file write, skipped during replay)
 
 Infrastructure [DONE]
   [x] A* shortest path (Chebyshev distance, Manhattan heuristic, entity blocking)
@@ -104,9 +165,17 @@ Turn Flow Pacing (wait event)
       drag still run mid-wait
   [x] Enemy turns inject waits (turn_flow_wait_milliseconds = 500): before each
       move (enemy_turn_move) and before each skill (enemy_turn_attack)
-  - Feed a real frame delta into update() from raylib GetFrameTime (currently a
-      placeholder frame_length; waits are correct in logic but not felt until
-      the loop has a real clock + frame throttling — see Platform Layer)
+  [x] Real frame delta feeds update() from the backend clock (raylib
+      GetFrameTime → microseconds via RaylibBackend.deltaMicroseconds). The
+      placeholder frame_length + computeFrameLength alias are gone.
+  [x] gameLoop render/snapshot throttle scaffolding removed: raylib paces the
+      loop (vsync / target FPS) so view()+render() run once per frame. The dead
+      time_since_last_view / needs_snapshot vars are gone; snapshots are still
+      taken on stack-empty.
+  - PACING FOLLOW-UP: gameLoop now runs update() exactly once per rendered
+      frame, so a large event stack (e.g. level load) drains at frame rate.
+      Revisit with a per-frame drain loop (drain events until a wait or idle,
+      then render once) if/when it becomes visible in a later phase.
 
 Build-time Lookups [DONE]
   [x] Generated src/generated_lookups.zig with getEffectDefinition / getSkillDefinition
@@ -114,7 +183,93 @@ Build-time Lookups [DONE]
   [x] Skill files standardized on `pub const skill`, effect defs in src/effects/
 
 Skill Logic
-  - Implement skill function pointers for each skill file
+  Porting all implemented skills from the Unity project (~/Development/taplop
+  Assets/Scripts/Skills). 26 total; slice + that_which_lingers already ported.
+  Pattern: C# SkillScript -> Zig Skill struct + 5 fns (getValidTargets/priority/
+  selectTarget/playerPrepareSkill/useSkill). Skills COMPOSE generic events
+  (see AGENTS.md rule) — skill logic emits attack/heal/stun/etc.
+  PORTING NOTE: Unity inverts AI priority (lower = higher priority, -1 = don't
+  use); ziglop is higher = higher priority, 0 = don't use — FLIP the numbers
+  when porting (see skill.zig priority_fn doc).
+  Plan (agreed): primitives-first, then a skill-helper layer, then batches.
+  [x] Primitives PR: new generic events heal / change_momentum /
+      change_cooldown / swap_positions (+ attack.heals_attacker lifesteal hook,
+      which emits a heal for the applied damage). Handlers clamp via
+      functions.applySignedDelta (tested). Converted momentum already in
+      getEffectiveOutgoingDamage; Impale/Skewer add one more getConvertedMomentum
+      in-skill.
+  [x] Skill-helper layer (src/skills/helpers.zig, excluded from the SkillId
+      scan in build.zig): hostilesInRange / nearestTarget / highlightTargets /
+      hostileEntityAt / ownedEvents. Each ported skill is now mostly its
+      useSkill damage recipe. slice.zig refactored onto them as the proving
+      case. Note: ownedEvents allocates the useSkill result in the passed
+      allocator (pushEvents consumes it synchronously but it must be valid
+      then) — the old `return &.{event}` returned a caller-frame temporary.
+  [x] Batch A single-target attacks: Stab (1.5x target>half), Chop (1.5x
+      caster>half), Throw (off-hand 1.5x, range 3), Impale (1.5x + 2x converted
+      momentum), Skewer (off-hand 2x + 2x converted momentum), VampiricStrike
+      (heals_attacker). Doubled converted momentum = getEffectiveOutgoingDamage
+      (which adds it once) + one more getConvertedMomentum. Priorities flipped
+      from Unity (5 - old for the 1..3 range; Skewer=4 highest, -1 -> 0).
+  [x] Batch B attack + status/move: Cleave (attack+stun), Bash (attack+knockback,
+      +0.5x raw collision dmg, collision-aware AI priority), RetreatingSwipe
+      (1.5x off-hand attack + retreat), Spark (attack + target -1 momentum),
+      Toss (attack + caster +1 momentum), Daze (stun + remove all target
+      momentum, no attack). Pattern: skill applies caster OUTGOING modifiers
+      (getEffectiveOutgoingDamage / getEffectiveOutgoingStunDuration /
+      getEffectiveDistance), handlers apply defender INCOMING. Added helpers
+      tileExists / isOccupied. BY DESIGN: all actions grant momentum —
+      use_skill AND move_entity handlers auto-grant +1 per action; Toss's +1 is
+      on top (nets +2), i.e. Toss just gives MORE momentum than a plain action.
+  [x] Batch C AoE: Spinblade (attack each in radius), Blitz (attack+stun each),
+      Slam (knockback+stun each, raw 1x main-hand collision dmg), FlashStrike
+      (teleport to empty tile in range, then attack each hostile around the
+      landing). Self-centered AoE (Spinblade/Blitz/Slam) are uses_targeting =
+      false (fire on caster, no pick); FlashStrike is targeted (empty landing
+      tile). Helpers hostileIndicesInRadius / emptyTilesInRange added.
+      IMPORTANT: the event stack is LIFO (processEvent pops the END, pushEvents
+      appends) so a batch runs in REVERSE array order. helpers.ownedEvents now
+      takes events in natural EXECUTION order and reverses them — skills list
+      events in the order they should happen. (This also fixed Batch B, which
+      was written in execution order.)
+      Blitz uses off-hand damage (Unity used mainHandDamage — an original bug,
+      corrected here).
+  Batch D utility cantrips:
+    [x] Blink (teleport to empty tile in range), Swap (swap_positions with
+        target), Replenish (heal to full), Howl (aggro_in_radius — NEW event;
+        aggro_around uses the entity's own aggro_range + level-end coupling, so
+        Howl needed a radius-parameterized aggro). All cantrips: skill_type =
+        .cantrip (non-turn-ending), REAL positive priorities (Unity 0 -> gated
+        positive, Unity -1 -> 0). Replenish=3 when wounded, Blink/Swap/Howl=1.
+    [x] Focus (option C): new orchestrator event reset_weapon_cooldowns
+        { entity_index }; its handler resolves slots 1-3 via
+        entity.skillInSlot(slot, history.weapon_type_definitions) and emits a
+        change_cooldown per weapon skill on cooldown (delta = -current). Focus
+        useSkill just emits it. Priority gated on "any skill on cooldown"
+        (approximation — can't resolve weapon skills without
+        weapon_type_definitions; handler resets precisely). Replay-safe: pushed
+        sub-events are discarded during replay (replayTo overwrites event_stack
+        with each recorded event), and the recorded change_cooldowns drive
+        reconstruction — same pattern as attack->death.
+  [x] Batch E enchantment effects: Reflect, StoneForm. ALL 25 SKILLS NOW
+      PORTED (no stubs).
+      - Effect damage pipeline (design B): added intercept_incoming_damage_fn
+        (TRANSFORM stage) returning DamageInterception { damage, events },
+        distinct from the reactive on_* family (kept). 5-stage pipeline doc in
+        effect.zig. Attack handler folds the defender's effects over the
+        outgoing damage BEFORE defense, gated on triggers_effects.
+      - Reflect (effects/reflect.zig): intercept returns { damage: 0, events:
+        [attack back at attacker, triggers_effects=false] } — the flag skips
+        re-interception (no reflect loops, = Unity isReflected). Skill
+        (weapon_skill, off-hand) emits create_effect(.reflect, dur 1), cd 4.
+      - StoneForm (effects/stone_form.zig): additive stun modifiers
+        (outgoing +1, incoming -1) + on_end_turn heal (max/5). Skill
+        (enchantment) emits create_effect(.stone_form, dur 5), cd 10; NEW
+        SkillId (file didn't exist).
+      - Emergent: VampiricStrike into Reflect heals 0 (applied dmg = 0);
+        Reflect vs Reflect terminates.
+  - Wire weapon-type definitions (data) to reference each skill so they are
+      equippable/testable (separate from the code port)
   - Targeting (range, valid tiles, team filtering)
   - Damage calculation with modifiers and effects
   [x] Effective stat methods on Entity (getEffectiveRange, etc.)
@@ -146,13 +301,16 @@ View State Types [DONE]
   [x] view() returns ViewState, game loop stores previous_view_state
 
 UI Framework — Types [DONE]
-  [x] UiState on GameState (open panels, overlays, tooltips, scroll offsets)
+  [x] UiState (open panels, overlays, tooltips, scroll offsets) — on
+      SessionState (GameStateHistory), not the undoable GameState
   [x] MiddlePanelId (inventory, gear, skills, enemy_inspect)
   [x] FullScreenOverlayId (world_map, full_combat_log)
   [x] toggleMiddlePanel / toggleFullScreenOverlay with open-order preservation
   [x] Options menu flag (separate, always on top, locks input)
   [x] Options menu pauses game (blocks event processing + idle input)
   [x] UiState reset on screen transition (prevents stale inspect targets etc.)
+      — now lives in SessionState (off the undoable GameState); reset happens
+      in the live loop on screen change, not in transitionScreen (see Tech Debt)
   [x] UI element types: NineSlicePanel, Slot, Button, TextLabel, Bar, Image
   [x] Button carries Action enum (same as keybinds — one input path for everything)
   [x] UiElement tagged union for flat rendering
@@ -179,15 +337,98 @@ UI Framework — Types [DONE]
 
 --- Next up ---
 
-View Function Implementation
-  - Derive ActiveColorTheme from level/hub color_wheel_index
-  - Convert tile positions to screen positions (camera + zoom)
-  - Build TileDrawable slice with checkerboard coloring (world gradient indices 1 and 3)
-  - Build TileOverlayDrawable slice (highlighted tiles, cursor)
-  - Build GroundDrawable slice from entities, decorations, ground items, level end
-  - Sort GroundDrawable by y-then-x for correct occlusion
+View Function Implementation  [Phase 4.0-4.2 DONE: plumbing + tiles + entity base sprites]
+  Phase 4 plumbing landed:
+    - tile_size_pixels is now 256 (was 512) — matches the 256px/tile assets;
+      screenToTile + the renderer share it so clicks map to drawn tiles.
+    - Camera is DERIVED, centered on the player: computeCamera(state, zoom) in
+      main.zig, computed once per frame in gameLoop and passed to BOTH
+      translateInput and view() so input/render never drift. (Future: add a
+      right-drag pan offset from SessionState into computeCamera.)
+    - view() gained camera + camera_zoom params; ViewState gained world_scale
+      (= zoom); the renderer draws world sprites at native texture size x
+      world_scale (UI keeps explicit reference-space sizes).
+    - Entity gained a `sprite` field (asset stem, e.g. "player", "skeleton_1");
+      parser stores it (enemies/NPCs from `sprite`, player defaults "player");
+      level/hub data uses snake_case sprite names matching asset filenames.
+    - Minimal starting_village hub authored (layout `!.1`, exit char 1 ->
+      first_mission) so the walk-into-mission flow works.
+  [x] Derive ActiveColorTheme from level/hub color_wheel_index (activeThemeFor)
+  [x] Convert tile positions to screen positions (camera + zoom): tileToScreen,
+      exact inverse of screenToTile
+  [x] Build TileDrawable slice with checkerboard coloring (world gradient indices 1 and 3)
+    - All tiles use one sprite: assets/world/tile.png. Source Tile.png was
+      600x600 (a 512 tile with ~44px jagged overhang each side, artist
+      experiment); stored scaled to 256x256 exactly (256px/tile, matching the
+      entity 2x-zoom resolution). The jagged sprite edges overlap neighbors to
+      outline the grid. Checkerboard tint applied per tile in hubs + levels.
+  [~] Build TileOverlayDrawable slice (Phase 4.3): move-range HIGHLIGHTS
+      (translucent fill over level.highlighted_tiles) + hover CURSOR (outline).
+      Overlays have no art — the renderer draws them as primitives (fill /
+      drawRectangleLinesEx). The cursor is derived in view() from the session
+      pointer (screenToTile), so it needs no GameState.tile_cursor and is
+      replay-safe; GameState.tile_cursor (for auto_target_at_cursor) is still
+      an unset input-path TODO. range/radius/aggro outline types aren't emitted
+      yet (renderer already handles them).
+  [~] Build GroundDrawable slice: ENTITIES done (base sprite only, pivot
+      0.5/0.8, back-to-front sort). Higher tile.y draws lower on screen
+      (nearer), so back-to-front is ASCENDING tile.y. LEVEL-END and HUB MISSION-START
+      flag poles done (world/flag_pole, pivot 0.5/0.75, one per level_end / hub
+      mission_exit); the animated banner overlay is deferred to the animation
+      work. Decorations + ground items still TODO.
+      REFINEMENT: the level-end marker is drawn before all entities (actors
+      always occlude it) rather than participating in the y-sort — do a proper
+      mixed y-sort of entities + markers + decorations later.
+    - Ground items: single sprite assets/world/ground_items.png (a dropped
+      sack), stored 256x256 (source 512x512 x0.5, matching tile resolution).
+      Pivot is centered (0.5, 0.5) — drawn at tile dimensions on the tile.
+    - Level end / hub mission start flag: static pole assets/world/flag_pole.png
+      (256x512 = 1x2 tiles) + animated banner assets/world/flag.png overlaid on
+      top (same frame/pivot so they register). Both stored x0.5. Pivot
+      (0.5, 0.75): the bottom tile-half of the 1x2 frame is centered on the
+      tile it stands on. Same sprite is used for level-end and hub mission-start
+      markers.
+  - Sprite animation (view-side, cosmetic; NEVER gameplay state, so replay-safe
+    by construction — frame is purely a function of wall-clock time, like the
+    pointer/tooltip):
+    - Frame chosen IN view(): view() reads a monotonic animation_clock
+      (elapsed microseconds on SessionState, advanced by the game loop, off
+      GameState) and emits a concrete SpriteDrawable with the resolved source
+      rectangle. Renderer stays dumb (draw sprite + source rect) — reuses the
+      same source-rectangle path as decoration footprint cropping.
+    - frame_index = (elapsed_ms / ms_per_frame) % frame_count; source rect =
+      (frame_index * frame_w, 0, frame_w, frame_h).
+    - 8 fps is the CONSTANT frame rate for ALL animations going forward
+      (125 ms/frame). Flag = 8 frames -> 1.0 s loop.
+    - Per-sheet frame data (count, frame size) is hardcoded per builder for now
+      (flag is the only animation); general per-sprite metadata table is the
+      "Sprite asset metadata" seam below.
+    - Revisit view()-side selection only if view() is ever throttled below
+      display rate (would throttle the animation too).
+  [x] Sort GroundDrawable by y-then-x for correct occlusion (entities;
+      buildEntities/buildHubEntities order back-to-front before emitting)
   - Decoration footprint splitting (per-tile pieces with source rectangles)
-  - Entity sub-layer assembly (sprites, gear, effects, health bars)
+  [~] Entity sub-layer assembly: base sprite + WEAPONS done. Weapons share the
+      entity 512x640 frame + pivot (register with no offset); main hand drawn
+      as-authored (left), off hand mirrored via SpriteDrawable.flip_horizontal
+      (renderer negates source width). Player bodies (team 0) use weapons/<type>,
+      enemies use weapons/enemy_<type>. Still TODO: gear sprites, effect
+      sprites (back/front), and health bars.
+    - Entity + weapon assets (assets/entities/*, assets/weapons/*) share one
+      frame with one pivot. Source was 2048x1280 two-pose sheets; we keep the
+      LEFT pose only. Stored at store_scale 0.5 (frame 512x640 = 256px/tile,
+      crisp to 2x zoom-in; re-derive from Unity originals for more headroom).
+    - Source authored at 512px/tile, so a stored frame is 2 tiles wide x 2.5
+      tall. Default render scale = display_tile_px / 256 (0.5 at the 128px
+      default zoom).
+    - Pivot is a NORMALIZED fraction of the frame, shared by every entity and
+      weapon overlay: (0.5, 0.8) = horizontal center, at the feet (0.5 tile of
+      foot/shadow overflow below). Renderer aligns pivot -> tile anchor:
+        draw_size = frame * render_scale
+        top_left  = tile_anchor_screen - (pivot.x*draw_w, pivot.y*draw_h)
+      Same frame+pivot means weapons register onto bodies with no per-sprite
+      offset. Silhouettes freely overflow the 128 footprint.
+    - Right pose (unused) is reserved for animation later.
   - Sprite asset metadata (dimensions) needed for decoration splitting
 
 UI Framework — Panel Builders
@@ -215,7 +456,28 @@ UI Framework — Panel Builders
   - buildWorldMap: campaign graph visualization, clickable hubs/missions
   - buildFullCombatLog: scrollable detailed combat log
   - buildOptionsMenu: settings controls (volume, gameplay toggles)
-  - buildMainMenu: new game / load game / options buttons
+  [x] buildMainMenu: centered vertical stack of 1024x256 buttons (Continue /
+      New Game / Load Save / Settings / Credits), each with a centered text
+      label; Continue emitted only when there is a game to resume
+      (continue_available). Editor / replay-viewer buttons deferred.
+      - Continue availability today = populated PlayerData
+        (current_campaign.len > 0). Standalone builds should ALSO offer
+        Continue when an autosave.txt exists at the expected path. That needs
+        the file layer (view() is pure over GameState + per-frame arena, no
+        Dir/Io access) — detect it ONCE when entering the menu (not per frame)
+        and feed the flag in. Wire when the mission/asset source lands.
+      - [x] Menu buttons carry Actions (continue_game / new_game / load_save /
+        open_settings / open_credits). Clicks now resolve (Phase 3): new_game
+        pushes start_new_game and enters the hub. continue_game / load_save /
+        open_settings / open_credits are intentional no-ops until an autosave
+        path + file picker and the Settings/Credits screens exist.
+      - Settings (Settings-struct editor, in and out of gameplay) is distinct
+        from the in-game Options pause menu (mission-exit navigation); Settings
+        is also reachable from Options. open_settings is its own action, not
+        toggle_options_menu.
+      - Buttons are panel-backed (emitPanelButton): a ui/panel 9-slice
+        background + a spriteless Button (action/hit-test) + centered label.
+        No dedicated menu-button art needed.
   - buildMissionComplete: statistics, clone rewards, continue/retry
   - buildMissionFail: header text, exit/retry buttons
   [x] buildTooltip: measures/wraps rows to the padded content area (max 1024,
@@ -228,20 +490,36 @@ UI Framework — Panel Builders
       "{cur} / {max}", swap weapons, skip turn step, momentum (value + converted
       damage), active effects (name/description/current duration), move/attack
       step icons
-  - 9-slice panel splitting (corners, edges, center fill → sprite draws)
+  [x] 9-slice panel splitting implemented in drawNineSlice (corners 1:1, edges
+      + center STRETCHED for now — tiling refinement noted under Platform
+      Layer). Source is ui/panel.png = 384x384, a 3x3 grid of 128px slices
+      (slice size = dimension / 3). NineSlicePanel carries no border field —
+      the sprite is the border.
+  - PLACEHOLDER ASSET: the original ui/panel.png was NOT a valid 9-slice source
+      (a 176x176 rounded rect centered with a 104px transparent margin — border
+      nowhere near the cell edges), so 9-slicing collapsed it to thin lines. It
+      was regenerated procedurally as a proper edge-to-edge rounded panel
+      (light border, radius 72 < 128 corner cell, translucent gray fill). The
+      original is saved at assets/ui/panel.original.png — FLAGGED for the artist
+      to produce a real 9-slice panel (border at the image edges, corner radius
+      <= 128; a distinct opaque tooltip panel can be a separate sprite).
   - Middle section horizontal scroll when panels exceed width
   - Add icon_sprite_id to Skill, Item, and Effect definitions (bottom bar
     temporarily uses their name as placeholder icon id)
-  - Move UI sprite assets from Unity project (ui/icon_*, ui/health_globe_*,
-    ui/cooldown_overlay, ui/skill_slot_empty, ui/panel are placeholder ids)
+  - Move UI sprite assets from Unity project. DONE so far (in assets/):
+    ui/icon_inventory,gear,skills,skip; ui/button_background; ui/turn_move,
+    turn_attack; ui/skill_button; ui/skill_slot_empty; skills/*; ui/health_globe
+    (+ _border); ui/panel. Still placeholder ids: ui/icon_swap, ui/momentum,
+    ui/cooldown_overlay.
   - Center cooldown/label text using measured text width — can now reuse the
     tooltip measurement seam (measureSpanWidth/lineHeight in ui.zig)
   - Real font metrics: export a per-glyph advance table (per style if bold/
     italic are separate faces) at font-finalization time and read it inside
     the measurement seam (measureSpanWidth/lineHeight), replacing the fixed-
     advance placeholder; make it UTF-8-aware (glyph count, not byte length)
-  - tooltip_panel 9-slice sprite asset (buildTooltip uses placeholder id
-    "ui/tooltip_panel")
+  [x] tooltip 9-slice sprite asset — buildTooltip now uses the shared
+      ui/panel sprite (tooltip_panel_sprite = "ui/panel"); a distinct styled
+      tooltip panel can be swapped in later if desired
   - Author real tooltips on elements (skills: range/radius/cooldown rows;
     items; effects) using the span constructors
   - text_label hover bounds are a placeholder (boundsOf reports a font_size
@@ -256,23 +534,39 @@ UI Framework — Panel Builders
     size- and overflow-aware (also covers the earlier size-aware TODO)
 
 Decoration Footprint
+  - Assets in assets/decorations/ (ruin_1..11, statue_1..5, stone_1..6,
+    tree_1). Authored at 512px/tile, stored x0.5 = 256px/tile (matching tiles
+    and entities). All are exact tile multiples, e.g. tree_1 768x768 = 3x3,
+    ruin_10/11 768x512 = 3x2, statue_5 256x768 = 1x3. So a decoration sprite
+    is (tiles_w*256) x (tiles_h*256) and splits cleanly into 256px chunks.
   - Add footprint data to decoration config format (relative offsets from anchor)
   - Parse footprint from level/hub files
   - Multi-tile layout characters for decorations
   - View function splits decorations into per-tile DecorationPieceDrawable
+    (each = one 256px source-rectangle chunk of the sprite at its tile)
+  - Footprint (which of the occupied tiles are collidable) is separate from the
+    sprite bounds — a decoration can visually overhang tiles it doesn't block
+    (e.g. tree canopy). Footprint = subset of the tile grid the sprite covers.
+  - Open: anchor convention (which tile is the sprite's origin — likely a
+    bottom row tile, consistent with the base-on-tile pivot used elsewhere) and
+    how it composes with per-tile source-rect splitting. Decide when wiring the
+    parser + view splitting.
 
 Input Resolution from ViewState
   - Use previous_view_state to resolve screen position → tile coordinate
   [x] Use previous_view_state to resolve screen position → UI slot (slotAt/
       slotRefAt, used by drag; buttons still TODO)
-  - Button clicks → resolve Action from Button.action, feed into PlayerInput
-  - World/UI input arbitration: the tile-click path (screenToTile in the idle
-    input) ignores UI occlusion, so clicking a UI element also acts on the
-    world behind it (and an open panel would leak clicks to the level). Gate
-    the world click on hitTest: if a blocking UI element is under the pointer,
-    the world receives no click. Route button clicks through hitTest with an
-    action predicate (same occlusion primitive as slotAt/tooltipAt). Decide
-    before building panels / wiring button clicks
+  [x] Button clicks → resolve Action from Button.action, feed into PlayerInput
+      (Phase 3). update() resolves a primary-button press over a Button via
+      ui.buttonAt (topmost, occlusion-aware) and folds its Action into
+      PlayerInput through input.applyAction — so a click drives the same path
+      as the keybind. Menu commands (no keybind) go to idle.menu_action,
+      handled by the main_menu branch of handleIdleInput.
+  [x] World/UI input arbitration (Phase 3): a primary-button press over any
+      blocking UI element (ui.blockingElementAt) clears the world click
+      (idle.tile_clicked + idle.confirm) so it does not also act on the level/
+      hub behind it. Left-click is bound to confirm, so this also stops menu/
+      panel clicks from leaking through as a world confirm.
   [x] Tooltip activation on hover (view() finds topmost element under pointer
       via elementAt/tooltipOf, appends buildTooltip last; suppressed while
       dragging)
@@ -326,24 +620,63 @@ Mission Flow
   - mission_fail screen (triggered on player death)
   - mission_complete screen (triggered on mission end)
   - New Screen variants and transition events
+  - Quit-to-menu and death/mission-fail exits MUST route through end_level/
+    end_hub so entity changes persist into PlayerData (see AGENTS.md convention
+    — these exit paths don't exist yet; today only level-completion and hub
+    mission-exit route through them)
 
-Platform Layer (raylib)
-  - Raylib integration for windowing, input, and rendering
-  - Map raylib input events to PlatformInputEvent
-  - Render ViewState layers using raylib drawing functions
-  - Scale from reference resolution to actual viewport
-  - Feed GetFrameTime() (as microseconds) into update() as delta_microseconds,
-    replacing the placeholder frame_length — makes turn-flow waits real-time
-  - Grayscale sprite × Color multiplication (shader or CPU)
-  - Sprite source rectangle cropping (decoration pieces)
-  - Draw offset support (decoration overhang)
-  - 9-slice panel rendering
-  - FillSprite rendering (draw background, crop fill sprite to fraction/direction)
+Platform Layer (raylib)  [Phase 1+2 DONE — window/clock/input + UI renderer]
+  Native-first (Linux desktop). Web is deferred and will be wasm32-emscripten
+  reusing the SAME raylib backend (route B), not the old freestanding-wasm +
+  JS-renderer stub (removed from build.zig).
+  Platform seam (so raylib only touches builds that can link it):
+    - src/main.zig stays raylib-free; gameLoop takes a duck-typed `backend`
+      (shouldClose / deltaMicroseconds / pollInput / render); old main() is now
+      pub fn run(backend, ...).
+    - src/raylib_backend.zig — the only raylib file: window, GetFrameTime clock,
+      mouse+keyboard polling → PlatformInput (key ids in KeyboardEvent.code
+      form matching data/settings.txt), black clearBackground.
+    - src/native.zig — native entry (allocator/IO/window) → game.run.
+    - build.zig: raylib linked to the native exe only; native.zig +
+      raylib_backend.zig excluded from the test-root scan.
+  [x] Raylib integration for windowing + input + a real frame clock
+  [x] Map raylib input events to PlatformInputEvent (mouse move/buttons,
+      bound keyboard keys + ctrl/shift/alt modifiers)
+  [x] Feed GetFrameTime() (as microseconds) into update() as delta_microseconds
+  [x] Render ViewState UI layer (Phase 2): all six UiElement variants
+      (nine_slice_panel, slot, button, text_label, fill_sprite, image) drawn
+      in raylib_backend.render. Verified: main menu renders (panel buttons +
+      labels), letterboxed. WORLD layers (tiles/overlays/ground) still stubbed
+      in view() — drawn in render() once view() populates them (Phase 4/5).
+  [x] Scale from reference resolution to actual viewport: render into a
+      reference-sized RenderTexture, blit to the window letterboxed
+      (aspect-preserving, centered). pollInput now maps the pointer back via
+      the INVERSE of that letterbox (replaced the Phase-1 stretch), so clicks
+      line up with what is drawn. Both share viewTransform() in raylib_backend.
+  [x] Grayscale sprite × Color multiplication: the element Color is passed as
+      raylib's DrawTexturePro tint (grayscale × color = tinted). CPU/shader
+      distinction moot — the GPU tint multiply does it.
+  [x] Sprite source rectangle cropping (drawSprite takes an optional source
+      rect; used by FillSprite; ready for decoration pieces)
+  [x] FillSprite rendering (background whole + fill sprite cropped to
+      fraction/direction via source+dest rects; all four directions)
+  [x] Texture cache (sprite_id -> assets/<id>.png, lazy-loaded, session-cached;
+      missing art draws a magenta box rather than crashing)
+  - 9-slice REFINEMENT: corners are drawn 1:1 but edges + center are STRETCHED,
+    not tiled. TODO.txt spec wants edges/center TILED — revisit drawNineSlice.
+  - Draw offset support (decoration overhang; SpriteDrawable.draw_offset)
   - Programmatic edge highlight for highlighted Button/Image (shader outline of
-    opaque pixels, or fallback highlight sprite)
-  - Text rendering (font loading, size scaling); honor TextLabel bold/italic
-    and color (needed for styled tooltip spans)
-  - WASM build target (raylib supports Emscripten)
+    opaque pixels, or fallback highlight sprite) — currently ignored
+  - Real font: default bitmap font blurs when scaled up and drawTextLabel
+    ignores bold/italic. Load a TTF + per-glyph metrics (feeds the ui.zig
+    measurement seam) and honor TextLabel bold/italic + color.
+  - Missing-art audit: some bottom-bar sprite ids are still placeholders
+    (ui/icon_swap, ui/momentum, ui/cooldown_overlay per the UI section) and
+    will draw magenta until real assets land.
+  - Web build target: wasm32-emscripten exe reusing raylib_backend.zig +
+    gameLoop (route B). Add the emscripten exe to build.zig; wire emscripten
+    asset packaging + the run/serve step. The old freestanding-wasm target was
+    removed — do NOT reintroduce a hand-written JS renderer.
 
 Audio
   - Play music and sound effects via raylib audio API
@@ -399,6 +732,45 @@ Asset Memory (decisions, from Unity project audit ~/Development/taplop)
   - Web download budget: PNG (lossless) for art + OGG for audio takes asset
     download from ~39 MB to ~8 MB, mostly art.
 
+Content Loading / Custom Missions (direction, build with platform layer)
+  - Core principle: SEPARATE acquiring a mission from reading it. Acquisition
+    (upload dialog / directory scan / online fetch) is one-time, possibly
+    interactive or async. Reading mission files during gameplay AND replay must
+    be synchronous, silent, repeatable.
+  - Route ALL content reads through a resident "mission/asset source"
+    abstraction: readFile(logical_path) -> bytes, from memory or disk. Impls:
+      * built-in / native disk: Dir-backed (today's history.directory/io)
+      * zip upload (browser dialog): extract to in-memory VFS (path->bytes)
+      * custom directory: Dir-backed at a chosen path
+      * online database: fetch by immutable id/url -> cache into in-memory VFS
+  - parseConfigFileFromPath + asset loads go through the source instead of
+    std.Io.Dir directly.
+  - Source lives on GameStateHistory (like directory/io/settings), NOT in the
+    replayed GameState — session-resident, available for every replay re-read,
+    never deep-copied into snapshots.
+  - Replay-safety falls out for free: dialog/fetch happens in an acquisition
+    step (idle input), never in an event handler. The recorded event is
+    start_mission referencing an already-resident source, so replay re-reads
+    silently and never re-fires the dialog (same pattern as load_save's picker).
+  - Under route B (emscripten + raylib), web content loads through raylib's
+    LoadFileData against emscripten's virtual FS (assets packaged at build
+    time), so the freestanding "no filesystem" constraint below no longer
+    dictates the design. The mission/asset-source abstraction is still worth it
+    for custom missions (upload/fetch), just not forced by the web target.
+  - (Historical, freestanding route A — abandoned) freestanding WASM has no cwd
+    filesystem, so even built-in content needs a non-Dir source on web.
+  - Caching: acquire once, cache raw bytes; future reads (replay re-loads,
+    retry, renderer asset loads) hit the cache. Real win is avoiding expensive
+    re-acquisition (network re-fetch / zip re-decompress), not re-parse. Cache
+    is session-scoped — a fresh session re-acquires unless persisted.
+  - Async wrinkle: online fetch / zip read is async on web. Acquisition must
+    fully populate the source ("loading mission...") before emitting
+    start_mission.
+  - Cross-session replay reproducibility: a shared/saved replay of a custom
+    mission is only reproducible with the exact mission bytes. Mission refs
+    should eventually be content-addressed (hash) or pinned to an immutable
+    version id — matters for recorded-history-as-test and replay sharing.
+
 Tech Debt / Refactoring
   [x] Enemy AI skill priority is integer (u32, 0 = don't use) not float — keeps
       gameplay logic integer-only for deterministic replay/RTA (skill.zig,
@@ -408,10 +780,59 @@ Tech Debt / Refactoring
       as-is)
   [x] Error-handling policy: unrecoverable errors fail fast via
       catch @panic("..."), never silent catch {} (see AGENTS.md)
+  [x] Replay-safety: route ALL gameplay-state mutation through events so
+      undo/redo replay reconstructs it (input-path direct mutations don't run
+      during replay). Wired clear_highlights into the flow (move/skip/cancel/
+      skill-use batches) instead of bare highlighted_tiles = &.{}; added
+      clear_prepared_skill and moved the prepared_skill setter into the
+      player_prepare_skill handler; turn_end (entity 0) now owns
+      turn_phase = null (removed the four input-path turn_phase writes).
+      refreshMoveHighlights/cancelPreparedSkill left as direct writes — they
+      only run inside event handlers, so replay already covers them.
+  [x] Live current_state memory is now arena-managed (was leaking into the gpa
+      on every event during forward play — latent only because no input drives
+      the loop yet). Two lifetimes split cleanly: (a) history_arena — durable,
+      unbounded, backs event_history + idle_points and holds deep-copied event
+      payloads (event slices are the replay source of truth, must outlive
+      current_arena resets); (b) current_arena — owns live current_state, and is
+      compacted at each idle point (deepCopy into a fresh arena, free the old)
+      so per-turn churn and exited levels/hubs are reclaimed instead of
+      accumulating. backing_allocator (gpa) stored on GameStateHistory so the
+      history methods no longer thread it; apply_event lost its allocator param;
+      processEvent + input handlers derive the state allocator from
+      current_arena internally (bodies unchanged). Cost: one extra full-state
+      deepCopy per idle point on top of the snapshot copy (negligible at player
+      pace).
+  [x] Replay/undo timeline correctness (two bugs in the history machinery):
+      (1) processEvent recorded EVERY event into event_history unconditionally,
+      including during replay — so undo/redo re-appended the replayed range,
+      growing the log unbounded and desyncing it from the real timeline. Now
+      gated on !replaying (index still advances so replayTo's loop progresses).
+      (2) Nothing truncated the future on branch: undoing then taking a new
+      action left the old future in event_history/idle_points/snapshots, so a
+      later replay past the nearest snapshot could reconstruct stale branch
+      state. Added GameStateHistory.recordEvent + discardFutureTimeline: a live
+      event processed from an undone position first trims the event log and
+      idle points to the current position and frees snapshots/checkpoints ahead
+      of the branch. Covered by 3 unit tests in state.zig (first history tests).
+  [x] Moved transient view/input state out of the undoable GameState:
+      new state.SessionState { input_state, ui_state } lives on
+      GameStateHistory (like settings), never deep-copied into snapshots or
+      touched by replay. Clean rule: in GameState => set via events; in
+      SessionState => set directly in the input/update path. Screen-transition
+      UI reset moved from transitionScreen into the live loop (gameLoop resets
+      session.ui_state when screen changes across update(), covering both
+      event transitions and undo/redo across a screen boundary); input_state
+      is never reset. TODO: when the tile_cursor input TODO lands, decide
+      whether it's gameplay (event-set, since auto_target_at_cursor reads it)
+      or moves to SessionState.
   - Test coverage for processEvent handlers: main.zig is ~2200 lines with
     essentially one test. processEvent is state-in/state-out and testable.
     Cover the event logic (equip/unequip, utility-skill events, boots
     move-range refresh, prepared-skill cancel) before wiring up UI drag.
+    (Partial: state.zig now has undo-branch timeline tests. Still no
+    end-to-end processEvent test — blocked on a lighter harness for building a
+    minimal GameStateHistory with real event application.)
   - Consistent slot-index bounds checking: utility-skill handlers guard
     slot_index < utility_skill_count, but equip_item/unequip_item/learn_skill/
     salvage_item index inventory.slots[...] directly (panic on out-of-range).
@@ -419,6 +840,17 @@ Tech Debt / Refactoring
     keeping in mind events can also originate from save/replay data.
   - Consider splitting processEvent handlers by scope (player/level/hub/meta)
     into separate files for readability once it grows further.
+  - Snapshot/checkpoint ring buffers are a clean FIFO (slot = ring_index %
+    size = oldest), but discardFutureTimeline nulls ahead-of-branch slots,
+    leaving holes the marching ring_index won't preferentially reuse — so
+    after an undo-branch we may briefly hold fewer live snapshots than
+    capacity (occasional extra replay on a far undo). Harmless, never wrong.
+    Deliberately left as-is: the quick "prefer a null slot" fix breaks the
+    FIFO/oldest-eviction property, and doing it properly means explicit victim
+    selection (evict smallest event_index / a monotonic insertion counter,
+    preferring nulls) in takeSnapshot + setCheckpoint. Revisit only if undo
+    latency is felt once raylib drives a real clock + big levels exist, and
+    size the rings from real measurements then (see Memory / Budget).
   - UNDECIDED: the ~26 `current.level.?` force-unwraps in level/sub-level
     handlers. Currently safe by invariant (those events only run in a level;
     event stack cleared on screen transition), so they act as fail-fast

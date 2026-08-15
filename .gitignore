@@ -1,4 +1,5 @@
 .zig-cache/
 zig-out/
+zig-pkg/
 src/generated_lookups.zig
 src/generated_test_root.zig

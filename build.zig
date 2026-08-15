@@ -14,40 +14,37 @@ pub fn build(b: *std.Build) void {
     // Lives in src/ so it can use normal relative @import paths.
     generateLookupFile(b);
 
-    // === WASM target (for web) ===
-    const wasm = b.addExecutable(.{
-        .name = "ziglop",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = b.resolveTargetQuery(.{
-                .cpu_arch = .wasm32,
-                .os_tag = .freestanding,
-            }),
-            .optimize = optimize,
-        }),
+    // === Web target (deferred) ===
+    // The web build will be a wasm32-emscripten exe that reuses the SAME
+    // raylib backend + gameLoop as native (raylib supports web via emscripten).
+    // The old wasm32-freestanding target (hand-written JS renderer driving an
+    // exported `update`) was removed: we chose the raylib/emscripten path, so
+    // that stub is dead. Add the emscripten exe here when the web phase lands.
+
+    // === Native target (raylib desktop client) ===
+    // The native build is the only compile that links raylib today. Its root is
+    // src/native.zig (the raylib-driven entry point); the shared game logic in
+    // src/main.zig stays raylib-free so the (future emscripten) web build and
+    // the test build can compile it. See raylib_backend.zig / native.zig for
+    // the platform seam.
+    const raylib_dep = b.dependency("raylib_zig", .{
+        .target = target,
+        .optimize = optimize,
     });
-    wasm.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
-    // Export the table so JS can call our exported functions.
-    wasm.root_module.export_symbol_names = &.{"update"};
-    wasm.entry = .disabled;
+    const raylib = raylib_dep.module("raylib");
+    const raylib_artifact = raylib_dep.artifact("raylib");
 
-    const install_wasm = b.addInstallArtifact(wasm, .{
-        .dest_dir = .{ .override = .{ .custom = "web" } },
-    });
-
-    const wasm_step = b.step("wasm", "Build the WASM module for web");
-    wasm_step.dependOn(&install_wasm.step);
-
-    // === Native target (for standalone client, future use) ===
     const exe = b.addExecutable(.{
         .name = "ziglop",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = b.path("src/native.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
     exe.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
+    exe.root_module.addImport("raylib", raylib);
+    exe.root_module.linkLibrary(raylib_artifact);
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the app");
@@ -80,7 +77,7 @@ pub fn build(b: *std.Build) void {
 fn generateIds(b: *std.Build) []const u8 {
     var content: std.ArrayListUnmanaged(u8) = .empty;
 
-    const skill_names = scanDir(b, "src/skills", &.{"skill.zig"});
+    const skill_names = scanDir(b, "src/skills", &.{ "skill.zig", "helpers.zig" });
     appendStr(b, &content, "pub const SkillId = enum {\n");
     for (skill_names) |name| {
         appendStr(b, &content, b.fmt("    {s},\n", .{name}));
@@ -134,7 +131,7 @@ fn generateLookupFile(b: *std.Build) void {
     appendStr(b, &content, "    };\n}\n\n");
 
     // Skill lookup
-    const skill_names = scanDir(b, "src/skills", &.{"skill.zig"});
+    const skill_names = scanDir(b, "src/skills", &.{ "skill.zig", "helpers.zig" });
     appendStr(b, &content, "pub fn getSkillDefinition(skill_id: SkillId) ?Skill {\n");
     appendStr(b, &content, "    return switch (skill_id) {\n");
     for (skill_names) |name| {
@@ -220,6 +217,11 @@ fn collectZigFiles(
                 if (!std.mem.endsWith(u8, entry.name, ".zig")) continue;
                 // Skip the generated root itself to avoid a self-import.
                 if (std.mem.eql(u8, rel, "generated_test_root.zig")) continue;
+                // Skip the raylib-linked platform files: the test build is a
+                // headless logic compile and must not pull in raylib (see the
+                // native exe wiring above and the platform seam).
+                if (std.mem.eql(u8, rel, "native.zig")) continue;
+                if (std.mem.eql(u8, rel, "raylib_backend.zig")) continue;
                 list.append(b.allocator, rel) catch @panic("append failed");
             },
             else => {},

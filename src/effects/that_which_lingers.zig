@@ -8,6 +8,7 @@ pub const effect = Effect{
     .additive_effect_modifiers = .{
         .outgoing_skill_duration = 1,
     },
+    .intercept_incoming_damage_fn = effect_mod.pass_incoming_damage,
     .on_effect_creation_fn = effect_mod.no_op,
     .on_effect_end_fn = effect_mod.no_op,
     .on_start_turn_fn = effect_mod.no_op,

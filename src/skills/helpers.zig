@@ -1,0 +1,187 @@
+//! Shared building blocks for skill implementations. Skills compose generic
+//! events (see AGENTS.md); these helpers factor the targeting/lookup/return
+//! boilerplate that is identical across most skills, so each skill file is
+//! mostly its distinctive `useSkill` recipe.
+//!
+//! Excluded from the SkillId scan in build.zig (like skill.zig) — this is a
+//! support file, not a skill.
+
+const std = @import("std");
+const types = @import("../types.zig");
+const state = @import("../state.zig");
+const events = @import("../events.zig");
+const functions = @import("../functions.zig");
+
+const Vector2 = types.Vector2;
+const GameState = state.GameState;
+const Event = events.Event;
+
+/// Positions of all living hostile entities within `range` (Chebyshev) of the
+/// caster. Returns null if there are none — matching `Skill.getValidTargets`.
+/// `range` is the caster's already-effective range.
+pub fn hostilesInRange(
+    caster_index: u32,
+    game_state: GameState,
+    range: i32,
+    allocator: std.mem.Allocator,
+) ?[]const Vector2 {
+    const level = game_state.level orelse return null;
+    const caster = level.entities[caster_index];
+
+    var positions: std.ArrayList(Vector2) = .empty;
+    for (level.entities, 0..) |entity, entity_index| {
+        if (entity_index == caster_index) continue;
+        if (entity.current_health == 0) continue;
+        if (entity.team == caster.team) continue;
+        if (functions.chebyshevDistance(caster.position, entity.position) <= range) {
+            positions.append(allocator, entity.position) catch @panic("failed to append target");
+        }
+    }
+
+    if (positions.items.len == 0) return null;
+    return positions.items;
+}
+
+/// AI target selection: the position nearest the caster from `valid_targets`.
+/// Null if the list is null or empty — matching `Skill.selectTarget`.
+pub fn nearestTarget(
+    caster_index: u32,
+    valid_targets: ?[]const Vector2,
+    game_state: GameState,
+) ?Vector2 {
+    const targets = valid_targets orelse return null;
+    if (targets.len == 0) return null;
+
+    const level = game_state.level orelse return null;
+    const caster = level.entities[caster_index];
+
+    var best: ?Vector2 = null;
+    var best_distance: i32 = std.math.maxInt(i32);
+    for (targets) |position| {
+        const distance = functions.chebyshevDistance(caster.position, position);
+        if (distance < best_distance) {
+            best_distance = distance;
+            best = position;
+        }
+    }
+    return best;
+}
+
+/// A `highlight_tiles` event covering `targets`, or null if there are none.
+/// The standard `playerPrepareSkill` body for a targeted skill.
+pub fn highlightTargets(targets: ?[]const Vector2) ?Event {
+    const positions = targets orelse return null;
+    return .{ .level_event = .{ .highlight_tiles = .{ .tile_positions = positions } } };
+}
+
+/// Index of a living hostile entity at `position`, or null. Used by `useSkill`
+/// to resolve the entity standing on the chosen target tile.
+pub fn hostileEntityAt(
+    caster_index: u32,
+    position: Vector2,
+    game_state: GameState,
+) ?u32 {
+    const level = game_state.level orelse return null;
+    const caster = level.entities[caster_index];
+    for (level.entities, 0..) |entity, entity_index| {
+        if (entity_index == caster_index) continue;
+        if (entity.current_health == 0) continue;
+        if (entity.team == caster.team) continue;
+        if (entity.position.x == position.x and entity.position.y == position.y) {
+            return @intCast(entity_index);
+        }
+    }
+    return null;
+}
+
+/// Indices of living hostile entities within `radius` (Chebyshev) of `center`.
+/// For radius/AoE skills that hit every hostile around a point. Empty slice if
+/// none.
+pub fn hostileIndicesInRadius(
+    caster_index: u32,
+    game_state: GameState,
+    center: Vector2,
+    radius: i32,
+    allocator: std.mem.Allocator,
+) []const u32 {
+    const level = game_state.level orelse return &.{};
+    const caster = level.entities[caster_index];
+
+    var indices: std.ArrayList(u32) = .empty;
+    for (level.entities, 0..) |entity, entity_index| {
+        if (entity_index == caster_index) continue;
+        if (entity.current_health == 0) continue;
+        if (entity.team == caster.team) continue;
+        if (functions.chebyshevDistance(center, entity.position) <= radius) {
+            indices.append(allocator, @intCast(entity_index)) catch @panic("failed to append target index");
+        }
+    }
+    return indices.items;
+}
+
+/// Empty walkable tiles within `range` (Chebyshev) of the caster — valid
+/// teleport destinations (Blink, FlashStrike). Null if there are none.
+pub fn emptyTilesInRange(
+    caster_index: u32,
+    game_state: GameState,
+    range: i32,
+    allocator: std.mem.Allocator,
+) ?[]const Vector2 {
+    const level = game_state.level orelse return null;
+    const caster = level.entities[caster_index];
+
+    var positions: std.ArrayList(Vector2) = .empty;
+    var delta_y: i32 = -range;
+    while (delta_y <= range) : (delta_y += 1) {
+        var delta_x: i32 = -range;
+        while (delta_x <= range) : (delta_x += 1) {
+            if (delta_x == 0 and delta_y == 0) continue;
+            const position = Vector2{ .x = caster.position.x + delta_x, .y = caster.position.y + delta_y };
+            if (tileExists(game_state, position) and !isOccupied(game_state, position, null)) {
+                positions.append(allocator, position) catch @panic("failed to append empty tile");
+            }
+        }
+    }
+    if (positions.items.len == 0) return null;
+    return positions.items;
+}
+
+/// Whether a walkable tile exists at `position`.
+pub fn tileExists(game_state: GameState, position: Vector2) bool {
+    const level = game_state.level orelse return false;
+    for (level.level_tiles) |tile| {
+        if (tile.x == position.x and tile.y == position.y) return true;
+    }
+    return false;
+}
+
+/// Whether a living entity (other than `exclude_index`, if given) occupies
+/// `position`. Used for knockback/retreat collision checks.
+pub fn isOccupied(game_state: GameState, position: Vector2, exclude_index: ?u32) bool {
+    const level = game_state.level orelse return false;
+    for (level.entities, 0..) |entity, entity_index| {
+        if (exclude_index) |excluded| {
+            if (entity_index == excluded) continue;
+        }
+        if (entity.current_health == 0) continue;
+        if (entity.position.x == position.x and entity.position.y == position.y) return true;
+    }
+    return false;
+}
+
+/// Build the event slice a `useSkill` returns. Takes events in natural
+/// EXECUTION order and returns them REVERSED, because the event stack is LIFO:
+/// pushEvents appends and processEvent pops from the end, so the last element
+/// runs first. Reversing here lets skill authors list events in the order they
+/// should happen (e.g. attack, then stun).
+///
+/// The result lives in `allocator` (not a caller-frame temporary): pushEvents
+/// consumes it synchronously but it must be valid at that point.
+pub fn ownedEvents(
+    allocator: std.mem.Allocator,
+    events_in_execution_order: []const Event,
+) []const Event {
+    const owned = allocator.dupe(Event, events_in_execution_order) catch @panic("failed to allocate skill events");
+    std.mem.reverse(Event, owned);
+    return owned;
+}

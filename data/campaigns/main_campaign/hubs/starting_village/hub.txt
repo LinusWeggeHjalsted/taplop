@@ -2,9 +2,12 @@ Metadata
 name Starting Village
 
 Layout
+!.1
 
 NPCs
 
 Decorations
 
 Exits
+character_code 1
+mission_id first_mission

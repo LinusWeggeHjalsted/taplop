@@ -1,4 +1,4 @@
 Skills
-skill_1 placeholder
-skill_2 placeholder
-skill_3 placeholder
+skill_1 stab
+skill_2 vampiric_strike
+skill_3 retreating_swipe

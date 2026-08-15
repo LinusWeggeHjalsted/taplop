@@ -9,7 +9,7 @@ Layout
 Enemies
 character_code 1
 name Skeleton Warrior
-sprite Skeleton1
+sprite skeleton_1
 max_health 20
 defense 0
 speed 1

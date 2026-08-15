@@ -167,17 +167,60 @@ pub const IdleInput = struct {
     confirm: bool = false,
     cancel: bool = false,
     skip: bool = false,
+    /// A main-menu command (New Game / Load Save / ...), set only when a menu
+    /// button is clicked (no keybind path). Handled by the main_menu branch of
+    /// handleIdleInput.
+    menu_action: ?types.Action = null,
 };
+
+/// Fold a UI Button's Action into `player_input` so a click drives the exact
+/// same path as the equivalent keybind (buttons carry the same Action enum).
+/// Actions with an existing input field set that field; main-menu commands
+/// (which have no keybind) go to idle.menu_action. This is the one bridge from
+/// "button was clicked" to the semantic input the handlers already consume.
+pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
+    switch (action) {
+        .undo => player_input.anytime.undo = true,
+        .redo => player_input.anytime.redo = true,
+        .toggle_options_menu => player_input.anytime.toggle_options_menu = true,
+        .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
+        .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
+        .toggle_skills => player_input.anytime.in_game.toggle_skills = true,
+        .toggle_world_map => player_input.anytime.in_game.toggle_world_map = true,
+        .swap_weapons => player_input.anytime.in_game.swap_weapons = true,
+        .confirm => player_input.idle.confirm = true,
+        .cancel => player_input.idle.cancel = true,
+        .skip => player_input.idle.skip = true,
+        .skill_slot_1 => player_input.idle.skill_slot_selected = 1,
+        .skill_slot_2 => player_input.idle.skill_slot_selected = 2,
+        .skill_slot_3 => player_input.idle.skill_slot_selected = 3,
+        .skill_slot_4 => player_input.idle.skill_slot_selected = 4,
+        .skill_slot_5 => player_input.idle.skill_slot_selected = 5,
+        .skill_slot_6 => player_input.idle.skill_slot_selected = 6,
+        .skill_slot_7 => player_input.idle.skill_slot_selected = 7,
+        .skill_slot_8 => player_input.idle.skill_slot_selected = 8,
+        .continue_game,
+        .new_game,
+        .load_save,
+        .open_settings,
+        .open_credits,
+        => player_input.idle.menu_action = action,
+    }
+}
 
 // ============================================================
 // Input translation — raw platform events → semantic PlayerInput
 // ============================================================
 
-pub const tile_size_pixels: f32 = 512.0;
+/// On-screen size of one tile in reference-space pixels at zoom 1.0. Sprites
+/// are authored at this resolution (tile.png is 256x256 = one tile; entity
+/// frames are 512x640 = 2 tiles wide). The renderer and screenToTile share
+/// this so clicks map back to the tile that was drawn.
+pub const tile_size_pixels: f32 = 256.0;
 
 /// Convert a screen-space position to tile coordinates.
 /// Takes into account camera position and zoom level.
-fn screenToTile(
+pub fn screenToTile(
     screen_position: ScreenPosition,
     camera: Camera,
     zoom: f32,

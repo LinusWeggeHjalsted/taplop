@@ -1,4 +1,4 @@
 Skills
-skill_1 placeholder
-skill_2 placeholder
-skill_3 placeholder
+skill_1 chop
+skill_2 cleave
+skill_3 throw

@@ -219,6 +219,23 @@ pub fn chebyshevDistance(a: Vector2, b: Vector2) i32 {
     return @max(dx, dy);
 }
 
+/// Apply a signed delta to an unsigned scalar, saturating at 0 (never wraps).
+/// Shared by the change_momentum / change_cooldown event handlers so the
+/// clamping is defined and tested in one place.
+pub fn applySignedDelta(value: u32, delta: i32) u32 {
+    if (delta >= 0) return value + @as(u32, @intCast(delta));
+    const decrease: u32 = @intCast(-delta);
+    return if (decrease >= value) 0 else value - decrease;
+}
+
+test "applySignedDelta saturates at zero and adds" {
+    try std.testing.expectEqual(@as(u32, 7), applySignedDelta(5, 2));
+    try std.testing.expectEqual(@as(u32, 3), applySignedDelta(5, -2));
+    try std.testing.expectEqual(@as(u32, 0), applySignedDelta(5, -5));
+    try std.testing.expectEqual(@as(u32, 0), applySignedDelta(5, -9));
+    try std.testing.expectEqual(@as(u32, 5), applySignedDelta(5, 0));
+}
+
 /// Returns all tiles reachable from start_position within max_steps,
 /// using BFS with Chebyshev movement (8-directional). Entities block
 /// movement (the mover's own tile is excluded from blocking).

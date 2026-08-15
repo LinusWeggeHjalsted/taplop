@@ -22,7 +22,14 @@ pub const MetaEvent = union(enum) {
     load_save: struct {
         save_path: []const u8,
     },
+    // Orchestrates a save: syncs PlayerData from the working entity (in a
+    // hub/level) via build_data_from_player, then writes via write_save.
     save_game: struct {
+        save_path: []const u8,
+    },
+    // The pure file write. Persists current.player_data as-is; expects any
+    // needed entity->PlayerData sync to have already run (see save_game).
+    write_save: struct {
         save_path: []const u8,
     },
     start_mission: struct {
@@ -72,6 +79,7 @@ pub const EditorEvent = union(enum) {
 
 pub const SubEditorEvent = union(enum) {
     // scope: editor
+    // individual editor events
 };
 
 pub const PlayerEvent = union(enum) {
@@ -146,6 +154,7 @@ pub const LevelEvent = union(enum) {
         tile_positions: []const Vector2,
     },
     clear_highlights: void,
+    clear_prepared_skill: void,
     
     move_entity: struct {
         entity_index: u32,
@@ -178,6 +187,10 @@ pub const SubLevelEvent = union(enum) {
         defender_index: u32,
         outgoing_damage: u32,
         triggers_effects: bool = true,
+        // Lifesteal hook (e.g. Vampiric Strike): after the damage pipeline
+        // resolves the applied damage, the handler emits a `heal` for the
+        // attacker of that amount.
+        heals_attacker: bool = false,
     },
     stun: struct {
         attacker_index: u32,
@@ -194,6 +207,44 @@ pub const SubLevelEvent = union(enum) {
         entity_index: u32,
         target_position: Vector2,
         distance: u32,
+    },
+    // --- generic scalar-field mutation primitives (composed by skills) ---
+    // Heal an entity, clamped to max_health.
+    heal: struct {
+        entity_index: u32,
+        amount: u32,
+    },
+    // Adjust momentum by a signed delta, clamped at 0.
+    change_momentum: struct {
+        entity_index: u32,
+        delta: i32,
+    },
+    // Adjust one skill's cooldown by a signed delta, clamped at 0. Focus
+    // resets equipped weapon skills by emitting one per skill.
+    change_cooldown: struct {
+        entity_index: u32,
+        skill_id: SkillId,
+        delta: i32,
+    },
+    // Atomically exchange two entities' positions (Swap). Not a pair of
+    // move_entity (they can't pass through each other).
+    swap_positions: struct {
+        entity_a_index: u32,
+        entity_b_index: u32,
+    },
+    // Activate all opposing entities within an explicit radius (Howl).
+    // Distinct from aggro_around, which uses the entity's own aggro_range and
+    // carries level-end coupling.
+    aggro_in_radius: struct {
+        entity_index: u32,
+        radius: u32,
+    },
+    // Focus: reset the entity's equipped weapon-skill (slots 1-3) cooldowns.
+    // Orchestrator — the handler resolves the weapon skills (needs
+    // weapon_type_definitions from GameStateHistory, unreachable from a skill)
+    // and emits a change_cooldown per skill.
+    reset_weapon_cooldowns: struct {
+        entity_index: u32,
     },
     create_effect: struct {
         caster_index: u32,

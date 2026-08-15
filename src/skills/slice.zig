@@ -4,9 +4,9 @@ const state = @import("../state.zig");
 const events = @import("../events.zig");
 const functions = @import("../functions.zig");
 const skill_mod = @import("skill.zig");
+const helpers = @import("helpers.zig");
 
 const Vector2 = types.Vector2;
-const Entity = types.Entity;
 const GameState = state.GameState;
 const Event = events.Event;
 const Skill = skill_mod.Skill;
@@ -38,35 +38,9 @@ fn getValidTargets(
     game_state: GameState,
     allocator: std.mem.Allocator,
 ) ?[]const Vector2 {
-    const level = game_state.level orelse return null;
-    const caster = level.entities[caster_index];
+    const caster = (game_state.level orelse return null).entities[caster_index];
     const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
-
-    // Count hostile entities in range
-    var count: usize = 0;
-    for (level.entities, 0..) |entity, entity_index| {
-        if (entity_index == caster_index) continue;
-        if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) <= range) {
-            count += 1;
-        }
-    }
-
-    if (count == 0) return null;
-
-    // Allocate and fill
-    const targets = allocator.alloc(Vector2, count) catch @panic("failed to allocate valid targets");
-    var target_index: usize = 0;
-    for (level.entities, 0..) |entity, entity_index| {
-        if (entity_index == caster_index) continue;
-        if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) <= range) {
-            targets[target_index] = entity.position;
-            target_index += 1;
-        }
-    }
-
-    return targets;
+    return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
 /// AI priority for using Slice.
@@ -110,22 +84,7 @@ fn selectTarget(
     valid_targets: ?[]const Vector2,
     game_state: GameState,
 ) ?Vector2 {
-    const targets = valid_targets orelse return null;
-    if (targets.len == 0) return null;
-
-    const level = game_state.level orelse return null;
-    const caster = level.entities[caster_index];
-
-    var best: ?Vector2 = null;
-    var best_distance: i32 = std.math.maxInt(i32);
-    for (targets) |position| {
-        const distance = functions.chebyshevDistance(caster.position, position);
-        if (distance < best_distance) {
-            best_distance = distance;
-            best = position;
-        }
-    }
-    return best;
+    return helpers.nearestTarget(caster_index, valid_targets, game_state);
 }
 
 /// Player prepare: returns a highlight_tiles event for all valid target positions.
@@ -134,11 +93,7 @@ fn playerPrepareSkill(
     game_state: GameState,
     allocator: std.mem.Allocator,
 ) ?Event {
-    const targets = getValidTargets(caster_index, game_state, allocator) orelse return null;
-
-    return .{ .level_event = .{ .highlight_tiles = .{
-        .tile_positions = targets,
-    } } };
+    return helpers.highlightTargets(getValidTargets(caster_index, game_state, allocator));
 }
 
 /// Use the skill: push an attack event against the target.
@@ -147,35 +102,28 @@ fn useSkill(
     caster_index: u32,
     target: ?Vector2,
     game_state: GameState,
-    _: std.mem.Allocator,
+    allocator: std.mem.Allocator,
 ) []const Event {
     const target_position = target orelse return &.{};
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
 
-    // Find the entity at target position
-    for (level.entities, 0..) |entity, entity_index| {
-        if (entity_index == caster_index) continue;
-        if (entity.team == caster.team) continue;
-        if (entity.position.x == target_position.x and entity.position.y == target_position.y) {
-            // Calculate damage: 1.5x if target below half health
-            const base_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
-            var damage: u32 = caster.getEffectiveOutgoingDamage(base_damage);
-            if (entity.current_health * 2 < entity.max_health) {
-                damage = damage + damage / 2; // 1.5x, integer math
-            }
+    const defender_index = helpers.hostileEntityAt(caster_index, target_position, game_state) orelse return &.{};
+    const defender = level.entities[defender_index];
 
-            const attack_event = Event{ .sub_level_event = .{ .attack = .{
-                .attacker_index = caster_index,
-                .defender_index = @intCast(entity_index),
-                .outgoing_damage = damage,
-            } } };
-
-            // Return as a single-element slice using a comptime-known array
-            return &.{attack_event};
-        }
+    // Damage: 1.5x if the target is below half health (integer math).
+    const base_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
+    var damage: u32 = caster.getEffectiveOutgoingDamage(base_damage);
+    if (defender.current_health * 2 < defender.max_health) {
+        damage = damage + damage / 2;
     }
 
-    return &.{};
+    return helpers.ownedEvents(allocator, &.{
+        .{ .sub_level_event = .{ .attack = .{
+            .attacker_index = caster_index,
+            .defender_index = defender_index,
+            .outgoing_damage = damage,
+        } } },
+    });
 }
 

@@ -8,8 +8,6 @@ const parser = @import("parser.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 
-const computeFrameLength = functions.computeFrameLength;
-
 const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
 const Event = events.Event;
@@ -88,12 +86,13 @@ fn dragToEvent(from: ui.SlotRef, to: ui.SlotRef) ?Event {
 /// slot with content begins a drag; release hit-tests the target slot and
 /// pushes the resolved event. Hit-tests against the previous frame's UI.
 fn handleDrag(
-    current: *GameState,
+    history: *GameStateHistory,
     pointer: input.PointerInput,
     ui_elements: []const ui.UiElement,
-    allocator: std.mem.Allocator,
 ) void {
-    const ui_state = &current.ui_state;
+    const current = &history.current_state;
+    const allocator = history.current_arena.allocator();
+    const ui_state = &history.session.ui_state;
 
     if (pointer.pressed) {
         // Begin a drag only when the pointer goes down on a slot that both has
@@ -122,22 +121,21 @@ fn handleDrag(
 fn handleAnytimeInput(
     history: *GameStateHistory,
     anytime: input.AnytimeInput,
-    allocator: std.mem.Allocator,
 ) void {
     if (anytime.undo) {
-        _ = history.undo(allocator, &processEvent);
+        _ = history.undo(&processEvent);
     }
 
     if (anytime.redo) {
-        _ = history.redo(allocator, &processEvent);
+        _ = history.redo(&processEvent);
     }
 
     if (anytime.toggle_options_menu) {
-        history.current_state.ui_state.options_menu_open = !history.current_state.ui_state.options_menu_open;
+        history.session.ui_state.options_menu_open = !history.session.ui_state.options_menu_open;
     }
 
     // When options menu is open, block all other input
-    if (history.current_state.ui_state.options_menu_open) return;
+    if (history.session.ui_state.options_menu_open) return;
 
     if (anytime.scroll_delta != 0) {
         const zoom_speed: f32 = 0.1;
@@ -146,40 +144,42 @@ fn handleAnytimeInput(
 
     // In-game inputs only apply when in a hub or level
     const current = &history.current_state;
+    const allocator = history.current_arena.allocator();
+    const ui_state = &history.session.ui_state;
     if (current.screen == .hub or current.screen == .level) {
         const in_game = anytime.in_game;
 
         if (in_game.toggle_inventory) {
-            current.ui_state.toggleMiddlePanel(.inventory);
+            ui_state.toggleMiddlePanel(.inventory);
         }
 
         if (in_game.toggle_gear) {
-            current.ui_state.toggleMiddlePanel(.gear);
+            ui_state.toggleMiddlePanel(.gear);
         }
 
         if (in_game.toggle_skills) {
-            current.ui_state.toggleMiddlePanel(.skills);
+            ui_state.toggleMiddlePanel(.skills);
         }
 
         if (in_game.toggle_entity_inspect) |entity_index| {
-            if (current.ui_state.inspected_entity_index) |current_inspected| {
+            if (ui_state.inspected_entity_index) |current_inspected| {
                 if (current_inspected == entity_index) {
                     // Same entity — close the panel
-                    current.ui_state.toggleMiddlePanel(.enemy_inspect);
-                    current.ui_state.inspected_entity_index = null;
+                    ui_state.toggleMiddlePanel(.enemy_inspect);
+                    ui_state.inspected_entity_index = null;
                 } else {
                     // Different entity — switch target
-                    current.ui_state.inspected_entity_index = entity_index;
+                    ui_state.inspected_entity_index = entity_index;
                 }
             } else {
                 // Not inspecting — open panel
-                current.ui_state.inspected_entity_index = entity_index;
-                current.ui_state.toggleMiddlePanel(.enemy_inspect);
+                ui_state.inspected_entity_index = entity_index;
+                ui_state.toggleMiddlePanel(.enemy_inspect);
             }
         }
 
         if (in_game.toggle_world_map) {
-            current.ui_state.toggleFullScreenOverlay(.world_map);
+            ui_state.toggleFullScreenOverlay(.world_map);
         }
         if (in_game.move_tile_cursor_to) |_| {
             // TODO: move tile cursor
@@ -197,9 +197,26 @@ fn handleAnytimeInput(
 fn handleIdleInput(
     history: *GameStateHistory,
     idle: input.IdleInput,
-    allocator: std.mem.Allocator,
 ) void {
     const current = &history.current_state;
+    const allocator = history.current_arena.allocator();
+
+    // Main menu: menu buttons emit a menu_action (no keybind path).
+    if (current.screen == .main_menu) {
+        if (idle.menu_action) |action| {
+            switch (action) {
+                .new_game => pushEvents(current, &.{
+                    .{ .meta_event = .start_new_game },
+                }, allocator),
+                // continue_game / load_save need an autosave path + file picker,
+                // and open_settings / open_credits need their screens. Wired
+                // when those land (Continue isn't even shown on a fresh start).
+                .continue_game, .load_save, .open_settings, .open_credits => {},
+                else => {},
+            }
+        }
+        return;
+    }
 
     // Level turn phase input handling
     if (current.level) |*level| {
@@ -216,10 +233,9 @@ fn handleIdleInput(
                             }
                         }
                         if (is_reachable) {
-                            level.highlighted_tiles = &.{};
-                            level.turn_phase = null;
                             pushEvents(current, &.{
                                 .{ .level_event = .player_turn_attack },
+                                .{ .level_event = .clear_highlights },
                                 .{ .level_event = .{ .move_entity = .{
                                     .entity_index = 0,
                                     .destination = clicked_position,
@@ -230,10 +246,9 @@ fn handleIdleInput(
 
                     if (idle.skip) {
                         // Skip movement, go straight to attack phase
-                        level.highlighted_tiles = &.{};
-                        level.turn_phase = null;
                         pushEvents(current, &.{
                             .{ .level_event = .player_turn_attack },
+                            .{ .level_event = .clear_highlights },
                         }, allocator);
                     }
                 },
@@ -253,7 +268,7 @@ fn handleIdleInput(
                                             if (valid_targets) |targets| {
                                                 for (targets) |target| {
                                                     if (target.x == cursor_position.x and target.y == cursor_position.y) {
-                                                        pushPlayerSkillUse(current, level, skill_id, skill_definition, cursor_position, allocator);
+                                                        pushPlayerSkillUse(current, skill_id, skill_definition, cursor_position, allocator);
                                                         return;
                                                     }
                                                 }
@@ -262,7 +277,6 @@ fn handleIdleInput(
                                     }
 
                                     // Begin targeting — push player_prepare_skill
-                                    level.prepared_skill = skill_id;
                                     pushEvents(current, &.{
                                         .{ .level_event = .{ .player_prepare_skill = .{
                                             .caster_index = 0,
@@ -271,7 +285,7 @@ fn handleIdleInput(
                                     }, allocator);
                                 } else {
                                     // No targeting — use immediately
-                                    pushPlayerSkillUse(current, level, skill_id, skill_definition, null, allocator);
+                                    pushPlayerSkillUse(current, skill_id, skill_definition, null, allocator);
                                 }
                             }
                         }
@@ -291,7 +305,7 @@ fn handleIdleInput(
                                 }
                                 if (is_valid) {
                                     if (lookups.getSkillDefinition(skill_id)) |skill_definition| {
-                                        pushPlayerSkillUse(current, level, skill_id, skill_definition, cursor_position, allocator);
+                                        pushPlayerSkillUse(current, skill_id, skill_definition, cursor_position, allocator);
                                     }
                                 }
                             }
@@ -301,19 +315,20 @@ fn handleIdleInput(
                     if (idle.cancel) {
                         // Cancel skill targeting
                         if (level.prepared_skill != null) {
-                            level.prepared_skill = null;
-                            level.highlighted_tiles = &.{};
                             // Stay in player_attack phase
+                            pushEvents(current, &.{
+                                .{ .level_event = .clear_highlights },
+                                .{ .level_event = .clear_prepared_skill },
+                            }, allocator);
                         }
                     }
 
                     if (idle.skip) {
                         // Skip attack, end turn
-                        level.turn_phase = null;
-                        level.prepared_skill = null;
-                        level.highlighted_tiles = &.{};
                         pushEvents(current, &.{
                             .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
+                            .{ .level_event = .clear_highlights },
+                            .{ .level_event = .clear_prepared_skill },
                         }, allocator);
                     }
                 },
@@ -392,12 +407,14 @@ fn computeMinRange(
 
         const skill_definition = lookups.getSkillDefinition(skill_id) orelse continue;
 
-        const effective_range: u32 = if (skill_definition.range) |range|
-            entity.getEffectiveRange(range)
-        else if (skill_definition.radius) |radius|
-            entity.getEffectiveRadius(radius)
-        else
-            0;
+        // Self/no-target skills (no range and no radius) don't require closing
+        // on the target, so they must not drag min_range down to 0 (which would
+        // let the enemy path onto the target's own tile).
+        const effective_range: u32 = blk: {
+            if (skill_definition.range) |range| break :blk entity.getEffectiveRange(range);
+            if (skill_definition.radius) |radius| break :blk entity.getEffectiveRadius(radius);
+            continue;
+        };
 
         if (min_range) |current_min| {
             if (effective_range < current_min) {
@@ -417,20 +434,15 @@ fn computeMinRange(
 /// idle input picks up again after use_skill processes.
 fn pushPlayerSkillUse(
     current: *GameState,
-    level: *types.Level,
     skill_id: SkillId,
     skill_definition: Skill,
     target: ?Vector2,
     allocator: std.mem.Allocator,
 ) void {
-    level.prepared_skill = null;
-    level.highlighted_tiles = &.{};
-
     const ends_turn = skill_definition.skill_type == .weapon_skill or
         skill_definition.skill_type == .spell;
 
     if (ends_turn) {
-        level.turn_phase = null;
         pushEvents(current, &.{
             .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
             .{ .level_event = .{ .use_skill = .{
@@ -438,6 +450,8 @@ fn pushPlayerSkillUse(
                 .skill_id = skill_id,
                 .target = target,
             } } },
+            .{ .level_event = .clear_highlights },
+            .{ .level_event = .clear_prepared_skill },
         }, allocator);
     } else {
         // Don't clear turn_phase — stays as player_attack.
@@ -448,6 +462,8 @@ fn pushPlayerSkillUse(
                 .skill_id = skill_id,
                 .target = target,
             } } },
+            .{ .level_event = .clear_highlights },
+            .{ .level_event = .clear_prepared_skill },
         }, allocator);
     }
 }
@@ -639,9 +655,12 @@ fn loadCampaignAndPushHub(
 /// state and records it in event history. Also used by undo/redo replay.
 fn processEvent(
     history: *GameStateHistory,
-    allocator: std.mem.Allocator,
 ) void {
     const current = &history.current_state;
+    // All live state mutations allocate into current_arena (reclaimed by
+    // compaction at idle points and by reconstruction on undo/redo). Durable
+    // event recording goes through history.recordEvent into history_arena.
+    const allocator = history.current_arena.allocator();
 
     if (current.event_stack.len == 0) return;
 
@@ -649,8 +668,13 @@ fn processEvent(
     const next_event = current.event_stack[current.event_stack.len - 1];
     current.event_stack = current.event_stack[0 .. current.event_stack.len - 1];
 
-    // Record in event history
-    history.event_history.append(allocator, next_event) catch @panic("failed to append event");
+    // Record in event history. Skip during replay: replay walks events that
+    // are already recorded, applying them to rebuild a past state — it must
+    // not create new events. The index still advances so replayTo's loop
+    // progresses. (See recordEvent for the undo-branch handling.)
+    if (!history.replaying) {
+        history.recordEvent(next_event);
+    }
     history.current_event_index += 1;
 
     switch (next_event) {
@@ -661,7 +685,7 @@ fn processEvent(
                 else => false,
             };
             if (should_checkpoint) {
-                history.setCheckpoint(allocator);
+                history.setCheckpoint();
             }
 
             switch (meta) {
@@ -699,10 +723,30 @@ fn processEvent(
                     loadCampaignAndPushHub(current, history, allocator);
                 },
                 .save_game => |save| {
+                    // Orchestrate: make PlayerData current, then write. LIFO means
+                    // the last-pushed event runs first, so build_data_from_player
+                    // (on top) syncs before write_save persists. Only sync when a
+                    // working entity exists (hub/level); outside those, player 0
+                    // isn't present and we write PlayerData as-is.
+                    if (current.level != null or current.hub != null) {
+                        pushEvents(current, &.{
+                            .{ .meta_event = .{ .write_save = .{ .save_path = save.save_path } } },
+                            .{ .super_event = .{ .build_data_from_player = .{ .entity_index = 0 } } },
+                        }, allocator);
+                    } else {
+                        pushEvents(current, &.{
+                            .{ .meta_event = .{ .write_save = .{ .save_path = save.save_path } } },
+                        }, allocator);
+                    }
+                },
+                .write_save => |write| {
+                    // Side effect: skip during replay so undo/redo scrubbing
+                    // doesn't rewrite the save (or spam download prompts on web).
+                    if (history.replaying) return;
                     parser.writePlayerSaveToFile(
                         history.directory,
                         history.io,
-                        save.save_path,
+                        write.save_path,
                         current.player_data,
                         allocator,
                     ) catch @panic("failed to write save file");
@@ -735,7 +779,15 @@ fn processEvent(
                         .entity_index = 0,
                     } } }}, allocator);
                 },
-                .end_hub => {},
+                .end_hub => {
+                    // Preserve the player entity's changes back into PlayerData
+                    // before the hub is discarded/replaced. Pushed on top so it
+                    // runs before whatever continuation the exit path stacked
+                    // below (LIFO). All hub-exit paths must route through here.
+                    pushEvents(current, &.{.{ .super_event = .{ .build_data_from_player = .{
+                        .entity_index = 0,
+                    } } }}, allocator);
+                },
                 .start_mission => |start| {
                     const mission_file_path = std.fmt.allocPrint(
                         allocator,
@@ -835,6 +887,13 @@ fn processEvent(
                             } } }}, allocator);
                         }
                     }
+                    // Preserve the player entity's changes back into PlayerData
+                    // before the level is discarded/replaced. Pushed last so it
+                    // runs on top of the continuation above (LIFO). All
+                    // level-exit paths must route through here.
+                    pushEvents(current, &.{.{ .super_event = .{ .build_data_from_player = .{
+                        .entity_index = 0,
+                    } } }}, allocator);
                 },
                 .wait => |wait_event| {
                     // Begin a real-time pause; update() drains it as frames
@@ -1010,11 +1069,17 @@ fn processEvent(
                                     .{ current.player_data.current_campaign, exit.mission_id },
                                 ) catch @panic("failed to allocate mission path");
 
-                                pushEvents(current, &.{.{ .meta_event = .{ .start_mission = .{
-                                    .mission_path = mission_path,
-                                    .start_hub_id = current.player_data.current_hub,
-                                    .end_hub_id = null,
-                                } } }}, allocator);
+                                // end_hub on top runs first (syncs the hub
+                                // player entity into PlayerData), then the
+                                // mission starts.
+                                pushEvents(current, &.{
+                                    .{ .meta_event = .{ .start_mission = .{
+                                        .mission_path = mission_path,
+                                        .start_hub_id = current.player_data.current_hub,
+                                        .end_hub_id = null,
+                                    } } },
+                                    .{ .meta_event = .end_hub },
+                                }, allocator);
                                 break;
                             }
                         }
@@ -1110,6 +1175,7 @@ fn processEvent(
                     // plus the next player turn_start at the bottom (processed last).
                     if (turn.entity_index == 0) {
                         const level = &current.level.?;
+                        level.turn_phase = null;
                         const player_position = level.entities[0].position;
 
                         // Collect active, alive non-player entity indices with their distances
@@ -1241,6 +1307,10 @@ fn processEvent(
                                 const max_steps = @min(effective_speed, @as(u32, @intCast(path_tiles.len)));
                                 for (0..max_steps) |step_index| {
                                     const step_position = path_tiles[step_index];
+                                    // Never step onto the target's own tile: shortestPath
+                                    // includes the (occupied) destination as its final
+                                    // tile, so stop before it regardless of min_range.
+                                    if (step_position.x == target_position.x and step_position.y == target_position.y) break;
                                     const distance_from_target = functions.chebyshevDistance(step_position, target_position);
                                     if (distance_from_target < min_range) break;
                                     destination = step_position;
@@ -1409,6 +1479,8 @@ fn processEvent(
                     }
                 },
                 .player_prepare_skill => |prepare| {
+                    const level = &current.level.?;
+                    level.prepared_skill = prepare.skill_id;
                     if (lookups.getSkillDefinition(prepare.skill_id)) |skill_definition| {
                         if (skill_definition.playerPrepareSkill(prepare.caster_index, current.*, allocator)) |event| {
                             pushEvents(current, &.{event}, allocator);
@@ -1445,6 +1517,10 @@ fn processEvent(
                 .clear_highlights => {
                     const level = &current.level.?;
                     level.highlighted_tiles = &.{};
+                },
+                .clear_prepared_skill => {
+                    const level = &current.level.?;
+                    level.prepared_skill = null;
                 },
                 .move_entity => |move| {
                     const entity = getLevelEntity(current, move.entity_index);
@@ -1712,8 +1788,29 @@ fn processEvent(
                         }
                     }
 
+                    // Damage pipeline: transform stage. The defender's effects
+                    // can change the outgoing damage before defense (Reflect
+                    // zeroes it and reflects it back). Gated on triggers_effects
+                    // so a reflected attack (triggers_effects=false) is not
+                    // re-intercepted — no reflect-vs-reflect loops.
+                    var effective_outgoing = attack.outgoing_damage;
+                    if (attack.triggers_effects) {
+                        for (defender.active_effects) |active_effect| {
+                            const definition = lookups.getEffectDefinition(active_effect.effect_id);
+                            const interception = definition.interceptIncomingDamage(
+                                attack.defender_index,
+                                attack.attacker_index,
+                                effective_outgoing,
+                                current.*,
+                                allocator,
+                            );
+                            effective_outgoing = interception.damage;
+                            pushEvents(current, interception.events, allocator);
+                        }
+                    }
+
                     // Calculate effective incoming damage
-                    const incoming_damage = defender.getEffectiveIncomingDamage(attack.outgoing_damage);
+                    const incoming_damage = defender.getEffectiveIncomingDamage(effective_outgoing);
 
                     if (incoming_damage > 0) {
                         // Apply damage
@@ -1744,6 +1841,17 @@ fn processEvent(
                             pushEvents(current, &.{
                                 .{ .sub_level_event = .{ .death = .{
                                     .entity_index = attack.defender_index,
+                                } } },
+                            }, allocator);
+                        }
+
+                        // Lifesteal: heal the attacker for the damage dealt
+                        // (composes the generic heal primitive).
+                        if (attack.heals_attacker) {
+                            pushEvents(current, &.{
+                                .{ .sub_level_event = .{ .heal = .{
+                                    .entity_index = attack.attacker_index,
+                                    .amount = incoming_damage,
                                 } } },
                             }, allocator);
                         }
@@ -1978,6 +2086,65 @@ fn processEvent(
                         }, allocator);
                     }
                 },
+                .heal => |heal_event| {
+                    const entity = getLevelEntity(current, heal_event.entity_index);
+                    if (entity.current_health == 0) return; // no reviving via heal
+                    const capacity = entity.max_health - entity.current_health;
+                    entity.current_health += @min(heal_event.amount, capacity);
+                },
+                .change_momentum => |change| {
+                    const entity = getLevelEntity(current, change.entity_index);
+                    if (entity.current_health == 0) return;
+                    entity.momentum = functions.applySignedDelta(entity.momentum, change.delta);
+                },
+                .change_cooldown => |change| {
+                    const entity = getLevelEntity(current, change.entity_index);
+                    if (entity.current_health == 0) return;
+                    const current_cooldown = entity.skill_cooldowns.get(change.skill_id);
+                    entity.skill_cooldowns.set(change.skill_id, functions.applySignedDelta(current_cooldown, change.delta));
+                },
+                .swap_positions => |swap| {
+                    const entity_a = getLevelEntity(current, swap.entity_a_index);
+                    const entity_b = getLevelEntity(current, swap.entity_b_index);
+                    if (entity_a.current_health == 0 or entity_b.current_health == 0) return;
+                    const temp = entity_a.position;
+                    entity_a.position = entity_b.position;
+                    entity_b.position = temp;
+                },
+                .aggro_in_radius => |aggro| {
+                    const level = &current.level.?;
+                    const entity = level.entities[aggro.entity_index];
+                    const radius: i32 = @intCast(aggro.radius);
+                    for (level.entities, 0..) |*other_entity, other_index| {
+                        if (other_index == aggro.entity_index) continue;
+                        if (other_entity.current_health == 0) continue;
+                        if (other_entity.team == entity.team) continue;
+                        if (functions.chebyshevDistance(entity.position, other_entity.position) <= radius) {
+                            @constCast(other_entity).is_active = true;
+                        }
+                    }
+                },
+                .reset_weapon_cooldowns => |reset| {
+                    // Resolve the entity's weapon skills (slots 1-3) — needs
+                    // weapon_type_definitions from history, hence a handler and
+                    // not the skill's useSkill. Emit a change_cooldown per
+                    // skill on cooldown (composes the cooldown primitive).
+                    const entity = getLevelEntity(current, reset.entity_index);
+                    if (entity.current_health == 0) return;
+                    var slot: u8 = 1;
+                    while (slot <= 3) : (slot += 1) {
+                        const skill_id = entity.skillInSlot(slot, history.weapon_type_definitions) orelse continue;
+                        const current_cooldown = entity.skill_cooldowns.get(skill_id);
+                        if (current_cooldown == 0) continue;
+                        pushEvents(current, &.{
+                            .{ .sub_level_event = .{ .change_cooldown = .{
+                                .entity_index = reset.entity_index,
+                                .skill_id = skill_id,
+                                .delta = -@as(i32, @intCast(current_cooldown)),
+                            } } },
+                        }, allocator);
+                    }
+                },
             }
         },
     }
@@ -1986,24 +2153,44 @@ fn processEvent(
 /// Process the next event on the stack, with player input handling.
 fn update(
     history: *GameStateHistory,
-    player_input: PlayerInput,
+    input_this_tick: PlayerInput,
     previous_view_state: ?types.ViewState,
     delta_microseconds: u64,
-    allocator: std.mem.Allocator,
 ) void {
+    var player_input = input_this_tick;
+
+    // The UI drawn last frame is what the pointer is over this frame. Used to
+    // resolve clicks into actions and to arbitrate world vs UI clicks.
+    const ui_elements: []const ui.UiElement =
+        if (previous_view_state) |view_state| view_state.ui_elements else &.{};
+
+    // Resolve a primary-button press over the UI. A press on a Button folds its
+    // Action into the input (so a click drives the same path as the keybind); a
+    // press on any blocking UI surface consumes the world click so it does not
+    // also act on the level/hub behind it (world/UI arbitration).
+    if (player_input.pointer.pressed) {
+        const pointer_position = player_input.pointer.position;
+        if (ui.buttonAt(ui_elements, pointer_position)) |button| {
+            input.applyAction(&player_input, button.action);
+            player_input.idle.tile_clicked = null;
+            player_input.idle.confirm = false;
+        } else if (ui.blockingElementAt(ui_elements, pointer_position) != null) {
+            player_input.idle.tile_clicked = null;
+            player_input.idle.confirm = false;
+        }
+    }
+
     // Always handle anytime input first (toggle_options_menu always works,
     // but other inputs are blocked when the options menu is open)
-    handleAnytimeInput(history, player_input.anytime, allocator);
+    handleAnytimeInput(history, player_input.anytime);
 
     // Options menu pauses the game
-    if (history.current_state.ui_state.options_menu_open) return;
+    if (history.session.ui_state.options_menu_open) return;
 
     // Drag lifecycle runs anytime (not gated on the event stack) so the player
     // can rearrange inventory / gear / skills even while turns resolve. Hit-
     // tested against the previous frame's UI.
-    const ui_elements: []const ui.UiElement =
-        if (previous_view_state) |view_state| view_state.ui_elements else &.{};
-    handleDrag(&history.current_state, player_input.pointer, ui_elements, allocator);
+    handleDrag(history, player_input.pointer, ui_elements);
 
     // Turn-flow pause: while waiting, drain the timer and stall event
     // processing until it elapses. Anytime input and drag above still run, so
@@ -2020,10 +2207,10 @@ fn update(
 
     if (history.current_state.event_stack.len > 0) {
         // Process next pushed event
-        processEvent(history, allocator);
+        processEvent(history);
     } else {
         // Stack empty — accept gameplay input
-        handleIdleInput(history, player_input.idle, allocator);
+        handleIdleInput(history, player_input.idle);
     }
 }
 
@@ -2032,11 +2219,43 @@ fn update(
 /// points at is allocated from it and lives until the next frame.
 fn view(
     current_state: *const GameState,
+    session: *const state.SessionState,
     color_theme_definitions: types.ColorThemeDefinitions,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    camera: types.Camera,
+    camera_zoom: f32,
     frame_allocator: std.mem.Allocator,
 ) types.ViewState {
-    _ = color_theme_definitions;
+    const active_theme = activeThemeFor(current_state, color_theme_definitions);
+
+    // World layer: checkerboard tiles + entity sprites for the hub/level.
+    var tiles: std.ArrayList(types.TileDrawable) = .empty;
+    var tile_overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+    var ground_drawables: std.ArrayList(types.GroundDrawable) = .empty;
+    if (current_state.level) |*level| {
+        buildTiles(&tiles, frame_allocator, level.level_tiles, active_theme, camera, camera_zoom);
+        buildHighlightOverlays(&tile_overlays, frame_allocator, level.highlighted_tiles, active_theme, camera, camera_zoom);
+        buildCursorOverlay(&tile_overlays, frame_allocator, level.level_tiles, session, active_theme, camera, camera_zoom);
+        // Level-end marker drawn before entities so actors occlude it (a proper
+        // mixed y-sort with entities is a later refinement).
+        if (level.level_end) |end_position| {
+            ground_drawables.append(frame_allocator, .{
+                .level_end = levelEndDrawable(end_position, camera, camera_zoom),
+            }) catch @panic("failed to append level-end drawable");
+        }
+        buildEntities(&ground_drawables, frame_allocator, level.entities, camera, camera_zoom);
+    } else if (current_state.hub) |*hub| {
+        buildTiles(&tiles, frame_allocator, hub.hub_tiles, active_theme, camera, camera_zoom);
+        buildCursorOverlay(&tile_overlays, frame_allocator, hub.hub_tiles, session, active_theme, camera, camera_zoom);
+        // Mission-start markers use the same flag sprite as level ends, drawn
+        // before entities so actors occlude them.
+        for (hub.mission_exits) |exit| {
+            ground_drawables.append(frame_allocator, .{
+                .level_end = levelEndDrawable(exit.position, camera, camera_zoom),
+            }) catch @panic("failed to append mission-start drawable");
+        }
+        buildHubEntities(&ground_drawables, frame_allocator, hub, camera, camera_zoom);
+    }
 
     var ui_elements: std.ArrayList(ui.UiElement) = .empty;
 
@@ -2048,12 +2267,24 @@ fn view(
             current_state,
             weapon_type_definitions,
         ) catch @panic("failed to build bottom bar");
+    } else if (current_state.screen == .main_menu) {
+        // Continue is available when there is a game to resume. Today that is
+        // populated PlayerData; a future standalone build also offers Continue
+        // when an autosave file exists (detected once via the file layer, not
+        // per frame here — see TODO.txt).
+        const continue_available = current_state.player_data.current_campaign.len > 0;
+        ui.buildMainMenu(
+            &ui_elements,
+            frame_allocator,
+            ui.screenRect(),
+            continue_available,
+        ) catch @panic("failed to build main menu");
     }
 
     // Drag ghost: the dragged icon follows the pointer, drawn last (on top).
     // Pointer position is in reference-resolution space (see translateInput).
-    if (current_state.ui_state.drag) |drag| {
-        const pointer = current_state.input_state.mouse_screen_position;
+    if (session.ui_state.drag) |drag| {
+        const pointer = session.input_state.mouse_screen_position;
         ui_elements.append(frame_allocator, .{ .image = .{
             .sprite_id = drag.icon_sprite_id,
             .screen_position = .{
@@ -2070,8 +2301,8 @@ fn view(
     // Hover tooltip: the topmost element under the pointer that carries
     // tooltip content spawns a tooltip, appended last so it draws on top.
     // Suppressed while dragging.
-    if (current_state.ui_state.drag == null) {
-        const pointer = current_state.input_state.mouse_screen_position;
+    if (session.ui_state.drag == null) {
+        const pointer = session.input_state.mouse_screen_position;
         const point = types.ScreenPosition{
             .x = @intFromFloat(pointer.x),
             .y = @intFromFloat(pointer.y),
@@ -2090,22 +2321,299 @@ fn view(
     }
 
     return .{
-        .background_color = .{ .r = 0, .g = 0, .b = 0 },
-        .active_color_theme = .{
-            .lightest = .{ .r = 255, .g = 255, .b = 240 },
-            .darkest = .{ .r = 20, .g = 15, .b = 25 },
-            .world_gradient = .{ .colors = .{types.Color{ .r = 128, .g = 128, .b = 128 }} ** types.gradient_color_count },
-            .enemy_gradient = .{ .colors = .{types.Color{ .r = 128, .g = 128, .b = 128 }} ** types.gradient_color_count },
-            .player_gradient = .{ .colors = .{types.Color{ .r = 128, .g = 128, .b = 128 }} ** types.gradient_color_count },
-        },
-        .tiles = &.{},
-        .tile_overlays = &.{},
-        .ground_drawables = &.{},
+        .background_color = active_theme.darkest,
+        .active_color_theme = active_theme,
+        .world_scale = camera_zoom,
+        .tiles = tiles.items,
+        .tile_overlays = tile_overlays.items,
+        .ground_drawables = ground_drawables.items,
         .ui_elements = ui_elements.items,
     };
 }
 
+/// The active color theme for the current screen, derived from its
+/// color_wheel_index (level/hub); a neutral default elsewhere.
+fn activeThemeFor(
+    current_state: *const GameState,
+    color_theme_definitions: types.ColorThemeDefinitions,
+) types.ActiveColorTheme {
+    const color_wheel_index = if (current_state.level) |level|
+        level.color_wheel_index
+    else if (current_state.hub) |hub|
+        hub.color_wheel_index
+    else
+        0;
+    return parser.deriveActiveColorTheme(color_theme_definitions, color_wheel_index);
+}
+
+/// The player's tile position for the current screen (entity 0 in a level,
+/// the hub player), or the origin when neither is active.
+fn playerPosition(current_state: *const GameState) types.Vector2 {
+    if (current_state.level) |level| {
+        if (level.entities.len > 0) return level.entities[0].position;
+    }
+    if (current_state.hub) |hub| return hub.player.position;
+    return .{ .x = 0, .y = 0 };
+}
+
+/// Camera centered on the player: places the player tile's center at the
+/// screen center. Position is in the same world-pixel space screenToTile
+/// inverts (tile coord * tile_size_pixels * zoom).
+fn computeCamera(current_state: *const GameState, zoom: f32) types.Camera {
+    const player_tile = playerPosition(current_state);
+    const tile_pixels = input.tile_size_pixels * zoom;
+    return .{ .position = .{
+        .x = @intFromFloat((@as(f32, @floatFromInt(player_tile.x)) + 0.5) * tile_pixels),
+        .y = @intFromFloat((@as(f32, @floatFromInt(player_tile.y)) + 0.5) * tile_pixels),
+    } };
+}
+
+/// Convert a tile coordinate to its top-left screen position (reference space).
+/// Exact inverse of input.screenToTile so clicks land on the drawn tile.
+fn tileToScreen(tile: types.Vector2, camera: types.Camera, zoom: f32) types.ScreenPosition {
+    const tile_pixels = input.tile_size_pixels * zoom;
+    const half_width: f32 = @floatFromInt(@divTrunc(types.reference_width, 2));
+    const half_height: f32 = @floatFromInt(@divTrunc(types.reference_height, 2));
+    const x = @as(f32, @floatFromInt(tile.x)) * tile_pixels - @as(f32, @floatFromInt(camera.position.x)) + half_width;
+    const y = @as(f32, @floatFromInt(tile.y)) * tile_pixels - @as(f32, @floatFromInt(camera.position.y)) + half_height;
+    return .{ .x = @intFromFloat(@round(x)), .y = @intFromFloat(@round(y)) };
+}
+
+/// Entity sprite frame: all entities/weapons share one 512x640 frame (2 tiles
+/// wide x 2.5 tall) authored at tile_size_pixels, with one normalized pivot
+/// (horizontal center, at the feet with 0.5 tile of foot/shadow overflow).
+const entity_frame_width: f32 = 512.0;
+const entity_frame_height: f32 = 640.0;
+const entity_pivot_x: f32 = 0.5;
+const entity_pivot_y: f32 = 0.8;
+
+const world_white: types.Color = .{ .r = 255, .g = 255, .b = 255 };
+
+/// Flag pole frame: 256x512 (1 tile wide x 2 tall). Pivot (0.5, 0.75) centers
+/// the bottom tile-half of the frame on the marker's tile. Used for both level
+/// ends and hub mission-start markers. The animated banner overlay is deferred
+/// to the animation work.
+const flag_pole_width: f32 = 256.0;
+const flag_pole_height: f32 = 512.0;
+const flag_pivot_x: f32 = 0.5;
+const flag_pivot_y: f32 = 0.75;
+
+fn levelEndDrawable(
+    tile: types.Vector2,
+    camera: types.Camera,
+    zoom: f32,
+) types.LevelEndDrawable {
+    const tile_top_left = tileToScreen(tile, camera, zoom);
+    const tile_pixels = input.tile_size_pixels * zoom;
+    const center_x = @as(f32, @floatFromInt(tile_top_left.x)) + tile_pixels / 2;
+    const center_y = @as(f32, @floatFromInt(tile_top_left.y)) + tile_pixels / 2;
+    return .{
+        .sprite_id = "world/flag_pole",
+        .screen_position = .{
+            .x = @intFromFloat(@round(center_x - flag_pivot_x * flag_pole_width * zoom)),
+            .y = @intFromFloat(@round(center_y - flag_pivot_y * flag_pole_height * zoom)),
+        },
+        .color = world_white,
+    };
+}
+
+/// Build an EntityDrawable for `entity`, aligning the shared sprite pivot to
+/// the center of the entity's tile. Only the base sprite is populated for now
+/// (weapons/gear/effects/health bar land later).
+fn entityDrawable(
+    entity: *const Entity,
+    camera: types.Camera,
+    zoom: f32,
+    allocator: std.mem.Allocator,
+) types.EntityDrawable {
+    const tile_top_left = tileToScreen(entity.position, camera, zoom);
+    const tile_pixels = input.tile_size_pixels * zoom;
+    const center_x = @as(f32, @floatFromInt(tile_top_left.x)) + tile_pixels / 2;
+    const center_y = @as(f32, @floatFromInt(tile_top_left.y)) + tile_pixels / 2;
+    const draw_width = entity_frame_width * zoom;
+    const draw_height = entity_frame_height * zoom;
+    // Body and every weapon overlay share this pivot-aligned top-left, so they
+    // register with no per-sprite offset (same 512x640 frame + pivot).
+    const top_left = types.ScreenPosition{
+        .x = @intFromFloat(@round(center_x - entity_pivot_x * draw_width)),
+        .y = @intFromFloat(@round(center_y - entity_pivot_y * draw_height)),
+    };
+    const base_sprite_id = std.fmt.allocPrint(allocator, "entities/{s}", .{entity.sprite}) catch
+        @panic("failed to build entity sprite id");
+
+    // Weapons: main hand drawn as-authored (left), off hand mirrored (right).
+    var weapon_sprites: [2]?types.SpriteDrawable = .{ null, null };
+    if (entity.main_hand_weapon) |weapon| {
+        weapon_sprites[0] = weaponSprite(entity, weapon.weapon_type, top_left, false, allocator);
+    }
+    if (entity.off_hand_weapon) |weapon| {
+        weapon_sprites[1] = weaponSprite(entity, weapon.weapon_type, top_left, true, allocator);
+    }
+
+    return .{
+        .back_effect_sprites = &.{},
+        .base_sprite = .{
+            .sprite_id = base_sprite_id,
+            .screen_position = top_left,
+            .draw_offset = .{ .x = 0, .y = 0 },
+            .source_rectangle = null,
+            .color = world_white,
+        },
+        .weapon_sprites = weapon_sprites,
+        .gear_sprites = &.{},
+        .front_effect_sprites = &.{},
+        .health_bar = null,
+    };
+}
+
+/// Build a weapon overlay sprite for an entity. The weapon art shares the
+/// entity frame + pivot, so it uses the same top-left as the body. Player
+/// bodies (team 0) use the plain art; enemy silhouettes use the enemy_ variant.
+/// Off-hand weapons are mirrored to sit on the right.
+fn weaponSprite(
+    entity: *const Entity,
+    weapon_type: types.WeaponType,
+    top_left: types.ScreenPosition,
+    flip_horizontal: bool,
+    allocator: std.mem.Allocator,
+) types.SpriteDrawable {
+    const variant_prefix = if (entity.team == 0) "" else "enemy_";
+    const sprite_id = std.fmt.allocPrint(allocator, "weapons/{s}{s}", .{ variant_prefix, @tagName(weapon_type) }) catch
+        @panic("failed to build weapon sprite id");
+    return .{
+        .sprite_id = sprite_id,
+        .screen_position = top_left,
+        .draw_offset = .{ .x = 0, .y = 0 },
+        .source_rectangle = null,
+        .color = world_white,
+        .flip_horizontal = flip_horizontal,
+    };
+}
+
+/// Order entities back-to-front for painter's-algorithm occlusion. tileToScreen
+/// maps higher tile.y to a LARGER screen y (lower on screen = nearer the
+/// viewer), so lower tile.y is further back and drawn first (ascending y).
+fn entityDrawsBefore(_: void, a: *const Entity, b: *const Entity) bool {
+    if (a.position.y != b.position.y) return a.position.y < b.position.y;
+    return a.position.x < b.position.x;
+}
+
+fn buildEntities(
+    list: *std.ArrayList(types.GroundDrawable),
+    allocator: std.mem.Allocator,
+    entities: []const Entity,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    var order = allocator.alloc(*const Entity, entities.len) catch @panic("failed to alloc entity order");
+    for (entities, 0..) |*entity, index| order[index] = entity;
+    std.mem.sort(*const Entity, order, {}, entityDrawsBefore);
+    for (order) |entity| {
+        list.append(allocator, .{ .entity = entityDrawable(entity, camera, zoom, allocator) }) catch
+            @panic("failed to append entity drawable");
+    }
+}
+
+/// Hub actors: the player plus NPCs, sorted together back-to-front.
+fn buildHubEntities(
+    list: *std.ArrayList(types.GroundDrawable),
+    allocator: std.mem.Allocator,
+    hub: *const types.Hub,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    var order = allocator.alloc(*const Entity, hub.npcs.len + 1) catch @panic("failed to alloc hub order");
+    order[0] = &hub.player;
+    for (hub.npcs, 0..) |*npc, index| order[index + 1] = &npc.entity;
+    std.mem.sort(*const Entity, order, {}, entityDrawsBefore);
+    for (order) |entity| {
+        list.append(allocator, .{ .entity = entityDrawable(entity, camera, zoom, allocator) }) catch
+            @panic("failed to append hub entity drawable");
+    }
+}
+
+/// Move-range highlights: a translucent fill over each reachable tile, tinted
+/// with a player-gradient color.
+fn buildHighlightOverlays(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    highlighted_tiles: []const types.Vector2,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    for (highlighted_tiles) |tile| {
+        list.append(allocator, .{
+            .screen_position = tileToScreen(tile, camera, zoom),
+            .overlay_type = .highlight,
+            .color = active_theme.player_gradient.colors[2],
+        }) catch @panic("failed to append highlight overlay");
+    }
+}
+
+/// Hover cursor: an outline on the tile under the pointer, when it is a real
+/// tile. Derived purely from the session pointer (reference space) — no
+/// GameState mutation, so it is replay-safe like the tooltip/drag-ghost.
+fn buildCursorOverlay(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    world_tiles: []const types.Vector2,
+    session: *const state.SessionState,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    const pointer = session.input_state.mouse_screen_position;
+    const viewport = input.ViewportSize{
+        .width = @floatFromInt(types.reference_width),
+        .height = @floatFromInt(types.reference_height),
+    };
+    const hovered_tile = input.screenToTile(pointer, camera, zoom, viewport);
+    for (world_tiles) |tile| {
+        if (tile.x == hovered_tile.x and tile.y == hovered_tile.y) {
+            list.append(allocator, .{
+                .screen_position = tileToScreen(hovered_tile, camera, zoom),
+                .overlay_type = .cursor,
+                .color = active_theme.lightest,
+            }) catch @panic("failed to append cursor overlay");
+            return;
+        }
+    }
+}
+
+/// Append a checkerboard TileDrawable per tile. The two shades come from world
+/// gradient indices 1 and 3, chosen by (x + y) parity.
+fn buildTiles(
+    list: *std.ArrayList(types.TileDrawable),
+    allocator: std.mem.Allocator,
+    tiles: []const types.Vector2,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    for (tiles) |tile| {
+        const color = if (@mod(tile.x + tile.y, 2) == 0)
+            active_theme.world_gradient.colors[1]
+        else
+            active_theme.world_gradient.colors[3];
+        list.append(allocator, .{
+            .screen_position = tileToScreen(tile, camera, zoom),
+            .color = color,
+        }) catch @panic("failed to append tile drawable");
+    }
+}
+
+/// Platform-agnostic game loop, driven by a `backend` (comptime duck-typed).
+/// The backend owns the window/clock/input/rendering and must provide:
+///   shouldClose() bool
+///   deltaMicroseconds() u64            — wall-clock time since the last frame
+///   pollInput() input.PlatformInput    — events + current viewport this frame
+///   render(view_state: types.ViewState, viewport: input.ViewportSize) void
+/// This keeps main.zig raylib-free: the raylib calls live in the backend
+/// (raylib_backend.zig), which only the native/web builds compile. See the
+/// platform-seam note in build.zig.
 fn gameLoop(
+    backend: anytype,
     allocator: std.mem.Allocator,
     starting_game_state: GameState,
     settings: Settings,
@@ -2125,7 +2633,6 @@ fn gameLoop(
         directory,
         io,
     );
-    var time_since_last_view: u32 = 0;
     var previous_view_state: ?types.ViewState = null;
 
     // Per-frame arena: everything a ViewState points at is allocated here
@@ -2133,52 +2640,61 @@ fn gameLoop(
     var frame_arena = std.heap.ArenaAllocator.init(allocator);
     defer frame_arena.deinit();
 
-    var needs_snapshot = false;
-
-    while (true) {
-        // TODO: read actual platform events from JS/native each tick
-        const platform_input = input.PlatformInput{
-            .events = &.{},
-            .viewport = .{ .width = 0, .height = 0 },
-        };
+    while (!backend.shouldClose()) {
+        const platform_input = backend.pollInput();
+        // Camera is derived (centered on the player), computed once per frame so
+        // input (screenToTile) and rendering (tileToScreen) use the identical
+        // transform. Future right-drag panning adds a session pan offset here.
+        const camera_zoom = history.settings.camera_zoom;
+        const camera = computeCamera(&history.current_state, camera_zoom);
         const player_input = input.translateInput(
             platform_input,
-            &history.current_state.input_state,
+            &history.session.input_state,
             history.settings,
-            history.current_state.camera orelse .{ .position = .{ .x = 0, .y = 0 } },
+            camera,
         );
 
-        // Placeholder frame delta until raylib drives the loop, at which point
-        // this becomes GetFrameTime() converted to microseconds. Wait-timer
-        // logic is correct against this, but real-time pacing won't be felt
-        // until raylib provides a real clock and frame throttling.
-        const frame_length_milliseconds = computeFrameLength(history.settings);
-        const delta_microseconds: u64 = @as(u64, frame_length_milliseconds) * 1000;
+        // Real frame delta from the backend clock (GetFrameTime on raylib),
+        // in microseconds. Drives the turn-flow wait timer in update().
+        const delta_microseconds = backend.deltaMicroseconds();
 
         const had_events = history.current_state.event_stack.len > 0;
-        update(&history, player_input, previous_view_state, delta_microseconds, allocator);
+        const screen_before_update = history.current_state.screen;
+        update(&history, player_input, previous_view_state, delta_microseconds);
         const has_events = history.current_state.event_stack.len > 0;
 
-        if (had_events and !has_events) {
-            // Stack just emptied — save a snapshot
-            history.takeSnapshot(allocator);
-            needs_snapshot = false;
-        } else if (had_events) {
-            needs_snapshot = true;
+        // UI panels/drag are transient view state, not part of the undoable
+        // GameState. Reset them whenever the screen changes (transitions and
+        // undo/redo across a screen boundary both run inside update()). Input
+        // state is deliberately left alone — it is live hardware state.
+        if (history.current_state.screen != screen_before_update) {
+            history.session.ui_state = .{};
         }
 
-        // Check if it's time to render
-        if (time_since_last_view >= frame_length_milliseconds) {
-            _ = frame_arena.reset(.retain_capacity);
-            previous_view_state = view(
-                &history.current_state,
-                history.color_theme_definitions,
-                history.weapon_type_definitions,
-                frame_arena.allocator(),
-            );
-            // TODO: pass previous_view_state to renderer
-            time_since_last_view -= frame_length_milliseconds;
+        if (had_events and !has_events) {
+            // Stack just emptied — save a snapshot, then compact current_arena
+            // so the per-turn allocation churn (and any exited level/hub) is
+            // reclaimed instead of accumulating across the session.
+            history.takeSnapshot();
+            history.compactCurrentArena();
         }
+
+        // Build the frame's view and hand it to the backend to draw. Rendering
+        // is paced by the backend (vsync / target FPS); we build one ViewState
+        // per rendered frame. NOTE: this runs update() exactly once per frame,
+        // so a large event stack (e.g. level load) drains at frame rate — a
+        // pacing refinement to revisit when it becomes visible (see TODO.txt).
+        _ = frame_arena.reset(.retain_capacity);
+        previous_view_state = view(
+            &history.current_state,
+            &history.session,
+            history.color_theme_definitions,
+            history.weapon_type_definitions,
+            camera,
+            camera_zoom,
+            frame_arena.allocator(),
+        );
+        backend.render(previous_view_state.?, platform_input.viewport);
     }
 }
 
@@ -2275,16 +2791,17 @@ fn loadSalvageDefinitionsFromDisk(
     ) catch @panic("failed to parse salvage.txt");
 }
 
-/// Called once to start the game loop.
-pub fn main() void {
-    var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
-    const allocator = debug_allocator.allocator();
-
-    var threaded_io = std.Io.Threaded.init(allocator, .{});
-    defer threaded_io.deinit();
-    const io = threaded_io.io();
-    const directory = std.Io.Dir.cwd();
-
+/// Entry point shared by every platform: load config, build the initial
+/// GameState, and run the backend-driven game loop. The `backend` provides
+/// window/clock/input/rendering (see gameLoop). Called by the native entry in
+/// native.zig (and, later, the web entry) — never from wasm/test builds, so
+/// this stays out of the raylib-free compiles even though it is `pub`.
+pub fn run(
+    backend: anytype,
+    allocator: std.mem.Allocator,
+    directory: std.Io.Dir,
+    io: std.Io,
+) void {
     const settings = loadSettingsFromDisk(directory, io, allocator);
     const weapon_type_definitions = loadWeaponTypeDefinitions(directory, io, allocator);
     const color_theme_definitions = loadColorThemeDefinitionsFromDisk(directory, io, allocator);
@@ -2295,8 +2812,6 @@ pub fn main() void {
         .event_stack = &.{.{ .meta_event = .open_main_menu }},
         .player_data = .{},
         .camera = null,
-        .input_state = .{},
-        .ui_state = .{},
         .editor = null,
         .replay_viewer = null,
         .campaign = null,
@@ -2306,6 +2821,7 @@ pub fn main() void {
     };
 
     gameLoop(
+        backend,
         allocator,
         starting_game_state,
         settings,

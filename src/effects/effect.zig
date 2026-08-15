@@ -8,19 +8,45 @@ const AdditiveEffectModifiers = types.AdditiveEffectModifiers;
 const GameState = state.GameState;
 const Event = events.Event;
 
+/// Result of a damage interceptor: the (possibly changed) damage that should
+/// continue down the pipeline, plus any events the effect wants to emit
+/// (e.g. Reflect emits an attack back at the attacker and sets damage = 0).
+pub const DamageInterception = struct {
+    damage: u32,
+    events: []const Event = &.{},
+};
+
 /// The interface that every effect (enchantment, curse, etc.) implements.
-/// Each effect file returns one of these from its `define()` function.
 ///
 /// Effects are active on an entity for a duration, providing passive stat
-/// modifiers and triggering events in response to game actions.
+/// modifiers (additive_effect_modifiers) and hooking into game actions.
 ///
-/// All callback function pointers follow the same pattern:
-///   (entity_index, game_state, allocator) -> ?[]const Event
-/// They return null if no events should be pushed, or a slice of events.
+/// An incoming attack resolves in stages; two hook KINDS reflect this:
+///   1. attacker's outgoing damage is computed
+///   2. defender's INTERCEPTORS transform it (intercept_incoming_damage) —
+///      can prevent/reduce/redirect; sees the pre-defense amount
+///   3. defender's defense + additive incoming modifiers apply
+///   4. damage is applied to health
+///   5. defender's REACTORS fire (on_incoming_damage etc.) — know the final
+///      applied amount and whether the target died; can only emit events
+/// So intercept_* is a TRANSFORM (returns modified damage + events) and the
+/// on_* family is REACTIVE (fires after the fact, returns ?[]const Event).
+/// All on_* callbacks share the pattern (entity_index, game_state, allocator)
+/// -> ?[]const Event.
 pub const Effect = struct {
     name: []const u8,
     description: []const u8,
     additive_effect_modifiers: AdditiveEffectModifiers,
+
+    // --- damage pipeline: transform stage (see the doc above) ---
+    // Runs before defense; may change the damage and/or emit events.
+    intercept_incoming_damage_fn: *const fn (
+        receiver_index: u32,
+        attacker_index: u32,
+        incoming_damage: u32,
+        game_state: GameState,
+        allocator: std.mem.Allocator,
+    ) DamageInterception,
 
     // --- lifecycle callbacks ---
     on_effect_creation_fn: *const fn (
@@ -114,6 +140,17 @@ pub const Effect = struct {
     ) ?[]const Event,
 
     // --- convenience methods ---
+
+    pub fn interceptIncomingDamage(
+        self: Effect,
+        receiver_index: u32,
+        attacker_index: u32,
+        incoming_damage: u32,
+        game_state: GameState,
+        allocator: std.mem.Allocator,
+    ) DamageInterception {
+        return self.intercept_incoming_damage_fn(receiver_index, attacker_index, incoming_damage, game_state, allocator);
+    }
 
     pub fn onEffectCreation(
         self: Effect,
@@ -273,6 +310,15 @@ pub const Effect = struct {
 fn noOp(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Event {
     return null;
 }
+
+/// Default interceptor: passes the damage through unchanged, emits nothing.
+fn passIncomingDamage(_: u32, _: u32, incoming_damage: u32, _: GameState, _: std.mem.Allocator) DamageInterception {
+    return .{ .damage = incoming_damage };
+}
+
+/// Use this for intercept_incoming_damage_fn on effects that don't transform
+/// incoming damage (the common case).
+pub const pass_incoming_damage = &passIncomingDamage;
 
 /// Use this to fill all callback fields, then override the ones you need.
 /// Since Zig doesn't have struct update syntax for function pointers at

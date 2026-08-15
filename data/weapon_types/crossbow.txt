@@ -1,4 +1,0 @@
-Skills
-skill_1 placeholder
-skill_2 placeholder
-skill_3 placeholder

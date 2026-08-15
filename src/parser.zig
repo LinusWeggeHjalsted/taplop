@@ -492,6 +492,7 @@ pub fn loadLevel(
             };
 
             if (findValue(pairs, "name")) |value| entity.name = value;
+            if (findValue(pairs, "sprite")) |value| entity.sprite = value;
             if (findValue(pairs, "max_health")) |value| {
                 entity.max_health = asU32(value) orelse 20;
                 entity.current_health = entity.max_health;
@@ -612,7 +613,7 @@ pub fn loadLevel(
     var tile_positions: std.ArrayList(types.Vector2) = .empty;
     // Player is always entity index 0
     var entity_list: std.ArrayList(types.Entity) = .empty;
-    try entity_list.append(allocator, .{ .name = "Player", .team = 0 });
+    try entity_list.append(allocator, .{ .name = "Player", .sprite = "player", .team = 0 });
     var decoration_list: std.ArrayList(types.Decoration) = .empty;
     var ground_item_list: std.ArrayList(types.GroundItems) = .empty;
     var player_start: ?types.Vector2 = null;
@@ -758,6 +759,7 @@ pub fn loadHub(
             if (code_string.len != 1) continue;
             var entity: types.Entity = .{};
             if (findValue(pairs, "name")) |value| entity.name = value;
+            if (findValue(pairs, "sprite")) |value| entity.sprite = value;
             try npc_definitions.put(code_string[0], .{ .entity = entity });
         }
     }
@@ -782,6 +784,7 @@ pub fn loadHub(
                     '!' => {
                         hub.player.position = position;
                         hub.player.name = "Player";
+                        hub.player.sprite = "player";
                         try tile_positions.append(allocator, position);
                     },
                     else => {

@@ -31,6 +31,12 @@ pub const Action = enum {
     skill_slot_7,
     skill_slot_8,
     swap_weapons,
+    // Main menu commands.
+    continue_game,
+    new_game,
+    load_save,
+    open_settings,
+    open_credits,
 };
 
 /// Raw input identifier — uses human-readable strings so config files
@@ -122,8 +128,6 @@ pub const WeaponType = enum {
     dagger,
     axe,
     staff,
-    crossbow,
-    idol,
 };
 
 pub const WeaponTypeDefinition = struct {
@@ -228,6 +232,9 @@ pub const Effect = struct {
 
 pub const Entity = struct {
     name: []const u8 = &.{},
+    /// Sprite identifier (asset stem under assets/entities/, e.g. "player",
+    /// "skeleton_1"). Distinct from `name`, which is the display name.
+    sprite: []const u8 = &.{},
     team: u32 = 0,
     position: Vector2 = .{ .x = 0, .y = 0 },
     max_health: u32 = 20,
@@ -775,6 +782,10 @@ pub const SpriteDrawable = struct {
     /// Region of the sprite to draw. Null means the full sprite.
     source_rectangle: ?Rectangle,
     color: Color,
+    /// Mirror the sprite left-right when drawn. Used for off-hand weapons: the
+    /// weapon art is authored on the left (main hand); flipping puts it on the
+    /// right for the off hand.
+    flip_horizontal: bool = false,
 };
 
 pub const HealthBarDrawable = struct {
@@ -831,6 +842,11 @@ pub const GroundDrawable = union(enum) {
 pub const ViewState = struct {
     background_color: Color,
     active_color_theme: ActiveColorTheme,
+    /// Multiplier applied by the renderer to world sprite sizes (tiles, ground
+    /// drawables, overlays), which are drawn at native texture size x this.
+    /// Equals the camera zoom; world screen_positions already bake it in. UI
+    /// elements are unaffected (they carry explicit reference-space sizes).
+    world_scale: f32,
     tiles: []const TileDrawable,
     tile_overlays: []const TileOverlayDrawable,
     ground_drawables: []const GroundDrawable,

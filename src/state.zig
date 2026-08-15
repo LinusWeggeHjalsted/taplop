@@ -61,6 +61,15 @@ pub const WaitState = struct {
     remaining_microseconds: u64,
 };
 
+// Transient view/input state. Deliberately NOT part of the undoable GameState:
+// it never affects gameplay outcomes and is not reconstructed by event replay.
+// Lives on GameStateHistory alongside settings. UI panels are reset on screen
+// transition by the live loop (see gameLoop), not by an event.
+pub const SessionState = struct {
+    input_state: input.InputState = .{},
+    ui_state: UiState = .{},
+};
+
 pub const GameState = struct {
     screen: Screen,
     event_stack: []const Event,
@@ -68,8 +77,6 @@ pub const GameState = struct {
     waiting: ?WaitState = null,
     player_data: PlayerData,
     camera: ?Camera,
-    input_state: input.InputState,
-    ui_state: UiState,
     editor: ?Editor,
     replay_viewer: ?ReplayViewer,
     campaign: ?Campaign,
@@ -94,7 +101,6 @@ pub const GameState = struct {
         if (old_scope.editor and !new_scope.editor) self.editor = null;
         if (old_scope.replay_viewer and !new_scope.replay_viewer) self.replay_viewer = null;
 
-        self.ui_state = .{};
         self.screen = new_screen;
     }
 };
@@ -114,6 +120,10 @@ pub const checkpoint_count = 8; // checkpoints kept in ring buffer
 pub const GameStateHistory = struct {
     // Player preferences — not part of game state, not affected by undo/redo.
     settings: Settings,
+
+    // Transient view/input state — not part of game state, not affected by
+    // undo/redo. See SessionState.
+    session: SessionState = .{},
 
     // Static game data loaded once at startup.
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
@@ -155,9 +165,28 @@ pub const GameStateHistory = struct {
     // Current position in the event history.
     current_event_index: u32,
 
+    // The base allocator (gpa) backing every arena. Stored so the history
+    // methods don't have to thread it through on every call.
+    backing_allocator: std.mem.Allocator,
+
+    // Durable arena for the append-only session log (event_history + idle_points
+    // backing, plus deep-copied event payloads). Event payload slices are the
+    // replay source of truth, so they must outlive current_arena resets — hence
+    // a separate arena from current_state's. Grows unbounded with the session
+    // (accepted; see TODO Memory / Budget); never reset.
+    history_arena: std.heap.ArenaAllocator,
+
     // The live game state — what update() works on and view() renders.
     current_state: GameState,
     current_arena: std.heap.ArenaAllocator, // owns all memory referenced by current_state
+
+    // True while replaying events to reconstruct a past state (undo/redo).
+    // Event handlers must run pure state transforms unconditionally, but gate
+    // observable side effects (file writes, downloads, audio, dialogs) on
+    // !replaying so scrubbing history doesn't re-fire them. Reconstruction
+    // reads (level/hub/save config) still run — the rebuilt state depends on
+    // them. See processEvent handlers.
+    replaying: bool = false,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -176,6 +205,8 @@ pub const GameStateHistory = struct {
             .salvage_definitions = salvage_definitions,
             .directory = directory,
             .io = io,
+            .backing_allocator = allocator,
+            .history_arena = std.heap.ArenaAllocator.init(allocator),
             .initial_state = initial_state,
             .initial_arena = std.heap.ArenaAllocator.init(allocator),
             .event_history = .{ .items = &.{}, .capacity = 0 },
@@ -188,17 +219,68 @@ pub const GameStateHistory = struct {
             .current_event_index = 0,
             .current_state = initial_state,
             .current_arena = std.heap.ArenaAllocator.init(allocator),
+            .replaying = false,
         };
+    }
+
+    /// Record a live (non-replay) event into the history log. If the player has
+    /// undone and is now taking a new action, the previously-recorded events
+    /// ahead of the current position are a stale branch: discard them before
+    /// appending, so the new action continues a fresh timeline from here.
+    /// Only call while !replaying (replay must not create events).
+    pub fn recordEvent(
+        self: *GameStateHistory,
+        event: Event,
+    ) void {
+        if (self.current_event_index < self.event_history.items.len) {
+            self.discardFutureTimeline();
+        }
+        // Deep-copy into the durable history arena: the event's payload slices
+        // may point into current_arena, which is reset on the next
+        // reconstruction; the recorded copy must stand on its own.
+        const arena = self.history_arena.allocator();
+        const durable_event = deepCopy(Event, event, arena);
+        self.event_history.append(arena, durable_event) catch @panic("failed to append event");
+    }
+
+    /// Drop the recorded timeline ahead of the current position — the stale
+    /// future left behind when the player undoes and then acts. Trims the event
+    /// log and idle points to the current position and frees any snapshots /
+    /// checkpoints that captured the abandoned branch (those at a later event
+    /// index; positions at or before the branch point are shared history).
+    fn discardFutureTimeline(self: *GameStateHistory) void {
+        self.event_history.shrinkRetainingCapacity(self.current_event_index);
+
+        // current_event_index is an idle point (new events only start from
+        // one), so idle_points[current_idle_index] == current_event_index;
+        // keep up to and including it, drop the rest.
+        self.idle_points.shrinkRetainingCapacity(self.current_idle_index + 1);
+
+        for (&self.snapshots) |*slot| {
+            if (slot.*) |*saved| {
+                if (saved.event_index > self.current_event_index) {
+                    saved.arena.deinit();
+                    slot.* = null;
+                }
+            }
+        }
+        for (&self.checkpoints) |*slot| {
+            if (slot.*) |*saved| {
+                if (saved.event_index > self.current_event_index) {
+                    saved.arena.deinit();
+                    slot.* = null;
+                }
+            }
+        }
     }
 
     /// Save a snapshot at the current position (call when event stack is empty).
     /// Also records this as an idle point for undo/redo.
     pub fn takeSnapshot(
         self: *GameStateHistory,
-        allocator: std.mem.Allocator,
     ) void {
-        // Record this event index as an undo/redo stop
-        self.idle_points.append(allocator, self.current_event_index) catch @panic("failed to append idle point");
+        // Record this event index as an undo/redo stop (durable session log).
+        self.idle_points.append(self.history_arena.allocator(), self.current_event_index) catch @panic("failed to append idle point");
         self.current_idle_index = @intCast(self.idle_points.items.len - 1);
 
         // Find the ring buffer slot to use
@@ -213,7 +295,7 @@ pub const GameStateHistory = struct {
         self.snapshots[slot] = .{
             .state = undefined,
             .event_index = self.current_event_index,
-            .arena = std.heap.ArenaAllocator.init(allocator),
+            .arena = std.heap.ArenaAllocator.init(self.backing_allocator),
         };
         self.snapshots[slot].?.state = deepCopy(GameState, self.current_state, self.snapshots[slot].?.arena.allocator());
 
@@ -223,7 +305,6 @@ pub const GameStateHistory = struct {
     /// Save a checkpoint at the current position (call on major game transitions).
     pub fn setCheckpoint(
         self: *GameStateHistory,
-        allocator: std.mem.Allocator,
     ) void {
         const slot = self.checkpoint_ring_index % checkpoint_count;
 
@@ -236,11 +317,25 @@ pub const GameStateHistory = struct {
         self.checkpoints[slot] = .{
             .state = undefined,
             .event_index = self.current_event_index,
-            .arena = std.heap.ArenaAllocator.init(allocator),
+            .arena = std.heap.ArenaAllocator.init(self.backing_allocator),
         };
         self.checkpoints[slot].?.state = deepCopy(GameState, self.current_state, self.checkpoints[slot].?.arena.allocator());
 
         self.checkpoint_ring_index += 1;
+    }
+
+    /// Compact current_state into a fresh arena, reclaiming the per-turn churn
+    /// (abandoned event-stack reallocations, rebuilt slices, exited levels/hubs)
+    /// that accumulated in current_arena since the last reset. Call at idle
+    /// points (stack empty) during live play only — replay manages current_arena
+    /// itself. Without this, current_arena grows unbounded across a long forward
+    /// session (it is otherwise only reset on undo/redo reconstruction).
+    pub fn compactCurrentArena(self: *GameStateHistory) void {
+        var fresh = std.heap.ArenaAllocator.init(self.backing_allocator);
+        const rebuilt = deepCopy(GameState, self.current_state, fresh.allocator());
+        self.current_arena.deinit();
+        self.current_arena = fresh;
+        self.current_state = rebuilt;
     }
 
     /// Find a saved state in a buffer that exactly matches the given event index.
@@ -295,28 +390,30 @@ pub const GameStateHistory = struct {
     fn replayTo(
         self: *GameStateHistory,
         target_event_index: u32,
-        allocator: std.mem.Allocator,
-        apply_event: *const fn (*GameStateHistory, std.mem.Allocator) void,
+        apply_event: *const fn (*GameStateHistory) void,
     ) void {
         // Find the best starting point
         if (self.findNearestBefore(target_event_index)) |saved| {
             self.current_arena.deinit();
-            self.current_arena = std.heap.ArenaAllocator.init(allocator);
+            self.current_arena = std.heap.ArenaAllocator.init(self.backing_allocator);
             self.current_state = deepCopy(GameState, saved.state, self.current_arena.allocator());
             self.current_event_index = saved.event_index;
         } else {
             // Fall back to initial state
             self.current_arena.deinit();
-            self.current_arena = std.heap.ArenaAllocator.init(allocator);
+            self.current_arena = std.heap.ArenaAllocator.init(self.backing_allocator);
             self.current_state = deepCopy(GameState, self.initial_state, self.current_arena.allocator());
             self.current_event_index = 0;
         }
 
-        // Replay events from starting point up to the target
+        // Replay events from starting point up to the target. Handlers gate
+        // observable side effects on !replaying (see the replaying field).
+        self.replaying = true;
+        defer self.replaying = false;
         while (self.current_event_index < target_event_index) {
             const event = self.event_history.items[self.current_event_index];
             self.current_state.event_stack = &.{event};
-            apply_event(self, allocator);
+            apply_event(self);
         }
 
         // Waits are live-play pacing only. Replay streams events straight
@@ -329,8 +426,7 @@ pub const GameStateHistory = struct {
     fn restoreTo(
         self: *GameStateHistory,
         target_event_index: u32,
-        allocator: std.mem.Allocator,
-        apply_event: *const fn (*GameStateHistory, std.mem.Allocator) void,
+        apply_event: *const fn (*GameStateHistory) void,
     ) void {
         // Try exact match in snapshots first, then checkpoints
         const exact = findExact(&self.snapshots, target_event_index) orelse
@@ -339,12 +435,12 @@ pub const GameStateHistory = struct {
         if (exact) |saved| {
             // Fast path: restore directly
             self.current_arena.deinit();
-            self.current_arena = std.heap.ArenaAllocator.init(allocator);
+            self.current_arena = std.heap.ArenaAllocator.init(self.backing_allocator);
             self.current_state = deepCopy(GameState, saved.state, self.current_arena.allocator());
             self.current_event_index = saved.event_index;
         } else {
             // Slow path: replay from nearest restore point
-            self.replayTo(target_event_index, allocator, apply_event);
+            self.replayTo(target_event_index, apply_event);
         }
     }
 
@@ -352,14 +448,13 @@ pub const GameStateHistory = struct {
     /// Returns true if undo was performed, false if already at the earliest point.
     pub fn undo(
         self: *GameStateHistory,
-        allocator: std.mem.Allocator,
-        apply_event: *const fn (*GameStateHistory, std.mem.Allocator) void,
+        apply_event: *const fn (*GameStateHistory) void,
     ) bool {
         if (self.current_idle_index == 0) return false;
 
         self.current_idle_index -= 1;
         const target_event_index = self.idle_points.items[self.current_idle_index];
-        self.restoreTo(target_event_index, allocator, apply_event);
+        self.restoreTo(target_event_index, apply_event);
         return true;
     }
 
@@ -367,14 +462,91 @@ pub const GameStateHistory = struct {
     /// Returns true if redo was performed, false if already at the latest point.
     pub fn redo(
         self: *GameStateHistory,
-        allocator: std.mem.Allocator,
-        apply_event: *const fn (*GameStateHistory, std.mem.Allocator) void,
+        apply_event: *const fn (*GameStateHistory) void,
     ) bool {
         if (self.current_idle_index >= self.idle_points.items.len - 1) return false;
 
         self.current_idle_index += 1;
         const target_event_index = self.idle_points.items[self.current_idle_index];
-        self.restoreTo(target_event_index, allocator, apply_event);
+        self.restoreTo(target_event_index, apply_event);
         return true;
     }
 };
+
+// Build a history with only the timeline-bookkeeping fields populated; the rest
+// (settings, definitions, io, current_state) are left undefined because the
+// methods under test never read them. Seeds a 5-event forward timeline with
+// idle points at indices 2 and 5.
+fn historyForTimelineTest(allocator: std.mem.Allocator) GameStateHistory {
+    var history: GameStateHistory = undefined;
+    history.backing_allocator = allocator;
+    history.history_arena = std.heap.ArenaAllocator.init(allocator);
+    history.event_history = .{ .items = &.{}, .capacity = 0 };
+    history.idle_points = .{ .items = &.{}, .capacity = 0 };
+    history.snapshots = .{null} ** (snapshot_count * 2);
+    history.checkpoints = .{null} ** checkpoint_count;
+    history.snapshot_ring_index = 0;
+    history.checkpoint_ring_index = 0;
+
+    // Back the session log with the durable history arena, matching production
+    // (recordEvent appends there); the arena's deinit frees both lists.
+    const arena = history.history_arena.allocator();
+    const dummy_event: Event = .{ .meta_event = .open_main_menu };
+    for (0..5) |_| history.event_history.append(arena, dummy_event) catch unreachable;
+    history.idle_points.append(arena, 2) catch unreachable;
+    history.idle_points.append(arena, 5) catch unreachable;
+    return history;
+}
+
+test "discardFutureTimeline trims the log, idle points, and stale snapshots" {
+    const allocator = std.testing.allocator;
+    var history = historyForTimelineTest(allocator);
+    defer history.history_arena.deinit();
+
+    // A snapshot ahead of the branch (index 5, stale) and one at the branch
+    // point (index 2, shared history).
+    history.snapshots[0] = .{ .state = undefined, .event_index = 5, .arena = std.heap.ArenaAllocator.init(allocator) };
+    history.snapshots[1] = .{ .state = undefined, .event_index = 2, .arena = std.heap.ArenaAllocator.init(allocator) };
+    defer if (history.snapshots[1]) |*saved| saved.arena.deinit();
+
+    // Player has undone to the idle point at index 2.
+    history.current_idle_index = 0;
+    history.current_event_index = 2;
+
+    history.discardFutureTimeline();
+
+    try std.testing.expectEqual(@as(usize, 2), history.event_history.items.len);
+    try std.testing.expectEqual(@as(usize, 1), history.idle_points.items.len);
+    try std.testing.expectEqual(@as(u32, 2), history.idle_points.items[0]);
+    try std.testing.expect(history.snapshots[0] == null); // stale, freed
+    try std.testing.expect(history.snapshots[1] != null); // shared, kept
+}
+
+test "recordEvent discards the stale future before appending a new branch" {
+    const allocator = std.testing.allocator;
+    var history = historyForTimelineTest(allocator);
+    defer history.history_arena.deinit();
+
+    // Player has undone to index 2, then takes a new action.
+    history.current_idle_index = 0;
+    history.current_event_index = 2;
+    history.recordEvent(.{ .meta_event = .open_main_menu });
+
+    // Future (indices 2..5) discarded, then the new event appended at 2.
+    try std.testing.expectEqual(@as(usize, 3), history.event_history.items.len);
+    try std.testing.expectEqual(@as(usize, 1), history.idle_points.items.len);
+}
+
+test "recordEvent appends without trimming during normal forward play" {
+    const allocator = std.testing.allocator;
+    var history = historyForTimelineTest(allocator);
+    defer history.history_arena.deinit();
+
+    // At the head of the timeline (index == log length): no branch.
+    history.current_idle_index = 1;
+    history.current_event_index = 5;
+    history.recordEvent(.{ .meta_event = .open_main_menu });
+
+    try std.testing.expectEqual(@as(usize, 6), history.event_history.items.len);
+    try std.testing.expectEqual(@as(usize, 2), history.idle_points.items.len);
+}

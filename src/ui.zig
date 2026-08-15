@@ -107,8 +107,9 @@ pub const SlotRef = union(enum) {
 };
 
 /// An in-progress drag. Lives on UiState so it is auto-cancelled on screen
-/// transition (UiState is reset there). The ghost follows the pointer using
-/// InputState.mouse_screen_position — no pointer position is stored here.
+/// transition (the live loop resets SessionState.ui_state there). The ghost
+/// follows the pointer using InputState.mouse_screen_position — no pointer
+/// position is stored here.
 pub const DragState = struct {
     source: SlotRef,
     icon_sprite_id: []const u8,
@@ -222,12 +223,21 @@ pub const bottom_bar_height: i32 = 256;
 pub const slot_size: i32 = 256;
 /// Weapon-swap button — half a normal button, centered vertically.
 pub const swap_button_size: i32 = 128;
+/// Main-menu button — wide stacked buttons on the title screen.
+pub const menu_button_width: i32 = 1024;
+pub const menu_button_height: i32 = 256;
+pub const menu_button_font_size: i32 = 96;
 /// Secondary indicator icons above the bar (momentum, effects, turn steps).
 pub const small_icon_size: i32 = 128;
+/// Health globe sizes match the downscaled Unity art (temporary — the artist
+/// will finalize). The ball sits inside the ornamented border, which is a
+/// touch wider than the 256 cell and overhangs horizontally.
+pub const health_globe_ball_size: i32 = 212;
+pub const health_globe_border_width: i32 = 297;
+pub const health_globe_border_height: i32 = slot_size; // 256 tall by design
 /// Gap between top-level UI items (e.g. bottom-bar segments).
 pub const ui_gap: i32 = 16;
 pub const slot_padding: i32 = 8;
-pub const panel_border: i32 = 16; // 9-slice border thickness
 pub const gear_panel_width: i32 = 200;
 pub const inventory_panel_width: i32 = 1100;
 pub const skills_panel_width: i32 = 800;
@@ -310,14 +320,16 @@ pub const Grid = struct {
 // UI elements — building blocks for the view function
 // ============================================================
 
-/// A 9-slice panel background. The sprite has fixed-size corners and
-/// edges that don't stretch, with a center region that fills.
+/// A 9-slice panel background. The source sprite is a 3x3 grid of equal
+/// slices (slice size = sprite dimension / 3); the renderer draws the four
+/// corners 1:1 and *tiles* the four edges and the center to fill (never
+/// stretching a slice). The slice thickness comes from the sprite itself,
+/// so there is no border field here.
 pub const NineSlicePanel = struct {
     sprite_id: []const u8,
     screen_position: ScreenPosition,
     width: i32,
     height: i32,
-    border: i32 = panel_border,
     color: Color = default_tint,
     tooltip: ?Tooltip = null,
     blocks_input: bool = true,
@@ -340,7 +352,10 @@ pub const Slot = struct {
 /// A clickable button with a sprite. Clicking triggers the same
 /// action as the corresponding keybind.
 pub const Button = struct {
-    sprite_id: []const u8,
+    /// The button's own sprite, if any. `null` = a spriteless button used
+    /// purely as an action/hit-test target over a separate background (e.g.
+    /// a 9-slice panel behind it); the renderer draws nothing for it.
+    sprite_id: ?[]const u8 = null,
     screen_position: ScreenPosition,
     width: i32 = slot_size,
     height: i32 = slot_size,
@@ -378,7 +393,11 @@ pub const FillSprite = struct {
     /// 0 = empty, 1 = full.
     fill_fraction: f32,
     fill_direction: enum { up, down, left, right } = .up,
-    color: Color = default_tint,
+    /// The two sprites can share one flat asset (e.g. the white health ball)
+    /// and read as empty vs filled purely through these tints (depleted color
+    /// under the fill color). Wired to the active color theme later.
+    background_color: Color = default_tint,
+    fill_color: Color = default_tint,
     tooltip: ?Tooltip = null,
     blocks_input: bool = true,
 };
@@ -478,6 +497,13 @@ fn isRefSlot(element: UiElement) bool {
     };
 }
 
+fn isButton(element: UiElement) bool {
+    return switch (element) {
+        .button => true,
+        else => false,
+    };
+}
+
 /// The topmost tooltip-bearing element under `position` (respecting
 /// occlusion), or null. Used by the hover pass in view().
 pub fn tooltipAt(
@@ -485,6 +511,25 @@ pub fn tooltipAt(
     position: ScreenPosition,
 ) ?UiElement {
     return hitTest(ui_elements, position, hasTooltip);
+}
+
+/// The topmost Button under `position` (respecting occlusion), or null. Used
+/// to resolve a click into the button's Action.
+pub fn buttonAt(
+    ui_elements: []const UiElement,
+    position: ScreenPosition,
+) ?Button {
+    return if (hitTest(ui_elements, position, isButton)) |element| element.button else null;
+}
+
+/// The topmost input-blocking element under `position`, or null. Used for
+/// world/UI click arbitration: if a blocking UI element is under the pointer,
+/// the world should not also receive the click.
+pub fn blockingElementAt(
+    ui_elements: []const UiElement,
+    position: ScreenPosition,
+) ?UiElement {
+    return hitTest(ui_elements, position, blocksInputOf);
 }
 
 /// The topmost ref-bearing slot under `position` (respecting occlusion),
@@ -615,7 +660,7 @@ pub const tooltip_row_gap: i32 = 8; // vertical gap between rows
 pub const tooltip_header_gap: i32 = 16; // extra gap below the header
 pub const tooltip_header_font_size: i32 = 64;
 pub const tooltip_body_font_size: i32 = 56;
-pub const tooltip_panel_sprite = "ui/tooltip_panel";
+pub const tooltip_panel_sprite = "ui/panel";
 
 fn cornerPoint(rect: Rectangle, corner: Corner) ScreenPosition {
     return switch (corner) {
@@ -912,6 +957,79 @@ fn emitCenteredNumber(
     } });
 }
 
+/// Sprite id of the reusable button background — a rounded panel drawn
+/// under an icon so the coloring framework can tint background and icon
+/// independently.
+pub const button_background_sprite_id: []const u8 = "ui/button_background";
+
+/// Emit a layered icon button: a background sprite (carries the action,
+/// tooltip, and hit-test) with the icon drawn on top. The icon passes hover
+/// through to the background so the whole button is one target. Callers pass
+/// the background id so different button styles (bottom-bar frame, skill
+/// frame) reuse the same layering.
+fn emitIconButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    background_sprite_id: []const u8,
+    icon_sprite_id: []const u8,
+    action: Action,
+    tooltip: ?Tooltip,
+) !void {
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = background_sprite_id,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = action,
+        .tooltip = tooltip,
+    } });
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = icon_sprite_id,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        // Sits on top of the background; let the button win the hit-test.
+        .blocks_input = false,
+    } });
+}
+
+/// Emit a panel-backed button: a 9-slice panel background, a spriteless
+/// Button over it (owns the action + hit-test), and a centered text label on
+/// top. Used for text buttons (main menu, settings, dialog choices).
+fn emitPanelButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    label: []const u8,
+    font_size: i32,
+    action: Action,
+) !void {
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = action,
+    } });
+    // Centered label. Horizontal centering uses the measurement seam;
+    // vertical centering uses the label's line height.
+    const label_width = measureSpanWidth(text(label), font_size);
+    const label_box = cell.placeCenter(label_width, lineHeight(font_size));
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = label_box.position(),
+        .font_size = font_size,
+        // Sits on top of the button; let the button win the hit-test.
+        .blocks_input = false,
+    } });
+}
+
 /// Map a skill bar slot (1-8) to its input Action, so clicking a skill
 /// button triggers the same path as the keybind.
 fn skillSlotAction(slot: u8) Action {
@@ -945,6 +1063,7 @@ fn emitSkillButton(
     const definition = if (skill_id) |id| lookups.getSkillDefinition(id) else null;
 
     if (skill_id == null or definition == null) {
+        // Empty slot: the standalone diamond marker, no background frame.
         try elements.append(allocator, .{ .image = .{
             .sprite_id = "ui/skill_slot_empty",
             .screen_position = cell.position(),
@@ -954,14 +1073,18 @@ fn emitSkillButton(
         return;
     }
 
-    try elements.append(allocator, .{ .button = .{
-        .sprite_id = definition.?.name, // TODO: real skill icon id
-        .screen_position = cell.position(),
-        .width = cell.width,
-        .height = cell.height,
-        .action = skillSlotAction(slot),
-        .tooltip = try buildSkillTooltip(allocator, definition.?),
-    } });
+    // Filled slot: skill frame background + the skill's icon on top. The icon
+    // id mirrors the SkillId tag name (assets/skills/<tag>.png).
+    const icon_sprite_id = try std.fmt.allocPrint(allocator, "skills/{s}", .{@tagName(skill_id.?)});
+    try emitIconButton(
+        elements,
+        allocator,
+        cell,
+        "ui/skill_button",
+        icon_sprite_id,
+        skillSlotAction(slot),
+        try buildSkillTooltip(allocator, definition.?),
+    );
 
     const cooldown = player.skill_cooldowns.get(skill_id.?);
     if (cooldown > 0) {
@@ -1026,12 +1149,16 @@ pub fn buildBottomBar(
 
     // Health globe (vertical fill).
     const health_cell = row.next(slot_size);
+    // One flat white ball serves as both background and fill; tint (later)
+    // reads them as depleted vs current health. Rendered at the ball's native
+    // (downscaled) size, centered in the cell so it sits inside the border.
+    const ball = health_cell.placeCenter(health_globe_ball_size, health_globe_ball_size);
     try elements.append(allocator, .{ .fill_sprite = .{
-        .background_sprite_id = "ui/health_globe_empty",
-        .fill_sprite_id = "ui/health_globe_full",
-        .screen_position = health_cell.position(),
-        .width = slot_size,
-        .height = slot_size,
+        .background_sprite_id = "ui/health_globe",
+        .fill_sprite_id = "ui/health_globe",
+        .screen_position = ball.position(),
+        .width = health_globe_ball_size,
+        .height = health_globe_ball_size,
         .fill_fraction = if (player.max_health == 0)
             0
         else
@@ -1041,6 +1168,17 @@ pub fn buildBottomBar(
         .tooltip = .{ .header = try spanRow(allocator, text(
             try std.fmt.allocPrint(allocator, "{d} / {d}", .{ player.current_health, player.max_health }),
         )) },
+    } });
+    // Stylized border drawn over the globe at its native size, centered on the
+    // cell (co-registered with the ball). Slightly wider than the cell, so it
+    // overhangs horizontally. Hover passes through to the globe.
+    const border = health_cell.placeCenter(health_globe_border_width, health_globe_border_height);
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = "ui/health_globe_border",
+        .screen_position = border.position(),
+        .width = health_globe_border_width,
+        .height = health_globe_border_height,
+        .blocks_input = false,
     } });
 
     // Weapon skills sub-bar (slots 1-3, packed flush).
@@ -1081,12 +1219,15 @@ pub fn buildBottomBar(
     if (in_level) {
         const cell = row.next(slot_size);
         skip_cell = cell;
-        try elements.append(allocator, .{ .button = .{
-            .sprite_id = "ui/icon_skip",
-            .screen_position = cell.position(),
-            .action = .skip,
-            .tooltip = .{ .header = try spanRow(allocator, text("Skip turn step")) },
-        } });
+        try emitIconButton(
+            elements,
+            allocator,
+            cell,
+            button_background_sprite_id,
+            "ui/icon_skip",
+            .skip,
+            .{ .header = try spanRow(allocator, text("Skip turn step")) },
+        );
     }
 
     // --- Indicators above the bar (16px gap, 128×128) ---
@@ -1182,5 +1323,55 @@ pub fn buildBottomBar(
             .highlighted = turn_phase == .player_attack,
             .tooltip = .{ .header = try spanRow(allocator, text("Attack step")) },
         } });
+    }
+}
+
+/// Build the main-menu button stack: fixed-size buttons centered as a group
+/// on `screen`, spaced by `ui_gap`, each with a centered text label. The
+/// Continue button is emitted only when `continue_available` (there is a game
+/// to resume — populated PlayerData today; an on-disk autosave later).
+pub fn buildMainMenu(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    screen: Rectangle,
+    continue_available: bool,
+) !void {
+    const MenuButton = struct { label: []const u8, action: Action };
+    var buttons: [5]MenuButton = undefined;
+    var button_count: usize = 0;
+    if (continue_available) {
+        buttons[button_count] = .{ .label = "Continue", .action = .continue_game };
+        button_count += 1;
+    }
+    buttons[button_count] = .{ .label = "New Game", .action = .new_game };
+    button_count += 1;
+    buttons[button_count] = .{ .label = "Load Save", .action = .load_save };
+    button_count += 1;
+    buttons[button_count] = .{ .label = "Settings", .action = .open_settings };
+    button_count += 1;
+    buttons[button_count] = .{ .label = "Credits", .action = .open_credits };
+    button_count += 1;
+
+    const total_height = rowWidth(@intCast(button_count), menu_button_height, ui_gap);
+    // Top-left of the centered stack.
+    const origin = screen
+        .placeCenter(menu_button_width, total_height)
+        .position();
+
+    for (buttons[0..button_count], 0..) |menu_button, index| {
+        const cell: Rectangle = .{
+            .x = origin.x,
+            .y = origin.y + @as(i32, @intCast(index)) * (menu_button_height + ui_gap),
+            .width = menu_button_width,
+            .height = menu_button_height,
+        };
+        try emitPanelButton(
+            elements,
+            allocator,
+            cell,
+            menu_button.label,
+            menu_button_font_size,
+            menu_button.action,
+        );
     }
 }

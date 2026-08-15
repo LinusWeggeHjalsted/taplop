@@ -42,6 +42,17 @@ pub const Skill = struct {
     /// Higher value = higher priority; 0 means the skill should not be used now.
     /// Turn-ending vs non-turn-ending is decided by skill_type at the call site
     /// (see enemy_turn_attack), not by the priority magnitude.
+    ///
+    /// PORTING NOTE: the Unity original INVERTS this (lower number = higher
+    /// priority, -1 = don't use). When porting a skill, FLIP the numbers to
+    /// higher = better, 0 = don't use (e.g. Unity 2/3 -> ziglop 3/2).
+    /// Unity also used 0 as a catch-all for non-turn-ending skills (cantrips/
+    /// enchantments), iterating them in skill-bar order. Here turn-ending is
+    /// decided separately by skill_type, so those get REAL positive priorities
+    /// (Unity -1 -> 0 don't-use; Unity 0 -> a positive value). Non-ending and
+    /// ending skills are chosen from separate pools (enemy_turn_attack), so
+    /// cantrip priorities only compete with each other; equal values keep
+    /// bar order (the AI replaces only on strictly-greater).
     priority_fn: *const fn (
         caster_index: u32,
         game_state: GameState,
