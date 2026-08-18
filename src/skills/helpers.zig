@@ -55,6 +55,9 @@ pub fn nearestTarget(
     const level = game_state.level orelse return null;
     const caster = level.entities[caster_index];
 
+    // Strict < keeps the first target at the minimum distance, so ties resolve
+    // by the order of `targets` (its builder's scan order) — deterministic (see
+    // AGENTS.md Determinism & Tiebreaking).
     var best: ?Vector2 = null;
     var best_distance: i32 = std.math.maxInt(i32);
     for (targets) |position| {

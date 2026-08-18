@@ -14,6 +14,17 @@ pub fn build(b: *std.Build) void {
     // Lives in src/ so it can use normal relative @import paths.
     generateLookupFile(b);
 
+    // === Build info (game version) ===
+    // Computes the game_version string at configure time (YYYY.MM.<commits
+    // this month>[-dirty], derived from the build date + git) and exposes it
+    // to code via @import("build_info").game_version. This is the runtime
+    // "which build" stamp — advisory for replay validity — and is deliberately
+    // NOT the build.zig.zon .version (which stays a static package-identity
+    // number). See computeGameVersion.
+    const build_info = b.addOptions();
+    build_info.addOption([]const u8, "game_version", computeGameVersion(b));
+    const build_info_module = build_info.createModule();
+
     // === Web target (deferred) ===
     // The web build will be a wasm32-emscripten exe that reuses the SAME
     // raylib backend + gameLoop as native (raylib supports web via emscripten).
@@ -43,6 +54,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     exe.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
+    exe.root_module.addImport("build_info", build_info_module);
     exe.root_module.addImport("raylib", raylib);
     exe.root_module.linkLibrary(raylib_artifact);
     b.installArtifact(exe);
@@ -67,8 +79,54 @@ pub fn build(b: *std.Build) void {
         }),
     });
     tests.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
+    tests.root_module.addImport("build_info", build_info_module);
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
+}
+
+/// Computes the game_version string at configure time:
+///   YYYY.MM.<commits this month>[-dirty]
+/// The date comes from the build clock; the counter is `git rev-list --count`
+/// scoped to the first of the current month (so it resets monthly and only
+/// changes on commit, keeping the build cache stable). A dirty working tree
+/// appends "-dirty".
+///
+/// Git is optional and we distinguish two "no number" cases:
+///   * git ran and reported 0 commits this month -> a legitimate ".0".
+///   * git couldn't tell us anything (no repo, git absent, e.g. a release
+///     tarball) -> ".unofficial", flagging a build not stamped from tracked
+///     history (and no dirty flag, since there's nothing to compare against).
+/// This is a free-form string (not semver), so a zero-padded month / word in
+/// the last field is fine.
+fn computeGameVersion(b: *std.Build) []const u8 {
+    const now_seconds: u64 = @intCast(std.Io.Clock.now(.real, b.graph.io).toSeconds());
+    const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = now_seconds };
+    const year_day = epoch_seconds.getEpochDay().calculateYearDay();
+    const year = year_day.year;
+    const month = year_day.calculateMonthDay().month.numeric();
+
+    const since = b.fmt("--since={d:0>4}-{d:0>2}-01", .{ year, month });
+    if (gitOutput(b, &.{ "git", "rev-list", "--count", since, "HEAD" })) |raw_count| {
+        const count = if (raw_count.len == 0) "0" else raw_count;
+        const dirty = if (gitOutput(b, &.{ "git", "status", "--porcelain" })) |status|
+            status.len != 0
+        else
+            false;
+        return b.fmt("{d:0>4}.{d:0>2}.{s}{s}", .{ year, month, count, if (dirty) "-dirty" else "" });
+    }
+
+    // Git unavailable: mark the build as not stamped from tracked history.
+    return b.fmt("{d:0>4}.{d:0>2}.unofficial", .{ year, month });
+}
+
+/// Run a git command, returning its trimmed stdout, or null if git is
+/// unavailable or the command fails (non-zero exit). Never panics: the build
+/// must work without a git checkout.
+fn gitOutput(b: *std.Build, argv: []const []const u8) ?[]const u8 {
+    var exit_code: u8 = 0;
+    const stdout = b.runAllowFail(argv, &exit_code, .ignore) catch return null;
+    if (exit_code != 0) return null;
+    return std.mem.trim(u8, stdout, " \t\r\n");
 }
 
 /// Scans directories at build time and generates a Zig source file containing

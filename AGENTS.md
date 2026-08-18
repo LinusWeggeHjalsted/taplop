@@ -108,6 +108,81 @@ Zig 0.16.0 rewrite of a Unity tactical grid game (original at ~/Development/tapl
   `idle_points`, frees snapshots/checkpoints ahead of the branch), so the new
   action continues a fresh timeline from the undone position.
 
+## Versioning
+
+- `game_version` is the runtime "which build" stamp: `YYYY.MM.<commits-this-
+  month>[-dirty]`, computed in `build.zig` (`computeGameVersion`) from the
+  build clock + git and exposed to code via `@import("build_info").game_version`
+  (a `b.addOptions` module wired onto BOTH the exe and test root modules).
+  Git is optional/build-time-only (never a runtime dependency — the string is
+  baked in): git ran → real count (a true `.0` is legitimate) plus `-dirty` on
+  a modified tree; git absent/no repo → `YYYY.MM.unofficial`.
+- `game_version` is ADVISORY: recorded into artifacts and warn-on-mismatch, not
+  a hard gate (a hard replay-validity guarantee would need content-hashing the
+  gameplay logic — future work). It is NOT `build.zig.zon` `.version`, which
+  stays a static, vestigial package-identity `0.0.0`.
+- Two orthogonal versions, both recorded in serialized artifacts:
+  `file_format_version` (monotonic int per artifact, in its `Metadata` section)
+  answers "can this parser read the file?"; `game_version` answers "will a
+  correctly-parsed file behave in this build?".
+
+## Logging & Replay
+
+(session-log read/write/reconstruct is built; combat log + replay-viewer UI
+still TODO)
+
+- There is ONE log: `event_history` (see Replay & Side Effects). The session
+  dump, the combat log, and the future replay viewer are all it plus
+  projections — not separate capture systems.
+- Session dump (ctrl+L → `dump_event_log` → `main.dumpEventLog`): serialize
+  `event_history` to config format via `parser.writeEventLog` — a
+  comptime-generic serializer over the `Event` union (lives in parser.zig with
+  the other writers; new events need no changes). `Metadata` header carries
+  file_format_version + game_version + created timestamp; an `EventLog` section
+  holds one entry group per event (`event <category> <variant>` discriminator +
+  one line per payload field; optionals omit their line when null;
+  Vector2/Materials/slices space-separated). Events alone reproduce a session —
+  do NOT also log player input (the input→event translation is deterministic
+  and would be redundant/divergent).
+- Reader: `parser.loadEventLog(sections)` → `SessionLog { file_format_version,
+  game_version, created, events }`, the comptime-generic inverse.
+  file_format_version is a HARD gate; game_version is advisory (caller warns via
+  `main.warnIfSessionLogFromDifferentBuild`).
+- Reload does NOT re-drive events through the input path. `event_history` is the
+  fully-linearized event stream; `GameStateHistory.reconstructFromEventLog`
+  deep-copies the loaded events into `history_arena` and drives the existing
+  `replayTo`/`restoreTo` machinery (which forces each recorded event onto the
+  stack in turn, discarding handler-pushed sub-events since those were
+  themselves recorded). `idle_points` are NOT serialized — step boundaries are
+  derived, not stored. The `runToIdle` + `reconstructFromEventLog` end-to-end
+  test (main.zig) proves forward play == replay.
+- Combat log = a filtered PROJECTION of `event_history` (leaning: derive on
+  demand, do NOT store on GameState — deletes the `CombatLogEntry`-on-`Level`
+  scaffolding rather than filling it). The replay viewer steps over the SAME
+  filter, so one whitelist drives both the combat-log UI and replay stepping.
+  Coarse (one entry per skill use) vs granular (skill + each consequence:
+  attack/death/stun/…) projection is still UNDECIDED.
+
+## Determinism & Tiebreaking
+
+- Replay does NOT require the engine's decision logic to be deterministic:
+  `replayTo` forces each RECORDED event onto the stack and discards
+  handler-pushed events, so AI/sort/targeting decisions are already
+  crystallized as recorded events (see Logging & Replay). Determinism still
+  matters for DEFINED behavior in live play and for any future input-based
+  replay (speedrun verification) — so make ordering explicit regardless.
+- Tiebreaking convention — every ordering/selection over equal keys must break
+  ties EXPLICITLY (in the comparator) or by a documented scan order:
+  - Entities: ascending `entity_index`.
+  - Tiles: ascending `(x, y)` (A* `comparePathNodes` already does this).
+  - Skills: slot order.
+- `std.mem.sort` is UNSTABLE: a distance/priority-only comparator leaves equal
+  elements in an arbitrary order — always add the secondary key (e.g. `turn_end`
+  enemy ordering breaks distance ties by `entity_index`). A strict `<`/`>`
+  accumulation loop that iterates in the convention's order already yields the
+  right tiebreak (lowest entity_index / first slot); document it with a comment
+  rather than restructuring.
+
 ## Error Handling
 
 - Errors here are effectively unrecoverable (OOM, startup file/parse failure,

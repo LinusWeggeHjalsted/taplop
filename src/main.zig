@@ -7,6 +7,7 @@ const input = @import("input.zig");
 const parser = @import("parser.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
+const build_info = @import("build_info");
 
 const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
@@ -118,6 +119,75 @@ fn handleDrag(
     }
 }
 
+/// Advisory check when loading a recorded session for replay: if it was
+/// produced by a different build, replay logic may diverge (game_version is
+/// advisory — see AGENTS.md Versioning). Warn, never fail.
+fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
+    if (!std.mem.eql(u8, log_game_version, build_info.game_version)) {
+        std.debug.print(
+            "warning: session log recorded on game_version {s}, this build is {s}; replay may diverge\n",
+            .{ log_game_version, build_info.game_version },
+        );
+    }
+}
+
+/// Write the full session event history to `session_log_YYYYMMDD_HHMMSS.txt` in
+/// the working directory (config format; see parser.writeEventLog). A dev tool
+/// bound to ctrl+L. Runs only from the input path, so it never fires during
+/// replay. The timestamp is UTC (no timezone handling) — fine for a filename.
+fn dumpEventLog(history: *GameStateHistory) void {
+    var arena = std.heap.ArenaAllocator.init(history.backing_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const created = formatSessionTimestamp(allocator, history.io);
+    const file_name = std.fmt.allocPrint(
+        allocator,
+        "session_log_{s}.txt",
+        .{created},
+    ) catch @panic("failed to format session-log file name");
+    const body = parser.writeEventLog(
+        history.event_history.items,
+        created,
+        allocator,
+    ) catch @panic("failed to serialize session log");
+    history.directory.writeFile(history.io, .{
+        .sub_path = file_name,
+        .data = body,
+    }) catch @panic("failed to write session log file");
+
+    // Feedback for this dev tool: the file lands in the process working
+    // directory (the project root under `zig build run`).
+    std.debug.print("wrote session log: {s} ({d} events)\n", .{
+        file_name,
+        history.event_history.items.len,
+    });
+}
+
+/// Format the current wall-clock time (UTC) as "YYYYMMDD_HHMMSS".
+fn formatSessionTimestamp(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+) []const u8 {
+    const seconds: u64 = @intCast(std.Io.Clock.now(.real, io).toSeconds());
+    const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = seconds };
+    const year_day = epoch_seconds.getEpochDay().calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const day_seconds = epoch_seconds.getDaySeconds();
+    return std.fmt.allocPrint(
+        allocator,
+        "{d:0>4}{d:0>2}{d:0>2}_{d:0>2}{d:0>2}{d:0>2}",
+        .{
+            year_day.year,
+            month_day.month.numeric(),
+            @as(u32, month_day.day_index) + 1,
+            day_seconds.getHoursIntoDay(),
+            day_seconds.getMinutesIntoHour(),
+            day_seconds.getSecondsIntoMinute(),
+        },
+    ) catch @panic("failed to format session-log timestamp");
+}
+
 fn handleAnytimeInput(
     history: *GameStateHistory,
     anytime: input.AnytimeInput,
@@ -128,6 +198,10 @@ fn handleAnytimeInput(
 
     if (anytime.redo) {
         _ = history.redo(&processEvent);
+    }
+
+    if (anytime.dump_event_log) {
+        dumpEventLog(history);
     }
 
     if (anytime.toggle_options_menu) {
@@ -493,6 +567,13 @@ fn pushEvents(
     @memcpy(combined[0..current.event_stack.len], current.event_stack);
     @memcpy(combined[current.event_stack.len..], new_events);
     current.event_stack = combined;
+}
+
+/// Total order over tiles for tiebreaking: ascending (x, then y). Matches the
+/// A* comparator's tile ordering (see AGENTS.md Determinism & Tiebreaking).
+fn tileBefore(a: Vector2, b: Vector2) bool {
+    if (a.x != b.x) return a.x < b.x;
+    return a.y < b.y;
 }
 
 /// Get a mutable pointer to the player entity, whether in a level or hub.
@@ -1194,10 +1275,14 @@ fn processEvent(
                             }) catch @panic("failed to append enemy distance");
                         }
 
-                        // Sort by distance ascending (closest first)
+                        // Sort by distance ascending (closest first). std.mem.sort
+                        // is unstable, so break ties explicitly by entity_index —
+                        // otherwise equal-distance enemies would take turns in an
+                        // arbitrary order (see AGENTS.md tiebreaking convention).
                         std.mem.sort(EntityDistance, enemy_distances.items, {}, struct {
                             fn lessThan(_: void, a: EntityDistance, b: EntityDistance) bool {
-                                return a.distance < b.distance;
+                                if (a.distance != b.distance) return a.distance < b.distance;
+                                return a.entity_index < b.entity_index;
                             }
                         }.lessThan);
 
@@ -1274,6 +1359,9 @@ fn processEvent(
                         if (other_entity.current_health == 0) continue;
                         if (other_entity.team == entity.team) continue;
                         const distance = functions.chebyshevDistance(entity.position, other_entity.position);
+                        // Strict < keeps the first at the minimum distance; since
+                        // we iterate entities in index order, ties resolve to the
+                        // lowest entity_index (the tiebreaking convention).
                         if (distance < nearest_distance) {
                             nearest_distance = distance;
                             nearest_target = other_entity.position;
@@ -1342,11 +1430,21 @@ fn processEvent(
                                     allocator,
                                 );
 
+                                // Pick the reachable tile closest to the target
+                                // (but no nearer than min_range, and only if it
+                                // improves on the current position). Ties in
+                                // distance break by the (x, y) tile convention so
+                                // the choice is defined, not scan-order-dependent.
                                 var best_tile: ?Vector2 = null;
-                                var best_distance: i32 = nearest_distance; // must improve on current
+                                var best_distance: i32 = nearest_distance;
                                 for (reachable) |tile| {
                                     const distance = functions.chebyshevDistance(tile, target_position);
-                                    if (distance >= min_range and distance < best_distance) {
+                                    if (distance < min_range) continue;
+                                    if (distance >= nearest_distance) continue; // must improve on current
+                                    const is_better = best_tile == null or
+                                        distance < best_distance or
+                                        (distance == best_distance and tileBefore(tile, best_tile.?));
+                                    if (is_better) {
                                         best_distance = distance;
                                         best_tile = tile;
                                     }
@@ -1393,6 +1491,10 @@ fn processEvent(
                     var best_ending_priority: u32 = 0;
                     var best_ending_definition: ?Skill = null;
 
+                    // collectSkillSlots yields skills in slot order (1..8), and
+                    // strict > below keeps the first at the best priority — so
+                    // priority ties resolve to the lowest slot (the tiebreaking
+                    // convention), per turn-ending / non-ending bucket.
                     for (&skill_ids) |maybe_skill_id| {
                         const skill_id = maybe_skill_id orelse continue;
                         if (entity.skill_cooldowns.get(skill_id) > 0) continue;
@@ -2872,3 +2974,68 @@ test "dragToEvent maps valid drags and blocks cross-domain drops" {
 }
 
 
+
+/// Drive event processing until the stack empties (test harness: no update()
+/// loop, so waits are cleared rather than timed).
+fn runToIdle(history: *GameStateHistory) void {
+    while (history.current_state.event_stack.len > 0) {
+        processEvent(history);
+        history.current_state.waiting = null;
+    }
+}
+
+test "session log round-trips through reconstruction (forward play == replay)" {
+    const allocator = std.testing.allocator;
+
+    // One arena backs the whole test: every sub-arena the histories spin up is
+    // freed at once, so no GameStateHistory deinit is needed.
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const directory = std.Io.Dir.cwd();
+
+    const settings = loadSettingsFromDisk(directory, io, arena);
+    const weapon_type_definitions = loadWeaponTypeDefinitions(directory, io, arena);
+    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(directory, io, arena);
+    const salvage_definitions = loadSalvageDefinitionsFromDisk(directory, io, arena);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    // Forward-play a short scripted session (main menu -> new game -> hub ->
+    // one hub move) into history1, recording events as it goes.
+    var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, directory, io);
+    runToIdle(&history1);
+    pushEvents(&history1.current_state, &.{.{ .meta_event = .start_new_game }}, history1.current_arena.allocator());
+    runToIdle(&history1);
+    pushEvents(&history1.current_state, &.{.{ .hub_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history1.current_arena.allocator());
+    runToIdle(&history1);
+    try std.testing.expectEqual(state.Screen.hub, history1.current_state.screen);
+
+    // Serialize -> parse -> load the recorded history.
+    const body = try parser.writeEventLog(history1.event_history.items, "20260101_000000", arena);
+    const sections = try parser.parseConfigFile(body, arena);
+    const log = try parser.loadEventLog(sections, arena);
+    warnIfSessionLogFromDifferentBuild(log.game_version); // same build -> silent
+
+    // Reconstruct into a fresh history2 from the loaded log and compare the
+    // final states: faithful reconstruction means replay == forward play.
+    var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, directory, io);
+    history2.reconstructFromEventLog(log.events, @intCast(log.events.len), &processEvent);
+
+    try std.testing.expectEqualDeep(history1.current_state, history2.current_state);
+}

@@ -142,6 +142,7 @@ pub const AnytimeInput = struct {
     undo: bool = false,
     redo: bool = false,
     toggle_options_menu: bool = false,
+    dump_event_log: bool = false,
     scroll_delta: f32 = 0,
 
     /// Only handled when the player is in a hub or level.
@@ -183,6 +184,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .undo => player_input.anytime.undo = true,
         .redo => player_input.anytime.redo = true,
         .toggle_options_menu => player_input.anytime.toggle_options_menu = true,
+        .dump_event_log => player_input.anytime.dump_event_log = true,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,
@@ -376,6 +378,7 @@ pub fn translateInput(
     result.anytime.undo = checkAction(.undo, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.redo = checkAction(.redo, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.toggle_options_menu = checkAction(.toggle_options_menu, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.dump_event_log = checkAction(.dump_event_log, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.scroll_delta = scroll_delta;
 
     // In-game anytime actions

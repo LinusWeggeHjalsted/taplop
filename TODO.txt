@@ -34,9 +34,18 @@ DONE (see detailed sections below for specifics):
   - Phase 7  Playable: move / skill / skip / enemy turns with real-time waits.
 
 NEXT UP (priority order):
-  A. LOGGING FIRST, then combat bugs. No logging exists; it is the key enabler
-     for troubleshooting the combat-flow bugs (which are deferred until then).
-     Then hook events -> CombatLogEntry (scaffolding exists, unpopulated).
+  A. LOGGING: session log write/parse/reconstruct is DONE (PR 1b/2/3 — ctrl+L
+     dump, comptime writer+reader in parser.zig, reconstructFromEventLog +
+     end-to-end test). Tiebreaking convention added + turn_end fixed.
+     >>> NEXT SESSION START HERE: the VIRTUAL-DEPTH RECONSTRUCTION REFACTOR —
+     record idle points + snapshots during replay so a loaded session undoes/
+     steps "as if played live". Full design in "Logging follow-ups" below (track
+     virtual stack depth from post-apply_event event_stack.len; depth 0 = idle
+     point -> takeSnapshot/compact; factor the idle bookkeeping into a helper
+     shared with gameLoop). Unblocks fast replay-viewer stepping.
+     THEN: combat log projection + UI, replay-viewer stepping, and the deferred
+     combat-flow bugs (logging now exists to troubleshoot them). Combat log +
+     replay viewer are projections of the same event log.
   B. Mission end states: mission_complete / mission_fail screens + player-death
      path (see "Mission Flow"). Verify level-end flag -> end_level -> end_mission
      -> start_hub actually returns to the hub. This closes the loop.
@@ -612,9 +621,86 @@ NPC Interaction
   - NPC dialogue system
   - NPC types (shopkeeper, quest giver, etc.)
 
-Combat Log
-  - Hook combat log entries into relevant event handlers
-    (attack, death, stun, knockback, skill use, movement, etc.)
+Logging & Replay
+  Design settled (see AGENTS.md "Logging & Replay"). ONE log = event_history;
+  session dump, combat log, and replay viewer are it + projections. Reload
+  reuses replayTo/restoreTo (NOT re-driven through input); events alone
+  reproduce a session (no input logging). idle_points NOT serialized (step
+  boundaries derived). Whole-session scope for now (per-mission slicing later).
+
+  Versioning [DONE]
+  [x] game_version build seam: computeGameVersion in build.zig produces
+      YYYY.MM.<commits-this-month>[-dirty] from build clock + git, git absent ->
+      YYYY.MM.unofficial (a true .0 = git ran, zero commits). Exposed via a
+      b.addOptions "build_info" module on both exe + test roots
+      (@import("build_info").game_version). Decoupled from build.zig.zon
+      .version (stays vestigial 0.0.0). Advisory, warn-on-mismatch policy.
+      Shape test in parser.zig.
+  - file_format_version: monotonic int per serialized artifact, in its Metadata
+      section. Session log starts at 1; retrofit missions/saves as those
+      formats stabilize (custom-mission support needs it). Also add a
+      format_version to mission Metadata when custom missions land.
+
+  PR 1b — session-log writer (in parser.zig) [DONE]
+  [x] Comptime-generic serializer over the Event union (parser.writeEventLog /
+      writeEvent / writeEventField / appendEventScalar). Leaf cases: ints
+      decimal, bool true/false, enum->@tagName, []const u8 verbatim, struct
+      (Vector2/Materials) fields space-separated, slice-of-struct (e.g.
+      highlight_tiles.tile_positions) flattened space-separated, optional->
+      omit line when null. New events serialize with no changes here.
+  [x] Metadata header: file_format_version (=1) + game_version + created
+      (YYYYMMDD_HHMMSS, UTC). EventLog section (added to parser whitelist): one
+      blank-line-separated entry group per event; first line `event <category>
+      <variant>`; payload fields one per line. No idle_points. Round-trips
+      structurally through parseConfigFile (unit-tested).
+  [x] ctrl+L: Action.dump_event_log + KeyL+ctrl binding in data/settings.txt;
+      handleAnytimeInput -> dumpEventLog writes session_log_YYYYMMDD_HHMMSS.txt
+      to cwd via history.directory (side effect on the input path, so off the
+      replay path; never gated). formatSessionTimestamp helper in main.zig.
+
+  PR 2 — session-log parser [DONE]
+  [x] loadEventLog (parser.zig): sections -> SessionLog { file_format_version,
+      game_version, created, events }. Comptime-generic inverse of the writer
+      (parseEvent / parseEventFieldValue / parseEventScalar / parseScalarTokens)
+      — mirrors the writer's flattening, so new events deserialize with no
+      changes. file_format_version is a hard gate
+      (error.UnsupportedFileFormatVersion); game_version is returned for the
+      caller to warn on (advisory warn wired at reconstruct time, PR 3).
+  [x] Tests: synthetic round-trip (expectEqualDeep over all field shapes incl.
+      present/absent optionals, slice + empty slice, Materials, enums, bools),
+      an unsupported-version rejection, and a verified byte-identical
+      re-serialization of the real 153-event session log.
+
+  PR 3 — reconstruct + step [DONE for reconstruct-to-end; stepping deferred]
+  [x] GameStateHistory.reconstructFromEventLog(events, target_index,
+      apply_event) (state.zig): deep-copies the loaded events into
+      history_arena, then drives the existing replayTo machinery from
+      initial_state. Call on a freshly-inited history whose initial_state
+      matches the session start; idle_points not populated (not serialized).
+  [x] game_version advisory warn: warnIfSessionLogFromDifferentBuild in
+      main.zig (warn-only, never fails). build_info imported into main.zig.
+  [x] End-to-end harness test (main.zig): forward-plays a scripted session
+      (main menu -> new game -> hub -> hub move) into one history, serializes ->
+      parses -> loads, reconstructs into a second history, asserts the final
+      current_state is deep-equal (forward play == replay). runToIdle helper
+      drives processEvent to stack-empty. This is the lighter end-to-end
+      processEvent harness the Tech Debt section wanted.
+  - TODO: wire the .replay_viewer screen to STEP through a loaded log via
+    reconstructFromEventLog/restoreTo at successive targets. Steps = the
+    combat-log filter (derived, not idle_points). Needs the projection +
+    replay-viewer UI (see Combat Log UI + the deferred coarse/granular
+    decision).
+
+  Deferred decision: combat log coarse (one entry per skill use) vs granular
+  (skill + each consequence). The same filter/whitelist drives combat-log UI +
+  replay stepping. CombatLogEntry-on-Level scaffolding likely deleted in favor
+  of an on-demand projection (see AGENTS.md).
+
+Combat Log (UI — depends on the projection above)
+  - Collapsed icon-based recent-history view in the top bar
+  - Expandable full-screen detailed combat log (buildFullCombatLog overlay)
+  - Projection function: event_history slice -> combat entries (shared with
+    replay-viewer stepping)
 
 Mission Flow
   - mission_fail screen (triggered on player death)
@@ -771,6 +857,64 @@ Content Loading / Custom Missions (direction, build with platform layer)
     should eventually be content-addressed (hash) or pinned to an immutable
     version id — matters for recorded-history-as-test and replay sharing.
 
+Determinism & Tiebreaking
+  Convention in AGENTS.md (entities -> entity_index, tiles -> (x,y), skills ->
+  slot order). Replay is immune to decision nondeterminism (records events), but
+  we still make ordering DEFINED for live behavior + future input-based replay.
+  [x] turn_end enemy ordering: unstable std.mem.sort now breaks distance ties
+      by entity_index (was genuinely arbitrary — the one real bug found).
+  Audit of remaining sites (all currently deterministic-but-implicit; make the
+  tiebreak explicit/commented):
+  - enemy_turn_move nearest-target loop: strict < already keeps lowest
+      entity_index — add a comment (no behavior change).
+  - nearestTarget helper (skills/helpers.zig): first target in slice — document
+      (no behavior change).
+  - enemy_turn_attack skill selection: first skill in slot order per bucket —
+      document (no behavior change).
+  - enemy_turn_move reachable-tile fallback: currently first tile in
+      reachableTiles scan order; applying the (x,y) tile convention CHANGES which
+      tile a stuck enemy picks on ties (small gameplay change — OK since combat
+      is unfinalized, but flagged for explicit sign-off before editing).
+  Already total (no action): A* comparePathNodes (f->x->y); entity draw sort
+  (unique positions, visual-only).
+
+Logging follow-ups (deferred, captured for later)
+  - Idle points + snapshots DURING reconstruction: reconstructFromEventLog
+      currently calls replayTo (reconstruct-to-end only, no undo metadata). To
+      let a loaded session undo/step "as if played live", replay must re-derive
+      idle points via a VIRTUAL STACK DEPTH: after forcing each recorded event,
+      current_state.event_stack.len == the sub-events its handler pushed (K);
+      track depth += K - 1 from the initial stack size; depth hitting 0 is an
+      idle point -> takeSnapshot + compactCurrentArena there (same bookkeeping
+      the live loop does on stack-empty). No idle_points serialized. Factor the
+      idle bookkeeping into a helper shared by the live loop and reconstruction
+      (the DRIVING differs: live watches the real stack, replay tracks virtual
+      depth). Unblocks fast replay-viewer stepping too.
+  - Exhaustive comptime round-trip test for the session-log writer/reader:
+      inline-for over every Event category/variant, synthesize a payload (0 /
+      false / first enum / "" / empty slice / null optional / recurse structs),
+      write -> parseConfigFile -> loadEventLog -> expectEqualDeep. Self-
+      maintaining (new events covered automatically). Structural drift is
+      already prevented by comptime + @compileError else-arms; this guards VALUE
+      fidelity + the field-presence contract (writer emits every field; reader
+      requires every non-optional field).
+  - Combat reconstruction test (owner will set up): extend the runToIdle harness
+      to enter first_mission's level and script a few combat actions with
+      ADAPTIVE targeting (read enemy position from live state), then
+      serialize -> load -> reconstruct -> expectEqualDeep. Self-referential (no
+      golden values). Guards handler PURITY (state,event)->state, not AI
+      determinism. NOTE: runToIdle clearing `waiting` becomes load-bearing here
+      (enemy turns inject waits; replayTo clears waiting, so forward play must
+      too, or the deep-equal spuriously fails).
+  - Session-log integrity: DECIDED not to add an event_count / corruption
+      warning — keep files lean + hand-editable for tool-assisted-speedrun
+      replays. A truncated dump is just corrupt and may error at parse; that's
+      acceptable. (A content hash is only worth it later as the shared-replay
+      content-address, not for local sanity.)
+  - game_version filename/timestamp is UTC (no tz db in std) — accepted papercut.
+  - formatSessionTimestamp is a generic time util living in main.zig — move to a
+      small util/time module when the main.zig split happens.
+
 Tech Debt / Refactoring
   [x] Enemy AI skill priority is integer (u32, 0 = don't use) not float — keeps
       gameplay logic integer-only for deterministic replay/RTA (skill.zig,
@@ -830,9 +974,12 @@ Tech Debt / Refactoring
     essentially one test. processEvent is state-in/state-out and testable.
     Cover the event logic (equip/unequip, utility-skill events, boots
     move-range refresh, prepared-skill cancel) before wiring up UI drag.
-    (Partial: state.zig now has undo-branch timeline tests. Still no
-    end-to-end processEvent test — blocked on a lighter harness for building a
-    minimal GameStateHistory with real event application.)
+    (Partial: state.zig has undo-branch timeline tests, and main.zig now has an
+    end-to-end reconstruction harness — forward-plays a scripted session through
+    processEvent, serializes/loads, and replays it (runToIdle +
+    reconstructFromEventLog). That harness can be reused to cover specific
+    event logic (equip/unequip, utility-skill events, boots move-range refresh,
+    prepared-skill cancel) with targeted scripted sessions + assertions.)
   - Consistent slot-index bounds checking: utility-skill handlers guard
     slot_index < utility_skill_count, but equip_item/unequip_item/learn_skill/
     salvage_item index inventory.slots[...] directly (panic on out-of-range).

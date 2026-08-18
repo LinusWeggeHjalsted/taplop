@@ -471,6 +471,32 @@ pub const GameStateHistory = struct {
         self.restoreTo(target_event_index, apply_event);
         return true;
     }
+
+    /// Load a recorded event history (e.g. from a session-log file) and
+    /// reconstruct the state at `target_event_index` (pass the event count for
+    /// the end). Events are deep-copied into the durable history arena, then
+    /// the existing replay machinery rebuilds the state from initial_state.
+    ///
+    /// Must be called on a freshly-inited history whose initial_state matches
+    /// the session's starting state; assumes an empty event_history (no live
+    /// timeline to branch from). Intended for session-log replay — the test
+    /// harness reconstructs to the end; the replay viewer will later step by
+    /// calling this (or restoreTo) at successive targets. idle_points are NOT
+    /// populated (they aren't serialized); step boundaries are derived by the
+    /// caller, and undo/redo aren't used on a reconstructed log.
+    pub fn reconstructFromEventLog(
+        self: *GameStateHistory,
+        event_log: []const Event,
+        target_event_index: u32,
+        apply_event: *const fn (*GameStateHistory) void,
+    ) void {
+        const arena = self.history_arena.allocator();
+        for (event_log) |event| {
+            const durable_event = deepCopy(Event, event, arena);
+            self.event_history.append(arena, durable_event) catch @panic("failed to append event");
+        }
+        self.replayTo(target_event_index, apply_event);
+    }
 };
 
 // Build a history with only the timeline-bookkeeping fields populated; the rest

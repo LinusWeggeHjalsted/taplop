@@ -31,6 +31,9 @@ pub const Action = enum {
     skill_slot_7,
     skill_slot_8,
     swap_weapons,
+    // Dump the full session event history to a config-format log file (dev
+    // tooling; see parser.writeEventLog). Anytime, side-effecting.
+    dump_event_log,
     // Main menu commands.
     continue_game,
     new_game,

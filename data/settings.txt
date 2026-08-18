@@ -22,6 +22,11 @@ ctrl true
 action redo
 
 input_type key
+input_name KeyL
+ctrl true
+action dump_event_log
+
+input_type key
 input_name Escape
 action toggle_options_menu
 

@@ -3,3 +3,7 @@ zig-out/
 zig-pkg/
 src/generated_lookups.zig
 src/generated_test_root.zig
+
+# Session event-log dumps (ctrl+L). Written to the working directory; not
+# committed. (IO/output-location handling is a planned follow-up.)
+session_log_*.txt

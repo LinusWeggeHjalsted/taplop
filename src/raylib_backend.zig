@@ -50,6 +50,7 @@ const key_mappings = [_]KeyMapping{
     .{ .key = .g, .id = "KeyG" },
     .{ .key = .s, .id = "KeyS" },
     .{ .key = .m, .id = "KeyM" },
+    .{ .key = .l, .id = "KeyL" },
     .{ .key = .escape, .id = "Escape" },
     .{ .key = .enter, .id = "Enter" },
     .{ .key = .backspace, .id = "Backspace" },
