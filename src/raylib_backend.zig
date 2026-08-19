@@ -63,6 +63,10 @@ const key_mappings = [_]KeyMapping{
     .{ .key = .six, .id = "Digit6" },
     .{ .key = .seven, .id = "Digit7" },
     .{ .key = .eight, .id = "Digit8" },
+    .{ .key = .up, .id = "ArrowUp" },
+    .{ .key = .down, .id = "ArrowDown" },
+    .{ .key = .left, .id = "ArrowLeft" },
+    .{ .key = .right, .id = "ArrowRight" },
 };
 
 const MouseMapping = struct {
@@ -116,13 +120,26 @@ pub const RaylibBackend = struct {
     /// Scratch for the events emitted by pollInput each frame. Valid only until
     /// the next pollInput; translateInput consumes it synchronously.
     event_buffer: [max_events_per_frame]input.PlatformInputEvent = undefined,
+    /// Unified file source for asset bytes (embedded map / persistent dir).
+    /// The texture cache loads via loadImageFromMemory from this instead of
+    /// touching the filesystem directly — see AGENTS.md "File System & IO".
+    file_source: *const @import("file_source.zig").FileSource,
+
+    /// Last real-clock sample (microseconds) for delta computation. Updated
+    /// each deltaMicroseconds() call. Real-clock based (rl.getTime), not
+    /// frame-rate based, so waits and gameplay logic are independent of the
+    /// render framerate.
+    last_time_microseconds: u64 = 0,
 
     pub fn init(
         allocator: std.mem.Allocator,
         width: i32,
         height: i32,
         title: [:0]const u8,
+        file_source: *const @import("file_source.zig").FileSource,
     ) RaylibBackend {
+        // Vsync defaults on (matching Settings.vsync default); run() calls
+        // applyVsync after loading settings to sync the window to the setting.
         rl.setConfigFlags(.{ .window_resizable = true, .vsync_hint = true });
         rl.initWindow(width, height, title);
         rl.setExitKey(.null); // Escape is a game binding (options menu), not quit.
@@ -136,6 +153,8 @@ pub const RaylibBackend = struct {
             .render_target = render_target,
             .font = font,
             .frame_arena = std.heap.ArenaAllocator.init(allocator),
+            .last_time_microseconds = @intFromFloat(rl.getTime() * std.time.us_per_s),
+            .file_source = file_source,
         };
     }
 
@@ -150,17 +169,89 @@ pub const RaylibBackend = struct {
         rl.closeWindow();
     }
 
+    /// Apply the vsync setting at runtime (toggles the vsync window state
+    /// flag). Called after settings load, since setConfigFlags must run before
+    /// initWindow — init defaults to vsync-on (matching the Settings default),
+    /// and this syncs the window to the loaded setting.
+    pub fn applyVsync(_: *RaylibBackend, vsync: bool) void {
+        if (vsync) {
+            rl.setWindowState(.{ .vsync_hint = true });
+        } else {
+            rl.clearWindowState(.{ .vsync_hint = true });
+        }
+    }
+
     pub fn shouldClose(_: *RaylibBackend) bool {
         return rl.windowShouldClose();
     }
 
-    pub fn deltaMicroseconds(_: *RaylibBackend) u64 {
-        const seconds = rl.getFrameTime(); // time the previous frame took
-        if (seconds <= 0) return 0;
-        return @intFromFloat(seconds * std.time.us_per_s);
+    pub fn deltaMicroseconds(self: *RaylibBackend) u64 {
+        const now_us: u64 = @intFromFloat(rl.getTime() * std.time.us_per_s);
+        const delta = now_us - self.last_time_microseconds;
+        self.last_time_microseconds = now_us;
+        return delta;
+    }
+
+    /// Current real-clock time in microseconds (rl.getTime based). Used by the
+    /// game loop's render gate to pace renders independent of the logic loop.
+    pub fn realClockMicroseconds(_: *RaylibBackend) u64 {
+        return @intFromFloat(rl.getTime() * std.time.us_per_s);
+    }
+
+    /// The render frame interval in microseconds, derived from settings. When
+    /// vsync is on, paces to the current monitor's refresh rate (queried each
+    /// call so a monitor swap is picked up); the render_fps_cap setting is
+    /// ignored. When vsync is off and cap > 0, paces to 1/cap. When vsync is
+    /// off and cap is 0, returns 0 (render every iteration — uncapped).
+    ///
+    /// On web (emscripten), the browser's requestAnimationFrame IS the vsync
+    /// pacer — getCurrentMonitor/getMonitorRefreshRate aren't implemented and
+    /// spam warnings. So on web with vsync on, return 0 (render every rAF
+    /// call); the browser already paces to the display refresh.
+    pub fn renderIntervalMicroseconds(
+        _: *RaylibBackend,
+        settings: @import("types.zig").Settings,
+    ) u64 {
+        if (@import("builtin").os.tag == .emscripten) {
+            // The browser paces rAF to the display refresh; render every call.
+            if (settings.vsync) return 0;
+            if (settings.render_fps_cap == 0) return 0;
+            return @as(u64, std.time.us_per_s) / settings.render_fps_cap;
+        }
+        if (settings.vsync) {
+            const monitor = rl.getCurrentMonitor();
+            const refresh_hz = rl.getMonitorRefreshRate(monitor);
+            if (refresh_hz <= 0) return std.time.us_per_s / 60; // sane fallback
+            return @as(u64, std.time.us_per_s) / @as(u64, @intCast(refresh_hz));
+        }
+        if (settings.render_fps_cap == 0) return 0;
+        return @as(u64, std.time.us_per_s) / settings.render_fps_cap;
+    }
+
+    /// Sleep for the given number of seconds (raylib waitTime). Used by the
+    /// game loop to yield briefly when idle (stack empty, no wait) so the loop
+    /// doesn't busy-spin at 100% CPU while waiting for player input.
+    pub fn waitTime(_: *RaylibBackend, seconds: f64) void {
+        rl.waitTime(seconds);
     }
 
     pub fn pollInput(self: *RaylibBackend) input.PlatformInput {
+        // Read input edges and position FIRST, before pumping.
+        //
+        // Why this order: raylib's PollInputEvents() copies previous = current
+        // (advancing the "previous" snapshot). IsMouseButtonPressed /
+        // IsKeyPressed check current vs previous. On native, PollInputEvents
+        // copies THEN calls glfwPollEvents() (which fires callbacks that update
+        // current) — so pumping-then-reading works (the copy sees the old
+        // state, game code sees the new state). But on web, events arrive
+        // asynchronously via JS callbacks BETWEEN frames (current is already
+        // set when we arrive). Pumping first would copy previous = current,
+        // erasing the edge (current == previous → no press detected). Reading
+        // first, then pumping, works on BOTH platforms: web sees current (from
+        // JS callbacks) vs previous (from last frame's copy); native sees
+        // current (from last iteration's glfwPollEvents) vs previous (from
+        // last iteration's copy), with ~1 iteration of latency at the uncapped
+        // loop speed (negligible).
         var count: usize = 0;
 
         // Mouse position, mapped from window pixels back into reference space
@@ -194,6 +285,13 @@ pub const RaylibBackend = struct {
                 count += 1;
             }
         }
+
+        // Pump the OS event queue AFTER reading edges. On native this calls
+        // glfwPollEvents() (fires callbacks that update current for the next
+        // iteration) + copies previous = current. On web it just copies
+        // previous = current (events are async). Without this call on native,
+        // the window would hang between renders (OS events not processed).
+        rl.pollInputEvents();
 
         return .{
             .events = self.event_buffer[0..count],
@@ -230,7 +328,12 @@ pub const RaylibBackend = struct {
         // Blit the target to the window, letterboxed. RenderTextures are stored
         // y-flipped, so the source height is negated.
         rl.beginDrawing();
-        defer rl.endDrawing();
+        // With SUPPORT_CUSTOM_FRAME_CONTROL, endDrawing() only flushes the
+        // render batch — we swap the buffer ourselves (vsync paces here).
+        defer {
+            rl.endDrawing();
+            rl.swapScreenBuffer();
+        }
         rl.clearBackground(rl.Color.black);
         const transform = viewTransform();
         const source = rl.Rectangle{
@@ -515,7 +618,10 @@ pub const RaylibBackend = struct {
     }
 
     /// Load a texture for `sprite_id` (assets/<id>.png), caching the result.
-    /// Returns null (and caches the miss) if the asset can't be loaded.
+    /// Reads bytes through the FileSource (embedded map / persistent-dir
+    /// override) and decodes via loadImageFromMemory, so the backend never
+    /// touches the filesystem directly. Returns null (and caches the miss) if
+    /// the asset can't be loaded.
     fn getTexture(self: *RaylibBackend, sprite_id: []const u8) ?rl.Texture2D {
         if (self.texture_cache.get(sprite_id)) |cached| return cached;
 
@@ -527,7 +633,19 @@ pub const RaylibBackend = struct {
         ) catch @panic("failed to build asset path");
 
         const key = self.allocator.dupe(u8, sprite_id) catch @panic("failed to dupe sprite id");
-        const loaded: ?rl.Texture2D = rl.loadTexture(path) catch null;
+
+        // Read asset bytes from the file source, then decode in memory. A
+        // missing/unreadable asset is a normal in-progress state -> cache
+        // null and fall through to the magenta fallback.
+        const loaded: ?rl.Texture2D = blk: {
+            const bytes = self.file_source.readFile(self.allocator, path) catch
+                break :blk null;
+            defer self.allocator.free(bytes);
+            const image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
+            defer rl.unloadImage(image);
+            break :blk rl.loadTextureFromImage(image) catch null;
+        };
+
         self.texture_cache.put(self.allocator, key, loaded) catch @panic("failed to cache texture");
         return loaded;
     }

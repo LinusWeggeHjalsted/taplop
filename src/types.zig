@@ -31,6 +31,13 @@ pub const Action = enum {
     skill_slot_7,
     skill_slot_8,
     swap_weapons,
+    // Tile-cursor nudging (arrow keys; see session.tile_cursor resolution).
+    // When the mouse is idle, these move the logical cursor one tile. If the
+    // cursor is null, it snaps to the player's tile before nudging.
+    move_cursor_up,
+    move_cursor_down,
+    move_cursor_left,
+    move_cursor_right,
     // Dump the full session event history to a config-format log file (dev
     // tooling; see parser.writeEventLog). Anytime, side-effecting.
     dump_event_log,
@@ -68,6 +75,11 @@ pub const Settings = struct {
     music_volume: f32 = 0.5, // 0.0–1.0
     sound_effects_volume: f32 = 0.5, // 0.0–1.0
     vsync: bool = true,
+    // Frames-per-second cap for rendering. 0 = no explicit cap. Ignored when
+    // vsync is on (vsync paces renders to the monitor refresh rate). When
+    // vsync is off and this is >0, renders are gated to 1/cap seconds; when 0
+    // and vsync off, the loop renders every iteration (uncapped).
+    render_fps_cap: u32 = 0,
     auto_skip_attack_step_out_of_combat: bool = true,
     auto_target_at_cursor: bool = true,
     input_bindings: []const InputBinding,
@@ -537,52 +549,6 @@ pub const Mission = struct {
     skills_used: u32 = 0,
 };
 
-pub const CombatLogEntry = union(enum) {
-    turn_start: struct {
-        entity_name: []const u8,
-    },
-    move: struct {
-        entity_name: []const u8,
-        from: Vector2,
-        to: Vector2,
-    },
-    skill_used: struct {
-        caster_name: []const u8,
-        skill_id: SkillId,
-        target: ?Vector2,
-    },
-    attack: struct {
-        attacker_name: []const u8,
-        defender_name: []const u8,
-        damage: u32,
-    },
-    death: struct {
-        entity_name: []const u8,
-    },
-    stun: struct {
-        attacker_name: []const u8,
-        defender_name: []const u8,
-        duration: u32,
-    },
-    knockback: struct {
-        attacker_name: []const u8,
-        defender_name: []const u8,
-        distance: u32,
-    },
-    effect_applied: struct {
-        entity_name: []const u8,
-        effect_id: EffectId,
-        duration: u32,
-    },
-    item_picked_up: struct {
-        entity_name: []const u8,
-        item_name: []const u8,
-    },
-    swap_weapons: struct {
-        entity_name: []const u8,
-    },
-};
-
 pub const TurnPhase = enum {
     player_move,
     player_attack,
@@ -596,11 +562,9 @@ pub const Level = struct {
     ground_items: []const GroundItems = &.{},
     decorations: []const Decoration = &.{},
     level_end: ?Vector2 = null,
-    tile_cursor: ?Vector2 = null,
     highlighted_tiles: []const Vector2 = &.{},
     prepared_skill: ?SkillId = null,
     turn_phase: ?TurnPhase = null,
-    combat_log: []const CombatLogEntry = &.{},
 };
 
 pub const MissionExit = struct {
@@ -854,5 +818,9 @@ pub const ViewState = struct {
     tile_overlays: []const TileOverlayDrawable,
     ground_drawables: []const GroundDrawable,
     ui_elements: []const @import("ui.zig").UiElement,
+    /// Chronological combat-log projection of the current level's events up to
+    /// the current position (empty outside a level). Built per-frame in the
+    /// frame arena; the UI renders it (top-bar coarse recent + detailed log).
+    combat_log: []const @import("events.zig").Event,
 };
 

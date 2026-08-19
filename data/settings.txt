@@ -4,6 +4,7 @@ sound_effects_volume 0.5
 
 Display
 vsync true
+render_fps_cap 0
 camera_zoom 1.0
 
 Gameplay
@@ -50,10 +51,6 @@ input_type key
 input_name Enter
 action confirm
 
-input_type mouse_button
-input_name left
-action confirm
-
 input_type key
 input_name Backspace
 action cancel
@@ -97,3 +94,19 @@ action skill_slot_7
 input_type key
 input_name Digit8
 action skill_slot_8
+
+input_type key
+input_name ArrowUp
+action move_cursor_up
+
+input_type key
+input_name ArrowDown
+action move_cursor_down
+
+input_type key
+input_name ArrowLeft
+action move_cursor_left
+
+input_type key
+input_name ArrowRight
+action move_cursor_right

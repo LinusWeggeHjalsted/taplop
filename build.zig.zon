@@ -36,6 +36,19 @@
             .url = "git+https://github.com/raylib-zig/raylib-zig#8758f4cd3a5ae0df6941c4715257223d34c5ad3e",
             .hash = "raylib_zig-6.0.0-KE8RECZ8BQDm-txuospkpZHbJ6DNpacUF7D88RWQ_qAe",
         },
+        // Emscripten SDK — used by the web build (zemscripten activates it at
+        // build time). Same version as the raylib C library's dependency.
+        .emsdk = .{
+            .url = "git+https://github.com/emscripten-core/emsdk#4.0.9",
+            .hash = "N-V-__8AAJl1DwBezhYo_VE6f53mPVm00R-Fk28NPW7P14EQ",
+        },
+        // Zig build shims for emscripten — emccStep, emccDefaultFlags/Settings,
+        // emrunStep, activateEmsdkStep. Same version as the raylib C library's
+        // dependency so the APIs match.
+        .zemscripten = .{
+            .url = "git+https://github.com/zig-gamedev/zemscripten#3fa4b778852226c7346bdcc3c1486e875a9a6d02",
+            .hash = "zemscripten-0.2.0-dev-sRlDqApRAACspTbAZnuNKWIzfWzSYgYkb2nWAXZ-tqqt",
+        },
     },
     .paths = .{
         "build.zig",

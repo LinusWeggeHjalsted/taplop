@@ -142,7 +142,12 @@ pub const LevelEvent = union(enum) {
         entity_index: u32,
     },
     player_turn_move: void,
-    player_turn_attack: void,
+    // The `force_attack_step` flag carries the player's click-time intent
+    // (ctrl held) through to the handler so auto_skip_attack_step_out_of_combat
+    // can be overridden. Set by the orchestrators that push this event.
+    player_turn_attack: struct {
+        force_attack_step: bool = false,
+    },
     enemy_turn_move: struct {
         entity_index: u32,
     },
@@ -159,6 +164,11 @@ pub const LevelEvent = union(enum) {
     move_entity: struct {
         entity_index: u32,
         destination: Vector2,
+        // True when this move was caused by knockback/retreat rather than a
+        // voluntary step. Lets the combat-log projection label forced moves
+        // distinctly (and suppress them from the coarse "moved" tier) without
+        // needing parent-context tracking.
+        is_forced: bool = false,
     },
 
     player_prepare_skill: struct {
@@ -167,6 +177,32 @@ pub const LevelEvent = union(enum) {
     },
     use_skill: struct {
         caster_index: u32,
+        skill_id: SkillId,
+        target: ?Vector2,
+    },
+
+    // --- player-action orchestrators ---
+    // Each player input pushes exactly ONE of these as the top-level event;
+    // the handler then composes the existing verb events (player_turn_attack,
+    // clear_highlights, move_entity, use_skill, turn_end, ...). This keeps one
+    // recorded event per player action so a reconstructed session derives idle
+    // points purely from virtual stack depth (see reconstructFromEventLog) and
+    // undo granularity matches a single click/key. These carry no state of
+    // their own beyond the player's intent — all mutation is in the verbs they
+    // push.
+    player_move_action: struct {
+        destination: Vector2,
+        // Carries the player's click-time intent (ctrl held) through to the
+        // handler so it can forward it to player_turn_attack's
+        // force_attack_step (ctrl overrides auto_skip_attack_step_out_of_combat).
+        force_attack_step: bool = false,
+    },
+    player_skip_move: struct {
+        force_attack_step: bool = false,
+    },
+    player_cancel_skill: void,
+    player_skip_attack: void,
+    player_use_skill: struct {
         skill_id: SkillId,
         target: ?Vector2,
     },
@@ -208,6 +244,19 @@ pub const SubLevelEvent = union(enum) {
         target_position: Vector2,
         distance: u32,
     },
+    // Collision damage from a knockback that ran into an obstacle (tile edge
+    // or another entity). Mirrors `attack`: carries the raw outgoing damage
+    // (the knockback's knockback_damage); the handler applies only the
+    // defender's incoming modifiers (no attacker outgoing — collision isn't a
+    // weapon hit), fires the collision + damage effect callbacks, and pushes
+    // death if killed. Exists as its own event so the combat-log projection
+    // sees collisions as first-class occurrences (the knockback handler used
+    // to do this inline, invisible to the stream).
+    collision: struct {
+        attacker_index: u32,
+        defender_index: u32,
+        damage: u32,
+    },
     // --- generic scalar-field mutation primitives (composed by skills) ---
     // Heal an entity, clamped to max_health.
     heal: struct {
@@ -245,6 +294,19 @@ pub const SubLevelEvent = union(enum) {
     // and emits a change_cooldown per skill.
     reset_weapon_cooldowns: struct {
         entity_index: u32,
+    },
+    // Items actually picked up from a ground stack. `pickup_around` is a pure
+    // CHECK: it scans ground items in the entity's radius and, for each in-range
+    // stack (one per position), pushes this event with just the stack's
+    // position. The handler looks up the stack at that position and transfers
+    // items into the inventory until full or the stack is empty. Carrying only
+    // the position (not the items) keeps this event simple-fielded — the
+    // session-log serializer never has to handle the Item union — while still
+    // giving the combat log a loggable "picked up at (x,y)" occurrence. An
+    // empty-tile move pushes no pickup_items, so the log stays clean.
+    pickup_items: struct {
+        entity_index: u32,
+        position: Vector2,
     },
     create_effect: struct {
         caster_index: u32,

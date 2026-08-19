@@ -14,6 +14,17 @@ pub fn build(b: *std.Build) void {
     // Lives in src/ so it can use normal relative @import paths.
     generateLookupFile(b);
 
+    // === Generated assets ===
+    // Emits generated_assets.zig at the PROJECT ROOT embedding every file
+    // under data/ and assets/ as @embedFile bytes, keyed by project-root-
+    // relative path. Exposed as the named module "generated_assets" so its
+    // package root is the project root (letting @embedFile reach data/ and
+    // assets/, which sit outside src/). This is the single-file-exe content
+    // source — see AGENTS.md "File System & IO". Re-runs every build so
+    // new/edited content is picked up (content edits to existing files
+    // require a recompile, which `zig build run` does anyway).
+    const assets_module = generateAssetsFile(b);
+
     // === Build info (game version) ===
     // Computes the game_version string at configure time (YYYY.MM.<commits
     // this month>[-dirty], derived from the build date + git) and exposes it
@@ -41,6 +52,13 @@ pub fn build(b: *std.Build) void {
     const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
         .optimize = optimize,
+        // Take over frame control ourselves: EndDrawing() then only flushes the
+        // render batch (no SwapScreenBuffer, no PollInputEvents, no frame-rate
+        // WaitTime). We call swapScreenBuffer() in render() and pollInputEvents()
+        // in pollInput() so the uncapped logic loop owns event polling — without
+        // this, EndDrawing()'s built-in PollInputEvents eats input events that
+        // accumulate during the vsync block (lost clicks).
+        .config = "-DSUPPORT_CUSTOM_FRAME_CONTROL",
     });
     const raylib = raylib_dep.module("raylib");
     const raylib_artifact = raylib_dep.artifact("raylib");
@@ -56,7 +74,34 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
     exe.root_module.addImport("build_info", build_info_module);
     exe.root_module.addImport("raylib", raylib);
+    exe.root_module.addImport("generated_assets", assets_module);
     exe.root_module.linkLibrary(raylib_artifact);
+
+    // Strip system .so files from the raylib archive before the exe links.
+    //
+    // raylib_zig's linkLinux() calls linkSystemLibrary("GL"/"X11"/...) on the
+    // raylib module, which archives the .so files into libraylib.a. LLD
+    // warns about .so files inside a .a archive ("neither ET_REL nor LLVM
+    // bitcode"), and Zig's build runner treats LLD's stderr as a build
+    // failure. The exe already links the system libs directly (-lGL -lX11
+    // etc. propagated from the raylib module), so the .so copies in the
+    // archive are redundant — safe to remove.
+    //
+    // We use zig's own ar (LLVM ar, which handles the full-path member names;
+    // GNU ar silently fails on them) via a shell one-liner that dynamically
+    // finds and strips any .so member (paths are system-dependent: /lib64 on
+    // Arch, /usr/lib/x86_64-linux-gnu on Debian, etc.). The step depends on
+    // the raylib artifact (so the archive exists) and the exe depends on the
+    // step (so it runs before linking).
+    const strip_so = b.addSystemCommand(&.{
+        "sh", "-c",
+        "ar t \"$1\" | grep '\\.so$' | while read f; do \"$0\" ar d \"$1\" \"$f\"; done",
+    });
+    strip_so.addArg(b.graph.zig_exe); // $0 — zig executable (for `zig ar d`)
+    strip_so.addFileArg(raylib_artifact.getEmittedBin()); // $1 — libraylib.a path
+    strip_so.step.dependOn(&raylib_artifact.step);
+    exe.step.dependOn(&strip_so.step);
+
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the app");
@@ -66,6 +111,104 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
+
+    // === Web target (emscripten + raylib) ===
+    // The web build reuses the SAME raylib backend + gameLoop as native (route
+    // B). Built as a wasm32-emscripten library, then packaged into HTML via
+    // emcc (zemscripten). Opt-in: `zig build web` produces zig-out/web/ziglop.html.
+    // See AGENTS.md "Platform Seam (raylib)" + "File System & IO".
+    //
+    // Phase 0 (toolchain spike): src/web.zig is a minimal raylib window to
+    // validate emcc + raylib + wasm compile and render. The real game loop
+    // wiring lands in Phase 1 (frame-body refactor) + Phase 2 (IDBFS + game).
+    const zemscripten = @import("zemscripten");
+
+    const web_target = b.resolveTargetQuery(.{ .os_tag = .emscripten, .cpu_arch = .wasm32 });
+    const raylib_web_dep = b.dependency("raylib_zig", .{
+        .target = web_target,
+        .optimize = optimize,
+        // Same custom frame control as native: EndDrawing() only flushes the
+        // render batch; we drive swapScreenBuffer + pollInputEvents ourselves
+        // from the emscripten main-loop callback (no asyncify).
+        .config = "-DSUPPORT_CUSTOM_FRAME_CONTROL",
+    });
+    const raylib_web = raylib_web_dep.module("raylib");
+    const raylib_web_artifact = raylib_web_dep.artifact("raylib");
+
+    const wasm = b.addLibrary(.{
+        .name = "ziglop",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/web.zig"),
+            .target = web_target,
+            .optimize = optimize,
+        }),
+    });
+    wasm.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
+    wasm.root_module.addImport("build_info", build_info_module);
+    wasm.root_module.addImport("raylib", raylib_web);
+    wasm.root_module.addImport("generated_assets", assets_module);
+    wasm.root_module.linkLibrary(raylib_web_artifact);
+
+    var emcc_flags = zemscripten.emccDefaultFlags(b.allocator, .{
+        .optimize = optimize,
+        .fsanitize = true,
+    });
+    var emcc_settings = zemscripten.emccDefaultSettings(b.allocator, .{
+        .optimize = optimize,
+        .emsdk_allocator = .emmalloc,
+    });
+    // The game uses the emscripten filesystem (IDBFS for persistence in Phase 2;
+    // embedded assets don't need it but FileSource.readFile falls back to the
+    // persistent dir, so the FS must exist). Allow memory growth so the wasm
+    // heap can expand beyond the initial allocation. USE_GLFW=3 links
+    // emscripten's GLFW3 shim — raylib's PLATFORM_WEB calls glfw* functions
+    // that emscripten provides via this shim (matching the raylib C library's
+    // own emccDefaultSettings wrapper).
+    // The game uses the emscripten filesystem: IDBFS for persistence (mounted
+    // at /ziglop in web.zig), and embedded assets fall back through
+    // FileSource.readFile to the persistent dir. FORCE_FILESYSTEM enables the
+    // FS API; -lidbfs.js includes the IDBFS backend (no longer default in
+    // recent emscripten). ALLOW_MEMORY_GROWTH lets the wasm heap expand.
+    // USE_GLFW=3 links emscripten's GLFW3 shim (raylib's PLATFORM_WEB uses it).
+    emcc_settings.put("FORCE_FILESYSTEM", "1") catch @panic("emcc settings OOM");
+    emcc_settings.put("ALLOW_MEMORY_GROWTH", "1") catch @panic("emcc settings OOM");
+    emcc_settings.put("USE_GLFW", "3") catch @panic("emcc settings OOM");
+    // The game's main() does substantial work at startup (config loads, game-
+    // state construction, deep copies) on top of raylib's init; the emscripten
+    // default 64KB stack overflows. 8MB is generous and matches typical native
+    // thread stacks; ALLOW_MEMORY_GROWTH keeps the heap flexible regardless.
+    emcc_settings.put("STACK_SIZE", "8mb") catch @panic("emcc settings OOM");
+
+    // -lidbfs.js: include the IDBFS backend (needed by web.zig's mount).
+    // Not a -s setting; passed as a linker flag via emcc_flags.
+    emcc_flags.put("-lidbfs.js", {}) catch @panic("emcc flags OOM");
+
+    // Custom HTML shell (no emscripten/raylib branding). The canvas id
+    // matches the one Module.canvas points at in the shell's <script>.
+    const shell_path = b.path("web/shell.html");
+
+    const web_install_dir: std.Build.InstallDir = .{ .custom = "web" };
+    const emcc_step = zemscripten.emccStep(b, wasm, .{
+        .optimize = optimize,
+        .flags = emcc_flags,
+        .settings = emcc_settings,
+        .shell_file_path = shell_path,
+        .install_dir = web_install_dir,
+    });
+    emcc_step.dependOn(zemscripten.activateEmsdkStep(b));
+
+    const web_step = b.step("web", "Build the web (emscripten) client");
+    web_step.dependOn(emcc_step);
+
+    // `zig build emrun` — serve the web build locally and open it in a browser.
+    const emrun_step = zemscripten.emrunStep(
+        b,
+        b.getInstallPath(web_install_dir, "ziglop.html"),
+        &.{},
+    );
+    emrun_step.dependOn(emcc_step);
+    const emrun_build_step = b.step("emrun", "Build and serve the web app locally using emrun");
+    emrun_build_step.dependOn(emrun_step);
 
     // === Tests ===
     // Generate a test root that imports every src/*.zig so tests are discovered
@@ -80,6 +223,7 @@ pub fn build(b: *std.Build) void {
     });
     tests.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
     tests.root_module.addImport("build_info", build_info_module);
+    tests.root_module.addImport("generated_assets", assets_module);
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
 }
@@ -280,7 +424,93 @@ fn collectZigFiles(
                 // native exe wiring above and the platform seam).
                 if (std.mem.eql(u8, rel, "native.zig")) continue;
                 if (std.mem.eql(u8, rel, "raylib_backend.zig")) continue;
+                if (std.mem.eql(u8, rel, "web.zig")) continue;
                 list.append(b.allocator, rel) catch @panic("append failed");
+            },
+            else => {},
+        }
+    }
+}
+
+/// Generates generated_assets.zig at the PROJECT ROOT, embedding every file
+/// under data/ and assets/ as @embedFile bytes into a std.StaticStringMap
+/// keyed by project-root-relative path (e.g. "data/settings.txt",
+/// "assets/world/tile.png"). This bakes all shipped content into the exe so it
+/// runs from anywhere. @embedFile needs comptime-known path literals, so the
+/// entries must be enumerated in a generated source file rather than
+/// discovered at runtime.
+///
+/// The file is emitted at the project root (not src/) and returned as a named
+/// module so its package root covers data/ and assets/ (which sit outside
+/// src/); @embedFile paths are then plain project-root-relative (no "../").
+/// initComptime sorts internally, but we pre-sort for deterministic output.
+fn generateAssetsFile(b: *std.Build) *std.Build.Module {
+    const io = b.graph.io;
+
+    var entries: std.ArrayListUnmanaged([2][]const u8) = .empty;
+    defer entries.deinit(b.allocator);
+
+    collectContentFiles(b, "data", "data", &entries);
+    collectContentFiles(b, "assets", "assets", &entries);
+
+    // Sort by key for deterministic output.
+    std.mem.sort([2][]const u8, entries.items, {}, struct {
+        fn lessThan(_: void, a: [2][]const u8, b_inner: [2][]const u8) bool {
+            return std.mem.order(u8, a[0], b_inner[0]) == .lt;
+        }
+    }.lessThan);
+
+    var content: std.ArrayListUnmanaged(u8) = .empty;
+    appendStr(b, &content,
+        "// AUTO-GENERATED by build.zig — do not edit manually.\n" ++
+        "// Embeds every file under data/ and assets/ as @embedFile bytes,\n" ++
+        "// keyed by project-root-relative path. See AGENTS.md \"File System & IO\".\n" ++
+        "const std = @import(\"std\");\n\n" ++
+        "pub const map = std.StaticStringMap([]const u8).initComptime(.{\n");
+    for (entries.items) |entry| {
+        const key = entry[0];
+        const embed_path = entry[1];
+        appendStr(b, &content, b.fmt("    .{{ \"{s}\", @embedFile(\"{s}\") }},\n", .{ key, embed_path }));
+    }
+    appendStr(b, &content, "});\n");
+
+    // Write at the project root (package root for the module) so @embedFile
+    // can reach data/ and assets/.
+    std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = "generated_assets.zig",
+        .data = content.items,
+    }) catch @panic("failed to write generated_assets.zig");
+
+    return b.addModule("generated_assets", .{ .root_source_file = b.path("generated_assets.zig") });
+}
+
+/// Recursively collect all files under `dir_path`, recording (key, embed_path)
+/// pairs into `entries`. `key_prefix` is the project-root-relative prefix the
+/// keys carry (e.g. "data" or "assets"). `embed_path` is the same as the key
+/// (both project-root-relative, since the generated file lives at the root).
+fn collectContentFiles(
+    b: *std.Build,
+    dir_path: []const u8,
+    key_prefix: []const u8,
+    entries: *std.ArrayListUnmanaged([2][]const u8),
+) void {
+    const io = b.graph.io;
+
+    var dir = std.Io.Dir.cwd().openDir(io, dir_path, .{ .iterate = true }) catch
+        @panic("failed to open directory for asset embedding");
+    defer dir.close(io);
+
+    var iter = dir.iterate();
+    while (iter.next(io) catch @panic("failed to iterate directory")) |entry| {
+        const key = b.fmt("{s}/{s}", .{ key_prefix, entry.name });
+        switch (entry.kind) {
+            .directory => {
+                const sub_dir_path = b.fmt("{s}/{s}", .{ dir_path, entry.name });
+                collectContentFiles(b, sub_dir_path, key, entries);
+            },
+            .file => {
+                // embed_path == key (project-root-relative from the root file).
+                entries.append(b.allocator, .{ key, key }) catch @panic("append failed");
             },
             else => {},
         }

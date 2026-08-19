@@ -3,7 +3,7 @@ const types = @import("types.zig");
 
 const Vector2 = types.Vector2;
 const SkillId = types.SkillId;
-const Modifiers = types.Modifiers;
+pub const Modifiers = types.Modifiers;
 const InputBinding = types.InputBinding;
 const RawInput = types.RawInput;
 const Settings = types.Settings;
@@ -125,6 +125,11 @@ pub const PlayerInput = struct {
     anytime: AnytimeInput = .{},
     idle: IdleInput = .{},
     pointer: PointerInput = .{},
+    /// Current modifier-key state at input translation time. Read by the
+    /// idle-input path for per-action overrides (e.g. ctrl held at click-time
+    /// forces the attack step even with auto_skip enabled). Not a binding —
+    /// bindings filter on modifiers in checkAction; this is the raw held state.
+    modifiers: Modifiers = .{},
 };
 
 /// Raw primary-pointer facts for the UI-resolution step (hit-testing, drag
@@ -157,7 +162,21 @@ pub const InGameInput = struct {
     toggle_entity_inspect: ?u32 = null,
     toggle_world_map: bool = false,
     swap_weapons: bool = false,
-    move_tile_cursor_to: ?Vector2 = null,
+    /// Raw, unvalidated tile under the mouse this frame (screenToTile of the
+    /// mouse position; may not be a real level/hub tile). The cursor
+    /// resolution step in update() validates it against the world tiles and
+    /// applies UI occlusion before writing session.tile_cursor.
+    mouse_tile: ?Vector2 = null,
+    /// True if the mouse moved this tick. The cursor resolution uses this to
+    /// decide whether the mouse or the arrow keys own the cursor this frame
+    /// (mouse takes precedence when it moved; otherwise arrows nudge).
+    mouse_moved_this_tick: bool = false,
+    // Arrow-key cursor nudges (edge-triggered this tick). Consumed by the
+    // cursor resolution when the mouse didn't move.
+    move_cursor_up: bool = false,
+    move_cursor_down: bool = false,
+    move_cursor_left: bool = false,
+    move_cursor_right: bool = false,
 };
 
 /// Actions that are only handled when the event stack is empty
@@ -190,6 +209,10 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,
         .toggle_world_map => player_input.anytime.in_game.toggle_world_map = true,
         .swap_weapons => player_input.anytime.in_game.swap_weapons = true,
+        .move_cursor_up => player_input.anytime.in_game.move_cursor_up = true,
+        .move_cursor_down => player_input.anytime.in_game.move_cursor_down = true,
+        .move_cursor_left => player_input.anytime.in_game.move_cursor_left = true,
+        .move_cursor_right => player_input.anytime.in_game.move_cursor_right = true,
         .confirm => player_input.idle.confirm = true,
         .cancel => player_input.idle.cancel = true,
         .skip => player_input.idle.skip = true,
@@ -299,6 +322,9 @@ pub fn translateInput(
     // Accumulate scroll delta across all events this tick
     var scroll_delta: f32 = 0;
 
+    // Whether the mouse moved this tick (set in the mouse_move handler).
+    var mouse_moved_this_tick: bool = false;
+
     // Process each raw event
     for (platform.events) |event| {
         switch (event) {
@@ -322,6 +348,16 @@ pub fn translateInput(
                 InputState.removeHeld(&state.mouse_buttons_held, button);
             },
             .mouse_move => |position| {
+                // Only treat the mouse as having moved when the position
+                // actually changed. The raylib backend emits a mouse_move
+                // event every frame unconditionally (it always pushes the
+                // current position), so without this check the arrow keys
+                // could never take over the cursor.
+                if (state.mouse_screen_position.x != position.x or
+                    state.mouse_screen_position.y != position.y)
+                {
+                    mouse_moved_this_tick = true;
+                }
                 state.mouse_screen_position = position;
             },
             .mouse_scroll => |delta| {
@@ -387,9 +423,16 @@ pub fn translateInput(
     result.anytime.in_game.toggle_skills = checkAction(.toggle_skills, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.in_game.toggle_world_map = checkAction(.toggle_world_map, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.in_game.swap_weapons = checkAction(.swap_weapons, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.move_cursor_up = checkAction(.move_cursor_up, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.move_cursor_down = checkAction(.move_cursor_down, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.move_cursor_left = checkAction(.move_cursor_left, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.move_cursor_right = checkAction(.move_cursor_right, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
 
-    // Mouse move → tile cursor
-    result.anytime.in_game.move_tile_cursor_to = screenToTile(state.mouse_screen_position, camera, zoom, platform.viewport);
+    // Raw mouse-over-tile (unvalidated; the cursor resolution in update()
+    // checks it against world tiles + UI occlusion). Plus whether the mouse
+    // moved this tick (mouse owns the cursor when it moved; arrows otherwise).
+    result.anytime.in_game.mouse_tile = screenToTile(state.mouse_screen_position, camera, zoom, platform.viewport);
+    result.anytime.in_game.mouse_moved_this_tick = mouse_moved_this_tick;
 
     // Idle actions
     result.idle.confirm = checkAction(.confirm, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
@@ -425,5 +468,6 @@ pub fn translateInput(
         },
     };
 
+    result.modifiers = modifiers;
     return result;
 }

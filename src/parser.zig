@@ -2,6 +2,9 @@ const std = @import("std");
 const types = @import("types.zig");
 const build_info = @import("build_info");
 const events_mod = @import("events.zig");
+const file_source_mod = @import("file_source.zig");
+
+const FileSource = file_source_mod.FileSource;
 
 const Event = events_mod.Event;
 
@@ -239,14 +242,14 @@ pub const ParsedConfigFile = struct {
     raw_text: []const u8,
 };
 
-/// Read a file from disk and parse it into sections.
+/// Read a file via the FileSource (persistent dir / embedded map) and parse
+/// it into sections. See AGENTS.md "File System & IO".
 pub fn parseConfigFileFromPath(
-    directory: std.Io.Dir,
-    io: std.Io,
+    file_source: *const FileSource,
     file_path: []const u8,
     allocator: std.mem.Allocator,
 ) !ParsedConfigFile {
-    const raw_text = try directory.readFileAlloc(io, file_path, allocator, .limited(1024 * 1024));
+    const raw_text = try file_source.readFile(allocator, file_path);
     const sections = try parseConfigFile(raw_text, allocator);
     return .{
         .sections = sections,
@@ -399,6 +402,9 @@ pub fn loadSettings(
             const pairs = section.entry_groups[0].pairs;
             if (findValue(pairs, "vsync")) |value| {
                 settings.vsync = asBool(value) orelse settings.vsync;
+            }
+            if (findValue(pairs, "render_fps_cap")) |value| {
+                settings.render_fps_cap = asU32(value) orelse settings.render_fps_cap;
             }
             if (findValue(pairs, "camera_zoom")) |value| {
                 settings.camera_zoom = asF32(value) orelse settings.camera_zoom;
@@ -1406,20 +1412,16 @@ fn writeInventoryItem(
     try buffer.print(allocator, "slot {d}\n", .{slot_index});
 }
 
-/// Write a PlayerData struct to a file on disk (standalone mode).
+/// Write a PlayerData struct to the persistent data dir via the FileSource.
 pub fn writePlayerSaveToFile(
-    directory: std.Io.Dir,
-    io: std.Io,
+    file_source: *const FileSource,
     file_path: []const u8,
     player_data: PlayerData,
     allocator: std.mem.Allocator,
 ) !void {
     const save_data = try writePlayerSave(player_data, allocator);
     defer allocator.free(save_data);
-    try directory.writeFile(io, .{
-        .sub_path = file_path,
-        .data = save_data,
-    });
+    try file_source.writeFile(file_path, save_data);
 }
 
 // ============================================================
@@ -1440,15 +1442,19 @@ pub fn writePlayerSaveToFile(
 //
 //   EventLog
 //
+//   event_index <N>
 //   event <category> <variant>
 //   <field> <value>
 //   ...
 //
-// Each event is one blank-line-separated entry group; the first `event` pair is
-// the discriminator (outer union tag = category, inner tag = variant). Payload
-// fields follow, one per line. Optionals omit their line when null. Vector2 /
-// Materials serialize as space-separated ints; slices of them (e.g.
-// highlight_tiles) flatten into one space-separated line; enums via @tagName.
+// Each event is one blank-line-separated entry group: a decorative
+// `event_index <N>` header line (purely for human readability — the reader
+// ignores it, and hand-edited/externally-authored logs may omit it), then the
+// `event` pair as the discriminator (outer union tag = category, inner tag =
+// variant). Payload fields follow, one per line. Optionals omit their line
+// when null. Vector2 / Materials serialize as space-separated ints; slices of
+// them (e.g. highlight_tiles) flatten into one space-separated line; enums via
+// @tagName.
 
 /// Serialize an event history (+ a created timestamp) into a session-log file
 /// body. `created` is expected as "YYYYMMDD_HHMMSS" but is written verbatim.
@@ -1465,8 +1471,12 @@ pub fn writeEventLog(
     try buffer.print(allocator, "created {s}\n", .{created});
 
     try buffer.appendSlice(allocator, "\nEventLog\n");
-    for (event_history) |event| {
+    for (event_history, 0..) |event, index| {
         try buffer.appendSlice(allocator, "\n");
+        // Decorative index header — purely for human readability when scanning
+        // a log. The reader ignores it (not required to parse), so hand-edited
+        // or externally-authored logs can omit it entirely.
+        try buffer.print(allocator, "event_index {d}\n", .{index});
         try writeEvent(&buffer, allocator, event);
     }
 
@@ -1828,10 +1838,10 @@ test "parseConfigFileFromPath reads a file from disk without error" {
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
     const parsed = try parseConfigFileFromPath(
-        std.Io.Dir.cwd(),
-        io,
+        &file_source,
         "data/settings.txt",
         allocator,
     );
@@ -1869,6 +1879,7 @@ test "loadSettings parses settings sections into a Settings struct" {
         \\
         \\Display
         \\vsync false
+        \\render_fps_cap 144
         \\camera_zoom 2.0
         \\
         \\Gameplay
@@ -1898,6 +1909,7 @@ test "loadSettings parses settings sections into a Settings struct" {
 
     // Display values
     try std.testing.expectEqual(false, settings.vsync);
+    try std.testing.expectEqual(@as(u32, 144), settings.render_fps_cap);
     try std.testing.expectApproxEqAbs(2.0, settings.camera_zoom, 0.001);
 
     // Gameplay values
@@ -2554,11 +2566,11 @@ test "new_player.txt parses and round-trips correctly" {
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
     // Parse the file from disk
     const parsed = try parseConfigFileFromPath(
-        std.Io.Dir.cwd(),
-        io,
+        &file_source,
         "data/new_player.txt",
         allocator,
     );
@@ -2706,10 +2718,10 @@ test "color_themes.txt parses from disk" {
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
     const parsed = try parseConfigFileFromPath(
-        std.Io.Dir.cwd(),
-        io,
+        &file_source,
         "data/color_themes.txt",
         allocator,
     );
@@ -2880,9 +2892,13 @@ test "writeEventLog serializes representative event shapes" {
     try std.testing.expectEqualStrings("Metadata", sections[0].header);
     try std.testing.expectEqualStrings("EventLog", sections[1].header);
     try std.testing.expectEqual(history.len, sections[1].entry_groups.len);
-    // First pair of each event group is the `event` discriminator.
-    try std.testing.expectEqualStrings("event", sections[1].entry_groups[0].pairs[0].key);
-    try std.testing.expectEqualStrings("meta_event open_main_menu", sections[1].entry_groups[0].pairs[0].value);
+    // Each event group begins with the decorative `event_index` header, then
+    // the `event` discriminator (event_index is purely for human readability
+    // — the reader ignores it).
+    try std.testing.expectEqualStrings("event_index", sections[1].entry_groups[0].pairs[0].key);
+    try std.testing.expectEqualStrings("0", sections[1].entry_groups[0].pairs[0].value);
+    try std.testing.expectEqualStrings("event", sections[1].entry_groups[0].pairs[1].key);
+    try std.testing.expectEqualStrings("meta_event open_main_menu", sections[1].entry_groups[0].pairs[1].value);
 }
 
 test "data/settings.txt binds ctrl+L to dump_event_log" {
@@ -2890,10 +2906,10 @@ test "data/settings.txt binds ctrl+L to dump_event_log" {
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
     const parsed = try parseConfigFileFromPath(
-        std.Io.Dir.cwd(),
-        io,
+        &file_source,
         "data/settings.txt",
         allocator,
     );

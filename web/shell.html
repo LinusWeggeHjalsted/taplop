@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ziglop</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #1a1424;
+        overflow: hidden;
+      }
+      /* The canvas fills the viewport. Raylib (emscripten's GLFW shim) sets the
+         drawing buffer via canvas.width/canvas.height; we set the CSS display
+         size to match so mouse coordinates (CSS pixels) line up with the
+         drawing buffer pixels the renderer uses. Without this, the browser may
+         CSS-stretch the canvas, making clicks land in the wrong place. */
+      #game {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game" oncontextmenu="event.preventDefault()"></canvas>
+    <script>
+      var Module = {
+        canvas: (function () {
+          return document.getElementById("game");
+        })(),
+      };
+
+      // Prevent the browser from eating Ctrl+letter combos that the game uses
+      // as keybindings (Ctrl+L focuses the address bar, Ctrl+Z/Y are undo/redo,
+      // etc.). Without this, browser shortcuts intercept game input before
+      // raylib's GLFW shim sees the keydown. We only prevent default for
+      // Ctrl+letter/digit combos — F-keys, Ctrl+R (refresh), Ctrl+Shift+I
+      // (devtools) and other browser-essential shortcuts are left alone.
+      document.addEventListener("keydown", function (e) {
+        if (e.ctrlKey && !e.altKey && !e.metaKey) {
+          var key = e.key;
+          if (key.length === 1 && /^[a-zA-Z0-9]$/.test(key)) {
+            e.preventDefault();
+          }
+        }
+      });
+    </script>
+    <!-- emscripten injects the .js here via {{{ SCRIPT }}} -->
+    {{{ SCRIPT }}}
+  </body>
+</html>

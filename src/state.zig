@@ -4,6 +4,9 @@ const events = @import("events.zig");
 const deep_copy = @import("deep_copy.zig");
 const input = @import("input.zig");
 const ui = @import("ui.zig");
+const file_source_mod = @import("file_source.zig");
+
+const FileSource = file_source_mod.FileSource;
 
 const deepCopy = deep_copy.deepCopy;
 
@@ -65,9 +68,17 @@ pub const WaitState = struct {
 // it never affects gameplay outcomes and is not reconstructed by event replay.
 // Lives on GameStateHistory alongside settings. UI panels are reset on screen
 // transition by the live loop (see gameLoop), not by an event.
+//
+// `tile_cursor` is the tile currently under the logical cursor (mouse or
+// arrow-key driven). It lives here, not on GameState, because it is transient
+// input state: auto_target_at_cursor reads it in the input path
+// (handleIdleInput), and the resulting player_use_skill event is what replay
+// reproduces — the cursor value at prepare-time is never needed for
+// reconstruction. See AGENTS.md "Replay & Side Effects" (SessionState rule).
 pub const SessionState = struct {
     input_state: input.InputState = .{},
     ui_state: UiState = .{},
+    tile_cursor: ?types.Vector2 = null,
 };
 
 pub const GameState = struct {
@@ -130,9 +141,18 @@ pub const GameStateHistory = struct {
     color_theme_definitions: ColorThemeDefinitions,
     salvage_definitions: SalvageDefinitions,
 
-    // File I/O handles for standalone mode. On web, file loading goes
-    // through JS — these are not used.
-    directory: std.Io.Dir,
+    // Unified file I/O (read-only content via the embedded map + player
+    // overrides; writable artifacts via the persistent dir). Session-resident,
+    // like settings — never deep-copied into snapshots, never touched by
+    // replay. See AGENTS.md "File System & IO" and file_source.zig.
+    file_source: *const FileSource,
+
+    // The general I/O handle (clocks, future async/networking, etc.) — a
+    // sibling to `file_source`, NOT nested inside it, because `std.Io` is
+    // broader than file reading/writing. Callers that need the clock (e.g.
+    // formatSessionTimestamp) read this directly instead of reaching through
+    // the file abstraction. A cheap vtable-handle copy of the same `std.Io`
+    // that `file_source` also holds.
     io: std.Io,
 
     // The initial game state at launch — ultimate fallback for replay.
@@ -195,7 +215,7 @@ pub const GameStateHistory = struct {
         weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
         color_theme_definitions: ColorThemeDefinitions,
         salvage_definitions: SalvageDefinitions,
-        directory: std.Io.Dir,
+        file_source: *const FileSource,
         io: std.Io,
     ) GameStateHistory {
         return .{
@@ -203,7 +223,7 @@ pub const GameStateHistory = struct {
             .weapon_type_definitions = weapon_type_definitions,
             .color_theme_definitions = color_theme_definitions,
             .salvage_definitions = salvage_definitions,
-            .directory = directory,
+            .file_source = file_source,
             .io = io,
             .backing_allocator = allocator,
             .history_arena = std.heap.ArenaAllocator.init(allocator),
@@ -324,6 +344,19 @@ pub const GameStateHistory = struct {
         self.checkpoint_ring_index += 1;
     }
 
+    /// Record an idle point: the live loop's stack-empty bookkeeping. Bundles
+    /// snapshot + arena compaction so the live loop and reconstruction share
+    /// one action (detection of the idle boundary differs — the live loop
+    /// watches the real stack drain; reconstruction tracks virtual stack
+    /// depth over the recorded stream). Call only when the event stack is
+    /// empty (live) or the virtual depth has hit 0 (reconstruction).
+    pub fn recordIdlePoint(
+        self: *GameStateHistory,
+    ) void {
+        self.takeSnapshot();
+        self.compactCurrentArena();
+    }
+
     /// Compact current_state into a fresh arena, reclaiming the per-turn churn
     /// (abandoned event-stack reallocations, rebuilt slices, exited levels/hubs)
     /// that accumulated in current_arena since the last reset. Call at idle
@@ -422,6 +455,69 @@ pub const GameStateHistory = struct {
         self.current_state.waiting = null;
     }
 
+    /// Replay events up to target_event_index, deriving idle points along the
+    /// way so a reconstructed session undoes/steps "as if played live".
+    ///
+    /// The recorded event_history is the fully-linearized stream — handler-
+    /// pushed sub-events are themselves subsequent recorded entries. So idle
+    /// points (stack-empty moments) are recoverable via VIRTUAL STACK DEPTH:
+    /// each recorded event is forced onto the stack and applied; after the
+    /// handler runs, the stack length K is the sub-events it pushed. Depth
+    /// changes by K - 1 (one popped, K pushed). Depth hitting 0 means the
+    /// stack just drained = an idle point → recordIdlePoint there. The next
+    /// recorded event is a fresh top-level player action from an empty stack,
+    /// so depth resets to 1.
+    ///
+    /// This relies on each player action pushing exactly ONE top-level event
+    /// (the orchestrator convention — see player_move_action etc.); otherwise
+    /// sibling batches can't be distinguished from drains and idle points
+    /// over-detect. Does NOT touch the undo/redo slow path (replayTo).
+    fn replayToWithIdleTracking(
+        self: *GameStateHistory,
+        target_event_index: u32,
+        apply_event: *const fn (*GameStateHistory) void,
+    ) void {
+        // Reconstruction always starts from the initial state (no snapshots/
+        // checkpoints exist on a freshly-inited history). The initial state
+        // carries a single seed event on its stack (e.g. open_main_menu), so
+        // the first recorded event is that seed draining to an idle point.
+        self.current_arena.deinit();
+        self.current_arena = std.heap.ArenaAllocator.init(self.backing_allocator);
+        self.current_state = deepCopy(GameState, self.initial_state, self.current_arena.allocator());
+        self.current_event_index = 0;
+
+        self.replaying = true;
+        defer self.replaying = false;
+
+        var virtual_depth: u32 = @intCast(self.initial_state.event_stack.len);
+
+        while (self.current_event_index < target_event_index) {
+            const event = self.event_history.items[self.current_event_index];
+            self.current_state.event_stack = &.{event};
+            apply_event(self);
+
+            // K = sub-events the handler pushed (the forced event itself was
+            // popped by apply_event, so the remaining stack IS the children).
+            const pushed: u32 = @intCast(self.current_state.event_stack.len);
+
+            if (pushed >= 1) {
+                virtual_depth += pushed - 1;
+            } else {
+                // No children: the event fully drained one level of depth.
+                if (virtual_depth > 0) virtual_depth -= 1;
+            }
+
+            if (virtual_depth == 0) {
+                // Stack-empty moment — same bookkeeping the live loop runs.
+                self.recordIdlePoint();
+                // The next recorded event is a fresh top-level action.
+                virtual_depth = 1;
+            }
+        }
+
+        self.current_state.waiting = null;
+    }
+
     /// Restore from a saved state, or replay if no exact match exists.
     fn restoreTo(
         self: *GameStateHistory,
@@ -472,18 +568,44 @@ pub const GameStateHistory = struct {
         return true;
     }
 
+    /// The event index where the current level began: the most recent
+    /// `start_level` meta event at or before `current_event_index`. Returns
+    /// null if none is in the prefix (e.g. on the main menu or in a hub), so
+    /// the combat-log projection knows there is no current-level span to show.
+    /// Pure backward scan, O(events since level start).
+    pub fn levelStartEventIndex(
+        self: *const GameStateHistory,
+    ) ?u32 {
+        var index: usize = @intCast(self.current_event_index);
+        while (index > 0) {
+            index -= 1;
+            const event = self.event_history.items[index];
+            switch (event) {
+                .meta_event => |meta| switch (meta) {
+                    .start_level => return @intCast(index + 1),
+                    else => {},
+                },
+                else => {},
+            }
+        }
+        return null;
+    }
+
     /// Load a recorded event history (e.g. from a session-log file) and
     /// reconstruct the state at `target_event_index` (pass the event count for
     /// the end). Events are deep-copied into the durable history arena, then
-    /// the existing replay machinery rebuilds the state from initial_state.
+    /// the state is rebuilt from initial_state.
+    ///
+    /// Idle points are DERIVED during replay via virtual stack depth (see
+    /// replayToWithIdleTracking), NOT serialized — so a loaded session undoes/
+    /// redoes and steps "as if played live", with matching idle point indices.
+    /// This relies on the one-orchestrator-event-per-player-action convention.
     ///
     /// Must be called on a freshly-inited history whose initial_state matches
     /// the session's starting state; assumes an empty event_history (no live
     /// timeline to branch from). Intended for session-log replay — the test
     /// harness reconstructs to the end; the replay viewer will later step by
-    /// calling this (or restoreTo) at successive targets. idle_points are NOT
-    /// populated (they aren't serialized); step boundaries are derived by the
-    /// caller, and undo/redo aren't used on a reconstructed log.
+    /// calling this (or restoreTo) at successive targets.
     pub fn reconstructFromEventLog(
         self: *GameStateHistory,
         event_log: []const Event,
@@ -495,7 +617,7 @@ pub const GameStateHistory = struct {
             const durable_event = deepCopy(Event, event, arena);
             self.event_history.append(arena, durable_event) catch @panic("failed to append event");
         }
-        self.replayTo(target_event_index, apply_event);
+        self.replayToWithIdleTracking(target_event_index, apply_event);
     }
 };
 

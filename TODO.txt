@@ -37,15 +37,65 @@ NEXT UP (priority order):
   A. LOGGING: session log write/parse/reconstruct is DONE (PR 1b/2/3 — ctrl+L
      dump, comptime writer+reader in parser.zig, reconstructFromEventLog +
      end-to-end test). Tiebreaking convention added + turn_end fixed.
-     >>> NEXT SESSION START HERE: the VIRTUAL-DEPTH RECONSTRUCTION REFACTOR —
-     record idle points + snapshots during replay so a loaded session undoes/
-     steps "as if played live". Full design in "Logging follow-ups" below (track
-     virtual stack depth from post-apply_event event_stack.len; depth 0 = idle
-     point -> takeSnapshot/compact; factor the idle bookkeeping into a helper
-     shared with gameLoop). Unblocks fast replay-viewer stepping.
-     THEN: combat log projection + UI, replay-viewer stepping, and the deferred
+     VIRTUAL-DEPTH RECONSTRUCTION REFACTOR DONE: replayToWithIdleTracking
+     derives idle points + snapshots during replay from virtual stack depth
+     (depth 0 = stack-empty = idle point -> recordIdlePoint), so a loaded
+     session undoes/steps "as if played live". recordIdlePoint helper shared
+     by the live gameLoop and reconstruction. Required the ONE-EVENT-PER-
+     PLAYER-ACTION convention (5 new orchestrator LevelEvents:
+     player_move_action / player_skip_move / player_cancel_skill /
+     player_skip_attack / player_use_skill) so sibling batches don't
+     over-detect idle points. Round-trip test extended to assert idle_points
+     match + undo-to-start on a reconstructed session.
+     NEXT: combat log projection + UI, replay-viewer stepping, and the deferred
      combat-flow bugs (logging now exists to troubleshoot them). Combat log +
      replay viewer are projections of the same event log.
+     >>> COMBAT LOG PROJECTION — event refactors + projection DONE; UI TODO:
+     No CombatLogEntry type: the projection returns []const Event (the
+     whitelisted subset within the current level, up to current_event_index);
+     a tier function combatLogTier(Event)->{none,coarse,fine} classifies. Pure
+     O(events-in-level) per-frame in view() into the frame arena (backward scan
+     via history.levelStartEventIndex for the most recent start_level, forward
+     filter to current_event_index — so undo truncates the future and crossing
+     back to the hub shows no log). No SessionState cache. UI resolves
+     entity_index/skill_id/effect_id to display strings against current_state
+     at render time (entity_index is stable within a level; dead entities keep
+     their slot). Old CombatLogEntry union + Level.combat_log scaffolding
+     DELETED. Lives in src/combat_log.zig (projectCombatLog + combatLogTier),
+     headless-tested with synthetic event slices (4 tests). ViewState gained a
+     combat_log field; view() takes event_history + level_start_index +
+     current_event_index params. Three event refactors landed so the stream
+     carries actual occurrences (not checks that might do nothing):
+       1. [DONE] move_entity gained is_forced:bool = false; knockback/retreat
+          push sites set it true (2 sites). Projection: !is_forced -> coarse
+          "moved to"; is_forced -> fine "knocked/pushed to".
+       2. [DONE] New collision sub_level_event { attacker_index, defender_index,
+          damage } carrying the RAW knockback_damage (mirrors attack carrying
+          outgoing_damage); its handler applies defender incoming modifiers,
+          fires on_outgoing/incoming_collision + on_outgoing/incoming_damage,
+          and pushes death if killed. The knockback handler's inline collision
+          block moved into the collision handler, pushed only when collided.
+          Tier: fine.
+       3. [DONE] New pickup_items sub_level_event { entity_index, position };
+          pickup_around is now a pure CHECK (no mutation): for each ground
+          stack in range, push pickup_items keyed by position. The pickup_items
+          handler finds the stack at that position, transfers items into the
+          inventory (first-empty-slot), and either keeps the stack with
+          leftovers or removes it. Carrying only the position (not the items)
+          avoids needing Item-union support in the session-log serializer; the
+          log shows "picked up at (x,y)" (no item details — pickups aren't
+          combat). Only pushed when items are actually in range -> log-clean on
+          empty moves. Tier: fine.
+     Tier map (coarse = top-bar last-N; fine = detailed interleaved with coarse):
+       coarse: move_entity(!is_forced), use_skill, death
+       fine:   attack, stun, knockback, retreat, heal, create_effect,
+               end_effect, collision, pickup_items, move_entity(is_forced)
+       none:   everything else (incl. swap_hands — player-only, spammable;
+               highlight/clear/turn-phase/aggro mechanic noise)
+     >>> NEXT: the combat-log UI (buildTopBar coarse recent-icons view +
+     buildFullCombatLog detailed overlay) renders ViewState.combat_log, mapping
+     events to display strings with names from current_state. Same projection
+     drives replay-viewer stepping later.
   B. Mission end states: mission_complete / mission_fail screens + player-death
      path (see "Mission Flow"). Verify level-end flag -> end_level -> end_mission
      -> start_hub actually returns to the hub. This closes the loop.
@@ -54,15 +104,17 @@ NEXT UP (priority order):
   D. Remaining 4b visuals: gear + effect sprites, sprite animation (8fps) +
      animated flag banner, ground items, decorations (footprint splitting).
   E. Input/camera leftovers: right-click-drag camera pan (wanted for big
-     levels); GameState.tile_cursor wiring for auto_target_at_cursor (unset);
-     occlude cursor overlay / world clicks under the bottom bar.
+     levels); tab-targeting (cycle highlighted tiles with Tab — speed up
+     target selection; reuse the cursor resolution). Cursor overlay is now
+     occluded under blocking UI (resolveTileCursor clears it).
   F. Cross-cutting polish: real TTF font (text is blurry default font), 9-slice
      TILING (currently stretched), `highlighted` edge outlines, missing art
      (ui/icon_swap, ui/momentum, ui/cooldown_overlay draw magenta).
   G. Larger systems (beyond MVP): middle panels (inventory/gear/skills/enemy
      inspect) + overlays (world map, full combat log) + options/settings/top bar
-     (drag-drop needs panels to be usable); NPC interaction/dialogue; audio;
-     web (wasm32-emscripten) build reusing raylib_backend + gameLoop.
+     (drag-drop needs panels to be usable); NPC interaction/dialogue; audio.
+     [Web build LANDED — see Platform Layer; Phase 3 (IDBFS flush) + Phase 4
+     (download-budget polish) remain.]
 
 KNOWN DEFERRED BUGS: enemy/combat turn-flow issues seen in playtesting; do NOT
   chase individually — land logging (A) first.
@@ -181,10 +233,35 @@ Turn Flow Pacing (wait event)
       loop (vsync / target FPS) so view()+render() run once per frame. The dead
       time_since_last_view / needs_snapshot vars are gone; snapshots are still
       taken on stack-empty.
-  - PACING FOLLOW-UP: gameLoop now runs update() exactly once per rendered
-      frame, so a large event stack (e.g. level load) drains at frame rate.
-      Revisit with a per-frame drain loop (drain events until a wait or idle,
-      then render once) if/when it becomes visible in a later phase.
+  - [FIXED] PACING: gameLoop is now UNCAPPED — one update() per iteration,
+      rendering gated to a real-clock interval (vsync → monitor refresh rate
+      via rl.getMonitorRefreshRate; or 1/render_fps_cap; or 0 = render every
+      iteration when vsync off + cap 0). Gameplay logic (event drain) runs as
+      fast as the CPU allows between renders; waits use real-clock deltas
+      (rl.getTime, not getFrameTime) so turn-flow pacing is precise regardless
+      of loop speed. Idle yield (rl.waitTime 0.1ms when stack empty + no wait)
+      avoids 100% CPU spin while keeping ~0.1ms input latency (~10% core, well
+      under a 60Hz frame). Idle AND wait states both yield (a wait is just an
+      empty-drain state where only the timer + anytime input need attention —
+      no reason to spin at full throttle); during active event drains the loop
+      spins freely (useful work, no yield). pollInputEvents() pumps the OS queue each iteration
+      so the window stays responsive between renders. New Settings field
+      render_fps_cap (0=none); vsync (existing) overrides the cap. raylib
+      backend gained realClockMicroseconds/renderIntervalMicroseconds/waitTime/
+      applyVsync; deltaMicroseconds switched to real-clock elapsed-since-last.
+      RENDER SEMANTICS: rendering is SKIPPED while an event drain is in progress
+      (stack non-empty, no wait) — vsync (swapScreenBuffer) blocks the thread
+      for a full refresh, so rendering every drain iteration would frame-lock
+      the drain to the render rate. We render only when the drain completes
+      (stack empties) or pauses (a wait is active). Intermediate drain states
+      flash by in <1ms and aren't worth a frame anyway. CAVEAT: a very long
+      non-wait drain (thousands of events, e.g. a future replay fast-forward
+      through the live loop or a skip-all-turns feature) would show nothing
+      until it ends — not a concern for current workloads (level loads ~30
+      events, turn_end ~255 events worst case, all <3ms), and replay
+      reconstruction uses a separate path. If a long-drain feature lands, either
+      insert periodic waits in that drain or switch its loop to a drain-burst-
+      per-iteration model (drain until wait/idle, then render at the gate).
 
 Build-time Lookups [DONE]
   [x] Generated src/generated_lookups.zig with getEffectDefinition / getSkillDefinition
@@ -650,9 +727,12 @@ Logging & Replay
       omit line when null. New events serialize with no changes here.
   [x] Metadata header: file_format_version (=1) + game_version + created
       (YYYYMMDD_HHMMSS, UTC). EventLog section (added to parser whitelist): one
-      blank-line-separated entry group per event; first line `event <category>
-      <variant>`; payload fields one per line. No idle_points. Round-trips
-      structurally through parseConfigFile (unit-tested).
+      blank-line-separated entry group per event; a decorative `event_index <N>`
+      header line (purely for human readability — the reader ignores it,
+      hand-edited/externally-authored logs may omit it), then `event <category>
+      <variant>` discriminator, then payload fields one per line. No
+      idle_points. Round-trips structurally through parseConfigFile (unit-
+      tested).
   [x] ctrl+L: Action.dump_event_log + KeyL+ctrl binding in data/settings.txt;
       handleAnytimeInput -> dumpEventLog writes session_log_YYYYMMDD_HHMMSS.txt
       to cwd via history.directory (side effect on the input path, so off the
@@ -671,36 +751,42 @@ Logging & Replay
       an unsupported-version rejection, and a verified byte-identical
       re-serialization of the real 153-event session log.
 
-  PR 3 — reconstruct + step [DONE for reconstruct-to-end; stepping deferred]
+  PR 3 — reconstruct + step [DONE]
   [x] GameStateHistory.reconstructFromEventLog(events, target_index,
       apply_event) (state.zig): deep-copies the loaded events into
-      history_arena, then drives the existing replayTo machinery from
+      history_arena, then rebuilds state via replayToWithIdleTracking from
       initial_state. Call on a freshly-inited history whose initial_state
-      matches the session start; idle_points not populated (not serialized).
+      matches the session start.
   [x] game_version advisory warn: warnIfSessionLogFromDifferentBuild in
       main.zig (warn-only, never fails). build_info imported into main.zig.
   [x] End-to-end harness test (main.zig): forward-plays a scripted session
       (main menu -> new game -> hub -> hub move) into one history, serializes ->
       parses -> loads, reconstructs into a second history, asserts the final
       current_state is deep-equal (forward play == replay). runToIdle helper
-      drives processEvent to stack-empty. This is the lighter end-to-end
-      processEvent harness the Tech Debt section wanted.
+      drives processEvent to stack-empty and records the idle point (mirrors
+      the live gameLoop). Extended to also assert history2.idle_points deep-
+      equals history1.idle_points (virtual-depth derivation matches live
+      bookkeeping) and that undo walks a reconstructed session back to start.
+      This is the lighter end-to-end processEvent harness the Tech Debt section
+      wanted.
   - TODO: wire the .replay_viewer screen to STEP through a loaded log via
     reconstructFromEventLog/restoreTo at successive targets. Steps = the
     combat-log filter (derived, not idle_points). Needs the projection +
-    replay-viewer UI (see Combat Log UI + the deferred coarse/granular
-    decision).
+    replay-viewer UI (see Combat Log UI).
 
-  Deferred decision: combat log coarse (one entry per skill use) vs granular
-  (skill + each consequence). The same filter/whitelist drives combat-log UI +
-  replay stepping. CombatLogEntry-on-Level scaffolding likely deleted in favor
-  of an on-demand projection (see AGENTS.md).
+  Combat log projection: DESIGN SETTLED (see NEXT UP section A above for the
+  full plan). Coarse (top bar) + fine (detailed), both from one projection
+  over event_history via a tier function. No stored CombatLogEntry; the old
+  CombatLogEntry union + Level.combat_log scaffolding will be deleted.
 
-Combat Log (UI — depends on the projection above)
-  - Collapsed icon-based recent-history view in the top bar
-  - Expandable full-screen detailed combat log (buildFullCombatLog overlay)
-  - Projection function: event_history slice -> combat entries (shared with
-    replay-viewer stepping)
+Combat Log (UI — projection DONE, rendering TODO)
+  - Collapsed icon-based recent-history view in the top bar (coarse tier,
+    last N) — buildTopBar
+  - Expandable full-screen detailed combat log (buildFullCombatLog overlay;
+    coarse + fine interleaved chronologically)
+  - Projection: src/combat_log.zig projectCombatLog + combatLogTier DONE
+    (shared with replay-viewer stepping). ViewState.combat_log is the per-frame
+    slice; UI maps events to display strings with names from current_state.
 
 Mission Flow
   - mission_fail screen (triggered on player death)
@@ -711,10 +797,12 @@ Mission Flow
     — these exit paths don't exist yet; today only level-completion and hub
     mission-exit route through them)
 
-Platform Layer (raylib)  [Phase 1+2 DONE — window/clock/input + UI renderer]
-  Native-first (Linux desktop). Web is deferred and will be wasm32-emscripten
-  reusing the SAME raylib backend (route B), not the old freestanding-wasm +
-  JS-renderer stub (removed from build.zig).
+Platform Layer (raylib)  [Phase 1+2 DONE — window/clock/input + UI renderer;
+  WEB BUILD LANDED — emscripten target works end-to-end]
+  Native-first (Linux desktop). Web is wasm32-emscripten reusing the SAME
+  raylib backend (route B), not the old freestanding-wasm + JS-renderer stub
+  (removed from build.zig). The game runs on web: main menu, hub, mission,
+  combat, mouse + keyboard input, embedded assets, IDBFS mounted at /ziglop.
   Platform seam (so raylib only touches builds that can link it):
     - src/main.zig stays raylib-free; gameLoop takes a duck-typed `backend`
       (shouldClose / deltaMicroseconds / pollInput / render); old main() is now
@@ -760,9 +848,39 @@ Platform Layer (raylib)  [Phase 1+2 DONE — window/clock/input + UI renderer]
     (ui/icon_swap, ui/momentum, ui/cooldown_overlay per the UI section) and
     will draw magenta until real assets land.
   - Web build target: wasm32-emscripten exe reusing raylib_backend.zig +
-    gameLoop (route B). Add the emscripten exe to build.zig; wire emscripten
-    asset packaging + the run/serve step. The old freestanding-wasm target was
-    removed — do NOT reintroduce a hand-written JS renderer.
+    gameLoop (route B). DONE — `zig build web` / `zig build emrun`.
+    [x] build.zig: emscripten exe + emcc packaging (zemscripten) + emrun step
+    [x] src/web.zig: entry mirroring native.zig — c_allocator (DebugAllocator
+        segfaults on wasm), IDBFS mount at /ziglop via emscripten_run_script,
+        FileSource on that dir, emscripten_set_main_loop_arg drives frame()
+    [x] Frame-body refactor: gameLoop split into shared frame() (budget-driven
+        drain + render gate, never yields) + native while-loop driver. Web
+        registers frame() via emscripten_set_main_loop_arg; browser schedules
+        rAFs and handles yielding. One shared model, deterministic identity.
+    [x] pollInput() read-edges-then-pump order (raylib's PollInputEvents copies
+        previous = current; pumping before reading erased web's async edges)
+    [x] renderIntervalMicroseconds returns 0 on web (browser rAF is the vsync
+        pacer; GetCurrentMonitor/GetMonitorRefreshRate aren't implemented)
+    [x] Custom shell HTML (web/shell.html, no emscripten branding) + canvas
+        sized to fill the viewport (CSS pixels match the drawing buffer)
+    [x] emcc settings: FORCE_FILESYSTEM, ALLOW_MEMORY_GROWTH, USE_GLFW=3,
+        STACK_SIZE=8mb (default 64KB overflows our main), -lidbfs.js, fsanitize
+  - PATCHED STDLIB WORKFLOW: Zig 0.16.0's std/os/emscripten.zig has a bug
+      (W.STOPSIG declared u32 but body returns the SIG enum) that breaks
+      emscripten compilation. The fix is upstream on the 0.16.x branch. We
+      carry it locally: /usr/lib/zig copied to ~/.local/zig-patched-lib, the
+      one-line fix applied, web builds run with
+      `ZIG_LIB_DIR=~/.local/zig-patched-lib zig build web`. Native + tests use
+      the normal zig (no env var). When 0.16.1 ships and Arch packages it, the
+      patched copy becomes unnecessary.
+  - TODO (Phase 3): IDBFS flush tuning — FS.syncfs(false) on autosave writes +
+      a beforeunload flush safety net, so writes actually persist to IndexedDB
+      (today they land in the in-memory FS layer and only persist on syncfs).
+  - TODO (Phase 4): asset downscaling for web download budget (the TODO
+      Memory/Asset section's OGG audio + sprite downscale work matters more
+      for web than native); WebGL1/WebGL2 build option; emrun polish.
+  - The old freestanding-wasm target was removed — do NOT reintroduce a
+      hand-written JS renderer.
 
 Audio
   - Play music and sound effects via raylib audio API
@@ -818,22 +936,41 @@ Asset Memory (decisions, from Unity project audit ~/Development/taplop)
   - Web download budget: PNG (lossless) for art + OGG for audio takes asset
     download from ~39 MB to ~8 MB, mostly art.
 
-Content Loading / Custom Missions (direction, build with platform layer)
+Content Loading / Custom Missions (build with platform layer)
+  FILE-LAYER DESIGN SETTLED — see AGENTS.md "File System & IO". Summary:
+    - Single-file exe: `data/` + `assets/` embedded at build time via a
+      generated `src/generated_assets.zig` (`@embedFile` +
+      `std.StaticStringMap.initComptime`). Re-run every `zig build`.
+    - One unified `FileSource` on `GameStateHistory` (like settings, never
+      deep-copied) with `readFile(path)` (VFS -> persistent dir -> embedded)
+      and `writeFile(path, bytes)` (persistent dir only; `data/`/`assets/`
+      prefixes rejected). Replaces today's `history.directory`/`history.io`.
+    - Persistent path: `~/.ziglop/` (dotfile, not XDG). `--data-dir` /
+      `$ZIGLOP_DATA` override for dev/portable/tests. macOS/Windows/web
+      (IDBFS) deferred but the abstraction doesn't block them.
+    - Raylib texture cache switches to `loadImageFromMemory` from source bytes;
+      `raylib_backend.zig` stays the only raylib-touching file. `native.zig`
+      builds the source + computes the path, hands to `main.run`.
+    - Modding-by-shadowing is an accepted side effect (drop files at
+      `~/.ziglop/<shipped-path>` to override), NOT a designed feature — no
+      override policy/verification/safe-mode flag yet; revisit if modding
+      becomes a real goal.
+  MIGRATION: replace `history.directory`/`history.io` with `FileSource`, swap
+  all ~15 call sites (main.zig, event_handlers.zig, input_handlers.zig,
+  parser.zig, raylib_backend.zig); parser tests switch from `Dir.cwd()` +
+  disk reads to the embedded source (also makes the test build hermetic).
+  The VFS layer below lands when custom-mission support does; it is NOT needed
+  for the cwd-decoupling / single-file-exe work.
+
+  Still forward-looking (custom-mission support, not the file layer itself):
   - Core principle: SEPARATE acquiring a mission from reading it. Acquisition
     (upload dialog / directory scan / online fetch) is one-time, possibly
     interactive or async. Reading mission files during gameplay AND replay must
     be synchronous, silent, repeatable.
-  - Route ALL content reads through a resident "mission/asset source"
-    abstraction: readFile(logical_path) -> bytes, from memory or disk. Impls:
-      * built-in / native disk: Dir-backed (today's history.directory/io)
+  - Acquisition impls (into the VFS layer of FileSource):
       * zip upload (browser dialog): extract to in-memory VFS (path->bytes)
       * custom directory: Dir-backed at a chosen path
       * online database: fetch by immutable id/url -> cache into in-memory VFS
-  - parseConfigFileFromPath + asset loads go through the source instead of
-    std.Io.Dir directly.
-  - Source lives on GameStateHistory (like directory/io/settings), NOT in the
-    replayed GameState — session-resident, available for every replay re-read,
-    never deep-copied into snapshots.
   - Replay-safety falls out for free: dialog/fetch happens in an acquisition
     step (idle input), never in an event handler. The recorded event is
     start_mission referencing an already-resident source, so replay re-reads
@@ -879,17 +1016,15 @@ Determinism & Tiebreaking
   (unique positions, visual-only).
 
 Logging follow-ups (deferred, captured for later)
-  - Idle points + snapshots DURING reconstruction: reconstructFromEventLog
-      currently calls replayTo (reconstruct-to-end only, no undo metadata). To
-      let a loaded session undo/step "as if played live", replay must re-derive
-      idle points via a VIRTUAL STACK DEPTH: after forcing each recorded event,
-      current_state.event_stack.len == the sub-events its handler pushed (K);
-      track depth += K - 1 from the initial stack size; depth hitting 0 is an
-      idle point -> takeSnapshot + compactCurrentArena there (same bookkeeping
-      the live loop does on stack-empty). No idle_points serialized. Factor the
-      idle bookkeeping into a helper shared by the live loop and reconstruction
-      (the DRIVING differs: live watches the real stack, replay tracks virtual
-      depth). Unblocks fast replay-viewer stepping too.
+  - [x] Idle points + snapshots DURING reconstruction: DONE. replayToWithIdle
+      Tracking derives idle points from virtual stack depth (depth 0 = stack-
+      empty = idle point -> recordIdlePoint, the shared takeSnapshot +
+      compactCurrentArena helper). Requires the one-orchestrator-event-per-
+      player-action convention (5 new LevelEvents) so sibling batches don't
+      over-detect idle points — see "PR 3" above and the orchestrator events
+      in events.zig. reconstructFromEventLog now calls it; undo/redo and
+      stepping work on a loaded session "as if played live". The live gameLoop
+      calls recordIdlePoint too (was two inline calls).
   - Exhaustive comptime round-trip test for the session-log writer/reader:
       inline-for over every Event category/variant, synthesize a payload (0 /
       false / first enum / "" / empty slice / null optional / recurse structs),
@@ -967,9 +1102,13 @@ Tech Debt / Refactoring
       UI reset moved from transitionScreen into the live loop (gameLoop resets
       session.ui_state when screen changes across update(), covering both
       event transitions and undo/redo across a screen boundary); input_state
-      is never reset. TODO: when the tile_cursor input TODO lands, decide
-      whether it's gameplay (event-set, since auto_target_at_cursor reads it)
-      or moves to SessionState.
+      is never reset. tile_cursor moved to SessionState (transient input
+      state, not gameplay — auto_target_at_cursor reads it in the input path
+      and the resulting player_use_skill event is what replay reproduces, so
+      the cursor value is never needed for reconstruction). Resolved per-frame
+      in update() (resolveTileCursor): mouse-move drives it, arrow keys nudge
+      when the mouse is idle (snapping to the player tile if null), blocking
+      UI / non-tiles clear it.
   - Test coverage for processEvent handlers: main.zig is ~2200 lines with
     essentially one test. processEvent is state-in/state-out and testable.
     Cover the event logic (equip/unequip, utility-skill events, boots
@@ -998,6 +1137,14 @@ Tech Debt / Refactoring
     preferring nulls) in takeSnapshot + setCheckpoint. Revisit only if undo
     latency is felt once raylib drives a real clock + big levels exist, and
     size the rings from real measurements then (see Memory / Budget).
+  - [FIXED] setCheckpoint was called BEFORE the start_level/start_hub handler
+    ran, so the checkpoint captured the PRE-transition state (e.g. hub with
+    level=null) but was labeled with the post-event index. Replaying from it
+    hit in-level sub-events (aggro_around) with no level loaded → null panic
+    on undo across a level boundary. Moved setCheckpoint to AFTER the handler
+    so it captures the post-transition scope. (Was covered by a real-log undo
+    test; deleted with the playtesting artifacts — a self-contained scripted
+    level-crossing undo test can be added if the path needs coverage again.)
   - UNDECIDED: the ~26 `current.level.?` force-unwraps in level/sub-level
     handlers. Currently safe by invariant (those events only run in a level;
     event stack cleared on screen transition), so they act as fail-fast

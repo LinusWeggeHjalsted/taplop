@@ -1,0 +1,574 @@
+//! Input consumption — the semantic layer that turns a `PlayerInput` into
+//! gameplay actions (event pushes) and transient state changes.
+//!
+//! `input.zig` is the *translation* layer (raw platform events → semantic
+//! `PlayerInput`); this file is the *consumption* layer: `handleAnytimeInput`,
+//! `handleIdleInput`, `resolveTileCursor`, and the drag lifecycle resolve a
+//! player input into event pushes (via `event_handlers.pushEvents`) or direct
+//! `SessionState` writes (transient view/input state — never undoable
+//! `GameState`). Session-log dev tooling (`dumpEventLog`, the build-version
+//! advisory warn, the timestamp formatter) lives here too, called from the
+//! anytime path.
+
+const std = @import("std");
+const types = @import("types.zig");
+const events = @import("events.zig");
+const state = @import("state.zig");
+const input = @import("input.zig");
+const parser = @import("parser.zig");
+const lookups = @import("generated_lookups.zig");
+const ui = @import("ui.zig");
+const event_handlers = @import("event_handlers.zig");
+const build_info = @import("build_info");
+
+const GameState = state.GameState;
+const GameStateHistory = state.GameStateHistory;
+const Event = events.Event;
+const PlayerInput = input.PlayerInput;
+const Vector2 = types.Vector2;
+const Entity = types.Entity;
+const SkillId = types.SkillId;
+const Level = types.Level;
+const WeaponTypeDefinition = types.WeaponTypeDefinition;
+const Settings = types.Settings;
+const utility_skill_count = types.utility_skill_count;
+const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
+const WeaponType = types.WeaponType;
+
+pub fn dragToEvent(from: ui.SlotRef, to: ui.SlotRef) ?Event {
+    return switch (from) {
+        .inventory => |inventory_index| switch (to) {
+            .gear => |gear_slot| .{ .player_event = .{ .equip_item = .{
+                .inventory_slot_index = inventory_index,
+                .gear_slot = gear_slot,
+            } } },
+            else => null, // inventory→inventory move (future) + skill targets
+        },
+        .gear => |gear_slot| switch (to) {
+            .inventory => |inventory_index| .{ .player_event = .{ .unequip_item = .{
+                .gear_slot = gear_slot,
+                .inventory_slot_index = inventory_index,
+            } } },
+            else => null,
+        },
+        .learned_skill => |skill_id| switch (to) {
+            .skill_bar => |slot_index| .{ .player_event = .{ .equip_utility_skill = .{
+                .skill_id = skill_id,
+                .slot_index = slot_index,
+            } } },
+            else => null,
+        },
+        .skill_bar => |from_index| switch (to) {
+            .skill_bar => |to_index| .{ .player_event = .{ .swap_utility_skills = .{
+                .slot_a_index = from_index,
+                .slot_b_index = to_index,
+            } } },
+            // Dropping a bar skill back onto the skills menu clears the slot.
+            .learned_skill => .{ .player_event = .{ .unequip_utility_skill = .{
+                .slot_index = from_index,
+            } } },
+            else => null,
+        },
+    };
+}
+
+/// Pointer-driven drag lifecycle. Runs every tick (anytime): press over a
+/// slot with content begins a drag; release hit-tests the target slot and
+/// pushes the resolved event. Hit-tests against the previous frame's UI.
+pub fn handleDrag(
+    history: *GameStateHistory,
+    pointer: input.PointerInput,
+    ui_elements: []const ui.UiElement,
+) void {
+    const current = &history.current_state;
+    const allocator = history.current_arena.allocator();
+    const ui_state = &history.session.ui_state;
+
+    if (pointer.pressed) {
+        // Begin a drag only when the pointer goes down on a slot that both has
+        // an identity and holds something (icon present).
+        if (ui.slotAt(ui_elements, pointer.position)) |slot| {
+            if (slot.ref) |ref| {
+                if (slot.icon_sprite_id) |icon| {
+                    ui_state.drag = .{ .source = ref, .icon_sprite_id = icon };
+                }
+            }
+        }
+    }
+
+    if (pointer.released) {
+        if (ui_state.drag) |drag| {
+            if (ui.slotRefAt(ui_elements, pointer.position)) |target| {
+                if (dragToEvent(drag.source, target)) |event| {
+                    event_handlers.pushEvents(current, &.{event}, allocator);
+                }
+            }
+            ui_state.drag = null;
+        }
+    }
+}
+
+/// Advisory check when loading a recorded session for replay: if it was
+/// produced by a different build, replay logic may diverge (game_version is
+/// advisory — see AGENTS.md Versioning). Warn, never fail.
+pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
+    if (!std.mem.eql(u8, log_game_version, build_info.game_version)) {
+        std.debug.print(
+            "warning: session log recorded on game_version {s}, this build is {s}; replay may diverge\n",
+            .{ log_game_version, build_info.game_version },
+        );
+    }
+}
+
+/// Write the full session event history to `logs/session_log_YYYYMMDD_HHMMSS.txt`
+/// in the persistent data dir (config format; see parser.writeEventLog). A dev
+/// tool bound to ctrl+L. Runs only from the input path, so it never fires during
+/// replay. The timestamp is UTC (no timezone handling) — fine for a filename.
+pub fn dumpEventLog(history: *GameStateHistory) void {
+    var arena = std.heap.ArenaAllocator.init(history.backing_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const created = formatSessionTimestamp(allocator, history.io);
+    const file_name = std.fmt.allocPrint(
+        allocator,
+        "logs/session_log_{s}.txt",
+        .{created},
+    ) catch @panic("failed to format session-log file name");
+    const body = parser.writeEventLog(
+        history.event_history.items,
+        created,
+        allocator,
+    ) catch @panic("failed to serialize session log");
+    history.file_source.writeFile(file_name, body) catch @panic("failed to write session log file");
+
+    // Feedback for this dev tool: the file lands in the persistent data dir
+    // (~/.ziglop/logs/).
+    std.debug.print("wrote session log: {s} ({d} events)\n", .{
+        file_name,
+        history.event_history.items.len,
+    });
+}
+
+/// Format the current wall-clock time (UTC) as "YYYYMMDD_HHMMSS".
+pub fn formatSessionTimestamp(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+) []const u8 {
+    const seconds: u64 = @intCast(std.Io.Clock.now(.real, io).toSeconds());
+    const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = seconds };
+    const year_day = epoch_seconds.getEpochDay().calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const day_seconds = epoch_seconds.getDaySeconds();
+    return std.fmt.allocPrint(
+        allocator,
+        "{d:0>4}{d:0>2}{d:0>2}_{d:0>2}{d:0>2}{d:0>2}",
+        .{
+            year_day.year,
+            month_day.month.numeric(),
+            @as(u32, month_day.day_index) + 1,
+            day_seconds.getHoursIntoDay(),
+            day_seconds.getMinutesIntoHour(),
+            day_seconds.getSecondsIntoMinute(),
+        },
+    ) catch @panic("failed to format session-log timestamp");
+}
+
+pub fn handleAnytimeInput(
+    history: *GameStateHistory,
+    anytime: input.AnytimeInput,
+) void {
+    if (anytime.undo) {
+        _ = history.undo(&event_handlers.processEvent);
+    }
+
+    if (anytime.redo) {
+        _ = history.redo(&event_handlers.processEvent);
+    }
+
+    if (anytime.dump_event_log) {
+        dumpEventLog(history);
+    }
+
+    if (anytime.toggle_options_menu) {
+        history.session.ui_state.options_menu_open = !history.session.ui_state.options_menu_open;
+    }
+
+    // When options menu is open, block all other input
+    if (history.session.ui_state.options_menu_open) return;
+
+    if (anytime.scroll_delta != 0) {
+        const zoom_speed: f32 = 0.1;
+        history.settings.camera_zoom = @max(0.1, history.settings.camera_zoom + anytime.scroll_delta * zoom_speed);
+    }
+
+    // In-game inputs only apply when in a hub or level
+    const current = &history.current_state;
+    const allocator = history.current_arena.allocator();
+    const ui_state = &history.session.ui_state;
+    if (current.screen == .hub or current.screen == .level) {
+        const in_game = anytime.in_game;
+
+        if (in_game.toggle_inventory) {
+            ui_state.toggleMiddlePanel(.inventory);
+        }
+
+        if (in_game.toggle_gear) {
+            ui_state.toggleMiddlePanel(.gear);
+        }
+
+        if (in_game.toggle_skills) {
+            ui_state.toggleMiddlePanel(.skills);
+        }
+
+        if (in_game.toggle_entity_inspect) |entity_index| {
+            if (ui_state.inspected_entity_index) |current_inspected| {
+                if (current_inspected == entity_index) {
+                    // Same entity — close the panel
+                    ui_state.toggleMiddlePanel(.enemy_inspect);
+                    ui_state.inspected_entity_index = null;
+                } else {
+                    // Different entity — switch target
+                    ui_state.inspected_entity_index = entity_index;
+                }
+            } else {
+                // Not inspecting — open panel
+                ui_state.inspected_entity_index = entity_index;
+                ui_state.toggleMiddlePanel(.enemy_inspect);
+            }
+        }
+
+        if (in_game.toggle_world_map) {
+            ui_state.toggleFullScreenOverlay(.world_map);
+        }
+        // Cursor resolution (mouse vs arrows vs UI occlusion) happens in a
+        // dedicated step in update(), after UI arbitration — it needs
+        // ui_elements + world tiles, which live in main.zig's world.
+
+        if (in_game.swap_weapons) {
+            event_handlers.pushEvents(current, &.{
+                .{ .player_event = .swap_hands },
+            }, allocator);
+        }
+    }
+}
+
+/// Handle inputs that are only accepted when the event stack is empty.
+pub fn handleIdleInput(
+    history: *GameStateHistory,
+    idle_input: input.IdleInput,
+    modifiers: input.Modifiers,
+) void {
+    // Enter acts as a click on the active tile cursor: fold it into
+    // tile_clicked so the existing click handlers (player_move, player_attack,
+    // hub) do the work — one path, no duplication. Only when a real click
+    // didn't already happen this frame (a click takes precedence).
+    var idle = idle_input;
+    if (idle.confirm and idle.tile_clicked == null) {
+        if (history.session.tile_cursor) |cursor| {
+            idle.tile_clicked = cursor;
+        }
+    }
+
+    const current = &history.current_state;
+    const allocator = history.current_arena.allocator();
+
+    // Main menu: menu buttons emit a menu_action (no keybind path).
+    if (current.screen == .main_menu) {
+        if (idle.menu_action) |action| {
+            switch (action) {
+                .new_game => event_handlers.pushEvents(current, &.{
+                    .{ .meta_event = .start_new_game },
+                }, allocator),
+                // continue_game / load_save need an autosave path + file picker,
+                // and open_settings / open_credits need their screens. Wired
+                // when those land (Continue isn't even shown on a fresh start).
+                .continue_game, .load_save, .open_settings, .open_credits => {},
+                else => {},
+            }
+        }
+        return;
+    }
+
+    // Level turn phase input handling
+    if (current.level) |*level| {
+        if (level.turn_phase) |turn_phase| {
+            switch (turn_phase) {
+                .player_move => {
+                    if (idle.tile_clicked) |clicked_position| {
+                        // Check if the clicked tile is in the highlighted (reachable) set
+                        var is_reachable = false;
+                        for (level.highlighted_tiles) |tile| {
+                            if (tile.x == clicked_position.x and tile.y == clicked_position.y) {
+                                is_reachable = true;
+                                break;
+                            }
+                        }
+                        if (is_reachable) {
+                            event_handlers.pushEvents(current, &.{
+                                .{ .level_event = .{ .player_move_action = .{
+                                    .destination = clicked_position,
+                                    .force_attack_step = modifiers.ctrl,
+                                } } },
+                            }, allocator);
+                        }
+                    }
+
+                    if (idle.skip) {
+                        // Skip movement, go straight to attack phase
+                        event_handlers.pushEvents(current, &.{
+                            .{ .level_event = .{ .player_skip_move = .{
+                                .force_attack_step = modifiers.ctrl,
+                            } } }}, allocator);
+                    }
+                },
+                .player_attack => {
+                    if (idle.skill_slot_selected) |slot| {
+                        const player = level.entities[0];
+                        if (player.skillInSlot(slot, history.weapon_type_definitions)) |skill_id| {
+                            // Check cooldown
+                            if (player.skill_cooldowns.get(skill_id) > 0) return;
+
+                            if (lookups.getSkillDefinition(skill_id)) |skill_definition| {
+                                if (skill_definition.uses_targeting) {
+                                    // Check auto_target_at_cursor: if cursor is on a valid target, use immediately
+                                    if (history.settings.auto_target_at_cursor) {
+                                        if (history.session.tile_cursor) |cursor_position| {
+                                            const valid_targets = skill_definition.getValidTargets(0, current.*, allocator);
+                                            if (valid_targets) |targets| {
+                                                for (targets) |target| {
+                                                    if (target.x == cursor_position.x and target.y == cursor_position.y) {
+                                                        event_handlers.pushPlayerSkillUse(current, skill_id, cursor_position, allocator);
+                                                        return;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Begin targeting — push player_prepare_skill
+                                    event_handlers.pushEvents(current, &.{
+                                        .{ .level_event = .{ .player_prepare_skill = .{
+                                            .caster_index = 0,
+                                            .skill_id = skill_id,
+                                        } } },
+                                    }, allocator);
+                                } else {
+                                    // No targeting — use immediately
+                                    event_handlers.pushPlayerSkillUse(current, skill_id, null, allocator);
+                                }
+                            }
+                        }
+                    }
+
+                    // Mouse path: a tile click on a highlighted (valid) tile
+                    // fires the prepared skill at that tile. Mirrors how
+                    // player_move consumes tile_clicked.
+                    if (idle.tile_clicked) |clicked_position| {
+                        if (level.prepared_skill) |skill_id| {
+                            var is_valid = false;
+                            for (level.highlighted_tiles) |tile| {
+                                if (tile.x == clicked_position.x and tile.y == clicked_position.y) {
+                                    is_valid = true;
+                                    break;
+                                }
+                            }
+                            if (is_valid) {
+                                if (lookups.getSkillDefinition(skill_id) != null) {
+                                    event_handlers.pushPlayerSkillUse(current, skill_id, clicked_position, allocator);
+                                }
+                            }
+                        }
+                    }
+
+                    // Enter (confirm) is folded into tile_clicked at the top
+                    // of handleIdleInput, so the mouse tile_clicked handler
+                    // above already covers the keyboard path when a cursor
+                    // is active.
+
+                    if (idle.cancel) {
+                        // Cancel skill targeting
+                        if (level.prepared_skill != null) {
+                            // Stay in player_attack phase
+                            event_handlers.pushEvents(current, &.{
+                                .{ .level_event = .player_cancel_skill }}, allocator);
+                        }
+                    }
+
+                    if (idle.skip) {
+                        // Skip attack, end turn
+                        event_handlers.pushEvents(current, &.{
+                            .{ .level_event = .player_skip_attack }}, allocator);
+                    }
+                },
+            }
+            return;
+        }
+    }
+
+    if (idle.tile_clicked) |clicked_position| {
+        if (current.hub) |hub| {
+            // Check if an NPC is on the clicked tile
+            var clicked_npc: ?u32 = null;
+            for (hub.npcs, 0..) |npc, npc_index| {
+                if (npc.entity.position.x == clicked_position.x and
+                    npc.entity.position.y == clicked_position.y)
+                {
+                    clicked_npc = @intCast(npc_index);
+                    break;
+                }
+            }
+
+            if (clicked_npc) |npc_index| {
+                event_handlers.pushEvents(current, &.{
+                    .{ .hub_event = .{ .interact_with_npc = .{
+                        .npc_index = npc_index,
+                    } } },
+                }, allocator);
+            } else {
+                // Move to clicked tile if walkable
+                var is_walkable = false;
+                for (hub.hub_tiles) |tile| {
+                    if (tile.x == clicked_position.x and tile.y == clicked_position.y) {
+                        is_walkable = true;
+                        break;
+                    }
+                }
+                if (is_walkable) {
+                    event_handlers.pushEvents(current, &.{
+                        .{ .hub_event = .{ .move_player = .{
+                            .destination = clicked_position,
+                        } } },
+                    }, allocator);
+                }
+            }
+        }
+    }
+
+    if (idle.skill_slot_selected) |_| {
+        // TODO: resolve slot to SkillId, begin skill targeting or push skill use
+        // if Settings.auto_target_at_cursor, check tile cursor position and use skill immediately if valid target
+    }
+
+    if (idle.cancel) {
+        // TODO: cancel current action (e.g. deselect skill)
+    }
+}
+
+/// Compute the minimum effective range across all off-cooldown skills an entity has.
+/// This is the closest distance the entity needs to be to use at least one skill.
+/// Uses range if the skill has it, radius if not.
+/// Returns null if no skills are off cooldown (shouldn't normally happen).
+/// Resolve the logical tile cursor (`session.tile_cursor`) for this frame.
+///
+/// Mouse takes precedence when it moved this tick: the cursor follows the
+/// mouse, but is cleared when the pointer is over a blocking UI element (so
+/// panels/buttons don't leave a world-cursor ghost) or over a non-tile. When
+/// the mouse didn't move, arrow keys nudge the cursor one tile; if the cursor
+/// is null, it snaps to the player's tile first. Only runs in a level/hub
+/// (needs world tiles + the player position).
+pub fn resolveTileCursor(
+    history: *GameStateHistory,
+    player_input: PlayerInput,
+    ui_elements: []const ui.UiElement,
+) void {
+    const current = &history.current_state;
+    if (current.screen != .level and current.screen != .hub) return;
+
+    const in_game = player_input.anytime.in_game;
+    const world_tiles: []const types.Vector2 = if (current.level) |*level|
+        level.level_tiles
+    else if (current.hub) |*hub|
+        hub.hub_tiles
+    else
+        &.{};
+
+    if (in_game.mouse_moved_this_tick) {
+        // Mouse owns the cursor this frame.
+        if (ui.blockingElementAt(ui_elements, player_input.pointer.position) != null) {
+            history.session.tile_cursor = null;
+            return;
+        }
+        if (in_game.mouse_tile) |mouse_tile| {
+            for (world_tiles) |tile| {
+                if (tile.x == mouse_tile.x and tile.y == mouse_tile.y) {
+                    history.session.tile_cursor = mouse_tile;
+                    return;
+                }
+            }
+        }
+        history.session.tile_cursor = null;
+        return;
+    }
+
+    // Mouse idle — arrow keys nudge the cursor.
+    const nudge_up = in_game.move_cursor_up;
+    const nudge_down = in_game.move_cursor_down;
+    const nudge_left = in_game.move_cursor_left;
+    const nudge_right = in_game.move_cursor_right;
+    if (!nudge_up and !nudge_down and !nudge_left and !nudge_right) return;
+
+    // Snap to the player's tile if the cursor is null.
+    var cursor = history.session.tile_cursor orelse blk: {
+        const player_pos = if (current.level) |*level|
+            level.entities[0].position
+        else if (current.hub) |*hub|
+            hub.player.position
+        else
+            return;
+        break :blk player_pos;
+    };
+
+    // Nudge (each axis independently; diagonals work via two keys at once).
+    if (nudge_up) cursor.y -= 1;
+    if (nudge_down) cursor.y += 1;
+    if (nudge_left) cursor.x -= 1;
+    if (nudge_right) cursor.x += 1;
+
+    // Clamp to a real tile — if the nudged position isn't a world tile, leave
+    // the cursor where it was (don't follow the cursor off the map).
+    for (world_tiles) |tile| {
+        if (tile.x == cursor.x and tile.y == cursor.y) {
+            history.session.tile_cursor = cursor;
+            return;
+        }
+    }
+}
+test "dragToEvent maps valid drags and blocks cross-domain drops" {
+    // inventory → gear = equip
+    {
+        const event = dragToEvent(.{ .inventory = 2 }, .{ .gear = .boots }).?;
+        try std.testing.expectEqual(@as(u32, 2), event.player_event.equip_item.inventory_slot_index);
+        try std.testing.expectEqual(types.GearSlot.boots, event.player_event.equip_item.gear_slot);
+    }
+    // gear → inventory = unequip
+    {
+        const event = dragToEvent(.{ .gear = .amulet }, .{ .inventory = 5 }).?;
+        try std.testing.expectEqual(types.GearSlot.amulet, event.player_event.unequip_item.gear_slot);
+        try std.testing.expectEqual(@as(u32, 5), event.player_event.unequip_item.inventory_slot_index);
+    }
+    // learned skill → skill bar = equip utility skill
+    {
+        const event = dragToEvent(.{ .learned_skill = .replenish }, .{ .skill_bar = 1 }).?;
+        try std.testing.expectEqual(types.SkillId.replenish, event.player_event.equip_utility_skill.skill_id);
+        try std.testing.expectEqual(@as(u32, 1), event.player_event.equip_utility_skill.slot_index);
+    }
+    // skill bar → skill bar = swap
+    {
+        const event = dragToEvent(.{ .skill_bar = 0 }, .{ .skill_bar = 3 }).?;
+        try std.testing.expectEqual(@as(u32, 0), event.player_event.swap_utility_skills.slot_a_index);
+        try std.testing.expectEqual(@as(u32, 3), event.player_event.swap_utility_skills.slot_b_index);
+    }
+    // skill bar → learned skill (skills menu) = unequip utility skill
+    {
+        const event = dragToEvent(.{ .skill_bar = 2 }, .{ .learned_skill = .slice }).?;
+        try std.testing.expectEqual(@as(u32, 2), event.player_event.unequip_utility_skill.slot_index);
+    }
+    // Cross-domain and nonsensical drops are no-ops.
+    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .inventory = 0 }, .{ .skill_bar = 0 }));
+    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .learned_skill = .slice }, .{ .gear = .coat }));
+    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .gear = .coat }, .{ .gear = .boots }));
+    // inventory → inventory move is not implemented yet.
+    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .inventory = 0 }, .{ .inventory = 1 }));
+}
+
