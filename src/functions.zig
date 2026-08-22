@@ -1,21 +1,14 @@
+//! Pure gameplay helpers: A* pathfinding (`shortestPath`, Chebyshev +
+//! Manhattan heuristic, entity blocking), tile reachability, distance metrics,
+//! the signed-delta saturation clamp (`applySignedDelta`), salvage-value
+//! computation from `data/salvage.txt`, and world-map graph layout. All
+//! integer gameplay logic; no floats, no I/O.
+
 const std = @import("std");
 const types = @import("types.zig");
 
-const Settings = types.Settings;
 const Vector2 = types.Vector2;
-const CampaignGraph = types.CampaignGraph;
-const PositionedCampaignGraph = types.PositionedCampaignGraph;
 const Level = types.Level;
-
-pub fn computeFrameLength(settings: Settings) u32 {
-    if (settings.vsync) {
-        // vsync calculation
-        return 16; // ~60fps placeholder
-    } else {
-        // calculate from fps setting
-        return 16;
-    }
-}
 
 fn manhattanDistance(a: Vector2, b: Vector2) u32 {
     const dx: u32 = @intCast(@abs(a.x - b.x));
@@ -200,17 +193,6 @@ pub fn walkingDistance(
     const path = shortestPath(level, start_position, end_position, allocator) orelse return null;
     defer allocator.free(path);
     return @intCast(path.len);
-}
-
-pub fn worldMapSpaceGraph(campaign_graph: CampaignGraph) PositionedCampaignGraph {
-    // convert campaign graph to world map space graph with iterated relaxation
-    _ = campaign_graph;
-    return undefined;
-}
-
-pub fn relaxGraphEdges(positioned_campaign_graph: PositionedCampaignGraph) PositionedCampaignGraph {
-    _ = positioned_campaign_graph;
-    return undefined;
 }
 
 pub fn chebyshevDistance(a: Vector2, b: Vector2) i32 {

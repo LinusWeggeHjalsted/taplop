@@ -28,22 +28,62 @@ Read AGENTS.md + TODO.md at the start of a session. Reach for DONE.md only
 when you need the history behind something already built. Keep all three
 in sync with the lifecycle above as work lands.
 
-## Collaboration
-
-- Work in small steps. Before editing, propose the approach and wait for approval.
-- Pause at natural checkpoints to discuss design decisions instead of
-  implementing an entire feature in one go.
-- Prefer surfacing tradeoffs for discussion over silently picking one and running.
-- Stay inside the current working directory. Before reading, searching, or
-  otherwise accessing anything outside it, ask first and give a reason. Scope
-  commands (rg/find/etc.) to the project so they can't wander into system files.
+> **Collaboration style** (small steps, pause at checkpoints, surface
+> tradeoffs, clarifying questions, stay inside the cwd) lives in
+> `~/.pi/agent/APPEND_SYSTEM.md` as cross-project working conventions.
 
 ## Build & Test
 
 - `zig build` — compile the native (raylib desktop) exe
 - `zig build run` — build and run the native client
 - `zig build test` — run all tests (headless; must never link raylib)
+- `scripts/test.sh` — `zig build test` with an unambiguous PASS/FAIL summary.
+  Prefer this over raw `zig build test`: the raw runner can print a
+  `failed command: .../test ...` line on SUCCESS (exit 0) whenever a test
+  writes to stderr (advisory warnings, etc.), which looks like failure. The
+  script labels advisory output `[advisory, non-fatal]`, surfaces only real
+  failures, and prints a final `PASS (exit 0)` / `FAIL (exit N)`. **Trust the
+  exit code, not the text.** Don't fish for test binaries in `.zig-cache/o/`
+  to "check" — `find` races the build and returns stale binaries; the exit
+  code is authoritative.
+  `scripts/test.sh --raw` prints the full verbatim output if needed.
 - OK to run these directly without asking
+
+### Commit policy
+
+- **Commit at each TODO slice checkoff.** The TODO slice boundaries are the
+  natural commit units — each `[x]` is a unit that's done + tested + has a
+  DONE.md entry. Committing at checkoff gives a clean, reversible baseline
+  before the next slice starts (so breakages can be compared against it).
+- **Commit locally without pushing.** Local commits are free; pushing is a
+  separate step. Don't hold uncommitted work across sessions — 27 files of
+  uncommitted changes across multiple sessions makes it impossible to tell
+  whether a breakage is from the latest change or latent prior work.
+- **Commit message: one line by default.** Shape: `<area>: <summary>` (e.g.
+  `error handling: slice 1 — modal error popup surface`). `<area>` is the
+  conceptual bucket (matches AGENTS.md sections / TODO items); `<summary>` is
+  a single line, imperative mood, specific enough to distinguish from
+  neighboring commits. The DONE.md entry is the detailed record; the commit
+  message is the index — searchable in `git log --oneline`, then DONE.md for
+  the why.
+- **Body only when it adds information the DONE.md entry doesn't already
+  carry.** The realistic cases: a bug-fix diagnosis (repro + root cause)
+  before the DONE.md entry catches up; a commit that isn't a TODO slice and
+  has no DONE.md entry (a quick fix, a reverted typo) — the body is the only
+  record; a decision worth recording inline before it moves to AGENTS.md. If
+  the DONE.md entry exists, the body is redundant — skip it. If there's no
+  DONE.md entry, the body is the record — use it. The rule is self-policing:
+  if you can't point to information the body adds beyond DONE.md, don't write
+  one.
+- **No conventional-commit prefixes** (`feat:`, `fix:`, `chore:`). There's no
+  CI gate parsing them, no release-notes generation, no semver automation.
+  The area name (`error handling:`, `editor:`) is more informative than a
+  type tag and costs less typing.
+- **Data-file edits from manual testing get reverted or committed separately.**
+  A typo introduced to test the parser (`chracter_code`, `Metadta`) must not
+  leak into a real code commit — it breaks tests and is indistinguishable from
+  a real content change. Revert test artifacts before committing, or commit
+  them with a `test:` prefix.
 - Web build: a `wasm32-emscripten` exe reusing the SAME raylib backend +
   gameLoop as native (route B). `zig build web` produces zig-out/web/ziglop.html;
   `zig build emrun` serves + opens it. The old `wasm32-freestanding` +
@@ -67,7 +107,7 @@ in sync with the lifecycle above as work lands.
 ## Platform Seam (raylib)
 
 - raylib is linked ONLY into the native exe. Keep it out of the test build (and
-  the future emscripten build's shared code) by never importing raylib from any
+  the emscripten build's shared code) by never importing raylib from any
   file the test-root scan pulls in.
 - `src/main.zig` stays raylib-free. The game loop is platform-agnostic and
   SPLIT into a shared per-frame core + a thin platform driver:
@@ -351,15 +391,76 @@ combat-log UI rendering + replay-viewer UI still TODO)
 
 ## Error Handling
 
-- Errors here are effectively unrecoverable (OOM, startup file/parse failure,
-  broken invariants). Fail fast: `catch @panic("descriptive message")`.
-- Never silently swallow (`catch {}`) — a dropped result becomes a confusing
-  silent bug; a panic points at the exact failure. Same spirit as the
-  intentional `current.level.?` invariant unwraps.
-- Allocation panics are written inline (e.g. `catch @panic("failed to append
-  event")`); no shared helper for now.
-- Revisit only if a logging layer lands: truly cosmetic per-frame failures
-  could then degrade-with-log instead of crashing — but never silently.
+Two error classes, with different responses:
+
+- **Unrecoverable** — OOM, broken invariants, the `current.level.?` force-
+  unwraps, replay-verification mismatch, a shipped/embedded file failing to
+  parse (a real bug). Response: `@panic` (fail fast). The game can't
+  continue, or the *code* is wrong.
+- **Recoverable** — an I/O or parse failure on content that is effectively
+  user-supplied at runtime: custom missions, player saves, session logs, AND
+  shipped files overridden via the persistent-dir shadowing (a player/dev
+  drops a broken file at `~/.ziglop/<shipped-path>` and the embedded copy is
+  never reached — so "shipped content can't fail at runtime" is false by
+  construction, not by accident). Response: warn + degrade/revert, never
+  crash. See the three contexts below.
+
+Never silently swallow (`catch {}`) — a dropped result becomes a confusing
+silent bug. Allocation panics are written inline (e.g.
+`catch @panic("failed to append event")`); OOM stays unrecoverable. The
+recoverable path surfaces failures to the player via the error popup, not
+silently.
+
+### Recoverable error surface (the popup)
+
+`SessionState.pending_error: ?[]const u8` (off the undoable GameState, so
+replay-safe by construction) carries a message; `view()` renders it as a
+modal centered popup (`ui.buildErrorPopup`), appended last so it draws on
+top. `Action.dismiss_error` (bound to Escape + Enter) clears it.
+`handleAnytimeInput` gates all input when a pending error is set — only
+`dismiss_error` gets through; `update()` pauses the game (drag/camera/wait/
+idle blocked), mirroring the options-menu pause. The message is duped into
+`history_arena` (durable across frames; overwrite leaks the prior bytes —
+accepted, same unbounded-arena tradeoff as `event_history`).
+
+### Three contexts for recoverable failures
+
+1. **Startup config** (`session_setup.zig`): settings, color themes, weapon
+   types, salvage. Shadow parse fail → fall back to the embedded copy + warn;
+   embedded fail → panic (real bug). All four loaders use
+   `loadConfigWithFallback` + `FileSource.readEmbeddedFile`; warnings are
+   collected and surfaced as a single `pending_error` popup after the history
+   is created.
+2. **In-event reconstruction reads** (`start_mission` / `start_level` /
+   `start_hub` / `load_save` / `open_editor`): these handlers return `!void`;
+   `processEvent` catches, the drain loop reverts to the last idle-point
+   snapshot (guaranteed empty stack — `recordIdlePoint` only fires when
+   `event_stack.len == 0`, so `restoreTo(last_idle)` replaces `current_state`
+   wholesale with a stack-empty state, no clearing needed) and sets
+   `pending_error`. OOM still panics. The other ~90 handlers stay `void` —
+   invariant unwraps + gameplay logic failures are bugs → panic.
+3. **Writes + reloads** (`save_game`, `dump_event_log`, session-log reload):
+   on failure, warn + popup + abort the operation. The session-log
+   `file_format_version` hard-gate can soften to warn-and-abort here.
+
+### B-simple (per-dispatch recording, not transactional)
+
+`recordEvent` + `discardFutureTimeline` stay per-dispatch (the current model:
+`event_history` is always an exact real-time log; `current_event_index`
+always points at a real committed position — a simple, robust invariant with
+no "pending" state). On a handler failure mid-transaction, the drain loop
+trims the failed transaction's recorded events
+(`event_history.shrinkRetainingCapacity(current_event_index)`) and restores
+the snapshot. **Known edge case:** if the player undoes, then triggers a
+failing load, the redo future was already discarded by the first event's
+`discardFutureTimeline` and is not restored — so redo is unavailable after a
+failed post-undo action. Accepted: a minor UX asymmetry (no crash, no
+corruption), in exchange for not restructuring the most determinism-critical
+code (replay verification, the reconstruction cache's `current_event_index -
+1` keying). The transactional alternative (defer append + discard to
+transaction commit) was considered and rejected: its independent benefits
+are marginal with no current consumer, and its costs land in replay-
+verification code where a subtle bug is most damaging.
 
 ## Code Style
 
@@ -367,6 +468,43 @@ combat-log UI rendering + replay-viewer UI still TODO)
 - Multiline function signatures — one parameter per line when long
 - All gameplay logic uses integers. Floats only for input, settings, rendering
 - No abbreviations
+- **Minimize `pub`.** Mark a symbol `pub` only if another file imports it;
+  everything else is `fn`/`const` (file-private). The compiler errors on
+  unused file-private symbols, so this turns it into a free dead-code detector.
+  A `pub` symbol is presumed to be API — nothing flags an unused one — so
+  dead `pub` scaffolding (`computeFrameLength`, `DecorationId`) can linger
+  across redesigns. There is no Zig tool that reliably detects unused `pub`
+  symbols; the discipline is the lever. If a symbol needs to be `pub` for a
+  test (`test "..."` blocks in the same file can see file-private symbols, so
+  this is rare), keep it `pub` but note why.
+
+### Code Comments
+
+Comments describe the code AS IT IS — never an imagined future state. This
+is the rule that prevents drift: a comment written as "lands later" / "wired
+later" / "for now" rots the moment the work lands, because nothing points
+back at the comment to update it.
+
+- **TODO.md owns all forward-looking notes.** No `TODO`/`FIXME`/`HACK`
+  markers, no "will eventually"/"lands when"/"revisit" prose in code. If a
+  gap is worth tracking, it lives in TODO.md; the code says nothing about it.
+  A runtime stub may use a descriptive panic message (e.g.
+  `"editor event handler not yet implemented"`), but that's a diagnostic,
+  not a comment.
+- **File-level `//!` header** on every file with a distinct architectural
+  role: one short paragraph — what the file owns, key invariants — plus an
+  `AGENTS → <section>` link where a settled design lives. `raylib_backend.zig`
+  is the model. Skill/effect files are exempt: each is self-documenting via a
+  `///` doc on its `pub const skill`/`pub const effect`.
+- **`///` doc comments** on public types/fns/fields with non-obvious meaning:
+  WHAT + WHY, not HOW.
+- **Inline `//` only for the non-obvious** — a tricky invariant, a tiebreak
+  convention, a "why this not the obvious thing". Not for restating what the
+  next line does.
+- **Link, don't restate settled decisions.** Instead of a 5-line inline
+  explanation of the replay cache, write `// Reconstruction cache — see
+  AGENTS → File System & IO`. Same single-source-of-truth rule as the .md
+  trio: the design lives in AGENTS.md, the code points at it.
 
 ## File System & IO
 
@@ -388,8 +526,8 @@ never touched by replay). It exposes:
     from the game's perspective).
 
 Read order (first hit wins):
-  1. in-memory VFS — uploaded zips / fetched custom missions (transient; lands
-     when custom-mission support does)
+  1. in-memory VFS — uploaded zips / fetched custom missions (transient; not
+     wired)
   2. persistent dir — `~/.ziglop/`
   3. embedded map — `data/**` + `assets/**` baked into the exe at build time
 
@@ -668,9 +806,11 @@ the campaign.
   runs the mission; a parse panic = "fix your mission"). Local import
   catches it on load (honest "broken mission" feedback, same spirit as the
   magenta-box fallback for missing art — don't hide the problem).
-- **Graceful error handling (load-fail + warning popup instead of crash) is
-  a DEFERRED, separate pass** — applies to this and other parse failures.
-  Until then, fail-fast panic is the policy.
+- **Graceful error handling for over-max stats is landing in the error-
+  handling pass** (see AGENTS → Error Handling): the parse panic becomes a
+  recoverable failure (warn + popup + abort the load) rather than a crash.
+  Applies to this and the other parse-failure contexts (startup config,
+  in-event reconstruction reads, writes/reloads).
 
 ### Auth & the server seam (deferred)
 
@@ -1241,9 +1381,16 @@ download from ~39 MB to ~8 MB, mostly art.
 ## Key Files
 
 - `src/main.zig` — platform-agnostic composition root: the uncapped game
-  loop (gameLoop/run), the per-iteration `update` step that ties input + event
-  processing together, and config loading (raylib-free). Tests live with the
-  code they exercise (see below).
+  loop (`gameLoop`/`run`), the per-iteration `update` step that ties input +
+  event processing together, and the round-trip reconstruction test. Config
+  loading lives in `session_setup.zig` (raylib-free).
+- `src/session_setup.zig` — session startup: loading all config (settings,
+  color themes, weapon types, salvage tables) + `SessionSetup`/
+  `createSessionSetup`/`fixupPointers` + `FrameState`. The entry files
+  (`native.zig`/`web.zig`) call `createSessionSetup` then hand the result to
+  `main.run`/`main.frame`.
+- `src/test_harness.zig` — reusable harness for `processEvent` handler tests
+  (`Harness.init` + `newHistory` + `runToIdle`); test build only.
 - `src/event_handlers.zig` — `processEvent` (the one-event dispatch + all
   handler arms) and handler-internal helpers (entity accessors, gear mutators,
   move-highlight refresh, prepared-skill cancel, AI min-range, tile tiebreak).

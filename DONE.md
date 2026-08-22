@@ -900,14 +900,9 @@ same shape: `Metadata` (with `file_format_version`) first, then type sections.
   replay through the slow path passes" (main.zig) forward-plays a session,
   evicts all snapshots + checkpoints to force `restoreTo`'s slow path on every
   undo/redo (full replay from initial_state), and confirms a clean replay
-  verifies every event without tripping the panic; repro test "replay
-  verification: reproduce crash against an external session log" (main.zig,
-  opt-in via `session_log_repro.txt` at project root, gitignored) loads a real
-  ~2700-line session log, reconstructs to the end, and undoes all the way back
-  to the start — this is the test that first surfaced the flat-check
-  false-positive and now confirms the natural-stack model handles it. (No
-  `expectPanic` in std, so the tampered-history negative case is covered by the
-  deepEqual unit tests + the obvious `@panic` call in verifyReplayMatch.)
+  verifies every event without tripping the panic. (No `expectPanic` in std,
+  so the tampered-history negative case is covered by the deepEqual unit
+  tests + the obvious `@panic` call in verifyReplayMatch.)
 
 ### Mission content hash (DONE — computation primitive, no wiring yet)
 
@@ -1072,3 +1067,619 @@ values directly — same as how `player_move_action` pushes `move_entity` (both
 LevelEvents). The placement-deletion variants now live only in `EditorEvent`.
 Also removed the `sub_editor_event` references in `combat_log.zig` (tier
 none) and `state.zig` (`eventName`).
+
+### Comment convention + drift cleanup (DONE)
+
+Settled the in-code comment convention (now in AGENTS → Code Style → Code
+Comments): comments describe the code as-is, TODO.md owns all forward-looking
+notes, no `TODO`/`FIXME`/`HACK` markers or "lands later"/"for now" prose in
+code. File-level `//!` headers on files with a distinct architectural role
+(`raylib_backend.zig` is the model); skill/effect files self-document via
+`///` on their defining const. Link to AGENTS instead of restating settled
+designs inline.
+
+Cleanup pass under that convention:
+- **Dead code removed:** the duplicate `skill_slot_selected`/`cancel` stubs
+  at the tail of `handleIdleInput` (the real handlers live in the
+  `.player_attack` case; the tail blocks never fired); the unused
+  `computeFrameLength` + its `Settings` import in `functions.zig`; the
+  vestigial `DecorationId` enum (only a `placeholder` variant), the
+  `Decoration.decoration_id` field, and its three `null` initializers.
+- **Comment drift fixed:** ~25 comments across `raylib_backend.zig`,
+  `view.zig`, `ui.zig`, `state.zig`, `file_source.zig`, `content_hash.zig`,
+  `types.zig`, `events.zig`, `input.zig`, `input_handlers.zig`, `main.zig`,
+  `web.zig`, `event_handlers.zig`, and the skill/effect files that described
+  done work as "future"/"later" (world drawing, entity weapons/layers,
+  FillSprite/health-globe tints, arrow-key cursor nudging) or pointed at the
+  old `TODO.txt` (now `TODO.md`) — reworded to as-is descriptions or
+  `AGENTS → <section>` links.
+- **`//!` headers added** to the 10 core files lacking one (`main.zig`,
+  `state.zig`, `types.zig`, `events.zig`, `functions.zig`, `input.zig`,
+  `parser.zig`, `ui.zig`, `combat_log.zig`, `deep_copy.zig`);
+  `///` const docs added to the two `that_which_lingers` outliers (skill +
+  effect) to match their siblings' self-documenting style.
+
+### Architecture cleanup: main.zig split + test harness + minimize-pub (DONE)
+
+Follow-up to the codebase review, three pieces:
+
+**`main.zig` split.** The composition root held three responsibilities
+(game loop, `update`, *and* all startup config loading). Extracted the
+config-loading half into `src/session_setup.zig`: `loadSettingsFromDisk` /
+`loadColorThemeDefinitionsFromDisk` / `loadWeaponTypeDefinitions` /
+`loadSalvageDefinitionsFromDisk` + `SessionSetup` / `createSessionSetup` /
+`fixupPointers` + `FrameState` (moved here so the module is a leaf:
+`main → session_setup`, never the reverse). The cleaner separation: the
+entry files (`native.zig`, `web.zig`) now call `session_setup.createSessionSetup`
+→ `fixupPointers` → `main.run(&backend, &setup)`; `main.run` no longer builds
+the setup itself. `main.zig` keeps the loop (`gameLoop`/`frame`/`run`),
+`update`, `runToIdle`, and the tests. `weapon_type_count` exposed `pub` from
+`session_setup` so the harness can name the array type.
+
+**Test harness.** `src/test_harness.zig` (test build only): `Harness.init(arena)`
+loads the four configs + a cwd-backed FileSource into the test's backing arena;
+`harness.newHistory(starting)` spins a fresh `GameStateHistory` against them;
+`runToIdle` drives event processing to stack-empty with the live idle-point
+bookkeeping. A smoke test confirms the bootstrap loads + a fresh history
+reaches the main menu. The existing main.zig tests keep their own `runToIdle`
+(still `fn` there). TODO updated: the handler-coverage item now points at the
+harness as the reusable primitive, with a prioritized list of first targets
+(equip/unequip, utility-skill slots, boots move-range, prepared-skill cancel,
+combat death/loot, enemy AI tiebreaks).
+
+**Minimize-pub rule.** Added to AGENTS → Code Style: mark a symbol `pub` only
+if another file imports it; everything else file-private. The compiler errors
+on unused file-private symbols, so this is a free dead-code detector — the
+class of dead `pub` scaffolding the cleanup removed (`computeFrameLength`,
+`DecorationId`) survives precisely because `pub` symbols aren't checked. No
+Zig tool reliably detects unused `pub`; the discipline is the lever.
+
+**Small fixes folded in:** the orphaned `computeMinRange` doc (lived in
+`input_handlers.zig` above `resolveTileCursor`; the function is in
+`event_handlers.zig`) moved to its function; five `\u2014` literal escapes
+(`ui.zig`, `skills/reflect.zig` ×2, `skills/stone_form.zig`, `types.zig`)
+replaced with real em dashes; the dead world-map graph scaffolding
+(`worldMapSpaceGraph`/`relaxGraphEdges` in `functions.zig`; `HubNode`/
+`MissionEdge`/`CampaignGraph`/`PositionedHubNode`/`PositionedMissionEdge`/
+`PositionedCampaignGraph` + `Campaign.campaign_graph` in `types.zig`) removed
+— unused since first written; revisit when the world-map UI lands.
+
+### Handler test coverage — Tier 1 (gear/skill mechanics) (DONE)
+
+First tier of `processEvent` handler tests, in `src/handler_tests_gear.zig`
+(22 tests, picked up by the automatic test-root scan). Uses the
+`test_harness.zig` harness: each test builds a hub-context player (no level
+needed — the gear side effects early-return without one), sets up known
+inventory/gear directly on the entity, pushes one `PlayerEvent`, runs to idle,
+and asserts on `current_state`.
+
+Coverage (branch-complete per handler):
+- `equip_item`: empty-slot no-op, type-mismatch no-op, into-empty-gear, swap-
+  with-filled (old piece drops back into the SAME inventory slot).
+- `unequip_item`: empty-gear no-op, into-empty-slot, swap-on-fit, swap-on-
+  mismatch no-op.
+- `learn_skill`: empty-slot no-op, non-tome no-op, already-learned no-op (tome
+  stays), valid consume+add.
+- `salvage_item`: empty-slot no-op, valid remove + material yield (asserts
+  materials == before + `computeSalvageValue`).
+- `equip_utility_skill`: out-of-range no-op, valid set, overwrite-filled.
+- `swap_utility_skills`: either-index-out-of-range no-op, valid swap, two-null
+  swap (no crash).
+- `unequip_utility_skill`: out-of-range no-op, valid clear.
+
+Key testing lesson: `runToIdle` → `recordIdlePoint` → `compactCurrentArena`
+  deep-copies `current_state` into a fresh arena, so `[]const u8` slice
+  POINTERS change (contents survive). `testing.expectEqual` on structs with
+  slices compares slice headers (ptr+len) → fails on pointer inequality. The
+  tests identify items by unique scalar fields (`weapon_damage`, `speed_bonus`,
+  `spell_damage`) via small helpers (`expectWeapon`/`expectBoots`/
+  `inventoryWeaponDamage`/`inventoryBootsSpeed`) rather than struct equality.
+  Future tiers follow the same pattern.
+
+### Handler test coverage — Tier 2 (combat primitives + gear side effects) (DONE)
+
+Second tier, in `src/handler_tests_combat.zig` (34 tests). The harness gained
+`levelStateWithEntities(arena, entities, tiles)` + `levelEntity(history, i)`
+for level-context fixtures (entities allocated as `[]Entity` in the backing
+arena, handed to the level as `[]const Entity` — handlers mutate via
+`@constCast`, matching the live `getLevelEntity` path). A shared 3x3 tile grid
+(`three_by_three`) gives combat room without crowding.
+
+Coverage (branch-complete per handler):
+- `heal`: clamp-to-max, dead-no-revive, partial.
+- `change_momentum` / `change_cooldown`: add + saturate-at-zero, dead-no-op.
+- `attack`: dead-attacker/dead-defender no-ops, defense subtraction, kill→
+  pushes death, `heals_attacker` lifesteal.
+- `death`: non-player drops equipped gear + inventory + skill tomes (one stack);
+  merges into an existing stack at the same position; player (entity 0) drops
+  nothing.
+- `pickup_items`: full transfer (stack removed), leftovers when inventory
+  full (stack stays), first-empty-slot placement.
+- `stun`: dead-no-op, applies duration, zero-effective (StoneForm
+  `incoming_stun_duration = -5` clamps a 2-stun to 0) adds nothing.
+- `knockback`: moves defender away, edge collision applies `knockback_damage`,
+  dead-no-op.
+- `collision`: applies damage + can kill, dead-defender no-op.
+- `retreat`: moves away from target, dead-no-op.
+- `create_effect`: adds new, extends existing (no duplicate), dead-receiver
+  no-op.
+- `end_effect`: removes the named effect (others stay).
+- Gear side effects (level context): equip-boots during `player_move` →
+  `refreshMoveHighlights` (speed 2 from center of 3x3 → 8 reachable tiles);
+  equip-weapon → `cancelPreparedSkill` (prepared `.slice` cleared).
+
+All confirm-exist (no logic fixes): the handlers already behave per the
+`events.zig` doc comments; the tests pin them against regressions. The
+deep-copy/`expectEqual` pattern from Tier 1 carried over (scalar-field
+comparison; for ground stacks and active_effects, assert `.len` + enum/
+duration scalars rather than struct equality).
+
+### Handler test coverage — Tier 3 (AI + determinism) (DONE)
+
+Third tier, in `src/handler_tests_ai.zig` (15 tests). The harness's
+`levelStateWithEntities` + `levelEntity` cover the fixture needs; AI tests use
+a 5x5 tile grid (`five_by_five`) for movement room. Enemies get weapon skills
+via `main_hand_weapon = .{ .weapon_type = .dagger }` (skill_1 = stab, range 1,
+turn-ending, 1.5x above half health).
+
+Coverage (branch-complete per handler):
+- `aggro_around`: activates opposing entities within `aggro_range`; out-of-
+  range stay inactive; same-team skipped; dead skipped; already-active stay
+  active (no deactivation).
+- `pickup_around`: pure check (no mutation) — pushes one `pickup_items` per
+  in-range ground stack; radius-0 reaches only the entity's own tile.
+- `enemy_turn_move`: nearest-target tiebreak resolves to the lowest
+  `entity_index` (strict-< scan in index order — the determinism convention);
+  already-within-min-range holds position (skips to attack); no opposing
+  entities → `turn_end`; moves up to `speed` steps along the path toward the
+  target without entering its tile.
+- `enemy_turn_attack`: no usable skills → `turn_end`; turn-ending weapon skill
+  fires when a target is in range (stab 1.5x above-half: 5 + 5/2 = 7 dmg);
+  on-cooldown skill skipped; out-of-range target → priority 0 → skipped.
+
+One assertion fix (test bug, not code bug): stab's 1.5x bonus is integer
+math (`damage + damage / 2` = 7, not 7.5), so 20 - 7 = 13, not the 15 I first
+expected. The handler/skill were correct; my expected value was wrong. This
+is the determinism-critical tier (the audit found one real bug here); the
+tests now pin the tiebreak + selection rules against regressions.
+
+### Handler test coverage — Tier 4 (turn-flow orchestrators) (DONE)
+
+Fourth and final tier, in `src/handler_tests_turnflow.zig` (22 tests). New
+technique: orchestrator/ordering tests call `processEvent` once and inspect
+`event_stack` (LIFO order) rather than `runToIdle` — this pins the exact
+push order without the pushed events running and obscuring the structure.
+
+Coverage (branch-complete per handler):
+- `turn_start`: reduces all skill cooldowns by 1; decrements effect durations
+  + pushes `end_effect` for expired (the active_effects list is rebuilt before
+  end_effect runs, so expired effects are already gone); stunned entity skips
+  turn (pushes `turn_end`, not the move event, and decrements stun); player
+  (entity 0) pushes `player_turn_move`; enemy pushes `enemy_turn_move`; dead
+  entity is a no-op.
+- `turn_end` (player): pushes the next round — player `turn_start` at the
+  bottom, enemies sorted by distance ascending with ties broken by
+  `entity_index` (lowest first = closest to stack top = processed first — the
+  determinism convention); inactive enemies skipped; dead enemies skipped;
+  increments `mission.turns_spent`; non-player `turn_end` pushes nothing
+  (the next `turn_start` is already on the stack).
+- `player_turn_move`: sets `turn_phase = .player_move` + refreshes highlights.
+- `player_turn_attack`: auto-skips to `turn_end` when no active enemies
+  (default setting on); enters `player_attack` when enemies exist;
+  `force_attack_step` overrides auto-skip.
+- Orchestrator fan-out (LIFO order pinned): `player_move_action` → [player_
+  turn_attack, clear_highlights, move_entity] (move runs first); `player_skip_
+  move` → [player_turn_attack, clear_highlights]; `player_skip_attack` →
+  [turn_end, clear_highlights, clear_prepared_skill]; `player_cancel_skill`
+  → [clear_highlights, clear_prepared_skill]; `player_use_skill` turn-ending
+  → [turn_end, use_skill, clear_highlights, clear_prepared_skill];
+  non-turn-ending → [use_skill, clear_highlights, clear_prepared_skill] (no
+  turn_end).
+
+All confirm-exist (no logic fixes). The two `turn_end` ordering tests pin
+the distance-then-entity_index rule — the other determinism-critical
+behavior beyond Tier 3's AI tiebreaks.
+
+**Handler test coverage complete:** 93 tests across 4 files (gear, combat,
+AI, turn-flow), 161 total with the pre-existing 68. The `processEvent` rules
+are now pinned against regressions — especially valuable for the editor UI
++ drag-drop work coming next, which will push many events through these same
+handlers.
+
+### Test workflow: scripts/test.sh + Build & Test note (DONE)
+
+`zig build test` exits 0 on success but can print a `failed command: .../test
+...` line whenever a test writes to stderr (advisory warnings, etc.) — that
+line looks like failure. `scripts/test.sh` is the fix: runs
+`zig build test`, labels advisory output `[advisory, non-fatal]`, surfaces
+only real failures (with expected/found), dedupes the summary line, and ends
+with an unambiguous `PASS (exit 0)` / `FAIL (exit N)`. Verified both paths
+(injected a failing assertion → FAIL with the failure surfaced; restored →
+PASS). `--raw` prints the full verbatim output if needed.
+
+AGENTS → Build & Test now documents the workflow: prefer `scripts/test.sh`,
+trust the exit code not the text, don't fish for binaries in `.zig-cache/o/`.
+
+### Cross-project conventions in APPEND_SYSTEM.md + AGENTS.md drift sweep (DONE)
+
+The AGENTS/TODO/DONE trio + lifecycle, the code-comment rules (no in-code
+`TODO`/`FIXME`/`HACK`, file-level `//!` headers, link-don't-restate), the
+collaboration style, and the "stay inside the cwd" boundary are cross-project
+working conventions. Added them to `~/.pi/agent/APPEND_SYSTEM.md` (loaded as
+system context each session, so they apply to every project without
+restating). Also added a "Using the `edit` tool" section there (raw-literal
+`oldText`, prefer small unique edits, re-read on no-match, exact indentation)
+to mitigate the edit-tool retry friction seen this session.
+
+**These stay in ziglop's AGENTS.md too** — AGENTS.md must be self-contained
+for anyone working in the repo (a different harness, a contributor reading it
+on GitHub, a fresh checkout without `~/.pi`). The .md trio + lifecycle and the
+Code Comments subsection describe how *this project* is organized, so they're
+project conventions regardless of also being the cross-project default. Only
+the collaboration *style* (small steps, checkpoints, tradeoffs, cwd boundary)
+is APPEND-only — that's working style, not project structure, and a
+blockquote pointer in AGENTS.md notes where it lives.
+
+Net: AGENTS.md keeps Documentation + Code Comments (self-contained), drops
+the duplicated Collaboration section (pointer to APPEND_SYSTEM). Forward-
+looking prose sweep fixed two drift cases: "future emscripten build" →
+"emscripten build" (web build is done), "lands when custom-mission support
+does" → "not wired" (VFS layer). The rest of the "future"/"deferred" mentions
+are legitimate settled-deferral scope notes (AGENTS.md's job), left as-is.
+
+## Error Handling
+
+### Slice 1 — error surface (DONE)
+
+Settled the two-class error policy and built the player-facing surface for
+recoverable failures. Settled design + B-simple recording choice in AGENTS →
+Error Handling; active slice tracking in TODO → Error handling pass.
+
+- **`SessionState.pending_error: ?[]const u8`** (state.zig): message duped
+  into `history_arena` (durable across frames; overwrite leaks the prior
+  bytes — accepted, same unbounded-arena tradeoff as `event_history`).
+  Helpers `setPendingError(allocator, msg)` / `clearPendingError()` /
+  `pendingError()`. Off the undoable GameState → replay-safe by
+  construction, like the other SessionState fields.
+- **`Action.dismiss_error`** (types.zig): explicit, modal-only action.
+- **Input wiring** (input.zig): `AnytimeInput.dismiss_error`, `applyAction`
+  arm, `checkAction` call. Bound to Escape + Enter in `data/settings.txt`
+  (both keep their existing bindings — list-style bindings allow a key to
+  map to multiple actions).
+- **`ui.buildErrorPopup`** (ui.zig): centered modal 9-slice panel + "Error"
+  header + wrapped body (reuses the tooltip `wrapRow` / `measureRowWidth` /
+  `lineHeight` machinery) + a Dismiss button (`emitPanelButton` carrying
+  `.dismiss_error`). `blocks_input = true` halts hit-testing within the
+  panel. Sizing constants: `error_popup_max_width` 1280, padding 32, header
+  72 / body 56 font sizes.
+- **`view()`** (view.zig): appends the popup last (topmost draw) when
+  `session.pendingError()` is non-null. Pure over SessionState, no file
+  access.
+- **Modal input gate:** `handleAnytimeInput` (input_handlers.zig) checks
+  `pending_error` first — only `dismiss_error` gets through, everything else
+  (including undo/redo + options toggle) swallowed. `update()` (main.zig)
+  mirrors the options-menu pause with `if (pending_error != null) return;`,
+  blocking drag/camera/wait/idle. Dismiss releases the modal in the same
+  frame.
+- **Tests:** `SessionState pending error: set/read/clear` + `overwrite
+  replaces the message` (state.zig); `buildErrorPopup emits a modal panel,
+  header, body, and a Dismiss button` (ui.zig — asserts the first element is
+  a modal `nine_slice_panel` and a `.dismiss_error` button is present).
+- **No real trigger yet** — nothing populates `pending_error` from a real
+  load path. Slices 2 (startup-config fallback) + 3 (in-event handlers →
+  `!void` + revert) wire the triggers. Visual end-to-end verification lands
+  with slice 3.
+
+### Scrollable error popup (DONE)
+
+Upgraded the error popup from a fixed-size panel to a scrollable one so many
+warnings (e.g. a mission with many broken keys) display without clipping.
+
+- **`UiElement.solid_rect`** (ui.zig): new variant — a plain filled
+  rectangle (no sprite), used for the scrollbar track + thumb. `boundsOf` /
+  `tooltipOf` / `blocksInputOf` work via the existing `inline else` arms
+  (the struct carries a `tooltip: ?Tooltip = null` field to satisfy
+  `tooltipOf`). Renderer arm: `rl.drawRectangleRec` (raylib_backend.zig).
+  `blocks_input` defaults false (decorative).
+- **`SessionState.error_scroll_offset: i32`** (state.zig): scroll position
+  in reference-space pixels. Reset to 0 in `setPendingError` (new error →
+  top of content). Clamped to `[0, max_scroll]` in `buildErrorPopup` (the
+  view is the only place that knows `max_scroll`, which depends on the
+  wrapped line count).
+- **`Action.error_scroll_up` / `error_scroll_down`** (types.zig): bound to
+  Up/Down arrows in `data/settings.txt` (same keys as `move_cursor_*` — the
+  modal gate routes them to scroll, not cursor, while the popup is up; no
+  collision thanks to list-style bindings).
+- **`handleAnytimeInput` modal gate** (input_handlers.zig): when
+  `pending_error != null`, routes `error_scroll_up`/`down` (step = 3 line
+  heights) + `scroll_delta` (mouse wheel redirected from camera zoom to
+  scroll) to `error_scroll_offset`, and swallows everything else except
+  `dismiss_error`. No zoom-while-scrolling: the gate returns before the
+  zoom code runs.
+- **`buildErrorPopup` rewrite** (ui.zig): takes `*SessionState` (for the
+  scroll-offset clamp). Wraps the body, computes `body_content_height` /
+  `visible_height` (capped at `error_popup_max_body_height` 1600px) /
+  `max_scroll`. Emits only lines within `[scroll_offset, scroll_offset +
+  visible_height]` (skips off-screen lines → small element list + clean
+  hit-test set). Draws a scrollbar (track + proportional thumb) on the
+  right edge only when content overflows. Header + Dismiss button are
+  outside the scroll region (always visible).
+- **`view()` signature** (view.zig): `session` param changed from
+  `*const SessionState` to `*SessionState` for the scroll-offset clamp.
+  This is transient view-state housekeeping (not gameplay mutation / I/O),
+  consistent with view()'s purity rule.
+- **Tests:** short message (no scrollbar, offset clamped to 0) + long
+  message (scrollbar present = ≥2 `solid_rect`, offset 0 at top) + offset
+  clamped to `max_scroll` on a long message with a huge offset.
+- **`error_scroll_line_height`** = 56 (synced with
+  `lineHeight(error_body_font_size)`); arrow-key scroll step = 3 lines.
+  `error_popup_max_body_height` = 1600 (leaves room for header + button +
+  padding within the 2160px reference height). Scrollbar: 12px wide, 16px
+  gap from body text.
+
+### B-simple vs transactional recording (decision, DONE)
+
+Chose **B-simple** (per-dispatch recording, accept the redo-loss edge case)
+over transactional (defer append + `discardFutureTimeline` to transaction
+commit). The transactional model's independent benefits (transaction-
+consistent session logs on crash-mid-action; a try/commit/abort primitive)
+are marginal with no current consumer beyond the error-handling edge case,
+and its costs land in replay-verification code (the reconstruction cache's
+`current_event_index - 1` keying would need rework; `current_event_index`
+semantics shift ripples to combat-log projection, `levelStartEventIndex`,
+replay seeding) where a subtle bug reintroduces silent replay divergence —
+the worst class. The current model's "always-committed, always-consistent
+index" is a genuinely good property. The edge case (redo unavailable after a
+failed post-undo action — no crash, no corruption) is accepted; the
+transactional fix remains available if it ever bites in playtesting. Full
+reasoning in AGENTS → Error Handling → B-simple.
+
+### Slice 2 — startup-config fallback (DONE)
+
+The four startup loaders (`loadSettingsFromDisk` / `loadColorThemeDefinitionsFromDisk`
+/ `loadWeaponTypeDefinitions` / `loadSalvageDefinitionsFromDisk`) now fall back
+to the embedded copy when the first read (persistent-dir shadow → embedded)
+fails at any stage — read, parse, or `load_fn`. Embedded-copy failure panics
+(shipped content is broken, a real bug). A warning is appended per fallback
+and surfaced as a single `pending_error` popup after the history is created.
+
+- **`FileSource.readEmbeddedFile(allocator, path) ![]u8`** (file_source.zig):
+  reads ONLY from the embedded map, skipping the persistent dir. Used by the
+  fallback to bypass a broken persistent shadow.
+- **`loadConfigWithFallback(T, file_source, allocator, path, load_fn, warnings)`**
+  (session_setup.zig): the shared read+parse+load+fallback helper. `load_fn`
+  has shape `fn ([]const Section, std.mem.Allocator) anyerror!T`; a small
+  `loadWeaponTypeDefinitionWrapped` adapter covers `loadWeaponTypeDefinition`
+  (which takes only sections). Bytes from the successful attempt are leaked
+  into `allocator` (process-lifetime on both platforms) — same lifetime
+  contract as the existing `parseConfigFileFromPath` path.
+- **Settings fallback changed:** was "hardcoded defaults on any failure"; now
+  "embedded copy on parse failure, hardcoded defaults only if the embedded
+  copy is missing entirely (panic)." The embedded copy is a better fallback
+  (preserves keybindings + authored values); uniform policy across all four
+  loaders.
+- **`createSessionSetup`** collects warnings from all four loaders, creates
+  the history, then if any warnings exist, concatenates them into one message
+  via `setPendingError(history.history_arena.allocator(), message)`. The
+  popup is modal on the main menu until dismissed.
+- **Tests:** "broken persistent shadow falls back to embedded + warns" (writes
+  a broken `data/settings.txt` to a scratch persistent dir, asserts embedded
+  settings loaded + 1 warning mentioning the path) + "no shadow uses embedded
+  directly, no warning" (empty persistent dir, asserts embedded loaded + 0
+  warnings). Both wrapped in an arena (the helper intentionally leaks config
+  bytes into the allocator — process-lifetime in production, arena-reclaimed
+  in tests).
+- **The popup is now reachable at startup:** malforming a shipped config file
+  in the persistent dir (e.g. `~/.ziglop/data/color_themes.txt`) and starting
+  the game triggers the popup with a "Failed to parse ...; using built-in
+  default" message. Visual end-to-end verification is now possible.
+
+### Key validation — approach A (DONE — infrastructure + level files)
+
+Per-section key whitelists that warn on unknown keys, catching the typo'd-key
+class (e.g. `chracter_code` → the permissive parser silently drops the entry;
+A names the typo directly). See AGENTS → Error Handling. Soft policy: unknown
+keys warn but don't reject (forward-compatible — a newer file still loads on
+an older parser with an advisory warning).
+
+- **`parser.validateKeys(sections, key_map, file_path, allocator, warnings)`**
+  (parser.zig): walks all sections, looks up each section's header in
+  `key_map`, checks every key in every entry group against the whitelist.
+  Unknown keys → warning (`"Unknown key 'X' in Section of file"`). Sections
+  not in the map are skipped (raw-grid sections like Layout, or sections
+  without a defined key set yet). Advisory — never errors, never rejects.
+- **`parser.level_key_map`** (parser.zig): comptime
+  `std.StaticStringMap([]const []const u8)` for level files — Metadata,
+  Enemies, Decorations, Items sections + their valid keys. Layout is excluded
+  (raw char grid, no key-value pairs). The Enemies key set is the full
+  `parseEntityDefinition` key set + `character_code` + utility-skill
+  `slot_4`..`slot_8` + `layer`.
+- **Wired into `start_level` handler** (event_handlers.zig): after parse,
+  before load. Collects key warnings, and if any, sets `pending_error` with
+  the concatenated message. Gated on `!history.replaying` so undo/redo
+  doesn't re-surface warnings from the recording. The load continues
+  (unknown keys are advisory — the file is valid, just noisy).
+- **Tests:** "warns on unknown keys in level file sections" (3 unknown keys
+  across Metadata/Enemies/Decorations → 3 warnings naming the key + section +
+  file) + "no warnings for valid keys" (clean file → 0 warnings). Both
+  arena-wrapped (sections are arena-allocated in production).
+- **Incremental expansion:** the infrastructure (`validateKeys` + comptime
+  key maps) is file-type-agnostic. Adding hub/mission/save/etc. key maps +
+  wiring into their load paths is additive — each file type is a separate
+  addition. The user's original case (typo in a level file's Enemies section)
+  is now caught at `start_level` time.
+
+### wrapRow: path-splitting + character-wrap fallback (DONE)
+
+`wrapRow` (ui.zig) was space-only: a long path with no spaces (e.g.
+`data/campaigns/main_campaign/missions/first_mission/level_1.txt`) was one
+giant "word" that overflowed the panel and got clipped. Extended the wrapper
+to handle long tokens uniformly (benefits both the error popup and tooltips):
+
+- **Break on `/`**: `/` is now a soft break point (like spaces). The `/`
+  stays with the preceding segment (`data/campaigns/` is one piece), so
+  paths wrap at separators and stay readable.
+- **Character-wrap fallback**: if a token (path segment, long key, etc.)
+  is still wider than `content_width` after splitting on spaces and `/`,
+  it's split into char-chunks that each fit, each on its own line. No token
+  ever overflows.
+- **Existing space-wrapping unchanged**: the regression test confirms
+  space-based wrapping still works identically.
+- **Tests**: breaks on `/` (path wraps at a separator, `/` stays with the
+  preceding segment), char-wraps a token wider than content width
+  (`abcdefgh` at 4-chars-per-line → 2 lines), and the existing space-wrap
+  regression. All arena-wrapped where needed.
+
+### Slice 3 — in-event reconstruction read failures (DONE)
+
+The 6 handlers that do reconstruction reads (`start_new_game` / `start_mission`
+/ `start_level` / `start_hub` / `load_save` / `open_editor` — `start_new_game`
++ `load_save` share `loadCampaignAndPushHub` which reads the campaign file)
+now recover from parse/load failures instead of crashing. The handler sets a
+flag + descriptive error, returns from `processEvent`, and the drain loop
+reverts + surfaces the popup. See AGENTS → Error Handling → three contexts.
+
+- **`GameStateHistory.load_error: bool`** (state.zig): set by a handler when
+  its reconstruction read fails during LIVE play. Distinct from
+  `pending_error` (the user-facing message, which can also be set
+  advisorially by key validation without triggering a revert).
+- **`failReconstructionRead(history, message)`** (event_handlers.zig): the
+  shared helper. During replay → `@panic` (fail-fast — a reconstruction-read
+  failure during replay is unexpected: in-session replay has cached bytes;
+  cross-session replay of changed content is the known accepted fail-fast).
+  During live play → `setPendingError` (duped into `history_arena`, survives
+  the revert) + `load_error = true`.
+- **Handler conversions:** each `catch @panic("failed to parse X")` on a
+  reconstruction read/parse/load became `catch { failReconstructionRead(...);
+  return; }`. OOM allocation panics stay (unrecoverable). The other ~90
+  handlers stay `void` (invariant unwraps, gameplay logic — bugs → panic).
+  `loadCampaignAndPushHub` (shared by `start_new_game` + `load_save`) also
+  converted; callers check `if (history.load_error) return;` after the call.
+- **Drain loop revert** (main.zig `frame()`): after each `update()`, checks
+  `history.load_error`. If set: `restoreTo(last_idle_event_index)` (guaranteed
+  exact — the snapshot was just taken at the last idle point, no snapshots
+  since — fast path, no replay; stack-empty by construction) +
+  `event_history.shrinkRetainingCapacity(current_event_index)` (trims the
+  failed transaction's recorded events) + `break` (exit drain). The popup
+  message survives (SessionState is off GameState, not touched by restoreTo).
+  `pending_error` is treated as a drain pause (like a wait) in the drain
+  loop condition + idle frame + render gate, so the popup renders and the
+  drain doesn't spin (the bug that caused the lockup before this fix).
+- **`runToIdle` (test harness, both copies):** panics on `load_error` (test
+  content should be valid — a load_error in a test is a bug).
+- **`restoreTo` made `pub`** (state.zig): main.zig's drain loop now calls it
+  directly for the revert. Justified by the minimize-pub rule (another file
+  imports it).
+- **Test:** "reconstruction read failure: handler sets load_error, drain loop
+  reverts state + trims history" (main.zig) — writes a broken mission.txt to
+  a scratch persistent dir, pushes start_mission, calls processEvent, asserts
+  load_error + pending_error set + state unchanged, then simulates the drain
+  loop's revert and asserts state restored + event_history trimmed + popup
+  message survived.
+- **B-simple edge case** (accepted): if the player undoes, then triggers a
+  failing load, `discardFutureTimeline` already trimmed the redo future. The
+  revert restores state but the redo future is gone. No crash, no corruption
+  — redo just unavailable. See AGENTS → Error Handling → B-simple.
+
+### Slice 4 — write/reload failures (DONE)
+
+The two write sites (`write_save` handler + `dumpEventLog` dev tool) now
+recover from write failures instead of crashing. Session-log reload is not
+user-wired yet (the replay viewer is TODO), so its `file_format_version`
+hard-gate softening is deferred to that work. See AGENTS → Error Handling →
+three contexts.
+
+- **`write_save` handler** (event_handlers.zig): `writePlayerSaveToFile`
+  `catch` → `setPendingError("failed to write save file")` + `return`. No
+  `load_error` / revert needed — a failed write doesn't mutate `current_state`
+  (the state is already correct; only the file write failed). The replay gate
+  stays (undo/redo doesn't rewrite). Mid-drain, `pending_error` pauses the
+  drain (the slice-3 drain-pause fix), so the popup renders and the player
+  dismisses; the drain then continues with remaining events.
+- **`dumpEventLog`** (input_handlers.zig): `writeEventLog` + `writeFile`
+  each `catch` → `setPendingError` + `return`. Runs from the input path (not
+  an event), so no drain/replay concern.
+- **`buildEditorMission` in `open_editor`**: also converted to
+  `failReconstructionRead` (it calls `loadLevel` internally, which can fail on
+  `validateFileFormatVersion` — same class as the other reconstruction reads).
+  Caught a `Metadta` section-header typo in `level_1.txt` during testing
+  (another manual test artifact, like the `chracter_code` key typo).
+- **`FileSource.writeFile` shipped-path guard stays a `@panic`**: it's a
+  programming error (writing to `data/`/`assets/`), not a runtime I/O
+  failure. The recoverable path is for genuine I/O failures (permissions,
+  disk full, parent-not-a-dir), not programming bugs.
+- **Test:** "write_save failure: sets pending_error, no crash, no state
+  corruption" — creates a scratch persistent dir with a *file* at the `saves`
+  path (so `ensureParentDirs` fails when trying to create the `saves` dir),
+  pushes `write_save`, asserts `pending_error` set + `load_error` NOT set +
+  `player_data` intact. (Using a file-as-dir blocker is more portable than
+  chmod read-only.)
+- **Session-log `file_format_version` hard-gate:** stays a hard error
+  (`error.UnsupportedFileFormatVersion` from `loadEventLog`) for now. It only
+  fires in tests (session-log reload isn't user-wired). Softening to
+  warn-and-abort lands with the replay viewer.
+
+### Key validation — all file types (DONE)
+
+Extended approach A from level files to every config file type. See AGENTS →
+Error Handling → key validation. Each file type has a comptime
+`StaticStringMap([]const []const u8)` key map; `validateKeys` checks every
+key in every entry group against the map and warns on unknowns.
+
+- **Key maps added** (parser.zig): `hub_key_map`, `mission_key_map`,
+  `campaign_key_map`, `settings_key_map`, `color_theme_key_map`,
+  `weapon_type_key_map`, `salvage_key_map`, `player_save_key_map`,
+  `player_loadout_key_map`. The Metadata section's keys (`file_format_version`
+  + `name`) are shared via `level_metadata_keys` where applicable. Hub
+  Decorations reuse `level_decorations_keys` (same format). Player loadout
+  uses the `parseEntityDefinition` key set (minus `character_code` — the
+  player isn't placed by char code). Salvage sections use `MaterialType` enum
+  values as keys (wood, metal, leather, cloth, knowledge).
+- **`validateConfigKeys` helper** (event_handlers.zig): centralizes the
+  warning-collection + `setPendingError` surfacing for in-event reads.
+  Gated on `!replaying`. Replaced the inline block in `start_level` and was
+  added to `start_mission`, `start_hub`, `start_level`, `load_save`,
+  `start_new_game`, `loadCampaignAndPushHub` (campaign), and `open_editor`
+  (mission.txt + player.txt + all level_N.txt).
+- **`loadConfigWithFallback`** (session_setup.zig): gained a `key_map`
+  parameter; validates both the first-attempt (persistent-dir) sections and
+  the embedded-fallback sections. All four startup loaders pass their key map.
+- **Smoke test** (test_harness.zig): asserts `pending_error` is null after
+  bootstrap — the shipped startup config has no unknown keys. The handler
+  tests (which load levels/hubs via the event path) implicitly cover the
+  shipped level/hub content.
+
+### Global shipped-content validation test (DONE)
+
+`src/content_validation_tests.zig`: a test that iterates every `.txt` in the
+embedded-asset map, classifies each by path pattern, and runs its loader +
+key validation. Catches shipped-content bugs (malformed syntax, unknown keys,
+bad file_format_version, semantic errors) that the permissive parser would
+otherwise silently drop.
+
+- **Classification by path pattern**: `data/settings.txt` → loadSettings +
+  settings_key_map; `data/color_themes.txt` → loadColorThemeDefinitions +
+  color_theme_key_map; `data/salvage.txt` → loadSalvageDefinitions +
+  salvage_key_map; `data/weapon_types/*.txt` → loadWeaponTypeDefinition +
+  weapon_type_key_map; `data/new_player.txt` / `data/autosave.txt` →
+  loadPlayerSave + player_save_key_map; `*/campaign.txt` → loadCampaign +
+  campaign_key_map; `*/hub.txt` → loadHub + hub_key_map; `*/mission.txt` →
+  loadMission + mission_key_map; `*/player.txt` → loadPlayerLoadout +
+  player_loadout_key_map; `*/level_*.txt` → loadLevel + level_key_map.
+- **Full load, not just parse**: the test runs the complete loader (type
+  construction), not just `parseConfigFile` — catches semantic errors (bad
+  enum values, missing required fields) that parse-only would miss. The
+  loaded types are discarded (arena-allocated).
+- **Self-maintaining**: new files added under `data/` are picked up
+  automatically by the embedded-asset map iteration (the build step re-runs
+  every build). No manual wiring when a new config file ships.
+- **Asserts zero key-validation warnings** across all shipped config. On
+  failure, prints every warning (key + section + file) so the author sees
+  exactly what to fix. Verified: reintroducing the `chracter_code` typo in
+  `level_1.txt` fails the test with `Unknown key 'chracter_code' in Enemies
+  section of data/.../level_1.txt`.
+- **Sanity check**: asserts at least 16 config files are present (the current
+  count), so a broken build step that drops the embedded map is caught.
+
+This test would have caught both manual-test typos (`chracter_code`,
+`Metadata`) this session before they leaked into the working tree.

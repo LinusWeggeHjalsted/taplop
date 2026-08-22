@@ -2,20 +2,20 @@
 //!
 //! The game ships as a single-file executable: all `data/` + `assets/` content
 //! is embedded at build time (see `generated_assets.zig`, emitted by build.zig).
-//! Writable artifacts (saves, session logs, future replays/custom missions)
-//! live in a persistent data directory (`~/.ziglop/` by default). Both content
-//! reads and artifact reads/writes funnel through this one session-resident
-//! `FileSource` so the game never depends on the current working directory.
+//! Writable artifacts (saves, session logs) live in a persistent data
+//! directory (`~/.ziglop/` by default). Both content reads and artifact
+//! reads/writes funnel through this one session-resident `FileSource` so the
+//! game never depends on the current working directory.
 //!
 //! Read order (first hit wins):
 //!   1. in-memory VFS — uploaded zips / fetched custom missions (transient;
-//!      lands when custom-mission support does — NOT yet wired)
+//!      not wired)
 //!   2. persistent dir — `~/.ziglop/<path>`
 //!   3. embedded map — `data/**` + `assets/**` baked into the exe
 //!
 //! Because the persistent dir is checked before the embedded map, a player can
 //! drop a file at `~/.ziglop/<shipped-path>` to shadow shipped content — a
-//! modding seam by side effect (accepted as-is for now; see AGENTS.md). Writes
+//! modding seam by side effect (accepted as-is; see AGENTS.md). Writes
 //! target the persistent dir only and reject `data/`/`assets/` prefixes so the
 //! game itself can never shadow its own shipped content.
 //!
@@ -28,7 +28,7 @@ const parser = @import("parser.zig");
 
 /// A generous upper bound on a single file read, guarding against runaway
 /// reads while comfortably covering any shipped asset (largest current asset
-/// is ~70 KB; future audio is the only thing that could approach this).
+/// is ~70 KB).
 const read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
 
 pub const FileSource = struct {
@@ -51,7 +51,7 @@ pub const FileSource = struct {
         allocator: std.mem.Allocator,
         path: []const u8,
     ) ![]u8 {
-        // 1. (future) in-memory VFS — not yet wired.
+        // 1. in-memory VFS — not wired.
 
         // 2. persistent dir (player overrides / custom content).
         if (self.persistent_dir.readFileAlloc(self.io, path, allocator, read_limit)) |bytes| {
@@ -66,6 +66,25 @@ pub const FileSource = struct {
             return try allocator.dupe(u8, bytes);
         }
 
+        return error.FileNotFound;
+    }
+
+    /// Read a file from the embedded map ONLY, skipping the persistent
+    /// dir. Used by the startup-config fallback (see AGENTS → Error
+    /// Handling): when a persistent-dir shadow of a shipped config file
+    /// fails to parse, the loader retries against the embedded copy so a
+    /// broken override can't crash the game. Returns `error.FileNotFound`
+    /// if the path isn't in the embedded map. Always returns freshly
+    /// allocated bytes (the caller owns them).
+    pub fn readEmbeddedFile(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+        path: []const u8,
+    ) ![]u8 {
+        _ = self; // the embedded map is a comptime-global, no instance state
+        if (embedded_assets.map.get(path)) |bytes| {
+            return try allocator.dupe(u8, bytes);
+        }
         return error.FileNotFound;
     }
 
@@ -229,7 +248,7 @@ pub const FileSource = struct {
                 .name = owned_name,
                 .level_count = mission.level_count,
                 .has_custom_assets = has_custom_assets,
-                .author_turns = null, // validation replay format not yet built
+                .author_turns = null, // no validation replay format
             });
         }
 

@@ -14,6 +14,8 @@ pub const effect = @import("../effects/that_which_lingers.zig").effect;
 
 // --- Skill interface ---
 
+/// That Which Lingers: an enchantment that applies the matching effect
+/// (all outgoing skill durations +1). No targeting.
 pub const skill = Skill{
     .name = "That Which Lingers",
     .skill_type = .enchantment,
@@ -43,8 +45,6 @@ fn priority(caster_index: u32, game_state: GameState) u32 {
     const caster = level.entities[caster_index];
 
     if (caster.skill_cooldowns.get(.that_which_lingers) > 0) return 0;
-
-    // TODO: higher priority if the entity has duration-based skills about to be used
     return 1;
 }
 

@@ -42,7 +42,7 @@ pub const RenderContext = struct {
 
 pub fn view(
     current_state: *const GameState,
-    session: *const state.SessionState,
+    session: *state.SessionState,
     settings: types.Settings,
     color_theme_definitions: types.ColorThemeDefinitions,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
@@ -136,10 +136,8 @@ pub fn view(
             settings.player_color_index,
         ) catch @panic("failed to build bottom bar");
     } else if (current_state.screen == .main_menu) {
-        // Continue is available when there is a game to resume. Today that is
-        // populated PlayerData; a future standalone build also offers Continue
-        // when an autosave file exists (detected once via the file layer, not
-        // per frame here — see TODO.txt).
+        // Continue is available when there is a game to resume (populated
+        // PlayerData).
         const continue_available = current_state.player_data.current_campaign.len > 0;
         ui.buildMainMenu(
             &ui_elements,
@@ -186,6 +184,14 @@ pub fn view(
                 ui.tooltipOf(hovered).?,
             ) catch @panic("failed to build tooltip");
         }
+    }
+
+    // Recoverable error popup: modal, centered, drawn on top of all other
+    // UI (including tooltips). Pure over SessionState.pending_error. See
+    // AGENTS → Error Handling.
+    if (session.pendingError()) |message| {
+        ui.buildErrorPopup(&ui_elements, frame_allocator, session, message) catch
+            @panic("failed to build error popup");
     }
 
     // Combat log: project the current level's events (up to the current
@@ -280,8 +286,7 @@ const world_white: types.Color = .{ .r = 255, .g = 255, .b = 255 };
 
 /// Flag pole frame: 256x512 (1 tile wide x 2 tall). Pivot (0.5, 0.75) centers
 /// the bottom tile-half of the frame on the marker's tile. Used for both level
-/// ends and hub mission-start markers. The animated banner overlay is deferred
-/// to the animation work.
+/// ends and hub mission-start markers; only the static pole is drawn here.
 const flag_pole_width: f32 = 256.0;
 const flag_pole_height: f32 = 512.0;
 const flag_pivot_x: f32 = 0.5;
@@ -307,8 +312,8 @@ fn levelEndDrawable(
 }
 
 /// Build an EntityDrawable for `entity`, aligning the shared sprite pivot to
-/// the center of the entity's tile. Only the base sprite is populated for now
-/// (weapons/gear/effects/health bar land later).
+/// the center of the entity's tile. Populates the base sprite, body overlay
+/// layers, and weapons; gear/effect sprites and the health bar are not wired.
 fn entityDrawable(
     entity: *const Entity,
     active_theme: types.ActiveColorTheme,

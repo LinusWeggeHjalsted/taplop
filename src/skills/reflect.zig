@@ -11,7 +11,7 @@ const GameState = state.GameState;
 const Event = events.Event;
 const Skill = skill_mod.Skill;
 
-/// Reflect: an off-hand skill. Grants the Reflect effect on the caster \u2014 while
+/// Reflect: an off-hand skill. Grants the Reflect effect on the caster — while
 /// active, incoming damage is prevented and dealt back to the attacker.
 /// Turn-ending (weapon skill).
 pub const skill = Skill{
@@ -38,8 +38,8 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 }
 
 /// AI priority: 0 if on cooldown or no hostile nearby, else 4 (cast defensively
-/// when about to be attacked). Heuristic: a hostile within 2 tiles \u2014 revisit
-/// during AI polishing.
+/// when about to be attacked). Heuristic: a hostile within 2 tiles — the
+/// threshold is conservative.
 fn priority(caster_index: u32, game_state: GameState) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];

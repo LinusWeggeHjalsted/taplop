@@ -41,6 +41,10 @@ const WeaponType = types.WeaponType;
 // wait handling in update() (main.zig).
 const turn_flow_wait_milliseconds: u32 = 500;
 
+/// Compute the minimum effective range across all off-cooldown skills an entity
+/// has — the closest distance it needs to be to use at least one skill. Uses
+/// range if the skill has it, radius if not. Returns null if no skills are off
+/// cooldown (shouldn't normally happen).
 fn computeMinRange(
     entity: Entity,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
@@ -124,6 +128,47 @@ pub fn pushEvents(
 /// Push the gameplay start batch for a freshly-loaded level: player sync
 /// (build_player_from_data, runs first) + per-entity aggro checks + the
 /// player's turn_start (runs last). Shared by start_level (normal gameplay,
+/// Set by a reconstruction-read handler when its config read or parse
+/// fails during LIVE play. Sets the user-facing pending_error (the
+/// descriptive `message`, duped into history_arena so it survives the
+/// revert) + the `load_error` flag (the drain loop checks it and reverts).
+/// During replay, panics instead (fail-fast — a reconstruction-read
+/// failure during replay is unexpected; in-session replay has cached bytes,
+/// cross-session replay of changed content is the known accepted fail-fast).
+/// See AGENTS → Error Handling → three contexts.
+fn failReconstructionRead(history: *GameStateHistory, message: []const u8) void {
+    if (history.replaying) @panic("replay: reconstruction read failed (content changed?)");
+    history.session.setPendingError(history.history_arena.allocator(), message);
+    history.load_error = true;
+}
+
+/// Run key validation on `sections` and, if any unknown keys are found,
+/// surface them as a pending_error popup. Advisory — the load continues
+/// regardless (unknown keys are dropped, not fatal). Gated on !replaying
+/// so undo/redo doesn't re-surface warnings from the recording. See AGENTS
+/// → Error Handling → key validation.
+fn validateConfigKeys(
+    history: *GameStateHistory,
+    sections: []const parser.Section,
+    key_map: std.StaticStringMap([]const []const u8),
+    file_path: []const u8,
+    allocator: std.mem.Allocator,
+) void {
+    if (history.replaying) return;
+    var key_warnings: std.ArrayList([]const u8) = .empty;
+    parser.validateKeys(sections, key_map, file_path, allocator, &key_warnings);
+    if (key_warnings.items.len > 0) {
+        var message: std.ArrayList(u8) = .empty;
+        for (key_warnings.items, 0..) |warning, index| {
+            if (index > 0) message.appendSlice(allocator, "\n") catch
+                @panic("failed to assemble key warning message");
+            message.appendSlice(allocator, warning) catch
+                @panic("failed to assemble key warning message");
+        }
+        history.session.setPendingError(history.history_arena.allocator(), message.items);
+    }
+}
+
 /// sync_player=true — the level's bare player entity gets its loadout from
 /// PlayerData) and start_playtest / start_validation (editor, sync_player=
 /// false — the player is already fully instantiated from editor.player_def,
@@ -311,12 +356,18 @@ fn loadCampaignAndPushHub(
     const campaign_sections = parser.parseConfigFile(
         history.readReconstructionFile(campaign_path),
         allocator,
-    ) catch @panic("failed to parse campaign file");
-
+    ) catch {
+        failReconstructionRead(history, "failed to parse campaign file");
+        return;
+    };
+    validateConfigKeys(history, campaign_sections, parser.campaign_key_map, campaign_path, allocator);
     current.campaign = parser.loadCampaign(
         campaign_sections,
         allocator,
-    ) catch @panic("failed to parse campaign file");
+    ) catch {
+        failReconstructionRead(history, "failed to parse campaign file");
+        return;
+    };
 
     // Push start_hub with the player's current hub
     const hub_id = current.player_data.current_hub;
@@ -375,27 +426,43 @@ pub fn processEvent(
                     const parsed_sections = parser.parseConfigFile(
                         history.readReconstructionFile("data/new_player.txt"),
                         allocator,
-                    ) catch @panic("failed to parse new_player.txt");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse new_player.txt");
+                        return;
+                    };
+                    validateConfigKeys(history, parsed_sections, parser.player_save_key_map, "data/new_player.txt", allocator);
 
                     current.player_data = parser.loadPlayerSave(
                         parsed_sections,
                         allocator,
-                    ) catch @panic("failed to parse new_player.txt");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse new_player.txt");
+                        return;
+                    };
 
                     loadCampaignAndPushHub(current, history, allocator);
+                    if (history.load_error) return;
                 },
                 .load_save => |load| {
                     const parsed_sections = parser.parseConfigFile(
                         history.readReconstructionFile(load.save_path),
                         allocator,
-                    ) catch @panic("failed to parse save file");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse save file");
+                        return;
+                    };
+                    validateConfigKeys(history, parsed_sections, parser.player_save_key_map, load.save_path, allocator);
 
                     current.player_data = parser.loadPlayerSave(
                         parsed_sections,
                         allocator,
-                    ) catch @panic("failed to parse save file");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse save file");
+                        return;
+                    };
 
                     loadCampaignAndPushHub(current, history, allocator);
+                    if (history.load_error) return;
                 },
                 .save_game => |save| {
                     // Orchestrate: make PlayerData current, then write. LIFO means
@@ -418,12 +485,21 @@ pub fn processEvent(
                     // Side effect: skip during replay so undo/redo scrubbing
                     // doesn't rewrite the save (or spam download prompts on web).
                     if (history.replaying) return;
+                    // A write failure is recoverable: the state is fine, just
+                    // the file didn't write. Surface a popup + abort the write;
+                    // don't crash. See AGENTS → Error Handling → three contexts.
                     parser.writePlayerSaveToFile(
                         history.file_source,
                         write.save_path,
                         current.player_data,
                         allocator,
-                    ) catch @panic("failed to write save file");
+                    ) catch {
+                        history.session.setPendingError(
+                            history.history_arena.allocator(),
+                            "failed to write save file",
+                        );
+                        return;
+                    };
                 },
                 .start_hub => |start| {
                     // Build hub file path: data/campaigns/{campaign}/hubs/{hub_id}/hub.txt
@@ -436,13 +512,20 @@ pub fn processEvent(
                     const hub_sections = parser.parseConfigFile(
                         history.readReconstructionFile(hub_path),
                         allocator,
-                    ) catch @panic("failed to parse hub file");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse hub file");
+                        return;
+                    };
+                    validateConfigKeys(history, hub_sections, parser.hub_key_map, hub_path, allocator);
 
                     current.hub = parser.loadHub(
                         hub_sections,
                         history.file_source,
                         allocator,
-                    ) catch @panic("failed to parse hub file");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse hub file");
+                        return;
+                    };
 
                     current.player_data.current_hub = start.hub_id;
                     current.transitionScreen(.hub);
@@ -475,11 +558,18 @@ pub fn processEvent(
                     const mission_sections = parser.parseConfigFile(
                         history.readReconstructionFile(mission_file_path),
                         allocator,
-                    ) catch @panic("failed to parse mission file");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse mission file");
+                        return;
+                    };
+                    validateConfigKeys(history, mission_sections, parser.mission_key_map, mission_file_path, allocator);
                     const mission = parser.loadMission(
                         mission_sections,
                         allocator,
-                    ) catch @panic("failed to parse mission file");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse mission file");
+                        return;
+                    };
 
                     // Player loadout (player.txt) — required for editor
                     // playtest/validation. Official missions ship one too.
@@ -491,9 +581,15 @@ pub fn processEvent(
                     const player_sections = parser.parseConfigFile(
                         history.readReconstructionFile(player_file_path),
                         allocator,
-                    ) catch @panic("failed to parse player.txt");
-                    const player_entity = parser.loadPlayerLoadout(player_sections, allocator) catch
-                        @panic("failed to parse player.txt");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse player.txt");
+                        return;
+                    };
+                    validateConfigKeys(history, player_sections, parser.player_loadout_key_map, player_file_path, allocator);
+                    const player_entity = parser.loadPlayerLoadout(player_sections, allocator) catch {
+                        failReconstructionRead(history, "failed to parse player.txt");
+                        return;
+                    };
 
                     // Read + parse every level, then build the reference-based editor.
                     var level_sections: std.ArrayList([]const parser.Section) = .empty;
@@ -507,7 +603,11 @@ pub fn processEvent(
                         const sections = parser.parseConfigFile(
                             history.readReconstructionFile(level_path),
                             allocator,
-                        ) catch @panic("failed to parse level file");
+                        ) catch {
+                            failReconstructionRead(history, "failed to parse level file");
+                            return;
+                        };
+                        validateConfigKeys(history, sections, parser.level_key_map, level_path, allocator);
                         level_sections.append(allocator, sections) catch @panic("failed to append level sections");
                     }
                     current.editor = parser.buildEditorMission(
@@ -516,7 +616,10 @@ pub fn processEvent(
                         level_sections.items,
                         history.file_source,
                         allocator,
-                    ) catch @panic("failed to build editor mission");
+                    ) catch {
+                        failReconstructionRead(history, "failed to build editor mission");
+                        return;
+                    };
                     current.transitionScreen(.editor);
                 },
                 .close_editor => {
@@ -557,9 +660,9 @@ pub fn processEvent(
                     pushGameplayStartEvents(current, allocator, false);
                 },
                 .end_validation => {
-                    // Restore the editor after a validation run. Success
-                    // semantics + replay attachment are deferred (online
-                    // services); for now just return to edit mode.
+                    // Restore the editor after a validation run. Returns to
+                    // edit mode; validation result + replay attachment are
+                    // not wired.
                     current.editor.?.mode = .edit;
                     current.transitionScreen(.editor);
                 },
@@ -573,12 +676,19 @@ pub fn processEvent(
                     const mission_sections = parser.parseConfigFile(
                         history.readReconstructionFile(mission_file_path),
                         allocator,
-                    ) catch @panic("failed to parse mission file");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse mission file");
+                        return;
+                    };
+                    validateConfigKeys(history, mission_sections, parser.mission_key_map, mission_file_path, allocator);
 
                     current.mission = parser.loadMission(
                         mission_sections,
                         allocator,
-                    ) catch @panic("failed to parse mission file");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse mission file");
+                        return;
+                    };
 
                     current.mission.?.path = start.mission_path;
                     current.mission.?.current_level_index = 1;
@@ -628,13 +738,25 @@ pub fn processEvent(
                     const level_sections = parser.parseConfigFile(
                         history.readReconstructionFile(level_path),
                         allocator,
-                    ) catch @panic("failed to parse level file");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse level file");
+                        return;
+                    };
+
+                    // Key validation: warn on unknown keys (advisory — the
+                    // file still loads). Catches typo'd keys that the
+                    // permissive parser would silently drop. See AGENTS →
+                    // Error Handling.
+                    validateConfigKeys(history, level_sections, parser.level_key_map, level_path, allocator);
 
                     current.level = parser.loadLevel(
                         level_sections,
                         history.file_source,
                         allocator,
-                    ) catch @panic("failed to parse level file");
+                    ) catch {
+                        failReconstructionRead(history, "failed to parse level file");
+                        return;
+                    };
 
                     if (current.mission) |*mission| {
                         mission.current_level_index = start.level_index;

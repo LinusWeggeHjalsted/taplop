@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const game = @import("main.zig");
+const session_setup = @import("session_setup.zig");
 const RaylibBackend = @import("raylib_backend.zig").RaylibBackend;
 const types = @import("types.zig");
 const FileSource = @import("file_source.zig").FileSource;
@@ -43,7 +44,9 @@ pub fn main(init: std.process.Init.Minimal) void {
     );
     defer backend.deinit();
 
-    game.run(&backend, allocator, &file_source, io);
+    var setup = session_setup.createSessionSetup(allocator, &file_source, io, &backend);
+    setup.fixupPointers();
+    game.run(&backend, &setup);
 }
 
 /// Scan argv for a `--data-dir <path>` or `--data-dir=<path>` flag and return

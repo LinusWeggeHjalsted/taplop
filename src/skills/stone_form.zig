@@ -10,7 +10,7 @@ const GameState = state.GameState;
 const Event = events.Event;
 const Skill = skill_mod.Skill;
 
-/// Stone Form: an enchantment. Grants the Stone Form effect on the caster \u2014
+/// Stone Form: an enchantment. Grants the Stone Form effect on the caster —
 /// reduced incoming stun, increased outgoing stun, and an end-of-turn heal.
 /// Non-turn-ending.
 pub const skill = Skill{

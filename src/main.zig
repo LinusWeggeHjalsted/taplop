@@ -1,3 +1,12 @@
+//! Platform-agnostic composition root. Owns the uncapped game loop
+//! (`gameLoop`/`run`), the per-iteration `update` step that ties input
+//! polling, event processing, and view construction together, and startup
+//! config loading (settings, color themes, weapon types, salvage tables).
+//! Never imports raylib — the platform driver (`native.zig`/`web.zig`)
+//! calls `run` with a duck-typed backend and drives `frame` per platform.
+//! See AGENTS → Platform Seam for the frame/driver split and the
+//! budget-driven drain.
+
 const std = @import("std");
 const types = @import("types.zig");
 const events = @import("events.zig");
@@ -27,10 +36,8 @@ const SkillId = types.SkillId;
 const Editor = types.Editor;
 const ReplayViewer = types.ReplayViewer;
 const Level = types.Level;
-const WeaponType = types.WeaponType;
-const WeaponTypeDefinition = types.WeaponTypeDefinition;
-const ColorThemeDefinitions = types.ColorThemeDefinitions;
-const Settings = types.Settings;
+const session_setup = @import("session_setup.zig");
+const FrameState = session_setup.FrameState;
 const Skill = @import("skills/skill.zig").Skill;
 const SkillType = types.SkillType;
 const utility_skill_count = types.utility_skill_count;
@@ -82,11 +89,11 @@ fn update(
     }
 
     // Tile-cursor resolution: decide what tile (if any) the logical cursor is
-    // on this frame. Mouse takes precedence when it moved; otherwise the
-    // cursor holds (arrow-key nudging lands in a later step). A pointer over
-    // blocking UI, or over a non-tile, clears the cursor. Runs before
-    // input_handlers.handleAnytimeInput/input_handlers.handleIdleInput so the idle path sees the fresh
-    // cursor (auto_target_at_cursor reads it).
+    // on this frame. Mouse takes precedence when it moved (cursor follows it,
+    // cleared over blocking UI or a non-tile); otherwise arrow keys nudge the
+    // cursor one tile (snapping to the player's tile if null). Runs before
+    // input_handlers.handleAnytimeInput/input_handlers.handleIdleInput so the
+    // idle path sees the fresh cursor (auto_target_at_cursor reads it).
     input_handlers.resolveTileCursor(history, player_input, ui_elements);
 
     // Always handle anytime input first (toggle_options_menu always works,
@@ -95,6 +102,11 @@ fn update(
 
     // Options menu pauses the game
     if (history.session.ui_state.options_menu_open) return;
+
+    // Recoverable error popup pauses the game (modal — same as options).
+    // handleAnytimeInput already cleared it if `dismiss_error` fired this
+    // frame, so a dismiss releases the modal within the same frame.
+    if (history.session.pending_error != null) return;
 
     // Drag lifecycle runs anytime (not gated on the event stack) so the player
     // can rearrange inventory / gear / skills even while turns resolve. Hit-
@@ -132,20 +144,6 @@ fn update(
 /// Build a ViewState describing what to render for the current game state.
 /// The frame_allocator is a per-frame arena — everything the ViewState
 /// points at is allocated from it and lives until the next frame.
-/// platform-seam note in build.zig.
-/// Per-session mutable state that lives across frames — extracted from the
-/// old blocking gameLoop so the per-frame body can be shared between platform
-/// drivers (native: blocking while-loop; web: emscripten_set_main_loop).
-/// See AGENTS.md "Platform Seam (raylib)" + the web build roadmap.
-pub const FrameState = struct {
-    history: GameStateHistory,
-    previous_view_state: ?types.ViewState = null,
-    /// Per-frame arena: everything a ViewState points at is allocated here and
-    /// reset (retaining capacity) at the start of the next render.
-    frame_arena: std.heap.ArenaAllocator,
-    /// Last render time (real-clock microseconds) for the render-interval gate.
-    last_render_time: u64,
-};
 
 /// Drain budget: process events for at most this long per frame before
 /// returning control to the driver. Long enough that a typical small-level
@@ -153,7 +151,7 @@ pub const FrameState = struct {
 /// window/tab stays responsive during a big drain (the driver regains control
 /// each frame to poll input + render). Native was previously uncapped (a big
 /// drain blocked the main thread); web would have frozen one rAF per event.
-/// 10ms is a starting value, tunable later.
+/// 10ms is a starting value.
 const drain_budget_microseconds: u64 = 10 * std.time.ms_per_s;
 
 /// One frame's worth of work — the platform-agnostic core, shared by both the
@@ -206,12 +204,29 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // reconstruction semantics are unchanged.
     const drain_start = backend.realClockMicroseconds();
     while (history.current_state.waiting == null and
+        history.session.pending_error == null and
         history.current_state.event_stack.len > 0 and
         backend.realClockMicroseconds() - drain_start < drain_budget_microseconds)
     {
         const screen_before_update = history.current_state.screen;
         const had_events = history.current_state.event_stack.len > 0;
         update(history, player_input, frame_state.previous_view_state, delta_microseconds, camera, camera_zoom, platform_input.viewport);
+
+        // A reconstruction-read handler failed during the event just
+        // processed. Revert to the last idle-point snapshot (guaranteed
+        // exact — it was just taken, no snapshots since — and stack-empty by
+        // construction), trim the failed transaction's recorded events, and
+        // exit the drain. The handler already set session.pending_error with
+        // a descriptive message (it survives the revert — SessionState is
+        // off GameState). See AGENTS → Error Handling → three contexts.
+        if (history.load_error) {
+            history.load_error = false;
+            const last_idle_event_index = history.idle_points.items[history.current_idle_index];
+            history.restoreTo(last_idle_event_index, &event_handlers.processEvent);
+            history.event_history.shrinkRetainingCapacity(history.current_event_index);
+            break;
+        }
+
         const has_events = history.current_state.event_stack.len > 0;
 
         // UI panels/drag and the tile cursor are transient view/input state,
@@ -240,7 +255,10 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // events to drain. Run one update() to handle idle input (and anytime
     // input / drag / wait-timer drain, which update() does every call).
     // Mirrors the old loop's single update() on idle iterations.
-    if (history.current_state.waiting != null or history.current_state.event_stack.len == 0) {
+    if (history.current_state.waiting != null or
+        history.session.pending_error != null or
+        history.current_state.event_stack.len == 0)
+    {
         const screen_before_update = history.current_state.screen;
         update(history, player_input, frame_state.previous_view_state, delta_microseconds, camera, camera_zoom, platform_input.viewport);
         if (history.current_state.screen != screen_before_update) {
@@ -274,8 +292,12 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const render_interval = backend.renderIntervalMicroseconds(history.settings);
     const now = backend.realClockMicroseconds();
     const since_last_render = now - frame_state.last_render_time;
+    // A pending error pauses the drain (the modal popup blocks event
+    // processing) — treat it like a wait for render-gate purposes so the
+    // popup is visible. See AGENTS → Error Handling.
     const drain_in_progress = history.current_state.event_stack.len > 0 and
-        history.current_state.waiting == null;
+        history.current_state.waiting == null and
+        history.session.pending_error == null;
     if (!drain_in_progress and since_last_render >= render_interval) {
         // Render camera is computed from the POST-update current_state, NOT the
         // pre-update camera used for input above. The input camera must reflect
@@ -333,7 +355,7 @@ fn gameLoop(backend: anytype, frame_state: *FrameState) void {
     // ~10% CPU on one core. During active event drains the loop spins freely
     // (useful work, no yield). Web doesn't sleep at all — the browser's rAF
     // scheduling IS the yield.
-    const idle_yield_seconds: f64 = 0.0001; // 0.1ms — see TODO analysis
+    const idle_yield_seconds: f64 = 0.0001; // 0.1ms — see AGENTS → Platform Seam (idle yield)
     while (!backend.shouldClose()) {
         frame(backend, frame_state);
         if (frame_state.history.current_state.event_stack.len == 0 or
@@ -344,180 +366,17 @@ fn gameLoop(backend: anytype, frame_state: *FrameState) void {
     }
 }
 
-const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
-
-/// Load settings from data/settings.txt. Returns default settings on failure.
-pub fn loadSettingsFromDisk(
-    file_source: *const FileSource,
-    allocator: std.mem.Allocator,
-) Settings {
-    const parsed = parser.parseConfigFileFromPath(
-        file_source,
-        "data/settings.txt",
-        allocator,
-    ) catch return .{ .input_bindings = &.{} };
-
-    return parser.loadSettings(parsed.sections, allocator) catch .{ .input_bindings = &.{} };
-}
-
-/// Load color theme definitions from data/color_themes.txt.
-/// Returns a default with no gradients on failure.
-pub fn loadColorThemeDefinitionsFromDisk(
-    file_source: *const FileSource,
-    allocator: std.mem.Allocator,
-) ColorThemeDefinitions {
-    const parsed = parser.parseConfigFileFromPath(
-        file_source,
-        "data/color_themes.txt",
-        allocator,
-    ) catch return .{
-        .lightest = .{ .r = 255, .g = 255, .b = 240 },
-        .darkest = .{ .r = 20, .g = 15, .b = 25 },
-        .gradients = &.{},
-    };
-
-    return parser.loadColorThemeDefinitions(
-        parsed.sections,
-        allocator,
-    ) catch .{
-        .lightest = .{ .r = 255, .g = 255, .b = 240 },
-        .darkest = .{ .r = 20, .g = 15, .b = 25 },
-        .gradients = &.{},
-    };
-}
-
-/// Load all weapon type definitions from data/weapon_types/.
-/// Each file is named after its WeaponType enum value (e.g. sword.txt).
-pub fn loadWeaponTypeDefinitions(
-    file_source: *const FileSource,
-    allocator: std.mem.Allocator,
-) [weapon_type_count]WeaponTypeDefinition {
-    var definitions: [weapon_type_count]WeaponTypeDefinition = undefined;
-    const fields = @typeInfo(WeaponType).@"enum".fields;
-
-    inline for (fields, 0..) |field, index| {
-        const file_path = "data/weapon_types/" ++ field.name ++ ".txt";
-        const parsed = parser.parseConfigFileFromPath(
-            file_source,
-            file_path,
-            allocator,
-        ) catch @panic("failed to read weapon type file: " ++ file_path);
-
-        definitions[index] = parser.loadWeaponTypeDefinition(
-            parsed.sections,
-        ) catch @panic("failed to parse weapon type file: " ++ file_path);
-    }
-
-    return definitions;
-}
-
-/// Load salvage definitions from data/salvage.txt.
-/// Panics on failure since salvage data is required.
-pub fn loadSalvageDefinitionsFromDisk(
-    file_source: *const FileSource,
-    allocator: std.mem.Allocator,
-) types.SalvageDefinitions {
-    const parsed = parser.parseConfigFileFromPath(
-        file_source,
-        "data/salvage.txt",
-        allocator,
-    ) catch @panic("failed to read salvage.txt");
-
-    return parser.loadSalvageDefinitions(
-        parsed.sections,
-        allocator,
-    ) catch @panic("failed to parse salvage.txt");
-}
-
-/// Owns the session-long setup state (config definitions + FrameState) that
-/// both platform drivers need. The `weapon_type_definitions` array is stored
-/// BY VALUE here (not on the caller's stack) because GameStateHistory holds a
-/// pointer to it — the pointer must remain valid for the whole session. On
-/// native, the SessionSetup lives on run()'s stack for the game's duration;
-/// on web, it's heap-allocated (the WebSession owns it) since main() returns
-/// immediately. fixupPointers() must be called once the struct is in its final
-/// memory location, so the history's pointer points to the right place.
-pub const SessionSetup = struct {
-    weapon_type_definitions: [weapon_type_count]WeaponTypeDefinition,
-    frame_state: FrameState,
-
-    /// Point history.weapon_type_definitions at this struct's field. Must be
-    /// called after the SessionSetup is in its final memory location (stack of
-    /// the native driver, or heap-allocated for web).
-    pub fn fixupPointers(self: *SessionSetup) void {
-        self.frame_state.history.weapon_type_definitions = &self.weapon_type_definitions;
-    }
-};
-
-/// Shared session setup: load all config, build the initial GameState, init the
-/// history, and create the FrameState. Both native (run) and web (web.main)
-/// call this instead of duplicating the load + init sequence. The caller is
-/// responsible for placing the returned SessionSetup in a stable location and
-/// calling fixupPointers() before driving frame().
-pub fn createSessionSetup(
-    allocator: std.mem.Allocator,
-    file_source: *const FileSource,
-    io: std.Io,
-    backend: anytype,
-) SessionSetup {
-    const settings = loadSettingsFromDisk(file_source, allocator);
-    backend.applyVsync(settings.vsync);
-    const weapon_type_definitions = loadWeaponTypeDefinitions(file_source, allocator);
-    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(file_source, allocator);
-    const salvage_definitions = loadSalvageDefinitionsFromDisk(file_source, allocator);
-
-    const starting_game_state = GameState{
-        .screen = .main_menu,
-        .event_stack = &.{.{ .meta_event = .open_main_menu }},
-        .player_data = .{},
-        .camera = null,
-        .editor = null,
-        .replay_viewer = null,
-        .campaign = null,
-        .mission = null,
-        .level = null,
-        .hub = null,
-    };
-
-    // Create the history with a temporary pointer to weapon_type_definitions
-    // (a local). The caller fixes this up via fixupPointers() once the
-    // SessionSetup is in its final location. The temporary pointer is fine
-    // because createSessionSetup hasn't returned yet — both the local and the
-    // returned struct's field hold the same array value at this point.
-    const history = GameStateHistory.init(
-        allocator,
-        starting_game_state,
-        settings,
-        &weapon_type_definitions,
-        color_theme_definitions,
-        salvage_definitions,
-        file_source,
-        io,
-    );
-
-    return .{
-        .weapon_type_definitions = weapon_type_definitions,
-        .frame_state = .{
-            .history = history,
-            .frame_arena = std.heap.ArenaAllocator.init(allocator),
-            .last_render_time = backend.realClockMicroseconds(),
-        },
-    };
-}
-
-/// Entry point shared by every platform: load config, build the initial
-/// GameState, and run the backend-driven game loop. The `backend` provides
-/// window/clock/input/rendering (see gameLoop). Called by the native entry in
-/// native.zig — never from wasm/test builds, so this stays out of the
+/// Entry point shared by every platform: drive the backend-driven game loop
+/// against a session the caller has already set up. The caller (native.zig /
+/// web.zig) builds the `SessionSetup` via `session_setup.createSessionSetup`,
+/// places it in a stable location, and calls `fixupPointers()` before handing
+/// it here. The `backend` provides window/clock/input/rendering (see
+/// gameLoop). Never called from wasm/test builds, so this stays out of the
 /// raylib-free compiles even though it is `pub`.
 pub fn run(
     backend: anytype,
-    allocator: std.mem.Allocator,
-    file_source: *const FileSource,
-    io: std.Io,
+    setup: *session_setup.SessionSetup,
 ) void {
-    var setup = createSessionSetup(allocator, file_source, io, backend);
-    setup.fixupPointers();
     defer setup.frame_state.frame_arena.deinit();
     gameLoop(backend, &setup.frame_state);
 }
@@ -531,6 +390,7 @@ pub fn run(
 fn runToIdle(history: *GameStateHistory) void {
     while (history.current_state.event_stack.len > 0) {
         event_handlers.processEvent(history);
+        if (history.load_error) @panic("runToIdle: handler set load_error (test content should be valid)");
         history.current_state.waiting = null;
     }
     history.recordIdlePoint();
@@ -550,10 +410,11 @@ test "session log round-trips through reconstruction (forward play == replay)" {
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    const settings = loadSettingsFromDisk(&file_source, arena);
-    const weapon_type_definitions = loadWeaponTypeDefinitions(&file_source, arena);
-    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(&file_source, arena);
-    const salvage_definitions = loadSalvageDefinitionsFromDisk(&file_source, arena);
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -633,10 +494,11 @@ test "replay verification: clean replay through the slow path passes" {
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    const settings = loadSettingsFromDisk(&file_source, arena);
-    const weapon_type_definitions = loadWeaponTypeDefinitions(&file_source, arena);
-    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(&file_source, arena);
-    const salvage_definitions = loadSalvageDefinitionsFromDisk(&file_source, arena);
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -676,69 +538,6 @@ test "replay verification: clean replay through the slow path passes" {
         history.current_idle_index,
     );
     try std.testing.expectEqual(state.Screen.hub, history.current_state.screen);
-}
-
-test "replay verification: reproduce crash against an external session log" {
-    // Reproduction harness: loads a real session log from
-    // ./session_log_repro.txt (gitignored), reconstructs to the end, then
-    // undoes all the way back to the start. With cross-session replay
-    // verification now ENABLED, any handler-pushed-child divergence from the
-    // recorded stream panics here — reproducing the in-game undo crash
-    // headlessly. Skips when the file is absent so the test suite stays
-    // hermetic without it.
-    const log_path = "session_log_repro.txt";
-
-    const allocator = std.testing.allocator;
-
-    var backing = std.heap.ArenaAllocator.init(allocator);
-    defer backing.deinit();
-    const arena = backing.allocator();
-
-    var threaded_io = std.Io.Threaded.init(allocator, .{});
-    defer threaded_io.deinit();
-    const io = threaded_io.io();
-    const file_source = FileSource.init(io, std.Io.Dir.cwd());
-
-    const settings = loadSettingsFromDisk(&file_source, arena);
-    const weapon_type_definitions = loadWeaponTypeDefinitions(&file_source, arena);
-    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(&file_source, arena);
-    const salvage_definitions = loadSalvageDefinitionsFromDisk(&file_source, arena);
-
-    // Read the log bytes from the cwd (the file ships at the project root,
-    // gitignored — drop a real log there to reproduce). Skip cleanly if absent.
-    const body = std.Io.Dir.cwd().readFileAlloc(io, log_path, arena, .limited(16 * 1024 * 1024)) catch |err| switch (err) {
-        error.FileNotFound => return,
-        else => @panic("failed to read session_log_repro.txt"),
-    };
-    const sections = try parser.parseConfigFile(body, arena);
-    const log = try parser.loadEventLog(sections, arena);
-    input_handlers.warnIfSessionLogFromDifferentBuild(log.game_version); // advisory
-
-    const starting_state = GameState{
-        .screen = .main_menu,
-        .event_stack = &.{.{ .meta_event = .open_main_menu }},
-        .player_data = .{},
-        .camera = null,
-        .editor = null,
-        .replay_viewer = null,
-        .campaign = null,
-        .mission = null,
-        .level = null,
-        .hub = null,
-    };
-
-    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
-
-    // Reconstruct to the end — verifyReplayStep runs on every event. If the
-    // recorded stream diverges from what the handlers push, this panics.
-    history.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent);
-
-    // Now undo all the way back to the start. Each undo takes restoreTo's slow
-    // path (replay from nearest snapshot/checkpoint) when no exact match
-    // exists; verifyReplayStep runs on every replayed event. The in-game
-    // crash reproduced here as a panic during undo.
-    while (history.undo(&event_handlers.processEvent)) {}
-    try std.testing.expectEqual(@as(u32, 0), history.current_idle_index);
 }
 
 test "reconstruction cache: undo replay reads original bytes after the file is overwritten" {
@@ -809,10 +608,11 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    const settings = loadSettingsFromDisk(&file_source, arena);
-    const weapon_type_definitions = loadWeaponTypeDefinitions(&file_source, arena);
-    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(&file_source, arena);
-    const salvage_definitions = loadSalvageDefinitionsFromDisk(&file_source, arena);
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -909,10 +709,11 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     const io = threaded_io.io();
     const file_source = FileSource.init(io, std.Io.Dir.cwd());
 
-    const settings = loadSettingsFromDisk(&file_source, arena);
-    const weapon_type_definitions = loadWeaponTypeDefinitions(&file_source, arena);
-    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(&file_source, arena);
-    const salvage_definitions = loadSalvageDefinitionsFromDisk(&file_source, arena);
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
 
     const starting_state = GameState{
         .screen = .main_menu,
@@ -960,4 +761,171 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
     runToIdle(&history);
     try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
+}
+
+test "reconstruction read failure: handler sets load_error, drain loop reverts state + trims history" {
+    // A broken mission file (invalid content) causes start_mission's parse
+    // to fail. The handler sets load_error + pending_error and returns. The
+    // drain loop (simulated here) reverts to the last idle-point snapshot,
+    // trims the failed transaction's recorded events, and the popup message
+    // survives (it's on SessionState, off GameState). See AGENTS → Error
+    // Handling → three contexts.
+    const allocator = std.testing.allocator;
+
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    // Scratch persistent dir with a broken mission.txt shadow.
+    const scratch = "zig-cache/test-recon-read-fail";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    // Write a broken mission.txt at the first_mission path (shadows the
+    // embedded copy). Invalid content → parseConfigFile fails.
+    dir.createDirPath(io, "data/campaigns/main_campaign/missions/first_mission") catch
+        @panic("failed to create mission dir");
+    dir.writeFile(io, .{
+        .sub_path = "data/campaigns/main_campaign/missions/first_mission/mission.txt",
+        .data = "this is not valid config",
+    }) catch @panic("failed to write broken mission");
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    runToIdle(&history);
+
+    // We're at the main menu (idle). Record the pre-action state for later
+    // comparison.
+    const pre_event_index = history.current_event_index;
+    const pre_idle_index = history.current_idle_index;
+    try std.testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);
+
+    // Push start_mission pointing at the broken mission.
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
+        .mission_path = "data/campaigns/main_campaign/missions/first_mission",
+        .start_hub_id = null,
+        .end_hub_id = null,
+    } } }}, history.current_arena.allocator());
+
+    // Process one event (start_mission). The parse fails → load_error is set,
+    // pending_error is set, and processEvent returns without mutating state
+    // further (mission stays null, screen stays main_menu).
+    event_handlers.processEvent(&history);
+    try std.testing.expect(history.load_error);
+    try std.testing.expect(history.session.pending_error != null);
+    try std.testing.expect(history.current_state.mission == null);
+    try std.testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
+
+    // Simulate the drain loop's revert: restore to the last idle-point
+    // snapshot, trim the failed transaction's recorded events, clear the flag.
+    history.load_error = false;
+    const last_idle_event_index = history.idle_points.items[history.current_idle_index];
+    history.restoreTo(last_idle_event_index, &event_handlers.processEvent);
+    history.event_history.shrinkRetainingCapacity(history.current_event_index);
+
+    // State is fully reverted: back at the main menu, event index restored,
+    // event_history trimmed (the failed start_mission event is gone).
+    try std.testing.expectEqual(pre_event_index, history.current_event_index);
+    try std.testing.expectEqual(pre_idle_index, history.current_idle_index);
+    try std.testing.expectEqual(pre_event_index, history.event_history.items.len);
+    try std.testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
+    try std.testing.expect(history.current_state.mission == null);
+
+    // The popup message survived the revert (SessionState is off GameState).
+    try std.testing.expect(history.session.pending_error != null);
+}
+
+test "write_save failure: sets pending_error, no crash, no state corruption" {
+    // A write_save event whose target dir parent is a FILE (not a dir)
+    // fails on ensureParentDirs (createDirPath can't make a dir where a
+    // file exists). The handler surfaces pending_error and returns instead
+    // of panicking. State is unchanged (the save just didn't happen — no
+    // revert needed for a failed write). See AGENTS → Error Handling.
+    const allocator = std.testing.allocator;
+
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    // Scratch persistent dir with a file at "saves" (so writing to
+    // "saves/test_save.txt" fails — ensureParentDirs can't create the
+    // "saves" dir because a file with that name exists).
+    const scratch = "zig-cache/test-write-save-fail";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    dir.writeFile(io, .{ .sub_path = "saves", .data = "i am a file not a dir" }) catch
+        @panic("failed to create blocker file");
+    const file_source = FileSource.init(io, dir);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{ .current_campaign = "test_campaign", .player_name = "Test" },
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    runToIdle(&history);
+
+    try std.testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);
+
+    // Push write_save to "saves/test_save.txt" — ensureParentDirs tries to
+    // create the "saves" dir, fails because "saves" is a file.
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .write_save = .{
+        .save_path = "saves/test_save.txt",
+    } } }}, history.current_arena.allocator());
+    event_handlers.processEvent(&history);
+
+    // The write failed → pending_error is set, load_error is NOT (writes
+    // don't need a revert — state is fine, just the file didn't write).
+    try std.testing.expect(history.session.pending_error != null);
+    try std.testing.expect(!history.load_error);
+
+    // State is unchanged — the save didn't happen, but player_data is intact.
+    try std.testing.expectEqualStrings("Test", history.current_state.player_data.player_name);
+
+    history.session.clearPendingError();
 }

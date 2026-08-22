@@ -1,6 +1,11 @@
-const std = @import("std");
+//! Comptime-generic deep copy + deep equal over the game's types (slices,
+//! optionals, tagged unions, structs, arrays, scalars). `deepCopy` clones
+//! into an arena (backing snapshots/checkpoints); `deepEqual` +
+//! `firstDiffField` drive replay verification (no floats in event payloads →
+//! exact `==`). Auto-tracks new fields via reflection. See AGENTS → Replay &
+//! Side Effects, Determinism & Tiebreaking → Replay VERIFICATION.
 
-/// Generic deep copy: recursively clones any value into an arena allocator.
+const std = @import("std");
 /// - Slices are duplicated (elements deep-copied if they contain slices/pointers)
 /// - Optionals are unwrapped and deep-copied if non-null
 /// - Tagged unions have their active field deep-copied

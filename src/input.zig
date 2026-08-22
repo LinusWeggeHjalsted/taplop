@@ -1,3 +1,10 @@
+//! Input pipeline. Translates raw platform input (keyboard, mouse, touch)
+//! into `PlayerInput` (anytime actions, idle game actions, pointer/drag
+//! state) against the keybindings in `data/settings.txt`. Owns the camera
+//! transforms: `screenToTile` (reference-space inverse) and `floatWorldPoint`
+//! (sub-tile float inverse, for camera pan). `tile_size_pixels` (256) is the
+//! shared gameplay↔screen scale.
+
 const std = @import("std");
 const types = @import("types.zig");
 
@@ -137,8 +144,7 @@ pub const PlayerInput = struct {
 /// than this many reference pixels between press and release counts as a drag
 /// rather than a click. 0 = any move is a drag. Centralized so it can be
 /// tuned in one place if real-world use shows it needs a dead zone for jittery
-/// clicks. Currently referenced by handleCameraPan; inventory drag will
-/// reference it when its click-vs-drag split lands (TODO → Drag & Drop).
+/// clicks. Referenced by handleCameraPan.
 pub const drag_threshold_pixels: i32 = 0;
 
 /// Raw primary-pointer facts for the UI-resolution step (hit-testing, drag
@@ -163,6 +169,14 @@ pub const AnytimeInput = struct {
     redo: bool = false,
     toggle_options_menu: bool = false,
     dump_event_log: bool = false,
+    /// Dismiss a recoverable error popup (see SessionState.pending_error).
+    /// Modal: when a pending error is shown, handleAnytimeInput lets only
+    /// this through and swallows everything else.
+    dismiss_error: bool = false,
+    /// Scroll the error popup body by a step (arrows). Only consumed while a
+    /// pending error is shown. See AGENTS → Error Handling.
+    error_scroll_up: bool = false,
+    error_scroll_down: bool = false,
     scroll_delta: f32 = 0,
 
     /// Only handled when the player is in a hub or level.
@@ -219,6 +233,9 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .redo => player_input.anytime.redo = true,
         .toggle_options_menu => player_input.anytime.toggle_options_menu = true,
         .dump_event_log => player_input.anytime.dump_event_log = true,
+        .dismiss_error => player_input.anytime.dismiss_error = true,
+        .error_scroll_up => player_input.anytime.error_scroll_up = true,
+        .error_scroll_down => player_input.anytime.error_scroll_down = true,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,
@@ -452,6 +469,9 @@ pub fn translateInput(
     result.anytime.redo = checkAction(.redo, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.toggle_options_menu = checkAction(.toggle_options_menu, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.dump_event_log = checkAction(.dump_event_log, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.error_scroll_up = checkAction(.error_scroll_up, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.error_scroll_down = checkAction(.error_scroll_down, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.scroll_delta = scroll_delta;
 
     // In-game anytime actions

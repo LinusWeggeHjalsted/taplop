@@ -36,6 +36,14 @@ input_name Escape
 action toggle_options_menu
 
 input_type key
+input_name Escape
+action dismiss_error
+
+input_type key
+input_name Enter
+action dismiss_error
+
+input_type key
 input_name KeyI
 action toggle_inventory
 
@@ -100,8 +108,16 @@ input_name ArrowUp
 action move_cursor_up
 
 input_type key
+input_name ArrowUp
+action error_scroll_up
+
+input_type key
 input_name ArrowDown
 action move_cursor_down
+
+input_type key
+input_name ArrowDown
+action error_scroll_down
 
 input_type key
 input_name ArrowLeft

@@ -1,3 +1,12 @@
+//! Config file parser + all loaders + the save/session-log writers. CamelCase
+//! sections / snake_case keys / raw layout grids (see AGENTS → Config File
+//! Format). Each loader validates `file_format_version` as a hard gate
+//! (`validateFileFormatVersion`) then parses into `types.*`. Owns decoration
+//! footprint/anchor validation, the editor dedup (`buildEditorMission`),
+//! editor level instantiation, the session-log comptime-generic serializer/
+//! deserializer (`writeEventLog`/`loadEventLog`), and the `free*` helpers for
+//! test ownership.
+
 const std = @import("std");
 const types = @import("types.zig");
 const build_info = @import("build_info");
@@ -473,6 +482,322 @@ const player_save_sections = [_][]const u8{
     "Pants",          "Boots",           "Inventory",      "UtilitySkills",
     "CloneData",
 };
+
+// ============================================================
+// Key validation (approach A — see AGENTS → Error Handling)
+// ============================================================
+//
+// Per-section key whitelists, analogous to the section whitelists above.
+// A file type's key map is a StaticStringMap from section header → valid
+// keys. validateKeys walks all sections, looks up each section's header in
+// the map, and warns on any key not in the whitelist. Warnings are advisory
+// (the file still loads); they surface via the pending_error popup. This
+// catches typo'd keys (e.g. `chracter_code` instead of `character_code`)
+// that the permissive parser would otherwise silently drop.
+//
+// Adding a new key to a loader: add it to the section's whitelist here too,
+// or valid content will false-positive a warning. The whitelist is the
+// single source of truth for "what keys does this section accept."
+
+// --- Level file key whitelists ---
+//
+// Enemies entries use the full entity-definition key set (parseEntityDefinition)
+// plus character_code. Items entries use item-type-specific keys. Decorations
+// entries use sprite/footprint/layer keys. Metadata carries level metadata.
+// Layout is a raw char grid (no key-value pairs) so it has no key whitelist.
+
+const level_metadata_keys = [_][]const u8{ "file_format_version", "name", "color_wheel_index" };
+
+const level_enemies_keys = [_][]const u8{
+    "character_code",
+    "name",
+    "sprite",
+    "color_index",
+    "displays_weapons",
+    "max_health",
+    "defense",
+    "speed",
+    "aggro_range",
+    "main_hand_weapon_type",
+    "main_hand_weapon_name",
+    "main_hand_weapon_damage",
+    "off_hand_weapon_type",
+    "off_hand_weapon_name",
+    "off_hand_weapon_damage",
+    "amulet_name",
+    "amulet_spell_damage",
+    "coat_name",
+    "coat_health_bonus",
+    "coat_defense_bonus",
+    "gloves_name",
+    "gloves_health_bonus",
+    "gloves_damage_bonus",
+    "pants_name",
+    "pants_health_bonus",
+    "pants_pickup_radius_bonus",
+    "boots_name",
+    "boots_health_bonus",
+    "boots_speed_bonus",
+    "slot_4", "slot_5", "slot_6", "slot_7", "slot_8",
+    "layer",
+};
+
+const level_decorations_keys = [_][]const u8{
+    "character_code",
+    "sprite",
+    "color_index",
+    "footprint",
+    "layer",
+};
+
+const level_items_keys = [_][]const u8{
+    "character_code",
+    "item_type",
+    "item_name",
+    "weapon_type",
+    "damage",
+    "spell_damage",
+    "defense",
+    "health",
+    "pickup_radius",
+    "speed",
+};
+
+/// Static key map for level files: section header → valid keys. Sections
+/// not in the map (e.g. Layout, which has no key-value pairs) are skipped by
+/// validateKeys. Pass this to validateKeys when loading a level file.
+pub const level_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Metadata", &level_metadata_keys },
+    .{ "Enemies", &level_enemies_keys },
+    .{ "Decorations", &level_decorations_keys },
+    .{ "Items", &level_items_keys },
+});
+
+// --- Hub file key whitelists ---
+//
+// Metadata carries hub metadata. NPCs entries are simple entity definitions
+// (character_code + name + sprite). Exits entries carry character_code +
+// mission_id. Decorations share the level decoration key set. Layout is a
+// raw grid (excluded).
+
+const hub_metadata_keys = [_][]const u8{ "file_format_version", "name", "color_wheel_index" };
+
+const hub_npcs_keys = [_][]const u8{ "character_code", "name", "sprite" };
+
+const hub_exits_keys = [_][]const u8{ "character_code", "mission_id" };
+
+/// Hub file key map: section header → valid keys. Decorations share the
+/// level decoration key set (same format). Layout is excluded (raw grid).
+pub const hub_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Metadata", &hub_metadata_keys },
+    .{ "NPCs", &hub_npcs_keys },
+    .{ "Exits", &hub_exits_keys },
+    .{ "Decorations", &level_decorations_keys },
+});
+
+// --- Mission file key whitelists ---
+//
+// Only a Metadata section with name, start_hub, end_hub, level_count.
+
+const mission_metadata_keys = [_][]const u8{ "file_format_version", "name", "start_hub", "end_hub", "level_count" };
+
+pub const mission_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Metadata", &mission_metadata_keys },
+});
+
+// --- Campaign file key whitelists ---
+//
+// Only a Metadata section with name + start_hub.
+
+const campaign_metadata_keys = [_][]const u8{ "file_format_version", "name", "start_hub" };
+
+pub const campaign_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Metadata", &campaign_metadata_keys },
+});
+
+// --- Settings file key whitelists ---
+//
+// Metadata carries file_format_version. Audio/Display/Gameplay carry their
+// respective keys. InputBindings entries carry input_type, input_name,
+// action + modifier flags.
+
+const settings_audio_keys = [_][]const u8{ "music_volume", "sound_effects_volume" };
+const settings_display_keys = [_][]const u8{ "vsync", "render_fps_cap", "camera_zoom" };
+const settings_gameplay_keys = [_][]const u8{ "auto_skip_attack_step_out_of_combat", "auto_target_at_cursor", "player_color_index" };
+const settings_input_bindings_keys = [_][]const u8{ "input_type", "input_name", "action", "ctrl", "shift", "alt" };
+
+pub const settings_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Metadata", &level_metadata_keys }, // Metadata keys are shared (file_format_version + name)
+    .{ "Audio", &settings_audio_keys },
+    .{ "Display", &settings_display_keys },
+    .{ "Gameplay", &settings_gameplay_keys },
+    .{ "InputBindings", &settings_input_bindings_keys },
+});
+
+// --- Color theme file key whitelists ---
+//
+// Metadata carries file_format_version. GlobalColors has lightest +
+// darkest. Gradients entries carry gradient_index + color_0..color_5.
+
+const color_theme_global_keys = [_][]const u8{ "lightest", "darkest" };
+const color_theme_gradient_keys = [_][]const u8{
+    "gradient_index",
+    "color_0", "color_1", "color_2", "color_3", "color_4", "color_5",
+};
+
+pub const color_theme_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Metadata", &level_metadata_keys },
+    .{ "GlobalColors", &color_theme_global_keys },
+    .{ "Gradients", &color_theme_gradient_keys },
+});
+
+// --- Weapon type file key whitelists ---
+//
+// Only a Skills section with skill_1, skill_2, skill_3.
+
+const weapon_type_skills_keys = [_][]const u8{ "skill_1", "skill_2", "skill_3" };
+
+pub const weapon_type_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Skills", &weapon_type_skills_keys },
+});
+
+// --- Salvage file key whitelists ---
+//
+// Each weapon-type section + armor sections + SkillTome use MaterialType
+// enum values as keys (wood, metal, leather, cloth, knowledge). No Metadata
+// section in the salvage file (it starts with the weapon sections).
+
+const salvage_split_keys = [_][]const u8{ "wood", "metal", "leather", "cloth", "knowledge" };
+
+pub const salvage_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Sword", &salvage_split_keys },
+    .{ "Shield", &salvage_split_keys },
+    .{ "Spear", &salvage_split_keys },
+    .{ "Dagger", &salvage_split_keys },
+    .{ "Axe", &salvage_split_keys },
+    .{ "Staff", &salvage_split_keys },
+    .{ "Crossbow", &salvage_split_keys },
+    .{ "Idol", &salvage_split_keys },
+    .{ "Amulet", &salvage_split_keys },
+    .{ "Coat", &salvage_split_keys },
+    .{ "Gloves", &salvage_split_keys },
+    .{ "Pants", &salvage_split_keys },
+    .{ "Boots", &salvage_split_keys },
+    .{ "SkillTome", &salvage_split_keys },
+});
+
+// --- Player save file key whitelists ---
+//
+// Metadata carries file_format_version. Info carries player stats +
+// materials. UnlockedSkills entries carry `name`. Weapon sections carry
+// item_name + weapon_type + damage. Armor sections carry item_name + their
+// stat bonuses. Inventory entries carry slot + item_type + item-specific
+// keys (same as level Items but with `slot`). UtilitySkills carries
+// slot_4..slot_8. CloneData entries carry clone_name + turn count +
+// materials. DiscoveredHubs entries carry `name`.
+
+const save_info_keys = [_][]const u8{
+    "player_name", "current_campaign", "current_hub",
+    "turns", "deaths", "defeated_enemies", "skills_used",
+    "wood_salvage", "metal_salvage", "leather_salvage", "cloth_salvage", "knowledge",
+};
+const save_unlocked_skills_keys = [_][]const u8{"name"};
+const save_weapon_keys = [_][]const u8{ "item_name", "weapon_type", "damage" };
+const save_amulet_keys = [_][]const u8{ "item_name", "spell_damage" };
+const save_coat_keys = [_][]const u8{ "item_name", "armor", "health" };
+const save_gloves_keys = [_][]const u8{ "item_name", "damage", "health" };
+const save_pants_keys = [_][]const u8{ "item_name", "pickup_radius", "health" };
+const save_boots_keys = [_][]const u8{ "item_name", "speed", "health" };
+const save_inventory_keys = [_][]const u8{
+    "slot", "item_type", "item_name",
+    "weapon_type", "damage", "spell_damage", "armor", "health", "pickup_radius", "speed", "skill_name",
+};
+const save_utility_skills_keys = [_][]const u8{ "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" };
+const save_clone_data_keys = [_][]const u8{
+    "clone_name", "turns_to_complete",
+    "wood", "metal", "leather", "cloth", "knowledge",
+};
+const save_discovered_hubs_keys = [_][]const u8{"name"};
+
+pub const player_save_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Metadata", &level_metadata_keys },
+    .{ "Info", &save_info_keys },
+    .{ "DiscoveredHubs", &save_discovered_hubs_keys },
+    .{ "UnlockedSkills", &save_unlocked_skills_keys },
+    .{ "MainHandWeapon", &save_weapon_keys },
+    .{ "OffHandWeapon", &save_weapon_keys },
+    .{ "Amulet", &save_amulet_keys },
+    .{ "Coat", &save_coat_keys },
+    .{ "Gloves", &save_gloves_keys },
+    .{ "Pants", &save_pants_keys },
+    .{ "Boots", &save_boots_keys },
+    .{ "Inventory", &save_inventory_keys },
+    .{ "UtilitySkills", &save_utility_skills_keys },
+    .{ "CloneData", &save_clone_data_keys },
+});
+
+// --- Player loadout (player.txt) key whitelists ---
+//
+// Uses parseEntityDefinition (same key set as level Enemies, minus
+// character_code — the player isn't placed by char code). The file has a
+// Metadata section + a PlayerLoadout section whose entry group is the
+// entity definition.
+
+const player_loadout_def_keys = [_][]const u8{
+    "name", "sprite", "color_index", "displays_weapons",
+    "max_health", "defense", "speed", "aggro_range",
+    "main_hand_weapon_type", "main_hand_weapon_name", "main_hand_weapon_damage",
+    "off_hand_weapon_type", "off_hand_weapon_name", "off_hand_weapon_damage",
+    "amulet_name", "amulet_spell_damage",
+    "coat_name", "coat_health_bonus", "coat_defense_bonus",
+    "gloves_name", "gloves_health_bonus", "gloves_damage_bonus",
+    "pants_name", "pants_health_bonus", "pants_pickup_radius_bonus",
+    "boots_name", "boots_health_bonus", "boots_speed_bonus",
+    "slot_4", "slot_5", "slot_6", "slot_7", "slot_8",
+    "layer",
+};
+
+pub const player_loadout_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Metadata", &level_metadata_keys },
+    .{ "PlayerLoadout", &player_loadout_def_keys },
+});
+
+/// Validate that every key in every entry group of every section is in the
+/// key map for that section. Appends a warning per unknown key to `warnings`.
+/// Sections not in `key_map` are skipped (they may be raw-grid sections like
+/// Layout, or sections without a defined key set yet). `file_path` is
+/// included in the warning message so the author knows which file to fix.
+/// Advisory: never returns an error, never rejects the file.
+pub fn validateKeys(
+    sections: []const Section,
+    key_map: std.StaticStringMap([]const []const u8),
+    file_path: []const u8,
+    allocator: std.mem.Allocator,
+    warnings: *std.ArrayList([]const u8),
+) void {
+    for (sections) |section| {
+        const valid_keys = key_map.get(section.header) orelse continue;
+        for (section.entry_groups) |group| {
+            for (group.pairs) |pair| {
+                if (keyInList(valid_keys, pair.key)) continue;
+                warnings.append(allocator, std.fmt.allocPrint(allocator,
+                    "Unknown key '{s}' in {s} section of {s}",
+                    .{ pair.key, section.header, file_path },
+                ) catch @panic("failed to allocate key validation warning")) catch
+                    @panic("failed to append key validation warning");
+            }
+        }
+    }
+}
+
+/// Check if `key` is in the list of valid keys. Linear scan (the lists are
+/// small, typically 5-30 keys).
+fn keyInList(list: []const []const u8, key: []const u8) bool {
+    for (list) |valid| {
+        if (std.mem.eql(u8, valid, key)) return true;
+    }
+    return false;
+}
 
 pub fn loadSettings(
     sections: []const Section,
@@ -953,7 +1278,6 @@ pub fn instantiateEditorLevel(
     for (editor_level.decoration_placements) |placement| {
         const dt = editor.decoration_types[placement.type_id];
         decorations.append(allocator, .{
-            .decoration_id = null,
             .name = dt.sprite,
             .position = placement.position,
             .footprint = dt.footprint,
@@ -1463,7 +1787,6 @@ pub fn loadLevel(
                             // Decoration: no tile at the anchor; footprint
                             // tiles are validated after the full layout walk.
                             var decoration: types.Decoration = .{
-                                .decoration_id = null,
                                 .name = deco_def.sprite,
                                 .position = position,
                                 .footprint = deco_def.footprint,
@@ -1608,7 +1931,6 @@ pub fn loadHub(
                     else => {
                         if (decoration_definitions.get(character)) |deco_def| {
                             var decoration: types.Decoration = .{
-                                .decoration_id = null,
                                 .name = deco_def.sprite,
                                 .position = position,
                                 .footprint = deco_def.footprint,
@@ -4033,3 +4355,78 @@ test "loadEventLog rejects an unsupported file_format_version" {
 }
 
 
+
+test "validateKeys: warns on unknown keys in level file sections" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const config =
+        \\Metadata
+        \\file_format_version 1
+        \\name Test Level
+        \\chracter_code X
+        \\
+        \\Layout
+        \\!.
+        \\
+        \\Enemies
+        \\character_code 1
+        \\name Skeleton
+        \\chracter_code 1
+        \\sprite skeleton_1
+        \\
+        \\Decorations
+        \\character_code T
+        \\sprite tree_1
+        \\unknwon_key blah
+        \\
+    ;
+    const sections = try parseConfigFile(config, allocator);
+    var warnings: std.ArrayList([]const u8) = .empty;
+    validateKeys(sections, level_key_map, "test/level_1.txt", allocator, &warnings);
+
+    // chracter_code in Metadata (X) + chracter_code in Enemies + unknwon_key in Decorations.
+    try std.testing.expectEqual(@as(usize, 3), warnings.items.len);
+
+    // Each warning names the unknown key + section + file path.
+    var found_chracter_metadata = false;
+    var found_chracter_enemies = false;
+    var found_unknown_deco = false;
+    for (warnings.items) |warning| {
+        if (std.mem.indexOf(u8, warning, "chracter_code") != null and std.mem.indexOf(u8, warning, "Metadata") != null)
+            found_chracter_metadata = true;
+        if (std.mem.indexOf(u8, warning, "chracter_code") != null and std.mem.indexOf(u8, warning, "Enemies") != null)
+            found_chracter_enemies = true;
+        if (std.mem.indexOf(u8, warning, "unknwon_key") != null and std.mem.indexOf(u8, warning, "Decorations") != null)
+            found_unknown_deco = true;
+    }
+    try std.testing.expect(found_chracter_metadata);
+    try std.testing.expect(found_chracter_enemies);
+    try std.testing.expect(found_unknown_deco);
+}
+
+test "validateKeys: no warnings for valid keys" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const config =
+        \\Metadata
+        \\file_format_version 1
+        \\name Test Level
+        \\color_wheel_index 3
+        \\
+        \\Layout
+        \\!.
+        \\
+        \\Enemies
+        \\character_code 1
+        \\name Skeleton
+        \\sprite skeleton_1
+        \\max_health 20
+        \\
+    ;
+    const sections = try parseConfigFile(config, allocator);
+    var warnings: std.ArrayList([]const u8) = .empty;
+    validateKeys(sections, level_key_map, "test/level_1.txt", allocator, &warnings);
+    try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
+}

@@ -44,6 +44,38 @@ Test by running `zig build run` and clicking through.
 - **Online services** — web database for leaderboards + custom content
   hosting/sharing. Builds on the custom-mission VFS acquisition path; see
   "Content Loading / Custom Missions" + "Online Services" below.
+- **Error handling pass** — replace uniform fail-fast with the two-class
+  policy (unrecoverable → panic; recoverable I/O failures → warn +
+  degrade/revert via the popup). Settled design + B-simple recording in
+  AGENTS → Error Handling. Slices:
+  - [x] **Slice 1 — error surface:** `SessionState.pending_error` +
+    `Action.dismiss_error` + `ui.buildErrorPopup` + `view()` wiring +
+    modal input gate (`handleAnytimeInput` / `update()` pause). No real
+    trigger yet; tests for the helpers + popup layout. History in DONE.md.
+  - [x] **Slice 2 — startup-config fallback:** `session_setup.zig` loaders
+    fall back to the embedded copy on shadow-parse fail + set
+    `pending_error`; embedded fail still panics. `FileSource.readEmbeddedFile`
+    + `loadConfigWithFallback` helper. History in DONE.md.
+  - [x] **Slice 3 — in-event reconstruction reads:** the 6 handlers
+    (`start_new_game` / `start_mission` / `start_level` / `start_hub` /
+    `load_save` / `open_editor`) use `failReconstructionRead` on parse/load
+    failure; the drain loop reverts to the last idle-point snapshot + trims
+    `event_history` + surfaces `pending_error`. Replay panics (fail-fast).
+    OOM still panics. History in DONE.md.
+  - [x] **Slice 4 — writes/reloads:** `write_save` / `dump_event_log` →
+    warn + popup + abort on failure (no crash, no revert needed — state is
+    fine, just the file didn't write). Session-log `file_format_version`
+    hard-gate softening deferred to the replay viewer (not user-wired yet).
+    History in DONE.md.
+- **Key validation (approach A)** — per-section key whitelists warn on
+  unknown keys (the permissive parser silently drops them today; see AGENTS
+  → Error Handling). Infrastructure: `parser.validateKeys` + comptime
+  `std.StaticStringMap` key maps per file type. All file types wired: level,
+  hub, mission, campaign, settings, color-theme, weapon-type, salvage,
+  player-save, player-loadout. The `validateConfigKeys` helper
+  (event_handlers.zig) centralizes the warning-collection + popup surfacing
+  for in-event reads; `loadConfigWithFallback` (session_setup.zig) validates
+  startup config. History in DONE.md.
 
 KNOWN DEFERRED BUGS: (none currently — combat turn-flow issues from earlier
   playtesting are resolved.)
@@ -438,12 +470,33 @@ Already total (no action): A* comparePathNodes (f→x→y); entity draw sort
 
 Done items in DONE.md. Open:
 
-- Test coverage for processEvent handlers: main.zig is large with essentially
-  one (end-to-end reconstruction) test. processEvent is state-in/state-out and
-  testable. Cover the event logic (equip/unequip, utility-skill events, boots
-  move-range refresh, prepared-skill cancel) before wiring up UI drag. The
-  runToIdle + reconstructFromEventLog harness can be reused with targeted
-  scripted sessions + assertions.
+- **Split `parser.zig`** (4400+ lines) along its natural seams:
+  `config_parser.zig` (the generic format layer: Section/EntryGroup/
+  KeyValuePair types, parseConfigFile, findSection/findValue, asBool/asU32/
+  asF32/parseEnum, validateSections/validateFileFormatVersion/validateKeys,
+  the key whitelists), `parser.zig` slimmed (the loaders + save writer +
+  free helpers), `session_log.zig` (the event-log serializer/deserializer).
+  Mechanical refactor — no behavior change, just moving code + updating
+  imports. Low risk (compiler catches import errors) but big diff. Not
+  urgent; do when parser.zig grows further or a load change lands.
+- Test coverage for processEvent handlers: DONE across all four tiers.
+  Harness: `src/test_harness.zig` (`Harness.init` + `newHistory` +
+  `runToIdle` + `levelStateWithEntities`/`levelEntity` + smoke test).
+  Tier 1 gear/skill mechanics (`src/handler_tests_gear.zig`, 22 tests).
+  Tier 2 combat primitives + gear side effects
+  (`src/handler_tests_combat.zig`, 34 tests). Tier 3 AI
+  (`src/handler_tests_ai.zig`, 15 tests). Tier 4 turn-flow orchestrators
+  (`src/handler_tests_turnflow.zig`, 22 tests: turn_start cooldown/effect/
+  stun/branch/dead, turn_end enemy ordering by distance-then-entity_index +
+  inactive/dead skip + turns_spent + non-player no-push, player_turn_move/
+  attack phase + auto-skip + force override, player_move_action/skip_move/
+  skip_attack/cancel_skill/use_skill orchestrator fan-out LIFO order).
+  Total: 93 handler tests (161 with the pre-existing 68). All confirm-exist
+  (no logic fixes). Self-referential asserts; scalar-field comparison
+  (runToIdle compacts the arena — slice PTRS change, contents survive).
+  Orchestrator/ordering tests call `processEvent` once + inspect
+  `event_stack` (LIFO order) rather than `runToIdle`. FUTURE: keep adding
+  tests when new handlers land (editor events are the next big set).
 - Consistent slot-index bounds checking: utility-skill handlers guard
   slot_index < utility_skill_count, but equip_item/unequip_item/learn_skill/
   salvage_item index inventory.slots[...] directly (panic on out-of-range).

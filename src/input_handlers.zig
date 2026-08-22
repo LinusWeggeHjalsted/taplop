@@ -43,7 +43,7 @@ pub fn dragToEvent(from: ui.SlotRef, to: ui.SlotRef) ?Event {
                 .inventory_slot_index = inventory_index,
                 .gear_slot = gear_slot,
             } } },
-            else => null, // inventory→inventory move (future) + skill targets
+            else => null, // inventory→inventory move + skill targets: no handler
         },
         .gear => |gear_slot| switch (to) {
             .inventory => |inventory_index| .{ .player_event = .{ .unequip_item = .{
@@ -216,8 +216,20 @@ pub fn dumpEventLog(history: *GameStateHistory) void {
         history.event_history.items,
         created,
         allocator,
-    ) catch @panic("failed to serialize session log");
-    history.file_source.writeFile(file_name, body) catch @panic("failed to write session log file");
+    ) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to serialize session log",
+        );
+        return;
+    };
+    history.file_source.writeFile(file_name, body) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to write session log file",
+        );
+        return;
+    };
 
     // Feedback for this dev tool: the file lands in the persistent data dir
     // (~/.ziglop/logs/).
@@ -255,6 +267,34 @@ pub fn handleAnytimeInput(
     history: *GameStateHistory,
     anytime: input.AnytimeInput,
 ) void {
+    // Recoverable error popup is modal: when a pending error is set, only
+    // `dismiss_error` and the scroll actions get through; everything else
+    // (including undo/redo, the options-menu toggle, and the camera-zoom
+    // wheel) is swallowed until the popup is dismissed. The state has
+    // already been reverted by the time the error is set, so there is
+    // nothing to undo. The wheel (`scroll_delta`) is redirected here to
+    // scroll the popup body instead of zooming the camera. The scroll offset
+    // is clamped in `buildErrorPopup` (the view is the only place that knows
+    // `max_scroll`, which depends on the wrapped line count). See AGENTS →
+    // Error Handling.
+    if (history.session.pending_error != null) {
+        if (anytime.dismiss_error) {
+            history.session.clearPendingError();
+            return;
+        }
+        const scroll_step: i32 = 3 * ui.error_scroll_line_height;
+        if (anytime.error_scroll_up) {
+            history.session.error_scroll_offset -= scroll_step;
+        }
+        if (anytime.error_scroll_down) {
+            history.session.error_scroll_offset += scroll_step;
+        }
+        if (anytime.scroll_delta != 0) {
+            history.session.error_scroll_offset += @intFromFloat(anytime.scroll_delta * @as(f32, @floatFromInt(scroll_step)));
+        }
+        return;
+    }
+
     if (anytime.undo) {
         _ = history.undo(&event_handlers.processEvent);
     }
@@ -358,8 +398,7 @@ pub fn handleIdleInput(
                     .{ .meta_event = .start_new_game },
                 }, allocator),
                 // Dev entry point: open the editor on the shipped first_mission
-                // (a real custom-mission browser lands later). Hardcoded path
-                // for now so the editor building blocks are reachable.
+                // (hardcoded path so the editor building blocks are reachable).
                 .open_editor => event_handlers.pushEvents(current, &.{
                     .{ .meta_event = .{ .open_editor = .{
                         .mission_path = "data/campaigns/main_campaign/missions/first_mission",
@@ -530,20 +569,8 @@ pub fn handleIdleInput(
         }
     }
 
-    if (idle.skill_slot_selected) |_| {
-        // TODO: resolve slot to SkillId, begin skill targeting or push skill use
-        // if Settings.auto_target_at_cursor, check tile cursor position and use skill immediately if valid target
-    }
-
-    if (idle.cancel) {
-        // TODO: cancel current action (e.g. deselect skill)
-    }
 }
 
-/// Compute the minimum effective range across all off-cooldown skills an entity has.
-/// This is the closest distance the entity needs to be to use at least one skill.
-/// Uses range if the skill has it, radius if not.
-/// Returns null if no skills are off cooldown (shouldn't normally happen).
 /// Resolve the logical tile cursor (`session.tile_cursor`) for this frame.
 ///
 /// Mouse takes precedence when it moved this tick: the cursor follows the
@@ -653,7 +680,7 @@ test "dragToEvent maps valid drags and blocks cross-domain drops" {
     try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .inventory = 0 }, .{ .skill_bar = 0 }));
     try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .learned_skill = .slice }, .{ .gear = .coat }));
     try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .gear = .coat }, .{ .gear = .boots }));
-    // inventory → inventory move is not implemented yet.
+    // inventory → inventory move is unsupported (returns null).
     try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .inventory = 0 }, .{ .inventory = 1 }));
 }
 

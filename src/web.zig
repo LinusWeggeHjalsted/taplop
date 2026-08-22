@@ -19,6 +19,7 @@
 const std = @import("std");
 const rl = @import("raylib");
 const game = @import("main.zig");
+const session_setup = @import("session_setup.zig");
 const RaylibBackend = @import("raylib_backend.zig").RaylibBackend;
 const types = @import("types.zig");
 const FileSource = @import("file_source.zig").FileSource;
@@ -36,7 +37,7 @@ extern fn emscripten_run_script(script: [*:0]const u8) void;
 
 /// Panic handler for web — uses std's simple_panic namespace (prints to
 /// stderr → browser console, traps). The default FullPanic pulls in symbol
-/// formatting that may not work on wasm; this is minimal for now.
+/// formatting that does not work on wasm; this stays minimal.
 pub const panic = std.debug.simple_panic;
 
 /// The virtual path where the IDBFS-backed persistent dir is mounted. Mirrors
@@ -52,7 +53,7 @@ const persistent_virtual_path = "/ziglop";
 /// points into it). Heap allocation via c_allocator lives until the tab closes.
 const WebSession = struct {
     backend: RaylibBackend,
-    setup: game.SessionSetup,
+    setup: session_setup.SessionSetup,
 };
 
 /// Emscripten main-loop callback — called once per requestAnimationFrame.
@@ -132,7 +133,7 @@ pub fn main() void {
     // createSessionSetup so both platforms stay in sync. The returned
     // SessionSetup is placed in the heap-allocated WebSession (not on main()'s
     // stack, which would leave dangling pointers after main() returns).
-    const setup = game.createSessionSetup(allocator, &file_source, io, &backend);
+    const setup = session_setup.createSessionSetup(allocator, &file_source, io, &backend);
 
     const session = allocator.create(WebSession) catch @panic("failed to allocate WebSession");
     session.* = .{

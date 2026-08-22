@@ -1,3 +1,11 @@
+//! The event hierarchy: a single `Event` tagged union over Meta, Super,
+//! Level, SubLevel, Player, Hub, and Editor event categories. Events are
+//! generic state-mutation verbs (a skill is a recipe composing them); each
+//! player action pushes one orchestrator that fans out into verbs. The event
+//! stack is LIFO and `event_history` is the linearized replay source of truth.
+//! See AGENTS → Architecture (Events are generic verbs, one orchestrator per
+//! action) and Replay & Side Effects.
+
 const types = @import("types.zig");
 
 const Vector2 = types.Vector2;
@@ -130,8 +138,7 @@ pub const EditorEvent = union(enum) {
     // ── Level tiles ──
     // Set a single tile (paint floor / erase). One event per cell — drag-
     // painting pushes one editor_set_tile per cell crossed (per-field undo
-    // granularity by design; batch-into-one-stroke is deferred unless it
-    // feels necessary).
+    // granularity by design).
     editor_set_tile: struct {
         level_index: u32,
         position: Vector2,
@@ -367,9 +374,8 @@ pub const EditorEvent = union(enum) {
     },
 };
 
-/// Which palette group a type belongs to (for editor_delete_type and any
-/// future group-keyed operations). Matches the three palette groups in the
-/// bottom bar.
+/// Which palette group a type belongs to (for editor_delete_type). Matches
+/// the three palette groups in the bottom bar.
 pub const EditorTypeKind = enum {
     entity,
     decoration,

@@ -1,3 +1,10 @@
+//! All game data types: entities, levels, hubs, missions, campaigns, player
+//! data, gear, items, skills/effects (via generated enums), color themes,
+//! input/settings, and the view-state drawables. `Entity` carries the
+//! gameplay stat accessors (`getEffective*`, `skillInSlot`, `collectSkillSlots`).
+//! See AGENTS → Architecture (player always entity 0, derived-from-entity
+//! single source of truth) and Entity & UI Coloring.
+
 const std = @import("std");
 const generated = @import("generated");
 
@@ -41,6 +48,18 @@ pub const Action = enum {
     // Dump the full session event history to a config-format log file (dev
     // tooling; see parser.writeEventLog). Anytime, side-effecting.
     dump_event_log,
+    // Dismiss a recoverable error popup (see SessionState.pending_error).
+    // Modal — when a pending error is shown, this is the only action that
+    // reaches the game; all other input is swallowed until the popup is
+    // dismissed. Bound to Escape + Enter so either key clears it.
+    dismiss_error,
+    // Scroll the error popup body (arrows; the mouse wheel also scrolls
+    // it via a redirect in the modal input gate). Only consumed while a
+    // pending error is shown. Bound to the same Up/Down keys as the tile-
+    // cursor nudge — the modal gate routes them to scroll, not cursor, while
+    // the popup is up. See AGENTS → Error Handling.
+    error_scroll_up,
+    error_scroll_down,
     // Main menu commands.
     continue_game,
     new_game,
@@ -135,11 +154,6 @@ pub const CustomColorTheme = struct {
     player_gradient: ColorGradient,
 };
 
-pub const DecorationId = enum {
-    // TODO: generate this at compile time
-    placeholder,
-};
-
 /// One overlay layer of a decoration: a sprite drawn over the base at the same
 /// position, colored independently. Must be the same pixel dimensions as the
 /// base (validated at load). See AGENTS.md "Decorations & Footprint".
@@ -152,7 +166,6 @@ pub const DecorationLayer = struct {
 };
 
 pub const Decoration = struct {
-    decoration_id: ?DecorationId,
     name: []const u8,
     /// World position of the anchor tile (bottom-most-then-left-most footprint
     /// tile). The layout char sits here; non-anchor footprint tiles are
@@ -547,7 +560,6 @@ pub const PlayerData = struct {
     deaths: u32 = 0,
     defeated_enemies: u32 = 0,
     skills_used: u32 = 0,
-    // maybe more statistics later
 
     main_hand_weapon: ?Weapon = null,
     off_hand_weapon: ?Weapon = null,
@@ -674,42 +686,8 @@ pub const ReplayViewer = struct {
 
 };
 
-pub const HubNode = struct {
-    hub_id: []const u8,
-    mission_exits: []const []const u8,
-};
-
-pub const MissionEdge = struct {
-    mission_id: []const u8,
-    start_hub: []const u8,
-    end_hub: []const u8,
-};
-
-pub const CampaignGraph = struct {
-    hub_nodes: []const HubNode,
-    mission_edges: []const MissionEdge,
-};
-
-pub const PositionedHubNode = struct {
-    hub_node: HubNode,
-    position: Vector2,
-};
-
-pub const PositionedMissionEdge = struct {
-    mission_edge: MissionEdge,
-    start_position: Vector2,
-    end_position: Vector2,
-};
-
-pub const PositionedCampaignGraph = struct {
-    // screen space
-    positioned_nodes: []const PositionedHubNode,
-    positioned_edges: []const PositionedMissionEdge,
-};
-
 pub const Campaign = struct {
     name: []const u8 = &.{},
-    campaign_graph: CampaignGraph = .{ .hub_nodes = &.{}, .mission_edges = &.{} },
     start_hub: []const u8 = &.{},
 };
 
@@ -768,7 +746,6 @@ pub const Hub = struct {
 
 pub const NPC = struct {
     entity: Entity,
-    // TODO: NPC-specific fields (dialogue, behavior, etc.)
 };
 
 // ============================================================
@@ -796,7 +773,7 @@ pub const Align = enum { start, center, end };
 /// shrink a panel to its content area with `inset`, slide a group with
 /// `translate`, and drop a fixed-size child into a region with the
 /// `place*` family (a 3\u00d73 grid of named anchors). Every method is pure
-/// \u2014 it returns a new value and never mutates the receiver.
+/// — it returns a new value and never mutates the receiver.
 pub const Rectangle = struct {
     x: i32,
     y: i32,

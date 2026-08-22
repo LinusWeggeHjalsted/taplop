@@ -1,3 +1,11 @@
+//! Core game state + the undo/redo/replay timeline. `GameState` is the
+//! live, undoable world (current screen, level/hub, entities, player data).
+//! `GameStateHistory` wraps it with the append-only `event_history`, the
+//! snapshot/checkpoint rings, the reconstruction cache, and `SessionState`
+//! (transient view/input state off the undo timeline). All undo/redo/replay
+//! flows through `recordEvent`/`replayTo`/`restoreTo`/`reconstructFromEventLog`.
+//! See AGENTS → Replay & Side Effects, Architecture (Allocator model).
+
 const std = @import("std");
 const types = @import("types.zig");
 const events = @import("events.zig");
@@ -89,6 +97,51 @@ pub const SessionState = struct {
     // handleCameraPan in input_handlers.zig.
     camera_pan: ?types.Vector2 = null,
     camera_pan_anchor: ?CameraPanAnchor = null,
+
+    // A recoverable load failure (a corrupt/overridden config file, an
+    // incompatible session log, etc.) surfaced to the player as a modal
+    // popup. Set by the drain loop after a handler returns an error and
+    // the state is reverted to the last idle-point snapshot; cleared on
+    // dismiss (`Action.dismiss_error`). Off the undoable GameState, so
+    // replay-safe by construction (like the other fields here). The message
+    // is duped into `history_arena` (durable across frames until process
+    // exit); overwriting a prior error leaks the old bytes in the arena —
+    // accepted, since errors are rare and small (same unbounded-arena
+    // tradeoff as `event_history`). See AGENTS → Error Handling.
+    pending_error: ?[]const u8 = null,
+
+    /// Scroll offset (reference-space pixels) within the error popup's body.
+    /// Reset to 0 by `setPendingError`. Clamped to `[0, max_scroll]` in
+    /// `buildErrorPopup` (the view is the only place that knows `max_scroll`,
+    /// since it depends on the wrapped line count). See AGENTS → Error
+    /// Handling.
+    error_scroll_offset: i32 = 0,
+
+    /// Copy `msg` into the durable history arena and set it as the pending
+    /// error. Overwrites (leaks) any prior message. The caller passes
+    /// `history_arena.allocator()` so the message outlives `current_arena`
+    // compaction (idle points) — a `current_arena`-backed message could be
+    // freed while the popup is still displayed.
+    pub fn setPendingError(
+        self: *SessionState,
+        allocator: std.mem.Allocator,
+        msg: []const u8,
+    ) void {
+        self.pending_error = allocator.dupe(u8, msg) catch
+            @panic("failed to allocate pending error message");
+        self.error_scroll_offset = 0;
+    }
+
+    /// Clear the pending error. The bytes live in `history_arena` (never
+    /// individually freed), so this just drops the pointer.
+    pub fn clearPendingError(self: *SessionState) void {
+        self.pending_error = null;
+    }
+
+    /// The pending error message, or null when no popup is shown.
+    pub fn pendingError(self: *const SessionState) ?[]const u8 {
+        return self.pending_error;
+    }
 };
 
 /// The world point grabbed at the start of a camera-pan drag, in float tile
@@ -179,12 +232,12 @@ pub const GameStateHistory = struct {
     // replay. See AGENTS.md "File System & IO" and file_source.zig.
     file_source: *const FileSource,
 
-    // The general I/O handle (clocks, future async/networking, etc.) — a
-    // sibling to `file_source`, NOT nested inside it, because `std.Io` is
-    // broader than file reading/writing. Callers that need the clock (e.g.
-    // formatSessionTimestamp) read this directly instead of reaching through
-    // the file abstraction. A cheap vtable-handle copy of the same `std.Io`
-    // that `file_source` also holds.
+    // The general I/O handle (clocks, etc.) — a sibling to `file_source`,
+    // NOT nested inside it, because `std.Io` is broader than file reading/
+    // writing. Callers that need the clock (e.g. formatSessionTimestamp)
+    // read this directly instead of reaching through the file abstraction.
+    // A cheap vtable-handle copy of the same `std.Io` that `file_source`
+    // also holds.
     io: std.Io,
 
     // The initial game state at launch — ultimate fallback for replay.
@@ -204,9 +257,8 @@ pub const GameStateHistory = struct {
     // (e.g. editor saves overwrite a mission's files mid-session). Entries
     // are appended in monotonic event-index order; trimmed on branch
     // (discardFutureTimeline). See AGENTS.md "Reconstruction cache" and the
-    // readReconstructionFile helper below. Not serialized yet (within-session
-    // only); cross-session log reload will serialize it when custom-mission
-    // sharing lands (=> file_format_version 2).
+    // readReconstructionFile helper below. Not serialized (within-session
+    // only).
     reconstruction_cache: std.ArrayList(ReconstructionCacheEntry) = .empty,
 
     // Ring buffer of checkpoints at major game transitions (entering a level/hub).
@@ -239,7 +291,7 @@ pub const GameStateHistory = struct {
     // backing, plus deep-copied event payloads). Event payload slices are the
     // replay source of truth, so they must outlive current_arena resets — hence
     // a separate arena from current_state's. Grows unbounded with the session
-    // (accepted; see TODO Memory / Budget); never reset.
+    // (accepted; see AGENTS → Memory & Budget); never reset.
     history_arena: std.heap.ArenaAllocator,
 
     // The live game state — what update() works on and view() renders.
@@ -254,16 +306,28 @@ pub const GameStateHistory = struct {
     // them. See processEvent handlers.
     replaying: bool = false,
 
+    // Set by a reconstruction-read handler (start_level / start_mission /
+    // start_hub / load_save / open_editor) when its config read or parse
+    // fails during LIVE play. The drain loop checks this after each
+    // processEvent; when set, it reverts to the last idle-point snapshot,
+    // trims the failed transaction's recorded events, and surfaces the
+    // error via session.pending_error. Distinct from pending_error (which
+    // is the user-facing message and can be set advisorially by key
+    // validation without triggering a revert). A handler failure during
+    // replay panics instead (fail-fast — unexpected; in-session replay has
+    // cached bytes). See AGENTS → Error Handling → three contexts.
+    load_error: bool = false,
+
     // True only during cross-session reconstruction (reconstructFromEventLog):
     // the cache starts empty because no live play ever populated it. On a
     // reconstruction-cache miss in this mode, readReconstructionFile falls
     // back to file_source and caches the result (establishing the cache
     // retroactively), instead of panicking. For shipped/immutable content the
     // bytes are identical to the original session; for custom missions they
-    // are whatever is on disk now (a known limitation until the cache is
-    // serialized into the session log — file_format_version 2). In-session
-    // undo/redo (replayTo) never sets this and stays panic-on-miss, since
-    // live play always cached before replay can reach the same index.
+    // are whatever is on disk now (the cache is not serialized into the
+    // session log). In-session undo/redo (replayTo) never sets this and
+    // stays panic-on-miss, since live play always cached before replay can
+    // reach the same index.
     cross_session_replay: bool = false,
 
     pub fn init(
@@ -336,8 +400,8 @@ pub const GameStateHistory = struct {
     /// panic rather than silently falling back to disk (which would
     /// reintroduce divergence, just quieter). The only legitimate miss is
     /// cross-session log reload, which starts with an empty cache — that
-    /// path (reconstructFromEventLog) will pre-populate the cache from the
-    /// serialized log when custom-mission sharing lands.
+    /// path (reconstructFromEventLog) falls back to file_source and caches
+    /// retroactively.
     pub fn readReconstructionFile(
         self: *GameStateHistory,
         path: []const u8,
@@ -734,7 +798,7 @@ pub const GameStateHistory = struct {
     }
 
     /// Restore from a saved state, or replay if no exact match exists.
-    fn restoreTo(
+    pub fn restoreTo(
         self: *GameStateHistory,
         target_event_index: u32,
         apply_event: *const fn (*GameStateHistory) void,
@@ -819,8 +883,8 @@ pub const GameStateHistory = struct {
     /// Must be called on a freshly-inited history whose initial_state matches
     /// the session's starting state; assumes an empty event_history (no live
     /// timeline to branch from). Intended for session-log replay — the test
-    /// harness reconstructs to the end; the replay viewer will later step by
-    /// calling this (or restoreTo) at successive targets.
+    /// harness reconstructs to the end; the replay viewer steps by calling
+    /// this (or restoreTo) at successive targets.
     pub fn reconstructFromEventLog(
         self: *GameStateHistory,
         event_log: []const Event,
@@ -915,4 +979,35 @@ test "recordEvent appends without trimming during normal forward play" {
 
     try std.testing.expectEqual(@as(usize, 6), history.event_history.items.len);
     try std.testing.expectEqual(@as(usize, 2), history.idle_points.items.len);
+}
+
+test "SessionState pending error: set, read, clear" {
+    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    var session: SessionState = .{};
+    try std.testing.expectEqual(@as(?[]const u8, null), session.pendingError());
+
+    session.setPendingError(arena.allocator(), "failed to parse data/campaigns/act_one.txt");
+    try std.testing.expectEqualStrings(
+        "failed to parse data/campaigns/act_one.txt",
+        session.pendingError().?,
+    );
+
+    session.clearPendingError();
+    try std.testing.expectEqual(@as(?[]const u8, null), session.pendingError());
+}
+
+test "SessionState pending error: overwrite replaces the message" {
+    const allocator = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    var session: SessionState = .{};
+    session.setPendingError(arena.allocator(), "first error");
+    session.setPendingError(arena.allocator(), "second error with more detail");
+
+    try std.testing.expectEqualStrings("second error with more detail", session.pendingError().?);
+    session.clearPendingError();
 }

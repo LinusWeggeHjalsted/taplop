@@ -10,4 +10,3 @@ generated_sprite_metadata.zig
 # (~/.ziglop/logs/), not the working directory — no longer gitignore-relevant
 # here. Kept for safety in case any old dumps linger in the tree.
 session_log_*.txt
-session_log_repro.txt

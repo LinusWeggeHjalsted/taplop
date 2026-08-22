@@ -1,3 +1,10 @@
+//! UI framework: the flat `UiElement` tagged union (nine_slice_panel, slot,
+//! button, text_label, fill_sprite, image, bar), layout helpers (Rect algebra,
+//! `Row`/`Grid`, screen-space `i32` dims), and panel builders (bottom bar,
+//! main menu, tooltips). `UiState` (open panels/overlays/drag/scroll) lives on
+//! `SessionState`, off the undo timeline. Buttons carry an `Action` so clicks
+//! feed the one input path. See AGENTS → UI Framework.
+
 const std = @import("std");
 const types = @import("types.zig");
 const state = @import("state.zig");
@@ -395,7 +402,7 @@ pub const FillSprite = struct {
     fill_direction: enum { up, down, left, right } = .up,
     /// The two sprites can share one flat asset (e.g. the white health ball)
     /// and read as empty vs filled purely through these tints (depleted color
-    /// under the fill color). Wired to the active color theme later.
+    /// under the fill color).
     background_color: Color = default_tint,
     fill_color: Color = default_tint,
     tooltip: ?Tooltip = null,
@@ -424,6 +431,19 @@ pub const UiElement = union(enum) {
     text_label: TextLabel,
     fill_sprite: FillSprite,
     image: Image,
+    solid_rect: SolidRect,
+};
+
+/// A plain filled rectangle (no sprite). Used for UI primitives like the
+/// error popup's scrollbar track + thumb. `blocks_input` defaults to false
+/// (decorative); set true if used as a solid surface.
+pub const SolidRect = struct {
+    screen_position: ScreenPosition,
+    width: i32,
+    height: i32,
+    color: Color = default_tint,
+    tooltip: ?Tooltip = null,
+    blocks_input: bool = false,
 };
 
 // ============================================================
@@ -442,6 +462,7 @@ pub fn boundsOf(element: UiElement) Rectangle {
         .text_label => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.font_size, .height = e.font_size },
         .fill_sprite => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
         .image => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
+        .solid_rect => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
     };
 }
 
@@ -640,8 +661,7 @@ pub fn selectTooltipCorners(
         return .{ .source_corner = .top_left, .tooltip_corner = .bottom_right };
     }
 
-    // Suppress unused parameter warnings — these will be used when we
-    // refine the logic to check actual overflow against screen edges.
+    // Reserved for overflow-aware corner selection; currently unused.
     _ = tooltip_width;
     _ = tooltip_height;
 }
@@ -661,6 +681,206 @@ pub const tooltip_header_gap: i32 = 16; // extra gap below the header
 pub const tooltip_header_font_size: i32 = 64;
 pub const tooltip_body_font_size: i32 = 56;
 pub const tooltip_panel_sprite = "ui/panel";
+
+// Error popup sizing — a modal centered panel for recoverable load
+// failures (see SessionState.pending_error). Reuses the tooltip wrap
+// machinery (wrapRow / measureRowWidth / lineHeight) for the message body.
+// The body scrolls when the wrapped text exceeds the max body height.
+pub const error_popup_max_width: i32 = 1280;
+pub const error_popup_padding: i32 = 32;
+pub const error_header_font_size: i32 = 72;
+pub const error_body_font_size: i32 = 56;
+pub const error_header_gap: i32 = 24; // gap below the "Error" header
+pub const error_button_gap: i32 = 32; // gap above the Dismiss button
+pub const error_dismiss_button_width: i32 = 512;
+pub const error_dismiss_button_height: i32 = 160;
+pub const error_dismiss_button_font_size: i32 = 64;
+/// One body text line's height — also the scroll-step unit (arrow keys scroll
+/// 3 lines at a time; see handleAnytimeInput). Kept in sync with
+/// `lineHeight(error_body_font_size)`.
+pub const error_scroll_line_height: i32 = 56;
+/// Max body region height before scrolling kicks in. Leaves room for the
+/// header + Dismiss button + padding within the 2160px reference height.
+pub const error_popup_max_body_height: i32 = 1600;
+/// Scrollbar geometry (reference-space pixels). Drawn only when the body
+/// content overflows the visible region.
+pub const error_scrollbar_width: i32 = 12;
+pub const error_scrollbar_gap: i32 = 16; // gap between body text and scrollbar
+
+/// Build a modal, centered, scrollable error popup showing `message` with
+/// a Dismiss button. Appended last in view() so it draws on top of
+/// everything; the panel's `blocks_input = true` halts hit-testing within
+/// its bounds. handleAnytimeInput gates all input except `dismiss_error` +
+/// the scroll actions while a pending error is set (see
+/// SessionState.pending_error).
+///
+/// When the wrapped body exceeds `error_popup_max_body_height`, the body
+/// scrolls: only lines within the visible window are emitted, and a
+/// scrollbar is drawn. `session.error_scroll_offset` is clamped to
+/// `[0, max_scroll]` here (the view is the only place that knows
+/// `max_scroll`, which depends on the wrapped line count). Pure over the
+/// message + frame arena, aside from that scroll-offset clamp.
+pub fn buildErrorPopup(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    session: *state.SessionState,
+    message: []const u8,
+) !void {
+    const content_width_limit = error_popup_max_width - 2 * error_popup_padding;
+
+    const header_lines = try wrapRow(
+        allocator,
+        try spanRow(allocator, text("Error")),
+        error_header_font_size,
+        content_width_limit,
+    );
+    const body_lines = try wrapRow(
+        allocator,
+        try spanRow(allocator, text(message)),
+        error_body_font_size,
+        content_width_limit,
+    );
+
+    const body_line_height = lineHeight(error_body_font_size);
+    const body_content_height: i32 = @intCast(body_lines.len * @as(usize, @intCast(body_line_height)));
+    const visible_body_height = @min(body_content_height, error_popup_max_body_height);
+    const max_scroll = @max(@as(i32, 0), body_content_height - visible_body_height);
+    // Clamp the scroll offset (authoritative — the input handler can't know
+    // max_scroll without wrapping the text itself).
+    if (session.error_scroll_offset < 0) session.error_scroll_offset = 0;
+    if (session.error_scroll_offset > max_scroll) session.error_scroll_offset = max_scroll;
+    const scroll_offset = session.error_scroll_offset;
+    const scrolls = body_content_height > visible_body_height;
+
+    // Content width = widest visual line, capped to the limit. The Dismiss
+    // button + scrollbar also constrain width so they fit inside the panel.
+    var content_width: i32 = error_dismiss_button_width;
+    if (scrolls) content_width += error_scrollbar_width + error_scrollbar_gap;
+    for (header_lines) |line| {
+        const line_width = @min(measureRowWidth(line, error_header_font_size), content_width_limit);
+        if (line_width > content_width) content_width = line_width;
+    }
+    for (body_lines) |line| {
+        const line_width = @min(measureRowWidth(line, error_body_font_size), content_width_limit);
+        if (line_width > content_width) content_width = line_width;
+    }
+
+    // Content height: header lines + header gap + visible body + button gap + button.
+    const header_height: i32 = @intCast(header_lines.len * @as(usize, @intCast(lineHeight(error_header_font_size))));
+    const content_height = header_height +
+        error_header_gap +
+        visible_body_height +
+        error_button_gap +
+        error_dismiss_button_height;
+
+    const panel_width = content_width + 2 * error_popup_padding;
+    const panel_height = content_height + 2 * error_popup_padding;
+
+    // Center on screen, clamped to the reference resolution.
+    const panel_rect = screenRect().placeCenter(panel_width, panel_height);
+    const panel_pos = panel_rect.position();
+
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = tooltip_panel_sprite,
+        .screen_position = panel_pos,
+        .width = panel_width,
+        .height = panel_height,
+        // Modal: halts hit-testing within the panel bounds so clicks on the
+        // popup (not on the button) are swallowed rather than passing through.
+        .blocks_input = true,
+    } });
+
+    const content_x = panel_pos.x + error_popup_padding;
+    var y = panel_pos.y + error_popup_padding;
+
+    // Header lines.
+    for (header_lines) |line| {
+        var x = content_x;
+        for (line) |span| {
+            try elements.append(allocator, .{ .text_label = .{
+                .text = span.text,
+                .screen_position = .{ .x = x, .y = y },
+                .color = span.color,
+                .font_size = error_header_font_size,
+                .bold = true,
+                .blocks_input = false,
+            } });
+            x += measureSpanWidth(span, error_header_font_size);
+        }
+        y += lineHeight(error_header_font_size);
+    }
+    y += error_header_gap;
+
+    // Body: emit only the lines within the scroll window. Lines above
+    // scroll_offset are above the visible region; lines below
+    // (scroll_offset + visible_body_height) are below it. The renderer
+    // would clip them anyway, but skipping them keeps the element list small
+    // and the hit-test set clean.
+    const body_top = y;
+    const first_visible_line: usize = @intCast(@divTrunc(scroll_offset, body_line_height));
+    const visible_line_count: usize = @intCast(@divTrunc(visible_body_height, body_line_height));
+    const last_visible_line = @min(body_lines.len, first_visible_line + visible_line_count);
+    // Skip the height of the lines above the scroll window.
+    y += @intCast(first_visible_line * @as(usize, @intCast(body_line_height)));
+    for (body_lines[first_visible_line..last_visible_line]) |line| {
+        var x = content_x;
+        for (line) |span| {
+            try elements.append(allocator, .{ .text_label = .{
+                .text = span.text,
+                .screen_position = .{ .x = x, .y = y },
+                .color = span.color,
+                .font_size = error_body_font_size,
+                .blocks_input = false,
+            } });
+            x += measureSpanWidth(span, error_body_font_size);
+        }
+        y += body_line_height;
+    }
+
+    // Scrollbar (only when the body overflows). Track + thumb on the right
+    // edge of the body region. The thumb is proportional to the visible /
+    // total ratio and positioned by the scroll offset.
+    if (scrolls) {
+        const scrollbar_x = content_x + content_width - error_scrollbar_width;
+        const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = scrollbar_x, .y = body_top },
+            .width = error_scrollbar_width,
+            .height = visible_body_height,
+            .color = track_color,
+        } });
+        const thumb_height = @max(
+            @as(i32, 40),
+            @divTrunc(visible_body_height * visible_body_height, body_content_height),
+        );
+        const thumb_y = body_top + @divTrunc(scroll_offset * (visible_body_height - thumb_height), max_scroll);
+        const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = scrollbar_x, .y = thumb_y },
+            .width = error_scrollbar_width,
+            .height = thumb_height,
+            .color = thumb_color,
+        } });
+    }
+
+    // Dismiss button, centered horizontally in the panel. Positioned after
+    // the (possibly scrolled) body region — always at the bottom, reachable.
+    y = body_top + visible_body_height + error_button_gap;
+    const button_rect = Rectangle{
+        .x = panel_pos.x + @divTrunc(panel_width - error_dismiss_button_width, 2),
+        .y = y,
+        .width = error_dismiss_button_width,
+        .height = error_dismiss_button_height,
+    };
+    try emitPanelButton(
+        elements,
+        allocator,
+        button_rect,
+        "Dismiss",
+        error_dismiss_button_font_size,
+        .dismiss_error,
+    );
+}
 
 fn cornerPoint(rect: Rectangle, corner: Corner) ScreenPosition {
     return switch (corner) {
@@ -690,9 +910,23 @@ fn wrapRow(
     for (row) |span| {
         var index: usize = 0;
         while (index < span.text.len) {
-            const is_space = span.text[index] == ' ';
+            const ch = span.text[index];
+            const is_space = ch == ' ';
+            const is_slash = ch == '/';
             const start = index;
-            while (index < span.text.len and (span.text[index] == ' ') == is_space) index += 1;
+            if (is_space) {
+                // Run of spaces.
+                while (index < span.text.len and span.text[index] == ' ') index += 1;
+            } else if (is_slash) {
+                // A '/' is a break opportunity. Keep it with the preceding
+                // text as one token (so "data/campaigns/" is one piece), then
+                // the next segment starts after the '/'. This keeps paths
+                // readable while allowing them to wrap at separators.
+                index += 1; // include the '/'
+            } else {
+                // Run of non-space, non-slash characters.
+                while (index < span.text.len and span.text[index] != ' ' and span.text[index] != '/') index += 1;
+            }
             const piece = Span{
                 .text = span.text[start..index],
                 .color = span.color,
@@ -705,6 +939,47 @@ fn wrapRow(
             }
             const word_width = measureSpanWidth(piece, font_size);
             const space_width = if (pending_space) |s| measureSpanWidth(s, font_size) else 0;
+            // If the word itself is wider than the content width, character-
+            // wrap it: emit chunks that fit, each on its own line. This is
+            // the fallback for any token (path segment, long key, etc.) that
+            // still overflows after splitting on spaces and '/'.
+            if (word_width > content_width) {
+                // First, flush any pending line content before the long word.
+                if (current.items.len > 0) {
+                    // Drop the pending space (the break before the long word
+                    // consumes it) and flush.
+                    pending_space = null;
+                    try lines.append(allocator, try current.toOwnedSlice(allocator));
+                    current = .empty;
+                    current_width = 0;
+                }
+                // Split the long piece into char-chunks that each fit.
+                const char_width = measureSpanWidth(.{ .text = "x", .color = piece.color, .bold = piece.bold }, font_size);
+                if (char_width == 0) {
+                    // Degenerate (zero-width font); emit the whole piece to
+                    // avoid an infinite loop.
+                    try current.append(allocator, piece);
+                    current_width = word_width;
+                } else {
+                    const max_chars = @max(@as(usize, 1), @as(usize, @intCast(@divTrunc(content_width, char_width))));
+                    var ci: usize = 0;
+                    while (ci < piece.text.len) {
+                        const chunk_len = @min(max_chars, piece.text.len - ci);
+                        try lines.append(allocator, try allocator.dupe(Span, &.{.{
+                            .text = piece.text[ci .. ci + chunk_len],
+                            .color = piece.color,
+                            .bold = piece.bold,
+                            .italic = piece.italic,
+                        }}));
+                        ci += chunk_len;
+                    }
+                    // The long word is fully emitted; reset line state.
+                    current = .empty;
+                    current_width = 0;
+                    pending_space = null;
+                }
+                continue;
+            }
             if (current.items.len > 0 and current_width + space_width + word_width > content_width) {
                 // Break before this word: flush the line, drop the pending space.
                 try lines.append(allocator, try current.toOwnedSlice(allocator));
@@ -1114,7 +1389,7 @@ fn emitSkillButton(
 ///   inventory, gear, skills, health, weapon-skills, swap, utility-skills, skip
 /// with `ui_gap` between top-level items. The two skill sub-bars pack
 /// their buttons flush (no gap). Skip appears only in levels. The bar has
-/// no background of its own \u2014 it is purely a layout region.
+/// no background of its own — it is purely a layout region.
 pub fn buildBottomBar(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -1176,8 +1451,8 @@ pub fn buildBottomBar(
 
     // Health globe (vertical fill).
     const health_cell = row.next(health_globe_border_width);
-    // One flat white ball serves as both background and fill; tint (later)
-    // reads them as depleted vs current health. Rendered at the ball's native
+    // One flat white ball serves as both background and fill; tint reads
+    // them as depleted vs current health. Rendered at the ball's native
     // (downscaled) size, centered in the cell so it sits inside the border.
     const ball = health_cell.placeCenter(health_globe_ball_size, health_globe_ball_size);
     try elements.append(allocator, .{ .fill_sprite = .{
@@ -1309,7 +1584,7 @@ pub fn buildBottomBar(
             };
             const definition = lookups.getEffectDefinition(effect.effect_id);
             try elements.append(allocator, .{ .image = .{
-                .sprite_id = definition.name, // TODO: real effect icon id
+                .sprite_id = definition.name, // effect name used as the icon id
                 .screen_position = cell.position(),
                 .width = small_icon_size,
                 .height = small_icon_size,
@@ -1365,7 +1640,7 @@ pub fn buildBottomBar(
 /// Build the main-menu button stack: fixed-size buttons centered as a group
 /// on `screen`, spaced by `ui_gap`, each with a centered text label. The
 /// Continue button is emitted only when `continue_available` (there is a game
-/// to resume — populated PlayerData today; an on-disk autosave later).
+/// to resume — populated PlayerData).
 pub fn buildMainMenu(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -1383,8 +1658,7 @@ pub fn buildMainMenu(
     button_count += 1;
     buttons[button_count] = .{ .label = "Load Save", .action = .load_save };
     button_count += 1;
-    // Dev entry point (hardcoded first_mission; a custom-mission browser
-    // replaces this later).
+    // Dev entry point (hardcoded first_mission).
     buttons[button_count] = .{ .label = "Editor", .action = .open_editor };
     button_count += 1;
     buttons[button_count] = .{ .label = "Settings", .action = .open_settings };
@@ -1414,4 +1688,164 @@ pub fn buildMainMenu(
             menu_button.action,
         );
     }
+}
+
+test "buildErrorPopup emits a modal panel, header, body, and a Dismiss button" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var session: state.SessionState = .{};
+
+    var elements: UiElementList = .empty;
+    try buildErrorPopup(&elements, arena.allocator(), &session, "failed to parse data/campaigns/act_one.txt: missing Campaign section");
+
+    // Panel + header label(s) + body label(s) + (panel + button + label) from emitPanelButton.
+    // At minimum: 1 nine_slice (popup) + 1 header text + N body texts + 1 nine_slice (button) + 1 button + 1 label.
+    try std.testing.expect(elements.items.len >= 6);
+
+    // The first element is the popup panel and it is modal (blocks_input).
+    try std.testing.expectEqual(std.meta.activeTag(elements.items[0]), .nine_slice_panel);
+    try std.testing.expect(elements.items[0].nine_slice_panel.blocks_input);
+
+    // The Dismiss button carries Action.dismiss_error.
+    var found_dismiss = false;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .dismiss_error) {
+            found_dismiss = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(found_dismiss);
+}
+
+test "buildErrorPopup: short message — no scrollbar, scroll offset clamped to 0" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var session: state.SessionState = .{};
+    session.error_scroll_offset = 500; // should be clamped to 0 (content fits)
+
+    var elements: UiElementList = .empty;
+    try buildErrorPopup(&elements, arena.allocator(), &session, "short error");
+
+    // No scrollbar (no solid_rect) since content fits in the visible region.
+    for (elements.items) |element| switch (element) {
+        .solid_rect => @panic("unexpected scrollbar for short message"),
+        else => {},
+    };
+    try std.testing.expectEqual(@as(i32, 0), session.error_scroll_offset);
+}
+
+test "buildErrorPopup: long message — scrollbar present, only visible lines emitted" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var session: state.SessionState = .{};
+
+    // Build a message long enough to overflow error_popup_max_body_height.
+    // Each line is ~56px; 1600px / 56 ≈ 28 lines fit. Generate 60 lines.
+    var msg: std.ArrayList(u8) = .empty;
+    defer msg.deinit(std.testing.allocator);
+    for (0..60) |i| {
+        if (i > 0) msg.appendSlice(std.testing.allocator, "\n") catch @panic("msg");
+        msg.appendSlice(std.testing.allocator, "This is warning line number X with some text.") catch @panic("msg");
+    }
+
+    var elements: UiElementList = .empty;
+    try buildErrorPopup(&elements, arena.allocator(), &session, msg.items);
+
+    // Scrollbar present (at least 2 solid_rects: track + thumb).
+    var solid_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .solid_rect => solid_count += 1,
+        else => {},
+    };
+    try std.testing.expect(solid_count >= 2);
+
+    // Scroll offset is 0 (top of content) since we didn't scroll.
+    try std.testing.expectEqual(@as(i32, 0), session.error_scroll_offset);
+}
+
+test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var session: state.SessionState = .{};
+    session.error_scroll_offset = 100_000; // way past max_scroll
+
+    var msg: std.ArrayList(u8) = .empty;
+    defer msg.deinit(std.testing.allocator);
+    for (0..60) |i| {
+        if (i > 0) msg.appendSlice(std.testing.allocator, "\n") catch @panic("msg");
+        msg.appendSlice(std.testing.allocator, "This is warning line number X with some text.") catch @panic("msg");
+    }
+
+    var elements: UiElementList = .empty;
+    try buildErrorPopup(&elements, arena.allocator(), &session, msg.items);
+
+    // Clamped to max_scroll (which is body_content_height - visible_body_height,
+    // both positive since content overflows). Exact value depends on wrapping,
+    // but it must be > 0 and < the original 100_000.
+    try std.testing.expect(session.error_scroll_offset > 0);
+    try std.testing.expect(session.error_scroll_offset < 100_000);
+}
+
+test "wrapRow breaks on '/' for paths" {
+    // font_size 100 → 1 char = 50px plain. content_width 350 fits 7 chars.
+    // "aa/bb/cc" is 8 chars = 400px > 350, so it wraps at a '/'.
+    const font_size: i32 = 100;
+    const row: TooltipRow = &.{text("aa/bb/cc")};
+
+    const lines = try wrapRow(std.testing.allocator, row, font_size, 350);
+    defer {
+        for (lines) |line| std.testing.allocator.free(line);
+        std.testing.allocator.free(lines);
+    }
+    // "aa/bb/" (6 chars = 300px) fits, then "cc" on the next line.
+    // The '/' stays with the preceding segment.
+    try std.testing.expect(lines.len >= 2);
+    // First line starts with "aa/bb/" (includes the trailing slash).
+    var first_line_text: []const u8 = "";
+    for (lines[0]) |span| first_line_text = span.text;
+    try std.testing.expect(std.mem.endsWith(u8, first_line_text, "/"));
+}
+
+test "wrapRow character-wraps a token wider than the content width" {
+    // font_size 100 → 1 char = 50px. content_width 200 fits 4 chars.
+    // "abcdefgh" is 8 chars = 400px > 200, no spaces or slashes → char-wrap.
+    const font_size: i32 = 100;
+    const row: TooltipRow = &.{text("abcdefgh")};
+
+    const lines = try wrapRow(std.testing.allocator, row, font_size, 200);
+    defer {
+        for (lines) |line| std.testing.allocator.free(line);
+        std.testing.allocator.free(lines);
+    }
+    // 8 chars / 4 per line = 2 lines.
+    try std.testing.expectEqual(@as(usize, 2), lines.len);
+    // Each line has 4 chars.
+    var first_line_text: []const u8 = "";
+    for (lines[0]) |span| first_line_text = span.text;
+    try std.testing.expectEqualStrings("abcd", first_line_text);
+    var second_line_text: []const u8 = "";
+    for (lines[1]) |span| second_line_text = span.text;
+    try std.testing.expectEqualStrings("efgh", second_line_text);
+}
+
+test "wrapRow: normal space wrapping still works" {
+    // Regression: the existing space-based wrapping behavior is unchanged.
+    const font_size: i32 = 100;
+    const row: TooltipRow = &.{text("aa bb cc")};
+
+    const lines = try wrapRow(std.testing.allocator, row, font_size, 260);
+    defer {
+        for (lines) |line| std.testing.allocator.free(line);
+        std.testing.allocator.free(lines);
+    }
+    try std.testing.expectEqual(@as(usize, 2), lines.len);
+    try std.testing.expectEqual(@as(usize, 3), lines[0].len);
+    try std.testing.expectEqualStrings("aa", lines[0][0].text);
+    try std.testing.expectEqualStrings(" ", lines[0][1].text);
+    try std.testing.expectEqualStrings("bb", lines[0][2].text);
+    try std.testing.expectEqualStrings("cc", lines[1][0].text);
 }

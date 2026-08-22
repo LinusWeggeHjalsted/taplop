@@ -11,12 +11,10 @@
 //!
 //! v1 scope: hashes CONFIG files only (mission.txt + player.txt if present +
 //! level_1..level_{count}.txt). Custom assets (sprites/audio under the
-//! mission folder) are NOT yet hashed — FileSource has no directory-listing
-//! API and custom assets don't exist yet. When the VFS layer lands with
-//! directory listing, extend the file set (read every file under the mission
-//! folder, not just the known config filenames). The canonicalization scheme
-//! (path-sorted, path-prefixed entries) is stable and already handles an
-//! arbitrary file set, so the extension is additive.
+//! mission folder) are not hashed — FileSource has no directory-listing API.
+//! The canonicalization scheme (path-sorted, path-prefixed entries) is stable
+//! and already handles an arbitrary file set, so extending to custom assets is
+//! additive.
 
 const std = @import("std");
 const file_source_mod = @import("file_source.zig");
@@ -36,8 +34,8 @@ pub const ContentHash = [32]u8;
 /// Canonicalization: the file set is sorted lexicographically by path. Each
 /// file is fed into the hash as a path-prefixed entry — `<path>\n` then the
 /// raw bytes — so two files with identical content but different paths
-/// contribute differently. NO line-ending normalization for now (our files
-/// are authored consistently); tighten only if cross-platform drift shows up.
+/// contribute differently. No line-ending normalization (our files are
+/// authored consistently); tighten only if cross-platform drift shows up.
 ///
 /// `player.txt` is OPTIONAL — official missions ship one, but its absence is
 /// a normal state (editor playtest loads it lazily). A missing optional file

@@ -1,7 +1,8 @@
-//! raylib platform backend. This is the ONLY file (besides native.zig) that
-//! imports raylib, and it is compiled solely into the native exe (and, later,
-//! the wasm32-emscripten exe). The shared game logic in main.zig never touches
-//! raylib; gameLoop drives this backend through a small duck-typed interface:
+//! raylib platform backend. This is the ONLY file that imports raylib
+//! directly (native.zig and web.zig import it through the backend). It is
+//! compiled into both the native exe and the wasm32-emscripten exe. The shared
+//! game logic in main.zig never touches raylib; gameLoop drives this backend
+//! through a small duck-typed interface:
 //!   shouldClose() bool
 //!   deltaMicroseconds() u64
 //!   pollInput() input.PlatformInput
@@ -12,8 +13,8 @@
 //! reference-sized RenderTexture, then blit that to the window letterboxed
 //! (aspect-preserving, centered). Input maps the pointer back through the
 //! inverse of that same letterbox transform, so clicks line up with what is
-//! drawn. World-layer drawing (tiles/entities) lands in a later phase; today
-//! render() draws the background + the flat UI element list.
+//! drawn. render() draws the background, the world drawables (tiles,
+//! decorations, entities, markers), and the flat UI element list.
 
 const std = @import("std");
 const rl = @import("raylib");
@@ -112,7 +113,7 @@ pub const RaylibBackend = struct {
     texture_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
     /// Reference-resolution offscreen target; blitted to the window each frame.
     render_target: rl.RenderTexture2D,
-    /// Default bitmap font for text labels (real TTF + glyph metrics later).
+    /// Default bitmap font for text labels.
     font: rl.Font,
     /// Transient per-frame allocations (null-terminated strings for raylib,
     /// asset paths). Reset at the start of every render.
@@ -455,7 +456,7 @@ pub const RaylibBackend = struct {
                 }
                 for (entity.gear_sprites) |sprite| self.drawSpriteDrawable(sprite, world_scale);
                 for (entity.front_effect_sprites) |sprite| self.drawSpriteDrawable(sprite, world_scale);
-                // health_bar: deferred (drawn as a small bar later).
+                // health_bar is not rendered (the field is currently null).
             },
             .decoration_piece => |decoration| {
                 self.drawSpriteDrawable(.{
@@ -496,6 +497,7 @@ pub const RaylibBackend = struct {
             .text_label => |label| self.drawTextLabel(label),
             .fill_sprite => |fill| self.drawFillSprite(fill),
             .image => |image| self.drawSprite(image.sprite_id, referenceRectangle(image.screen_position, image.width, image.height), null, image.color),
+            .solid_rect => |rect| rl.drawRectangleRec(referenceRectangle(rect.screen_position, rect.width, rect.height), toRaylibColor(rect.color, 255)),
         }
     }
 
@@ -524,8 +526,7 @@ pub const RaylibBackend = struct {
     }
 
     /// 9-slice: the four corners are drawn 1:1 (at the source slice size), and
-    /// the edges + center are stretched to fill the remaining area. TODO: the
-    /// edges/center should tile rather than stretch (see TODO.txt).
+    /// the edges + center are stretched to fill the remaining area.
     fn drawNineSlice(self: *RaylibBackend, panel: ui.NineSlicePanel) void {
         const texture = self.getTexture(panel.sprite_id) orelse {
             rl.drawRectangleRec(referenceRectangle(panel.screen_position, panel.width, panel.height), rl.Color.magenta);
@@ -576,8 +577,8 @@ pub const RaylibBackend = struct {
 
     fn drawTextLabel(self: *RaylibBackend, label: ui.TextLabel) void {
         // raylib needs a null-terminated string; copy into the frame arena.
-        // TODO: honor bold/italic and load a real TTF (default font is a small
-        // bitmap that blurs when scaled up).
+        // bold/italic are ignored and the default bitmap font blurs when
+        // scaled up.
         const text = self.frame_arena.allocator().dupeZ(u8, label.text) catch return;
         const font_size: f32 = @floatFromInt(label.font_size);
         rl.drawTextEx(
