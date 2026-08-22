@@ -1,3 +1,6 @@
+Metadata
+file_format_version 1
+
 Audio
 music_volume 0.5
 sound_effects_volume 0.5
@@ -10,6 +13,7 @@ camera_zoom 1.0
 Gameplay
 auto_skip_attack_step_out_of_combat true
 auto_target_at_cursor true
+player_color_index 0
 
 InputBindings
 input_type key
@@ -53,10 +57,6 @@ action confirm
 
 input_type key
 input_name Backspace
-action cancel
-
-input_type mouse_button
-input_name right
 action cancel
 
 input_type key

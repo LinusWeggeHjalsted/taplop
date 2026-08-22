@@ -975,6 +975,8 @@ fn emitIconButton(
     icon_sprite_id: []const u8,
     action: Action,
     tooltip: ?Tooltip,
+    background_color: Color,
+    icon_color: Color,
 ) !void {
     try elements.append(allocator, .{ .button = .{
         .sprite_id = background_sprite_id,
@@ -982,6 +984,7 @@ fn emitIconButton(
         .width = cell.width,
         .height = cell.height,
         .action = action,
+        .color = background_color,
         .tooltip = tooltip,
     } });
     try elements.append(allocator, .{ .image = .{
@@ -989,6 +992,7 @@ fn emitIconButton(
         .screen_position = cell.position(),
         .width = cell.width,
         .height = cell.height,
+        .color = icon_color,
         // Sits on top of the background; let the button win the hit-test.
         .blocks_input = false,
     } });
@@ -1058,6 +1062,8 @@ fn emitSkillButton(
     slot: u8,
     player: Entity,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    background_color: Color,
+    icon_color: Color,
 ) !void {
     const skill_id = player.skillInSlot(slot, weapon_type_definitions);
     const definition = if (skill_id) |id| lookups.getSkillDefinition(id) else null;
@@ -1069,6 +1075,7 @@ fn emitSkillButton(
             .screen_position = cell.position(),
             .width = cell.width,
             .height = cell.height,
+            .color = background_color,
         } });
         return;
     }
@@ -1084,6 +1091,8 @@ fn emitSkillButton(
         icon_sprite_id,
         skillSlotAction(slot),
         try buildSkillTooltip(allocator, definition.?),
+        background_color,
+        icon_color,
     );
 
     const cooldown = player.skill_cooldowns.get(skill_id.?);
@@ -1112,16 +1121,33 @@ pub fn buildBottomBar(
     screen: Rectangle,
     game_state: *const GameState,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    active_theme: types.ActiveColorTheme,
+    player_color_index: u32,
 ) !void {
     const player = playerEntity(game_state) orelse return;
     const in_level = game_state.screen == .level;
+
+    // Player-gradient colors for the bottom bar elements.
+    const p = active_theme.player_gradient.colors;
+    const c_btn = p[@min(@as(u32, 4), types.gradient_color_count - 1)]; // inventory/gear/skills: 4
+    const c_globe_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)]; // health bg: 5
+    const c_globe_fill = p[@min(@as(u32, 1), types.gradient_color_count - 1)]; // health fill: 1
+    const c_border = p[@min(@as(u32, 3), types.gradient_color_count - 1)]; // border/skill bg/skip bg/turn/swap/momentum: 3
+    const c_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)]; // skill/skip icon: 1
+    const c_skip_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)]; // skip bg: 5
+    _ = player_color_index; // UI uses fixed indices, not the player's chosen index
 
     const weapon_skills_width = 3 * slot_size;
     const utility_skills_width = 5 * slot_size;
 
     // Total content width, to size and center the row.
     var top_level_count: i32 = 7; // inventory,gear,skills,health,wpn,swap,util
-    var content_width = slot_size * 4 // inventory, gear, skills, health
+    // The health globe cell is wider than slot_size to fit its border at
+    // native size (297 vs 256) — the border is authored wider than a slot, so
+    // the cell matches it rather than letting the border overhang into the
+    // gaps (which crowded the neighbors — see health_globe_border_width).
+    var content_width = slot_size * 3 // inventory, gear, skills
+        + health_globe_border_width // health (wider than a slot)
         + weapon_skills_width + swap_button_size + utility_skills_width;
     if (in_level) {
         top_level_count += 1;
@@ -1143,12 +1169,13 @@ pub fn buildBottomBar(
             .sprite_id = toggle.sprite,
             .screen_position = row.next(slot_size).position(),
             .action = toggle.action,
+            .color = c_btn,
             .tooltip = .{ .header = try spanRow(allocator, text(toggle.label)) },
         } });
     }
 
     // Health globe (vertical fill).
-    const health_cell = row.next(slot_size);
+    const health_cell = row.next(health_globe_border_width);
     // One flat white ball serves as both background and fill; tint (later)
     // reads them as depleted vs current health. Rendered at the ball's native
     // (downscaled) size, centered in the cell so it sits inside the border.
@@ -1165,6 +1192,8 @@ pub fn buildBottomBar(
             @as(f32, @floatFromInt(player.current_health)) /
                 @as(f32, @floatFromInt(player.max_health)),
         .fill_direction = .up,
+        .background_color = c_globe_bg,
+        .fill_color = c_globe_fill,
         .tooltip = .{ .header = try spanRow(allocator, text(
             try std.fmt.allocPrint(allocator, "{d} / {d}", .{ player.current_health, player.max_health }),
         )) },
@@ -1178,6 +1207,7 @@ pub fn buildBottomBar(
         .screen_position = border.position(),
         .width = health_globe_border_width,
         .height = health_globe_border_height,
+        .color = c_border,
         .blocks_input = false,
     } });
 
@@ -1187,7 +1217,7 @@ pub fn buildBottomBar(
         var inner = Row.init(weapon_sub_bar.position(), bottom_bar_height, 0);
         var slot: u8 = 1;
         while (slot <= 3) : (slot += 1) {
-            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions);
+            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon);
         }
     }
 
@@ -1200,6 +1230,7 @@ pub fn buildBottomBar(
             .width = swap_button_size,
             .height = swap_button_size,
             .action = .swap_weapons,
+            .color = c_border,
             .tooltip = .{ .header = try spanRow(allocator, text("Swap weapons")) },
         } });
     }
@@ -1210,7 +1241,7 @@ pub fn buildBottomBar(
         var inner = Row.init(utility_sub_bar.position(), bottom_bar_height, 0);
         var slot: u8 = 4;
         while (slot <= 8) : (slot += 1) {
-            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions);
+            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon);
         }
     }
 
@@ -1227,6 +1258,8 @@ pub fn buildBottomBar(
             "ui/icon_skip",
             .skip,
             .{ .header = try spanRow(allocator, text("Skip turn step")) },
+            c_skip_bg,
+            c_icon,
         );
     }
 
@@ -1242,6 +1275,7 @@ pub fn buildBottomBar(
             .screen_position = momentum_cell.position(),
             .width = small_icon_size,
             .height = small_icon_size,
+            .color = c_border,
             .tooltip = .{
                 .header = try spanRow(allocator, text(
                     try std.fmt.allocPrint(allocator, "{d} momentum", .{player.momentum}),
@@ -1312,6 +1346,7 @@ pub fn buildBottomBar(
             .screen_position = move_cell.position(),
             .width = small_icon_size,
             .height = small_icon_size,
+            .color = c_border,
             .highlighted = turn_phase == .player_move,
             .tooltip = .{ .header = try spanRow(allocator, text("Move step")) },
         } });
@@ -1320,6 +1355,7 @@ pub fn buildBottomBar(
             .screen_position = attack_cell.position(),
             .width = small_icon_size,
             .height = small_icon_size,
+            .color = c_border,
             .highlighted = turn_phase == .player_attack,
             .tooltip = .{ .header = try spanRow(allocator, text("Attack step")) },
         } });
@@ -1337,7 +1373,7 @@ pub fn buildMainMenu(
     continue_available: bool,
 ) !void {
     const MenuButton = struct { label: []const u8, action: Action };
-    var buttons: [5]MenuButton = undefined;
+    var buttons: [6]MenuButton = undefined;
     var button_count: usize = 0;
     if (continue_available) {
         buttons[button_count] = .{ .label = "Continue", .action = .continue_game };
@@ -1346,6 +1382,10 @@ pub fn buildMainMenu(
     buttons[button_count] = .{ .label = "New Game", .action = .new_game };
     button_count += 1;
     buttons[button_count] = .{ .label = "Load Save", .action = .load_save };
+    button_count += 1;
+    // Dev entry point (hardcoded first_mission; a custom-mission browser
+    // replaces this later).
+    buttons[button_count] = .{ .label = "Editor", .action = .open_editor };
     button_count += 1;
     buttons[button_count] = .{ .label = "Settings", .action = .open_settings };
     button_count += 1;

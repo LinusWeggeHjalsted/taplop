@@ -1,76 +1,31 @@
+Metadata
+file_format_version 1
+
 GlobalColors
-lightest #FFFFF0
-darkest #140F19
+lightest #fef9ee
+darkest #4c3f4e
 
 Gradients
 gradient_index 0
-color_0 #C83C3C
-color_1 #A02828
-color_2 #781E1E
-color_3 #5A1414
-color_4 #3C0F0F
-color_5 #280A0A
+color_0 #f5f8d4
+color_1 #d6da7b
+color_2 #bec761
+color_3 #aaae56
+color_4 #969446
+color_5 #767253
 
 gradient_index 1
-color_0 #C8963C
-color_1 #A07828
-color_2 #785A1E
-color_3 #5A3C14
-color_4 #3C280F
-color_5 #28140A
+color_0 #ecf1f9
+color_1 #96a9d5
+color_2 #8097cd
+color_3 #7183b7
+color_4 #606daa
+color_5 #565872
 
 gradient_index 2
-color_0 #96C83C
-color_1 #78A028
-color_2 #5A781E
-color_3 #3C5A14
-color_4 #283C0F
-color_5 #14280A
-
-gradient_index 3
-color_0 #3CC83C
-color_1 #28A028
-color_2 #1E781E
-color_3 #145A14
-color_4 #0F3C0F
-color_5 #0A280A
-
-gradient_index 4
-color_0 #3CC896
-color_1 #28A078
-color_2 #1E785A
-color_3 #145A3C
-color_4 #0F3C28
-color_5 #0A2814
-
-gradient_index 5
-color_0 #3C96C8
-color_1 #2878A0
-color_2 #1E5A78
-color_3 #143C5A
-color_4 #0F283C
-color_5 #0A1428
-
-gradient_index 6
-color_0 #3C3CC8
-color_1 #2828A0
-color_2 #1E1E78
-color_3 #14145A
-color_4 #0F0F3C
-color_5 #0A0A28
-
-gradient_index 7
-color_0 #963CC8
-color_1 #7828A0
-color_2 #5A1E78
-color_3 #3C145A
-color_4 #280F3C
-color_5 #140A28
-
-gradient_index 8
-color_0 #C83C96
-color_1 #A02878
-color_2 #781E5A
-color_3 #5A143C
-color_4 #3C0F28
-color_5 #280A14
+color_0 #fef1e8
+color_1 #f3a56c
+color_2 #ee9159
+color_3 #d57f4f
+color_4 #af6e50
+color_5 #845d4c

@@ -2,10 +2,31 @@
 
 Zig 0.16.0 rewrite of a Unity tactical grid game (original at ~/Development/taplop).
 
-## Project Tracking
+## Documentation
 
-- `TODO.txt` is the running task list / roadmap. Read it at the start of a
-  session and keep it updated as work lands (check off items, add follow-ups).
+Three files, each with a clear job. Keep a fact in ONE place; never restate
+settled decisions across files (that's how drift crept in before).
+
+- **AGENTS.md** (this file) — settled rules, architecture, conventions,
+  the "how/why." Single source of truth. Read at the start of a session.
+- **TODO.md** — active + near-term + deferred **tasks**, plus **open /
+  undecided design questions** kept inline where they're being worked.
+  Settled decisions do NOT live here — when a question settles, move the
+  prose to AGENTS.md and leave a one-line pointer. Keeps it scannable.
+- **DONE.md** — archive of completed work, resolved tech debt, and the
+  "why we did X" history. Read on demand when you need the reasoning behind
+  something that already landed, not every session.
+
+Lifecycle of a fact:
+  - **Open question** lives inline in TODO.md with the task that needs it.
+  - **Settles** → move the design prose into AGENTS.md; in TODO.md drop to a
+    pointer (`see AGENTS → <section>`) and check off the task.
+  - **Task completes** → move its prose to DONE.md; in TODO.md leave a `[x]`
+    one-liner (or just delete the line) so TODO stays scannable.
+
+Read AGENTS.md + TODO.md at the start of a session. Reach for DONE.md only
+when you need the history behind something already built. Keep all three
+in sync with the lifecycle above as work lands.
 
 ## Collaboration
 
@@ -130,8 +151,29 @@ Zig 0.16.0 rewrite of a Unity tactical grid game (original at ~/Development/tapl
   resolution and maps the pointer into reference space (inverse letterbox), so
   the whole game — UI hit-testing and screenToTile alike — works in reference
   coordinates.
+- **Two cameras per frame.** `frame()` computes an INPUT camera (pre-update,
+  reflecting the previously-rendered view — the player clicks against what's
+  on screen) and a RENDER camera (recomputed post-update, before `view()`, so
+  it tracks the state being drawn). Without the recompute, a move completed
+  this frame draws the player at the new position under a camera still
+  centered on the old one — a one-frame glitch. Both go through
+  `view.computeCamera(state, zoom, pan)` so they never drift relative to each
+  other or to the pan offset.
+- **Camera pan (right-drag)** is transient view state on `SessionState`
+  (`camera_pan` + `camera_pan_anchor`), off `GameState` — replay-safe by
+  construction (like `tile_cursor` / the animation clock). Levels/hubs only;
+  cleared on player move (recenter) and screen transition. `handleCameraPan`
+  (input_handlers.zig) runs anytime (mid-wait / mid-turn), grabs the world
+  point under the cursor at drag start (sub-tile float precision via
+  `input.floatWorldPoint`, the float inverse of the camera transform), and
+  solves for the camera that keeps it under the cursor. Pan-start is
+  suppressed over blocking UI (`blockingElementAt`). Right mouse is the pan
+  button (cancel is Backspace only).
 - `build.zig` also generates `src/generated_lookups.zig` and the `generated`
-  module (SkillId/EffectId enums) by scanning `src/skills/` and `src/effects/`
+  module (SkillId/EffectId enums) by scanning `src/skills/` and `src/effects/`,
+  plus `generated_sprite_metadata.zig` (pixel dims from PNG IHDR for every
+  shipped `assets/**/*.png`, keyed by sprite id) and `generated_assets.zig`
+  (embedded content map). All are gitignored.
 
 ## Replay & Side Effects
 
@@ -195,11 +237,21 @@ Zig 0.16.0 rewrite of a Unity tactical grid game (original at ~/Development/tapl
   `file_format_version` (monotonic int per artifact, in its `Metadata` section)
   answers "can this parser read the file?"; `game_version` answers "will a
   correctly-parsed file behave in this build?".
+- `file_format_version` is on EVERY config file type (levels, hubs,
+  missions, campaigns, player saves, settings, color themes, player loadouts,
+  session logs) — one monotonic int per type, in the file's `Metadata` section
+  (the FIRST section, before any type-specific sections). The loader
+  validates it as a HARD gate (`error.UnsupportedFileFormatVersion` on mismatch
+  or absence) and discards it — it's a parse-time compatibility check, not
+  runtime state (not stored on the parsed type). The save writer emits the
+  current constant in a `Metadata` section. Per-type version constants live
+  in parser.zig (`level_file_format_version`, `hub_file_format_version`,
+  etc., all currently 1).
 
 ## Logging & Replay
 
-(session-log read/write/reconstruct is built; combat log + replay-viewer UI
-still TODO)
+(session-log read/write/reconstruct is built; combat-log projection is built;
+combat-log UI rendering + replay-viewer UI still TODO)
 
 - There is ONE log: `event_history` (see Replay & Side Effects). The session
   dump, the combat log, and the future replay viewer are all it plus
@@ -223,24 +275,68 @@ still TODO)
   deep-copies the loaded events into `history_arena` and drives the existing
   `replayTo`/`restoreTo` machinery (which forces each recorded event onto the
   stack in turn, discarding handler-pushed sub-events since those were
-  themselves recorded). `idle_points` are NOT serialized — step boundaries are
-  derived, not stored. The `runToIdle` + `reconstructFromEventLog` end-to-end
-  test (main.zig) proves forward play == replay.
-- Combat log = a filtered PROJECTION of `event_history` (leaning: derive on
-  demand, do NOT store on GameState — deletes the `CombatLogEntry`-on-`Level`
-  scaffolding rather than filling it). The replay viewer steps over the SAME
-  filter, so one whitelist drives both the combat-log UI and replay stepping.
-  Coarse (one entry per skill use) vs granular (skill + each consequence:
-  attack/death/stun/…) projection is still UNDECIDED.
+  themselves recorded — but VERIFIES them first via `verifyReplayStep`, see
+  Determinism & Tiebreaking; verification runs even cross-session now). `idle_points` are NOT serialized — step
+  boundaries are derived, not stored. The `runToIdle` +
+  `reconstructFromEventLog` end-to-end test (main.zig) proves forward play ==
+  replay.
+- Combat log = a filtered PROJECTION of `event_history` (derived on demand,
+  NOT stored on GameState — the old `CombatLogEntry`-on-`Level` scaffolding is
+  DELETED). The replay viewer steps over the SAME filter, so one whitelist
+  drives both the combat-log UI and replay stepping. The tier split is DECIDED:
+  coarse (one entry per move / skill use / death) + fine (each consequence:
+  attack / stun / knockback / retreat / heal / create_effect / end_effect /
+  collision / pickup_items) + none (the rest). `combat_log.zig` exposes
+  `projectCombatLog` + `combatLogTier`; `view()` projects per-frame into the
+  frame arena and `ViewState.combat_log` carries the `[]const Event` slice
+  (scoped to the current level, up to `current_event_index`, so undo truncates
+  the future and the hub shows no log). Remaining work is RENDERING (top-bar
+  coarse recent-icons view + full-screen detailed log) and replay-viewer
+  stepping.
 
 ## Determinism & Tiebreaking
 
-- Replay does NOT require the engine's decision logic to be deterministic:
-  `replayTo` forces each RECORDED event onto the stack and discards
-  handler-pushed events, so AI/sort/targeting decisions are already
-  crystallized as recorded events (see Logging & Replay). Determinism still
-  matters for DEFINED behavior in live play and for any future input-based
-  replay (speedrun verification) — so make ordering explicit regardless.
+- Replay no longer papers over nondeterminism: the natural-stack replay
+  loops (`replayTo` / `replayToWithIdleTracking`) let `processEvent`'s
+  pop/push machinery run and verify each stack-top event against the
+  recording (see Replay VERIFICATION below). A handler that pushes a
+  different child than the original session did now panics instead of the
+  state silently staying correct via force-fed recorded events. The old
+  "replay is robust to nondeterminism" property is deliberately replaced by
+  strict validation — the whole point. Determinism still matters for live
+  behavior regardless, so make ordering explicit.
+- **Replay VERIFICATION.** The replay loops (`replayTo` /
+  `replayToWithIdleTracking`; `restoreTo`'s slow path delegates to
+  `replayTo`) use the **natural stack** to drive replay + verification.
+  Instead of force-feeding each recorded event and discarding handler
+  outputs (the old model), `processEvent`'s pop/push machinery runs
+  naturally: before each dispatch, the stack top is the event that should
+  run next, and `verifyReplayMatch` confirms it equals
+  `history[current_event_index]`. Handler-pushed children interleave with
+  their own subtrees in the recorded stream, and the stack tracks that
+  interleaving for free (it IS the DFS cursor). When the stack drains, the
+  next recorded event is a fresh top-level player action — the loop seeds
+  it (top-level events come from player input, not handlers, so the
+  recording is authoritative there and the check is trivial). Comparison is
+  `deep_copy.deepEqual` (comptime-generic, mirrors `deepCopy`; no floats in
+  event payloads → exact `==`). A mismatch is a fail-fast `@panic` naming
+  the recorded index, both variant tags, and the first differing payload
+  field (`deep_copy.firstDiffField` recurses through the union payload
+  struct). Runs for ALL replay origins including cross-session
+  (`reconstructFromEventLog`) — a divergence is a nondeterminism bug we want
+  surfaced, not silently rebuilt state. (Cross-session replay of a custom
+  mission whose files changed since the original session WILL panic —
+  accepted as fail-fast; the reconstruction cache is deterministic for
+  shipped content and within-session replay. Closing the custom-mission
+  cross-session gap lands with cache serialization into the session log, the
+  planned `file_format_version` 2 work.) **Semantic shift:** replay is now
+  strict-verification, not robust-rebuild — a nondeterministic handler
+  panics instead of the state silently staying correct via the recording.
+  This is the point of validation. Idle-point derivation in
+  `replayToWithIdleTracking` simplified: the real `event_stack.len` replaces
+  the old virtual-depth bookkeeping (idle = stack empties). This is also the
+  primitive the Online Services TODO wants for server-side replay validation
+  (leaderboard anti-cheat).
 - Tiebreaking convention — every ordering/selection over equal keys must break
   ties EXPLICITLY (in the comparator) or by a documented scan order:
   - Entities: ascending `entity_index`.
@@ -353,15 +449,249 @@ overridable, no verification, no safe-mode flag. It's accepted as-is for now;
 revisit and add structure (override policy, verification, a disable-for-
 troubleshooting flag) only if modding becomes a real goal.
 
-### Migration (in flight)
+### Migration (done)
 
-Today every read/write is a relative path against `std.Io.Dir.cwd()` stored on
-`GameStateHistory` as `history.directory` + `history.io`, passed in from
-`native.zig`. The migration replaces that pair with a `FileSource` and swaps
-every call site (~15 sites across `main.zig`, `event_handlers.zig`,
-`input_handlers.zig`, `parser.zig`, `raylib_backend.zig`). Parser tests that
-currently do `Dir.cwd()` + read `data/...` from disk switch to the source
-(embedded), which also makes the test build hermetic.
+The migration described above is complete: `history.directory` is gone,
+replaced by the `FileSource` on `GameStateHistory` plus a sibling `io:
+std.Io` handle (kept separate because `std.Io` is broader than file I/O —
+callers that need the clock, e.g. `formatSessionTimestamp`, read it directly,
+not through the file abstraction). All call sites across `main.zig`,
+`event_handlers.zig`, `input_handlers.zig`, `parser.zig`, and
+`raylib_backend.zig` go through the source. Parser tests read `data/...` from
+the embedded map, so the test build is hermetic. The VFS layer (layer 1 of
+the read order) is the only piece still outstanding — it lands with
+custom-mission support.
+
+### Reconstruction cache (deterministic replay over mutable files)
+
+Reconstruction-read event handlers (`start_level` / `start_hub` /
+`start_mission` / `load_save` / future `start_editor`) read config files whose
+results become part of the reconstructed state. Without a cache, replay
+re-reads from disk — fine for shipped content (immutable) but WRONG for
+files that can change mid-session (the editor overwriting a custom mission's
+files, then undo back across the editor-open read). The cache makes the bytes
+a reconstruction-read event applies a **pure function of its position in
+history**, so replay is deterministic regardless of later file changes.
+
+- `GameStateHistory.reconstruction_cache`: an append-only list of
+  `(event_index, path, bytes)` entries in `history_arena` (durable, same
+  lifetime as `event_history`; never in snapshots; never touched by replay).
+- `GameStateHistory.readReconstructionFile(path) -> []const u8` is what
+  reconstruction-read handlers call INSTEAD of `file_source.readFile`. **Live**
+  (`!replaying`): reads via `file_source` into `history_arena`, caches, returns.
+  **Replay** (`replaying`): binary-searches by event index, linear-scans within
+  the event for the path, returns the cached bytes.
+- The key is `(current_event_index - 1, path)` — `processEvent` increments
+  `current_event_index` before dispatch, so the event under handling is at
+  `current_event_index - 1` (identical in live and replay). A single handler
+  may read several files; the path distinguishes them.
+- **Cache-miss policy:** in-session undo/redo (`replayTo`) never misses — live
+  play always cached before replay can reach the same index — so a miss is a
+  bug → `@panic` (fail fast, never silently fall back to disk, which would
+  reintroduce divergence quieter). Cross-session reconstruction
+  (`reconstructFromEventLog`, flagged by `cross_session_replay`) starts with an
+  empty cache because no live play ever ran; there a miss falls back to
+  `file_source` and caches the result (establishing the cache retroactively).
+  For shipped content the bytes match the original session; for custom
+  missions they're whatever is on disk now — the known cross-session
+  limitation until the cache is serialized into the session log.
+- `discardFutureTimeline` trims cache entries ahead of a branch (monotonic by
+  event index, so shrink from the end), alongside `event_history` /
+  `idle_points` / snapshots / checkpoints.
+- **Not serialized yet** (within-session only). Cross-session log reload
+  needs the cache serialized into the session log (a new `ReconstructionCache`
+  section, `file_format_version` → 2), pre-populated by `reconstructFromEventLog`
+  before replay. This is the same property wanted for custom-mission shared-
+  replay reproducibility (content-addressed / pinned version); lands together
+  with custom-mission sharing. The current in-memory cache doesn't paint us
+  into a corner — adding serialization is a localized change to the log
+  writer/reader + `reconstructFromEventLog`.
+
+Editor consequence: editor-open reads go through the cache → undo past
+editor-open replays the reads → cache hits → original bytes, regardless of
+later saves. Editor edits are events mutating in-memory mission/level state
+in `GameState` (captured by `deepCopy`, undo/redo by construction). Editor
+save-to-disk is a **side effect gated on `!replaying`** (same convention as
+`save_game` / `dump_event_log`) → undo never re-writes files. No
+editor-specific undo machinery needed.
+
+## Custom Missions & Online Services
+
+Custom missions are player-authored content that runs through the SAME
+engine path as official missions. The framing is diegetic: a custom mission
+is a "dream," accessed via a dreamguide NPC (guided meditation). Design is
+settled; implementation is mostly pending (the VFS layer is the foundation).
+
+### Dreams (custom missions in play)
+
+- **A dream is a normal mission run**, NOT editor playtest. Rewards persist
+  into PlayerData (gear/skills picked up carry back to the campaign). The
+  editor's playtest/validate discard machinery is NOT reused — it stays
+  scoped to the editor. A dream uses `start_mission` → `start_level` →
+  `build_player_from_data` (sync campaign PlayerData in), and `end_level` →
+  `build_data_from_player` (sync entity back out) → `end_mission`, exactly
+  like an official mission. Custom missions ARE official content in spirit
+  (the shipped campaign is one locally-bundled set showcasing all skills);
+  the only differences are file source + return target.
+- **File source:** the VFS layer (layer 1 of the FileSource read order) or
+  the persistent `custom_missions/` dir, NOT the embedded map. This is the
+  outstanding VFS piece from File System & IO.
+- **Return target = where the player was when they opened the browser**, NOT
+  the mission's authored `start_hub`/`end_hub` (those may name a hub that
+  doesn't exist in the player's campaign). In-hub / in-world-map / in-level
+  launch → return to `player_data.current_hub`. Main-menu launch → return to
+  the main menu (don't drop the player into the campaign world via a dream).
+  The `start_mission` event for a dream carries `start_hub_id =
+  current_hub`; the exit guard overrides `end_mission`'s return accordingly.
+- **Main-menu launch requires a save pick** (existing save or new game) before
+  `start_mission` — you need a character to dream with. Reuses the existing
+  `load_save` / `start_new_game` machinery; the browser feeds into it.
+- **Edge case:** a brand-new player with no hub visited has `current_hub =
+  ""`. A dream from main menu is gated on having a Continue-able save; from
+  a hub you're already in one.
+
+### Browser (the custom-mission selector)
+
+- A new full-screen overlay (alongside `world_map` / `full_combat_log` in
+  `FullScreenOverlayId`). Reachable from three triggers, one UI:
+  1. The dreamguide NPC in any hub (diegetic entry).
+  2. The main menu (a button alongside New Game / Continue).
+  3. The world map.
+- Tabs/content:
+  - **Acquired missions** (already in the persistent `custom_missions/`
+    dir) — click to start. Enumerated via
+    `FileSource.listCustomMissions` (see below).
+  - **Online browse** (fetch list from the database, preview metadata,
+    download into the persistent dir) — only once online services ship;
+    absent/disabled until then. Fetch-to-local-then-play so no active
+    connection is needed after download.
+  - **Import from file** (zip upload / local path) — the offline sharing
+    path, always available, no account needed.
+- **Folder convention:** `custom_missions/<id>/` where `<id>` is the folder
+  name. Editor-generated and online-downloaded missions use `<uuid>_<slug>`
+  (UUID generated at mission creation, stored in `mission_uuid` in
+  mission.txt, stable across re-saves; slug derived from the display name).
+  Hand-placed folders with any name are ALSO accepted (the id is whatever
+  the folder is named) — generation/download follow the convention, reading
+  tolerates anything. Two authors making "Skeleton Attack" get different
+  UUIDs → different folders, no collision.
+- **`FileSource.listCustomMissions`** (file_source.zig): enumerates
+  `custom_missions/` in the persistent dir, returns `[]CustomMissionEntry`.
+  Each entry: `id` (folder name), `name` + `level_count` (from mission.txt),
+  `has_custom_assets` (true if the folder has any file beyond mission.txt /
+  player.txt / level_*.txt), `author_turns: ?u32` (null = unvalidated, until
+  the validation replay format lands). Folders without a readable
+  mission.txt are SKIPPED (broken/half-installed missions aren't offered).
+  Persistent-dir only (no VFS — the local collection is the source of
+  truth; transient acquisitions persist into this dir first).
+
+### Content identity
+
+Two distinct IDs, serving different needs:
+
+- **Content hash (local, derived):** SHA-256 over the mission's raw file
+  bytes — `mission.txt`, `player.txt`, all `level_N.txt`, and any custom
+  assets under the mission's folder. Canonicalization for v1: sort file
+  paths lexicographically, hash each file as a path-prefixed entry
+  (`<path>\n<bytes>`), concatenate, SHA-256. NO line-ending normalization
+  for now (our files are authored consistently); tighten only if
+  cross-platform drift shows up. The hash is a DERIVED property (computed
+  on demand), not a stored field on Mission. It is load-bearing for replay
+  pinning: a session log records the mission content hash, and on
+  cross-session replay the exact version is fetched/cached so handler
+  outputs match the recording (closes the reconstruction-cache cross-session
+  gap — see Replay & Side Effects / Logging & Replay). This is pure local,
+  no server needed, and is the first piece to build.
+- **Publishable ID (server-assigned, stable across versions):** a UUID/slug
+  assigned at publish time, with each version carrying its own content hash.
+  A leaderboard entry pins to a version (content hash); a mission's profile
+  page aggregates versions. Out of scope until the server seam lands.
+
+### Turn counters + author medals
+
+Two turn counters, incremented in the player's `turn_end` (entity_index 0)
+handler:
+
+- **Per-mission (`Mission.turns_spent`):** scopes a single playthrough. Used
+  by the mission-complete screen for mission stats, and by the validation
+  replay's author medal target. Discarded with the mission on exit (editor
+  playtest/validate are discard-semantics, so it naturally doesn't persist
+  there). Increments whenever the player's turn ends, in any mode.
+- **Cumulative (`PlayerData.turns`):** lifetime turns across the campaign,
+  for historical stats. SKIPPED in editor playtest/validate (guard:
+  `current.editor == null`) — the editor session must not inflate the
+  player's real turn count. Persists via PlayerData (synced on save like
+  other PlayerData fields; NOT synced through `build_data_from_player`
+  since it's a direct PlayerData field, not an entity field).
+
+Both are direct GameState writes inside an event handler → reproduced on
+replay.
+
+**Author medals (Trackmania-style).** When an author validates a custom
+mission, the validation run's turn count becomes the **author medal target**
+(the time to beat). Gold/silver/bronze are DERIVED from it by constant
+multipliers, computed at read time (not stored):
+  - gold = ceil(author_turns × 1.2)
+  - silver = ceil(author_turns × 2.0)
+  - bronze = ceil(author_turns × 5.0)
+Ceil (round up) so a medal target is always at least 1 turn more than the
+faster tier (very low author times can make tiers collide — accepted edge
+case). Multipliers live as constants in the file that uses them (the browser
+UI / mission-complete screen, when those land). The author time itself lives
+in the **validation replay file's metadata** (not mission.txt — keeps
+mission.txt pure authored config; the author time is result data tied to the
+replay that proved it). Medal derivation is a pure function of author_turns,
+so the browser/mission-complete derive at display time. A mission with no
+validation replay shows "unvalidated" (no medals). The validation replay
+format is the session-log format + reconstruction cache (`file_format_version`
+2), not yet built — so `listCustomMissions` shows "unvalidated" for all
+missions until it lands.
+
+### Balance bounds (parse-time, fail-fast)
+
+All gear-stat variables (health, defense, damage, speed, etc.) have UNIFORM
+`max_*` constants (one set for ALL content — official + custom; "custom
+missions ARE official content" supports uniform bounds). Every parsed
+gear-stat field routes through a bounded-int helper that **panics** on
+out-of-range. Parse time is the single chokepoint: enemy gear definitions in
+level files ARE the loot table (enemies drop their entire inventory + equipped
+gear + a skill tome per equipped utility skill), and that loot persists into
+PlayerData — so bounding enemy gear stats at parse bounds what can ever enter
+the campaign.
+
+- Fail-fast panic (not silent clamp) matches the codebase error policy
+  (parser already panics on malformed input, file_format_version mismatch,
+  footprint overlaps, etc.). Silent clamping would be the one place we
+  swallow a bad value and would confuse authors ("I set damage 9999, why is
+  it 500?").
+- Editor `validate` mode catches over-max stats pre-publish (the validator
+  runs the mission; a parse panic = "fix your mission"). Local import
+  catches it on load (honest "broken mission" feedback, same spirit as the
+  magenta-box fallback for missing art — don't hide the problem).
+- **Graceful error handling (load-fail + warning popup instead of crash) is
+  a DEFERRED, separate pass** — applies to this and other parse failures.
+  Until then, fail-fast panic is the policy.
+
+### Auth & the server seam (deferred)
+
+- **Local-first always.** The editor saves a mission to the persistent
+  `custom_missions/` dir (zip or folder) — a complete, shareable artifact
+  you can hand to anyone, post anywhere. No account, no server.
+- **Online upload is optional and gated behind auth.** "Publish to the
+  database" is a separate action requiring a token; the server validates
+  (runs the validation replay, checks the content hash), assigns the stable
+  versioned ID, and lists it. Authors get a profile page; missions get a
+  discoverable entry.
+- **Acquisition is symmetric:** online fetch (needs the server but NOT an
+  account — browsing/downloading is anonymous) vs. manual import (zip/file,
+  no server). A player never needs an account to PLAY custom missions, only
+  to PUBLISH them.
+- **Auth model (real accounts vs. device-identity) is UNDECIDED** — only
+  affects the publish action, which is the last thing to build. The
+  local-first story doesn't depend on it. Decide when the server seam lands.
+- **Server component is out of scope for the single-file exe** — a separate
+  backend. The client only needs a thin HTTP fetch/submit seam + an auth
+  token stored in the persistent dir.
 
 ## Config File Format
 
@@ -443,6 +773,450 @@ currently do `Dir.cwd()` + read `data/...` from disk switch to the source
   level; the event stack is cleared on screen transition). Prefer fail-fast
   over silently returning, which would hide the logic bug the unwrap catches
 
+### Level Editor (building blocks implemented; UI pending)
+
+A custom-mission editor. A mission is multiple sequential levels, so the
+editor is focused on a mission with per-level tabs (quick swap to edit each
+level) + a mission-shared palette of enemies/decorations. Lives on
+`GameState.editor: ?Editor` (already a field, currently always null) — null
+outside the editor so normal gameplay snapshots pay nothing; when populated,
+snapshots carry it (bounded ring, acceptable for now).
+
+```zig
+EntityTypeDef = struct { id: []const u8, template: Entity };  // palette entry (prefab)
+DecorationTypeDef = struct { id, sprite, footprint };
+EditorLevel = struct {                      // reference-based (not concrete Level)
+    name, color_wheel_index, level_tiles, player_start: Vector2,  // the '!'
+    level_end: ?Vector2,
+    entity_placements: []EntityPlacement,     // (type_id, position) into palette
+    decoration_placements: []DecorationPlacement,
+};
+Editor = struct {
+    mission: Mission, levels: []EditorLevel,  // was []Level — now reference-based
+    entity_types: []EntityTypeDef,             // palette (enemies)
+    decoration_types: []DecorationTypeDef,
+    player_def: EntityTypeDef,                 // editor-global player loadout (player.txt)
+    active_level_index: usize = 0, mode: EditorMode = .edit,
+};
+EditorMode = enum { edit, playtest, validate };
+```
+
+`Screen.editor` is the screen; `editor.mode` is the modal switch within it.
+Edit mode = editor UI/input; playtest/validate = gameplay UI/input with the
+editor dormant (the "home base" you return to). No new Screen variants for
+playtest/validate — they're gameplay using the existing gameplay input/UI,
+just with editor-scoped exit flow. The `.editor` screen scope is just
+`{ editor }` (NOT `level` — the editor reads `editor.levels[]`, not
+`current.level`); the `.level` scope includes `editor` so the dormant editor
+survives the playtest/validate screen transition.
+
+**Palette: transient, dedup-on-load, no on-disk file.** On `open_editor`, the
+levels' inline entity/decoration definitions are deduped into `entity_types` /
+`decoration_types` (`entityDefinitionsEqual` compares definition fields only,
+not runtime/position). Placements store `(type_id, position)`. Editing a type
+updates every placement referencing it — no propagation sweep. Save flattens
+back to the existing inline level format (single format, backwards
+compatible). **Unused types are lost on editor close** (accepted as cleaner) —
+since save is inline, a type with zero placements has no on-disk trace.
+
+**Player loadout: `player.txt` in the mission directory, persistent.** The
+player isn't part of the enemy palette (it's not placed; the `!` in each
+level's Layout is the spawn position, already parsed). The loadout persists as
+`player.txt` (an Entity definition, same shape as an `EntityTypeDef.template`,
+parsed via `parseEntityDefinition`). Editor-global: same player across all
+level playtests. Visible metadata (someone picking up a custom mission sees
+the author's loadout). All official campaign missions ship a `player.txt` too.
+In-campaign play of a custom mission uses the campaign's PlayerData instead
+(separate path, doesn't change the editor design).
+
+**Editor edits ride the existing event system.** `EditorEvent` variants
+(`editor_set_active_level`, …) mutate `current.editor.?.levels[level_index]`
+or the palette directly — pure state transforms captured by `deepCopy`, so
+undo/redo works by construction. No editor-specific undo machinery. Editor
+save-to-disk is a side effect gated on `!replaying` (same convention as
+`save_game` / `dump_event_log`) — files stay off the undo timeline.
+
+**Playtest/validate framing (Option 2: separate framing events, minimal
+exit guard).** `open_editor` / `close_editor` / `start_playtest` /
+`end_playtest` / `start_validation` / `end_validation` are MetaEvents. They
+own enter/exit; the gameplay events stay pristine. `start_playtest` calls
+`instantiateEditorLevel(editor, N)` → a concrete `Level` (entity 0 from
+`player_def` at `player_start`, each enemy from its palette type at its
+placement, runtime fields reset), copies `editor.mission` → `current.mission`
+(so gameplay handlers read unmodified), preserves the editor mode (only flips
+to `.playtest` when entering from `.edit`, so validate's next-level
+continuation via `start_playtest` stays `.validate`), transitions to `.level`,
+and pushes `pushGameplayStartEvents(sync_player=false)` — **the player sync is
+skipped** because the player is already fully instantiated from `player_def`
+(normal gameplay's `build_player_from_data` would clobber it with the
+campaign's PlayerData). `end_playtest` / `end_validation` discard
+`current.level` + `current.mission` (discard semantics — playtest/validate
+never write back to the editor's levels) and restore `screen = .editor`,
+`mode = .edit`. Validation is the same shape but starts at level 1 and forces
+a full playthrough; its per-level continuation is "next `start_playtest` from
+`editor.levels` or `end_validation`."
+
+**Exit guard (the minimal editor-aware seam).** `end_level` checks
+`current.editor`: in `.playtest` it pushes `end_playtest` (instead of the
+default next-level/`end_mission`); in `.validate` it pushes the next
+`start_playtest` or `end_validation{success=true}`. `build_data_from_player`
+is skipped in editor mode (playtest/validate are discard-semantics — the
+player's real PlayerData is unchanged). `end_mission` also guards: if an
+editor is active, suppress the `start_hub` continuation (defensive —
+`end_level`'s guard should redirect before `end_mission` is ever reached).
+No other gameplay handler knows about the editor.
+
+**Replay & the reconstruction cache.** `open_editor` reads mission.txt +
+player.txt + all level_N.txt via `readReconstructionFile` (cache-deterministic).
+`buildEditorMission` (pure, no I/O) does the dedup. In-memory instantiation
+(`start_playtest` calling `instantiateEditorLevel`) is an event mutating
+`GameState` — captured by `deepCopy`, deterministic by construction, no cache
+concern.
+
+**Editor UI layout (settled design; implementation pending).** Three-zone
+layout + a left inspector:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ [Level 1] [Level 2] [Level 3]⟷   [+]        [Test][Validate] │  tabs + primary actions
+├──────────────┬──────────────────────────────────────────┤
+│              │                                          │
+│  Inspector   │           Level Viewport                 │
+│  (left bar,  │      (rendered as in-game;              │
+│   toggleable)│       clickable for paint/place/select) │
+│              │                                          │
+├──────────────┴──────────────────────────────────────────┤
+│ [Select][Tile] [Enemies ▾] [Decorations ▾] [Items ▾] ⟷  │  tool palette (bottom bar)
+└─────────────────────────────────────────────────────────┘
+```
+
+- **Tabs (top):** one per level, horizontally scrollable when too many for
+  the width. Each tab carries a close button (×) that deletes the level
+  (`editor_delete_level` event), shifts subsequent levels down, decrements
+  `mission.level_count`. Gated on `level_count > 1` (a mission always has
+  ≥1 level — deleting the last is disallowed). The "add level" button (`+`)
+  is pinned OUTSIDE the scroll region so it's always reachable; it creates
+  a level from the default template (`data/default_level.txt` — a minimal
+  `!=` layout, `!` at (0,0), `=` at (1,0), no floor). `editor_add_level`
+  event. Tab label: the level's name or "Level N" if unnamed; a color
+  swatch from `color_wheel_index`.
+- **Level viewport (center):** the active level rendered as in-game (tiles,
+  decorations, entities, ground items, `!`, `=`). Click behavior is FULLY
+  MODAL on the active tool (see below) — no dialogs, no mode-switching
+  prompts; the active tool determines what a viewport click does.
+- **Tool palette (bottom bar):** mirrors the in-game bottom bar's slot
+  style. Fixed tools first ([Select] [Tile]), then three collapsible groups:
+  Enemies, Decorations, Ground Items. Each group is a horizontally
+  scrollable row of `slot_size` slots; each slot renders the type's full
+  sprite stack (base + layers, colored via the enemy gradient for enemies,
+  world gradient for decorations — same draw path as in-game). Each group
+  has an "add new" button (`+`) at its tail that creates a new empty type
+  via an `editor_add_*_type` event. Collapsed groups show just their header
+  (expand/collapse toggle). Hover tooltips on slots show the type's name.
+- **Inspector (left bar):** shows TYPE fields for the currently-relevant
+  type (see selection model). User-toggleable (button in the bottom bar,
+  mirroring in-game panel toggles), open by default. Auto-opens on new
+  enemy/decoration/item creation (an empty type isn't useful until
+  populated). NO DIALOGS anywhere — all field editing is inline within the
+  inspector: sprite selection (scrollable/searchable list of shipped +
+  mission-folder sprite ids), skill assignment, gear equip, stat fields,
+  footprint editing (decorations), etc.
+- **Primary actions (top-right):** Test + Validate buttons. Test =
+  `start_playtest` on the active level (single-level); Validate =
+  `start_validation` (full playthrough from level 1). Both transition to
+  `.level` screen with editor dormant; `end_playtest`/`end_validation`
+  return to `.editor`. The bottom bar during playtest/validate is the
+  in-game bottom bar (the screen transition handles it; `view()` branches
+  on screen). Upload/Publish UI is DEFERRED (lands with online services).
+
+**Active-tool model (fully modal).** The active tool is always exactly one
+of: {selection, tile-paint, enemy-type-X, decoration-type-X,
+ground-item-type-X}. Selecting a palette slot sets the active tool to that
+type and the inspector shows that type's fields. A viewport click's effect
+is determined by the active tool:
+- **Selection tool:** click selects / shift-click adds to / drag-marquee
+  builds the selection set (heterogeneous `Selectable` set, see below).
+  Placing does NOT happen in selection mode.
+- **Tile-paint tool:** click/drag toggles floor tiles at the cursor
+  position (paint floor / erase — right-click or a modifier for erase).
+  Does not modify the selection set.
+- **Placement tools (enemy/decoration/item type):** click places one
+  instance of that type at the cursor position (pushes an
+  `editor_place_*` event). Placing does NOT select the placed instance —
+  you switch to the selection tool to select. (Auto-select-after-place is
+  deliberately NOT the model; keeps tool responsibilities disjoint.)
+
+**Selection model (`Selectable` union).** The viewport can contain
+heterogeneous selectable things; multi-select is a REQUIRED feature
+(marquee + shift-click). A `Selectable` union covers all kinds:
+
+```zig
+Selectable = union(enum) {
+    tile: Vector2,                   // a floor tile (paint/erase target)
+    entity_placement: usize,         // index into editor.levels[i].entity_placements
+    decoration_placement: usize,     // index into decoration_placements
+    ground_item_placement: usize,    // index into item_placements (new editor placement type)
+    player_start: void,              // the '!' — singleton, movable not deletable
+    level_end: void,                 // the '=' — singleton, movable not deletable
+};
+```
+
+The selection set is `[]Selectable`. **Inspector tool-type inference:** when
+the selection contains only placements (entity/decoration/item) that all
+share one `type_id`, the inspector switches to that palette tool and shows
+its type fields (editing the type updates all placements of it). When the
+selection spans multiple types, or includes tiles / `player_start` /
+`level_end`, no single type is inferred → the inspector shows selection
+info (count, bounds) instead of type fields. Selecting `player_start` shows
+the player loadout fields (`player_def`, reached by clicking the `!`, NOT by
+a palette entry — the player isn't a placed type, it's a singleton spawn).
+`player_start` and `level_end` are NEVER deletable, only movable (updating
+the level's `player_start`/`level_end` via an editor event). Multi-select
+that includes them is allowed for move/bounds but they have no type to edit.
+
+**Ground items (new editor palette).** Levels already support loose floor
+items via the `Items` section + layout char code (`GroundItems{position,
+items}`). The editor gains a third palette group (Ground Items) for placing
+single items not tied to an enemy — the level designer's custom loot.
+Placements store `(type_id, position)` into an `item_types` palette, same
+reference model as enemies/decorations. (The `Item` union's shape means the
+item palette types are richer than entity/decoration types — weapon vs
+skill-tome vs material vs gear — to be fleshed out when the item palette is
+implemented.)
+
+**Viewport hit-testing.** The selection tool needs click → `Selectable`.
+Priority follows the render order (topmost-drawn = topmost-selectable):
+entities over decorations over ground items over tiles; `player_start`/
+`level_end` are selectables at their tile. Derived from the view drawable
+list (decorations selectable through their full bbox, not just footprint —
+to be confirmed when the editor viewport is wired).
+
+**Implemented:** types (`Editor`/`EditorLevel`/`EntityTypeDef`/
+`DecorationTypeDef`/`EditorMode`), event variants + handlers (framing +
+`editor_set_active_level`), exit guard in `end_level`/`end_mission`,
+`open_editor` action + main-menu "Editor" button (dev entry, hardcoded to
+`first_mission`), `parseEntityDefinition` (extracted, shared by enemy + player
+loading), `loadPlayerLoadout` + `player.txt` format (`PlayerLoadout` section),
+`buildEditorMission` (dedup-on-load), `instantiateEditorLevel`, round-trip test
+(open → playtest → end → close, asserts palette + player_def + instantiated
+entities). `first_mission` ships a `player.txt`. **Pending:** editor UI/input
+— the layout + active-tool + selection model above, implemented as a vertical
+slice (static shell first: tabs + viewport + bottom bar + inspector rendering
+with real data, no interaction; then wire input per tool). New events needed:
+`editor_add_level` / `editor_delete_level` / `editor_add_entity_type` /
+`editor_add_decoration_type` / `editor_add_item_type` / `editor_place_*` /
+`editor_delete_placement` / `editor_move_placement` / `editor_edit_type_*`
+(field-level edits) / `editor_toggle_inspector` / `editor_set_tool`. Default
+level template (`data/default_level.txt`). Validation result + replay
+attachment (deferred with online services), editor autosave (nice-to-have).
+
+## Decorations & Footprint
+
+Decorations are multi-tile sprite props placed in levels/hubs. Each carries a
+**footprint** = the set of world tiles it reserves; the sprite may visually
+**overhang** tiles outside the footprint (e.g. a tree canopy over non-trunk
+tiles). The footprint is part of the level/hub file per decoration entry so
+custom sprites can have large footprints the same way official ones do.
+
+**Config format.** A decoration entry group carries the base fields plus an
+optional `color_index` and zero or more `layer` sub-groups. The footprint is a
+list of tile coordinates in the sprite's own tile-grid (top-left of the sprite
+bbox = `(0,0)`), one per `footprint` line. Example:
+```
+Decorations
+character_code T
+sprite tree_trunk
+color_index 4
+footprint 1 2
+layer
+sprite tree_canopy
+color_index 2
+
+character_code R
+sprite ruin_1
+color_index 0
+footprint 0 0
+footprint 1 0
+footprint 0 1
+```
+The footprint list is in sprite-grid coords (NOT anchor-relative):
+unambiguous and authorable by marking the solid tiles of the sprite. Blank
+lines end an entry (as everywhere). A `layer` line is a DELIMITER: the
+following `sprite`/`color_index` pairs belong to that layer until the next
+`layer` or end of entry. The base's own `sprite`/`color_index` are top-level
+keys on the entry (the base owns the footprint).
+
+**Sprite id convention: bare stems.** All config `sprite` values store the
+BARE STEM (e.g. `tree_1`, `skeleton_1`, `player`), not the full asset path.
+The code prepends the asset folder (`entities/{s}` for entities,
+`decorations/{s}` for decorations, `weapons/{s}` for weapons, `skills/{s}`
+for skills). Custom decorations use a stem like `custom/<mission>/<name>`
+which lands at `decorations/custom/<mission>/<name>`. The comptime
+sprite-metadata table (dims) is keyed by the full asset-relative path, so
+the parser's `resolveDecorationSpriteDimensions` prepends `decorations/`
+before the dims lookup.
+
+**Derived, not stored:**
+- **bbox** = sprite pixel dimensions / 256 (tiles_w × tiles_h). A footprint
+  coordinate outside the bbox → parse error (fail fast).
+- **anchor** = bottom-most-then-left-most footprint tile. The decoration's
+  placement position (the layout char) is the anchor tile. Non-anchor footprint
+tiles are implicit in the layout (space = no tile, so they're automatically
+tile-free); the parse-time check catches a `.`/`!`/`=`/enemy char colliding
+with a footprint-covered world tile.
+
+**Placement invariant (parse + editor).** A world tile under a decoration's
+footprint must NOT also be a level/hub tile — decorations sit on top of tiles
+only via non-footprinted overhang. The parser rejects this at load; the editor
+blocks placing a decoration whose footprint overlaps an existing tile and
+blocks placing a tile under a decoration footprint.
+
+**Rendering: split per bbox tile, sort by assigned footprint y.** The sprite
+is split into one `DecorationPieceDrawable` per **bbox** tile (9 for the tree:
+footprint + 7 overhang). Footprint is NOT used to decide what gets drawn —
+overhang tiles still draw — it's a layout-reservation field only.
+
+Overhang bbox tiles (art but not footprint) are **assigned to a footprint
+tile** at load so the piece sorts at that footprint tile's `y`, not its own.
+This prevents wide entities from clipping through a decoration: in a layout
+like `!T` with `!` at `(1,0)` and a tree footprint at `(1,1)` whose canopy
+overhangs `(0,0)`, the left canopy piece sorting at its own `y=0` would draw
+behind the player's left arm (same y, lower x first); tying it to the footprint
+`y=1` draws it after the player, correctly in front.
+
+**Assignment rule** (computed at load, never config): each overhang bbox tile
+is assigned to its nearest footprint tile by **Chebyshev distance**; ties
+break by footprint scan order (bottom-most then left-most = the anchor
+convention). The piece sorts at the assigned footprint tile's `y`; horizontal
+tiebreaking among same-`y` pieces uses the overhang tile's own `x`. Nearest
+handles both common cases ("canopy directly above trunk" and "canopy wider
+than trunk") uniformly; the tie-break only fires when an overhang tile is
+equidistant from
+two footprint tiles (e.g. an arch spanning two pillars). Open wiring-time
+detail: whether an overhang piece's effective sort `x` is its own `x` or the
+assigned footprint's `x` (only differs when an entity shares the footprint's
+`y` and sits between them — rare; decide by looking at it in view()). Open
+edge case: tall multi-`y` footprints with overhang between pillars (no such
+art today; revisit if one ships).
+
+**Color.** Each decoration base and each layer carries a `color_index` into
+the current theme's **world gradient** (`world_gradient.colors[0..5]`). Tiles
+use indices 1 and 3 (checkerboard); the background uses 2; so decorations
+should use 0, 4, 5 for well-designed distinction. Default `color_index` = 0
+(omitting the key is legal and yields the lightest world color). The resolved
+color is passed as the raylib `DrawTexturePro` tint — that multiply IS the
+grayscale×color theming path (same as entities/tiles).
+
+**Multi-sprite layers.** A decoration may have a BASE sprite (owns the
+footprint) plus zero or more LAYER sprites, each colored independently and
+drawn over the base in declaration order (base first, then layers in file
+order). Use case: a tree with a trunk (base) and a canopy (layer) colored
+differently. A layer's graphic MUST be the same pixel dimensions as the base
+(validated at load — fail fast on mismatch); the per-bbox-tile split and
+overhang-to-footprint assignment are identical across base + all layers
+(same `source_rectangle` per tile), so a decoration piece at a bbox tile is a
+STACK: base chunk + N layer chunks, all at the same screen position and
+source rect, different sprite ids and colors. One `DecorationPieceDrawable`
+per bbox tile carries the base chunk plus a `layers` slice of overlay chunks;
+the renderer draws base then iterates layers. This keeps the ground-drawable
+count at one-per-bbox-tile (not N×) and the sort simple.
+
+**Per-char-code color.** `color_index` (and layers) live on the decoration
+entry group, so all placements of the same char code share the same coloring.
+A level wanting two colorings of one sprite uses two char codes (e.g. `T`
+and `t`). Mirrored in the editor: a palette decoration carries its color, and
+a differently-colored variant is a separate palette entry.
+
+**`data/decorations.txt`** = registry of official decorations (base sprite +
+color_index + footprint coordinate list + optional layer sub-groups, NO
+`character_code`/position — those are per-level). Used ONLY as editor-palette
+prefabs for "add new decoration." Existing decorations already in the
+mission's levels populate the palette at editor launch via the existing
+dedup-on-load (same as enemies). Custom decorations carry their footprint
+inline in the level file (same format), so official and custom share ONE
+parser path; the registry is never read during gameplay/replay, only when the
+editor adds a new prefab to the palette.
+
+## Entity & UI Coloring
+
+Entities and UI are tinted by the active theme's gradients via the raylib
+`DrawTexturePro` multiply (same path as decorations/tiles).
+
+**Entities** carry `color_index: u32` + `layers: []const EntityLayer` (same
+layer model as decorations: overlay sprites, same fixed 512×640 frame + pivot,
+colored independently, drawn after base and before weapons). The player
+(team 0) uses `settings.player_color_index` into the **player gradient**
+(overriding the entity field at render time); enemies (team != 0) use their
+own `color_index` into the **enemy gradient**. Entity layers resolve into the
+same team gradient as their base. `entityDefinitionsEqual` compares
+color_index + layers for editor palette dedup. **Weapons** are team-gradient
+index 1 (player → player gradient, enemy → enemy gradient) and are suppressed
+when the entity's `displays_weapons: bool` is false (e.g. wolves); parsed
+from `displays_weapons true|false` in the enemy definition (default true).
+
+**UI** is tinted by the **player gradient** with FIXED indices (not the
+player's chosen index — the UI palette is independent of the player's body
+color). Bottom bar: inventory/gear/skills buttons = 4; health globe
+background = 5, fill = 1, border = 3; skill slot backgrounds = 3, skill
+icons = 1; skip button background = 5, skip icon = 1; turn-step indicators =
+3; momentum display = 3; weapon swap = 3. `view()` passes `active_theme` +
+`settings.player_color_index` to `buildBottomBar`; the helper resolves colors
+and threads them through `emitSkillButton`/`emitIconButton`.
+
+## Memory & Budget
+
+Arenas are NOT fixed size: they grow from a backing allocator
+(ArenaAllocator → DebugAllocator → page_allocator → OS/wasm). Allocation
+fails only when the backing fails: OS OOM (native, rare) or wasm
+`memory.grow` hitting the module maximum / 4 GiB wasm32 ceiling (the
+realistic case). Caps are estimates for now, to be tuned from real
+measurements (see TODO.md).
+
+- **History residency:** ~26 full GameState deep copies resident (16
+  snapshot slots + 8 checkpoints + current + initial). Per-copy size ≈
+  entities × ~4.2 KB (~90% is the inlined 96-slot inventory) + tiles × 8 B.
+- **Enemy inventories are NOT lazy-init.** Inventory dominates Entity size
+  but only matters at huge entity counts, which level caps prevent anyway;
+  keep the simple inline array + uniform enemy pickup behavior.
+- **Level caps bound worst case:** `max_entities = 256` for now (official
+  levels ~16, but the level editor + sharing will let players build massive
+  levels); `max_tiles ~10k` as a starting estimate. Worst case ≈ 26 ×
+  (max_entities × entity_size + max_tiles × 8) ≈ tens of MB.
+- **Generous safety ceiling (~256–512 MB)** so runaway bugs (infinite event
+  push, bad deep copy) fail fast at a `@panic` instead of killing the tab.
+  Not a tight fit — real non-asset usage is single-digit MB for normal levels.
+- **`event_history` grows unbounded** (every event, tens of bytes each) to
+  power infinite undo. Accepted: growth is tiny, the feature is worth it,
+  extreme sessions fail-fast rather than corrupt.
+
+### Asset memory (from the Unity project audit)
+
+Disk size is NOT memory size. Textures are the dominant consumer (~80× the
+PNG folder once decoded), not gamestate: GPU needs raw RGBA = w×h×4, and
+source art is oversized (Flag 4096×1024 = 16 MB; every weapon 2048×1280 =
+10 MB) for a grid game rendering at ~256px. Current assets: 122 PNGs = 4.1
+MB on disk but ~325 MB decoded RGBA (~433 MB w/ mipmaps); 16 WAVs = 34.8 MB
+(one 33.5 MB Ambient track, SFX ~1.3 MB combined).
+
+Two separate budgets:
+- **wasm linear heap** — gamestate / events / decoded SFX / temp; small.
+- **GPU/texture memory** — browser-managed on WebGL, large, art-driven, off
+  the wasm heap. Streamed music also stays off the heap; fully decoded audio
+  lands on it.
+
+Levers, in impact order (in-memory lossless compression is NOT one of them):
+1. **Downscale source sprites to display resolution** (~325 MB → <50 MB, no
+   perceptible loss). Biggest memory + web-download win. (Confirm whether
+   sprites are animation sheets first — affects how far we can shrink.)
+2. **Stream music as OGG** (raylib `LoadMusicStream`): ~33 MB → tiny ring
+   buffer + decoder; disk ~33 MB → ~3–4 MB.
+3. **SFX:** fully decode to PCM (memory trivial); OGG only helps download.
+4. **GPU texture compression** (ASTC/ETC2/BC via KTX2/Basis) only if later
+   measurements demand it — lossy, WebGL/raylib support fiddly.
+
+Web download budget: PNG (lossless) for art + OGG for audio takes asset
+download from ~39 MB to ~8 MB, mostly art.
+
 ## UI Framework
 
 - `view()` builds a `ViewState` each render from a per-frame arena (reset every frame in the game loop); everything the ViewState points at lives until the next frame
@@ -474,7 +1248,8 @@ currently do `Dir.cwd()` + read `data/...` from disk switch to the source
   handler arms) and handler-internal helpers (entity accessors, gear mutators,
   move-highlight refresh, prepared-skill cancel, AI min-range, tile tiebreak).
   Also the event-pushing utilities (`pushEvents`/`pushPlayerSkillUse`) shared
-  with the input handlers. The round-trip reconstruction test lives here.
+  with the input handlers. (The round-trip reconstruction test lives in
+  `main.zig`.)
 - `src/input_handlers.zig` — input consumption: `handleAnytimeInput`,
   `handleIdleInput`, `resolveTileCursor`, the drag lifecycle, and session-log
   dev tooling (dumpEventLog, build-version warn, timestamp formatter). The
@@ -497,5 +1272,11 @@ currently do `Dir.cwd()` + read `data/...` from disk switch to the source
 - `src/combat_log.zig` — combat-log projection (projectCombatLog + combatLogTier)
 - `src/file_source.zig` — unified file I/O (FileSource: embedded map +
   persistent dir + future VFS; see File System & IO)
+- `src/content_hash.zig` — mission content identity (SHA-256 over the
+  mission's config files; see Custom Missions & Online Services → Content
+  identity). v1 hashes config files only; extends to custom assets when the
+  VFS lands with directory listing.
 - `src/skills/` — one file per skill, Skill interface
-- `src/effects/` — Effect interface with 16 callbacks
+- `src/effects/` — Effect interface with 18 callbacks (interception +
+  on-effect/turn/attack hooks + outgoing/incoming pairs for damage/stun/effect/
+  knockback/collision + onRetreat + onOpponentDeath)

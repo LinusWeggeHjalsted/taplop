@@ -19,7 +19,10 @@ const state = @import("state.zig");
 const functions = @import("functions.zig");
 const parser = @import("parser.zig");
 const lookups = @import("generated_lookups.zig");
+const deep_copy = @import("deep_copy.zig");
 const Skill = @import("skills/skill.zig").Skill;
+
+const deepCopy = deep_copy.deepCopy;
 
 const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
@@ -116,6 +119,52 @@ pub fn pushEvents(
     @memcpy(combined[0..current.event_stack.len], current.event_stack);
     @memcpy(combined[current.event_stack.len..], new_events);
     current.event_stack = combined;
+}
+
+/// Push the gameplay start batch for a freshly-loaded level: player sync
+/// (build_player_from_data, runs first) + per-entity aggro checks + the
+/// player's turn_start (runs last). Shared by start_level (normal gameplay,
+/// sync_player=true — the level's bare player entity gets its loadout from
+/// PlayerData) and start_playtest / start_validation (editor, sync_player=
+/// false — the player is already fully instantiated from editor.player_def,
+/// so build_player_from_data would clobber it with the campaign's PlayerData).
+fn pushGameplayStartEvents(current: *GameState, allocator: std.mem.Allocator, sync_player: bool) void {
+    var start_events: std.ArrayList(Event) = .empty;
+    // Player turn_start at bottom of LIFO (processed last, after sync + aggro).
+    start_events.append(allocator, .{ .level_event = .{ .turn_start = .{
+        .entity_index = 0,
+    } } }) catch @panic("failed to append turn_start");
+    // Aggro checks in the middle.
+    for (0..current.level.?.entities.len) |entity_index| {
+        start_events.append(allocator, .{ .sub_level_event = .{ .aggro_around = .{
+            .entity_index = @intCast(entity_index),
+        } } }) catch @panic("failed to append aggro event");
+    }
+    // Player sync on top (processed first) — only for normal gameplay.
+    if (sync_player) {
+        start_events.append(allocator, .{ .super_event = .{ .build_player_from_data = .{
+            .entity_index = 0,
+        } } }) catch @panic("failed to append build_player_from_data");
+    }
+    pushEvents(current, start_events.items, allocator);
+}
+
+/// Handle an EditorEvent (the non-`editor_set_active_level` variants). Pure
+/// state transform on `current.editor.?.levels[]` or the palette. Called from
+/// the `.editor_event` arm of `processEvent`; the switch there dispatches the
+/// one inline case and routes the rest here. Implementation lands in the next
+/// slice (the handlers are mechanical — each sets a field). Until then this
+/// panics so an unimplemented editor event fails fast rather than silently
+/// no-op'ing (which would let the UI believe it edited something).
+fn handleEditorEvent(
+    current: *GameState,
+    event: events.EditorEvent,
+    allocator: std.mem.Allocator,
+) void {
+    _ = current;
+    _ = event;
+    _ = allocator;
+    @panic("editor event handler not yet implemented");
 }
 
 fn tileBefore(a: Vector2, b: Vector2) bool {
@@ -259,14 +308,13 @@ fn loadCampaignAndPushHub(
         .{current.player_data.current_campaign},
     ) catch @panic("failed to allocate campaign path");
 
-    const campaign_parsed = parser.parseConfigFileFromPath(
-        history.file_source,
-        campaign_path,
+    const campaign_sections = parser.parseConfigFile(
+        history.readReconstructionFile(campaign_path),
         allocator,
-    ) catch @panic("failed to read campaign file");
+    ) catch @panic("failed to parse campaign file");
 
     current.campaign = parser.loadCampaign(
-        campaign_parsed.sections,
+        campaign_sections,
         allocator,
     ) catch @panic("failed to parse campaign file");
 
@@ -324,28 +372,26 @@ pub fn processEvent(
                     current.transitionScreen(.main_menu);
                 },
                 .start_new_game => {
-                    const parsed = parser.parseConfigFileFromPath(
-                        history.file_source,
-                        "data/new_player.txt",
+                    const parsed_sections = parser.parseConfigFile(
+                        history.readReconstructionFile("data/new_player.txt"),
                         allocator,
-                    ) catch @panic("failed to read new_player.txt");
+                    ) catch @panic("failed to parse new_player.txt");
 
                     current.player_data = parser.loadPlayerSave(
-                        parsed.sections,
+                        parsed_sections,
                         allocator,
                     ) catch @panic("failed to parse new_player.txt");
 
                     loadCampaignAndPushHub(current, history, allocator);
                 },
                 .load_save => |load| {
-                    const parsed = parser.parseConfigFileFromPath(
-                        history.file_source,
-                        load.save_path,
+                    const parsed_sections = parser.parseConfigFile(
+                        history.readReconstructionFile(load.save_path),
                         allocator,
-                    ) catch @panic("failed to read save file");
+                    ) catch @panic("failed to parse save file");
 
                     current.player_data = parser.loadPlayerSave(
-                        parsed.sections,
+                        parsed_sections,
                         allocator,
                     ) catch @panic("failed to parse save file");
 
@@ -387,14 +433,14 @@ pub fn processEvent(
                         .{ current.player_data.current_campaign, start.hub_id },
                     ) catch @panic("failed to allocate hub path");
 
-                    const hub_parsed = parser.parseConfigFileFromPath(
-                        history.file_source,
-                        hub_path,
+                    const hub_sections = parser.parseConfigFile(
+                        history.readReconstructionFile(hub_path),
                         allocator,
-                    ) catch @panic("failed to read hub file");
+                    ) catch @panic("failed to parse hub file");
 
                     current.hub = parser.loadHub(
-                        hub_parsed.sections,
+                        hub_sections,
+                        history.file_source,
                         allocator,
                     ) catch @panic("failed to parse hub file");
 
@@ -415,6 +461,108 @@ pub fn processEvent(
                         .entity_index = 0,
                     } } }}, allocator);
                 },
+                .open_editor => |start| {
+                    // Load a mission into an Editor session. All reads go through
+                    // history.readReconstructionFile so the reconstruction cache
+                    // makes undo replay deterministic (see AGENTS → File System
+                    // & IO → Reconstruction cache). buildEditorMission dedups
+                    // the levels' inline definitions into a shared palette.
+                    const mission_file_path = std.fmt.allocPrint(
+                        allocator,
+                        "{s}/mission.txt",
+                        .{start.mission_path},
+                    ) catch @panic("failed to allocate mission path");
+                    const mission_sections = parser.parseConfigFile(
+                        history.readReconstructionFile(mission_file_path),
+                        allocator,
+                    ) catch @panic("failed to parse mission file");
+                    const mission = parser.loadMission(
+                        mission_sections,
+                        allocator,
+                    ) catch @panic("failed to parse mission file");
+
+                    // Player loadout (player.txt) — required for editor
+                    // playtest/validation. Official missions ship one too.
+                    const player_file_path = std.fmt.allocPrint(
+                        allocator,
+                        "{s}/player.txt",
+                        .{start.mission_path},
+                    ) catch @panic("failed to allocate player path");
+                    const player_sections = parser.parseConfigFile(
+                        history.readReconstructionFile(player_file_path),
+                        allocator,
+                    ) catch @panic("failed to parse player.txt");
+                    const player_entity = parser.loadPlayerLoadout(player_sections, allocator) catch
+                        @panic("failed to parse player.txt");
+
+                    // Read + parse every level, then build the reference-based editor.
+                    var level_sections: std.ArrayList([]const parser.Section) = .empty;
+                    var level_index: u32 = 1;
+                    while (level_index <= mission.level_count) : (level_index += 1) {
+                        const level_path = std.fmt.allocPrint(
+                            allocator,
+                            "{s}/level_{d}.txt",
+                            .{ start.mission_path, level_index },
+                        ) catch @panic("failed to allocate level path");
+                        const sections = parser.parseConfigFile(
+                            history.readReconstructionFile(level_path),
+                            allocator,
+                        ) catch @panic("failed to parse level file");
+                        level_sections.append(allocator, sections) catch @panic("failed to append level sections");
+                    }
+                    current.editor = parser.buildEditorMission(
+                        mission,
+                        player_entity,
+                        level_sections.items,
+                        history.file_source,
+                        allocator,
+                    ) catch @panic("failed to build editor mission");
+                    current.transitionScreen(.editor);
+                },
+                .close_editor => {
+                    // Tear down the editor session and return to the main menu.
+                    // transitionScreen clears editor (old scope .editor, new
+                    // scope .main_menu has no editor).
+                    current.transitionScreen(.main_menu);
+                },
+                .start_playtest => |start| {
+                    // Instantiate the chosen level from the editor's palette +
+                    // player_def into a concrete gameplay Level. Discard
+                    // semantics: the editor's levels/palette are untouched.
+                    const editor = &current.editor.?;
+                    current.level = parser.instantiateEditorLevel(editor.*, start.level_index, allocator);
+                    current.mission = deepCopy(types.Mission, editor.mission, allocator);
+                    current.mission.?.current_level_index = start.level_index + 1; // 1-based for gameplay handlers
+                    if (editor.mode == .edit) editor.mode = .playtest;
+                    current.transitionScreen(.level);
+                    pushGameplayStartEvents(current, allocator, false);
+                },
+                .end_playtest => {
+                    // Discard the playtest level + mission, restore the editor.
+                    // transitionScreen(.editor) clears level + mission (out of
+                    // scope) but keeps editor (.level scope includes editor).
+                    current.editor.?.mode = .edit;
+                    current.transitionScreen(.editor);
+                },
+                .start_validation => {
+                    // Forced full-mission playthrough from level 1. Same as
+                    // playtest but mode=.validate and always level 0. end_level's
+                    // guard pushes the next level or end_validation.
+                    const editor = &current.editor.?;
+                    current.level = parser.instantiateEditorLevel(editor.*, 0, allocator);
+                    current.mission = deepCopy(types.Mission, editor.mission, allocator);
+                    current.mission.?.current_level_index = 1;
+                    editor.mode = .validate;
+                    current.transitionScreen(.level);
+                    pushGameplayStartEvents(current, allocator, false);
+                },
+                .end_validation => {
+                    // Restore the editor after a validation run. Success
+                    // semantics + replay attachment are deferred (online
+                    // services); for now just return to edit mode.
+                    current.editor.?.mode = .edit;
+                    current.transitionScreen(.editor);
+                },
                 .start_mission => |start| {
                     const mission_file_path = std.fmt.allocPrint(
                         allocator,
@@ -422,19 +570,34 @@ pub fn processEvent(
                         .{start.mission_path},
                     ) catch @panic("failed to allocate mission path");
 
-                    const mission_parsed = parser.parseConfigFileFromPath(
-                        history.file_source,
-                        mission_file_path,
+                    const mission_sections = parser.parseConfigFile(
+                        history.readReconstructionFile(mission_file_path),
                         allocator,
-                    ) catch @panic("failed to read mission file");
+                    ) catch @panic("failed to parse mission file");
 
                     current.mission = parser.loadMission(
-                        mission_parsed.sections,
+                        mission_sections,
                         allocator,
                     ) catch @panic("failed to parse mission file");
 
                     current.mission.?.path = start.mission_path;
                     current.mission.?.current_level_index = 1;
+
+                    // Return-hub override: when the caller passes a non-null
+                    // end_hub_id, the mission returns THERE on end_mission
+                    // instead of its authored end_hub. Used by dreams
+                    // (custom missions): the authored end_hub may name a hub
+                    // that doesn't exist in the player's campaign, so the
+                    // caller overrides the return to the hub the player was
+                    // at. Official missions pass null and keep the authored
+                    // end_hub (existing behavior). The override lives on the
+                    // live mission working copy (current_arena), so it is
+                    // captured by deepCopy and reproduced on replay
+                    // (start_mission re-applies it from the recorded event).
+                    // See AGENTS → Custom Missions & Online Services → Dreams.
+                    if (start.end_hub_id) |hub_id| {
+                        current.mission.?.end_hub = hub_id;
+                    }
 
                     // Push the first level
                     pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
@@ -443,6 +606,11 @@ pub fn processEvent(
                     } } }}, allocator);
                 },
                 .end_mission => |end| {
+                    // Editor exit guard: in an editor session, end_mission
+                    // should never be reached (end_level's guard redirects to
+                    // end_validation / end_playtest), but suppress the
+                    // start_hub continuation defensively if it ever is.
+                    if (current.editor != null) return;
                     // Return to the destination hub
                     if (end.hub_id) |hub_id| {
                         pushEvents(current, &.{.{ .meta_event = .{ .start_hub = .{
@@ -457,14 +625,14 @@ pub fn processEvent(
                         .{ start.mission_path, start.level_index },
                     ) catch @panic("failed to allocate level path");
 
-                    const level_parsed = parser.parseConfigFileFromPath(
-                        history.file_source,
-                        level_path,
+                    const level_sections = parser.parseConfigFile(
+                        history.readReconstructionFile(level_path),
                         allocator,
-                    ) catch @panic("failed to read level file");
+                    ) catch @panic("failed to parse level file");
 
                     current.level = parser.loadLevel(
-                        level_parsed.sections,
+                        level_sections,
+                        history.file_source,
                         allocator,
                     ) catch @panic("failed to parse level file");
 
@@ -473,30 +641,38 @@ pub fn processEvent(
                     }
 
                     current.transitionScreen(.level);
-
-                    // Sync player entity from PlayerData, check initial aggro, then start player turn
-                    var start_events: std.ArrayList(Event) = .empty;
-
-                    // Player turn_start at bottom of LIFO (processed last, after sync and aggro)
-                    start_events.append(allocator, .{ .level_event = .{ .turn_start = .{
-                        .entity_index = 0,
-                    } } }) catch @panic("failed to append turn_start");
-
-                    // Aggro checks in the middle
-                    for (0..current.level.?.entities.len) |entity_index| {
-                        start_events.append(allocator, .{ .sub_level_event = .{ .aggro_around = .{
-                            .entity_index = @intCast(entity_index),
-                        } } }) catch @panic("failed to append aggro event");
-                    }
-
-                    // Player sync on top (processed first)
-                    start_events.append(allocator, .{ .super_event = .{ .build_player_from_data = .{
-                        .entity_index = 0,
-                    } } }) catch @panic("failed to append build_player_from_data");
-
-                    pushEvents(current, start_events.items, allocator);
+                    pushGameplayStartEvents(current, allocator, true);
                 },
                 .end_level => {
+                    // Editor exit guard: when an editor session is active, it
+                    // owns the exit continuation — the gameplay default
+                    // (next start_level / end_mission → start_hub) is
+                    // suppressed/redirected. build_data_from_player is also
+                    // skipped (playtest/validate are discard-semantics; the
+                    // player's real PlayerData is unchanged). See AGENTS →
+                    // Architecture → Level Editor.
+                    if (current.editor) |editor| {
+                        switch (editor.mode) {
+                            .playtest => {
+                                pushEvents(current, &.{.{ .meta_event = .end_playtest }}, allocator);
+                            },
+                            .validate => {
+                                const current_level_index = current.mission.?.current_level_index;
+                                if (current_level_index < editor.levels.len) {
+                                    const next_index = current_level_index; // 0-based: current is 1-based, next is current
+                                    pushEvents(current, &.{.{ .meta_event = .{ .start_playtest = .{
+                                        .level_index = next_index,
+                                    } } }}, allocator);
+                                } else {
+                                    pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{
+                                        .success = true,
+                                    } } }}, allocator);
+                                }
+                            },
+                            .edit => {}, // shouldn't happen (no level loaded in edit mode)
+                        }
+                        return;
+                    }
                     if (current.mission) |mission| {
                         if (mission.current_level_index < mission.level_count) {
                             // More levels — push the next one
@@ -719,12 +895,20 @@ pub fn processEvent(
             }
         },
         .editor_event => |editor_event| {
-            _ = editor_event;
-            _ = current.editor;
-        },
-        .sub_editor_event => |sub_editor_event| {
-            _ = sub_editor_event;
-            _ = current.editor;
+            switch (editor_event) {
+                .editor_set_active_level => |set| {
+                    if (current.editor) |*editor| {
+                        if (set.level_index < editor.levels.len) {
+                            editor.active_level_index = set.level_index;
+                        }
+                    }
+                },
+                // The remaining editor events are handled in the dedicated
+                // editor handler block below (handleEditorEvent). They are
+                // pure state transforms on current.editor.?.levels[] or the
+                // palette; undo/redo works by construction via deepCopy.
+                else => |ev| handleEditorEvent(current, ev, allocator),
+            }
         },
         .replay_viewer_event => |replay_event| {
             _ = replay_event;
@@ -804,6 +988,26 @@ pub fn processEvent(
                     // all active/alive enemy turn_starts sorted by distance (closest first),
                     // plus the next player turn_start at the bottom (processed last).
                     if (turn.entity_index == 0) {
+                        // Turn counters. The per-mission counter (turns_spent)
+                        // lives on the live mission working copy and is
+                        // discarded with it on exit — it scopes a single
+                        // playthrough for the mission-complete screen and the
+                        // validation replay's author medal target. The
+                        // cumulative lifetime counter (player_data.turns)
+                        // persists across the campaign for historical stats;
+                        // it is SKIPPED in editor playtest/validate
+                        // (discard-semantics — the editor session must not
+                        // inflate the player's real turn count). Both are
+                        // direct GameState writes inside an event handler, so
+                        // they are reproduced on replay. See AGENTS → Custom
+                        // Missions & Online Services → Author time + medals.
+                        if (current.mission) |*mission| {
+                            mission.turns_spent += 1;
+                        }
+                        if (current.editor == null) {
+                            current.player_data.turns += 1;
+                        }
+
                         const level = &current.level.?;
                         level.turn_phase = null;
                         const player_position = level.entities[0].position;

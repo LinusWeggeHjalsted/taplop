@@ -132,6 +132,15 @@ pub const PlayerInput = struct {
     modifiers: Modifiers = .{},
 };
 
+/// Shared movement threshold for drag gestures (inventory drag once it
+/// gains click-vs-drag disambiguation, camera pan). A pointer move of more
+/// than this many reference pixels between press and release counts as a drag
+/// rather than a click. 0 = any move is a drag. Centralized so it can be
+/// tuned in one place if real-world use shows it needs a dead zone for jittery
+/// clicks. Currently referenced by handleCameraPan; inventory drag will
+/// reference it when its click-vs-drag split lands (TODO → Drag & Drop).
+pub const drag_threshold_pixels: i32 = 0;
+
 /// Raw primary-pointer facts for the UI-resolution step (hit-testing, drag
 /// lifecycle). Deliberately semantic-free: main.zig decides what a press/
 /// release over a given position means. Position is in reference-resolution
@@ -140,6 +149,12 @@ pub const PointerInput = struct {
     pressed: bool = false, // primary button went down this tick
     released: bool = false, // primary button went up this tick
     position: types.ScreenPosition = .{ .x = 0, .y = 0 },
+    /// Secondary (right) button edges + held state, for the camera-pan drag.
+    /// Not a binding — like the tile cursor, this is raw pointer state
+    /// consumed in the input path (see handleCameraPan).
+    right_pressed: bool = false,
+    right_released: bool = false,
+    right_held: bool = false,
 };
 
 /// Actions that can be handled regardless of event stack state.
@@ -227,6 +242,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .continue_game,
         .new_game,
         .load_save,
+        .open_editor,
         .open_settings,
         .open_credits,
         => player_input.idle.menu_action = action,
@@ -261,6 +277,27 @@ pub fn screenToTile(
     return .{
         .x = @intFromFloat(@floor(world_x)),
         .y = @intFromFloat(@floor(world_y)),
+    };
+}
+
+/// The float world position (tile units) under a screen position — the
+/// inverse of the camera transform, before `@floor`. Used by the camera-pan
+/// anchor so the grabbed point tracks the cursor at sub-tile precision (an
+/// integer-tile anchor would jump up to half a tile at drag start). Kept
+/// beside screenToTile so the two halves of the camera<->screen mapping stay
+/// in sync.
+pub fn floatWorldPoint(
+    screen_position: types.ScreenPosition,
+    camera: Camera,
+    zoom: f32,
+    viewport: ViewportSize,
+) struct { x: f32, y: f32 } {
+    const tile_pixels = tile_size_pixels * zoom;
+    return .{
+        .x = (@as(f32, @floatFromInt(camera.position.x)) +
+            (@as(f32, @floatFromInt(screen_position.x)) - viewport.width / 2.0)) / tile_pixels,
+        .y = (@as(f32, @floatFromInt(camera.position.y)) +
+            (@as(f32, @floatFromInt(screen_position.y)) - viewport.height / 2.0)) / tile_pixels,
     };
 }
 
@@ -466,6 +503,9 @@ pub fn translateInput(
             .x = @intFromFloat(state.mouse_screen_position.x),
             .y = @intFromFloat(state.mouse_screen_position.y),
         },
+        .right_pressed = InputState.isHeld(&mouse_pressed, "right"),
+        .right_released = InputState.isHeld(&mouse_released, "right"),
+        .right_held = InputState.isHeld(&state.mouse_buttons_held, "right"),
     };
 
     result.modifiers = modifiers;

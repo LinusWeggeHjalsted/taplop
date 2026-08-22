@@ -54,6 +54,9 @@ fn update(
     input_this_tick: PlayerInput,
     previous_view_state: ?types.ViewState,
     delta_microseconds: u64,
+    camera: types.Camera,
+    camera_zoom: f32,
+    viewport: input.ViewportSize,
 ) void {
     var player_input = input_this_tick;
 
@@ -97,6 +100,12 @@ fn update(
     // can rearrange inventory / gear / skills even while turns resolve. Hit-
     // tested against the previous frame's UI.
     input_handlers.handleDrag(history, player_input.pointer, ui_elements);
+
+    // Camera pan (right-drag) runs anytime alongside the inventory drag. Needs
+    // the camera (with current pan) for the drag-start anchor; subsequent pan
+    // updates use the stored anchor, so the camera passed here is the frame's
+    // input camera. See handleCameraPan.
+    input_handlers.handleCameraPan(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
     // Turn-flow pause: while waiting, drain the timer and stall event
     // processing until it elapses. Anytime input and drag above still run, so
@@ -161,7 +170,12 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // Camera is derived (centered on the player), computed each frame so input
     // (screenToTile) and rendering (tileToTile) stay in sync.
     const camera_zoom = history.settings.camera_zoom;
-    const camera = view_mod.computeCamera(&history.current_state, camera_zoom);
+    // Input camera: computed BEFORE the drain, reflecting the previously-
+    // rendered view (the player clicks against what's on screen). Includes
+    // the current camera pan so screenToTile maps clicks against the panned
+    // view. The render camera is recomputed post-update below so it tracks
+    // the state being drawn (see the render gate).
+    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
     const player_input = input.translateInput(
         platform_input,
         &history.session.input_state,
@@ -172,6 +186,13 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // Real-clock delta since the last frame (NOT frame-rate based), so the
     // wait timer drains in real time regardless of how often frame() is called.
     const delta_microseconds = backend.deltaMicroseconds();
+
+    // Player position before the drain, for the pan-recenter check: if the
+    // player moved this frame (a move event in the drain, or a click-to-move
+    // in the idle update), clear the camera pan so the camera recenters on
+    // the player. Grabbing the pre-drain position lets us detect the move
+    // without inspecting events.
+    const player_position_before = view_mod.playerPosition(&history.current_state);
 
     // Drain: call update() repeatedly until the stack empties, a wait
     // activates, or the drain budget elapses — whichever comes first. update()
@@ -190,7 +211,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     {
         const screen_before_update = history.current_state.screen;
         const had_events = history.current_state.event_stack.len > 0;
-        update(history, player_input, frame_state.previous_view_state, delta_microseconds);
+        update(history, player_input, frame_state.previous_view_state, delta_microseconds, camera, camera_zoom, platform_input.viewport);
         const has_events = history.current_state.event_stack.len > 0;
 
         // UI panels/drag and the tile cursor are transient view/input state,
@@ -202,6 +223,8 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         if (history.current_state.screen != screen_before_update) {
             history.session.ui_state = .{};
             history.session.tile_cursor = null;
+            history.session.camera_pan = null;
+            history.session.camera_pan_anchor = null;
         }
 
         if (had_events and !has_events) {
@@ -219,11 +242,26 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // Mirrors the old loop's single update() on idle iterations.
     if (history.current_state.waiting != null or history.current_state.event_stack.len == 0) {
         const screen_before_update = history.current_state.screen;
-        update(history, player_input, frame_state.previous_view_state, delta_microseconds);
+        update(history, player_input, frame_state.previous_view_state, delta_microseconds, camera, camera_zoom, platform_input.viewport);
         if (history.current_state.screen != screen_before_update) {
             history.session.ui_state = .{};
             history.session.tile_cursor = null;
+            history.session.camera_pan = null;
+            history.session.camera_pan_anchor = null;
         }
+    }
+
+    // Player-move recenter: if the player's tile changed this frame (a move
+    // event in the drain or a click-to-move in the idle update), clear the
+    // camera pan so the camera recenters on the player. Pan drifts off the
+    // player while looking around; a move is the natural "look, then go" hand-
+    // off back to player-centered framing.
+    const player_position_after = view_mod.playerPosition(&history.current_state);
+    if (player_position_after.x != player_position_before.x or
+        player_position_after.y != player_position_before.y)
+    {
+        history.session.camera_pan = null;
+        history.session.camera_pan_anchor = null;
     }
 
     // Render gate: only build+render a frame when enough real time has elapsed
@@ -239,18 +277,31 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const drain_in_progress = history.current_state.event_stack.len > 0 and
         history.current_state.waiting == null;
     if (!drain_in_progress and since_last_render >= render_interval) {
+        // Render camera is computed from the POST-update current_state, NOT the
+        // pre-update camera used for input above. The input camera must reflect
+        // the previously-rendered view (clicks are made against what's on
+        // screen); the render camera must track the state being drawn. Without
+        // this recompute, a move completed this frame draws the player at the
+        // new position under a camera still centered on the old one — a
+        // one-frame glitch where the player appears jumped/shifted before the
+        // camera catches up next frame. computeCamera is cheap; recompute it
+        // here so render never lags the state by a frame.
+        const render_camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
         _ = frame_state.frame_arena.reset(.retain_capacity);
         frame_state.previous_view_state = view_mod.view(
             &history.current_state,
             &history.session,
+            history.settings,
             history.color_theme_definitions,
             history.weapon_type_definitions,
-            camera,
-            camera_zoom,
-            history.event_history.items,
-            history.levelStartEventIndex(),
-            history.current_event_index,
-            frame_state.frame_arena.allocator(),
+            .{
+                .camera = render_camera,
+                .camera_zoom = camera_zoom,
+                .event_history = history.event_history.items,
+                .level_start_index = history.levelStartEventIndex(),
+                .current_event_index = history.current_event_index,
+                .frame_allocator = frame_state.frame_arena.allocator(),
+            },
         );
         backend.render(frame_state.previous_view_state.?, platform_input.viewport);
 
@@ -558,4 +609,355 @@ test "session log round-trips through reconstruction (forward play == replay)" {
     );
     while (history2.undo(&event_handlers.processEvent)) {}
     try std.testing.expectEqual(@as(u32, 0), history2.current_idle_index);
+}
+
+test "replay verification: clean replay through the slow path passes" {
+    // The natural-stack replay loops (state.zig) verify before each dispatch
+    // that the event about to run (stack top) matches the recorded stream.
+    // On undo/redo the slow path (restoreTo -> replayTo) only fires when no
+    // exact snapshot exists, so here we force it: forward-play a session, then
+    // NULL every snapshot + checkpoint so any undo/redo replays the whole
+    // history from initial_state. A clean replay must verify every event
+    // without tripping the panic — this is the positive integration proof
+    // that the check is wired and sound. (A tampered event_history would trip
+    // the panic; deepEqual/firstDiffField unit tests in deep_copy.zig prove
+    // the comparison detects that.)
+    const allocator = std.testing.allocator;
+
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    const settings = loadSettingsFromDisk(&file_source, arena);
+    const weapon_type_definitions = loadWeaponTypeDefinitions(&file_source, arena);
+    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(&file_source, arena);
+    const salvage_definitions = loadSalvageDefinitionsFromDisk(&file_source, arena);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    runToIdle(&history);
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .start_new_game }}, history.current_arena.allocator());
+    runToIdle(&history);
+    event_handlers.pushEvents(&history.current_state, &.{.{ .hub_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history.current_arena.allocator());
+    runToIdle(&history);
+    try std.testing.expectEqual(state.Screen.hub, history.current_state.screen);
+
+    // Evict every restore point so undo/redo take the replay slow path.
+    for (&history.snapshots) |*slot| slot.* = null;
+    for (&history.checkpoints) |*slot| slot.* = null;
+
+    // Undo back to the start: each step replays from initial_state through
+    // every event up to the target idle point, running verifyReplayStep on
+    // each. A clean replay must not panic.
+    while (history.undo(&event_handlers.processEvent)) {}
+    try std.testing.expectEqual(@as(u32, 0), history.current_idle_index);
+
+    // Redo forward to the end: same slow-path replay + verification.
+    while (history.redo(&event_handlers.processEvent)) {}
+    try std.testing.expectEqual(
+        history.idle_points.items.len - 1,
+        history.current_idle_index,
+    );
+    try std.testing.expectEqual(state.Screen.hub, history.current_state.screen);
+}
+
+test "replay verification: reproduce crash against an external session log" {
+    // Reproduction harness: loads a real session log from
+    // ./session_log_repro.txt (gitignored), reconstructs to the end, then
+    // undoes all the way back to the start. With cross-session replay
+    // verification now ENABLED, any handler-pushed-child divergence from the
+    // recorded stream panics here — reproducing the in-game undo crash
+    // headlessly. Skips when the file is absent so the test suite stays
+    // hermetic without it.
+    const log_path = "session_log_repro.txt";
+
+    const allocator = std.testing.allocator;
+
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    const settings = loadSettingsFromDisk(&file_source, arena);
+    const weapon_type_definitions = loadWeaponTypeDefinitions(&file_source, arena);
+    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(&file_source, arena);
+    const salvage_definitions = loadSalvageDefinitionsFromDisk(&file_source, arena);
+
+    // Read the log bytes from the cwd (the file ships at the project root,
+    // gitignored — drop a real log there to reproduce). Skip cleanly if absent.
+    const body = std.Io.Dir.cwd().readFileAlloc(io, log_path, arena, .limited(16 * 1024 * 1024)) catch |err| switch (err) {
+        error.FileNotFound => return,
+        else => @panic("failed to read session_log_repro.txt"),
+    };
+    const sections = try parser.parseConfigFile(body, arena);
+    const log = try parser.loadEventLog(sections, arena);
+    input_handlers.warnIfSessionLogFromDifferentBuild(log.game_version); // advisory
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+
+    // Reconstruct to the end — verifyReplayStep runs on every event. If the
+    // recorded stream diverges from what the handlers push, this panics.
+    history.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent);
+
+    // Now undo all the way back to the start. Each undo takes restoreTo's slow
+    // path (replay from nearest snapshot/checkpoint) when no exact match
+    // exists; verifyReplayStep runs on every replayed event. The in-game
+    // crash reproduced here as a panic during undo.
+    while (history.undo(&event_handlers.processEvent)) {}
+    try std.testing.expectEqual(@as(u32, 0), history.current_idle_index);
+}
+
+test "reconstruction cache: undo replay reads original bytes after the file is overwritten" {
+    // The reconstruction cache makes replay deterministic regardless of later
+    // file changes (the editor-saves-overwrite-mid-session case). A live
+    // reconstruction read caches its bytes; a replay of that event returns the
+    // cached bytes, not whatever is on disk now. This is the within-session
+    // guarantee; cross-session (reconstructFromEventLog) falls back to disk
+    // because the cache starts empty (see cross_session_replay).
+    const allocator = std.testing.allocator;
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    // Scratch persistent dir under the project's zig-cache so it's writable
+    // and easy to clean up. FileSource reads hit this dir first (no embedded
+    // override for a non-data/non-assets path).
+    const scratch_path = "zig-cache/test-recon-cache";
+    const persistent_dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch_path, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch_path) catch {};
+    const file_source = FileSource.init(io, persistent_dir);
+
+    // Write version 1 of a custom file (not under data//assets/ so writeFile accepts it).
+    file_source.writeFile("custom_mission.txt", "version1") catch @panic("failed to write v1");
+
+    // Minimal history: readReconstructionFile touches current_event_index,
+    // replaying, cross_session_replay, reconstruction_cache, history_arena,
+    // and file_source — the rest is left undefined (the method never reads it).
+    var history: GameStateHistory = undefined;
+    history.backing_allocator = allocator;
+    history.history_arena = std.heap.ArenaAllocator.init(allocator);
+    defer history.history_arena.deinit();
+    history.reconstruction_cache = .empty;
+    history.file_source = &file_source;
+    history.replaying = false;
+    history.cross_session_replay = false;
+
+    // Simulate a live reconstruction read at event index 0: processEvent
+    // increments current_event_index to 1 before dispatching the handler, so
+    // the event under handling is at index 0 = current_event_index - 1.
+    history.current_event_index = 1;
+    const live_bytes = history.readReconstructionFile("custom_mission.txt");
+    try std.testing.expectEqualStrings("version1", live_bytes);
+
+    // Overwrite the file on disk (e.g. an editor save) with different bytes.
+    file_source.writeFile("custom_mission.txt", "version2") catch @panic("failed to write v2");
+
+    // Replay the same event: replaying=true, same event index. Must return the
+    // CACHED version1 bytes, not the new version2 on disk.
+    history.replaying = true;
+    history.current_event_index = 1;
+    const replayed_bytes = history.readReconstructionFile("custom_mission.txt");
+    try std.testing.expectEqualStrings("version1", replayed_bytes);
+}
+
+test "editor building blocks: open -> playtest -> end -> close round-trips" {
+    const allocator = std.testing.allocator;
+
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    const settings = loadSettingsFromDisk(&file_source, arena);
+    const weapon_type_definitions = loadWeaponTypeDefinitions(&file_source, arena);
+    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(&file_source, arena);
+    const salvage_definitions = loadSalvageDefinitionsFromDisk(&file_source, arena);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    runToIdle(&history);
+
+    // Open the editor on the shipped first_mission.
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .open_editor = .{
+        .mission_path = "data/campaigns/main_campaign/missions/first_mission",
+    } } }}, history.current_arena.allocator());
+    runToIdle(&history);
+
+    // Editor is populated: screen is .editor, mission loaded, levels array
+    // has the mission's level_count entries, mode is .edit. The palette is
+    // reference-based: first_mission's level_1 has one enemy (Skeleton
+    // Warrior at char '1'), so entity_types has one entry and the level has
+    // one placement referencing it. player_def carries the player loadout
+    // from player.txt.
+    try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
+    try std.testing.expect(history.current_state.editor != null);
+    const editor = &history.current_state.editor.?;
+    try std.testing.expectEqual(@as(usize, 1), editor.levels.len); // first_mission has 1 level
+    try std.testing.expectEqual(types.EditorMode.edit, editor.mode);
+    try std.testing.expectEqual(@as(usize, 1), editor.entity_types.len); // one enemy type (Skeleton Warrior)
+    try std.testing.expectEqual(@as(usize, 1), editor.levels[0].entity_placements.len);
+    try std.testing.expectEqual(@as(u32, 0), editor.levels[0].entity_placements[0].type_id);
+    try std.testing.expect(std.mem.eql(u8, "Player", editor.player_def.template.name));
+    try std.testing.expect(std.mem.eql(u8, "player", editor.player_def.template.sprite));
+
+    // Start a playtest on level 0.
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
+        .level_index = 0,
+    } } }}, history.current_arena.allocator());
+    runToIdle(&history);
+
+    // Gameplay is live: screen is .level, current.level populated (entity 0
+    // = player from player_def at the '!', entity 1 = the skeleton from the
+    // palette type at its placement), editor dormant with mode .playtest.
+    try std.testing.expectEqual(state.Screen.level, history.current_state.screen);
+    try std.testing.expect(history.current_state.level != null);
+    try std.testing.expectEqual(@as(usize, 2), history.current_state.level.?.entities.len); // player + 1 enemy
+    try std.testing.expect(std.mem.eql(u8, "Player", history.current_state.level.?.entities[0].name));
+    try std.testing.expect(std.mem.eql(u8, "skeleton_1", history.current_state.level.?.entities[1].sprite));
+    try std.testing.expectEqual(types.EditorMode.playtest, history.current_state.editor.?.mode);
+    try std.testing.expect(history.current_state.editor != null); // dormant, not cleared
+
+    // End the playtest (simulating the player completing the level — in live
+    // play, end_level's guard pushes end_playtest; here we push it directly).
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
+    runToIdle(&history);
+
+    // Back in the editor: screen .editor, level + mission cleared (discard
+    // semantics), mode .edit, editor's levels array untouched.
+    try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
+    try std.testing.expect(history.current_state.level == null);
+    try std.testing.expect(history.current_state.mission == null);
+    try std.testing.expectEqual(types.EditorMode.edit, history.current_state.editor.?.mode);
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.editor.?.levels.len);
+
+    // Close the editor.
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .close_editor }}, history.current_arena.allocator());
+    runToIdle(&history);
+    try std.testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
+    try std.testing.expect(history.current_state.editor == null);
+}
+
+test "turn counters: per-mission increments, cumulative skipped in editor mode" {
+    // The player's turn_end (entity_index == 0) increments the per-mission
+    // turns_spent (scoped to the current playthrough) and the cumulative
+    // player_data.turns (lifetime). In editor playtest/validate the
+    // cumulative counter is SKIPPED (discard-semantics — the editor session
+    // must not inflate the player's real turn count); the per-mission
+    // counter still increments (discarded with the mission on exit). This
+    // uses the editor playtest path to enter a level and take one turn.
+    const allocator = std.testing.allocator;
+
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    const settings = loadSettingsFromDisk(&file_source, arena);
+    const weapon_type_definitions = loadWeaponTypeDefinitions(&file_source, arena);
+    const color_theme_definitions = loadColorThemeDefinitionsFromDisk(&file_source, arena);
+    const salvage_definitions = loadSalvageDefinitionsFromDisk(&file_source, arena);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    runToIdle(&history);
+
+    // Open editor + start playtest on first_mission level 0.
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .open_editor = .{
+        .mission_path = "data/campaigns/main_campaign/missions/first_mission",
+    } } }}, history.current_arena.allocator());
+    runToIdle(&history);
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
+        .level_index = 0,
+    } } }}, history.current_arena.allocator());
+    runToIdle(&history);
+
+    try std.testing.expectEqual(state.Screen.level, history.current_state.screen);
+    try std.testing.expectEqual(@as(u32, 0), history.current_state.mission.?.turns_spent);
+    try std.testing.expectEqual(@as(u32, 0), history.current_state.player_data.turns);
+
+    // Skip the player's move phase (goes to attack phase), then skip the
+    // attack phase (pushes turn_end entity_index 0). The per-mission counter
+    // increments; the cumulative counter does NOT (editor mode).
+    event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = .{ .player_skip_move = .{} } }}, history.current_arena.allocator());
+    runToIdle(&history);
+    event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = .player_skip_attack }}, history.current_arena.allocator());
+    runToIdle(&history);
+
+    try std.testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
+    try std.testing.expectEqual(@as(u32, 0), history.current_state.player_data.turns);
+
+    // End the playtest (discard semantics — counters are discarded with the
+    // mission; player_data.turns was never touched).
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
+    runToIdle(&history);
+    try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
 }

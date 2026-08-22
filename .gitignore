@@ -4,8 +4,10 @@ zig-pkg/
 src/generated_lookups.zig
 src/generated_test_root.zig
 generated_assets.zig
+generated_sprite_metadata.zig
 
 # Session event-log dumps (ctrl+L) now write to the persistent data dir
 # (~/.ziglop/logs/), not the working directory — no longer gitignore-relevant
 # here. Kept for safety in case any old dumps linger in the tree.
 session_log_*.txt
+session_log_repro.txt

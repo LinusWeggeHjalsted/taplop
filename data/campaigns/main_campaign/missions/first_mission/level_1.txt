@@ -1,15 +1,17 @@
 Metadata
+file_format_version 1
 name Level 1
 
 Layout
-   1..
- ..!..
-   ..=
+  1..
+..!..
+ T..=
 
 Enemies
 character_code 1
 name Skeleton Warrior
 sprite skeleton_1
+color_index 4
 max_health 20
 defense 0
 speed 1
@@ -22,5 +24,12 @@ off_hand_weapon_name Skeleton Shield
 off_hand_weapon_damage 3
 
 Decorations
+character_code T
+sprite tree_1
+color_index 4
+footprint 1 2
+layer
+sprite tree_1_canopy
+color_index 2
 
 Items

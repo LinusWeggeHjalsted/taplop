@@ -1,3 +1,6 @@
+Metadata
+file_format_version 1
+
 Info
 player_name New Player
 current_campaign main_campaign

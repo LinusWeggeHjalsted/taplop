@@ -1,4 +1,6 @@
 Metadata
+file_format_version 1
 name First Mission
 start_hub starting_village
 end_hub starting_village
+level_count 1

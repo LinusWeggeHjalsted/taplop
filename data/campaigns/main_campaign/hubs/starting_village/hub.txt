@@ -1,12 +1,18 @@
 Metadata
+file_format_version 1
 name Starting Village
 
 Layout
-!.1
+!.S
+ 1
 
 NPCs
 
 Decorations
+character_code S
+sprite stone_1
+color_index 0
+footprint 0 0
 
 Exits
 character_code 1

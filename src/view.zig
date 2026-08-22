@@ -27,47 +27,100 @@ const ColorThemeDefinitions = types.ColorThemeDefinitions;
 const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
 const WeaponType = types.WeaponType;
 
-pub fn view(
-    current_state: *const GameState,
-    session: *const state.SessionState,
-    color_theme_definitions: types.ColorThemeDefinitions,
-    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+/// Per-frame render context: the camera, timing, event log view, and
+/// frame arena that change every frame. Bundled so `view()` doesn't take a
+/// long flat parameter list — the remaining params are session/game-state
+/// that live across frames.
+pub const RenderContext = struct {
     camera: types.Camera,
     camera_zoom: f32,
     event_history: []const events.Event,
     level_start_index: ?u32,
     current_event_index: u32,
     frame_allocator: std.mem.Allocator,
+};
+
+pub fn view(
+    current_state: *const GameState,
+    session: *const state.SessionState,
+    settings: types.Settings,
+    color_theme_definitions: types.ColorThemeDefinitions,
+    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    render: RenderContext,
 ) types.ViewState {
+    // Unpack the render context (local aliases keep the body readable).
+    const camera = render.camera;
+    const camera_zoom = render.camera_zoom;
+    const frame_allocator = render.frame_allocator;
+    const event_history = render.event_history;
+    const level_start_index = render.level_start_index;
+    const current_event_index = render.current_event_index;
+
     const active_theme = activeThemeFor(current_state, color_theme_definitions);
 
     // World layer: checkerboard tiles + entity sprites for the hub/level.
     var tiles: std.ArrayList(types.TileDrawable) = .empty;
     var tile_overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
-    var ground_drawables: std.ArrayList(types.GroundDrawable) = .empty;
+    // Ground drawables (entities, decoration pieces, level-end / mission-start
+    // markers) are collected into a sortable list and unified y-sorted so
+    // decoration overhang pieces interleave correctly with entities (see
+    // AGENTS → Decorations & Footprint). Tiles + overlays are separate layers.
+    var ground_entries: std.ArrayList(GroundEntry) = .empty;
     if (current_state.level) |*level| {
         buildTiles(&tiles, frame_allocator, level.level_tiles, active_theme, camera, camera_zoom);
         buildHighlightOverlays(&tile_overlays, frame_allocator, level.highlighted_tiles, active_theme, camera, camera_zoom);
         buildCursorOverlay(&tile_overlays, frame_allocator, level.level_tiles, session, active_theme, camera, camera_zoom);
-        // Level-end marker drawn before entities so actors occlude it (a proper
-        // mixed y-sort with entities is a later refinement).
         if (level.level_end) |end_position| {
-            ground_drawables.append(frame_allocator, .{
-                .level_end = levelEndDrawable(end_position, camera, camera_zoom),
-            }) catch @panic("failed to append level-end drawable");
+            ground_entries.append(frame_allocator, .{
+                .sort_y = end_position.y,
+                .sort_x = end_position.x,
+                .drawable = .{ .level_end = levelEndDrawable(end_position, camera, camera_zoom) },
+            }) catch @panic("failed to append level-end entry");
         }
-        buildEntities(&ground_drawables, frame_allocator, level.entities, camera, camera_zoom);
+        // Level entities: build a pointer slice for the unified collector.
+        {
+            const entity_ptrs = frame_allocator.alloc(*const Entity, level.entities.len) catch
+                @panic("failed to alloc entity pointer slice");
+            for (level.entities, 0..) |*entity, index| entity_ptrs[index] = entity;
+            collectEntityEntries(&ground_entries, frame_allocator, entity_ptrs, active_theme, settings.player_color_index, camera, camera_zoom);
+        }
+        for (level.decorations) |decoration| {
+            const pieces = buildDecorationPieces(decoration, active_theme, camera, camera_zoom, frame_allocator);
+            for (pieces) |entry| ground_entries.append(frame_allocator, entry) catch
+                @panic("failed to append decoration piece entry");
+        }
     } else if (current_state.hub) |*hub| {
         buildTiles(&tiles, frame_allocator, hub.hub_tiles, active_theme, camera, camera_zoom);
         buildCursorOverlay(&tile_overlays, frame_allocator, hub.hub_tiles, session, active_theme, camera, camera_zoom);
-        // Mission-start markers use the same flag sprite as level ends, drawn
-        // before entities so actors occlude them.
         for (hub.mission_exits) |exit| {
-            ground_drawables.append(frame_allocator, .{
-                .level_end = levelEndDrawable(exit.position, camera, camera_zoom),
-            }) catch @panic("failed to append mission-start drawable");
+            ground_entries.append(frame_allocator, .{
+                .sort_y = exit.position.y,
+                .sort_x = exit.position.x,
+                .drawable = .{ .level_end = levelEndDrawable(exit.position, camera, camera_zoom) },
+            }) catch @panic("failed to append mission-start entry");
         }
-        buildHubEntities(&ground_drawables, frame_allocator, hub, camera, camera_zoom);
+        // Hub entities: the player + NPCs as a pointer slice.
+        {
+            const hub_entity_ptrs = frame_allocator.alloc(*const Entity, 1 + hub.npcs.len) catch
+                @panic("failed to alloc hub entity pointer slice");
+            hub_entity_ptrs[0] = &hub.player;
+            for (hub.npcs, 0..) |*npc, index| hub_entity_ptrs[index + 1] = &npc.entity;
+            collectEntityEntries(&ground_entries, frame_allocator, hub_entity_ptrs, active_theme, settings.player_color_index, camera, camera_zoom);
+        }
+        for (hub.decorations) |decoration| {
+            const pieces = buildDecorationPieces(decoration, active_theme, camera, camera_zoom, frame_allocator);
+            for (pieces) |entry| ground_entries.append(frame_allocator, entry) catch
+                @panic("failed to append decoration piece entry");
+        }
+    }
+
+    // Unified y-sort (ascending sort_y, then sort_x) and extract into the
+    // ground_drawables list the ViewState carries.
+    std.mem.sort(GroundEntry, ground_entries.items, {}, groundEntryBefore);
+    var ground_drawables: std.ArrayList(types.GroundDrawable) = .empty;
+    for (ground_entries.items) |entry| {
+        ground_drawables.append(frame_allocator, entry.drawable) catch
+            @panic("failed to append ground drawable");
     }
 
     var ui_elements: std.ArrayList(ui.UiElement) = .empty;
@@ -79,6 +132,8 @@ pub fn view(
             ui.screenRect(),
             current_state,
             weapon_type_definitions,
+            active_theme,
+            settings.player_color_index,
         ) catch @panic("failed to build bottom bar");
     } else if (current_state.screen == .main_menu) {
         // Continue is available when there is a game to resume. Today that is
@@ -142,7 +197,7 @@ pub fn view(
         &.{};
 
     return .{
-        .background_color = active_theme.darkest,
+        .background_color = worldGradientColor(active_theme, 2),
         .active_color_theme = active_theme,
         .world_scale = camera_zoom,
         .tiles = tiles.items,
@@ -170,7 +225,7 @@ fn activeThemeFor(
 
 /// The player's tile position for the current screen (entity 0 in a level,
 /// the hub player), or the origin when neither is active.
-fn playerPosition(current_state: *const GameState) types.Vector2 {
+pub fn playerPosition(current_state: *const GameState) types.Vector2 {
     if (current_state.level) |level| {
         if (level.entities.len > 0) return level.entities[0].position;
     }
@@ -178,16 +233,28 @@ fn playerPosition(current_state: *const GameState) types.Vector2 {
     return .{ .x = 0, .y = 0 };
 }
 
-/// Camera centered on the player: places the player tile's center at the
-/// screen center. Position is in the same world-pixel space screenToTile
-/// inverts (tile coord * tile_size_pixels * zoom).
-pub fn computeCamera(current_state: *const GameState, zoom: f32) types.Camera {
+/// Camera centered on the player (plus an optional right-drag pan offset):
+/// places the player tile's center at the screen center, then adds `pan`.
+/// Position is in the same world-pixel space screenToTile inverts
+/// (tile coord * tile_size_pixels * zoom). `pan` is in world pixels too.
+/// Both the input camera and the render camera pass through here so input
+/// and rendering never drift relative to the pan offset.
+pub fn computeCamera(
+    current_state: *const GameState,
+    zoom: f32,
+    pan: ?types.Vector2,
+) types.Camera {
     const player_tile = playerPosition(current_state);
     const tile_pixels = input.tile_size_pixels * zoom;
-    return .{ .position = .{
+    var pos = types.Vector2{
         .x = @intFromFloat((@as(f32, @floatFromInt(player_tile.x)) + 0.5) * tile_pixels),
         .y = @intFromFloat((@as(f32, @floatFromInt(player_tile.y)) + 0.5) * tile_pixels),
-    } };
+    };
+    if (pan) |offset| {
+        pos.x += offset.x;
+        pos.y += offset.y;
+    }
+    return .{ .position = pos };
 }
 
 /// Convert a tile coordinate to its top-left screen position (reference space).
@@ -244,6 +311,8 @@ fn levelEndDrawable(
 /// (weapons/gear/effects/health bar land later).
 fn entityDrawable(
     entity: *const Entity,
+    active_theme: types.ActiveColorTheme,
+    player_color_index: u32,
     camera: types.Camera,
     zoom: f32,
     allocator: std.mem.Allocator,
@@ -263,13 +332,50 @@ fn entityDrawable(
     const base_sprite_id = std.fmt.allocPrint(allocator, "entities/{s}", .{entity.sprite}) catch
         @panic("failed to build entity sprite id");
 
-    // Weapons: main hand drawn as-authored (left), off hand mirrored (right).
-    var weapon_sprites: [2]?types.SpriteDrawable = .{ null, null };
-    if (entity.main_hand_weapon) |weapon| {
-        weapon_sprites[0] = weaponSprite(entity, weapon.weapon_type, top_left, false, allocator);
+    // Body color: player uses the settings-driven player gradient index;
+    // enemies use their own color_index into the enemy gradient.
+    const body_color = if (entity.team == 0)
+        playerColor(active_theme, player_color_index)
+    else
+        enemyColor(active_theme, entity.color_index);
+
+    // Overlay layers: same frame + pivot as the base, drawn after base and
+    // before weapons. Each colored by its own index into the team gradient.
+    var layer_sprites: std.ArrayList(types.SpriteDrawable) = .empty;
+    for (entity.layers) |layer| {
+        const layer_sprite_id = std.fmt.allocPrint(allocator, "entities/{s}", .{layer.sprite}) catch
+            @panic("failed to build entity layer sprite id");
+        const layer_color = if (entity.team == 0)
+            playerColor(active_theme, layer.color_index)
+        else
+            enemyColor(active_theme, layer.color_index);
+        layer_sprites.append(allocator, .{
+            .sprite_id = layer_sprite_id,
+            .screen_position = top_left,
+            .draw_offset = .{ .x = 0, .y = 0 },
+            .source_rectangle = null,
+            .color = layer_color,
+        }) catch @panic("failed to append entity layer sprite");
     }
-    if (entity.off_hand_weapon) |weapon| {
-        weapon_sprites[1] = weaponSprite(entity, weapon.weapon_type, top_left, true, allocator);
+    const layer_slice = layer_sprites.toOwnedSlice(allocator) catch
+        @panic("failed to own entity layer sprites");
+
+    // Weapons: main hand drawn as-authored (left), off hand mirrored (right).
+    // Suppressed for entities that don't display weapons (e.g. wolves).
+    // Color = team gradient index 1 (player → player gradient, enemy → enemy
+    // gradient).
+    const weapon_color = if (entity.team == 0)
+        playerColor(active_theme, 1)
+    else
+        enemyColor(active_theme, 1);
+    var weapon_sprites: [2]?types.SpriteDrawable = .{ null, null };
+    if (entity.displays_weapons) {
+        if (entity.main_hand_weapon) |weapon| {
+            weapon_sprites[0] = weaponSprite(entity, weapon.weapon_type, top_left, false, weapon_color, allocator);
+        }
+        if (entity.off_hand_weapon) |weapon| {
+            weapon_sprites[1] = weaponSprite(entity, weapon.weapon_type, top_left, true, weapon_color, allocator);
+        }
     }
 
     return .{
@@ -279,8 +385,9 @@ fn entityDrawable(
             .screen_position = top_left,
             .draw_offset = .{ .x = 0, .y = 0 },
             .source_rectangle = null,
-            .color = world_white,
+            .color = body_color,
         },
+        .layer_sprites = layer_slice,
         .weapon_sprites = weapon_sprites,
         .gear_sprites = &.{},
         .front_effect_sprites = &.{},
@@ -297,6 +404,7 @@ fn weaponSprite(
     weapon_type: types.WeaponType,
     top_left: types.ScreenPosition,
     flip_horizontal: bool,
+    color: types.Color,
     allocator: std.mem.Allocator,
 ) types.SpriteDrawable {
     const variant_prefix = if (entity.team == 0) "" else "enemy_";
@@ -307,7 +415,7 @@ fn weaponSprite(
         .screen_position = top_left,
         .draw_offset = .{ .x = 0, .y = 0 },
         .source_rectangle = null,
-        .color = world_white,
+        .color = color,
         .flip_horizontal = flip_horizontal,
     };
 }
@@ -315,43 +423,226 @@ fn weaponSprite(
 /// Order entities back-to-front for painter's-algorithm occlusion. tileToScreen
 /// maps higher tile.y to a LARGER screen y (lower on screen = nearer the
 /// viewer), so lower tile.y is further back and drawn first (ascending y).
-fn entityDrawsBefore(_: void, a: *const Entity, b: *const Entity) bool {
-    if (a.position.y != b.position.y) return a.position.y < b.position.y;
-    return a.position.x < b.position.x;
+/// One entry in the unified ground-drawable sort. `sort_y` is the tile y
+/// the drawable sorts at (entity tile y, decoration piece's assigned
+/// footprint y, marker tile y); `sort_x` is the horizontal tiebreak.
+const GroundEntry = struct {
+    sort_y: i32,
+    sort_x: i32,
+    drawable: types.GroundDrawable,
+};
+
+/// Unified back-to-front order: ascending sort_y, then ascending sort_x.
+/// Lower y is further back (drawn first); same-y ties break by lower x
+/// (left-first), matching the previous entity-only sort convention.
+fn groundEntryBefore(_: void, a: GroundEntry, b: GroundEntry) bool {
+    if (a.sort_y != b.sort_y) return a.sort_y < b.sort_y;
+    return a.sort_x < b.sort_x;
 }
 
-fn buildEntities(
-    list: *std.ArrayList(types.GroundDrawable),
+/// Append entity drawables into the unified ground-entry list, each keyed by
+/// its tile (y, x). Replaces the old `buildEntities` (which sorted and
+/// appended directly); the unified sort happens once after all entries
+/// (entities + decorations + markers) are collected.
+fn collectEntityEntries(
+    list: *std.ArrayList(GroundEntry),
     allocator: std.mem.Allocator,
-    entities: []const Entity,
+    entities: []const *const Entity,
+    active_theme: types.ActiveColorTheme,
+    player_color_index: u32,
     camera: types.Camera,
     zoom: f32,
 ) void {
-    var order = allocator.alloc(*const Entity, entities.len) catch @panic("failed to alloc entity order");
-    for (entities, 0..) |*entity, index| order[index] = entity;
-    std.mem.sort(*const Entity, order, {}, entityDrawsBefore);
-    for (order) |entity| {
-        list.append(allocator, .{ .entity = entityDrawable(entity, camera, zoom, allocator) }) catch
-            @panic("failed to append entity drawable");
+    for (entities) |entity| {
+        list.append(allocator, .{
+            .sort_y = entity.position.y,
+            .sort_x = entity.position.x,
+            .drawable = .{ .entity = entityDrawable(entity, active_theme, player_color_index, camera, zoom, allocator) },
+        }) catch @panic("failed to append entity entry");
     }
 }
 
-/// Hub actors: the player plus NPCs, sorted together back-to-front.
-fn buildHubEntities(
-    list: *std.ArrayList(types.GroundDrawable),
-    allocator: std.mem.Allocator,
-    hub: *const types.Hub,
+/// Tile size in pixels (decorations are authored at 256px/tile). Matches
+/// input.tile_size_pixels — duplicated here to avoid a cross-module constant
+/// for a value that's part of the rendering contract.
+const tile_size_pixels: i32 = 256;
+
+/// Build per-bbox-tile ground entries for one decoration, each carrying its
+/// sort key (assigned footprint y for overhang tiles, own y for footprint
+/// tiles) and the `DecorationPieceDrawable`. The sprite is split into 256px
+/// chunks; each chunk is one bbox tile. Overhang bbox tiles (art but not
+/// footprint) are assigned to their nearest footprint tile (Chebyshev
+/// distance, tie-break bottom-most-then-left-most) and sort at that footprint
+/// tile's y so wide entities don't clip through the decoration (see AGENTS
+/// → Decorations & Footprint). Horizontal tiebreak among same-y pieces uses
+/// the piece's own world x.
+fn buildDecorationPieces(
+    decoration: types.Decoration,
+    active_theme: types.ActiveColorTheme,
     camera: types.Camera,
     zoom: f32,
-) void {
-    var order = allocator.alloc(*const Entity, hub.npcs.len + 1) catch @panic("failed to alloc hub order");
-    order[0] = &hub.player;
-    for (hub.npcs, 0..) |*npc, index| order[index + 1] = &npc.entity;
-    std.mem.sort(*const Entity, order, {}, entityDrawsBefore);
-    for (order) |entity| {
-        list.append(allocator, .{ .entity = entityDrawable(entity, camera, zoom, allocator) }) catch
-            @panic("failed to append hub entity drawable");
+    allocator: std.mem.Allocator,
+) []GroundEntry {
+    const tiles_w: i32 = @divTrunc(decoration.pixel_dims.x, tile_size_pixels);
+    const tiles_h: i32 = @divTrunc(decoration.pixel_dims.y, tile_size_pixels);
+    const anchor = decorationAnchor(decoration.footprint) orelse
+        @panic("decoration has no anchor in view");
+    const base_color = worldGradientColor(active_theme, decoration.color_index);
+
+    // Build a set of footprint sprite-grid coords for O(1) membership.
+    var footprint_set = std.AutoHashMap(types.Vector2, void).init(allocator);
+    defer footprint_set.deinit();
+    for (decoration.footprint) |fp| {
+        footprint_set.put(fp, {}) catch @panic("failed to insert footprint tile");
     }
+
+    var entries: std.ArrayList(GroundEntry) = .empty;
+    var grid_y: i32 = 0;
+    while (grid_y < tiles_h) : (grid_y += 1) {
+        var grid_x: i32 = 0;
+        while (grid_x < tiles_w) : (grid_x += 1) {
+            const grid_tile = types.Vector2{ .x = grid_x, .y = grid_y };
+            const is_footprint = footprint_set.contains(grid_tile);
+
+            // World tile this piece is drawn at (for screen position + sort x).
+            const world_tile = types.Vector2{
+                .x = decoration.position.x + (grid_x - anchor.x),
+                .y = decoration.position.y + (grid_y - anchor.y),
+            };
+
+            // Sort y: footprint tiles sort at their own world y; overhang
+            // tiles sort at their assigned footprint tile's world y.
+            const sort_y = if (is_footprint)
+                world_tile.y
+            else
+                decoration.position.y + (nearestFootprint(grid_tile, decoration.footprint).y - anchor.y);
+
+            const screen_top_left = tileToScreen(world_tile, camera, zoom);
+            const source_rect = types.Rectangle{
+                .x = grid_x * tile_size_pixels,
+                .y = grid_y * tile_size_pixels,
+                .width = tile_size_pixels,
+                .height = tile_size_pixels,
+            };
+
+            // Build overlay layer chunks for this bbox tile (same source
+            // rect + screen position, different sprite + color).
+            var layer_sprites: std.ArrayList(types.SpriteDrawable) = .empty;
+            for (decoration.layers) |layer| {
+                layer_sprites.append(allocator, .{
+                    .sprite_id = decorationLayerSpriteId(layer.sprite, allocator),
+                    .screen_position = screen_top_left,
+                    .draw_offset = .{ .x = 0, .y = 0 },
+                    .source_rectangle = source_rect,
+                    .color = worldGradientColor(active_theme, layer.color_index),
+                }) catch @panic("failed to append layer sprite");
+            }
+            const layer_slice = layer_sprites.toOwnedSlice(allocator) catch
+                @panic("failed to own layer sprites");
+
+            const piece = types.DecorationPieceDrawable{
+                .sprite_id = decorationSpriteId(decoration, allocator),
+                .screen_position = screen_top_left,
+                .draw_offset = .{ .x = 0, .y = 0 },
+                .source_rectangle = source_rect,
+                .color = base_color,
+                .layers = layer_slice,
+            };
+            entries.append(allocator, .{
+                .sort_y = sort_y,
+                .sort_x = world_tile.x,
+                .drawable = .{ .decoration_piece = piece },
+            }) catch @panic("failed to append decoration piece entry");
+        }
+    }
+    return entries.toOwnedSlice(allocator) catch @panic("failed to own decoration entries");
+}
+
+/// Find the nearest footprint tile to a sprite-grid coord by Chebyshev
+/// distance, tie-breaking by footprint scan order (bottom-most-then-left-most
+/// — the anchor convention, which is how `decorationAnchor` orders). Used to
+/// assign overhang bbox tiles to a footprint tile for render sorting.
+fn nearestFootprint(grid_tile: types.Vector2, footprint: []const types.Vector2) types.Vector2 {
+    std.debug.assert(footprint.len > 0);
+    var best = footprint[0];
+    var best_dist = chebyshev(grid_tile, best);
+    for (footprint[1..]) |fp| {
+        const dist = chebyshev(grid_tile, fp);
+        if (dist < best_dist) {
+            best = fp;
+            best_dist = dist;
+        }
+        // Tie: keep the first found (footprint scan order). Since the
+        // footprint list is authored in sprite-grid order and the anchor is
+        // bottom-most-then-left-most, the scan order is deterministic. We
+        // don't re-sort the footprint here — the caller's authoring order is
+        // the tiebreak, matching `decorationAnchor`'s convention.
+    }
+    return best;
+}
+
+fn chebyshev(a: types.Vector2, b: types.Vector2) i32 {
+    const dx: i32 = @intCast(@abs(a.x - b.x));
+    const dy: i32 = @intCast(@abs(a.y - b.y));
+    return @max(dx, dy);
+}
+
+/// Build the sprite id (`decorations/<name>`) for a decoration. The
+/// decoration's `name` field carries the sprite stem (e.g. `tree_1` or
+/// `decorations/tree_1` — the parser stores the `sprite` value as-is).
+fn decorationSpriteId(decoration: types.Decoration, allocator: std.mem.Allocator) []const u8 {
+    return decorationSpriteIdFromName(decoration.name, allocator);
+}
+
+/// Build the sprite id for a layer (`decorations/<name>` or the name as-is
+/// if it already contains `/`). Same convention as the base sprite id.
+fn decorationLayerSpriteId(sprite_name: []const u8, allocator: std.mem.Allocator) []const u8 {
+    return decorationSpriteIdFromName(sprite_name, allocator);
+}
+
+fn decorationSpriteIdFromName(name: []const u8, allocator: std.mem.Allocator) []const u8 {
+    // Config stores the bare stem (e.g. `tree_1`); the `decorations/` folder
+    // is a code-level convention, same as `entities/{s}` for entity sprites.
+    // Custom decorations use a stem like `custom/<mission>/<name>` which still
+    // lands under `decorations/custom/<mission>/<name>`.
+    return std.fmt.allocPrint(allocator, "decorations/{s}", .{name}) catch
+        @panic("failed to build decoration sprite id");
+}
+
+/// Resolve a world-gradient color by index. Clamps to the valid range
+/// (0..gradient_color_count-1) so a bad index draws something sane rather
+/// than crashing — the config is authored, so an out-of-range value is a
+/// content bug, but view() stays robust.
+fn worldGradientColor(active_theme: types.ActiveColorTheme, color_index: u32) types.Color {
+    const idx = @min(color_index, types.gradient_color_count - 1);
+    return active_theme.world_gradient.colors[idx];
+}
+
+/// Resolve a player-gradient color by index (clamped).
+fn playerColor(active_theme: types.ActiveColorTheme, color_index: u32) types.Color {
+    const idx = @min(color_index, types.gradient_color_count - 1);
+    return active_theme.player_gradient.colors[idx];
+}
+
+/// Resolve an enemy-gradient color by index (clamped).
+fn enemyColor(active_theme: types.ActiveColorTheme, color_index: u32) types.Color {
+    const idx = @min(color_index, types.gradient_color_count - 1);
+    return active_theme.enemy_gradient.colors[idx];
+}
+
+/// Derive the anchor (bottom-most-then-left-most) from a sprite-grid
+/// footprint. Mirrors `parser.decorationAnchor` — duplicated in view to keep
+/// view.zig dependency-free from parser.zig (the parser's version operates on
+/// the same coordinate convention). Returns null if the footprint is empty.
+fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
+    if (footprint.len == 0) return null;
+    var anchor = footprint[0];
+    for (footprint[1..]) |tile| {
+        if (tile.y > anchor.y or (tile.y == anchor.y and tile.x < anchor.x)) {
+            anchor = tile;
+        }
+    }
+    return anchor;
 }
 
 /// Move-range highlights: a translucent fill over each reachable tile, tinted

@@ -3,14 +3,92 @@ const types = @import("types.zig");
 const build_info = @import("build_info");
 const events_mod = @import("events.zig");
 const file_source_mod = @import("file_source.zig");
+const sprite_metadata = @import("generated_sprite_metadata");
 
 const FileSource = file_source_mod.FileSource;
+
+/// PNG signature (first 8 bytes) for validating image bytes before reading the
+/// IHDR chunk.
+const png_signature = [_]u8{ 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+
+/// Parse pixel dimensions from a PNG file's raw bytes by reading the IHDR
+/// chunk (big-endian u32 width/height at byte offset 16/20). Returns null if
+/// the bytes are too short or don't start with the PNG signature. Used at
+/// runtime for custom (non-shipped) sprite PNGs; shipped sprites resolve from
+/// the comptime `generated_sprite_metadata` table instead.
+fn parsePngDimensions(bytes: []const u8) ?types.Vector2 {
+    if (bytes.len < 24) return null;
+    if (!std.mem.eql(u8, bytes[0..8], &png_signature)) return null;
+    const width: i32 = @intCast(std.mem.readInt(u32, bytes[16..20], .big));
+    const height: i32 = @intCast(std.mem.readInt(u32, bytes[20..24], .big));
+    return .{ .x = width, .y = height };
+}
+
+/// Resolve a sprite's pixel dimensions. Shipped sprites (in the comptime
+/// `generated_sprite_metadata` table) resolve with zero I/O. Custom sprites
+/// fall back to reading the PNG via `file_source` and parsing its IHDR. Panics
+/// if the dims can't be resolved — a level referencing a sprite with no known
+/// dims is a bug (shipped art is always in the table; custom art must be
+/// resident in the file source before the level loads).
+fn resolveSpriteDimensions(
+    sprite_id: []const u8,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+) types.Vector2 {
+    // 1. Shipped sprite → comptime table (no I/O).
+    if (sprite_metadata.map.get(sprite_id)) |dims_str| {
+        return parseDimsString(dims_str);
+    }
+
+    // 2. Custom sprite → read PNG bytes via file source, parse IHDR.
+    if (file_source) |source| {
+        const path = std.fmt.allocPrint(allocator, "assets/{s}.png", .{sprite_id}) catch
+            @panic("failed to build sprite path for dims resolution");
+        defer allocator.free(path);
+        const bytes = source.readFile(allocator, path) catch
+            @panic("failed to read sprite PNG for dims resolution");
+        defer allocator.free(bytes);
+        return parsePngDimensions(bytes) orelse
+            @panic("sprite PNG is not a valid PNG");
+    }
+
+    @panic("cannot resolve sprite dimensions: not a shipped sprite and no file source");
+}
+
+/// Parse a `"w h"` string (as emitted by generated_sprite_metadata.zig) into a
+/// Vector2. Panics on malformed input — the table is build-generated, so a
+/// bad value is a build bug.
+fn parseDimsString(dims_str: []const u8) types.Vector2 {
+    var it = std.mem.tokenizeScalar(u8, dims_str, ' ');
+    const width_str = it.next() orelse @panic("malformed sprite dims string");
+    const height_str = it.next() orelse @panic("malformed sprite dims string");
+    return .{
+        .x = asI32(width_str) orelse @panic("malformed sprite dims width"),
+        .y = asI32(height_str) orelse @panic("malformed sprite dims height"),
+    };
+}
 
 const Event = events_mod.Event;
 
 /// Monotonic schema version for the session-log file format ("can this parser
 /// read the file?"). Bump on any breaking change to the EventLog layout.
 pub const session_log_file_format_version: u32 = 1;
+
+/// Monotonic schema versions for each config-file type. Bump on any breaking
+/// change to that file's layout. The loader validates the file's
+/// `file_format_version` (in its Metadata/Info section) against the expected
+/// constant and returns `error.UnsupportedFileFormatVersion` on mismatch — a
+/// HARD gate. The version is validate-and-discard (not stored on the parsed
+/// type): it's a parse-time compatibility check, not runtime state. The save
+/// writer emits the current constant. See AGENTS → Versioning.
+pub const level_file_format_version: u32 = 1;
+pub const hub_file_format_version: u32 = 1;
+pub const mission_file_format_version: u32 = 1;
+pub const campaign_file_format_version: u32 = 1;
+pub const player_save_file_format_version: u32 = 1;
+pub const settings_file_format_version: u32 = 1;
+pub const color_themes_file_format_version: u32 = 1;
+pub const player_loadout_file_format_version: u32 = 1;
 
 const Settings = types.Settings;
 const Level = types.Level;
@@ -80,6 +158,7 @@ const valid_section_headers = [_][]const u8{
     "GlobalColors",
     "Gradients",
     "EventLog",
+    "PlayerLoadout",
     "Sword",
     "Shield",
     "Spear",
@@ -279,6 +358,25 @@ fn validateSections(
     }
 }
 
+/// Validate `file_format_version` from a parsed Metadata/Info section's first
+/// entry group. Required (hard gate): a file without it returns
+/// `error.UnsupportedFileFormatVersion`. Mismatch returns the same error.
+/// Validate-and-discard — the version is not stored on the parsed type.
+fn validateFileFormatVersion(
+    sections: []const Section,
+    section_header: []const u8,
+    expected_version: u32,
+) !void {
+    const section = findSection(sections, section_header) orelse
+        return error.UnsupportedFileFormatVersion;
+    if (section.entry_groups.len == 0) return error.UnsupportedFileFormatVersion;
+    const pairs = section.entry_groups[0].pairs;
+    const version_str = findValue(pairs, "file_format_version") orelse
+        return error.UnsupportedFileFormatVersion;
+    const version = asU32(version_str) orelse return error.UnsupportedFileFormatVersion;
+    if (version != expected_version) return error.UnsupportedFileFormatVersion;
+}
+
 pub fn asU32(value: []const u8) ?u32 {
     return std.fmt.parseInt(u32, value, 10) catch null;
 }
@@ -363,14 +461,14 @@ fn parseEnum(
     return null;
 }
 
-const settings_sections = [_][]const u8{ "Audio", "Display", "Gameplay", "InputBindings" };
+const settings_sections = [_][]const u8{ "Metadata", "Audio", "Display", "Gameplay", "InputBindings" };
 const weapon_type_sections = [_][]const u8{"Skills"};
 const level_sections = [_][]const u8{ "Metadata", "Layout", "Enemies", "Decorations", "Items" };
 const hub_sections = [_][]const u8{ "Metadata", "Layout", "NPCs", "Decorations", "Exits" };
 const campaign_sections = [_][]const u8{"Metadata"};
 const mission_sections = [_][]const u8{"Metadata"};
 const player_save_sections = [_][]const u8{
-    "Info",           "DiscoveredHubs",  "UnlockedSkills", "MainHandWeapon",
+    "Metadata",       "Info",           "DiscoveredHubs",  "UnlockedSkills", "MainHandWeapon",
     "OffHandWeapon",  "Amulet",          "Coat",           "Gloves",
     "Pants",          "Boots",           "Inventory",      "UtilitySkills",
     "CloneData",
@@ -381,6 +479,7 @@ pub fn loadSettings(
     allocator: std.mem.Allocator,
 ) !Settings {
     try validateSections(sections, &settings_sections);
+    try validateFileFormatVersion(sections, "Metadata", settings_file_format_version);
     var settings: Settings = .{ .input_bindings = &.{} };
 
     // Audio
@@ -421,6 +520,9 @@ pub fn loadSettings(
             }
             if (findValue(pairs, "auto_target_at_cursor")) |value| {
                 settings.auto_target_at_cursor = asBool(value) orelse settings.auto_target_at_cursor;
+            }
+            if (findValue(pairs, "player_color_index")) |value| {
+                settings.player_color_index = asU32(value) orelse settings.player_color_index;
             }
         }
     }
@@ -464,11 +566,788 @@ pub fn loadSettings(
     return settings;
 }
 
+/// Parse an entity definition (the shared body of an Enemies entry, a player
+/// loadout, or an editor EntityTypeDef template) from a set of key-value
+/// pairs. `team` is set by the caller (enemies = 1, player = 0) since the
+/// format doesn't carry it. `default_name` / `default_sprite` are used when
+/// the pairs don't specify name/sprite (player loadout defaults to
+/// "Player"/"player"). current_health is set to max_health (reset by
+/// instantiateEditorLevel for placements). Utility skills are read from
+/// `slot_4`..`slot_8` keys (matching the save format), so the player loadout
+/// carries its bar; enemy types can too if present.
+pub fn parseEntityDefinition(
+    pairs: []const KeyValuePair,
+    team: u32,
+    default_name: []const u8,
+    default_sprite: []const u8,
+    allocator: std.mem.Allocator,
+) types.Entity {
+    var entity: types.Entity = .{ .team = team };
+    entity.name = findValue(pairs, "name") orelse default_name;
+    entity.sprite = findValue(pairs, "sprite") orelse default_sprite;
+    if (findValue(pairs, "color_index")) |value| {
+        entity.color_index = asU32(value) orelse 0;
+    }
+    if (findValue(pairs, "displays_weapons")) |value| {
+        entity.displays_weapons = asBool(value) orelse true;
+    }
+    if (findValue(pairs, "max_health")) |value| {
+        entity.max_health = asU32(value) orelse 20;
+        entity.current_health = entity.max_health;
+    }
+    if (findValue(pairs, "defense")) |value| entity.defense = asU32(value) orelse 0;
+    if (findValue(pairs, "speed")) |value| entity.speed = asU32(value) orelse 1;
+    if (findValue(pairs, "aggro_range")) |value| entity.aggro_range = asU32(value) orelse 3;
+
+    // Main hand weapon
+    if (findValue(pairs, "main_hand_weapon_name")) |name| {
+        entity.main_hand_weapon = .{
+            .name = name,
+            .weapon_type = if (findValue(pairs, "main_hand_weapon_type")) |value| parseEnum(types.WeaponType, value) orelse .sword else .sword,
+            .weapon_damage = if (findValue(pairs, "main_hand_weapon_damage")) |value| asU32(value) orelse 0 else 0,
+        };
+    }
+    // Off hand weapon
+    if (findValue(pairs, "off_hand_weapon_name")) |name| {
+        entity.off_hand_weapon = .{
+            .name = name,
+            .weapon_type = if (findValue(pairs, "off_hand_weapon_type")) |value| parseEnum(types.WeaponType, value) orelse .sword else .sword,
+            .weapon_damage = if (findValue(pairs, "off_hand_weapon_damage")) |value| asU32(value) orelse 0 else 0,
+        };
+    }
+    // Gear
+    if (findValue(pairs, "amulet_name")) |name| {
+        entity.amulet = .{ .name = name, .spell_damage = if (findValue(pairs, "amulet_spell_damage")) |value| asU32(value) orelse 0 else 0 };
+    }
+    if (findValue(pairs, "coat_name")) |name| {
+        entity.coat = .{
+            .name = name,
+            .defense_bonus = if (findValue(pairs, "coat_defense_bonus")) |value| asU32(value) orelse 0 else 0,
+            .health_bonus = if (findValue(pairs, "coat_health_bonus")) |value| asU32(value) orelse 0 else 0,
+        };
+    }
+    if (findValue(pairs, "gloves_name")) |name| {
+        entity.gloves = .{
+            .name = name,
+            .damage_bonus = if (findValue(pairs, "gloves_damage_bonus")) |value| asU32(value) orelse 0 else 0,
+            .health_bonus = if (findValue(pairs, "gloves_health_bonus")) |value| asU32(value) orelse 0 else 0,
+        };
+    }
+    if (findValue(pairs, "pants_name")) |name| {
+        entity.pants = .{
+            .name = name,
+            .pickup_radius_bonus = if (findValue(pairs, "pants_pickup_radius_bonus")) |value| asU32(value) orelse 0 else 0,
+            .health_bonus = if (findValue(pairs, "pants_health_bonus")) |value| asU32(value) orelse 0 else 0,
+        };
+    }
+    if (findValue(pairs, "boots_name")) |name| {
+        entity.boots = .{
+            .name = name,
+            .speed_bonus = if (findValue(pairs, "boots_speed_bonus")) |value| asU32(value) orelse 0 else 0,
+            .health_bonus = if (findValue(pairs, "boots_health_bonus")) |value| asU32(value) orelse 0 else 0,
+        };
+    }
+
+    // Utility skills (slot_4..slot_8, matching the save format). Enemy types
+    // can carry a bar if present; the player loadout normally does.
+    var slot_key_buf: [16]u8 = undefined;
+    for (0..types.utility_skill_count) |i| {
+        const key = std.fmt.bufPrint(&slot_key_buf, "slot_{d}", .{i + 4}) catch continue;
+        if (findValue(pairs, key)) |value| {
+            if (parseEnum(types.SkillId, value)) |skill_id| {
+                entity.equipped_utility_skills[i] = skill_id;
+            }
+        }
+    }
+
+    // Overlay layers: `layer` delimiter starts a sub-group whose following
+    // `sprite`/`color_index` pairs belong to it (same convention as
+    // decorations). Layers share the entity's fixed frame, so no dims to
+    // resolve or validate.
+    var layers: std.ArrayList(types.EntityLayer) = .empty;
+    var current_layer_sprite: ?[]const u8 = null;
+    var current_layer_color: u32 = 0;
+    var in_layer = false;
+    for (pairs) |pair| {
+        if (std.mem.eql(u8, pair.key, "layer")) {
+            if (in_layer) {
+                if (current_layer_sprite) |layer_sprite| {
+                    layers.append(allocator, .{
+                        .sprite = layer_sprite,
+                        .color_index = current_layer_color,
+                    }) catch @panic("failed to append entity layer");
+                }
+            }
+            in_layer = true;
+            current_layer_sprite = null;
+            current_layer_color = 0;
+            continue;
+        }
+        if (in_layer) {
+            if (std.mem.eql(u8, pair.key, "sprite")) {
+                current_layer_sprite = pair.value;
+            } else if (std.mem.eql(u8, pair.key, "color_index")) {
+                current_layer_color = asU32(pair.value) orelse 0;
+            }
+        }
+    }
+    if (in_layer) {
+        if (current_layer_sprite) |layer_sprite| {
+            layers.append(allocator, .{
+                .sprite = layer_sprite,
+                .color_index = current_layer_color,
+            }) catch @panic("failed to append entity layer");
+        }
+    }
+    entity.layers = layers.toOwnedSlice(allocator) catch @panic("failed to own entity layers");
+
+    return entity;
+}
+
+/// Load a player start loadout from a player.txt's parsed sections. The player
+/// is team 0, defaults name "Player" / sprite "player". Reuses
+/// parseEntityDefinition so the loadout has the same field set as an enemy type
+/// template.
+pub fn loadPlayerLoadout(
+    sections: []const Section,
+    allocator: std.mem.Allocator,
+) !types.Entity {
+    try validateFileFormatVersion(sections, "Metadata", player_loadout_file_format_version);
+    for (sections) |section| {
+        for (section.entry_groups) |group| {
+            return parseEntityDefinition(group.pairs, 0, "Player", "player", allocator);
+        }
+    }
+    return .{ .name = "Player", .sprite = "player", .team = 0 };
+}
+
+/// Compare two entity definitions for palette dedup. Compares the DEFINITION
+/// fields only (name, sprite, team, stats, weapons, gear, utility skills) —
+/// NOT runtime fields (position, current_health, is_active, momentum, stun,
+/// cooldowns, active_effects, inventory), which are reset on instantiate and
+/// meaningless on a template. Slice fields (names) compared by content.
+pub fn entityDefinitionsEqual(a: types.Entity, b: types.Entity) bool {
+    if (!std.mem.eql(u8, a.name, b.name)) return false;
+    if (!std.mem.eql(u8, a.sprite, b.sprite)) return false;
+    if (a.team != b.team) return false;
+    if (a.max_health != b.max_health) return false;
+    if (a.defense != b.defense) return false;
+    if (a.speed != b.speed) return false;
+    if (a.aggro_range != b.aggro_range) return false;
+    // Weapons (optionals of structs with a name slice + scalar fields).
+    if (!optionalWeaponEqual(a.main_hand_weapon, b.main_hand_weapon)) return false;
+    if (!optionalWeaponEqual(a.off_hand_weapon, b.off_hand_weapon)) return false;
+    if (!optionalAmuletEqual(a.amulet, b.amulet)) return false;
+    if (!optionalCoatEqual(a.coat, b.coat)) return false;
+    if (!optionalGlovesEqual(a.gloves, b.gloves)) return false;
+    if (!optionalPantsEqual(a.pants, b.pants)) return false;
+    if (!optionalBootsEqual(a.boots, b.boots)) return false;
+    if (a.color_index != b.color_index) return false;
+    if (a.displays_weapons != b.displays_weapons) return false;
+    if (!entityLayersEqual(a.layers, b.layers)) return false;
+    return std.mem.eql(?types.SkillId, a.equipped_utility_skills[0..], b.equipped_utility_skills[0..]);
+}
+
+fn entityLayersEqual(a: []const types.EntityLayer, b: []const types.EntityLayer) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |la, lb| {
+        if (!std.mem.eql(u8, la.sprite, lb.sprite)) return false;
+        if (la.color_index != lb.color_index) return false;
+    }
+    return true;
+}
+
+fn optionalWeaponEqual(a: ?types.Weapon, b: ?types.Weapon) bool {
+    if (a == null and b == null) return true;
+    if (a == null or b == null) return false;
+    const ax = a.?;
+    const bx = b.?;
+    return std.mem.eql(u8, ax.name, bx.name) and ax.weapon_type == bx.weapon_type and ax.weapon_damage == bx.weapon_damage;
+}
+fn optionalAmuletEqual(a: ?types.Amulet, b: ?types.Amulet) bool {
+    if (a == null and b == null) return true;
+    if (a == null or b == null) return false;
+    return std.mem.eql(u8, a.?.name, b.?.name) and a.?.spell_damage == b.?.spell_damage;
+}
+fn optionalCoatEqual(a: ?types.Coat, b: ?types.Coat) bool {
+    if (a == null and b == null) return true;
+    if (a == null or b == null) return false;
+    return std.mem.eql(u8, a.?.name, b.?.name) and a.?.defense_bonus == b.?.defense_bonus and a.?.health_bonus == b.?.health_bonus;
+}
+fn optionalGlovesEqual(a: ?types.Gloves, b: ?types.Gloves) bool {
+    if (a == null and b == null) return true;
+    if (a == null or b == null) return false;
+    return std.mem.eql(u8, a.?.name, b.?.name) and a.?.damage_bonus == b.?.damage_bonus and a.?.health_bonus == b.?.health_bonus;
+}
+fn optionalPantsEqual(a: ?types.Pants, b: ?types.Pants) bool {
+    if (a == null and b == null) return true;
+    if (a == null or b == null) return false;
+    return std.mem.eql(u8, a.?.name, b.?.name) and a.?.pickup_radius_bonus == b.?.pickup_radius_bonus and a.?.health_bonus == b.?.health_bonus;
+}
+fn optionalBootsEqual(a: ?types.Boots, b: ?types.Boots) bool {
+    if (a == null and b == null) return true;
+    if (a == null or b == null) return false;
+    return std.mem.eql(u8, a.?.name, b.?.name) and a.?.speed_bonus == b.?.speed_bonus and a.?.health_bonus == b.?.health_bonus;
+}
+
+/// Compare two decoration definitions for palette dedup (sprite + footprint
+/// + color_index + layers by content).
+pub fn decorationDefinitionsEqual(a: types.Decoration, b: types.Decoration) bool {
+    if (!std.mem.eql(u8, a.name, b.name)) return false;
+    if (a.footprint.len != b.footprint.len) return false;
+    for (a.footprint, b.footprint) |fa, fb| {
+        if (fa.x != fb.x or fa.y != fb.y) return false;
+    }
+    if (a.color_index != b.color_index) return false;
+    return decorationLayersEqual(a.layers, b.layers);
+}
+
+/// Compare two decoration layer slices for palette dedup.
+pub fn decorationLayersEqual(a: []const types.DecorationLayer, b: []const types.DecorationLayer) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |la, lb| {
+        if (!std.mem.eql(u8, la.sprite, lb.sprite)) return false;
+        if (la.color_index != lb.color_index) return false;
+    }
+    return true;
+}
+
+/// Build an Editor session from already-parsed mission/player/level sections.
+/// Pure (no file I/O) — the caller (open_editor handler) reads via
+/// history.readReconstructionFile so the reconstruction cache makes undo
+/// replay deterministic. Dedups the levels' inline entity/decoration
+/// definitions into a shared palette (entity_types / decoration_types).
+/// The result is reference-based (EditorLevel + placements); save flattens
+/// back to the existing inline format. Unused palette types are lost on
+/// editor close (accepted). See AGENTS → Architecture → Level Editor.
+pub fn buildEditorMission(
+    mission: types.Mission,
+    player_entity: types.Entity,
+    parsed_level_sections: []const []const Section,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+) !types.Editor {
+    var entity_types: std.ArrayList(types.EntityTypeDef) = .empty;
+    var decoration_types: std.ArrayList(types.DecorationTypeDef) = .empty;
+    var editor_levels: std.ArrayList(types.EditorLevel) = .empty;
+
+    for (parsed_level_sections) |sections| {
+        const level = try loadLevel(sections, file_source, allocator);
+
+        // Entity placements: entity 0 is the player (skip — loadout comes from
+        // player_def, spawn is player_start). entities 1..N dedup into the palette.
+        var placements: std.ArrayList(types.EntityPlacement) = .empty;
+        for (level.entities[1..]) |entity| {
+            var type_id: ?u32 = null;
+            for (entity_types.items, 0..) |et, et_index| {
+                if (entityDefinitionsEqual(et.template, entity)) {
+                    type_id = @intCast(et_index);
+                    break;
+                }
+            }
+            if (type_id == null) {
+                type_id = @intCast(entity_types.items.len);
+                entity_types.append(allocator, .{
+                    .id = entity.name,
+                    .template = entity,
+                }) catch @panic("failed to append entity type");
+            }
+            placements.append(allocator, .{
+                .type_id = type_id.?,
+                .position = entity.position,
+            }) catch @panic("failed to append entity placement");
+        }
+
+        // Decoration placements: dedup by sprite + footprint + color_index +
+        // layers (the full visual identity).
+        var deco_placements: std.ArrayList(types.DecorationPlacement) = .empty;
+        for (level.decorations) |decoration| {
+            var type_id: ?u32 = null;
+            for (decoration_types.items, 0..) |dt, dt_index| {
+                if (std.mem.eql(u8, dt.sprite, decoration.name) and
+                    decorationFootprintEqual(dt.footprint, decoration.footprint) and
+                    dt.color_index == decoration.color_index and
+                    decorationLayersEqual(dt.layers, decoration.layers))
+                {
+                    type_id = @intCast(dt_index);
+                    break;
+                }
+            }
+            if (type_id == null) {
+                type_id = @intCast(decoration_types.items.len);
+                const fp = allocator.dupe(types.Vector2, decoration.footprint) catch @panic("failed to dupe footprint");
+                const ly = allocator.dupe(types.DecorationLayer, decoration.layers) catch @panic("failed to dupe layers");
+                decoration_types.append(allocator, .{
+                    .id = decoration.name,
+                    .sprite = decoration.name,
+                    .footprint = fp,
+                    .pixel_dims = decoration.pixel_dims,
+                    .color_index = decoration.color_index,
+                    .layers = ly,
+                }) catch @panic("failed to append decoration type");
+            }
+            deco_placements.append(allocator, .{
+                .type_id = type_id.?,
+                .position = decoration.position,
+            }) catch @panic("failed to append decoration placement");
+        }
+
+        editor_levels.append(allocator, .{
+            .name = level.name,
+            .color_wheel_index = level.color_wheel_index,
+            .level_tiles = level.level_tiles,
+            .player_start = level.entities[0].position,
+            .level_end = level.level_end,
+            .entity_placements = placements.items,
+            .decoration_placements = deco_placements.items,
+        }) catch @panic("failed to append editor level");
+    }
+
+    return .{
+        .mission = mission,
+        .levels = editor_levels.items,
+        .entity_types = entity_types.items,
+        .decoration_types = decoration_types.items,
+        .player_def = .{ .id = "Player", .template = player_entity },
+    };
+}
+
+fn decorationFootprintEqual(a: []const types.Vector2, b: []const types.Vector2) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |fa, fb| {
+        if (fa.x != fb.x or fa.y != fb.y) return false;
+    }
+    return true;
+}
+
+/// Instantiate a concrete gameplay Level from an EditorLevel + the editor's
+/// palette + player_def. Entity 0 is the player (from player_def at
+/// player_start); each placement becomes an entity from its palette type at
+/// the placement's position. Runtime fields are reset (current_health =
+/// max_health, is_active = false, momentum/stun/cooldowns/effects/inventory
+/// zeroed/empty). The gameplay engine runs on the result unmodified.
+pub fn instantiateEditorLevel(
+    editor: types.Editor,
+    level_index: usize,
+    allocator: std.mem.Allocator,
+) types.Level {
+    const editor_level = editor.levels[level_index];
+    var entities: std.ArrayList(types.Entity) = .empty;
+
+    // Entity 0: the player.
+    var player = editor.player_def.template;
+    resetRuntimeFields(&player);
+    player.position = editor_level.player_start;
+    entities.append(allocator, player) catch @panic("failed to append player entity");
+
+    // Enemy placements.
+    for (editor_level.entity_placements) |placement| {
+        var entity = editor.entity_types[placement.type_id].template;
+        resetRuntimeFields(&entity);
+        entity.position = placement.position;
+        entities.append(allocator, entity) catch @panic("failed to append entity");
+    }
+
+    // Decorations (concrete, for rendering).
+    var decorations: std.ArrayList(types.Decoration) = .empty;
+    for (editor_level.decoration_placements) |placement| {
+        const dt = editor.decoration_types[placement.type_id];
+        decorations.append(allocator, .{
+            .decoration_id = null,
+            .name = dt.sprite,
+            .position = placement.position,
+            .footprint = dt.footprint,
+            .pixel_dims = dt.pixel_dims,
+            .color_index = dt.color_index,
+            .layers = dt.layers,
+        }) catch @panic("failed to append decoration");
+    }
+
+    return .{
+        .name = editor_level.name,
+        .color_wheel_index = editor_level.color_wheel_index,
+        .level_tiles = editor_level.level_tiles,
+        .entities = entities.items,
+        .decorations = decorations.items,
+        .ground_items = &.{},
+        .level_end = editor_level.level_end,
+    };
+}
+
+/// Reset an entity's runtime fields to a fresh-start state (used by
+/// instantiateEditorLevel). Definition fields (stats, weapons, gear, skills)
+/// are kept; only per-playthrough state is zeroed.
+fn resetRuntimeFields(entity: *types.Entity) void {
+    entity.current_health = entity.max_health;
+    entity.momentum = 0;
+    entity.is_active = false;
+    entity.stun_duration = 0;
+    entity.skill_cooldowns = std.EnumArray(types.SkillId, u32).initFill(0);
+    entity.active_effects = &.{};
+    entity.inventory = .{};
+}
+
+/// A decoration definition parsed from a Decorations section entry group,
+/// keyed by character code (like enemy/item definitions). Carries the
+/// sprite-grid footprint list, resolved pixel dims, color index, and overlay
+/// layers so the layout walk can build `Decoration` values without re-reading
+/// the section. See AGENTS.md "Decorations & Footprint".
+const DecorationDefinition = struct {
+    sprite: []const u8,
+    footprint: []const types.Vector2, // sprite-grid coords
+    pixel_dims: types.Vector2,
+    color_index: u32 = 0,
+    layers: []const types.DecorationLayer = &.{},
+};
+
+/// Derive the anchor (bottom-most-then-left-most) from a sprite-grid footprint.
+/// Returns null if the footprint is empty — the caller panics (a decoration
+/// with no footprint tiles is a malformed level).
+fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
+    if (footprint.len == 0) return null;
+    var anchor = footprint[0];
+    for (footprint[1..]) |tile| {
+        // Bottom-most = highest y (sprite-grid y increases downward). Tiebreak
+        // by left-most = lowest x. This is the convention from AGENTS →
+        // Decorations & Footprint.
+        if (tile.y > anchor.y or (tile.y == anchor.y and tile.x < anchor.x)) {
+            anchor = tile;
+        }
+    }
+    return anchor;
+}
+
+/// Validate a decoration's footprint against its sprite bbox and the level/hub
+/// tile set. Panics on violation (fail fast — see AGENTS → Error Handling):
+///   - empty footprint (no anchor, no reserved tiles)
+///   - footprint tile outside the sprite bbox
+///   - a world footprint tile overlapping a level/hub tile (placement invariant)
+fn validateDecorationFootprint(
+    decoration: types.Decoration,
+    tile_set: *const std.AutoHashMap(types.Vector2, void),
+) void {
+    if (decoration.footprint.len == 0) {
+        @panic("decoration has no footprint tiles");
+    }
+    const tiles_w: i32 = @divTrunc(decoration.pixel_dims.x, 256);
+    const tiles_h: i32 = @divTrunc(decoration.pixel_dims.y, 256);
+    const anchor = decorationAnchor(decoration.footprint) orelse
+        @panic("decoration has no footprint anchor");
+    for (decoration.footprint) |fp_grid| {
+        // Footprint must be within the sprite bbox.
+        if (fp_grid.x < 0 or fp_grid.x >= tiles_w or fp_grid.y < 0 or fp_grid.y >= tiles_h) {
+            @panic("decoration footprint tile is outside the sprite bbox");
+        }
+        // World footprint tile = anchor world pos + (fp_grid - anchor_grid).
+        const world_tile = types.Vector2{
+            .x = decoration.position.x + (fp_grid.x - anchor.x),
+            .y = decoration.position.y + (fp_grid.y - anchor.y),
+        };
+        if (tile_set.contains(world_tile)) {
+            @panic("decoration footprint overlaps a level/hub tile");
+        }
+    }
+}
+
+/// Parse all decoration definitions from the Decorations section into a
+/// hashmap keyed by character code. Each entry group has:
+///   character_code X  (single char)
+///   sprite <name>        (base sprite)
+///   color_index N        (optional, default 0 — world gradient index)
+///   footprint x y        (one or more lines, sprite-grid coords)
+///   layer                (delimiter — starts a layer sub-group)
+///     sprite <name>      (layer sprite, must be same pixel dims as base)
+///     color_index N      (layer color index)
+/// A `layer` line is a delimiter: the following `sprite`/`color_index` pairs
+/// belong to that layer until the next `layer` or end of entry. Pixel dims
+/// are resolved from the comptime sprite-metadata table (shipped) or the file
+/// source (custom); layer dims are validated == base dims at load.
+fn parseDecorationDefinitions(
+    sections: []const Section,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+) std.AutoHashMap(u8, DecorationDefinition) {
+    var definitions = std.AutoHashMap(u8, DecorationDefinition).init(allocator);
+    if (findSection(sections, "Decorations")) |section| {
+        for (section.entry_groups) |group| {
+            const pairs = group.pairs;
+            const code_string = findValue(pairs, "character_code") orelse continue;
+            if (code_string.len != 1) continue;
+            const base_sprite = findValue(pairs, "sprite") orelse &.{};
+            const base_color_index = asU32(findValue(pairs, "color_index") orelse "0") orelse 0;
+            const base_pixel_dims = resolveDecorationSpriteDimensions(base_sprite, file_source, allocator);
+
+            // Collect base footprint + parse layer sub-groups. The pairs list
+            // is flat; a `layer` key delimits a new sub-group whose following
+            // `sprite`/`color_index` pairs belong to it.
+            var footprint: std.ArrayList(types.Vector2) = .empty;
+            var layers: std.ArrayList(types.DecorationLayer) = .empty;
+            var current_layer_sprite: ?[]const u8 = null;
+            var current_layer_color: u32 = 0;
+            var in_layer = false;
+
+            for (pairs) |pair| {
+                if (std.mem.eql(u8, pair.key, "layer")) {
+                    // Finish the previous layer sub-group (if any).
+                    if (in_layer) {
+                        if (current_layer_sprite) |layer_sprite| {
+                            const layer_dims = resolveDecorationSpriteDimensions(layer_sprite, file_source, allocator);
+                            if (layer_dims.x != base_pixel_dims.x or layer_dims.y != base_pixel_dims.y) {
+                                @panic("decoration layer sprite must be the same pixel dimensions as the base");
+                            }
+                            layers.append(allocator, .{
+                                .sprite = layer_sprite,
+                                .color_index = current_layer_color,
+                                .pixel_dims = layer_dims,
+                            }) catch @panic("failed to append decoration layer");
+                        }
+                    }
+                    // Start a new layer sub-group.
+                    in_layer = true;
+                    current_layer_sprite = null;
+                    current_layer_color = 0;
+                    continue;
+                }
+
+                if (in_layer) {
+                    if (std.mem.eql(u8, pair.key, "sprite")) {
+                        current_layer_sprite = pair.value;
+                    } else if (std.mem.eql(u8, pair.key, "color_index")) {
+                        current_layer_color = asU32(pair.value) orelse 0;
+                    }
+                    // Other keys (footprint, character_code) are ignored
+                    // inside a layer sub-group.
+                } else {
+                    // Base-level fields.
+                    if (std.mem.eql(u8, pair.key, "footprint")) {
+                        const coords = parseVector2Pair(pair.value) orelse
+                            @panic("malformed footprint coordinate line");
+                        footprint.append(allocator, coords) catch @panic("failed to append footprint");
+                    }
+                    // character_code / sprite / color_index are already
+                    // handled above; ignore them here.
+                }
+            }
+            // Finish the last layer sub-group (if the entry ended mid-layer).
+            if (in_layer) {
+                if (current_layer_sprite) |layer_sprite| {
+                    const layer_dims = resolveDecorationSpriteDimensions(layer_sprite, file_source, allocator);
+                    if (layer_dims.x != base_pixel_dims.x or layer_dims.y != base_pixel_dims.y) {
+                        @panic("decoration layer sprite must be the same pixel dimensions as the base");
+                    }
+                    layers.append(allocator, .{
+                        .sprite = layer_sprite,
+                        .color_index = current_layer_color,
+                        .pixel_dims = layer_dims,
+                    }) catch @panic("failed to append decoration layer");
+                }
+            }
+
+            const footprint_owned = footprint.toOwnedSlice(allocator) catch @panic("failed to own footprint slice");
+            const layers_owned = layers.toOwnedSlice(allocator) catch @panic("failed to own layers slice");
+            definitions.put(code_string[0], .{
+                .sprite = base_sprite,
+                .footprint = footprint_owned,
+                .pixel_dims = base_pixel_dims,
+                .color_index = base_color_index,
+                .layers = layers_owned,
+            }) catch @panic("failed to insert decoration definition");
+        }
+    }
+    return definitions;
+}
+
+/// Parse a `"x y"` pair of integers into a Vector2. Returns null on failure.
+fn parseVector2Pair(value: []const u8) ?types.Vector2 {
+    var it = std.mem.tokenizeScalar(u8, value, ' ');
+    const x_str = it.next() orelse return null;
+    const y_str = it.next() orelse return null;
+    const x = asI32(x_str) orelse return null;
+    const y = asI32(y_str) orelse return null;
+    return .{ .x = x, .y = y };
+}
+
+/// Resolve a decoration sprite's pixel dimensions. Config stores the bare
+/// stem (e.g. `tree_1`); the comptime sprite-metadata table is keyed by the
+/// asset-relative path (`decorations/tree_1`), so this prepends `decorations/`
+/// before calling `resolveSpriteDimensions`. Custom sprites (`custom/...`)
+/// resolve via the file source fallback inside `resolveSpriteDimensions`.
+fn resolveDecorationSpriteDimensions(
+    sprite_stem: []const u8,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+) types.Vector2 {
+    const full_id = std.fmt.allocPrint(allocator, "decorations/{s}", .{sprite_stem}) catch
+        @panic("failed to build decoration sprite id for dims");
+    defer allocator.free(full_id);
+    return resolveSpriteDimensions(full_id, file_source, allocator);
+}
+
+// -- Ownership helpers --
+//
+// `parseEntityDefinition` and `parseDecorationDefinitions` return definitions
+// whose STRING fields are BORROWED from the parsed config's `pairs` backing
+// (freed by `freeParsedSections`) and whose ARRAY fields (footprint, layers)
+// are OWNED via `toOwnedSlice`. The layout walk CLONES each placed
+// entity/decoration/item so the level fully owns its data (no sharing with
+// the definition hashmaps). `freeLevel`/`freeHub` then deep-free everything
+// uniformly — use them in tests with `std.testing.allocator`. In production,
+// the arena absorbs all allocations, so these frees are no-ops.
+
+fn dupeString(allocator: std.mem.Allocator, s: []const u8) []const u8 {
+    return allocator.dupe(u8, s) catch @panic("failed to dupe string");
+}
+
+/// Deep-clone an entity's owned fields (all string slices + layers) into
+/// `allocator`. Used in the layout walk so each placed entity fully owns its
+/// data, independent of the definition hashmap.
+fn cloneEntityOwned(entity: *types.Entity, allocator: std.mem.Allocator) void {
+    entity.name = dupeString(allocator, entity.name);
+    entity.sprite = dupeString(allocator, entity.sprite);
+    if (entity.main_hand_weapon) |*w| w.name = dupeString(allocator, w.name);
+    if (entity.off_hand_weapon) |*w| w.name = dupeString(allocator, w.name);
+    if (entity.amulet) |*a| a.name = dupeString(allocator, a.name);
+    if (entity.coat) |*c| c.name = dupeString(allocator, c.name);
+    if (entity.gloves) |*g| g.name = dupeString(allocator, g.name);
+    if (entity.pants) |*p| p.name = dupeString(allocator, p.name);
+    if (entity.boots) |*b| b.name = dupeString(allocator, b.name);
+    const duped_layers = allocator.alloc(types.EntityLayer, entity.layers.len) catch
+        @panic("failed to alloc entity layers");
+    for (entity.layers, 0..) |layer, i| {
+        duped_layers[i] = .{
+            .sprite = dupeString(allocator, layer.sprite),
+            .color_index = layer.color_index,
+        };
+    }
+    entity.layers = duped_layers;
+}
+
+/// Free an entity's owned fields (all string slices + layers). After
+/// `cloneEntityOwned`, every string and the layers array are owned; this
+/// frees them all.
+pub fn freeEntity(entity: types.Entity, allocator: std.mem.Allocator) void {
+    allocator.free(entity.name);
+    allocator.free(entity.sprite);
+    if (entity.main_hand_weapon) |w| allocator.free(w.name);
+    if (entity.off_hand_weapon) |w| allocator.free(w.name);
+    if (entity.amulet) |a| allocator.free(a.name);
+    if (entity.coat) |c| allocator.free(c.name);
+    if (entity.gloves) |g| allocator.free(g.name);
+    if (entity.pants) |p| allocator.free(p.name);
+    if (entity.boots) |b| allocator.free(b.name);
+    for (entity.layers) |layer| allocator.free(layer.sprite);
+    allocator.free(entity.layers);
+}
+
+/// Deep-clone a decoration's owned fields (name + footprint + layers) into
+/// `allocator`.
+fn cloneDecorationOwned(decoration: *types.Decoration, allocator: std.mem.Allocator) void {
+    decoration.name = dupeString(allocator, decoration.name);
+    decoration.footprint = allocator.dupe(types.Vector2, decoration.footprint) catch
+        @panic("failed to dupe decoration footprint");
+    const duped_layers = allocator.alloc(types.DecorationLayer, decoration.layers.len) catch
+        @panic("failed to alloc decoration layers");
+    for (decoration.layers, 0..) |layer, i| {
+        duped_layers[i] = .{
+            .sprite = dupeString(allocator, layer.sprite),
+            .color_index = layer.color_index,
+            .pixel_dims = layer.pixel_dims,
+        };
+    }
+    decoration.layers = duped_layers;
+}
+
+/// Free a decoration's owned fields (name + footprint + layers).
+pub fn freeDecoration(decoration: types.Decoration, allocator: std.mem.Allocator) void {
+    allocator.free(decoration.name);
+    allocator.free(decoration.footprint);
+    for (decoration.layers) |layer| allocator.free(layer.sprite);
+    allocator.free(decoration.layers);
+}
+
+/// Deep-clone an item's name string into `allocator`.
+fn cloneItemOwned(item: *types.Item, allocator: std.mem.Allocator) void {
+    switch (item.*) {
+        .weapon => |*w| w.name = dupeString(allocator, w.name),
+        .amulet => |*a| a.name = dupeString(allocator, a.name),
+        .coat => |*c| c.name = dupeString(allocator, c.name),
+        .gloves => |*g| g.name = dupeString(allocator, g.name),
+        .pants => |*p| p.name = dupeString(allocator, p.name),
+        .boots => |*b| b.name = dupeString(allocator, b.name),
+        .skill_tome => {},
+    }
+}
+
+/// Free an item's name string.
+pub fn freeItem(item: types.Item, allocator: std.mem.Allocator) void {
+    switch (item) {
+        .weapon => |w| allocator.free(w.name),
+        .amulet => |a| allocator.free(a.name),
+        .coat => |c| allocator.free(c.name),
+        .gloves => |g| allocator.free(g.name),
+        .pants => |p| allocator.free(p.name),
+        .boots => |b| allocator.free(b.name),
+        .skill_tome => {},
+    }
+}
+
+/// Free all heap-allocated data in a Level (tiles, entities, decorations,
+/// ground items). Each entity/decoration/item is deep-freed. Use in tests
+/// with `std.testing.allocator`; in production, the arena absorbs everything.
+pub fn freeLevel(level: types.Level, allocator: std.mem.Allocator) void {
+    allocator.free(level.level_tiles);
+    for (level.entities) |entity| freeEntity(entity, allocator);
+    allocator.free(level.entities);
+    for (level.decorations) |decoration| freeDecoration(decoration, allocator);
+    allocator.free(level.decorations);
+    for (level.ground_items) |ground_items| {
+        for (ground_items.items) |item| freeItem(item, allocator);
+        allocator.free(ground_items.items);
+    }
+    allocator.free(level.ground_items);
+}
+
+/// Free all heap-allocated data in a Hub (tiles, player, npcs, decorations,
+/// mission exits).
+pub fn freeHub(hub: types.Hub, allocator: std.mem.Allocator) void {
+    allocator.free(hub.hub_tiles);
+    freeEntity(hub.player, allocator);
+    for (hub.npcs) |npc| freeEntity(npc.entity, allocator);
+    allocator.free(hub.npcs);
+    for (hub.decorations) |decoration| freeDecoration(decoration, allocator);
+    allocator.free(hub.decorations);
+    for (hub.mission_exits) |exit| allocator.free(exit.mission_id);
+    allocator.free(hub.mission_exits);
+}
+
+/// Free owned arrays (footprint + layers) in a decoration-definitions hashmap,
+/// then deinit. String fields are borrowed (freed by `freeParsedSections`).
+fn freeDecorationDefinitions(definitions: *std.AutoHashMap(u8, DecorationDefinition), allocator: std.mem.Allocator) void {
+    var it = definitions.iterator();
+    while (it.next()) |entry| {
+        allocator.free(entry.value_ptr.footprint);
+        allocator.free(entry.value_ptr.layers);
+    }
+    definitions.deinit();
+}
+
+/// Free owned arrays (layers) in an enemy-definitions hashmap, then deinit.
+/// String fields are borrowed.
+fn freeEnemyDefinitions(definitions: *std.AutoHashMap(u8, types.Entity), allocator: std.mem.Allocator) void {
+    var it = definitions.iterator();
+    while (it.next()) |entry| {
+        allocator.free(entry.value_ptr.layers);
+    }
+    definitions.deinit();
+}
+
 pub fn loadLevel(
     sections: []const Section,
+    file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
 ) !Level {
     try validateSections(sections, &level_sections);
+    try validateFileFormatVersion(sections, "Metadata", level_file_format_version);
     var level: Level = .{};
     if (findSection(sections, "Metadata")) |section| {
         if (section.entry_groups.len > 0) {
@@ -482,94 +1361,19 @@ pub fn loadLevel(
         }
     }
 
-    // Collect decoration character codes so layout parsing knows which chars block tiles
-    var decoration_codes: std.ArrayList(u8) = .empty;
-    defer decoration_codes.deinit(allocator);
-    if (findSection(sections, "Decorations")) |section| {
-        for (section.entry_groups) |group| {
-            const code_string = findValue(group.pairs, "character_code") orelse continue;
-            if (code_string.len != 1) continue;
-            try decoration_codes.append(allocator, code_string[0]);
-        }
-    }
-
-    // Parse enemy definitions keyed by character code
+    // Parse decoration definitions keyed by character code (sprite +
+    // sprite-grid footprint + pixel dims). Replaces the old decoration_codes
+    // list — the layout walk now looks up the full definition per char.
+    var decoration_definitions = parseDecorationDefinitions(sections, file_source, allocator);
+    defer freeDecorationDefinitions(&decoration_definitions, allocator);
     var enemy_definitions = std.AutoHashMap(u8, types.Entity).init(allocator);
-    defer enemy_definitions.deinit();
+    defer freeEnemyDefinitions(&enemy_definitions, allocator);
     if (findSection(sections, "Enemies")) |section| {
         for (section.entry_groups) |group| {
             const pairs = group.pairs;
             const code_string = findValue(pairs, "character_code") orelse continue;
             if (code_string.len != 1) continue;
-
-            var entity: types.Entity = .{
-                .team = 1, // enemies are team 1
-            };
-
-            if (findValue(pairs, "name")) |value| entity.name = value;
-            if (findValue(pairs, "sprite")) |value| entity.sprite = value;
-            if (findValue(pairs, "max_health")) |value| {
-                entity.max_health = asU32(value) orelse 20;
-                entity.current_health = entity.max_health;
-            }
-            if (findValue(pairs, "defense")) |value| entity.defense = asU32(value) orelse 0;
-            if (findValue(pairs, "speed")) |value| entity.speed = asU32(value) orelse 1;
-            if (findValue(pairs, "aggro_range")) |value| entity.aggro_range = asU32(value) orelse 3;
-
-            // Main hand weapon
-            if (findValue(pairs, "main_hand_weapon_name")) |name| {
-                entity.main_hand_weapon = .{
-                    .name = name,
-                    .weapon_type = if (findValue(pairs, "main_hand_weapon_type")) |value| parseEnum(types.WeaponType, value) orelse .sword else .sword,
-                    .weapon_damage = if (findValue(pairs, "main_hand_weapon_damage")) |value| asU32(value) orelse 0 else 0,
-                };
-            }
-
-            // Off hand weapon
-            if (findValue(pairs, "off_hand_weapon_name")) |name| {
-                entity.off_hand_weapon = .{
-                    .name = name,
-                    .weapon_type = if (findValue(pairs, "off_hand_weapon_type")) |value| parseEnum(types.WeaponType, value) orelse .sword else .sword,
-                    .weapon_damage = if (findValue(pairs, "off_hand_weapon_damage")) |value| asU32(value) orelse 0 else 0,
-                };
-            }
-
-            // Gear
-            if (findValue(pairs, "amulet_name")) |name| {
-                entity.amulet = .{
-                    .name = name,
-                    .spell_damage = if (findValue(pairs, "amulet_spell_damage")) |value| asU32(value) orelse 0 else 0,
-                };
-            }
-            if (findValue(pairs, "coat_name")) |name| {
-                entity.coat = .{
-                    .name = name,
-                    .defense_bonus = if (findValue(pairs, "coat_defense_bonus")) |value| asU32(value) orelse 0 else 0,
-                    .health_bonus = if (findValue(pairs, "coat_health_bonus")) |value| asU32(value) orelse 0 else 0,
-                };
-            }
-            if (findValue(pairs, "gloves_name")) |name| {
-                entity.gloves = .{
-                    .name = name,
-                    .damage_bonus = if (findValue(pairs, "gloves_damage_bonus")) |value| asU32(value) orelse 0 else 0,
-                    .health_bonus = if (findValue(pairs, "gloves_health_bonus")) |value| asU32(value) orelse 0 else 0,
-                };
-            }
-            if (findValue(pairs, "pants_name")) |name| {
-                entity.pants = .{
-                    .name = name,
-                    .pickup_radius_bonus = if (findValue(pairs, "pants_pickup_radius_bonus")) |value| asU32(value) orelse 0 else 0,
-                    .health_bonus = if (findValue(pairs, "pants_health_bonus")) |value| asU32(value) orelse 0 else 0,
-                };
-            }
-            if (findValue(pairs, "boots_name")) |name| {
-                entity.boots = .{
-                    .name = name,
-                    .speed_bonus = if (findValue(pairs, "boots_speed_bonus")) |value| asU32(value) orelse 0 else 0,
-                    .health_bonus = if (findValue(pairs, "boots_health_bonus")) |value| asU32(value) orelse 0 else 0,
-                };
-            }
-
+            const entity = parseEntityDefinition(pairs, 1, &.{}, &.{}, allocator);
             try enemy_definitions.put(code_string[0], entity);
         }
     }
@@ -628,15 +1432,16 @@ pub fn loadLevel(
     var tile_positions: std.ArrayList(types.Vector2) = .empty;
     // Player is always entity index 0
     var entity_list: std.ArrayList(types.Entity) = .empty;
-    try entity_list.append(allocator, .{ .name = "Player", .sprite = "player", .team = 0 });
+    var player_entity: types.Entity = .{ .name = "Player", .sprite = "player", .team = 0 };
+    cloneEntityOwned(&player_entity, allocator);
+    try entity_list.append(allocator, player_entity);
     var decoration_list: std.ArrayList(types.Decoration) = .empty;
     var ground_item_list: std.ArrayList(types.GroundItems) = .empty;
     var player_start: ?types.Vector2 = null;
 
     if (findSection(sections, "Layout")) |section| {
-        const row_count: i32 = @intCast(section.raw_lines.len);
         for (section.raw_lines, 0..) |row, raw_y| {
-            const y: i32 = row_count - 1 - @as(i32, @intCast(raw_y));
+            const y: i32 = @intCast(raw_y);
             for (row, 0..) |character, raw_x| {
                 const x: i32 = @intCast(raw_x);
                 const position = types.Vector2{ .x = x, .y = y };
@@ -654,47 +1459,39 @@ pub fn loadLevel(
                     },
                     else => {
                         // Check if this character is a decoration (no tile underneath)
-                        var is_decoration = false;
-                        for (decoration_codes.items) |code| {
-                            if (character == code) {
-                                is_decoration = true;
-                                break;
-                            }
-                        }
-
-                        if (!is_decoration) {
-                            try tile_positions.append(allocator, position);
-                        }
-
-                        // Match character to enemy, decoration, or item definition
-                        if (enemy_definitions.get(character)) |definition| {
-                            var entity = definition;
-                            entity.position = position;
-                            try entity_list.append(allocator, entity);
-                        } else if (is_decoration) {
-                            // Decoration info is parsed from the Decorations section entry groups
-                            // For now, create a basic decoration with the position
-                            if (findSection(sections, "Decorations")) |decoration_section| {
-                                for (decoration_section.entry_groups) |group| {
-                                    const code_string = findValue(group.pairs, "character_code") orelse continue;
-                                    if (code_string.len == 1 and code_string[0] == character) {
-                                        try decoration_list.append(allocator, .{
-                                            .decoration_id = null,
-                                            .name = findValue(group.pairs, "sprite") orelse &.{},
-                                            .position = position,
-                                            .footprint = &.{position},
-                                        });
-                                        break;
-                                    }
-                                }
-                            }
-                        } else if (item_definitions.get(character)) |item| {
-                            const items = try allocator.alloc(types.Item, 1);
-                            items[0] = item;
-                            try ground_item_list.append(allocator, .{
+                        if (decoration_definitions.get(character)) |deco_def| {
+                            // Decoration: no tile at the anchor; footprint
+                            // tiles are validated after the full layout walk.
+                            var decoration: types.Decoration = .{
+                                .decoration_id = null,
+                                .name = deco_def.sprite,
                                 .position = position,
-                                .items = items,
-                            });
+                                .footprint = deco_def.footprint,
+                                .pixel_dims = deco_def.pixel_dims,
+                                .color_index = deco_def.color_index,
+                                .layers = deco_def.layers,
+                            };
+                            cloneDecorationOwned(&decoration, allocator);
+                            decoration_list.append(allocator, decoration) catch @panic("failed to append decoration");
+                        } else {
+                            // Not a decoration — this tile is walkable.
+                            try tile_positions.append(allocator, position);
+
+                            // Match character to enemy or item definition.
+                            if (enemy_definitions.get(character)) |definition| {
+                                var entity = definition;
+                                entity.position = position;
+                                cloneEntityOwned(&entity, allocator);
+                                try entity_list.append(allocator, entity);
+                            } else if (item_definitions.get(character)) |item| {
+                                const items = try allocator.alloc(types.Item, 1);
+                                items[0] = item;
+                                cloneItemOwned(&items[0], allocator);
+                                try ground_item_list.append(allocator, .{
+                                    .position = position,
+                                    .items = items,
+                                });
+                            }
                         }
                     },
                 }
@@ -707,6 +1504,18 @@ pub fn loadLevel(
         entity_list.items[0].position = position;
     }
 
+    // Validate decoration footprints: each world footprint tile must not
+    // overlap a level tile (placement invariant — see AGENTS → Decorations
+    // & Footprint). Build a tile-position set for O(1) lookup.
+    var tile_set = std.AutoHashMap(types.Vector2, void).init(allocator);
+    defer tile_set.deinit();
+    for (tile_positions.items) |tile| {
+        tile_set.put(tile, {}) catch @panic("failed to insert tile into set");
+    }
+    for (decoration_list.items) |decoration| {
+        validateDecorationFootprint(decoration, &tile_set);
+    }
+
     level.level_tiles = try tile_positions.toOwnedSlice(allocator);
     level.entities = try entity_list.toOwnedSlice(allocator);
     level.decorations = try decoration_list.toOwnedSlice(allocator);
@@ -717,9 +1526,11 @@ pub fn loadLevel(
 
 pub fn loadHub(
     sections: []const Section,
+    file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
 ) !Hub {
     try validateSections(sections, &hub_sections);
+    try validateFileFormatVersion(sections, "Metadata", hub_file_format_version);
     var hub: Hub = .{};
 
     // Metadata
@@ -735,16 +1546,9 @@ pub fn loadHub(
         }
     }
 
-    // Collect decoration character codes
-    var decoration_codes: std.ArrayList(u8) = .empty;
-    defer decoration_codes.deinit(allocator);
-    if (findSection(sections, "Decorations")) |section| {
-        for (section.entry_groups) |group| {
-            const code_string = findValue(group.pairs, "character_code") orelse continue;
-            if (code_string.len != 1) continue;
-            try decoration_codes.append(allocator, code_string[0]);
-        }
-    }
+    // Parse decoration definitions keyed by character code (same as levels).
+    var decoration_definitions = parseDecorationDefinitions(sections, file_source, allocator);
+    defer freeDecorationDefinitions(&decoration_definitions, allocator);
 
     // Collect exit character codes
     var exit_codes: std.ArrayList(u8) = .empty;
@@ -786,9 +1590,8 @@ pub fn loadHub(
     var exit_list: std.ArrayList(types.MissionExit) = .empty;
 
     if (findSection(sections, "Layout")) |section| {
-        const row_count: i32 = @intCast(section.raw_lines.len);
         for (section.raw_lines, 0..) |row, raw_y| {
-            const y: i32 = row_count - 1 - @as(i32, @intCast(raw_y));
+            const y: i32 = @intCast(raw_y);
             for (row, 0..) |character, raw_x| {
                 const x: i32 = @intCast(raw_x);
                 const position = types.Vector2{ .x = x, .y = y };
@@ -798,49 +1601,53 @@ pub fn loadHub(
                     '.' => try tile_positions.append(allocator, position),
                     '!' => {
                         hub.player.position = position;
-                        hub.player.name = "Player";
-                        hub.player.sprite = "player";
+                        hub.player.name = dupeString(allocator, "Player");
+                        hub.player.sprite = dupeString(allocator, "player");
                         try tile_positions.append(allocator, position);
                     },
                     else => {
-                        var is_decoration = false;
-                        for (decoration_codes.items) |code| {
-                            if (character == code) {
-                                is_decoration = true;
-                                break;
-                            }
-                        }
-
-                        if (!is_decoration) {
+                        if (decoration_definitions.get(character)) |deco_def| {
+                            var decoration: types.Decoration = .{
+                                .decoration_id = null,
+                                .name = deco_def.sprite,
+                                .position = position,
+                                .footprint = deco_def.footprint,
+                                .pixel_dims = deco_def.pixel_dims,
+                                .color_index = deco_def.color_index,
+                                .layers = deco_def.layers,
+                            };
+                            cloneDecorationOwned(&decoration, allocator);
+                            decoration_list.append(allocator, decoration) catch @panic("failed to append decoration");
+                        } else {
                             try tile_positions.append(allocator, position);
-                        }
 
-                        if (is_decoration) {
-                            if (findSection(sections, "Decorations")) |decoration_section| {
-                                for (decoration_section.entry_groups) |group| {
-                                    const code_string = findValue(group.pairs, "character_code") orelse continue;
-                                    if (code_string.len == 1 and code_string[0] == character) {
-                                        try decoration_list.append(allocator, .{
-                                            .decoration_id = null,
-                                            .name = findValue(group.pairs, "sprite") orelse &.{},
-                                            .position = position,
-                                            .footprint = &.{position},
-                                        });
-                                        break;
-                                    }
-                                }
+                            if (exit_definitions.getPtr(character)) |exit| {
+                                exit.position = position;
+                                var exit_copy = exit.*;
+                                exit_copy.mission_id = dupeString(allocator, exit_copy.mission_id);
+                                try exit_list.append(allocator, exit_copy);
+                            } else if (npc_definitions.getPtr(character)) |npc| {
+                                var npc_copy = npc.*;
+                                npc_copy.entity.position = position;
+                                cloneEntityOwned(&npc_copy.entity, allocator);
+                                try npc_list.append(allocator, npc_copy);
                             }
-                        } else if (exit_definitions.getPtr(character)) |exit| {
-                            exit.position = position;
-                            try exit_list.append(allocator, exit.*);
-                        } else if (npc_definitions.getPtr(character)) |npc| {
-                            npc.entity.position = position;
-                            try npc_list.append(allocator, npc.*);
                         }
                     },
                 }
             }
         }
+    }
+
+    // Validate decoration footprints (same as levels — see AGENTS →
+    // Decorations & Footprint).
+    var tile_set = std.AutoHashMap(types.Vector2, void).init(allocator);
+    defer tile_set.deinit();
+    for (tile_positions.items) |tile| {
+        tile_set.put(tile, {}) catch @panic("failed to insert tile into set");
+    }
+    for (decoration_list.items) |decoration| {
+        validateDecorationFootprint(decoration, &tile_set);
     }
 
     hub.hub_tiles = try tile_positions.toOwnedSlice(allocator);
@@ -857,6 +1664,7 @@ pub fn loadCampaign(
 ) !Campaign {
     _ = allocator;
     try validateSections(sections, &campaign_sections);
+    try validateFileFormatVersion(sections, "Metadata", campaign_file_format_version);
     var campaign: Campaign = .{};
 
     if (findSection(sections, "Metadata")) |section| {
@@ -876,6 +1684,7 @@ pub fn loadMission(
 ) !Mission {
     _ = allocator;
     try validateSections(sections, &mission_sections);
+    try validateFileFormatVersion(sections, "Metadata", mission_file_format_version);
     var mission: Mission = .{};
 
     if (findSection(sections, "Metadata")) |section| {
@@ -896,6 +1705,7 @@ pub fn loadPlayerSave(
     allocator: std.mem.Allocator,
 ) !PlayerData {
     try validateSections(sections, &player_save_sections);
+    try validateFileFormatVersion(sections, "Metadata", player_save_file_format_version);
     var player_data: PlayerData = .{};
 
     // Info
@@ -1121,13 +1931,14 @@ pub fn loadWeaponTypeDefinition(
     };
 }
 
-const color_theme_sections = [_][]const u8{ "GlobalColors", "Gradients" };
+const color_theme_sections = [_][]const u8{ "Metadata", "GlobalColors", "Gradients" };
 
 pub fn loadColorThemeDefinitions(
     sections: []const Section,
     allocator: std.mem.Allocator,
 ) !ColorThemeDefinitions {
     try validateSections(sections, &color_theme_sections);
+    try validateFileFormatVersion(sections, "Metadata", color_themes_file_format_version);
 
     var theme: ColorThemeDefinitions = .{
         .lightest = .{ .r = 255, .g = 255, .b = 240 },
@@ -1226,7 +2037,9 @@ pub fn writePlayerSave(
     var buffer: std.ArrayList(u8) = .empty;
 
     // Info
-    try buffer.appendSlice(allocator, "Info\n");
+    try buffer.appendSlice(allocator, "Metadata\n");
+    try buffer.print(allocator, "file_format_version {d}\n", .{player_save_file_format_version});
+    try buffer.appendSlice(allocator, "\nInfo\n");
     try buffer.print(allocator, "player_name {s}\n", .{player_data.player_name});
     try buffer.print(allocator, "current_campaign {s}\n", .{player_data.current_campaign});
     try buffer.print(allocator, "current_hub {s}\n", .{player_data.current_hub});
@@ -1573,6 +2386,39 @@ fn appendEventScalar(
                 try appendEventScalar(buffer, allocator, @field(value, field.name));
             }
         },
+        .@"union" => |union_info| {
+            // A tagged-union field value (e.g. EntityEditTarget, Item):
+            // `<tag> <payload-fields...>`. The tag is the first token, then
+            // the active payload's fields (recursively flattened). A void
+            // payload (e.g. EntityEditTarget.player_def) writes just the tag.
+            if (union_info.tag_type) |_| {
+                try buffer.appendSlice(allocator, @tagName(value));
+                switch (value) {
+                    inline else => |payload, tag| {
+                        // `tag` is a comptime-known enum value, so indexing
+                        // union_info.fields (a comptime tuple) works. A void
+                        // payload (e.g. EntityEditTarget.player_def) writes
+                        // just the tag — no payload fields appended.
+                        const field_info = union_info.fields[@intFromEnum(tag)];
+                        if (field_info.type != void) {
+                            try buffer.appendSlice(allocator, " ");
+                            try appendEventScalar(buffer, allocator, payload);
+                        }
+                    },
+                }
+            } else {
+                @compileError("unsupported event field: untagged union " ++ @typeName(T));
+            }
+        },
+        .array => {
+            // Fixed-size array (e.g. [6]Color in a ColorGradient): flattened
+            // as space-separated element reprs, same as a slice. Elements have
+            // fixed arity so decoding regroups.
+            for (value, 0..) |element, index| {
+                if (index != 0) try buffer.appendSlice(allocator, " ");
+                try appendEventScalar(buffer, allocator, element);
+            }
+        },
         else => @compileError("unsupported event field type: " ++ @typeName(T)),
     }
 }
@@ -1718,13 +2564,13 @@ fn parseEventScalar(
             var elements: std.ArrayList(pointer.child) = .empty;
             var tokens = std.mem.tokenizeScalar(u8, value, ' ');
             while (tokens.peek() != null) {
-                try elements.append(allocator, try parseScalarTokens(pointer.child, &tokens));
+                try elements.append(allocator, try parseScalarTokens(pointer.child, &tokens, allocator));
             }
             return try elements.toOwnedSlice(allocator);
         },
         else => {
             var tokens = std.mem.tokenizeScalar(u8, value, ' ');
-            return parseScalarTokens(T, &tokens);
+            return parseScalarTokens(T, &tokens, allocator);
         },
     }
 }
@@ -1735,6 +2581,7 @@ fn parseEventScalar(
 fn parseScalarTokens(
     comptime T: type,
     tokens: anytype,
+    allocator: std.mem.Allocator,
 ) SessionLogError!T {
     switch (@typeInfo(T)) {
         .int => {
@@ -1751,10 +2598,55 @@ fn parseScalarTokens(
             const token = tokens.next() orelse return error.MalformedSessionLog;
             return std.meta.stringToEnum(T, token) orelse error.MalformedSessionLog;
         },
+        .pointer => |pointer| {
+            // A string field inside a struct/union payload (e.g. Weapon.name,
+            // EntityLayer.sprite). Slices of non-u8 aren't handled here —
+            // they go through parseEventScalar's token-stream loop at the top
+            // level. The string is duped into the caller's allocator so it
+            // outlives the input buffer (mirrors parseEventScalar's []const u8).
+            if (pointer.size != .slice) {
+                @compileError("unsupported event field pointer type: " ++ @typeName(T));
+            }
+            if (pointer.child != u8) {
+                @compileError("parseScalarTokens: slice of non-u8 not supported inside a struct/union — use a top-level field");
+            }
+            const token = tokens.next() orelse return error.MalformedSessionLog;
+            return try allocator.dupe(u8, token);
+        },
         .@"struct" => |info| {
             var result: T = undefined;
             inline for (info.fields) |field| {
-                @field(result, field.name) = try parseScalarTokens(field.type, tokens);
+                @field(result, field.name) = try parseScalarTokens(field.type, tokens, allocator);
+            }
+            return result;
+        },
+        .@"union" => |union_info| {
+            // A tagged-union field value: `<tag> <payload-fields...>`. The
+            // tag is the first token; for a void payload (e.g.
+            // EntityEditTarget.player_def) the tag alone suffices.
+            if (union_info.tag_type) |_| {
+                const tag_token = tokens.next() orelse return error.MalformedSessionLog;
+                inline for (union_info.fields) |field| {
+                    if (std.mem.eql(u8, tag_token, field.name)) {
+                        if (field.type == void) {
+                            return @unionInit(T, field.name, {});
+                        } else {
+                            const payload = try parseScalarTokens(field.type, tokens, allocator);
+                            return @unionInit(T, field.name, payload);
+                        }
+                    }
+                }
+                return error.MalformedSessionLog;
+            } else {
+                @compileError("unsupported event field: untagged union " ++ @typeName(T));
+            }
+        },
+        .array => |array| {
+            // Fixed-size array (e.g. [6]Color): consume one element per cell,
+            // mirroring appendEventScalar's flattening.
+            var result: T = undefined;
+            inline for (0..array.len) |index| {
+                result[index] = try parseScalarTokens(array.child, tokens, allocator);
             }
             return result;
         },
@@ -1809,7 +2701,6 @@ test "parseConfigFile handles sections, key-value pairs, and entry groups" {
     try std.testing.expectEqualStrings("Audio", sections[0].header);
     try std.testing.expectEqualStrings("Gameplay", sections[1].header);
     try std.testing.expectEqualStrings("Layout", sections[2].header);
-    try std.testing.expectEqualStrings("Metadata", sections[3].header);
 
     // Key-value pairs within a single entry group
     try std.testing.expectEqual(1, sections[0].entry_groups.len);
@@ -1873,6 +2764,9 @@ test "value conversion helpers" {
 test "loadSettings parses settings sections into a Settings struct" {
     const allocator = std.testing.allocator;
     const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
         \\Audio
         \\music_volume 0.8
         \\sound_effects_volume 0.3
@@ -1953,6 +2847,7 @@ test "parseConfigFile handles layout grids as raw lines" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
+        \\file_format_version 1
         \\name Test Level
         \\
         \\Layout
@@ -1996,6 +2891,7 @@ test "section headers only recognized after blank lines" {
         \\ ...
         \\
         \\Metadata
+        \\file_format_version 1
         \\name test
     ;
 
@@ -2048,6 +2944,7 @@ test "loadLevel parses a complete level" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
+        \\file_format_version 1
         \\name Test Level
         \\
         \\Layout
@@ -2072,11 +2969,8 @@ test "loadLevel parses a complete level" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, allocator);
-    defer allocator.free(level.level_tiles);
-    defer allocator.free(level.entities);
-    defer allocator.free(level.decorations);
-    defer allocator.free(level.ground_items);
+    const level = try loadLevel(sections, null, allocator);
+    defer freeLevel(level, allocator);
 
     // Metadata
     try std.testing.expectEqualStrings("Test Level", level.name);
@@ -2098,10 +2992,10 @@ test "loadLevel parses a complete level" {
     try std.testing.expectEqual(3, level.entities[1].main_hand_weapon.?.weapon_damage);
 
     // Tiles: all '.' and '!' and '=' positions, plus enemy position
-    // Layout (flipped Y):
-    //   row 0 "  1.." -> y=2: tiles at (2,2) enemy, (3,2), (4,2)
-    //   row 1 "..!.." -> y=1: tiles at (0,1), (1,1), (2,1) player, (3,1), (4,1)
-    //   row 2 "  ..=" -> y=0: tiles at (2,0), (3,0), (4,0) level_end
+    // Layout (top row = y=0, natural reading order):
+    //   row 0 (y=0) "  1.." -> tiles at (2,0) enemy, (3,0), (4,0)
+    //   row 1 (y=1) "..!.." -> tiles at (0,1), (1,1), (2,1) player, (3,1), (4,1)
+    //   row 2 (y=2) "  ..=" -> tiles at (2,2), (3,2), (4,2) level_end
     try std.testing.expectEqual(11, level.level_tiles.len);
 
     // Player position matches '!' location
@@ -2110,13 +3004,14 @@ test "loadLevel parses a complete level" {
 
     // Level end matches '=' location
     try std.testing.expectEqual(4, level.level_end.?.x);
-    try std.testing.expectEqual(0, level.level_end.?.y);
+    try std.testing.expectEqual(2, level.level_end.?.y);
 }
 
 test "loadLevel decorations do not create tiles" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
+        \\file_format_version 1
         \\name Decoration Test
         \\
         \\Layout
@@ -2128,7 +3023,8 @@ test "loadLevel decorations do not create tiles" {
         \\
         \\Decorations
         \\character_code A
-        \\sprite BigTree
+        \\sprite stone_1
+        \\footprint 0 0
         \\
         \\Items
     ;
@@ -2136,29 +3032,129 @@ test "loadLevel decorations do not create tiles" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, allocator);
-    defer allocator.free(level.level_tiles);
-    defer allocator.free(level.entities);
-    defer allocator.free(level.decorations);
-    defer allocator.free(level.ground_items);
+    const level = try loadLevel(sections, null, allocator);
+    defer freeLevel(level, allocator);
 
     // 8 tiles: 9 positions minus 1 decoration
     try std.testing.expectEqual(8, level.level_tiles.len);
 
     // 1 decoration
     try std.testing.expectEqual(1, level.decorations.len);
-    try std.testing.expectEqualStrings("BigTree", level.decorations[0].name);
+    try std.testing.expectEqualStrings("stone_1", level.decorations[0].name);
 
-    // Decoration position: column 1, row 1 in text -> y is flipped
-    // Row 0 ".!." -> y=2, Row 1 ".A." -> y=1, Row 2 "..." -> y=0
+    // Decoration position: row 1 (middle), col 1 -> y=1 (natural reading order)
+    // Row 0 (y=0) ".!.", Row 1 (y=1) ".A.", Row 2 (y=2) "..."
     try std.testing.expectEqual(1, level.decorations[0].position.x);
     try std.testing.expectEqual(1, level.decorations[0].position.y);
+
+    // Footprint (sprite-grid) + pixel dims resolved from the comptime table.
+    try std.testing.expectEqual(1, level.decorations[0].footprint.len);
+    try std.testing.expectEqual(@as(i32, 0), level.decorations[0].footprint[0].x);
+    try std.testing.expectEqual(@as(i32, 0), level.decorations[0].footprint[0].y);
+    try std.testing.expectEqual(@as(i32, 256), level.decorations[0].pixel_dims.x);
+    try std.testing.expectEqual(@as(i32, 256), level.decorations[0].pixel_dims.y);
+}
+
+test "loadLevel multi-tile decoration footprint" {
+    const allocator = std.testing.allocator;
+    // tree_1 is 768x768 = 3x3 bbox. Footprint is just the trunk tile at
+    // sprite-grid (1,2) (bottom-middle). The canopy overhangs the other 8
+    // bbox tiles — those are NOT footprint tiles and may overlap level tiles.
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\name Tree Test
+        \\
+        \\Layout
+        \\T..
+        \\...
+        \\...
+        \\
+        \\Enemies
+        \\
+        \\Decorations
+        \\character_code T
+        \\sprite tree_1
+        \\footprint 1 2
+        \\
+        \\Items
+    ;
+
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    const level = try loadLevel(sections, null, allocator);
+    defer freeLevel(level, allocator);
+
+    // T is at row 0, col 0 -> world (0, 0) (natural reading order). The
+    // footprint world tile is (0, 0) — not a level tile (decoration char adds
+    // no tile). The other 8 positions are all '.' -> 8 tiles.
+    try std.testing.expectEqual(8, level.level_tiles.len);
+
+    // 1 decoration with a single footprint tile (the trunk).
+    try std.testing.expectEqual(1, level.decorations.len);
+    try std.testing.expectEqualStrings("tree_1", level.decorations[0].name);
+    try std.testing.expectEqual(0, level.decorations[0].position.x);
+    try std.testing.expectEqual(0, level.decorations[0].position.y);
+    try std.testing.expectEqual(1, level.decorations[0].footprint.len);
+    try std.testing.expectEqual(@as(i32, 1), level.decorations[0].footprint[0].x);
+    try std.testing.expectEqual(@as(i32, 2), level.decorations[0].footprint[0].y);
+    // 768x768 pixel dims from the comptime sprite-metadata table.
+    try std.testing.expectEqual(@as(i32, 768), level.decorations[0].pixel_dims.x);
+    try std.testing.expectEqual(@as(i32, 768), level.decorations[0].pixel_dims.y);
+}
+
+test "loadLevel decoration with layers" {
+    const allocator = std.testing.allocator;
+    // A decoration with a base (tree_trunk) + a layer (tree_canopy) of the
+    // same pixel dims, each with its own color index. Both are real shipped
+    // sprites so dims resolve from the comptime table.
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\name Layer Test
+        \\
+        \\Layout
+        \\T..
+        \\...
+        \\...
+        \\
+        \\Enemies
+        \\
+        \\Decorations
+        \\character_code T
+        \\sprite tree_1
+        \\color_index 4
+        \\footprint 1 2
+        \\layer
+        \\sprite tree_1
+        \\color_index 2
+        \\
+        \\Items
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    const level = try loadLevel(sections, null, allocator);
+    defer freeLevel(level, allocator);
+
+    try std.testing.expectEqual(1, level.decorations.len);
+    try std.testing.expectEqualStrings("tree_1", level.decorations[0].name);
+    try std.testing.expectEqual(@as(u32, 4), level.decorations[0].color_index);
+
+    // 1 layer, same sprite (reused for the test), color_index 2, same dims.
+    try std.testing.expectEqual(1, level.decorations[0].layers.len);
+    try std.testing.expectEqualStrings("tree_1", level.decorations[0].layers[0].sprite);
+    try std.testing.expectEqual(@as(u32, 2), level.decorations[0].layers[0].color_index);
+    try std.testing.expectEqual(@as(i32, 768), level.decorations[0].layers[0].pixel_dims.x);
+    try std.testing.expectEqual(@as(i32, 768), level.decorations[0].layers[0].pixel_dims.y);
 }
 
 test "loadLevel rejects unexpected sections" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
+        \\file_format_version 1
         \\name Bad Level
         \\
         \\Layout
@@ -2171,13 +3167,14 @@ test "loadLevel rejects unexpected sections" {
         \\Items
         \\
         \\Audio
+        \\file_format_version 1
         \\music_volume 0.5
     ;
 
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const result = loadLevel(sections, allocator);
+    const result = loadLevel(sections, null, allocator);
     try std.testing.expectError(error.UnexpectedSection, result);
 }
 
@@ -2185,6 +3182,7 @@ test "loadHub parses a complete hub" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
+        \\file_format_version 1
         \\name Test Village
         \\
         \\Layout
@@ -2206,11 +3204,8 @@ test "loadHub parses a complete hub" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const hub = try loadHub(sections, allocator);
-    defer allocator.free(hub.hub_tiles);
-    defer allocator.free(hub.npcs);
-    defer allocator.free(hub.decorations);
-    defer allocator.free(hub.mission_exits);
+    const hub = try loadHub(sections, null, allocator);
+    defer freeHub(hub, allocator);
 
     // Metadata
     try std.testing.expectEqualStrings("Test Village", hub.name);
@@ -2223,16 +3218,16 @@ test "loadHub parses a complete hub" {
     // NPC
     try std.testing.expectEqual(1, hub.npcs.len);
     try std.testing.expectEqualStrings("Blacksmith", hub.npcs[0].entity.name);
-    // N at column 3, row 0 in text -> y=2
+    // N at column 3, row 0 -> y=0 (natural reading order)
     try std.testing.expectEqual(3, hub.npcs[0].entity.position.x);
-    try std.testing.expectEqual(2, hub.npcs[0].entity.position.y);
+    try std.testing.expectEqual(0, hub.npcs[0].entity.position.y);
 
     // Mission exit
     try std.testing.expectEqual(1, hub.mission_exits.len);
     try std.testing.expectEqualStrings("first_mission", hub.mission_exits[0].mission_id);
-    // E at column 2, row 2 in text -> y=0
+    // E at column 2, row 2 -> y=2
     try std.testing.expectEqual(2, hub.mission_exits[0].position.x);
-    try std.testing.expectEqual(0, hub.mission_exits[0].position.y);
+    try std.testing.expectEqual(2, hub.mission_exits[0].position.y);
 
     // Tiles: all positions except decorations. No decorations here, so all non-space chars get tiles.
     // 5 + 5 + 5 = 15 total characters, minus 0 spaces = 15... wait, rows are 5 chars each
@@ -2246,6 +3241,7 @@ test "loadCampaign parses campaign metadata" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
+        \\file_format_version 1
         \\name Main Campaign
         \\start_hub starting_village
     ;
@@ -2263,6 +3259,7 @@ test "loadMission parses mission metadata" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
+        \\file_format_version 1
         \\name First Mission
         \\start_hub camp
         \\end_hub village
@@ -2283,6 +3280,9 @@ test "loadMission parses mission metadata" {
 test "loadPlayerSave parses a save file" {
     const allocator = std.testing.allocator;
     const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
         \\Info
         \\player_name Test Player
         \\turns 100
@@ -2635,6 +3635,9 @@ test "asColor parses hex color codes" {
 test "loadColorThemeDefinitions parses global colors and gradients" {
     const allocator = std.testing.allocator;
     const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
         \\GlobalColors
         \\lightest #FFFFF0
         \\darkest #140F19
@@ -2731,12 +3734,12 @@ test "color_themes.txt parses from disk" {
     const theme = try loadColorThemeDefinitions(parsed.sections, allocator);
     defer allocator.free(theme.gradients);
 
-    // Should have 9 gradients
-    try std.testing.expectEqual(9, theme.gradients.len);
+    // Should have 3 gradients (world / enemy / player for the first full theme).
+    try std.testing.expectEqual(3, theme.gradients.len);
 
     // Lightest and darkest should be parsed
-    try std.testing.expectEqual(255, theme.lightest.r);
-    try std.testing.expectEqual(20, theme.darkest.r);
+    try std.testing.expectEqual(0xfe, theme.lightest.r);
+    try std.testing.expectEqual(0x4c, theme.darkest.r);
 }
 
 // ============================================================

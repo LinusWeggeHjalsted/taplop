@@ -19,6 +19,7 @@ const parser = @import("parser.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const event_handlers = @import("event_handlers.zig");
+const view_mod = @import("view.zig");
 const build_info = @import("build_info");
 
 const GameState = state.GameState;
@@ -108,9 +109,85 @@ pub fn handleDrag(
     }
 }
 
-/// Advisory check when loading a recorded session for replay: if it was
-/// produced by a different build, replay logic may diverge (game_version is
-/// advisory — see AGENTS.md Versioning). Warn, never fail.
+/// Camera pan (right-drag): grab the world point under the cursor and drag
+/// it so it stays under the cursor. Runs anytime (not gated on the event
+/// stack) so the player can look around mid-wait / mid-turn. Levels/hubs
+/// only. The pan offset lives on SessionState (transient view state, replay-
+/// safe by construction — see AGENTS.md). `camera` must already include the
+/// current pan offset (so screenToTile / floatWorldPoint map the cursor
+/// against the camera the player is actually seeing).
+///
+/// Pan-start is suppressed when the pointer is over a blocking UI element
+/// (same occlusion check as the tile cursor) — right-clicking a panel pans
+/// nothing. On player move (detected in frame()) the pan is cleared so the
+/// camera recenters; on screen transition frame() also clears it. Here we
+/// only own the drag itself.
+pub fn handleCameraPan(
+    history: *GameStateHistory,
+    pointer: input.PointerInput,
+    ui_elements: []const ui.UiElement,
+    camera: types.Camera,
+    camera_zoom: f32,
+    viewport: input.ViewportSize,
+) void {
+    const current = &history.current_state;
+    const session = &history.session;
+
+    // Outside a level/hub there's nothing to pan. Clear any stale pan/anchor
+    // so re-entering a world doesn't inherit it (frame() also clears on
+    // screen transition, but this covers direct entry without a transition).
+    if (current.screen != .level and current.screen != .hub) {
+        session.camera_pan = null;
+        session.camera_pan_anchor = null;
+        return;
+    }
+
+    // Right-button press begins a pan — unless the cursor is over blocking UI.
+    if (pointer.right_pressed) {
+        if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
+            session.camera_pan_anchor = null;
+            return;
+        }
+        const world = input.floatWorldPoint(pointer.position, camera, camera_zoom, viewport);
+        session.camera_pan_anchor = .{ .world_x = world.x, .world_y = world.y };
+        return;
+    }
+
+    // No active drag — nothing to do on held/moved/released.
+    if (session.camera_pan_anchor == null) {
+        if (pointer.right_released) session.camera_pan_anchor = null;
+        return;
+    }
+
+    // Drag in progress (right held). Solve for the camera position that keeps
+    // the anchored world point exactly under the cursor, then store the
+    // offset from the player-centered camera as `camera_pan`.
+    //
+    //   world = (camera.position + (cursor - viewport/2)) / tile_pixels
+    //   => camera.position = world * tile_pixels - (cursor - viewport/2)
+    //
+    // pan = camera.position - player_centered_camera.position (computed here
+    // without the pan offset, so the offset is relative to the recentered
+    // camera and survives a player move only until frame() clears it).
+    if (pointer.right_held) {
+        const tile_pixels = input.tile_size_pixels * camera_zoom;
+        const anchor = session.camera_pan_anchor.?;
+        const cursor_x: f32 = @floatFromInt(pointer.position.x);
+        const cursor_y: f32 = @floatFromInt(pointer.position.y);
+        const target_camera_x = anchor.world_x * tile_pixels - (cursor_x - viewport.width / 2.0);
+        const target_camera_y = anchor.world_y * tile_pixels - (cursor_y - viewport.height / 2.0);
+
+        const player_centered = view_mod.computeCamera(current, camera_zoom, null);
+        session.camera_pan = .{
+            .x = @intFromFloat(@round(target_camera_x - @as(f32, @floatFromInt(player_centered.position.x)))),
+            .y = @intFromFloat(@round(target_camera_y - @as(f32, @floatFromInt(player_centered.position.y)))),
+        };
+    }
+
+    if (pointer.right_released) {
+        session.camera_pan_anchor = null;
+    }
+}
 pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
     if (!std.mem.eql(u8, log_game_version, build_info.game_version)) {
         std.debug.print(
@@ -279,6 +356,14 @@ pub fn handleIdleInput(
             switch (action) {
                 .new_game => event_handlers.pushEvents(current, &.{
                     .{ .meta_event = .start_new_game },
+                }, allocator),
+                // Dev entry point: open the editor on the shipped first_mission
+                // (a real custom-mission browser lands later). Hardcoded path
+                // for now so the editor building blocks are reachable.
+                .open_editor => event_handlers.pushEvents(current, &.{
+                    .{ .meta_event = .{ .open_editor = .{
+                        .mission_path = "data/campaigns/main_campaign/missions/first_mission",
+                    } } },
                 }, allocator),
                 // continue_game / load_save need an autosave path + file picker,
                 // and open_settings / open_credits need their screens. Wired

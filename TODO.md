@@ -1,0 +1,470 @@
+# Ziglop — TODO
+
+File roles + the open-question → AGENTS → DONE lifecycle are in
+AGENTS.md → Documentation. This file holds **active + near-term + deferred
+tasks** and **open/undecided design questions** only. Settled decisions live
+in AGENTS.md; completed history lives in DONE.md.
+
+## Goal
+
+Finish the game. The core loop (hub → mission → level → return) runs
+end-to-end natively and on web, and combat flow is working. The end goal is
+the full game: level editor, replay viewer, all planned skills, full art,
+full sound design, a web database for leaderboards and custom content, and
+everything else that entails. A lot is still missing — but it's reachable.
+Test by running `zig build run` and clicking through.
+
+## NEXT UP (not ordered — pick what progresses)
+
+- **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
+  view + full-screen detailed log). Projection is DONE (combat_log.zig); see
+  "Combat Log" below.
+- **Replay viewer** — wire the .replay_viewer screen to STEP through a loaded
+  log. See "Logging & Replay" below.
+- **Mission end states** — mission_complete / mission_fail screens + player
+  death. See "Mission Flow" below.
+- **Level editor** — major planned system, not yet broken down. The Screen
+  enum has `.editor` and events.zig has EditorEvent scaffolding
+  scaffolding; everything else is to be designed. See "Level Editor" below.
+- **Combat readability (Phase 4b)** — entity health bars + grayscale × gradient
+  tinting: entity color (player settings-driven index into player gradient,
+  enemies color_index into enemy gradient) + bottom-bar UI coloring DONE;
+  health bars still TODO.
+- **Remaining 4b visuals** — gear + effect sprites, sprite animation (8 fps) +
+  animated flag banner, ground items, decorations (footprint splitting DONE).
+- **Input/camera leftovers** — tab-targeting (cycle highlighted tiles
+  with Tab; reuse cursor resolution). (Right-click-drag camera pan DONE
+  — see DONE.md.)
+- **Cross-cutting polish** — real TTF font (text is blurry), 9-slice TILING
+  (currently stretched), `highlighted` edge outlines, missing art
+  (ui/icon_swap, ui/momentum, ui/cooldown_overlay draw magenta).
+- **Larger systems (beyond MVP)** — middle panels (inventory/gear/skills/enemy
+  inspect) + overlays (world map, full combat log) + options/settings/top bar
+  (drag-drop needs panels to be usable); NPC interaction/dialogue; audio.
+- **Online services** — web database for leaderboards + custom content
+  hosting/sharing. Builds on the custom-mission VFS acquisition path; see
+  "Content Loading / Custom Missions" + "Online Services" below.
+
+KNOWN DEFERRED BUGS: (none currently — combat turn-flow issues from earlier
+  playtesting are resolved.)
+  chase individually — troubleshoot via the session log (logging has landed).
+
+## Skill Logic
+
+All 25 skills ported (no stubs); port history in DONE.md. Remaining:
+
+- Wire weapon-type definitions (data) to reference each skill so they are
+  equippable/testable (separate from the code port).
+- Targeting (range, valid tiles, team filtering).
+- Damage calculation with modifiers and effects.
+
+## View Function Implementation
+
+Phase 4 plumbing + tiles + entity base sprites DONE (history in DONE.md).
+Reference notes that matter while working here (sprite/asset conventions):
+
+- Entity + weapon assets share one 512×640 frame + pivot (0.5, 0.8)
+  (normalized fraction; horizontal center, at the feet). Renderer aligns
+  pivot → tile anchor; weapons register with no per-sprite offset. Source
+  2048×1280 two-pose sheets, LEFT pose only, stored at 0.5 (256px/tile).
+  Player bodies use weapons/<type>, enemies weapons/enemy_<type>; off-hand
+  mirrored via flip_horizontal. Right pose reserved for animation later.
+- Tiles: assets/world/tile.png (source 600×600 → 256×256; jagged edges
+  overlap to outline the grid). Checkerboard tint per tile.
+- Flag: static pole world/flag_pole.png (256×512 = 1×2, pivot 0.5/0.75) +
+  animated banner world/flag.png overlaid (same frame/pivot). Both stored
+  ×0.5. Same sprite for level-end and hub mission-start markers.
+- Ground items: world/ground_items.png (256×256, centered pivot 0.5/0.5).
+
+Open / in-progress:
+
+- [~] TileOverlayDrawable slice (Phase 4.3): move-range HIGHLIGHTS
+  (translucent fill over level.highlighted_tiles) + hover CURSOR (outline).
+  Overlays have no art — renderer draws them as primitives. The cursor is
+  derived in view() from the session pointer (screenToTile), replay-safe.
+  range/radius/aggro outline types aren't emitted yet (renderer handles them).
+- [~] GroundDrawable slice: ENTITIES + flag poles DONE (base sprite only,
+  pivot 0.5/0.8, ascending-tile.y back-to-front sort). Decorations + ground
+  items still TODO.
+  - REFINEMENT: the level-end marker is drawn before all entities (actors
+    always occlude it) rather than participating in the y-sort — do a proper
+    mixed y-sort of entities + markers + decorations later.
+- [~] Entity sub-layer assembly: base sprite + WEAPONS done. Still TODO:
+  gear sprites, effect sprites (back/front), and health bars.
+- Sprite animation (view-side, cosmetic; NEVER gameplay state, so replay-safe
+  — frame is purely a function of wall-clock time, like the pointer/tooltip):
+  - Frame chosen IN view(): read a monotonic animation_clock (elapsed
+    microseconds on SessionState, advanced by the game loop, off GameState)
+    and emit a concrete SpriteDrawable with the resolved source rectangle.
+    Renderer stays dumb (draw sprite + source rect) — reuses the same
+    source-rectangle path as decoration footprint cropping.
+  - frame_index = (elapsed_ms / ms_per_frame) % frame_count; source rect =
+    (frame_index * frame_w, 0, frame_w, frame_h).
+  - 8 fps CONSTANT for ALL animations (125 ms/frame). Flag = 8 frames → 1.0 s.
+  - Per-sheet frame data (count, frame size) hardcoded per builder for now
+    (flag is the only animation); general per-sprite metadata table is the
+    "Sprite asset metadata" item below.
+  - Revisit view()-side selection only if view() is ever throttled below
+    display rate.
+- Decoration footprint splitting (per-tile pieces with source rectangles)
+  DONE — see "Decoration Footprint" below.
+- Sprite asset metadata (dimensions) DONE — `generated_sprite_metadata.zig`
+  (build-time PNG IHDR scan, keyed by sprite id). Used by the parser to
+  populate `Decoration.pixel_dims`; view splitting will read it from the
+  stored field. Custom sprites resolve dims from PNG bytes at runtime.
+
+## UI Framework — Panel Builders
+
+Layout infrastructure + buildBottomBar + buildMainMenu + buildTooltip +
+buildSkillTooltip + 9-slice + bottom-bar tooltips DONE (history in DONE.md).
+Open:
+
+- buildTopBar: options button (top-left), combat log summary.
+- buildGearPanel: equipped gear slots (weapons, amulet, coat, gloves, pants,
+  boots).
+- buildInventoryPanel: 8×12 grid, material counts on right side.
+- buildSkillsPanel: learned skills grid (draggable for swapping utility
+  slots).
+- buildEnemyInspectPanel: entity stats, skill bar with cooldowns, active
+  effects.
+- buildWorldMap: campaign graph visualization, clickable hubs/missions.
+- buildFullCombatLog: scrollable detailed combat log (renders
+  ViewState.combat_log; see Combat Log).
+- buildOptionsMenu: settings controls (volume, gameplay toggles).
+- buildMainMenu Continue availability: today Continue shows only when
+  PlayerData is populated (current_campaign.len > 0). Standalone builds
+  should ALSO offer Continue when an autosave.txt exists at the persistent
+  path. The file layer has landed (FileSource) — detect it ONCE when
+  entering the menu (not per frame; view() is pure over GameState + frame
+  arena, no file access) and feed the flag in.
+- buildMissionComplete: statistics, clone rewards, continue/retry.
+- buildMissionFail: header text, exit/retry buttons.
+- Middle section horizontal scroll when panels exceed width.
+- Add icon_sprite_id to Skill, Item, and Effect definitions (bottom bar
+  temporarily uses their name as placeholder icon id).
+- Move UI sprite assets from Unity project. Done so far (in assets/):
+  ui/icon_inventory,gear,skills,skip; ui/button_background; ui/turn_move,
+  turn_attack; ui/skill_button; ui/skill_slot_empty; skills/*;
+  ui/health_globe (+ _border); ui/panel. Still placeholder ids:
+  ui/icon_swap, ui/momentum, ui/cooldown_overlay.
+- Center cooldown/label text using measured text width — reuse the tooltip
+  measurement seam (measureSpanWidth/lineHeight in ui.zig).
+- Real font metrics: export a per-glyph advance table (per style if bold/
+  italic are separate faces) at font-finalization time and read it inside the
+  measurement seam, replacing the fixed-advance placeholder; make it
+  UTF-8-aware (glyph count, not byte length).
+- Author real tooltips on elements (skills: range/radius/cooldown rows;
+  items; effects) using the span constructors.
+- text_label hover bounds are a placeholder (boundsOf reports a font_size
+  square, no measurement) — fine while no text label has a tooltip. Wire
+  boundsOf for text_label to measureSpanWidth once the real font lands, if/
+  when we want tooltips on text elements.
+- Tooltip can overlap its own source: selectTooltipCorners picks a corner
+  purely by the source's screen quadrant and buildTooltip only clamps on
+  screen — it never checks the panel doesn't cover the hovered element (worse
+  for center-screen sources / large tooltips). Make corner selection size-
+  and overflow-aware.
+- PLACEHOLDER ASSET: the original ui/panel.png was NOT a valid 9-slice source
+  (a 176×176 rounded rect centered with a 104px transparent margin), so
+  9-slicing collapsed it to thin lines. Regenerated procedurally as a proper
+  edge-to-edge rounded panel. Original saved at assets/ui/panel.original.png
+  — FLAGGED for the artist to produce a real 9-slice panel (border at the
+  image edges, corner radius ≤ 128; a distinct opaque tooltip panel can be a
+  separate sprite).
+
+## Decoration Footprint
+
+Settled — see AGENTS → Decorations & Footprint. WIRING progress:
+- [x] Build-time sprite metadata table (`generated_sprite_metadata.zig` —
+      pixel dims from PNG IHDR for every shipped `assets/**/*.png`).
+- [x] `Decoration.pixel_dims` / `DecorationTypeDef.pixel_dims` field; parser
+      resolves dims (comptime table for shipped, PNG-byte parse for custom via
+      `?*const FileSource` on `loadLevel`/`loadHub`/`buildEditorMission`).
+- [x] Parser: `footprint x y` lines (sprite-grid coords), anchor derivation
+      (bottom-most-then-left-most), placement-invariant check (no tile under a
+      footprint tile → `@panic`). `instantiateEditorLevel` carries `pixel_dims`.
+- [x] View splitting (per-bbox-tile `DecorationPieceDrawable` with assigned
+      footprint sort y + unified ground-drawable y-sort). Entities +
+      decoration pieces + level-end/mission-start markers now share one
+      ascending (y, x) sort. Shipped level_1 + starting_village carry sample
+      decorations (tree_1, stone_1).
+- [x] Color indexing: `color_index` per decoration entry → world gradient
+      color; view resolves it to the raylib tint. Default 0.
+- [x] Multi-sprite layers: `layer` sub-groups (delimiter syntax) with
+      sprite + color_index; validated same pixel dims as base; per-bbox-tile
+      layer chunks drawn over the base. `DecorationLayer` type +
+      `DecorationPieceDrawable.layers` slice.
+- [ ] `data/decorations.txt` registry (editor-palette prefabs — pending editor
+      UI).
+- [ ] Editor custom-decoration acquisition (pick PNG → write to file source →
+      resolve dims → `editor_add_decoration_type` event).
+- [ ] Editor footprint editing event + UI.
+- Open wiring-time details (from AGENTS): overhang sort x; tall multi-y
+  footprints if such art ships.
+
+## Input Resolution from ViewState
+
+- Use previous_view_state to resolve screen position → tile coordinate.
+- Replace direct camera math in translateInput.
+
+(Other input resolution DONE — history in DONE.md.)
+
+## Drag & Drop
+
+Core lifecycle DONE (SlotRef/DragState, pointer, slotAt/slotRefAt, handleDrag,
+dragToEvent, drag ghost — history in DONE.md). Open:
+
+- Cancel drag / snap item back when the pointer release is lost outside the
+  game (focus loss, pointer leaves window) — currently a lost mouse-up leaves
+  the drag latched to the cursor.
+- Click vs drag disambiguation: movement threshold 0 (any move = drag), pure
+  press-release = click; items get double-click (L/R) and modifier+click for
+  different behaviors (needs a time source for double-click).
+- inventory → inventory move/swap event + handler (dragToEvent returns null
+  for now).
+- Panel builders must emit ref-bearing Slots before drag is usable in-game
+  (buildInventoryPanel/buildGearPanel/buildSkillsPanel — see UI section).
+- Coordinate-space reconciliation with renderer: pointer→reference-space
+  conversion and screenToTile share an unverified assumption (see rendering).
+
+## NPC Interaction
+
+- interact_with_npc handler (dialogue, shop, quest, etc.)
+- NPC dialogue system
+- NPC types (shopkeeper, quest giver, etc.)
+
+## Level Editor
+
+A custom-mission editor: mission + per-level tabs (quick swap to edit each
+level) + a mission-shared palette of enemies / decorations / ground items.
+Architecture is SETTLED — see AGENTS → Architecture → Level Editor for the
+`Editor` type, the event family, the Option-2 framing + minimal exit guard,
+the replay/cache story, AND the full UI layout + active-tool model +
+`Selectable`-union selection model (tabs + viewport + bottom-bar palette +
+left inspector; no dialogs; Test/Validate top-right; Upload deferred). Not
+yet implemented. Remaining work:
+
+- `Editor` / `EditorMode` types + event variants + `processEvent` arms for
+  the framing + edit verbs. DONE (building blocks: `open_editor` /
+  `close_editor` / `start_playtest` / `end_playtest` / `start_validation` /
+  `end_validation` + `editor_set_active_level`; exit guard in `end_level` /
+  `end_mission`; round-trip test). See AGENTS → Architecture → Level Editor.
+- Editor input/UI: the settled layout/interaction design (AGENTS →
+  Architecture → Level Editor → Editor UI layout). Build as a vertical
+  slice — static shell first (tabs + viewport + bottom bar + inspector
+  rendering with real data, no interaction), then wire input per tool.
+  New events: `editor_add_level` / `editor_delete_level` /
+  `editor_add_entity_type` / `editor_add_decoration_type` /
+  `editor_add_item_type` / `editor_place_*` / `editor_delete_placement` /
+  `editor_move_placement` / `editor_edit_type_*` / `editor_toggle_inspector` /
+  `editor_set_tool`. Default level template (`data/default_level.txt`).
+  Currently the `.editor` screen has no view or
+  input handler — the building blocks are reachable (main-menu "Editor"
+  button) but the screen is blank.
+- The exit guard in `end_level` / `end_mission` (suppress default
+  continuation in `.playtest`; redirect to next editor level /
+  `end_validation` in `.validate`).
+- `open_editor` entry point (from main menu for now; later from a custom-
+  mission browser).
+- Validation result + replay attachment: on successful validation, attach a
+  saved mission replay to the custom mission (next save writes it into the
+  custom mission dir) for re-validation before uploading to the online
+  database. NOT important right now — deferred with online services.
+- Editor autosave: nice-to-have, not need-to-have (explicit save for now).
+
+## Logging & Replay
+
+Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
+→ Logging & Replay; history in DONE.md). Remaining:
+
+- file_format_version: monotonic int per serialized artifact, in its Metadata
+  section. Session log starts at 1; retrofit missions/saves as those formats
+  stabilize (custom-mission support needs it). Also add a format_version to
+  mission Metadata when custom missions land.
+- Replay-viewer screen: wire .replay_viewer to STEP through a loaded log via
+  reconstructFromEventLog/restoreTo at successive targets. Steps = the
+  combat-log filter (derived, not idle_points). Needs the projection (DONE) +
+  replay-viewer UI.
+- formatSessionTimestamp is a generic time util living in main.zig — move to
+  a small util/time module when the main.zig split happens.
+
+Logging follow-ups (open):
+
+- Replay verification cross-session: `verifyReplayStep` now runs for
+  cross-session `reconstructFromEventLog` too (a divergence is a real bug we
+  want surfaced). The remaining gap is custom-mission cross-session replay
+  where the mission files changed since the original session — that will
+  panic until the reconstruction cache is serialized into the session log
+  (`file_format_version` 2, lands with custom-mission sharing). See AGENTS →
+  Determinism & Tiebreaking → Replay VERIFICATION.
+- Exhaustive comptime round-trip test for the session-log writer/reader:
+  inline-for over every Event category/variant, synthesize a payload (0 /
+  false / first enum / "" / empty slice / null optional / recurse structs),
+  write → parseConfigFile → loadEventLog → expectEqualDeep. Self-maintaining
+  (new events covered automatically). Structural drift is already prevented
+  by comptime + @compileError else-arms; this guards VALUE fidelity + the
+  field-presence contract (writer emits every field; reader requires every
+  non-optional field).
+- Combat reconstruction test: extend the runToIdle harness to enter
+  first_mission's level and script a few combat actions with ADAPTIVE
+  targeting (read enemy position from live state), then serialize → load →
+  reconstruct → expectEqualDeep. Self-referential (no golden values). Guards
+  handler PURITY (state,event)→state, not AI determinism. NOTE: runToIdle
+  clearing `waiting` becomes load-bearing here (enemy turns inject waits;
+  replayTo clears waiting, so forward play must too, or the deep-equal
+  spuriously fails).
+
+## Combat Log (projection DONE; rendering TODO)
+
+- Collapsed icon-based recent-history view in the top bar (coarse tier,
+  last N) — buildTopBar. Maps ViewState.combat_log events to display strings
+  with names from current_state.
+- Expandable full-screen detailed combat log (buildFullCombatLog overlay;
+  coarse + fine interleaved chronologically). Same projection drives it.
+
+## Mission Flow
+
+- mission_fail screen (triggered on player death).
+- mission_complete screen (triggered on mission end).
+- New Screen variants and transition events.
+- Quit-to-menu and death/mission-fail exits MUST route through end_level /
+  end_hub so entity changes persist into PlayerData (see AGENTS → Architecture
+  — these exit paths don't exist yet; today only level-completion and hub
+  mission-exit route through them).
+
+## Platform Layer (raylib)
+
+Native + web builds DONE (history in DONE.md; seam in AGENTS → Platform Seam).
+Open:
+
+- 9-slice REFINEMENT: corners 1:1 but edges + center are STRETCHED, not
+  tiled. Spec wants edges/center TILED — revisit drawNineSlice.
+- Draw offset support (decoration overhang; SpriteDrawable.draw_offset).
+- Programmatic edge highlight for highlighted Button/Image (shader outline of
+  opaque pixels, or fallback highlight sprite) — currently ignored.
+- Real font: default bitmap font blurs when scaled up and drawTextLabel
+  ignores bold/italic. Load a TTF + per-glyph metrics (feeds the ui.zig
+  measurement seam) and honor TextLabel bold/italic + color.
+- Missing-art audit: some bottom-bar sprite ids are still placeholders
+  (ui/icon_swap, ui/momentum, ui/cooldown_overlay) and will draw magenta until
+  real assets land.
+- Web Phase 4: asset downscaling for web download budget (the Memory & Budget
+  → Asset memory levers matter more for web than native); WebGL1/WebGL2 build
+  option; emrun polish.
+
+## Audio
+
+- Play music and sound effects via raylib audio API.
+- Hook into events (attack → hit sound, etc.).
+
+## Memory / Budget
+
+Settled decisions + reasoning in AGENTS.md → Memory & Budget. Open work:
+
+- Tune caps + wasm budget from real measurements: add peak-usage reporting
+  via DebugAllocator (once a real level is drivable), then set the true caps +
+  safety ceiling from actual numbers instead of the current estimates
+  (max_entities=256, max_tiles~10k, ceiling ~256–512 MB).
+- Confirm whether source sprites are animation sheets before downscaling
+  (affects how far we can shrink — see AGENTS → Memory & Budget → Asset
+  memory, lever 1).
+
+## Content Loading / Custom Missions
+
+DESIGN SETTLED — see AGENTS → Custom Missions & Online Services (dreams,
+browser, content identity/hash, balance bounds, auth/server). This section
+kept for active task pointers; prose moved to AGENTS.
+
+File layer DONE (embedded map + persistent dir + FileSource; see AGENTS →
+File System & IO). The VFS layer (layer 1 of the read order) is the only
+piece still outstanding — it lands with custom-mission support. Forward-
+looking:
+
+- Core principle: SEPARATE acquiring a mission from reading it. Acquisition
+  (upload dialog / directory scan / online fetch) is one-time, possibly
+  interactive or async. Reading mission files during gameplay AND replay
+  must be synchronous, silent, repeatable.
+- Acquisition impls (into the VFS layer of FileSource):
+  - zip upload (browser dialog): extract to in-memory VFS (path→bytes)
+  - custom directory: Dir-backed at a chosen path
+  - online database: fetch by immutable id/url → cache into in-memory VFS
+    (see Online Services)
+- Replay-safety falls out for free: dialog/fetch happens in an acquisition
+  step (idle input), never in an event handler. The recorded event is
+  start_mission referencing an already-resident source, so replay re-reads
+  silently and never re-fires the dialog (same pattern as load_save's picker).
+- Caching: acquire once, cache raw bytes; future reads (replay re-loads,
+  retry, renderer asset loads) hit the cache. Real win is avoiding expensive
+  re-acquisition (network re-fetch / zip re-decompress), not re-parse. Cache
+  is session-scoped — a fresh session re-acquires unless persisted.
+- Async wrinkle: online fetch / zip read is async on web. Acquisition must
+  fully populate the source ("loading mission…") before emitting
+  start_mission.
+- Cross-session replay reproducibility: a shared/saved replay of a custom
+  mission is only reproducible with the exact mission bytes. Mission refs
+  should eventually be content-addressed (hash) or pinned to an immutable
+  version id — matters for recorded-history-as-test and replay sharing.
+
+## Online Services
+
+Web database for leaderboards + custom content hosting/sharing. Builds on
+the custom-mission online-acquisition path (Content Loading above). Not yet
+designed:
+
+- Leaderboards: what's scored (mission completion time? score? both?),
+  scoring source (event_history-derived vs server-validated), anti-cheat
+  considerations (server-side replay validation ties into the advisory
+  game_version / future content-hash work).
+- Custom content hosting: upload/download of missions (+ replays?),
+  content-addressing (hash) for reproducibility, moderation, metadata.
+- Auth/identity model (if any).
+- Server component: out of scope for the single-file exe — a separate
+  backend. The game client only needs a thin HTTP fetch/submit seam.
+
+## Determinism & Tiebreaking
+
+Convention in AGENTS → Determinism & Tiebreaking. Replay is immune to
+decision nondeterminism (records events), but ordering is made DEFINED for
+live behavior + future input-based replay. All audit sites are now explicit
+(turn_end enemy ordering breaks distance ties by entity_index;
+enemy_turn_move nearest-target loop documents the lowest-entity_index
+resolution; reachable-tile fallback uses `tileBefore` with the (x,y)
+convention). History in DONE.md.
+
+Already total (no action): A* comparePathNodes (f→x→y); entity draw sort
+(unique positions, visual-only).
+
+## Tech Debt / Refactoring
+
+Done items in DONE.md. Open:
+
+- Test coverage for processEvent handlers: main.zig is large with essentially
+  one (end-to-end reconstruction) test. processEvent is state-in/state-out and
+  testable. Cover the event logic (equip/unequip, utility-skill events, boots
+  move-range refresh, prepared-skill cancel) before wiring up UI drag. The
+  runToIdle + reconstructFromEventLog harness can be reused with targeted
+  scripted sessions + assertions.
+- Consistent slot-index bounds checking: utility-skill handlers guard
+  slot_index < utility_skill_count, but equip_item/unequip_item/learn_skill/
+  salvage_item index inventory.slots[...] directly (panic on out-of-range).
+  Pick one convention (guard everywhere, or trust the source everywhere),
+  keeping in mind events can also originate from save/replay data.
+- Consider splitting processEvent handlers by scope (player/level/hub/meta)
+  into separate files for readability once it grows further.
+- Snapshot/checkpoint ring buffers are a clean FIFO (slot = ring_index %
+  size = oldest), but discardFutureTimeline nulls ahead-of-branch slots,
+  leaving holes the marching ring_index won't preferentially reuse — so
+  after an undo-branch we may briefly hold fewer live snapshots than
+  capacity (occasional extra replay on a far undo). Harmless, never wrong.
+  Deliberately left as-is: the quick "prefer a null slot" fix breaks the
+  FIFO/oldest-eviction property; doing it properly means explicit victim
+  selection (evict smallest event_index / a monotonic insertion counter,
+  preferring nulls) in takeSnapshot + setCheckpoint. Revisit only if undo
+  latency is felt once a real clock + big levels exist, and size the rings
+  from real measurements then (see Memory / Budget).
+- **UNDECIDED:** the ~26 `current.level.?` force-unwraps in level/sub-level
+  handlers. Currently safe by invariant (those events only run in a level;
+  event stack cleared on screen transition), so they act as fail-fast
+  assertions. Leaving as-is for now; options if revisited: (A) keep, (B) one
+  guard at dispatch that returns (risks hiding bugs), (C) a levelPtr() helper
+  with a descriptive @panic. See AGENTS → Architecture note.

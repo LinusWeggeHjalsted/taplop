@@ -49,7 +49,6 @@ pub fn combatLogTier(event: Event) CombatLogTier {
         .meta_event,
         .super_event,
         .editor_event,
-        .sub_editor_event,
         .player_event,
         .hub_event,
         .replay_viewer_event,

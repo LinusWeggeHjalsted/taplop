@@ -146,6 +146,12 @@ pub const RaylibBackend = struct {
 
         const render_target = rl.loadRenderTexture(reference_width_int, reference_height_int) catch
             @panic("failed to create reference-resolution render target");
+        // Smooth the universal reference(4K) -> window blit. raylib defaults
+        // textures to point (nearest-neighbor) filtering, which on the
+        // downscale turns smooth alpha edges into jagged chunky boundaries
+        // (every content layer passes through this blit). Bilinear fixes the
+        // transparent-edge artifact at no per-frame cost.
+        rl.setTextureFilter(render_target.texture, .bilinear);
         const font = rl.getFontDefault() catch @panic("failed to load default font");
 
         return .{
@@ -443,6 +449,7 @@ pub const RaylibBackend = struct {
             .entity => |entity| {
                 for (entity.back_effect_sprites) |sprite| self.drawSpriteDrawable(sprite, world_scale);
                 self.drawSpriteDrawable(entity.base_sprite, world_scale);
+                for (entity.layer_sprites) |sprite| self.drawSpriteDrawable(sprite, world_scale);
                 for (entity.weapon_sprites) |maybe_sprite| {
                     if (maybe_sprite) |sprite| self.drawSpriteDrawable(sprite, world_scale);
                 }
@@ -450,13 +457,20 @@ pub const RaylibBackend = struct {
                 for (entity.front_effect_sprites) |sprite| self.drawSpriteDrawable(sprite, world_scale);
                 // health_bar: deferred (drawn as a small bar later).
             },
-            .decoration_piece => |decoration| self.drawSpriteDrawable(.{
-                .sprite_id = decoration.sprite_id,
-                .screen_position = decoration.screen_position,
-                .draw_offset = decoration.draw_offset,
-                .source_rectangle = decoration.source_rectangle,
-                .color = decoration.color,
-            }, world_scale),
+            .decoration_piece => |decoration| {
+                self.drawSpriteDrawable(.{
+                    .sprite_id = decoration.sprite_id,
+                    .screen_position = decoration.screen_position,
+                    .draw_offset = decoration.draw_offset,
+                    .source_rectangle = decoration.source_rectangle,
+                    .color = decoration.color,
+                }, world_scale);
+                // Overlay layers: same position + source rect, different
+                // sprite + color, drawn in slice order (base first).
+                for (decoration.layers) |layer| {
+                    self.drawSpriteDrawable(layer, world_scale);
+                }
+            },
             .ground_items => |items| self.drawWorldSprite(items.sprite_id, items.screen_position, world_scale, items.color),
             .level_end => |marker| self.drawWorldSprite(marker.sprite_id, marker.screen_position, world_scale, marker.color),
         }

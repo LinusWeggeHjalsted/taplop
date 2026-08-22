@@ -45,6 +45,7 @@ pub const Action = enum {
     continue_game,
     new_game,
     load_save,
+    open_editor,
     open_settings,
     open_credits,
 };
@@ -82,6 +83,9 @@ pub const Settings = struct {
     render_fps_cap: u32 = 0,
     auto_skip_attack_step_out_of_combat: bool = true,
     auto_target_at_cursor: bool = true,
+    /// Player color index into the current theme's player gradient. Read at
+    /// render time to tint the player entity + UI. Default 0 (lightest).
+    player_color_index: u32 = 0,
     input_bindings: []const InputBinding,
     camera_zoom: f32 = 1.0, // 1.0 = no zoom, <1 = zoomed out, >1 = zoomed in
 };
@@ -116,16 +120,62 @@ pub const ActiveColorTheme = struct {
     player_gradient: ColorGradient,
 };
 
+/// A fully custom per-level/per-hub color theme: the 3 gradients (18 colors)
+/// that `ActiveColorTheme` derives from the color wheel when
+/// `color_wheel_index` is used. Stored as an OPTIONAL override on
+/// Level/Hub/EditorLevel (`custom_theme: ?CustomColorTheme`); when null,
+/// `activeThemeFor` derives from `color_wheel_index` as before (backward
+/// compatible). `lightest`/`darkest` stay from the global
+/// ColorThemeDefinitions (lightest = tile-cursor color; darkest is unused
+/// since the background now comes from world_gradient[2]). See AGENTS →
+/// Architecture → Level Editor → Editor UI layout (right metadata panel).
+pub const CustomColorTheme = struct {
+    world_gradient: ColorGradient,
+    enemy_gradient: ColorGradient,
+    player_gradient: ColorGradient,
+};
+
 pub const DecorationId = enum {
     // TODO: generate this at compile time
     placeholder,
 };
 
+/// One overlay layer of a decoration: a sprite drawn over the base at the same
+/// position, colored independently. Must be the same pixel dimensions as the
+/// base (validated at load). See AGENTS.md "Decorations & Footprint".
+pub const DecorationLayer = struct {
+    sprite: []const u8,
+    color_index: u32,
+    /// Pixel dims (validated == base pixel_dims at load; stored so view() stays
+    /// pure and replay reproduces without re-reading).
+    pixel_dims: Vector2,
+};
+
 pub const Decoration = struct {
     decoration_id: ?DecorationId,
     name: []const u8,
+    /// World position of the anchor tile (bottom-most-then-left-most footprint
+    /// tile). The layout char sits here; non-anchor footprint tiles are
+    /// implicit. See AGENTS.md "Decorations & Footprint".
     position: Vector2,
-    footprint: []const Vector2, // position should be bottommost then leftmost in footprint
+    /// Footprint tile coordinates in the SPRITE's own tile-grid (top-left of
+    /// the sprite bbox = (0,0)). Not anchor-relative — the list is authored
+    /// by marking the solid tiles of the sprite. The anchor is DERIVED from
+    /// this list (bottom-most-then-left-most).
+    footprint: []const Vector2,
+    /// Pixel dimensions of the BASE sprite (from the PNG IHDR). view() uses
+    /// these to compute the tile bbox and per-tile source rectangles for
+    /// splitting. Populated by the parser: comptime table for shipped sprites,
+    /// PNG-byte parse for custom sprites. Stored on the GameState so view()
+    /// stays pure (no I/O) and replay reproduces it without re-reading the PNG.
+    pixel_dims: Vector2,
+    /// Color index into the current theme's world gradient. Default 0
+    /// (lightest world color). Tiles use 1/3, background uses 2; decorations
+    /// should use 0/4/5 for distinction.
+    color_index: u32 = 0,
+    /// Overlay layers (same pixel dims as the base), drawn over the base in
+    /// declaration order, each colored independently.
+    layers: []const DecorationLayer = &.{},
 };
 
 pub const SkillType = enum {
@@ -245,6 +295,15 @@ pub const Effect = struct {
     additive_effect_modifiers: AdditiveEffectModifiers = .{},
 };
 
+/// One overlay layer of an entity: a sprite drawn over the base body at the
+/// same frame + pivot, colored independently. Shares the entity's fixed
+/// 512×640 frame (no per-layer pixel dims needed). See AGENTS → Decorations
+/// & Footprint for the layer model.
+pub const EntityLayer = struct {
+    sprite: []const u8,
+    color_index: u32,
+};
+
 pub const Entity = struct {
     name: []const u8 = &.{},
     /// Sprite identifier (asset stem under assets/entities/, e.g. "player",
@@ -260,6 +319,19 @@ pub const Entity = struct {
     aggro_range: u32 = 3,
     is_active: bool = false,
     stun_duration: u32 = 0,
+    /// Whether weapons are drawn on this entity. Default true (humanoids);
+    /// enemies like wolves set `displays_weapons false` to suppress weapon
+    /// overlays. Parsed from the level file's enemy definition.
+    displays_weapons: bool = true,
+    /// Color index into the team's gradient (enemy → enemy_gradient, player
+    /// → player_gradient). The player's index is overridden by a settings
+    /// field at render time; enemies read this directly. Default 0.
+    color_index: u32 = 0,
+    /// Overlay sprite layers drawn over the base body, each colored
+    /// independently. Same 512×640 frame + pivot as the base (no per-layer
+    /// dims). Drawn after base, before weapons. See AGENTS → Decorations &
+    /// Footprint for the layer model (entities reuse it).
+    layers: []const EntityLayer = &.{},
 
     main_hand_weapon: ?Weapon = null,
     off_hand_weapon: ?Weapon = null,
@@ -488,8 +560,114 @@ pub const PlayerData = struct {
     equipped_utility_skills: [utility_skill_count]?SkillId = .{null} ** utility_skill_count,
 };
 
+// A palette entry: a reusable entity definition (the "prefab"). Placements
+// reference a type by index into Editor.entity_types. The template is a full
+// Entity (reuses the type + deepCopy); runtime fields (current_health,
+// is_active, momentum, stun, cooldowns, active_effects, inventory) are
+// meaningless on the template and reset by instantiateEditorLevel. Editing
+// the template updates every placement referencing this type — no
+// propagation sweep.
+pub const EntityTypeDef = struct {
+    id: []const u8 = &.{}, // user-facing name, e.g. "Skeleton Warrior"
+    template: Entity = .{},
+};
+
+pub const DecorationTypeDef = struct {
+    id: []const u8 = &.{}, // user-facing name / sprite stem
+    sprite: []const u8 = &.{},
+    // Sprite-grid footprint + pixel dims; see Decoration for semantics.
+    footprint: []const Vector2 = &.{},
+    pixel_dims: Vector2 = .{ .x = 0, .y = 0 },
+    color_index: u32 = 0,
+    layers: []const DecorationLayer = &.{},
+};
+
+/// A palette entry for a loose ground item (loot not tied to an enemy).
+/// The `item` carries the full Item union (weapon/amulet/.../skill_tome)
+/// since the union's variety makes per-field granularity impractical — the
+/// inspector edits the whole item and pushes one `editor_set_item_def`
+/// event per commit. See AGENTS → Architecture → Level Editor → Editor UI
+/// layout (Ground Items palette group).
+pub const ItemTypeDef = struct {
+    id: []const u8 = &.{}, // user-facing name, e.g. "Iron Sword"
+    item: Item = .{ .weapon = .{} },
+};
+
+/// Which entity-type-like target an entity-edit event applies to. The
+/// player loadout (`Editor.player_def`) is an EntityTypeDef too, just not
+/// in the `entity_types` array — this union lets the entity-edit events
+/// cover both without a parallel `editor_set_player_*` event set. See
+/// AGENTS → Architecture → Level Editor → Editor UI layout.
+pub const EntityEditTarget = union(enum) {
+    entity_type: u32, // index into Editor.entity_types
+    player_def: void, // the editor-global player loadout
+};
+
+// A reference-based level: placements point into the editor's palette instead
+// of carrying full entity/decoration definitions. Serializes back to the
+// existing inline level format (see parser.buildLevelFileText). The player
+// spawn is the '!' in level_tiles (as in shipped levels); the player loadout
+// is editor-global (Editor.player_def), not per-level.
+pub const EditorLevel = struct {
+    name: []const u8 = &.{},
+    color_wheel_index: u32 = 0,
+    /// Optional per-level theme override. When non-null, `activeThemeFor`
+    /// builds the ActiveColorTheme from this instead of deriving from
+    /// `color_wheel_index`. Backward compatible (null on older files). See
+    /// AGENTS → Architecture → Level Editor → Editor UI layout.
+    custom_theme: ?CustomColorTheme = null,
+    level_tiles: []const Vector2 = &.{},
+    player_start: Vector2 = .{ .x = 0, .y = 0 }, // the '!' position
+    level_end: ?Vector2 = null,
+    entity_placements: []const EntityPlacement = &.{},
+    decoration_placements: []const DecorationPlacement = &.{},
+    /// Loose floor items placed via the Ground Items palette (loot not tied
+    /// to an enemy). Mirrors Level.ground_items but reference-based: each
+    /// placement points into Editor.item_types. See AGENTS → Architecture →
+    /// Level Editor → Editor UI layout (Ground Items palette group).
+    item_placements: []const ItemPlacement = &.{},
+};
+
+pub const EntityPlacement = struct {
+    type_id: u32, // index into Editor.entity_types
+    position: Vector2,
+};
+
+pub const ItemPlacement = struct {
+    type_id: u32, // index into Editor.item_types
+    position: Vector2,
+};
+
+pub const DecorationPlacement = struct {
+    type_id: u32, // index into Editor.decoration_types
+    position: Vector2,
+};
+
+pub const EditorMode = enum {
+    edit, // UI/input = editor; levels array is the source of truth
+    playtest, // UI/input = gameplay; current.level is live, editor dormant
+    validate, // UI/input = gameplay, forced full-mission; editor dormant
+};
+
 pub const Editor = struct {
-    
+    mission: Mission = .{}, // metadata + path (the mission being edited)
+    levels: []const EditorLevel = &.{}, // all levels, reference-based
+    // Palette (editor-global). Derived by dedup on open_editor from the
+    // levels' inline definitions; not persisted to disk (unused types are
+    // lost on editor close — accepted as cleaner). See AGENTS → Architecture
+    // → Level Editor.
+    entity_types: []const EntityTypeDef = &.{},
+    decoration_types: []const DecorationTypeDef = &.{},
+    /// Palette of loose ground-item types (loot not tied to an enemy). See
+    /// AGENTS → Architecture → Level Editor → Editor UI layout (Ground Items
+    /// palette group).
+    item_types: []const ItemTypeDef = &.{},
+    // The editor-global player start loadout. Persistent as player.txt in the
+    // mission directory (so a recorded validation replay is reproducible and
+    // players picking up a custom mission can see the author's loadout).
+    player_def: EntityTypeDef = .{},
+    active_level_index: usize = 0, // which tab is open
+    mode: EditorMode = .edit,
 };
 
 pub const ReplayViewer = struct {
@@ -557,6 +735,10 @@ pub const TurnPhase = enum {
 pub const Level = struct {
     name: []const u8 = &.{},
     color_wheel_index: u32 = 0,
+    /// Optional per-level theme override. When non-null, `activeThemeFor`
+    /// builds the ActiveColorTheme from this instead of deriving from
+    /// `color_wheel_index`. Backward compatible (null on older files).
+    custom_theme: ?CustomColorTheme = null,
     level_tiles: []const Vector2 = &.{},
     entities: []const Entity = &.{},
     ground_items: []const GroundItems = &.{},
@@ -575,6 +757,8 @@ pub const MissionExit = struct {
 pub const Hub = struct {
     name: []const u8 = &.{},
     color_wheel_index: u32 = 0,
+    /// Optional per-hub theme override. Same semantics as Level.custom_theme.
+    custom_theme: ?CustomColorTheme = null,
     hub_tiles: []const Vector2 = &.{},
     player: Entity = .{},
     npcs: []const NPC = &.{},
@@ -765,6 +949,9 @@ pub const HealthBarDrawable = struct {
 pub const EntityDrawable = struct {
     back_effect_sprites: []const SpriteDrawable,
     base_sprite: SpriteDrawable,
+    /// Overlay body layers (armor/clothing), drawn after base, before weapons.
+    /// Each colored independently. See AGENTS → Decorations & Footprint.
+    layer_sprites: []const SpriteDrawable,
     weapon_sprites: [2]?SpriteDrawable,
     gear_sprites: []const SpriteDrawable,
     front_effect_sprites: []const SpriteDrawable,
@@ -777,6 +964,10 @@ pub const DecorationPieceDrawable = struct {
     draw_offset: ScreenPosition,
     source_rectangle: Rectangle,
     color: Color,
+    /// Overlay layer chunks drawn over the base at the same position + source
+    /// rect, each with its own sprite + color. Empty for single-sprite
+    /// decorations. Drawn in slice order (base first, then layers).
+    layers: []const SpriteDrawable = &.{},
 };
 
 pub const GroundItemDrawable = struct {

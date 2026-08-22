@@ -6,6 +6,16 @@ const GearSlot = types.GearSlot;
 const Item = types.Item;
 const Materials = types.Materials;
 const EffectId = types.EffectId;
+const Weapon = types.Weapon;
+const Amulet = types.Amulet;
+const Coat = types.Coat;
+const Gloves = types.Gloves;
+const Pants = types.Pants;
+const Boots = types.Boots;
+const EntityLayer = types.EntityLayer;
+const DecorationLayer = types.DecorationLayer;
+const CustomColorTheme = types.CustomColorTheme;
+const EntityEditTarget = types.EntityEditTarget;
 
 pub const MetaEvent = union(enum) {
     // scope: all
@@ -51,8 +61,23 @@ pub const MetaEvent = union(enum) {
         sets_checkpoint: bool = true,
     },
     end_hub: void,
-    open_editor: void,
+    // Editor framing (see AGENTS → Architecture → Level Editor). open_editor
+    // reads a mission from disk into an Editor session; start_playtest /
+    // end_playtest bracket a single-level playtest; start_validation /
+    // end_validation bracket a forced full-mission playthrough. The gameplay
+    // events stay pristine — end_level's guard defers to these.
+    open_editor: struct {
+        mission_path: []const u8,
+    },
     close_editor: void,
+    start_playtest: struct {
+        level_index: u32, // 0-based into editor.levels
+    },
+    end_playtest: void,
+    start_validation: void,
+    end_validation: struct {
+        success: bool,
+    },
 };
 
 pub const SuperEvent = union(enum) {
@@ -74,12 +99,281 @@ pub const SuperEvent = union(enum) {
 
 pub const EditorEvent = union(enum) {
     // scope: editor
-    // main editor actions
+    // One EditorEvent per player action (the orchestrator convention — see
+    // AGENTS → Architecture). Most editor edits are a single verb, so they
+    // live directly here as their own variant. The exception is
+    // editor_delete_type, an orchestrator that pushes editor_delete_*_placement
+    // sub-events (SubEditorEvent) for each referencing placement before
+    // removing the type. All editor events mutate current.editor.?.levels[]
+    // or the palette directly — pure state transforms captured by deepCopy,
+    // so undo/redo works by construction. See AGENTS → Architecture → Level
+    // Editor → Editor UI layout for the full design.
+
+    // ── Level management ──
+    // Switch the active level tab. Pure state on editor.active_level_index.
+    editor_set_active_level: struct {
+        level_index: u32,
+    },
+    // Append a new level built from data/default_level.txt (the minimal `!=`
+    // template). No payload — the template is fixed; the author renames /
+    // re-themes via the metadata events below.
+    editor_add_level: void,
+    // Delete a level. Handler removes it, shifts later indices down,
+    // decrements mission.level_count, clamps active_level_index. Gated on
+    // levels.len > 1 (a mission always has ≥1 level — the handler panics
+    // if violated; the UI shouldn't offer the × on the last tab, but the
+    // event enforces the invariant).
+    editor_delete_level: struct {
+        level_index: u32,
+    },
+
+    // ── Level tiles ──
+    // Set a single tile (paint floor / erase). One event per cell — drag-
+    // painting pushes one editor_set_tile per cell crossed (per-field undo
+    // granularity by design; batch-into-one-stroke is deferred unless it
+    // feels necessary).
+    editor_set_tile: struct {
+        level_index: u32,
+        position: Vector2,
+        is_floor: bool,
+    },
+
+    // ── Level + mission metadata ──
+    editor_set_level_name: struct {
+        level_index: u32,
+        name: []const u8,
+    },
+    // Switch the level's theme source to the color wheel (clears
+    // custom_theme → null; activeThemeFor derives from color_wheel_index).
+    editor_set_level_color_wheel: struct {
+        level_index: u32,
+        color_wheel_index: u32,
+    },
+    // Set a fully custom per-level theme (or null to revert to the wheel).
+    // The 18 colors (3 gradients) come from the right metadata panel's hex
+    // fields. See AGENTS → CustomColorTheme.
+    editor_set_level_custom_theme: struct {
+        level_index: u32,
+        custom_theme: ?CustomColorTheme,
+    },
+    editor_set_mission_name: struct {
+        name: []const u8,
+    },
+
+    // ── Player start + level end (move-only, non-deletable) ──
+    editor_set_player_start: struct {
+        level_index: u32,
+        position: Vector2,
+    },
+    editor_set_level_end: struct {
+        level_index: u32,
+        position: Vector2,
+    },
+
+    // ── Palette type management ──
+    // Append an empty type to the corresponding palette group. No payload —
+    // the author populates it via the inspector (field-edit events below).
+    editor_add_entity_type: void,
+    editor_add_decoration_type: void,
+    editor_add_item_type: void,
+    // Delete a palette type AND every placement referencing it (the handler
+    // pushes editor_delete_*_placement sub-events for each referencing
+    // placement, then removes the type — the one orchestrator in this set).
+    editor_delete_type: struct {
+        type_kind: EditorTypeKind,
+        type_id: u32,
+    },
+
+    // ── Placement (viewport clicks with a placement tool active) ──
+    // Per-kind variants (not a Selectable-carrying generic event) so the
+    // exported log reads self-describing: `editor_place_entity { … }` over
+    // `editor_place { kind entity, … }`.
+    editor_place_entity: struct {
+        level_index: u32,
+        type_id: u32,
+        position: Vector2,
+    },
+    editor_place_decoration: struct {
+        level_index: u32,
+        type_id: u32,
+        position: Vector2,
+    },
+    editor_place_item: struct {
+        level_index: u32,
+        type_id: u32,
+        position: Vector2,
+    },
+    editor_delete_entity_placement: struct {
+        level_index: u32,
+        placement_index: u32,
+    },
+    editor_delete_decoration_placement: struct {
+        level_index: u32,
+        placement_index: u32,
+    },
+    editor_delete_item_placement: struct {
+        level_index: u32,
+        placement_index: u32,
+    },
+    editor_move_entity_placement: struct {
+        level_index: u32,
+        placement_index: u32,
+        new_position: Vector2,
+    },
+    editor_move_decoration_placement: struct {
+        level_index: u32,
+        placement_index: u32,
+        new_position: Vector2,
+    },
+    editor_move_item_placement: struct {
+        level_index: u32,
+        placement_index: u32,
+        new_position: Vector2,
+    },
+
+    // ── Entity type editing (per-field, target covers entity_type | player_def) ──
+    // Dedicated variants (not a generic field+value event) so the log reads
+    // `editor_set_entity_name { target entity_type 0, name Skeleton Warrior }`
+    // — the variant name carries the field. Each is one field = one undo.
+    editor_set_entity_name: struct {
+        target: EntityEditTarget,
+        value: []const u8,
+    },
+    editor_set_entity_sprite: struct {
+        target: EntityEditTarget,
+        value: []const u8,
+    },
+    editor_set_entity_color_index: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
+    editor_set_entity_displays_weapons: struct {
+        target: EntityEditTarget,
+        value: bool,
+    },
+    editor_set_entity_max_health: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
+    editor_set_entity_momentum: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
+    editor_set_entity_speed: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
+    editor_set_entity_defense: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
+    editor_set_entity_aggro_range: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
+    // Gear: nullable (equip/unequip). Each slot its own event = one undo.
+    editor_set_entity_main_hand_weapon: struct {
+        target: EntityEditTarget,
+        value: ?Weapon,
+    },
+    editor_set_entity_off_hand_weapon: struct {
+        target: EntityEditTarget,
+        value: ?Weapon,
+    },
+    editor_set_entity_amulet: struct {
+        target: EntityEditTarget,
+        value: ?Amulet,
+    },
+    editor_set_entity_coat: struct {
+        target: EntityEditTarget,
+        value: ?Coat,
+    },
+    editor_set_entity_gloves: struct {
+        target: EntityEditTarget,
+        value: ?Gloves,
+    },
+    editor_set_entity_pants: struct {
+        target: EntityEditTarget,
+        value: ?Pants,
+    },
+    editor_set_entity_boots: struct {
+        target: EntityEditTarget,
+        value: ?Boots,
+    },
+    // Utility skills: per-slot (slot_index 0..utility_skill_count-1), nullable.
+    editor_set_entity_utility_skill: struct {
+        target: EntityEditTarget,
+        slot_index: u32,
+        value: ?SkillId,
+    },
+    // Entity sprite layers (base + overlays). Add/remove/set per layer.
+    editor_add_entity_layer: struct {
+        target: EntityEditTarget,
+        layer: EntityLayer,
+    },
+    editor_remove_entity_layer: struct {
+        target: EntityEditTarget,
+        layer_index: u32,
+    },
+    editor_set_entity_layer: struct {
+        target: EntityEditTarget,
+        layer_index: u32,
+        layer: EntityLayer,
+    },
+
+    // ── Decoration type editing (per-field) ──
+    editor_set_decoration_name: struct {
+        type_id: u32,
+        value: []const u8,
+    },
+    editor_set_decoration_sprite: struct {
+        type_id: u32,
+        value: []const u8,
+    },
+    editor_set_decoration_color_index: struct {
+        type_id: u32,
+        value: u32,
+    },
+    editor_set_decoration_footprint: struct {
+        type_id: u32,
+        value: []const Vector2,
+    },
+    editor_add_decoration_layer: struct {
+        type_id: u32,
+        layer: DecorationLayer,
+    },
+    editor_remove_decoration_layer: struct {
+        type_id: u32,
+        layer_index: u32,
+    },
+    editor_set_decoration_layer: struct {
+        type_id: u32,
+        layer_index: u32,
+        layer: DecorationLayer,
+    },
+
+    // ── Item type editing ──
+    // The Item union's variety (weapon/amulet/.../skill_tome, each with
+    // different fields) makes per-field granularity impractical — the
+    // inspector edits the whole item and pushes one event per commit. The
+    // log still reads cleanly (the serializer flattens the union).
+    editor_set_item_def: struct {
+        type_id: u32,
+        value: Item,
+    },
+    editor_set_item_name: struct {
+        type_id: u32,
+        value: []const u8,
+    },
 };
 
-pub const SubEditorEvent = union(enum) {
-    // scope: editor
-    // individual editor events
+/// Which palette group a type belongs to (for editor_delete_type and any
+/// future group-keyed operations). Matches the three palette groups in the
+/// bottom bar.
+pub const EditorTypeKind = enum {
+    entity,
+    decoration,
+    item,
 };
 
 pub const PlayerEvent = union(enum) {
@@ -331,7 +625,6 @@ pub const Event = union(enum) {
     meta_event: MetaEvent,
     super_event: SuperEvent,
     editor_event: EditorEvent,
-    sub_editor_event: SubEditorEvent,
     player_event: PlayerEvent,
     hub_event: HubEvent,
     level_event: LevelEvent,

@@ -9,6 +9,8 @@ const file_source_mod = @import("file_source.zig");
 const FileSource = file_source_mod.FileSource;
 
 const deepCopy = deep_copy.deepCopy;
+const deepEqual = deep_copy.deepEqual;
+const firstDiffField = deep_copy.firstDiffField;
 
 const Event = events.Event;
 const UiState = ui.UiState;
@@ -49,8 +51,8 @@ pub const Screen = enum {
         return switch (self) {
             .main_menu => .{},
             .hub => .{ .campaign = true, .hub = true },
-            .level => .{ .campaign = true, .mission = true, .level = true },
-            .editor => .{ .editor = true, .level = true },
+            .level => .{ .campaign = true, .mission = true, .level = true, .editor = true },
+            .editor => .{ .editor = true },
             .replay_viewer => .{ .replay_viewer = true },
         };
     }
@@ -79,6 +81,23 @@ pub const SessionState = struct {
     input_state: input.InputState = .{},
     ui_state: UiState = .{},
     tile_cursor: ?types.Vector2 = null,
+    // Camera pan (right-drag): offset in world pixels added to the player-
+    // centered camera, plus the drag anchor. Transient view state — off the
+    // undoable GameState, replay-safe by construction (like tile_cursor / the
+    // animation clock). Levels/hubs only; cleared on screen transition and on
+    // player move (the camera recenters when the player moves). See
+    // handleCameraPan in input_handlers.zig.
+    camera_pan: ?types.Vector2 = null,
+    camera_pan_anchor: ?CameraPanAnchor = null,
+};
+
+/// The world point grabbed at the start of a camera-pan drag, in float tile
+/// units so the cursor tracks it at sub-tile precision (an integer-tile
+/// anchor would jump up to half a tile at drag start). See floatWorldPoint
+/// in input.zig.
+pub const CameraPanAnchor = struct {
+    world_x: f32,
+    world_y: f32,
 };
 
 pub const GameState = struct {
@@ -125,6 +144,19 @@ pub const SavedState = struct {
     arena: std.heap.ArenaAllocator, // owns all memory referenced by this state
 };
 
+// One cached file read for a reconstruction-read event, keyed by
+// (event_index, path). event_index is the index of the event under
+// handling (processEvent increments current_event_index before dispatch,
+// so it's current_event_index - 1); path distinguishes the multiple files a
+// single handler may read (e.g. start_new_game reads new_player.txt then
+// campaign.txt). Entries are appended in monotonic event-index order; within
+// an event, in read order. See reconstruction_cache on GameStateHistory.
+pub const ReconstructionCacheEntry = struct {
+    event_index: u32,
+    path: []const u8,
+    bytes: []const u8,
+};
+
 pub const snapshot_count = 8; // snapshots saved in each direction from current position
 pub const checkpoint_count = 8; // checkpoints kept in ring buffer
 
@@ -162,6 +194,20 @@ pub const GameStateHistory = struct {
     // Complete event history since game launch.
     // Any game state can be reconstructed by replaying events from initial_state.
     event_history: std.ArrayList(Event),
+
+    // Reconstruction cache: the bytes read by each reconstruction-read event
+    // (start_level / start_hub / start_mission / load_save), keyed by the
+    // event index under handling. Live reads cache their bytes here (in
+    // history_arena); replay serves them back from the cache so the bytes a
+    // reconstruction-read event applies are a pure function of its position
+    // in history — fully deterministic regardless of later file changes
+    // (e.g. editor saves overwrite a mission's files mid-session). Entries
+    // are appended in monotonic event-index order; trimmed on branch
+    // (discardFutureTimeline). See AGENTS.md "Reconstruction cache" and the
+    // readReconstructionFile helper below. Not serialized yet (within-session
+    // only); cross-session log reload will serialize it when custom-mission
+    // sharing lands (=> file_format_version 2).
+    reconstruction_cache: std.ArrayList(ReconstructionCacheEntry) = .empty,
 
     // Ring buffer of checkpoints at major game transitions (entering a level/hub).
     // Replay starts from the nearest checkpoint before the target, keeping
@@ -207,6 +253,18 @@ pub const GameStateHistory = struct {
     // reads (level/hub/save config) still run — the rebuilt state depends on
     // them. See processEvent handlers.
     replaying: bool = false,
+
+    // True only during cross-session reconstruction (reconstructFromEventLog):
+    // the cache starts empty because no live play ever populated it. On a
+    // reconstruction-cache miss in this mode, readReconstructionFile falls
+    // back to file_source and caches the result (establishing the cache
+    // retroactively), instead of panicking. For shipped/immutable content the
+    // bytes are identical to the original session; for custom missions they
+    // are whatever is on disk now (a known limitation until the cache is
+    // serialized into the session log — file_format_version 2). In-session
+    // undo/redo (replayTo) never sets this and stays panic-on-miss, since
+    // live play always cached before replay can reach the same index.
+    cross_session_replay: bool = false,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -263,6 +321,81 @@ pub const GameStateHistory = struct {
         self.event_history.append(arena, durable_event) catch @panic("failed to append event");
     }
 
+    /// Read a file for a reconstruction-read event handler (start_level /
+    /// start_hub / start_mission / load_save). Live: reads via file_source
+    /// and caches the bytes in history_arena, keyed by the event index
+    /// under handling. Replay: returns the cached bytes. This makes replay
+    /// fully deterministic regardless of later file changes (e.g. editor
+    /// saves overwrite a mission's files mid-session) — the bytes a
+    /// reconstruction-read event reads are a pure function of its position
+    /// in history. Call this INSTEAD of file_source.readFile from any event
+    /// handler whose read result becomes part of the reconstructed state.
+    ///
+    /// Cache-miss during replay is a bug (live always populates before
+    /// replay can reach the same index), so we fail fast with a descriptive
+    /// panic rather than silently falling back to disk (which would
+    /// reintroduce divergence, just quieter). The only legitimate miss is
+    /// cross-session log reload, which starts with an empty cache — that
+    /// path (reconstructFromEventLog) will pre-populate the cache from the
+    /// serialized log when custom-mission sharing lands.
+    pub fn readReconstructionFile(
+        self: *GameStateHistory,
+        path: []const u8,
+    ) []const u8 {
+        // processEvent increments current_event_index BEFORE dispatching the
+        // handler, so the event under handling is at current_event_index - 1.
+        // This is identical in live and replay (same increment, same dispatch).
+        const event_index = self.current_event_index - 1;
+        if (self.replaying) {
+            // Binary search by event_index to the first entry for this event,
+            // then linear-scan within the event for a matching path (a single
+            // handler may read several files; the per-event count is small).
+            const items = self.reconstruction_cache.items;
+            var lo: usize = 0;
+            var hi: usize = items.len;
+            while (lo < hi) {
+                const mid = lo + (hi - lo) / 2;
+                if (items[mid].event_index < event_index) lo = mid + 1 else hi = mid;
+            }
+            var index = lo;
+            while (index < items.len and items[index].event_index == event_index) : (index += 1) {
+                if (std.mem.eql(u8, items[index].path, path)) return items[index].bytes;
+            }
+            // Miss. In-session undo/redo (replayTo) never misses — live play
+            // cached before replay could reach this index — so that's a bug we
+            // fail fast on. Cross-session reconstruction
+            // (reconstructFromEventLog) starts with an empty cache; there a
+            // miss is expected, so fall back to file_source and cache the
+            // result (establishing the cache retroactively). For shipped
+            // content the bytes match the original session; for custom
+            // missions they're whatever is on disk now — the known cross-
+            // session limitation until the cache is serialized (format v2).
+            if (!self.cross_session_replay) {
+                @panic("reconstruction cache miss: no cached bytes for this event+path (live read did not cache — cross-session reload not yet supported)");
+            }
+            const arena = self.history_arena.allocator();
+            const durable_path = arena.dupe(u8, path) catch @panic("failed to dupe reconstruction cache path");
+            const bytes = self.file_source.readFile(arena, path) catch
+                @panic("failed to read reconstruction file during cross-session replay");
+            self.reconstruction_cache.append(arena, .{
+                .event_index = event_index,
+                .path = durable_path,
+                .bytes = bytes,
+            }) catch @panic("failed to append reconstruction cache entry");
+            return bytes;
+        }
+        const arena = self.history_arena.allocator();
+        const durable_path = arena.dupe(u8, path) catch @panic("failed to dupe reconstruction cache path");
+        const bytes = self.file_source.readFile(arena, path) catch
+            @panic("failed to read reconstruction file");
+        self.reconstruction_cache.append(arena, .{
+            .event_index = event_index,
+            .path = durable_path,
+            .bytes = bytes,
+        }) catch @panic("failed to append reconstruction cache entry");
+        return bytes;
+    }
+
     /// Drop the recorded timeline ahead of the current position — the stale
     /// future left behind when the player undoes and then acts. Trims the event
     /// log and idle points to the current position and frees any snapshots /
@@ -292,6 +425,20 @@ pub const GameStateHistory = struct {
                 }
             }
         }
+
+        // Drop reconstruction-cache entries ahead of the branch. Entries are
+        // appended in monotonic event-index order, so find the first with
+        // event_index >= current_event_index and shrink to it. The bytes they
+        // point at live in history_arena (never individually freed); trimming
+        // the list is enough — they're reclaimed only when history_arena is
+        // torn down at process exit.
+        var cache_keep: usize = self.reconstruction_cache.items.len;
+        while (cache_keep > 0 and
+            self.reconstruction_cache.items[cache_keep - 1].event_index >= self.current_event_index)
+        {
+            cache_keep -= 1;
+        }
+        self.reconstruction_cache.shrinkRetainingCapacity(cache_keep);
     }
 
     /// Save a snapshot at the current position (call when event stack is empty).
@@ -418,8 +565,63 @@ pub const GameStateHistory = struct {
         return best;
     }
 
+    /// Format an Event's full discriminator ("meta_event.start_level" etc.) into
+    /// `buf` for use in replay-mismatch panic messages. The slice is borrowed
+    /// from the caller's buffer, valid as long as `buf` lives (i.e. within the
+    /// panic-building scope).
+    fn eventName(buf: []u8, event: Event) []const u8 {
+        return switch (event) {
+            .meta_event => |m| std.fmt.bufPrint(buf, "meta_event.{s}", .{@tagName(m)}) catch "meta_event.?",
+            .super_event => |m| std.fmt.bufPrint(buf, "super_event.{s}", .{@tagName(m)}) catch "super_event.?",
+            .editor_event => |m| std.fmt.bufPrint(buf, "editor_event.{s}", .{@tagName(m)}) catch "editor_event.?",
+            .player_event => |m| std.fmt.bufPrint(buf, "player_event.{s}", .{@tagName(m)}) catch "player_event.?",
+            .hub_event => |m| std.fmt.bufPrint(buf, "hub_event.{s}", .{@tagName(m)}) catch "hub_event.?",
+            .level_event => |m| std.fmt.bufPrint(buf, "level_event.{s}", .{@tagName(m)}) catch "level_event.?",
+            .sub_level_event => |m| std.fmt.bufPrint(buf, "sub_level_event.{s}", .{@tagName(m)}) catch "sub_level_event.?",
+        .replay_viewer_event => |m| std.fmt.bufPrint(buf, "replay_viewer_event.{s}", .{@tagName(m)}) catch "replay_viewer_event.?",
+        };
+    }
+
+    /// Verify that the event about to be dispatched (the stack top) matches
+    /// the recorded event at `recorded_index`. Called before each
+    /// `apply_event` during the natural-stack replay loops (`replayTo` /
+    /// `replayToWithIdleTracking`), for handler-pushed children AND seeded
+    /// top-level events. For top-level events (just seeded from the
+    /// recording) the check is trivially true; for handler-pushed children
+    /// it is the real verification — a handler that pushes a different child
+    /// than the original session did panics here. A divergence means the
+    /// engine's (state, event) → (state', children) transform is not a pure
+    /// function of its inputs (a nondeterminism bug), so we fail fast.
+    /// Runs for ALL replay origins including cross-session
+    /// (`reconstructFromEventLog`); see AGENTS → Determinism & Tiebreaking →
+    /// Replay VERIFICATION.
+    fn verifyReplayMatch(
+        self: *GameStateHistory,
+        expected: Event,
+        recorded_index: u32,
+    ) void {
+        const recorded = self.event_history.items[recorded_index];
+        if (!deepEqual(Event, expected, recorded)) {
+            var exp_buf: [128]u8 = undefined;
+            var act_buf: [128]u8 = undefined;
+            const exp_name = eventName(&exp_buf, recorded);
+            const act_name = eventName(&act_buf, expected);
+            const field_hint = firstDiffField(Event, expected, recorded) orelse "";
+            var msg_buf: [512]u8 = undefined;
+            const msg = std.fmt.bufPrint(&msg_buf,
+                "replay mismatch at recorded event {d}: handler would run {s}, but recorded history has {s} (first differing field: \"{s}\")",
+                .{ recorded_index, act_name, exp_name, field_hint },
+            ) catch "replay mismatch: handler-pushed event does not match recorded history";
+            @panic(msg);
+        }
+    }
+
     /// Replay events up to target_event_index, starting from the best available
-    /// restore point (snapshot, checkpoint, or initial state).
+    /// restore point (snapshot, checkpoint, or initial state). Uses the
+    /// natural-stack model (see `replayToWithIdleTracking`): the stack top
+    /// before each dispatch must match the recording, verified via
+    /// `verifyReplayMatch`. Does not track idle points (undo/redo uses
+    /// snapshots for restore points, not derived idle boundaries).
     fn replayTo(
         self: *GameStateHistory,
         target_event_index: u32,
@@ -444,8 +646,17 @@ pub const GameStateHistory = struct {
         self.replaying = true;
         defer self.replaying = false;
         while (self.current_event_index < target_event_index) {
-            const event = self.event_history.items[self.current_event_index];
-            self.current_state.event_stack = &.{event};
+            // If the stack drained, seed the next top-level recorded event.
+            if (self.current_state.event_stack.len == 0) {
+                self.current_state.event_stack =
+                    &.{self.event_history.items[self.current_event_index]};
+            }
+
+            // Verify: the event about to run (stack top) matches the recording.
+            const expected = self.current_state.event_stack[
+                self.current_state.event_stack.len - 1];
+            self.verifyReplayMatch(expected, self.current_event_index);
+
             apply_event(self);
         }
 
@@ -458,20 +669,23 @@ pub const GameStateHistory = struct {
     /// Replay events up to target_event_index, deriving idle points along the
     /// way so a reconstructed session undoes/steps "as if played live".
     ///
-    /// The recorded event_history is the fully-linearized stream — handler-
-    /// pushed sub-events are themselves subsequent recorded entries. So idle
-    /// points (stack-empty moments) are recoverable via VIRTUAL STACK DEPTH:
-    /// each recorded event is forced onto the stack and applied; after the
-    /// handler runs, the stack length K is the sub-events it pushed. Depth
-    /// changes by K - 1 (one popped, K pushed). Depth hitting 0 means the
-    /// stack just drained = an idle point → recordIdlePoint there. The next
-    /// recorded event is a fresh top-level player action from an empty stack,
-    /// so depth resets to 1.
+    /// This uses the NATURAL STACK to drive replay + verification (see AGENTS
+    /// → Determinism & Tiebreaking → Replay VERIFICATION): instead of force-
+    /// feeding each recorded event and discarding handler outputs, we let
+    /// `processEvent`'s pop/push machinery run. The event stack IS the DFS
+    /// cursor — before each dispatch, the stack top is the event that should
+    /// run next, and we verify it equals the recorded event at
+    /// `current_event_index`. Handler-pushed children naturally interleave
+    /// with their own subtrees in the recorded stream, and the stack tracks
+    /// that interleaving for free. When the stack drains, the next recorded
+    /// event is a fresh top-level player action — we seed it (top-level
+    /// events come from player input, not handlers, so the recording is the
+    /// source of truth for them and the check is trivial there).
     ///
-    /// This relies on each player action pushing exactly ONE top-level event
-    /// (the orchestrator convention — see player_move_action etc.); otherwise
-    /// sibling batches can't be distinguished from drains and idle points
-    /// over-detect. Does NOT touch the undo/redo slow path (replayTo).
+    /// Idle points are simply stack-empty moments (depth 0) — the real stack
+    /// depth replaces the old virtual-depth bookkeeping. This still relies on
+    /// the one-orchestrator-event-per-player-action convention so that each
+    /// idle point is a genuine player-action boundary.
     fn replayToWithIdleTracking(
         self: *GameStateHistory,
         target_event_index: u32,
@@ -480,7 +694,7 @@ pub const GameStateHistory = struct {
         // Reconstruction always starts from the initial state (no snapshots/
         // checkpoints exist on a freshly-inited history). The initial state
         // carries a single seed event on its stack (e.g. open_main_menu), so
-        // the first recorded event is that seed draining to an idle point.
+        // the first recorded event is that seed.
         self.current_arena.deinit();
         self.current_arena = std.heap.ArenaAllocator.init(self.backing_allocator);
         self.current_state = deepCopy(GameState, self.initial_state, self.current_arena.allocator());
@@ -489,29 +703,30 @@ pub const GameStateHistory = struct {
         self.replaying = true;
         defer self.replaying = false;
 
-        var virtual_depth: u32 = @intCast(self.initial_state.event_stack.len);
-
         while (self.current_event_index < target_event_index) {
-            const event = self.event_history.items[self.current_event_index];
-            self.current_state.event_stack = &.{event};
-            apply_event(self);
-
-            // K = sub-events the handler pushed (the forced event itself was
-            // popped by apply_event, so the remaining stack IS the children).
-            const pushed: u32 = @intCast(self.current_state.event_stack.len);
-
-            if (pushed >= 1) {
-                virtual_depth += pushed - 1;
-            } else {
-                // No children: the event fully drained one level of depth.
-                if (virtual_depth > 0) virtual_depth -= 1;
+            // If the stack drained, seed the next top-level recorded event.
+            // (Top-level events originate from player input, not handlers, so
+            // the recording is authoritative for them; the verify below is
+            // trivially true right after a seed.)
+            if (self.current_state.event_stack.len == 0) {
+                self.current_state.event_stack =
+                    &.{self.event_history.items[self.current_event_index]};
             }
 
-            if (virtual_depth == 0) {
-                // Stack-empty moment — same bookkeeping the live loop runs.
+            // Verify: the event about to run (stack top) matches the recording.
+            // For handler-pushed children this is the real check — a handler
+            // that pushes a different child than the original session did
+            // panics here. For seeded top-level events this is trivially true.
+            const expected = self.current_state.event_stack[
+                self.current_state.event_stack.len - 1];
+            self.verifyReplayMatch(expected, self.current_event_index);
+
+            apply_event(self);
+
+            // Idle point = the stack just drained. (recordIdlePoint snapshots
+            // + compacts, mirroring the live gameLoop's idle bookkeeping.)
+            if (self.current_state.event_stack.len == 0) {
                 self.recordIdlePoint();
-                // The next recorded event is a fresh top-level action.
-                virtual_depth = 1;
             }
         }
 
@@ -617,6 +832,8 @@ pub const GameStateHistory = struct {
             const durable_event = deepCopy(Event, event, arena);
             self.event_history.append(arena, durable_event) catch @panic("failed to append event");
         }
+        self.cross_session_replay = true;
+        defer self.cross_session_replay = false;
         self.replayToWithIdleTracking(target_event_index, apply_event);
     }
 };
@@ -631,6 +848,7 @@ fn historyForTimelineTest(allocator: std.mem.Allocator) GameStateHistory {
     history.history_arena = std.heap.ArenaAllocator.init(allocator);
     history.event_history = .{ .items = &.{}, .capacity = 0 };
     history.idle_points = .{ .items = &.{}, .capacity = 0 };
+    history.reconstruction_cache = .empty;
     history.snapshots = .{null} ** (snapshot_count * 2);
     history.checkpoints = .{null} ** checkpoint_count;
     history.snapshot_ring_index = 0;

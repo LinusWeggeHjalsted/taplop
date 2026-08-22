@@ -25,6 +25,14 @@ pub fn build(b: *std.Build) void {
     // require a recompile, which `zig build run` does anyway).
     const assets_module = generateAssetsFile(b);
 
+    // === Generated sprite metadata ===
+    // Emits generated_sprite_metadata.zig at the PROJECT ROOT with pixel
+    // dimensions (from each PNG's IHDR) for every assets/**/*.png, keyed by
+    // sprite id. The parser uses this to populate `Decoration.pixel_dims` for
+    // shipped sprites with zero I/O (custom sprites resolve dims at runtime).
+    // See AGENTS.md "Decorations & Footprint".
+    const sprite_metadata_module = generateSpriteMetadataFile(b);
+
     // === Build info (game version) ===
     // Computes the game_version string at configure time (YYYY.MM.<commits
     // this month>[-dirty], derived from the build date + git) and exposes it
@@ -75,6 +83,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("build_info", build_info_module);
     exe.root_module.addImport("raylib", raylib);
     exe.root_module.addImport("generated_assets", assets_module);
+    exe.root_module.addImport("generated_sprite_metadata", sprite_metadata_module);
     exe.root_module.linkLibrary(raylib_artifact);
 
     // Strip system .so files from the raylib archive before the exe links.
@@ -147,6 +156,7 @@ pub fn build(b: *std.Build) void {
     wasm.root_module.addImport("build_info", build_info_module);
     wasm.root_module.addImport("raylib", raylib_web);
     wasm.root_module.addImport("generated_assets", assets_module);
+    wasm.root_module.addImport("generated_sprite_metadata", sprite_metadata_module);
     wasm.root_module.linkLibrary(raylib_web_artifact);
 
     var emcc_flags = zemscripten.emccDefaultFlags(b.allocator, .{
@@ -224,6 +234,7 @@ pub fn build(b: *std.Build) void {
     tests.root_module.addAnonymousImport("generated", .{ .root_source_file = generated_path });
     tests.root_module.addImport("build_info", build_info_module);
     tests.root_module.addImport("generated_assets", assets_module);
+    tests.root_module.addImport("generated_sprite_metadata", sprite_metadata_module);
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
 }
@@ -482,6 +493,81 @@ fn generateAssetsFile(b: *std.Build) *std.Build.Module {
     }) catch @panic("failed to write generated_assets.zig");
 
     return b.addModule("generated_assets", .{ .root_source_file = b.path("generated_assets.zig") });
+}
+
+/// Generates generated_sprite_metadata.zig at the PROJECT ROOT with one entry
+/// per `assets/**/*.png`, keyed by sprite id (the asset path minus the
+/// `assets/` prefix and `.png` suffix, e.g. `decorations/tree_1`), value =
+/// pixel dimensions as `"w h"`. Dimensions are read from the PNG IHDR
+/// (big-endian u32 width/height at byte offset 16) so no image decode is
+/// needed. Exposed as the named module "generated_sprite_metadata" (package
+/// root at the project root, like generated_assets).
+///
+/// This is the build-time source of sprite dimensions for shipped art: the
+/// parser looks up a shipped sprite's dims here (zero I/O) and bakes them into
+/// `Decoration.pixel_dims`. Custom (runtime-imported) sprites can't be in this
+/// table — their dims are parsed from the PNG bytes at acquisition time and
+/// stored on the decoration/type-def the same way (see AGENTS → Decorations &
+/// Footprint). Re-runs every build so new/edited art is picked up.
+fn generateSpriteMetadataFile(b: *std.Build) *std.Build.Module {
+    const io = b.graph.io;
+
+    // Reuse the same walk as asset embedding, but filter to assets/*.png.
+    var png_entries: std.ArrayListUnmanaged([2][]const u8) = .empty;
+    defer png_entries.deinit(b.allocator);
+    collectContentFiles(b, "assets", "assets", &png_entries);
+
+    // Build (sprite_id, dims) pairs by reading each PNG's IHDR.
+    var pairs: std.ArrayListUnmanaged([2][]const u8) = .empty;
+    defer pairs.deinit(b.allocator);
+    for (png_entries.items) |entry| {
+        const path = entry[0]; // e.g. "assets/decorations/tree_1.png"
+        if (!std.mem.endsWith(u8, path, ".png")) continue;
+        const with_prefix = path["assets/".len..]; // "decorations/tree_1.png"
+        const sprite_id = with_prefix[0 .. with_prefix.len - ".png".len];
+
+        const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, b.allocator, .limited(1024 * 1024)) catch
+            @panic("failed to read PNG for sprite metadata");
+        defer b.allocator.free(bytes);
+        if (bytes.len < 24) @panic("PNG too small for IHDR");
+        // PNG signature is 8 bytes, then IHDR chunk: 4 length, 4 type, 4 width,
+        // 4 height — width/height are big-endian at byte offset 16 and 20.
+        const width: u32 = std.mem.readInt(u32, bytes[16..20], .big);
+        const height: u32 = std.mem.readInt(u32, bytes[20..24], .big);
+        const dims_str = b.fmt("{d} {d}", .{ width, height });
+        const id_dup = b.allocator.dupe(u8, sprite_id) catch @panic("OOM");
+        const dims_dup = b.allocator.dupe(u8, dims_str) catch @panic("OOM");
+        pairs.append(b.allocator, .{ id_dup, dims_dup }) catch @panic("OOM");
+    }
+
+    // Sort by sprite id for deterministic output.
+    std.mem.sort([2][]const u8, pairs.items, {}, struct {
+        fn lessThan(_: void, a: [2][]const u8, c: [2][]const u8) bool {
+            return std.mem.order(u8, a[0], c[0]) == .lt;
+        }
+    }.lessThan);
+
+    var content: std.ArrayListUnmanaged(u8) = .empty;
+    appendStr(b, &content,
+        "// AUTO-GENERATED by build.zig — do not edit manually.\n" ++
+        "// Pixel dimensions (from each PNG's IHDR) for every assets/**/*.png,\n" ++
+        "// keyed by sprite id (asset path minus `assets/` prefix and `.png`\n" ++
+        "// suffix). Values are `\"w h\"` strings. See AGENTS.md \"Decorations &\n" ++
+        "// Footprint\". Shipped sprites only; custom runtime sprites resolve\n" ++
+        "// their dims from the PNG bytes at acquisition time.\n" ++
+        "const std = @import(\"std\");\n\n" ++
+        "pub const map = std.StaticStringMap([]const u8).initComptime(.{\n");
+    for (pairs.items) |pair| {
+        appendStr(b, &content, b.fmt("    .{{ \"{s}\", \"{s}\" }},\n", .{ pair[0], pair[1] }));
+    }
+    appendStr(b, &content, "});\n");
+
+    std.Io.Dir.cwd().writeFile(io, .{
+        .sub_path = "generated_sprite_metadata.zig",
+        .data = content.items,
+    }) catch @panic("failed to write generated_sprite_metadata.zig");
+
+    return b.addModule("generated_sprite_metadata", .{ .root_source_file = b.path("generated_sprite_metadata.zig") });
 }
 
 /// Recursively collect all files under `dir_path`, recording (key, embed_path)
