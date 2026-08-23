@@ -1229,6 +1229,17 @@ pub fn processEvent(
                     const level = &current.level.?;
                     const entity = level.entities[enemy_move.entity_index];
 
+                    // A dead entity can't take its turn — skip to turn_end to
+                    // advance the cycle. (Reactive effects like Reflect can
+                    // kill an entity mid-turn, leaving its turn events already
+                    // on the stack.)
+                    if (entity.current_health == 0) {
+                        pushEvents(current, &.{.{ .level_event = .{ .turn_end = .{
+                            .entity_index = enemy_move.entity_index,
+                        } } }}, allocator);
+                        return;
+                    }
+
                     // Find nearest alive entity from a different team
                     var nearest_target: ?Vector2 = null;
                     var nearest_distance: i32 = std.math.maxInt(i32);
@@ -1358,6 +1369,18 @@ pub fn processEvent(
                 .enemy_turn_attack => |enemy_attack| {
                     const level = &current.level.?;
                     const entity = level.entities[enemy_attack.entity_index];
+
+                    // A dead entity can't take its turn — skip to turn_end to
+                    // advance the cycle. (Reactive effects like Reflect can
+                    // kill an entity mid-turn, leaving its turn events already
+                    // on the stack.)
+                    if (entity.current_health == 0) {
+                        pushEvents(current, &.{.{ .level_event = .{ .turn_end = .{
+                            .entity_index = enemy_attack.entity_index,
+                        } } }}, allocator);
+                        return;
+                    }
+
                     const skill_ids = entity.collectSkillSlots(history.weapon_type_definitions);
 
                     // Evaluate all off-cooldown skills, partitioned by turn-ending vs not

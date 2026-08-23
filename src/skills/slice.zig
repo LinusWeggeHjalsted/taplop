@@ -62,6 +62,7 @@ fn priority(caster_index: u32, game_state: GameState) u32 {
     var found_wounded_target = false;
     for (level.entities, 0..) |entity, entity_index| {
         if (entity_index == caster_index) continue;
+        if (entity.current_health == 0) continue;
         if (entity.team == caster.team) continue;
         if (functions.chebyshevDistance(caster.position, entity.position) <= range) {
             found_target = true;
