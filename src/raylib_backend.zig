@@ -27,6 +27,11 @@ const reference_height_int: i32 = types.reference_height;
 const reference_width: f32 = @floatFromInt(reference_width_int);
 const reference_height: f32 = @floatFromInt(reference_height_int);
 
+/// Edge-highlight outline thickness in source pixels (inner band hugging the
+/// sprite silhouette). Drawn via a precomputed outline mask (see
+/// `getOutlineTexture`). Tune from in-game viewing.
+const outline_thickness: i32 = 8;
+
 /// A raylib key mapped to the game's binding id (Web KeyboardEvent.code style,
 /// e.g. "KeyZ", "Escape", "Digit1"). Only the keys the game actually binds are
 /// listed; unmapped keys are ignored. Modifiers are included so getModifiers()
@@ -111,6 +116,13 @@ pub const RaylibBackend = struct {
     /// failed load is not retried (and spammed) every frame. Keys are duped
     /// into `allocator`; the loaded textures live until deinit.
     texture_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
+    /// sprite_id -> precomputed edge-outline mask texture (white opaque halo
+    /// sitting just outside the silhouette). Generated lazily by
+    /// `ensureOutlineLoaded` on the first `getOutlineTexture` request, so
+    /// only sprites that actually get outlined pay the cost (the tile cursor
+    /// + highlighted UI icons). A cached `null` means the sprite is missing
+    /// (or the mask failed) -> callers skip the outline.
+    outline_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
     /// Reference-resolution offscreen target; blitted to the window each frame.
     render_target: rl.RenderTexture2D,
     /// Default bitmap font for text labels.
@@ -171,6 +183,11 @@ pub const RaylibBackend = struct {
             if (maybe_texture.*) |texture| rl.unloadTexture(texture);
         }
         self.texture_cache.deinit(self.allocator);
+        var outlines = self.outline_cache.valueIterator();
+        while (outlines.next()) |maybe_texture| {
+            if (maybe_texture.*) |texture| rl.unloadTexture(texture);
+        }
+        self.outline_cache.deinit(self.allocator);
         self.frame_arena.deinit();
         rl.unloadRenderTexture(self.render_target);
         rl.closeWindow();
@@ -327,9 +344,9 @@ pub const RaylibBackend = struct {
             view_state.world_scale,
             tile.color,
         );
-        for (view_state.tile_overlays) |overlay| drawTileOverlay(overlay, view_state.world_scale);
+        for (view_state.tile_overlays) |overlay| self.drawTileOverlay(overlay, view_state.world_scale);
         for (view_state.ground_drawables) |ground| self.drawGroundDrawable(ground, view_state.world_scale);
-        for (view_state.ui_elements) |element| self.drawUiElement(element);
+        for (view_state.ui_elements) |element| self.drawUiElement(element, view_state.active_color_theme.lightest);
         rl.endTextureMode();
 
         // Blit the target to the window, letterboxed. RenderTextures are stored
@@ -363,7 +380,7 @@ pub const RaylibBackend = struct {
     /// Draw a tile overlay as a primitive (no overlay art): a translucent fill
     /// for move-range highlights, an outline for the cursor / range outlines.
     /// Sized to one tile at the current world scale.
-    fn drawTileOverlay(overlay: types.TileOverlayDrawable, world_scale: f32) void {
+    fn drawTileOverlay(self: *RaylibBackend, overlay: types.TileOverlayDrawable, world_scale: f32) void {
         const tile_size = input.tile_size_pixels * world_scale;
         const rectangle = rl.Rectangle{
             .x = @floatFromInt(overlay.screen_position.x),
@@ -373,7 +390,24 @@ pub const RaylibBackend = struct {
         };
         switch (overlay.overlay_type) {
             .highlight => rl.drawRectangleRec(rectangle, toRaylibColor(overlay.color, 90)),
-            .cursor, .range_outline, .radius_outline, .aggro_outline => {
+            .cursor => {
+                // Outline hugging the tile graphic's silhouette instead of
+                // a plain rectangle: draw the precomputed edge mask of
+                // world/tile tinted with the cursor color. Falls back to
+                // rectangle lines if the mask is unavailable.
+                if (self.getOutlineTexture("world/tile")) |mask| {
+                    const source = rl.Rectangle{
+                        .x = 0,
+                        .y = 0,
+                        .width = @floatFromInt(mask.width),
+                        .height = @floatFromInt(mask.height),
+                    };
+                    rl.drawTexturePro(mask, source, rectangle, .{ .x = 0, .y = 0 }, 0, toRaylibColor(overlay.color, 255));
+                } else {
+                    rl.drawRectangleLinesEx(rectangle, 6 * world_scale, toRaylibColor(overlay.color, 255));
+                }
+            },
+            .range_outline, .radius_outline, .aggro_outline => {
                 rl.drawRectangleLinesEx(rectangle, 6 * world_scale, toRaylibColor(overlay.color, 255));
             },
         }
@@ -494,7 +528,7 @@ pub const RaylibBackend = struct {
 
     // -- UI element drawing --
 
-    fn drawUiElement(self: *RaylibBackend, element: ui.UiElement) void {
+    fn drawUiElement(self: *RaylibBackend, element: ui.UiElement, highlight_color: types.Color) void {
         switch (element) {
             .nine_slice_panel => |panel| self.drawNineSlice(panel),
             .slot => |slot| {
@@ -506,14 +540,35 @@ pub const RaylibBackend = struct {
                 // Spriteless buttons are pure action/hit-test targets over a
                 // separate background; the renderer draws nothing for them.
                 if (button.sprite_id) |sprite_id| {
-                    self.drawSprite(sprite_id, referenceRectangle(button.screen_position, button.width, button.height), null, button.color);
+                    const dest = referenceRectangle(button.screen_position, button.width, button.height);
+                    self.drawSprite(sprite_id, dest, null, button.color);
+                    if (button.highlighted) self.drawHighlightOutline(sprite_id, dest, highlight_color);
                 }
             },
             .text_label => |label| self.drawTextLabel(label),
             .fill_sprite => |fill| self.drawFillSprite(fill),
-            .image => |image| self.drawSprite(image.sprite_id, referenceRectangle(image.screen_position, image.width, image.height), null, image.color),
+            .image => |image| {
+                const dest = referenceRectangle(image.screen_position, image.width, image.height);
+                self.drawSprite(image.sprite_id, dest, null, image.color);
+                if (image.highlighted) self.drawHighlightOutline(image.sprite_id, dest, highlight_color);
+            },
             .solid_rect => |rect| rl.drawRectangleRec(referenceRectangle(rect.screen_position, rect.width, rect.height), toRaylibColor(rect.color, 255)),
         }
+    }
+
+    /// Draw a precomputed edge-outline mask over `destination`, tinted with
+    /// `highlight_color`. Used by highlighted UI elements (Button/Image) to
+    /// ring the sprite silhouette. No-op if the sprite or its mask is
+    /// unavailable.
+    fn drawHighlightOutline(self: *RaylibBackend, sprite_id: []const u8, destination: rl.Rectangle, highlight_color: types.Color) void {
+        const mask = self.getOutlineTexture(sprite_id) orelse return;
+        const source = rl.Rectangle{
+            .x = 0,
+            .y = 0,
+            .width = @floatFromInt(mask.width),
+            .height = @floatFromInt(mask.height),
+        };
+        rl.drawTexturePro(mask, source, destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(highlight_color, 255));
     }
 
     /// Draw a sprite into `destination`. `source` selects a sub-region of the
@@ -651,9 +706,32 @@ pub const RaylibBackend = struct {
     /// Reads bytes through the FileSource (embedded map / persistent-dir
     /// override) and decodes via loadImageFromMemory, so the backend never
     /// touches the filesystem directly. Returns null (and caches the miss) if
-    /// the asset can't be loaded.
+    /// the asset can't be loaded. The outline mask is NOT built here — it is
+    /// generated lazily by `ensureOutlineLoaded` only for sprites that
+    /// actually get outlined, so loading a level pays no outline cost.
     fn getTexture(self: *RaylibBackend, sprite_id: []const u8) ?rl.Texture2D {
-        if (self.texture_cache.get(sprite_id)) |cached| return cached;
+        if (!self.texture_cache.contains(sprite_id)) self.ensureSpriteLoaded(sprite_id);
+        return self.texture_cache.get(sprite_id).?;
+    }
+
+    /// The precomputed edge-outline mask for `sprite_id` (a white opaque halo
+    /// sitting just outside the silhouette). Lazily generated on first
+    /// request via `ensureOutlineLoaded`, so only sprites that actually get
+    /// outlined pay the cost (`world/tile` for the cursor, highlighted UI
+    /// icons). null if the sprite is missing or the mask could not be built.
+    fn getOutlineTexture(self: *RaylibBackend, sprite_id: []const u8) ?rl.Texture2D {
+        if (!self.outline_cache.contains(sprite_id)) self.ensureOutlineLoaded(sprite_id);
+        return self.outline_cache.get(sprite_id).?;
+    }
+
+    /// Load `sprite_id` from the file source, decode, and cache the main
+    /// texture only (the outline mask is generated lazily by
+    /// `ensureOutlineLoaded`). A missing/unreadable asset is a normal
+    /// in-progress state -> cache null and fall through to the magenta
+    /// fallback at draw sites. Idempotent: presence in `texture_cache` marks
+    /// the load attempted.
+    fn ensureSpriteLoaded(self: *RaylibBackend, sprite_id: []const u8) void {
+        if (self.texture_cache.contains(sprite_id)) return;
 
         const path = std.fmt.allocPrintSentinel(
             self.frame_arena.allocator(),
@@ -664,10 +742,7 @@ pub const RaylibBackend = struct {
 
         const key = self.allocator.dupe(u8, sprite_id) catch @panic("failed to dupe sprite id");
 
-        // Read asset bytes from the file source, then decode in memory. A
-        // missing/unreadable asset is a normal in-progress state -> cache
-        // null and fall through to the magenta fallback.
-        const loaded: ?rl.Texture2D = blk: {
+        const texture: ?rl.Texture2D = blk: {
             const bytes = self.file_source.readFile(self.allocator, path) catch
                 break :blk null;
             defer self.allocator.free(bytes);
@@ -676,8 +751,124 @@ pub const RaylibBackend = struct {
             break :blk rl.loadTextureFromImage(image) catch null;
         };
 
-        self.texture_cache.put(self.allocator, key, loaded) catch @panic("failed to cache texture");
-        return loaded;
+        self.texture_cache.put(self.allocator, key, texture) catch @panic("failed to cache texture");
+    }
+
+    /// Build and cache the edge-outline mask for `sprite_id`. Re-reads the
+    /// asset bytes and decodes — outlines are requested for few sprites
+    /// (`world/tile` + a handful of UI icons), so a second read per outlined
+    /// sprite is far cheaper than holding decoded images for every sprite.
+    /// Caches null on miss/failure. Idempotent via `outline_cache` presence.
+    fn ensureOutlineLoaded(self: *RaylibBackend, sprite_id: []const u8) void {
+        if (self.outline_cache.contains(sprite_id)) return;
+
+        const path = std.fmt.allocPrintSentinel(
+            self.frame_arena.allocator(),
+            "assets/{s}.png",
+            .{sprite_id},
+            0,
+        ) catch @panic("failed to build asset path");
+
+        const key = self.allocator.dupe(u8, sprite_id) catch @panic("failed to dupe sprite id");
+
+        const outline: ?rl.Texture2D = blk: {
+            const bytes = self.file_source.readFile(self.allocator, path) catch
+                break :blk null;
+            defer self.allocator.free(bytes);
+            var image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
+            defer rl.unloadImage(image);
+            // Normalize to RGBA so alpha is always at the same byte offset.
+            image.setFormat(.uncompressed_r8g8b8a8);
+            break :blk self.generateOutlineMask(image) catch null;
+        };
+
+        self.outline_cache.put(self.allocator, key, outline) catch @panic("failed to cache outline mask");
+    }
+
+    /// Build a white-opaque edge-outline mask as an OUTER band: transparent
+    /// pixels within `outline_thickness` (Chebyshev) of an opaque pixel become
+    /// white; opaque pixels stay transparent. The band sits just outside the
+    /// silhouette, so the sprite's own art is never overpainted. Dilation by a
+    /// square is separable: dilate horizontally, then vertically —
+    /// O(w·h·(2t+1)) instead of O(w·h·(2t+1)²). The band is clipped at the
+    /// canvas border (a sprite filling its canvas edge-to-edge gets no halo on
+    /// that side); current art ships with enough margin that this never shows.
+    fn generateOutlineMask(self: *RaylibBackend, image: rl.Image) !rl.Texture2D {
+        const width: i32 = image.width;
+        const height: i32 = image.height;
+        const colors = try rl.loadImageColors(image);
+        defer rl.unloadImageColors(colors);
+
+        const pixel_count: usize = @intCast(width * height);
+        // opaque_mask[i] = 1 if the source pixel is opaque, else 0.
+        const opaque_mask = try self.allocator.alloc(u8, pixel_count);
+        defer self.allocator.free(opaque_mask);
+        for (colors, 0..) |c, i| opaque_mask[i] = if (c.a > 16) 1 else 0;
+
+        // Horizontal dilation: opaque_h_mask[i] = 1 if any opaque pixel is within
+        // `t` columns (same row), else 0.
+        const opaque_h_mask = try self.allocator.alloc(u8, pixel_count);
+        defer self.allocator.free(opaque_h_mask);
+        const t = outline_thickness;
+        var y: i32 = 0;
+        while (y < height) : (y += 1) {
+            const row_start: usize = @intCast(y * width);
+            var x: i32 = 0;
+            while (x < width) : (x += 1) {
+                var hit: u8 = 0;
+                var dx: i32 = -t;
+                while (dx <= t) : (dx += 1) {
+                    const nx = x + dx;
+                    if (nx < 0 or nx >= width) continue;
+                    if (opaque_mask[row_start + @as(usize, @intCast(nx))] == 1) {
+                        hit = 1;
+                        break;
+                    }
+                }
+                opaque_h_mask[row_start + @as(usize, @intCast(x))] = hit;
+            }
+        }
+
+        // Vertical dilation + band output: a pixel joins the band iff it is
+        // transparent but some horizontally-dilated pixel is within `t` rows
+        // (same column). Written straight into the RGBA upload buffer.
+        const buf = try self.allocator.alloc(u8, pixel_count * 4);
+        defer self.allocator.free(buf);
+        @memset(buf, 0);
+        y = 0;
+        while (y < height) : (y += 1) {
+            const row_start: usize = @intCast(y * width);
+            var x: i32 = 0;
+            while (x < width) : (x += 1) {
+                const i: usize = row_start + @as(usize, @intCast(x));
+                if (opaque_mask[i] == 1) continue; // opaque -> keep transparent
+                var hit = false;
+                var dy: i32 = -t;
+                while (dy <= t) : (dy += 1) {
+                    const ny = y + dy;
+                    if (ny < 0 or ny >= height) continue;
+                    if (opaque_h_mask[@as(usize, @intCast(ny)) * @as(usize, @intCast(width)) + @as(usize, @intCast(x))] == 1) {
+                        hit = true;
+                        break;
+                    }
+                }
+                if (hit) {
+                    buf[i * 4 + 0] = 255;
+                    buf[i * 4 + 1] = 255;
+                    buf[i * 4 + 2] = 255;
+                    buf[i * 4 + 3] = 255;
+                }
+            }
+        }
+
+        const mask_image = rl.Image{
+            .data = @ptrCast(buf.ptr),
+            .width = width,
+            .height = height,
+            .mipmaps = 1,
+            .format = .uncompressed_r8g8b8a8,
+        };
+        return rl.loadTextureFromImage(mask_image) catch error.LoadTexture;
     }
 };
 

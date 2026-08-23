@@ -1936,3 +1936,42 @@ single-tile decorations present) and untouched.
 The `loadDecorationRegistry` test (parser.zig) already asserted
 stone_6's footprint as the single tile `(0,1)` at HEAD, so no test
 change was needed for the registry correction.
+
+### Programmatic edge-highlight outlines (done)
+
+A precomputed outline-mask primitive powers two highlights: the tile cursor
+(outline hugging the `world/tile` silhouette instead of a plain rectangle)
+and highlighted UI elements (the move/attack step indicators above the
+bottom bar ring the icon silhouette). All outlines tint with the active
+theme's `lightest` color (the artist's slightly-off-white).
+
+- `outline_thickness: i32 = 8` constant in `raylib_backend.zig` (tuned from
+  in-game viewing; the one knob to adjust).
+- `outline_cache: sprite_id -> ?rl.Texture2D` on `RaylibBackend`, freed in
+  `deinit` alongside `texture_cache`.
+- `generateOutlineMask`: an OUTER band — transparent pixels within
+  `outline_thickness` (Chebyshev) of an opaque pixel become white, opaque
+  pixels stay transparent. The band sits just outside the silhouette, so the
+  sprite's own art is never overpainted (an earlier inner-band design
+  overlapped the art's own edges). Dilation by a square is SEPARABLE: a
+  horizontal pass into `opaque_h_mask`, then a vertical pass straight into
+  the RGBA upload buffer — O(w·h·(2t+1)) instead of O(w·h·(2t+1)²), ~8.5x
+  faster at t=8.
+- LAZY generation: `ensureSpriteLoaded` loads the main texture only (no
+  outline cost at level load — entity/weapon/decoration sheets never
+  generate masks). `ensureOutlineLoaded` builds the mask on the first
+  `getOutlineTexture` request (re-reading the asset bytes; outlined sprites
+  are few, so a second read is cheaper than holding decoded images for every
+  sprite). Fixed a debug-build stall where loading a level took multiple
+  seconds because outlines were eagerly generated for every sprite.
+- Band is clipped at the canvas border (a sprite filling its canvas
+  edge-to-edge gets no halo on that side); current art ships with enough
+  margin that this never shows. Canvas expansion (pad by t per side + grow
+  the dest rect) is the robust fix if such art ever ships.
+- `drawTileOverlay` is now a method; `.cursor` draws the `world/tile` mask
+  tinted with the cursor color (rectangle-line fallback if the mask is
+  missing). `.range_outline`/`.radius_outline`/`.aggro_outline` keep the
+  rectangle (they outline tile regions, not sprite art).
+- `drawUiElement` takes `highlight_color`; `.button`/`.image` draw the
+  sprite's mask over it when `highlighted`, via `drawHighlightOutline`.
+  `render()` passes `view_state.active_color_theme.lightest`.
