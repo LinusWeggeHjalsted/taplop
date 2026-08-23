@@ -371,6 +371,53 @@ pub fn handleAnytimeInput(
 }
 
 /// Handle inputs that are only accepted when the event stack is empty.
+/// A resolved skill-bar slot press: use the skill now (auto-target hit or
+/// no-targeting skill, with an optional target tile) or begin targeting
+/// (prepare). Produced by `resolveSkillSlotAction` and consumed by both the
+/// player_move and player_attack turn phases.
+const SkillSlotAction = union(enum) {
+    use: struct { skill_id: SkillId, target: ?Vector2 },
+    prepare: SkillId,
+};
+
+/// Resolve a skill-bar slot press into a concrete action. Returns null when
+/// the slot is empty, the skill is on cooldown, or the skill definition is
+/// missing — the caller drops the input silently (matching the prior inline
+/// behavior). Shared by the player_move (skip-to-skill) and player_attack
+/// (in-phase) paths so both follow one resolution path. Targeting
+/// resolution depends on the transient `tile_cursor` (SessionState, off
+/// GameState), so it lives here in the input path, not in an event handler
+/// (replay doesn't re-resolve input — the orchestrator carries the result).
+fn resolveSkillSlotAction(
+    history: *GameStateHistory,
+    current: *GameState,
+    level: *const Level,
+    slot: u8,
+    allocator: std.mem.Allocator,
+) ?SkillSlotAction {
+    const player = level.entities[0];
+    const skill_id = player.skillInSlot(slot, history.weapon_type_definitions) orelse return null;
+    if (player.skill_cooldowns.get(skill_id) > 0) return null;
+    const skill_definition = lookups.getSkillDefinition(skill_id) orelse return null;
+    if (!skill_definition.uses_targeting) {
+        return .{ .use = .{ .skill_id = skill_id, .target = null } };
+    }
+    // Targeted skill: auto-target at the cursor if it sits on a valid target.
+    if (history.settings.auto_target_at_cursor) {
+        if (history.session.tile_cursor) |cursor_position| {
+            const valid_targets = skill_definition.getValidTargets(0, current.*, allocator);
+            if (valid_targets) |targets| {
+                for (targets) |target| {
+                    if (target.x == cursor_position.x and target.y == cursor_position.y) {
+                        return .{ .use = .{ .skill_id = skill_id, .target = cursor_position } };
+                    }
+                }
+            }
+        }
+    }
+    return .{ .prepare = skill_id };
+}
+
 pub fn handleIdleInput(
     history: *GameStateHistory,
     idle_input: input.IdleInput,
@@ -419,6 +466,31 @@ pub fn handleIdleInput(
         if (level.turn_phase) |turn_phase| {
             switch (turn_phase) {
                 .player_move => {
+                    // Pressing a skill slot during the move step skips the
+                    // move and acts in the attack step instead — no need to
+                    // manually skip the move when you don't intend to move.
+                    if (idle.skill_slot_selected) |slot| {
+                        if (resolveSkillSlotAction(history, current, level, slot, allocator)) |action| {
+                            switch (action) {
+                                .use => |use| event_handlers.pushEvents(current, &.{
+                                    .{ .level_event = .{ .player_skip_move_to_skill = .{
+                                        .skill_id = use.skill_id,
+                                        .target = use.target,
+                                        .prepare = false,
+                                    } } },
+                                }, allocator),
+                                .prepare => |skill_id| event_handlers.pushEvents(current, &.{
+                                    .{ .level_event = .{ .player_skip_move_to_skill = .{
+                                        .skill_id = skill_id,
+                                        .target = null,
+                                        .prepare = true,
+                                    } } },
+                                }, allocator),
+                            }
+                            return;
+                        }
+                    }
+
                     if (idle.tile_clicked) |clicked_position| {
                         // Check if the clicked tile is in the highlighted (reachable) set
                         var is_reachable = false;
@@ -448,40 +520,22 @@ pub fn handleIdleInput(
                 },
                 .player_attack => {
                     if (idle.skill_slot_selected) |slot| {
-                        const player = level.entities[0];
-                        if (player.skillInSlot(slot, history.weapon_type_definitions)) |skill_id| {
-                            // Check cooldown
-                            if (player.skill_cooldowns.get(skill_id) > 0) return;
-
-                            if (lookups.getSkillDefinition(skill_id)) |skill_definition| {
-                                if (skill_definition.uses_targeting) {
-                                    // Check auto_target_at_cursor: if cursor is on a valid target, use immediately
-                                    if (history.settings.auto_target_at_cursor) {
-                                        if (history.session.tile_cursor) |cursor_position| {
-                                            const valid_targets = skill_definition.getValidTargets(0, current.*, allocator);
-                                            if (valid_targets) |targets| {
-                                                for (targets) |target| {
-                                                    if (target.x == cursor_position.x and target.y == cursor_position.y) {
-                                                        event_handlers.pushPlayerSkillUse(current, skill_id, cursor_position, allocator);
-                                                        return;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Begin targeting — push player_prepare_skill
-                                    event_handlers.pushEvents(current, &.{
-                                        .{ .level_event = .{ .player_prepare_skill = .{
-                                            .caster_index = 0,
-                                            .skill_id = skill_id,
-                                        } } },
-                                    }, allocator);
-                                } else {
-                                    // No targeting — use immediately
-                                    event_handlers.pushPlayerSkillUse(current, skill_id, null, allocator);
-                                }
+                        if (resolveSkillSlotAction(history, current, level, slot, allocator)) |action| {
+                            switch (action) {
+                                .use => |use| event_handlers.pushPlayerSkillUse(
+                                    current,
+                                    use.skill_id,
+                                    use.target,
+                                    allocator,
+                                ),
+                                .prepare => |skill_id| event_handlers.pushEvents(current, &.{
+                                    .{ .level_event = .{ .player_prepare_skill = .{
+                                        .caster_index = 0,
+                                        .skill_id = skill_id,
+                                    } } },
+                                }, allocator),
                             }
+                            return;
                         }
                     }
 

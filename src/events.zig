@@ -500,6 +500,20 @@ pub const LevelEvent = union(enum) {
     player_skip_move: struct {
         force_attack_step: bool = false,
     },
+    // Pressing a skill slot during the player_move phase: skip the move step
+    // and act in the attack step instead. The payload is the RESOLVED intent
+    // (prepare vs. use-with-target) — targeting resolution depends on the
+    // transient tile_cursor (SessionState, off GameState), so it must happen
+    // in the input path, not the handler (replay doesn't re-resolve input).
+    // `prepare = true` → begin targeting; `prepare = false` → use now (target
+    // is non-null only for auto-targeted / no-targeting skills). The handler
+    // forces the attack step on so auto_skip_attack_step_out_of_combat can't
+    // end the turn before the skill fires.
+    player_skip_move_to_skill: struct {
+        skill_id: SkillId,
+        target: ?Vector2 = null,
+        prepare: bool,
+    },
     player_cancel_skill: void,
     player_skip_attack: void,
     player_use_skill: struct {

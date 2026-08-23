@@ -484,3 +484,52 @@ test "player_use_skill: non-turn-ending skill omits turn_end" {
     // No turn_end in the stack.
     for (stack) |event| try testing.expect(event.level_event != .turn_end);
 }
+
+test "player_skip_move_to_skill: prepare branch fans out prepare + player_turn_attack(forced) + clear" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &five_by_five,
+    ));
+    pushOne(&history, .{ .player_skip_move_to_skill = .{
+        .skill_id = .stab,
+        .prepare = true,
+    } });
+    stepOnce(&history);
+    // LIFO: array = [player_prepare_skill, player_turn_attack, clear_highlights]
+    // stack top (last) = clear_highlights (runs first).
+    const stack = history.current_state.event_stack;
+    try testing.expectEqual(@as(usize, 3), stack.len);
+    try testing.expect(stack[0].level_event == .player_prepare_skill); // bottom
+    try testing.expect(stack[1].level_event == .player_turn_attack);
+    try testing.expect(stack[2].level_event == .clear_highlights); // top, runs first
+    // The attack step is always forced so auto_skip_attack_step_out_of_combat
+    // can't end the turn before the prepared skill fires.
+    try testing.expect(stack[1].level_event.player_turn_attack.force_attack_step);
+}
+
+test "player_skip_move_to_skill: use branch fans out use + player_turn_attack(forced) + clear" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &five_by_five,
+    ));
+    pushOne(&history, .{ .player_skip_move_to_skill = .{
+        .skill_id = .stab,
+        .target = .{ .x = 1, .y = 0 },
+        .prepare = false,
+    } });
+    stepOnce(&history);
+    const stack = history.current_state.event_stack;
+    try testing.expectEqual(@as(usize, 3), stack.len);
+    try testing.expect(stack[0].level_event == .player_use_skill); // bottom
+    try testing.expect(stack[1].level_event == .player_turn_attack);
+    try testing.expect(stack[2].level_event == .clear_highlights); // top, runs first
+    try testing.expect(stack[1].level_event.player_turn_attack.force_attack_step);
+}

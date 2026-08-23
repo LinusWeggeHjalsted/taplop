@@ -1482,6 +1482,36 @@ pub fn processEvent(
                         .{ .level_event = .clear_highlights },
                     }, allocator);
                 },
+                .player_skip_move_to_skill => |skip| {
+                    // Force the attack step: the player explicitly asked to act,
+                    // so auto_skip_attack_step_out_of_combat must not end the
+                    // turn before the skill fires. clear_highlights removes the
+                    // move-step highlights before entering the attack phase;
+                    // the nested prepare/use orchestrator owns the rest.
+                    if (skip.prepare) {
+                        pushEvents(current, &.{
+                            .{ .level_event = .{ .player_prepare_skill = .{
+                                .caster_index = 0,
+                                .skill_id = skip.skill_id,
+                            } } },
+                            .{ .level_event = .{ .player_turn_attack = .{
+                                .force_attack_step = true,
+                            } } },
+                            .{ .level_event = .clear_highlights },
+                        }, allocator);
+                    } else {
+                        pushEvents(current, &.{
+                            .{ .level_event = .{ .player_use_skill = .{
+                                .skill_id = skip.skill_id,
+                                .target = skip.target,
+                            } } },
+                            .{ .level_event = .{ .player_turn_attack = .{
+                                .force_attack_step = true,
+                            } } },
+                            .{ .level_event = .clear_highlights },
+                        }, allocator);
+                    }
+                },
                 .player_cancel_skill => {
                     pushEvents(current, &.{
                         .{ .level_event = .clear_highlights },
