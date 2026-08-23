@@ -336,6 +336,18 @@ pub fn handleAnytimeInput(
         history.settings.camera_zoom = clamped;
     }
 
+    // Keyboard zoom shortcuts (ctrl+I / ctrl+O / ctrl+0). Same additive
+    // step + bounds as the wheel. Reset snaps to 1.0 (the default).
+    if (anytime.zoom_in) {
+        history.settings.camera_zoom = @min(max_camera_zoom, history.settings.camera_zoom + camera_zoom_step);
+    }
+    if (anytime.zoom_out) {
+        history.settings.camera_zoom = @max(min_camera_zoom, history.settings.camera_zoom - camera_zoom_step);
+    }
+    if (anytime.zoom_reset) {
+        history.settings.camera_zoom = 1.0;
+    }
+
     // In-game inputs only apply when in a hub or level
     const current = &history.current_state;
     const allocator = history.current_arena.allocator();

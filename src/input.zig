@@ -262,6 +262,11 @@ pub const AnytimeInput = struct {
     error_scroll_up: bool = false,
     error_scroll_down: bool = false,
     scroll_delta: f32 = 0,
+    // Keyboard zoom shortcuts (ctrl+I / ctrl+O / ctrl+0). Press-only — the
+    // mouse wheel (scroll_delta) is the continuous path. See Action.zoom_*.
+    zoom_in: bool = false,
+    zoom_out: bool = false,
+    zoom_reset: bool = false,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -327,6 +332,9 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .dismiss_error => player_input.anytime.dismiss_error = true,
         .error_scroll_up => player_input.anytime.error_scroll_up = true,
         .error_scroll_down => player_input.anytime.error_scroll_down = true,
+        .zoom_in => player_input.anytime.zoom_in = true,
+        .zoom_out => player_input.anytime.zoom_out = true,
+        .zoom_reset => player_input.anytime.zoom_reset = true,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,
@@ -617,6 +625,9 @@ pub fn translateInput(
     result.anytime.error_scroll_up = checkAction(.error_scroll_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.error_scroll_down = checkAction(.error_scroll_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.scroll_delta = scroll_delta;
+    result.anytime.zoom_in = checkAction(.zoom_in, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.zoom_out = checkAction(.zoom_out, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.zoom_reset = checkAction(.zoom_reset, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
 
     // In-game anytime actions. Repeat whitelist: movement cursors only.
     // Toggles / swap_weapons are press-only.

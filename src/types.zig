@@ -60,6 +60,14 @@ pub const Action = enum {
     // the popup is up. See AGENTS → Error Handling.
     error_scroll_up,
     error_scroll_down,
+    // Camera zoom (keyboard shortcuts; the mouse wheel also zooms via
+    // scroll_delta). ctrl+I = zoom in, ctrl+O = zoom out, ctrl+0 = reset to
+    // 1.0. Letters/digits are layout-stable (physical key positions), unlike
+    // the +/- symbol keys whose raylib tokens are layout-labeled and degrade
+    // on ISO layouts. See AGENTS → Input.
+    zoom_in,
+    zoom_out,
+    zoom_reset,
     // Main menu commands.
     continue_game,
     new_game,

@@ -33,6 +33,21 @@ ctrl true
 action dump_event_log
 
 input_type key
+input_name KeyI
+ctrl true
+action zoom_in
+
+input_type key
+input_name KeyO
+ctrl true
+action zoom_out
+
+input_type key
+input_name Digit0
+ctrl true
+action zoom_reset
+
+input_type key
 input_name Escape
 action toggle_options_menu
 
