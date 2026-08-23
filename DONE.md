@@ -330,7 +330,7 @@ Settled design in AGENTS → Platform Seam (budget-driven drain, render
 
 ### Skill logic — port (done, all 25 skills)
 
-Ported from the Unity project (~/Development/taplop Assets/Scripts/Skills).
+Ported from the Unity project (https://github.com/LinusWeggeHjalsted/taplop, Assets/Scripts/Skills).
 Pattern: C# SkillScript → Zig Skill struct + 5 fns (getValidTargets /
 priority / selectTarget / playerPrepareSkill / useSkill). Skills compose
 generic events (AGENTS → Architecture). Porting note: Unity inverts AI
@@ -1719,7 +1719,7 @@ player doesn't have to manually skip the move when they don't intend to move
 
 ### Ported the designed Unity levels (DONE)
 
-Ported all 4 designed missions from the Unity project (~/Development/taplop)
+Ported all 4 designed missions from the Unity project (https://github.com/LinusWeggeHjalsted/taplop)
 + the single hub (Camp at the Crossroads) into ziglop's config format. They
 live alongside the existing dev/sample `first_mission` + `starting_village`
 (which stay — referenced by editor dev entry + tests).

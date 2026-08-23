@@ -1,6 +1,6 @@
 # Ziglop
 
-Zig 0.16.0 rewrite of a Unity tactical grid game (original at ~/Development/taplop).
+Zig 0.16.0 rewrite of a Unity tactical grid game (original at https://github.com/LinusWeggeHjalsted/taplop).
 
 ## Documentation
 
