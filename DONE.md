@@ -2078,3 +2078,56 @@ hover-vs-active contrast is wanted).
 - Suppressed while dragging (mirrors tooltip suppression — the pointer is
   dragging, not hovering). Modal popups shield buttons behind them naturally
   (hitTest respects `blocks_input`).
+
+### Settings persistence (done)
+
+Player preferences (camera zoom first; other tunable fields as their UI
+lands) now persist across sessions via a user `settings.txt` in the
+persistent dir, overlaid on the shipped `data/default_settings.txt`.
+
+**Rename + overlay:**
+- `data/settings.txt` → `data/default_settings.txt` (embedded shipped
+  defaults, read-only). The user's `~/.ziglop/settings.txt` is the SAME
+  FORMAT, overlaid at startup: scalars per-field (user value wins, missing
+  keeps default); InputBindings, if present, REPLACE the default binding set
+  entirely (the user's bindings are authoritative — changing official
+  defaults only affects players with no user file, preserving their flow).
+- `parser.loadSettings` gained an optional `base: ?Settings` param: when
+  provided, `loadSettings` starts from the base (defaults) and overlays
+  present fields. The binding replacement frees the base's bindings (no
+  leak). `loadSettingsWrapped` (2-param) bridges to `loadConfigWithFallback`
+  for the default-load path.
+- `session_setup.overlayUserSettings` reads `settings.txt` from the
+  persistent dir, parses it with defaults as the base, and returns the merged
+  settings. Missing/unparseable user file → keep defaults + warn.
+
+**Writer:**
+- `parser.writeSettings(Settings) → []const u8` serializes the full settings
+  (Metadata + Audio + Display + Gameplay + InputBindings) in the same format
+  as `default_settings.txt`. Full-format write so the user file is always
+  the same shape as the defaults.
+
+**Debounced persistence (`PendingWrite`):**
+- `SessionState.session_clock: u64` — non-pause-gated monotonic clock (unlike
+  `animation_clock` which freezes during pause), advanced by `frame()` every
+  tick. Used for write deadlines so writes fire even while the options menu
+  is open.
+- `SessionState.pending_writes: [4]?PendingWrite` — a small fixed array keyed
+  by tag. `markWriteDirty(tag, write_fn, now)` coalesces by tag (a burst of
+  zoom changes → one write). Debounce 1s + max-wait 5s: fires after 1s of
+  quiet, or immediately if dirty for >5s (a continuous stream can't starve
+  the write). `fireElapsedWrites` scans and fires elapsed entries each tick.
+  `flushPendingWrites` flushes all on shutdown.
+- `frame()` advances `session_clock` before the drain (so `markWriteDirty`
+  sees an up-to-date clock), fires elapsed writes after all updates. `frame()`
+  is the live path — replay goes through `restoreTo`/`replayTo`, not here —
+  so the `!replaying` gate is automatic.
+- Native `run` defer flushes on clean exit. Web `beforeunload` only does
+  `FS.syncfs` (no Zig callback); a change-then-immediate-tab-close may lose
+  the last debounced write (same best-effort limitation as the crash dump).
+- `input_handlers.writeSettingsToFile` is the settings writer fn: serializes
+  via `parser.writeSettings`, writes to `~/.ziglop/settings.txt` via
+  `FileSource.writeFile`, swallows errors (a failed preferences write is not
+  critical). `markSettingsDirty` is called after any actual zoom change
+  (guarded by `new != current` so a clamped no-op scroll doesn't queue a
+  write).

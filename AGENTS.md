@@ -484,6 +484,36 @@ combat-log UI rendering + replay-viewer UI still TODO)
   cursor nudges it can burst a few tiles during a drain that overlaps a held
   arrow. Pre-existing for real key presses; repeat makes it visible on held
   keys too. Brief and harmless; revisit if felt.
+- **Settings persistence (user preferences).** Shipped defaults live in
+  `data/default_settings.txt` (embedded, read-only). User preferences live in
+  `~/.ziglop/settings.txt` (persistent dir, same format). At startup the
+  loader reads defaults, then overlays the user file: scalars per-field (user
+  value wins, missing keeps default); InputBindings, if present, REPLACE the
+  default binding set entirely (the user's bindings are authoritative —
+  changing official defaults only affects players with no user file). Writes
+  are FULL-FORMAT (all sections including InputBindings) so the user file is
+  the same format as the defaults. `Settings.camera_zoom` is the first
+  persisted preference; other tunable fields mark dirty as their UI lands.
+- **Binding overlay semantics.** Per-action, not per-key-combo: a user file's
+  binding for an action replaces the default's binding for that action
+  (rebind = replace, not duplicate). One combo → one action (uniqueness
+  validated at load, collisions warn-and-drop); one action → multiple combos
+  (additive — skip can live on Space AND Enter). Changing an official default
+  for an EXISTING action doesn't reach players who have a user file (their
+  binding is authoritative, even if it was an old default they never
+  deliberately chose — we don't interrupt their flow).
+- **Debounced writes (`PendingWrite`).** A general debounce primitive on
+  `SessionState` (settings, future editor autosave). `markWriteDirty(tag,
+  write_fn, now)` coalesces by tag (a burst of changes → one write). Debounce
+  1s + max-wait 5s: a dirty mark fires after 1s of quiet, or immediately if
+  dirty for >5s (so a continuous stream can't starve the write forever).
+  `session_clock` (non-pause-gated, on SessionState) drives deadlines so
+  writes fire even while the options menu is open. `frame()` fires elapsed
+  writes each tick; it's the live path (replay goes through restoreTo/replayTo,
+  not frame), so the `!replaying` gate is automatic. Native `run` defer + web
+  `beforeunload` flush pending writes on shutdown (web best-effort — same
+  limitation as the crash dump; a change-then-immediate-tab-close may lose
+  the last debounced write).
 
 ## Error Handling
 
