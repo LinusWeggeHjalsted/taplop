@@ -863,10 +863,12 @@ fn keyInList(list: []const []const u8, key: []const u8) bool {
 pub fn loadSettings(
     sections: []const Section,
     allocator: std.mem.Allocator,
+    base: ?Settings,
 ) !Settings {
     try validateSections(sections, &settings_sections);
     try validateFileFormatVersion(sections, "Metadata", settings_file_format_version);
-    var settings: Settings = .{ .input_bindings = &.{} };
+    var settings: Settings = base orelse .{ .input_bindings = &.{} };
+    const has_base = base != null;
 
     // Audio
     if (findSection(sections, "Audio")) |section| {
@@ -949,6 +951,12 @@ pub fn loadSettings(
             });
         }
 
+        // Free the base's bindings before replacing (when a base is provided,
+        // its bindings were heap-allocated by a prior loadSettings call; when
+        // no base, input_bindings is the static &.{} and must not be freed).
+        if (has_base and settings.input_bindings.len > 0) {
+            allocator.free(settings.input_bindings);
+        }
         settings.input_bindings = try bindings.toOwnedSlice(allocator);
     }
 
@@ -3131,7 +3139,7 @@ fn parseScalarTokens(
 // ============================================================
 
 /// Helper to free all memory allocated by parseConfigFile.
-fn freeParsedSections(
+pub fn freeParsedSections(
     sections: []const Section,
     allocator: std.mem.Allocator,
 ) void {
@@ -3266,7 +3274,7 @@ test "loadSettings parses settings sections into a Settings struct" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const settings = try loadSettings(sections, allocator);
+    const settings = try loadSettings(sections, allocator, null);
     defer allocator.free(settings.input_bindings);
 
     // Audio values
@@ -4479,7 +4487,7 @@ test "data/default_settings.txt binds ctrl+L to dump_event_log" {
     defer allocator.free(parsed.raw_text);
     defer freeParsedSections(parsed.sections, allocator);
 
-    const settings = try loadSettings(parsed.sections, allocator);
+    const settings = try loadSettings(parsed.sections, allocator, null);
     defer allocator.free(settings.input_bindings);
 
     var found = false;

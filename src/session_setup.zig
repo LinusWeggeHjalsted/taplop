@@ -112,6 +112,16 @@ fn loadWeaponTypeDefinitionWrapped(
     return parser.loadWeaponTypeDefinition(sections);
 }
 
+/// Wrapper so `loadConfigWithFallback` can call `parser.loadSettings` through
+/// the common 2-param `(sections, allocator)` interface (loadSettings takes an
+/// extra `base` param for the user-overlay path).
+fn loadSettingsWrapped(
+    sections: []const parser.Section,
+    allocator: std.mem.Allocator,
+) anyerror!Settings {
+    return parser.loadSettings(sections, allocator, null);
+}
+
 /// Load settings from data/default_settings.txt, falling back to the embedded
 /// copy on parse failure (see AGENTS → Error Handling). The embedded copy is a
 /// better fallback than hardcoded defaults — it preserves keybindings and
@@ -124,7 +134,50 @@ pub fn loadSettingsFromDisk(
     allocator: std.mem.Allocator,
     warnings: Warnings,
 ) Settings {
-    return loadConfigWithFallback(Settings, file_source, allocator, "data/default_settings.txt", parser.loadSettings, parser.settings_key_map, warnings);
+    return loadConfigWithFallback(Settings, file_source, allocator, "data/default_settings.txt", loadSettingsWrapped, parser.settings_key_map, warnings);
+}
+
+/// Overlay a user's persistent `settings.txt` (in the persistent dir) on top
+/// of the shipped defaults. The user file is the SAME FORMAT as
+/// `data/default_settings.txt` but carries only the fields the player has
+/// changed: scalars overlay per-field (user value wins, missing keeps default);
+/// InputBindings, if present, REPLACE the default binding set entirely (the
+/// user's bindings are authoritative — see AGENTS → Input). A missing or
+/// unparseable user file leaves the defaults untouched (with a warning).
+/// Replay-safe: settings are loaded once at startup, never during replay.
+pub fn overlayUserSettings(
+    defaults: Settings,
+    file_source: *const FileSource,
+    allocator: std.mem.Allocator,
+    warnings: Warnings,
+) Settings {
+    const user_bytes = file_source.readFile(allocator, "settings.txt") catch {
+        return defaults; // No user settings file → defaults are authoritative.
+    };
+    defer allocator.free(user_bytes);
+
+    const user_sections = parser.parseConfigFile(user_bytes, allocator) catch {
+        warnings.append(allocator, std.fmt.allocPrint(allocator,
+            "Failed to parse user settings.txt; using defaults.", .{}) catch
+            @panic("failed to allocate startup warning")) catch
+            @panic("failed to append startup warning");
+        return defaults;
+    };
+    defer parser.freeParsedSections(user_sections, allocator);
+
+    // Load with the defaults as the base — loadSettings overlays present
+    // fields and replaces bindings if the user file has an InputBindings
+    // section. A file_format_version mismatch or parse failure is recoverable
+    // (warn + keep defaults) per AGENTS → Error Handling.
+    const merged = parser.loadSettings(user_sections, allocator, defaults) catch {
+        warnings.append(allocator, std.fmt.allocPrint(allocator,
+            "Failed to load user settings.txt; using defaults.", .{}) catch
+            @panic("failed to allocate startup warning")) catch
+            @panic("failed to append startup warning");
+        return defaults;
+    };
+    parser.validateKeys(user_sections, parser.settings_key_map, "settings.txt", allocator, warnings);
+    return merged;
 }
 
 /// Load color theme definitions from data/color_themes.txt, falling back to
@@ -207,7 +260,8 @@ pub fn createSessionSetup(
 ) SessionSetup {
     var warnings: std.ArrayList([]const u8) = .empty;
 
-    const settings = loadSettingsFromDisk(file_source, allocator, &warnings);
+    const default_settings = loadSettingsFromDisk(file_source, allocator, &warnings);
+    const settings = overlayUserSettings(default_settings, file_source, allocator, &warnings);
     backend.applyVsync(settings.vsync);
     const weapon_type_definitions = loadWeaponTypeDefinitions(file_source, allocator, &warnings);
     const color_theme_definitions = loadColorThemeDefinitionsFromDisk(file_source, allocator, &warnings);
