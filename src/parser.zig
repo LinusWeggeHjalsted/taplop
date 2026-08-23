@@ -2705,6 +2705,65 @@ fn writeInventoryItem(
     try buffer.print(allocator, "slot {d}\n", .{slot_index});
 }
 
+/// Serialize a `Settings` struct to the config-file format (same shape as
+/// `data/default_settings.txt`). Used to persist user preferences to
+/// `~/.ziglop/settings.txt` — see AGENTS → Input. The full settings are
+/// written (audio + display + gameplay + InputBindings) so the user file is
+/// the same format as the defaults. The loader overlays this onto the shipped
+/// defaults at startup (per-field scalars, binding replace).
+pub fn writeSettings(
+    settings: types.Settings,
+    allocator: std.mem.Allocator,
+) ![]const u8 {
+    var buffer: std.ArrayList(u8) = .empty;
+
+    // Metadata
+    try buffer.appendSlice(allocator, "Metadata\n");
+    try buffer.print(allocator, "file_format_version {d}\n", .{settings_file_format_version});
+
+    // Audio
+    try buffer.appendSlice(allocator, "\nAudio\n");
+    try buffer.print(allocator, "music_volume {d}\n", .{settings.music_volume});
+    try buffer.print(allocator, "sound_effects_volume {d}\n", .{settings.sound_effects_volume});
+
+    // Display
+    try buffer.appendSlice(allocator, "\nDisplay\n");
+    try buffer.print(allocator, "vsync {}\n", .{settings.vsync});
+    try buffer.print(allocator, "render_fps_cap {d}\n", .{settings.render_fps_cap});
+    try buffer.print(allocator, "camera_zoom {d}\n", .{settings.camera_zoom});
+    try buffer.print(allocator, "animation_fps {d}\n", .{settings.animation_fps});
+
+    // Gameplay
+    try buffer.appendSlice(allocator, "\nGameplay\n");
+    try buffer.print(allocator, "auto_skip_attack_step_out_of_combat {}\n", .{settings.auto_skip_attack_step_out_of_combat});
+    try buffer.print(allocator, "auto_target_at_cursor {}\n", .{settings.auto_target_at_cursor});
+    try buffer.print(allocator, "player_color_index {d}\n", .{settings.player_color_index});
+
+    // InputBindings — one entry group per binding, blank-line-separated.
+    try buffer.appendSlice(allocator, "\nInputBindings\n");
+    for (settings.input_bindings, 0..) |binding, index| {
+        if (index > 0) try buffer.appendSlice(allocator, "\n");
+        const input_type_str = switch (binding.input) {
+            .key => "key",
+            .mouse_button => "mouse_button",
+            .gamepad_button => "gamepad_button",
+        };
+        const input_name = switch (binding.input) {
+            .key => |name| name,
+            .mouse_button => |name| name,
+            .gamepad_button => |name| name,
+        };
+        try buffer.print(allocator, "input_type {s}\n", .{input_type_str});
+        try buffer.print(allocator, "input_name {s}\n", .{input_name});
+        if (binding.modifiers.ctrl) try buffer.appendSlice(allocator, "ctrl true\n");
+        if (binding.modifiers.shift) try buffer.appendSlice(allocator, "shift true\n");
+        if (binding.modifiers.alt) try buffer.appendSlice(allocator, "alt true\n");
+        try buffer.print(allocator, "action {s}\n", .{@tagName(binding.action)});
+    }
+
+    return try buffer.toOwnedSlice(allocator);
+}
+
 /// Write a PlayerData struct to the persistent data dir via the FileSource.
 pub fn writePlayerSaveToFile(
     file_source: *const FileSource,
