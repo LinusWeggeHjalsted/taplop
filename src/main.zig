@@ -269,6 +269,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         backend.realClockMicroseconds() - drain_start < drain_budget_microseconds)
     {
         const screen_before_update = history.current_state.screen;
+        const world_generation_before_update = history.current_state.world_generation;
         const had_events = history.current_state.event_stack.len > 0;
         update(history, player_input, frame_state.previous_view_state, delta_microseconds, camera, camera_zoom, platform_input.viewport);
 
@@ -291,11 +292,17 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
 
         // UI panels/drag and the tile cursor are transient view/input state,
         // not part of the undoable GameState. Reset them whenever the screen
-        // changes (transitions and undo/redo across a screen boundary both
-        // run inside update()). Input state is deliberately left alone — it
-        // is live hardware state. The tile cursor is scoped to a level/hub's
-        // tile grid, so a screen transition invalidates it.
-        if (history.current_state.screen != screen_before_update) {
+        // changes OR a new world is installed (start_hub / start_level /
+        // start_playtest / start_validation all bump world_generation even
+        // when the Screen enum stays the same — e.g. level-to-level keeps
+        // screen == .level, so the screen check alone would leave a stale
+        // tile cursor positioned in the old level's grid). undo/redo across
+        // a screen boundary runs through update() too, so both signals fire
+        // there as well. Input state is deliberately left alone — it is live
+        // hardware state.
+        if (history.current_state.screen != screen_before_update or
+            history.current_state.world_generation != world_generation_before_update)
+        {
             history.session.ui_state = .{};
             history.session.tile_cursor = null;
             history.session.camera_pan = null;
@@ -324,8 +331,11 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     {
         const event_index_before_update = history.current_event_index;
         const screen_before_update = history.current_state.screen;
+        const world_generation_before_update = history.current_state.world_generation;
         update(history, player_input, frame_state.previous_view_state, delta_microseconds, camera, camera_zoom, platform_input.viewport);
-        if (history.current_state.screen != screen_before_update) {
+        if (history.current_state.screen != screen_before_update or
+            history.current_state.world_generation != world_generation_before_update)
+        {
             history.session.ui_state = .{};
             history.session.tile_cursor = null;
             history.session.camera_pan = null;

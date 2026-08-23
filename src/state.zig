@@ -343,6 +343,14 @@ pub const GameState = struct {
     mission: ?Mission,
     level: ?Level,
     hub: ?Hub,
+    /// Monotonic counter bumped whenever a new world is installed (start_hub,
+    /// start_level, start_playtest, start_validation). Level-to-level
+    /// transitions keep `screen == .level`, so the live loop can't detect a
+    /// world swap from the Screen enum alone; this field gives it a second,
+    /// world-scoped change signal so transient view/input state (tile cursor,
+    /// camera pan, pressed button, ui_state) is reset on every world change,
+    /// not just on screen changes. See AGENTS → Architecture.
+    world_generation: u64 = 0,
 
     /// Transition to a new screen, clearing any data that was in scope
     /// for the old screen but is not in scope for the new one.

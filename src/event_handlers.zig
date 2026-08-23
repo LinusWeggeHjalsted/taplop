@@ -546,6 +546,7 @@ pub fn processEvent(
                     };
 
                     current.player_data.current_hub = start.hub_id;
+                    current.world_generation +%= 1;
                     current.transitionScreen(.hub);
 
                     // Sync player entity from PlayerData
@@ -659,6 +660,7 @@ pub fn processEvent(
                     current.mission = deepCopy(types.Mission, editor.mission, allocator);
                     current.mission.?.current_level_index = start.level_index + 1; // 1-based for gameplay handlers
                     if (editor.mode == .edit) editor.mode = .playtest;
+                    current.world_generation +%= 1;
                     current.transitionScreen(.level);
                     pushGameplayStartEvents(current, allocator, false);
                 },
@@ -678,6 +680,7 @@ pub fn processEvent(
                     current.mission = deepCopy(types.Mission, editor.mission, allocator);
                     current.mission.?.current_level_index = 1;
                     editor.mode = .validate;
+                    current.world_generation +%= 1;
                     current.transitionScreen(.level);
                     pushGameplayStartEvents(current, allocator, false);
                 },
@@ -788,6 +791,7 @@ pub fn processEvent(
                         mission.current_level_index = start.level_index;
                     }
 
+                    current.world_generation +%= 1;
                     current.transitionScreen(.level);
                     pushGameplayStartEvents(current, allocator, true);
                 },
