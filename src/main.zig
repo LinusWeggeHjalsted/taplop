@@ -447,6 +447,7 @@ pub fn run(
     // changed moments before quit) so a quick change-then-exit isn't lost.
     // Runs before the arena deinit. See AGENTS → Input.
     defer setup.frame_state.history.session.flushPendingWrites(&setup.frame_state.history);
+    defer setup.frame_state.history.session.pending_sounds.deinit(setup.frame_state.history.backing_allocator);
     gameLoop(backend, &setup.frame_state);
 }
 

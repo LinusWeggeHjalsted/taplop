@@ -13,6 +13,29 @@ pub const EffectId = generated.EffectId;
 
 pub const utility_skill_count = 5;
 
+/// One-shot sound effects, one variant per sfx file under `assets/audio/sfx/`.
+/// Pushed onto `SessionState.pending_sounds` by event handlers (gated
+/// `!replaying`) and input handlers, then drained by `frame()` and played via
+/// the backend. Music is a single always-on stream, not a `SoundId`. See
+/// AGENTS → Audio.
+pub const SoundId = enum {
+    move,
+    attack,
+    spell,
+    damage,
+    pickup,
+    skip,
+    equip,
+    learn_skill,
+    salvage,
+    swap_skill,
+    button_click_down,
+    button_click_up,
+    menu,
+    defeat,
+    mission_completion,
+};
+
 pub const Vector2 = struct {
     x: i32,
     y: i32,
@@ -100,8 +123,9 @@ pub const InputBinding = struct {
 };
 
 pub const Settings = struct {
-    music_volume: f32 = 0.5, // 0.0–1.0
-    sound_effects_volume: f32 = 0.5, // 0.0–1.0
+    master_volume: f32 = 1.0, // 0.0–1.0, scales music + sfx alike
+    music_volume: f32 = 0.5, // 0.0–1.0, before master
+    sound_effects_volume: f32 = 0.5, // 0.0–1.0, before master
     vsync: bool = true,
     // Frames-per-second cap for rendering. 0 = no explicit cap. Ignored when
     // vsync is on (vsync paces renders to the monitor refresh rate). When

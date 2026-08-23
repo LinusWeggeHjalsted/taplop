@@ -682,7 +682,7 @@ pub const campaign_key_map = std.StaticStringMap([]const []const u8).initComptim
 // respective keys. InputBindings entries carry input_type, input_name,
 // action + modifier flags.
 
-const settings_audio_keys = [_][]const u8{ "music_volume", "sound_effects_volume" };
+const settings_audio_keys = [_][]const u8{ "master_volume", "music_volume", "sound_effects_volume" };
 const settings_display_keys = [_][]const u8{ "vsync", "render_fps_cap", "camera_zoom", "animation_fps" };
 const settings_gameplay_keys = [_][]const u8{ "auto_skip_attack_step_out_of_combat", "auto_target_at_cursor", "player_color_index" };
 const settings_input_bindings_keys = [_][]const u8{ "input_type", "input_name", "action", "ctrl", "shift", "alt" };
@@ -874,6 +874,9 @@ pub fn loadSettings(
     if (findSection(sections, "Audio")) |section| {
         if (section.entry_groups.len > 0) {
             const pairs = section.entry_groups[0].pairs;
+            if (findValue(pairs, "master_volume")) |value| {
+                settings.master_volume = asF32(value) orelse settings.master_volume;
+            }
             if (findValue(pairs, "music_volume")) |value| {
                 settings.music_volume = asF32(value) orelse settings.music_volume;
             }
@@ -2766,6 +2769,7 @@ pub fn writeSettings(
 
     // Audio
     try buffer.appendSlice(allocator, "\nAudio\n");
+    try buffer.print(allocator, "master_volume {d}\n", .{settings.master_volume});
     try buffer.print(allocator, "music_volume {d}\n", .{settings.music_volume});
     try buffer.print(allocator, "sound_effects_volume {d}\n", .{settings.sound_effects_volume});
 

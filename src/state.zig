@@ -136,6 +136,15 @@ pub const SessionState = struct {
     /// gate is automatic). See AGENTS → Input.
     pending_writes: [max_pending_writes]?PendingWrite = .{null} ** max_pending_writes,
 
+    /// Pending one-shot sound effects queued by event handlers (gated
+    /// `!replaying`) and input handlers during a frame. Drained by `frame()`
+    /// after the update drain and played via the backend. Off the undoable
+    /// GameState → replay-safe by construction (replay queues nothing; the
+    /// `!replaying` gate is at the push site). Backed by `backing_allocator`
+    /// (not an arena — cleared each frame, so an arena would leak growth).
+    /// See AGENTS → Audio.
+    pending_sounds: std.ArrayListUnmanaged(types.SoundId) = .empty,
+
     // A recoverable load failure (a corrupt/overridden config file, an
     // incompatible session log, etc.) surfaced to the player as a modal
     // popup. Set by the drain loop after a handler returns an error and
@@ -179,6 +188,30 @@ pub const SessionState = struct {
     /// The pending error message, or null when no popup is shown.
     pub fn pendingError(self: *const SessionState) ?[]const u8 {
         return self.pending_error;
+    }
+
+    /// Append a one-shot sound to the pending queue. Callers gate on
+    /// `!history.replaying` so replaying pushes nothing (replay-safe by
+    /// construction). `allocator` is `history.backing_allocator`. See
+    /// AGENTS → Audio.
+    pub fn queueSound(
+        self: *SessionState,
+        allocator: std.mem.Allocator,
+        sound: types.SoundId,
+    ) void {
+        self.pending_sounds.append(allocator, sound) catch
+            @panic("failed to queue sound");
+    }
+
+    /// Drain and return the pending sounds slice. The caller owns playing
+    /// them; the queue is cleared (capacity retained) for the next frame.
+    /// `allocator` is `history.backing_allocator`.
+    pub fn drainPendingSounds(
+        self: *SessionState,
+    ) []const types.SoundId {
+        const sounds = self.pending_sounds.items;
+        self.pending_sounds.clearRetainingCapacity();
+        return sounds;
     }
 
     /// Mark a debounced write as dirty. If a write with the same tag is
