@@ -306,9 +306,21 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // stack at baseline (non-empty during an enemy turn), so it does not
         // record an idle point here — it stays absorbed into the surrounding
         // drain's idle point, as intended.
+        //
+        // The `idle_points[current_idle_index] != current_event_index` clause
+        // excludes undo/redo, which are also anytime actions handled inside
+        // update(). undo/redo set `current_idle_index` and `restoreTo` sets
+        // `current_event_index` to that idle point, so after update() they're
+        // equal — the position is already indexed and must NOT get a
+        // duplicate idle point (which would corrupt the timeline and make
+        // undo/redo cycle between adjacent states). A genuine new action
+        // advances `current_event_index` via processEvent without touching
+        // `current_idle_index`, leaving them unequal — the signal that a new
+        // idle point is needed.
         if (history.current_event_index != event_index_before_update and
             history.current_state.event_stack.len == 0 and
-            history.current_state.waiting == null)
+            history.current_state.waiting == null and
+            history.idle_points.items[history.current_idle_index] != history.current_event_index)
         {
             history.recordIdlePoint();
         }
@@ -1192,4 +1204,94 @@ test "anytime swap_weapons during a wait: handled immediately, no idle point, ab
     // No idle point was recorded for the interjection — it stays absorbed
     // into the surrounding enemy-turn drain's eventual idle point.
     try std.testing.expectEqual(idle_count_before, history.idle_points.items.len);
+}
+
+test "undo/redo via anytime input does not record duplicate idle points (no cycling)" {
+    // Regression: the idle-branch idle-point recording fired for ANY index
+    // change inside update(), including undo/redo (which are anytime actions).
+    // undo/redo set current_idle_index + restoreTo(current_event_index), so
+    // after update() the position is already indexed — recording a duplicate
+    // grew idle_points with near-duplicate entries and made undo/redo cycle
+    // between two states instead of walking the timeline. The fix gates the
+    // recording on `idle_points[current_idle_index] != current_event_index`,
+    // which is true only for genuine new forward progress (processEvent
+    // advances the index without touching current_idle_index) and false for
+    // navigation (undo/redo leave them equal).
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{playerWithWeapons()},
+        &three_by_three_tiles,
+    ));
+    runToIdle(&history); // idle point 0 (index after open_main_menu... here just the initial)
+
+    // Idle swap #1 → idle point 1 (sword→staff). Drive via update() and
+    // replicate frame()'s idle-branch recording (the helper being tested).
+    doIdleSwap(&history);
+    try std.testing.expectEqual(@as(?types.WeaponType, .staff), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
+    const idle_count_after_swap1 = history.idle_points.items.len;
+
+    // Idle swap #2 → idle point 2 (staff→sword).
+    doIdleSwap(&history);
+    try std.testing.expectEqual(@as(?types.WeaponType, .sword), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
+    const idle_count_after_swap2 = history.idle_points.items.len;
+    try std.testing.expectEqual(idle_count_after_swap1 + 1, idle_count_after_swap2);
+
+    // Undo via anytime input (the bug path). Should go back to idle point 1
+    // (staff in main hand) WITHOUT recording a duplicate idle point.
+    doAnytime(&history, .{ .undo = true });
+    try std.testing.expectEqual(@as(?types.WeaponType, .staff), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
+    try std.testing.expectEqual(idle_count_after_swap2, history.idle_points.items.len); // no duplicate recorded
+
+    // Undo again — must go further back to idle point 0, NOT cycle forward to
+    // idle point 2 (the cycling symptom). Without the fix, this second undo
+    // recorded a duplicate and subsequent undos bounced between swap1/swap2.
+    doAnytime(&history, .{ .undo = true });
+    try std.testing.expectEqual(idle_count_after_swap2, history.idle_points.items.len); // still no duplicate
+    // At the earliest idle point — one more undo is a no-op.
+    try std.testing.expect(!history.undo(&event_handlers.processEvent));
+
+    // Redo walks forward without recording duplicates either.
+    doAnytime(&history, .{ .redo = true });
+    try std.testing.expectEqual(@as(?types.WeaponType, .staff), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
+    try std.testing.expectEqual(idle_count_after_swap2, history.idle_points.items.len);
+    doAnytime(&history, .{ .redo = true });
+    try std.testing.expectEqual(@as(?types.WeaponType, .sword), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
+    try std.testing.expectEqual(idle_count_after_swap2, history.idle_points.items.len);
+}
+
+/// Drive one update() in the idle frame and replicate frame()'s idle-branch
+/// idle-point recording — the exact path the duplicate-idle-point bug lived
+/// in. Shared by doIdleSwap (a new action) and doAnytime (undo/redo), so both
+/// exercise the same condition the production idle branch uses.
+fn runIdleUpdate(history: *GameStateHistory, player_input: input.PlayerInput) void {
+    const event_index_before = history.current_event_index;
+    const camera = view_mod.computeCamera(&history.current_state, history.settings.camera_zoom, history.session.camera_pan);
+    update(history, player_input, null, 16_000, camera, history.settings.camera_zoom, .{ .width = 3840, .height = 2160 });
+    if (history.current_event_index != event_index_before and
+        history.current_state.event_stack.len == 0 and
+        history.current_state.waiting == null and
+        history.idle_points.items[history.current_idle_index] != history.current_event_index)
+    {
+        history.recordIdlePoint();
+    }
+}
+
+/// Drive an idle swap_weapons through update() and replicate frame()'s
+/// idle-branch idle-point recording — the exact path the bug lived in.
+fn doIdleSwap(history: *GameStateHistory) void {
+    var player_input: input.PlayerInput = .{};
+    player_input.anytime.in_game.swap_weapons = true;
+    runIdleUpdate(history, player_input);
+}
+
+/// Drive an anytime action (undo/redo/etc.) through update() and replicate
+/// frame()'s idle-branch idle-point recording — the path that recorded
+/// duplicate idle points on undo/redo before the fix.
+fn doAnytime(history: *GameStateHistory, anytime: input.AnytimeInput) void {
+    var player_input: input.PlayerInput = .{};
+    player_input.anytime = anytime;
+    runIdleUpdate(history, player_input);
 }

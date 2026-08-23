@@ -2256,3 +2256,32 @@ assert weapons swapped this tick (not delayed) + wait still active (remaining
 reduced by exactly delta) + baseline event still on stack + no idle point
 recorded. The wait test fails on the old code (weapons not swapped — the
 interjection sat on the stack); passes with the drain.
+
+### Fix: idle-branch idle-point recording duplicated on undo/redo (cycling)
+
+The idle-branch idle-point recording (from the swap_weapons fix above) fired
+for ANY `current_event_index` change inside `update()`, including undo/redo —
+which are themselves anytime actions handled in `handleAnytimeInput`. undo/
+redo set `current_idle_index` and `restoreTo` sets `current_event_index` to
+that idle point, so after `update()` the position was already indexed. The
+idle branch then recorded a DUPLICATE idle point at the navigated-to position,
+growing `idle_points` with near-duplicate entries. Undo/redo walked the
+corrupted list, cycling between two adjacent states instead of going further
+back/forward.
+
+Fix: added one clause to the idle-branch condition — only record when
+`idle_points[current_idle_index] != current_event_index`. This is true only
+for genuine new forward progress (processEvent advances the index without
+touching `current_idle_index`, leaving them unequal) and false for navigation
+(undo/redo leave them equal — the position is already indexed). Safe via
+short-circuit: the indexing only evaluates when the index advanced, which
+implies events were processed, which implies `idle_points` is non-empty.
+
+Regression test (main.zig): "undo/redo via anytime input does not record
+duplicate idle points (no cycling)" — two idle swaps (idle points 1 + 2),
+then undo via anytime input (back to swap1), assert `idle_points` did NOT
+grow, then undo again (back to swap0, not cycling forward to swap2), assert
+no-op undo at earliest, then redo twice forward without duplicates. Uses a
+shared `runIdleUpdate` helper that replicates `frame()`'s idle-branch
+condition exactly. Fails on the old condition (first undo grows
+`idle_points`); passes with the `!= current_event_index` clause.
