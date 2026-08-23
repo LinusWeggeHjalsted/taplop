@@ -83,6 +83,7 @@ fn update(
         const pointer_position = player_input.pointer.position;
         if (ui.buttonAt(ui_elements, pointer_position)) |button| {
             input.applyAction(&player_input, button.action);
+            history.session.queueSound(history.backing_allocator, .button_click_down);
             player_input.idle.tile_clicked = null;
             player_input.idle.confirm = false;
         } else if (ui.blockingElementAt(ui_elements, pointer_position) != null) {

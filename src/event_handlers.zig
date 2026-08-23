@@ -1015,6 +1015,7 @@ pub fn processEvent(
         .hub_event => |hub_event| {
             switch (hub_event) {
                 .move_player => |move| {
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .move);
                     if (current.hub) |*hub| {
                         hub.player.position = move.destination;
 
@@ -1657,6 +1658,7 @@ pub fn processEvent(
                     level.prepared_skill = null;
                 },
                 .move_entity => |move| {
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .move);
                     const entity = getLevelEntity(current, move.entity_index);
                     entity.position = move.destination;
                     entity.momentum += 1;
@@ -1737,6 +1739,7 @@ pub fn processEvent(
                     }
                 },
                 .pickup_items => |pickup| {
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .pickup);
                     const level = &current.level.?;
                     const entity = getLevelEntity(current, pickup.entity_index);
 
@@ -1957,6 +1960,7 @@ pub fn processEvent(
                     }
                 },
                 .attack => |attack| {
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .attack);
                     const attacker = getLevelEntity(current, attack.attacker_index);
                     const defender = getLevelEntity(current, attack.defender_index);
 
