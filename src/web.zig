@@ -148,6 +148,12 @@ pub fn main() void {
     // SessionSetup's field (now in its stable heap location).
     session.setup.fixupPointers();
 
+    // Open the audio device + load sfx/music after settings are available.
+    // No-op-safe if the device can't open (the game runs silent). See
+    // AGENTS → Audio. Web audio may require a user gesture to start in some
+    // browsers; the stream simply won't play until then, never crashing.
+    (&session.backend).initAudio(session.setup.frame_state.history.settings);
+
     // Register the live history so a panic can dump its event log before
     // trapping (best-effort on web — see crash_dump.zig). No uninstall: the
     // tab/process closing IS the shutdown.

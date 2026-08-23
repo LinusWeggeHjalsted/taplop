@@ -182,6 +182,10 @@ const drain_budget_microseconds: u64 = 10 * std.time.ms_per_s;
 pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const history = &frame_state.history;
 
+    // Music streams require a per-frame update call (raylib decodes in
+    // chunks). No-op when audio isn't initialized. See AGENTS → Audio.
+    backend.updateMusic();
+
     const platform_input = backend.pollInput();
     // Camera is derived (centered on the player), computed each frame so input
     // (screenToTile) and rendering (tileToTile) stay in sync.
@@ -312,6 +316,16 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // point, as intended.
         const events_processed = history.current_event_index != event_index_before_update;
         history.maybeRecordIdlePoint(events_processed);
+    }
+
+    // Drain queued one-shot sounds after the update drain. Event handlers
+    // and input handlers push onto `session.pending_sounds` (gated
+    // `!replaying`); play them here via the backend. The slice is valid
+    // until the next drain (clearRetainingCapacity keeps the backing). See
+    // AGENTS → Audio.
+    const pending_sounds = history.session.drainPendingSounds();
+    if (pending_sounds.len > 0) {
+        backend.playSounds(pending_sounds, history.settings);
     }
 
     // Player-move recenter: if the player's tile changed this frame (a move

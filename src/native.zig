@@ -51,6 +51,10 @@ pub fn main(init: std.process.Init.Minimal) void {
 
     var setup = session_setup.createSessionSetup(allocator, &file_source, io, &backend);
     setup.fixupPointers();
+    // Open the audio device + load sfx/music after settings are available.
+    // No-op-safe if the device can't open (the game runs silent). See
+    // AGENTS → Audio.
+    backend.initAudio(setup.frame_state.history.settings);
     game.run(&backend, &setup);
 }
 

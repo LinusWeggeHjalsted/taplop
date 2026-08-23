@@ -187,6 +187,20 @@ pub const RaylibBackend = struct {
     /// touching the filesystem directly — see AGENTS.md "File System & IO".
     file_source: *const @import("file_source.zig").FileSource,
 
+    /// One-shot sound effects, one per `SoundId`, loaded via
+    /// `loadWaveFromMemory` + `loadSoundFromWave` from the file source.
+    /// Missing audio is a normal in-progress state (like missing sprites) ->
+    /// cache null and skip play. See AGENTS → Audio.
+    sound_cache: std.AutoHashMapUnmanaged(types.SoundId, ?rl.Sound) = .empty,
+    /// The always-on ambient music stream, loaded via
+    /// `loadMusicStreamFromMemory`. null if the audio device isn't ready or
+    /// the asset failed to load. Looping; updated each frame by
+    /// `updateMusic`. See AGENTS → Audio.
+    music: ?rl.Music = null,
+    /// Whether `initAudio` succeeded in opening the audio device. If false,
+    /// all audio methods no-op (the game runs silent, never crashes).
+    audio_ready: bool = false,
+
     /// Last real-clock sample (microseconds) for delta computation. Updated
     /// each deltaMicroseconds() call. Real-clock based (rl.getTime), not
     /// frame-rate based, so waits and gameplay logic are independent of the
@@ -238,6 +252,7 @@ pub const RaylibBackend = struct {
             if (maybe_texture.*) |texture| rl.unloadTexture(texture);
         }
         self.outline_cache.deinit(self.allocator);
+        self.deinitAudio();
         if (!self.font_is_default) rl.unloadFont(self.font);
         self.frame_arena.deinit();
         rl.unloadRenderTexture(self.render_target);
@@ -254,6 +269,137 @@ pub const RaylibBackend = struct {
         } else {
             rl.clearWindowState(.{ .vsync_hint = true });
         }
+    }
+
+    /// Open the audio device and load all sfx + the music stream from the
+    /// file source. Called once after construction (settings are available).
+    /// Idempotent: a second call when already ready no-ops. If the audio
+    /// device can't open, `audio_ready` stays false and all audio methods
+    /// no-op — the game runs silent, never crashes. See AGENTS → Audio.
+    pub fn initAudio(self: *RaylibBackend, settings: types.Settings) void {
+        if (self.audio_ready) return;
+        rl.initAudioDevice();
+        if (!rl.isAudioDeviceReady()) return;
+        self.audio_ready = true;
+
+        // Load every sfx. A missing/unreadable file caches null (the game
+        // continues silent for that sound, like missing sprites).
+        for (std.meta.tags(types.SoundId)) |sound| {
+            self.ensureSoundLoaded(sound);
+        }
+
+        // Load + start the music stream (looping).
+        const music_path = "assets/audio/music/ambient.ogg";
+        if (self.file_source.readFile(self.allocator, music_path)) |bytes| {
+            defer self.allocator.free(bytes);
+            if (rl.loadMusicStreamFromMemory(".ogg", bytes) catch null) |music_value| {
+                var music = music_value;
+                music.looping = true;
+                self.music = music;
+                rl.playMusicStream(music);
+            }
+        } else |_| {}
+
+        self.applyVolumes(settings);
+    }
+
+    /// Load a single sfx from the file source into the sound cache. Caches
+    /// null on miss/failure (idempotent via cache presence).
+    fn ensureSoundLoaded(self: *RaylibBackend, sound: types.SoundId) void {
+        if (self.sound_cache.contains(sound)) return;
+        const stem = soundFileName(sound);
+        const path = std.fmt.allocPrintSentinel(
+            self.frame_arena.allocator(),
+            "assets/audio/sfx/{s}.ogg",
+            .{stem},
+            0,
+        ) catch @panic("failed to build sfx path");
+        const loaded: ?rl.Sound = blk: {
+            const bytes = self.file_source.readFile(self.allocator, path) catch
+                break :blk null;
+            defer self.allocator.free(bytes);
+            const wave = rl.loadWaveFromMemory(".ogg", bytes) catch break :blk null;
+            defer rl.unloadWave(wave);
+            const s = rl.loadSoundFromWave(wave);
+            if (!rl.isSoundValid(s)) break :blk null;
+            break :blk s;
+        };
+        self.sound_cache.put(self.allocator, sound, loaded) catch
+            @panic("failed to cache sound");
+    }
+
+    /// The on-disk stem for a `SoundId` (matches the file names under
+    /// `assets/audio/sfx/`).
+    fn soundFileName(sound: types.SoundId) []const u8 {
+        return switch (sound) {
+            .move => "move",
+            .attack => "attack",
+            .spell => "spell",
+            .damage => "damage",
+            .pickup => "pickup",
+            .skip => "skip",
+            .equip => "equip",
+            .learn_skill => "learn_skill",
+            .salvage => "salvage",
+            .swap_skill => "swap_skill",
+            .button_click_down => "button_click_down",
+            .button_click_up => "button_click_up",
+            .menu => "menu",
+            .defeat => "defeat",
+            .mission_completion => "mission_completion",
+        };
+    }
+
+    /// Tear down audio: stop + unload music, unload all sfx, close the audio
+    /// device. Safe to call when audio was never initialized (no-op).
+    pub fn deinitAudio(self: *RaylibBackend) void {
+        if (!self.audio_ready) return;
+        if (self.music) |music| {
+            rl.stopMusicStream(music);
+            rl.unloadMusicStream(music);
+            self.music = null;
+        }
+        var sounds = self.sound_cache.valueIterator();
+        while (sounds.next()) |maybe_sound| {
+            if (maybe_sound.*) |sound| rl.unloadSound(sound);
+        }
+        self.sound_cache.deinit(self.allocator);
+        rl.closeAudioDevice();
+        self.audio_ready = false;
+    }
+
+    /// Apply music + sfx volumes from settings. Sfx volume is applied per-play
+    /// (see `playSounds`); this sets the music stream volume. Master scales
+    /// both. No-op when audio isn't ready.
+    pub fn applyVolumes(self: *RaylibBackend, settings: types.Settings) void {
+        if (!self.audio_ready) return;
+        if (self.music) |music| {
+            rl.setMusicVolume(music, settings.music_volume * settings.master_volume);
+        }
+    }
+
+    /// Play all queued one-shot sounds (drained from `SessionState`), each at
+    /// `sfx_volume * master_volume`. Missing sounds (cached null) are skipped.
+    /// No-op when audio isn't ready. See AGENTS → Audio.
+    pub fn playSounds(self: *RaylibBackend, sounds: []const types.SoundId, settings: types.Settings) void {
+        if (!self.audio_ready) return;
+        const volume = settings.sound_effects_volume * settings.master_volume;
+        for (sounds) |sound| {
+            if (self.sound_cache.get(sound)) |maybe_loaded| {
+                if (maybe_loaded) |loaded| {
+                    rl.setSoundVolume(loaded, volume);
+                    rl.playSound(loaded);
+                }
+            }
+        }
+    }
+
+    /// Advance the music stream each frame. Must be called every frame the
+    /// game runs (raylib requires it for streaming audio). No-op when audio
+    /// isn't ready or music failed to load.
+    pub fn updateMusic(self: *RaylibBackend) void {
+        if (!self.audio_ready) return;
+        if (self.music) |music| rl.updateMusicStream(music);
     }
 
     /// Extract per-glyph advance widths from the loaded font into a
