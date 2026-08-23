@@ -72,6 +72,16 @@ pub const Screen = enum {
 // microseconds to avoid truncation drift when accumulating small frame deltas.
 pub const WaitState = struct {
     remaining_microseconds: u64,
+    /// The event-stack depth when this wait was pushed. While the wait drains,
+    /// the live loop processes anytime-interjected events (e.g. swap_weapons)
+    /// down to this depth so they're handled immediately instead of sitting
+    /// on the stack until the wait elapses. Set by the `wait` handler to the
+    /// post-pop stack length (the remaining enemy-turn events). Replay never
+    /// reads it — replay streams events straight through and clears
+    /// `waiting` after — so it's harmless dead data in any snapshot that
+    /// catches a mid-wait state (and idle points are stack-empty, so a wait
+    /// implies no snapshot is taken at that moment anyway).
+    baseline_stack_depth: usize = 0,
 };
 
 // Transient view/input state. Deliberately NOT part of the undoable GameState:

@@ -26,6 +26,8 @@ const crash_dump = @import("crash_dump.zig");
 
 const FileSource = file_source_mod.FileSource;
 
+const test_harness = @import("test_harness.zig");
+
 const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
 const Event = events.Event;
@@ -127,10 +129,25 @@ fn update(
     if (history.current_state.waiting) |*wait_state| {
         if (wait_state.remaining_microseconds > delta_microseconds) {
             wait_state.remaining_microseconds -= delta_microseconds;
+            // Drain anytime-interjected events (e.g. swap_weapons pushed by
+            // handleAnytimeInput above) down to the depth the wait started
+            // at, so they're handled immediately instead of sitting on the
+            // stack until the wait elapses. No idle point: the wait hasn't
+            // ended and the surrounding enemy-turn drain owns the next one.
+            // Assumption: interjection events don't push nested waits or
+            // reconstruction reads (true for swap_hands, the only anytime
+            // event-pusher today); break on load_error for safety regardless.
+            const baseline = wait_state.baseline_stack_depth;
+            while (history.current_state.event_stack.len > baseline) {
+                if (history.load_error) break;
+                event_handlers.processEvent(history);
+            }
             return;
         }
         history.current_state.waiting = null;
         // Wait elapsed this tick; fall through to process the next event.
+        // An interjection pushed during the wait is on top of the stack and
+        // runs first in the normal path below.
     }
 
     if (history.current_state.event_stack.len > 0) {
@@ -269,6 +286,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         history.session.pending_error != null or
         history.current_state.event_stack.len == 0)
     {
+        const event_index_before_update = history.current_event_index;
         const screen_before_update = history.current_state.screen;
         update(history, player_input, frame_state.previous_view_state, delta_microseconds, camera, camera_zoom, platform_input.viewport);
         if (history.current_state.screen != screen_before_update) {
@@ -276,6 +294,23 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             history.session.tile_cursor = null;
             history.session.camera_pan = null;
             history.session.camera_pan_anchor = null;
+        }
+        // An anytime action (e.g. swap_weapons) can push events onto the
+        // empty stack and process them within this one update() call. If
+        // events were processed and the stack is empty again with no active
+        // wait, it's an idle boundary — record the undo stop, mirroring the
+        // drain loop's had_events/!has_events check. The `waiting == null`
+        // gate avoids a spurious idle point if a wait was pushed at an empty
+        // stack (no such event today, but defensive). A mid-wait anytime
+        // interjection is drained to baseline inside update() and leaves the
+        // stack at baseline (non-empty during an enemy turn), so it does not
+        // record an idle point here — it stays absorbed into the surrounding
+        // drain's idle point, as intended.
+        if (history.current_event_index != event_index_before_update and
+            history.current_state.event_stack.len == 0 and
+            history.current_state.waiting == null)
+        {
+            history.recordIdlePoint();
         }
     }
 
@@ -1028,4 +1063,133 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
     try std.testing.expectEqualStrings("Test", history.current_state.player_data.player_name);
 
     history.session.clearPendingError();
+}
+
+// ───────────────────────── anytime swap_weapons: idle point + wait interjection ─────────────────────────
+//
+// swap_weapons is an anytime action (handleAnytimeInput). Two bugs were fixed
+// together: (1) swapping while idle processed the event but recorded no undo
+// stop, so the swap wasn't undoable until the next action absorbed it; (2)
+// swapping during an enemy-turn wait sat on the stack until the wait elapsed
+// (~500ms delay). The fix: update()'s wait branch drains anytime-interjected
+// events down to the wait's baseline_stack_depth (immediate, no delay, no idle
+// point — absorbed into the surrounding drain), and frame()'s idle branch
+// records an idle point when update() advanced the index and left the stack
+// empty with no active wait. These tests exercise update() directly (both
+// changes are inside it) and replicate the frame() idle-branch condition for
+// the idle-stop assertion.
+
+const three_by_three_tiles = [_]types.Vector2{
+    .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
+    .{ .x = 0, .y = 1 }, .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 },
+    .{ .x = 0, .y = 2 }, .{ .x = 1, .y = 2 }, .{ .x = 2, .y = 2 },
+};
+
+/// A player entity with distinguishable weapons: main = sword (damage 5),
+/// off = bow (damage 3). After a swap, main = bow / off = sword.
+fn playerWithWeapons() types.Entity {
+    return .{
+        .team = 0,
+        .max_health = 20,
+        .current_health = 20,
+        .main_hand_weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 5 },
+        .off_hand_weapon = .{ .name = "staff", .weapon_type = .staff, .weapon_damage = 3 },
+    };
+}
+
+test "anytime swap_weapons while idle: records an undoable idle point" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{playerWithWeapons()},
+        &three_by_three_tiles,
+    ));
+    runToIdle(&history); // records the initial idle point (stack starts empty)
+
+    const idle_count_before = history.idle_points.items.len;
+    const event_index_before = history.current_event_index;
+    try std.testing.expectEqual(@as(?types.WeaponType, .sword), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
+
+    // Drive one update() with swap_weapons set — mirrors what frame()'s idle
+    // branch does: handleAnytimeInput pushes swap_hands, then update()'s tail
+    // processes it (stack non-empty → processEvent), leaving stack empty.
+    var player_input: input.PlayerInput = .{};
+    player_input.anytime.in_game.swap_weapons = true;
+    const camera = view_mod.computeCamera(&history.current_state, history.settings.camera_zoom, history.session.camera_pan);
+    update(&history, player_input, null, 16_000, camera, history.settings.camera_zoom, .{ .width = 3840, .height = 2160 });
+
+    // The swap processed: weapons are now swapped.
+    try std.testing.expectEqual(@as(?types.WeaponType, .staff), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
+    try std.testing.expectEqual(@as(?types.WeaponType, .sword), history.current_state.level.?.entities[0].off_hand_weapon.?.weapon_type);
+    // The swap was recorded into event_history.
+    try std.testing.expect(history.current_event_index == event_index_before + 1);
+    // Stack is empty, no wait active — the frame() idle-branch condition.
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expect(history.current_state.waiting == null);
+    // Replicate frame()'s idle-branch check: index advanced + stack empty +
+    // not waiting → record the undo stop.
+    if (history.current_event_index != event_index_before and
+        history.current_state.event_stack.len == 0 and
+        history.current_state.waiting == null)
+    {
+        history.recordIdlePoint();
+    }
+    try std.testing.expectEqual(idle_count_before + 1, history.idle_points.items.len);
+
+    // Undo restores the pre-swap weapon arrangement.
+    try std.testing.expect(history.undo(&event_handlers.processEvent));
+    try std.testing.expectEqual(@as(?types.WeaponType, .sword), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
+    try std.testing.expectEqual(@as(?types.WeaponType, .staff), history.current_state.level.?.entities[0].off_hand_weapon.?.weapon_type);
+}
+
+test "anytime swap_weapons during a wait: handled immediately, no idle point, absorbed" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{playerWithWeapons()},
+        &three_by_three_tiles,
+    ));
+    runToIdle(&history);
+    const idle_count_before = history.idle_points.items.len;
+    const event_index_before = history.current_event_index;
+
+    // Simulate an enemy-turn wait in progress: one event remains on the stack
+    // below the wait's baseline depth (e.g. a pending turn_end). The wait has
+    // 500ms remaining; baseline_stack_depth = 1 (the stack depth when the wait
+    // was pushed, after the wait event itself was popped).
+    event_handlers.pushEvents(&history.current_state, &.{.{
+        .level_event = .clear_highlights,
+    }}, history.current_arena.allocator());
+    history.current_state.waiting = .{
+        .remaining_microseconds = 500_000,
+        .baseline_stack_depth = 1,
+    };
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+
+    // Drive update() with swap_weapons set and a delta (100ms) smaller than
+    // the wait remaining (500ms) — so the wait does NOT elapse this tick.
+    var player_input: input.PlayerInput = .{};
+    player_input.anytime.in_game.swap_weapons = true;
+    const camera = view_mod.computeCamera(&history.current_state, history.settings.camera_zoom, history.session.camera_pan);
+    update(&history, player_input, null, 100_000, camera, history.settings.camera_zoom, .{ .width = 3840, .height = 2160 });
+
+    // The interjection was handled IMMEDIATELY (not delayed until the wait
+    // elapsed): weapons are swapped this tick.
+    try std.testing.expectEqual(@as(?types.WeaponType, .staff), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
+    try std.testing.expectEqual(@as(?types.WeaponType, .sword), history.current_state.level.?.entities[0].off_hand_weapon.?.weapon_type);
+    // The swap was recorded into event_history.
+    try std.testing.expect(history.current_event_index == event_index_before + 1);
+    // The wait is still active — remaining reduced by exactly the delta.
+    try std.testing.expect(history.current_state.waiting != null);
+    try std.testing.expectEqual(@as(u64, 400_000), history.current_state.waiting.?.remaining_microseconds);
+    // The baseline event (clear_highlights) is still on the stack — the
+    // interjection drained only down to baseline_stack_depth.
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    // No idle point was recorded for the interjection — it stays absorbed
+    // into the surrounding enemy-turn drain's eventual idle point.
+    try std.testing.expectEqual(idle_count_before, history.idle_points.items.len);
 }

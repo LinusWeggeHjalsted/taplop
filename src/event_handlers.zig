@@ -846,9 +846,15 @@ pub fn processEvent(
                 },
                 .wait => |wait_event| {
                     // Begin a real-time pause; update() drains it as frames
-                    // elapse before the next event is processed.
+                    // elapse before the next event is processed. Record the
+                    // stack depth so anytime interjections (swap_weapons)
+                    // pushed during the wait are processed immediately down
+                    // to this baseline instead of delaying until the wait
+                    // elapses. The wait event is already popped, so this is
+                    // the depth of the remaining enemy-turn events.
                     current.waiting = .{
                         .remaining_microseconds = @as(u64, wait_event.duration_milliseconds) * 1000,
+                        .baseline_stack_depth = current.event_stack.len,
                     };
                 },
                 else => {},

@@ -2200,3 +2200,59 @@ into `emitSkillButton`, which sets `highlighted` on the emitted Button when
 the slot's `skillId` matches. `emitIconButton` gained a `highlighted: bool`
 param (passed `false` by the skip button, the only other caller). No `view()`
 signature change — `buildBottomBar` already receives `game_state`.
+
+### Anytime swap_weapons: idle undo stop + wait interjection
+
+Two bugs in the anytime `swap_weapons` path (handleAnytimeInput), fixed together:
+
+1. **Idle swap not undoable.** Swapping while the event stack was empty
+   processed `swap_hands` and advanced `current_event_index`, but `frame()`'s
+   idle branch never called `recordIdlePoint()` — so the swap had no undo stop
+   until the next action's drain absorbed it. Fix: `frame()`'s idle branch now
+   records an idle point when `update()` advanced the index AND the stack is
+   empty AND no wait is active (mirroring the drain loop's
+   `had_events/!has_events` check, measured by index advancement since the
+   idle branch starts with an empty stack). The `waiting == null` gate avoids
+   a spurious idle point if a wait was pushed at an empty stack.
+
+2. **Swap during a wait delayed ~500ms.** `handleAnytimeInput` pushed
+   `swap_hands` onto the stack, but `update()`'s wait branch decremented the
+   timer and returned before `processEvent` ran — the swap sat on the stack
+   until the wait elapsed. Fix: `WaitState` gained `baseline_stack_depth`
+   (set by the `wait` handler to the post-pop stack length = the remaining
+   enemy-turn events). `update()`'s wait branch now drains anytime-interjected
+   events down to that baseline before returning, so the swap is handled
+   immediately. No idle point is recorded (the wait hasn't ended; the
+   surrounding enemy-turn drain owns the next one). When the wait elapses, the
+   interjection is already processed and the baseline events run in the normal
+   path.
+
+The two fixes compose: a mid-drain swap (stack non-empty, no wait) is still
+handled by the drain loop and absorbed into its idle point (unchanged). A
+mid-wait swap is drained to baseline inside `update()` and also absorbed (no
+idle point in the idle branch — the stack is at baseline, non-empty during an
+enemy turn). Only a truly-idle swap (empty stack, no wait) gets its own undo
+stop.
+
+`WaitState.baseline_stack_depth` lives on GameState (not SessionState): it's a
+property of the specific wait, set where `waiting` is set, travels with it,
+dies when it clears. Snapshot-safe: idle points are stack-empty moments, a
+wait implies the drain paused mid-turn, so no snapshot carries a WaitState.
+Replay clears `waiting` after streaming and never reads the baseline (only the
+live drain reads it, and the live drain doesn't run during replay).
+
+Assumption documented at the drain site: interjection events don't push nested
+waits or reconstruction reads (true for `swap_hands`, the only anytime
+event-pusher today — a leaf that swaps hands + cancels a prepared skill). A
+`load_error` break guards the drain regardless.
+
+Tests (main.zig): "anytime swap_weapons while idle" — swap via `update()`,
+assert weapons swapped + index advanced + stack empty + not waiting, replicate
+the `frame()` idle-branch condition + `recordIdlePoint()`, then `undo()`
+restores the original weapon arrangement. "anytime swap_weapons during a wait"
+— set `waiting` with `baseline_stack_depth=1` + one baseline event on the
+stack, swap via `update()` with a delta smaller than the wait remaining,
+assert weapons swapped this tick (not delayed) + wait still active (remaining
+reduced by exactly delta) + baseline event still on stack + no idle point
+recorded. The wait test fails on the old code (weapons not swapped — the
+interjection sat on the stack); passes with the drain.
