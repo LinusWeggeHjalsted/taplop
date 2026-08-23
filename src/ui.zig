@@ -710,15 +710,18 @@ test "tooltipAt: overlays pass through, blockers shield what is behind" {
 pub const Side = enum { right, below, left, above };
 
 /// Place the tooltip flush against one side of the source element so they
-/// share an edge (not just a corner). Picks the side with the most screen
-/// clearance so the tooltip stays on screen; ties break right > below > left
-/// > above (the examination order with strict `>`) for a consistent default
-/// feel. Aligns the tooltip to the near corner along that side — e.g. the
-/// right side with the source in the top half top-aligns the tooltip, so the
-/// shared edge runs from the source's top-right corner downward. Clamps on
-/// screen; clamping shifts the tooltip along the cross-axis, shrinking the
-/// shared edge but keeping the sides flush (degenerates to a point only if
-/// the tooltip is larger than the available cross-axis space).
+/// share an edge (not just a corner). Tries sides in a fixed preference
+/// order — above, below, right, left — and uses the first that fits on
+/// screen without clamping, so tooltips prefer going above an element
+/// (the natural direction, especially for the bottom bar) and only fall
+/// sideways when there's no vertical room. If no side fits fully, falls back
+/// to the top preference (above) and clamps. Aligns the tooltip to the near
+/// corner along the chosen side — e.g. above with the source in the left
+/// half left-aligns the tooltip, so the shared edge runs from the source's
+/// top-left corner rightward. Clamping shifts the tooltip along the
+/// cross-axis, shrinking the shared edge but keeping the sides flush
+/// (degenerates to a point only if the tooltip is larger than the available
+/// cross-axis space).
 pub fn placeTooltip(
     source_position: ScreenPosition,
     source_width: i32,
@@ -730,60 +733,37 @@ pub fn placeTooltip(
     const source_bottom = source_position.y + source_height;
     const screen_w = types.reference_width;
     const screen_h = types.reference_height;
-
-    // Clearance from each side of the source to the nearest screen edge —
-    // the space available for the tooltip on that side.
-    const clearance_right = screen_w - source_right;
-    const clearance_below = screen_h - source_bottom;
-    const clearance_left = source_position.x;
-    const clearance_above = source_position.y;
-
-    // Pick the side with the most clearance; strict `>` keeps the first
-    // examined on ties, so the order below IS the tiebreak order
-    // (right > below > left > above).
-    var best_side: Side = .right;
-    var best_clearance = clearance_right;
-    if (clearance_below > best_clearance) {
-        best_side = .below;
-        best_clearance = clearance_below;
-    }
-    if (clearance_left > best_clearance) {
-        best_side = .left;
-        best_clearance = clearance_left;
-    }
-    if (clearance_above > best_clearance) {
-        best_side = .above;
-    }
-
     const source_center_x = source_position.x + @divTrunc(source_width, 2);
     const source_center_y = source_position.y + @divTrunc(source_height, 2);
+    const left_half = source_center_x < @divTrunc(screen_w, 2);
+    const top_half = source_center_y < @divTrunc(screen_h, 2);
 
-    var panel_x: i32 = 0;
-    var panel_y: i32 = 0;
+    // Candidate position for each side, in preference order (above, below,
+    // right, left). Each is flush on its side and aligned to the near corner
+    // along that side.
+    const positions = [_]struct { x: i32, y: i32 }{
+        // above: flush over the source, horizontally near-corner-aligned.
+        .{ .x = if (left_half) source_position.x else source_right - tooltip_width, .y = source_position.y - tooltip_height },
+        // below: flush under the source, horizontally near-corner-aligned.
+        .{ .x = if (left_half) source_position.x else source_right - tooltip_width, .y = source_bottom },
+        // right: flush to the right, vertically near-corner-aligned.
+        .{ .x = source_right, .y = if (top_half) source_position.y else source_bottom - tooltip_height },
+        // left: flush to the left, vertically near-corner-aligned.
+        .{ .x = source_position.x - tooltip_width, .y = if (top_half) source_position.y else source_bottom - tooltip_height },
+    };
 
-    switch (best_side) {
-        .right, .left => {
-            // Flush on the chosen side; align vertically to the near corner.
-            panel_x = if (best_side == .right) source_right else source_position.x - tooltip_width;
-            panel_y = if (source_center_y < @divTrunc(screen_h, 2))
-                source_position.y // top-align
-            else
-                source_bottom - tooltip_height; // bottom-align
-        },
-        .below, .above => {
-            // Flush above/below; align horizontally to the near corner.
-            panel_y = if (best_side == .below) source_bottom else source_position.y - tooltip_height;
-            panel_x = if (source_center_x < @divTrunc(screen_w, 2))
-                source_position.x // left-align
-            else
-                source_right - tooltip_width; // right-align
-        },
+    // First side that fits on screen without clamping wins.
+    for (positions) |pos| {
+        if (pos.x >= 0 and pos.x + tooltip_width <= screen_w and pos.y >= 0 and pos.y + tooltip_height <= screen_h)
+            return .{ .x = pos.x, .y = pos.y };
     }
 
-    // Clamp on screen (shifts along the cross-axis, keeping the side flush).
-    panel_x = std.math.clamp(panel_x, 0, screen_w - tooltip_width);
-    panel_y = std.math.clamp(panel_y, 0, screen_h - tooltip_height);
-    return .{ .x = panel_x, .y = panel_y };
+    // None fit fully — fall back to the top preference (above), clamped.
+    const fallback = positions[0];
+    return .{
+        .x = std.math.clamp(fallback.x, 0, screen_w - tooltip_width),
+        .y = std.math.clamp(fallback.y, 0, screen_h - tooltip_height),
+    };
 }
 
 // ============================================================

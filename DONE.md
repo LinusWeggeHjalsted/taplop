@@ -2480,20 +2480,23 @@ Replaced the corner-pair model with a **side-based** one: the tooltip sits
 flush against one *side* of the source, sharing an edge segment.
 
 - **`Side` enum** (`right`/`below`/`left`/`above`) replaces `Corner`.
-- **`placeTooltip`** replaces `selectTooltipCorners` + `cornerPoint`. It picks
-  the side with the most screen clearance (so the tooltip stays on screen);
-  ties break right > below > left > above (the examination order under strict
-  `>`) for a consistent default feel. It places the panel flush on that side
+- **`placeTooltip`** replaces `selectTooltipCorners` + `cornerPoint`. It
+  tries sides in a fixed preference order — above, below, right, left — and
+  uses the first that fits on screen without clamping; if none fit fully it
+  falls back to the top preference (above) and clamps. This makes tooltips
+  prefer going above an element (the natural direction, especially for the
+  bottom bar, where the earlier max-clearance picker chose `right` because the
+  space to the screen edge beat the space above) and only fall sideways when
+  there's no vertical room. It places the panel flush on the chosen side
   (`panel.x = source.right` for the right side, etc.) and aligns it to the
-  near corner *along* the side — e.g. right side + source in the top half →
-  top-aligned, so the shared edge runs from the source's top-right corner
-  downward. Then clamps on screen; clamping shifts the panel along the
-  cross-axis (shrinking the shared edge but keeping the sides flush), only
-  degenerating to a point if the tooltip is larger than the available
-  cross-axis space (rare).
+  near corner *along* the side — e.g. above + source in the left half →
+  left-aligned, so the shared edge runs from the source's top-left corner
+  rightward. Clamping shifts the panel along the cross-axis (shrinking the
+  shared edge but keeping the sides flush), only degenerating to a point if
+  the tooltip is larger than the available cross-axis space (rare).
 - `buildTooltip` now calls `placeTooltip` directly for `panel_x`/`panel_y`
   (the corner/clamp math is gone from it).
 
 The old "Tooltip can overlap its own source" TODO is resolved for the common
-case (clearance-based side choice naturally avoids the source) and narrowed to
-the degenerate cross-axis-clamp case (see TODO).
+case (the preference order + flush placement naturally avoids the source)
+and narrowed to the degenerate cross-axis-clamp case (see TODO).
