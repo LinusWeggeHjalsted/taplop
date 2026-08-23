@@ -2470,3 +2470,30 @@ Deliberately deferred (called out in TODO):
   as plain. Loading separate faces is a separate follow-up.
 - Non-ASCII glyphs use the 0.5em fallback advance; the Calligraphr font only
   covers 76/95 ASCII anyway (the gap flagged in the TTF slice).
+
+### Tooltip placement: side-based (shared edge) instead of corner-point (done)
+
+Tooltips used to anchor a tooltip *corner* to a source *corner* — they touched
+at a single diagonal point (e.g. tooltip's bottom-left at the source's
+top-right), so the tooltip floated off to a diagonal with no shared edge.
+Replaced the corner-pair model with a **side-based** one: the tooltip sits
+flush against one *side* of the source, sharing an edge segment.
+
+- **`Side` enum** (`right`/`below`/`left`/`above`) replaces `Corner`.
+- **`placeTooltip`** replaces `selectTooltipCorners` + `cornerPoint`. It picks
+  the side with the most screen clearance (so the tooltip stays on screen);
+  ties break right > below > left > above (the examination order under strict
+  `>`) for a consistent default feel. It places the panel flush on that side
+  (`panel.x = source.right` for the right side, etc.) and aligns it to the
+  near corner *along* the side — e.g. right side + source in the top half →
+  top-aligned, so the shared edge runs from the source's top-right corner
+  downward. Then clamps on screen; clamping shifts the panel along the
+  cross-axis (shrinking the shared edge but keeping the sides flush), only
+  degenerating to a point if the tooltip is larger than the available
+  cross-axis space (rare).
+- `buildTooltip` now calls `placeTooltip` directly for `panel_x`/`panel_y`
+  (the corner/clamp math is gone from it).
+
+The old "Tooltip can overlap its own source" TODO is resolved for the common
+case (clearance-based side choice naturally avoids the source) and narrowed to
+the degenerate cross-axis-clamp case (see TODO).

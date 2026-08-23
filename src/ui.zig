@@ -703,55 +703,87 @@ test "tooltipAt: overlays pass through, blockers shield what is behind" {
 }
 
 // ============================================================
-// Tooltip corner selection
+// Tooltip placement (side-based)
 // ============================================================
 
-pub const Corner = enum {
-    top_left,
-    top_right,
-    bottom_left,
-    bottom_right,
-};
+/// One side of the source element a tooltip can sit flush against.
+pub const Side = enum { right, below, left, above };
 
-/// Pick which corner of the tooltip to anchor to which corner of the
-/// source element, so the tooltip stays on screen.
-/// Returns the corner of the source element and the corner of the tooltip
-/// that should meet.
-pub fn selectTooltipCorners(
+/// Place the tooltip flush against one side of the source element so they
+/// share an edge (not just a corner). Picks the side with the most screen
+/// clearance so the tooltip stays on screen; ties break right > below > left
+/// > above (the examination order with strict `>`) for a consistent default
+/// feel. Aligns the tooltip to the near corner along that side — e.g. the
+/// right side with the source in the top half top-aligns the tooltip, so the
+/// shared edge runs from the source's top-right corner downward. Clamps on
+/// screen; clamping shifts the tooltip along the cross-axis, shrinking the
+/// shared edge but keeping the sides flush (degenerates to a point only if
+/// the tooltip is larger than the available cross-axis space).
+pub fn placeTooltip(
     source_position: ScreenPosition,
     source_width: i32,
     source_height: i32,
     tooltip_width: i32,
     tooltip_height: i32,
-) struct { source_corner: Corner, tooltip_corner: Corner } {
-    const source_center_x = source_position.x + @divTrunc(source_width, 2);
-    const source_center_y = source_position.y + @divTrunc(source_height, 2);
-    const screen_center_x: i32 = @divTrunc(types.reference_width, 2);
-    const screen_center_y: i32 = @divTrunc(types.reference_height, 2);
+) struct { x: i32, y: i32 } {
+    const source_right = source_position.x + source_width;
+    const source_bottom = source_position.y + source_height;
+    const screen_w = types.reference_width;
+    const screen_h = types.reference_height;
 
-    // Place tooltip away from the nearest screen edge.
-    // If source is in the left half, tooltip goes to the right (and vice versa).
-    // If source is in the top half, tooltip goes below (and vice versa).
-    const tooltip_goes_right = source_center_x < screen_center_x;
-    const tooltip_goes_down = source_center_y < screen_center_y;
+    // Clearance from each side of the source to the nearest screen edge —
+    // the space available for the tooltip on that side.
+    const clearance_right = screen_w - source_right;
+    const clearance_below = screen_h - source_bottom;
+    const clearance_left = source_position.x;
+    const clearance_above = source_position.y;
 
-    // The source corner is the one closest to where the tooltip will be.
-    // The tooltip corner is the opposite — they meet at those corners.
-    if (tooltip_goes_right and tooltip_goes_down) {
-        // Tooltip appears to the bottom-right of the source.
-        // Source's bottom-right corner meets tooltip's top-left corner.
-        return .{ .source_corner = .bottom_right, .tooltip_corner = .top_left };
-    } else if (!tooltip_goes_right and tooltip_goes_down) {
-        return .{ .source_corner = .bottom_left, .tooltip_corner = .top_right };
-    } else if (tooltip_goes_right and !tooltip_goes_down) {
-        return .{ .source_corner = .top_right, .tooltip_corner = .bottom_left };
-    } else {
-        return .{ .source_corner = .top_left, .tooltip_corner = .bottom_right };
+    // Pick the side with the most clearance; strict `>` keeps the first
+    // examined on ties, so the order below IS the tiebreak order
+    // (right > below > left > above).
+    var best_side: Side = .right;
+    var best_clearance = clearance_right;
+    if (clearance_below > best_clearance) {
+        best_side = .below;
+        best_clearance = clearance_below;
+    }
+    if (clearance_left > best_clearance) {
+        best_side = .left;
+        best_clearance = clearance_left;
+    }
+    if (clearance_above > best_clearance) {
+        best_side = .above;
     }
 
-    // Reserved for overflow-aware corner selection; currently unused.
-    _ = tooltip_width;
-    _ = tooltip_height;
+    const source_center_x = source_position.x + @divTrunc(source_width, 2);
+    const source_center_y = source_position.y + @divTrunc(source_height, 2);
+
+    var panel_x: i32 = 0;
+    var panel_y: i32 = 0;
+
+    switch (best_side) {
+        .right, .left => {
+            // Flush on the chosen side; align vertically to the near corner.
+            panel_x = if (best_side == .right) source_right else source_position.x - tooltip_width;
+            panel_y = if (source_center_y < @divTrunc(screen_h, 2))
+                source_position.y // top-align
+            else
+                source_bottom - tooltip_height; // bottom-align
+        },
+        .below, .above => {
+            // Flush above/below; align horizontally to the near corner.
+            panel_y = if (best_side == .below) source_bottom else source_position.y - tooltip_height;
+            panel_x = if (source_center_x < @divTrunc(screen_w, 2))
+                source_position.x // left-align
+            else
+                source_right - tooltip_width; // right-align
+        },
+    }
+
+    // Clamp on screen (shifts along the cross-axis, keeping the side flush).
+    panel_x = std.math.clamp(panel_x, 0, screen_w - tooltip_width);
+    panel_y = std.math.clamp(panel_y, 0, screen_h - tooltip_height);
+    return .{ .x = panel_x, .y = panel_y };
 }
 
 // ============================================================
@@ -974,14 +1006,6 @@ pub fn buildErrorPopup(
     );
 }
 
-fn cornerPoint(rect: Rectangle, corner: Corner) ScreenPosition {
-    return switch (corner) {
-        .top_left => .{ .x = rect.x, .y = rect.y },
-        .top_right => .{ .x = rect.right(), .y = rect.y },
-        .bottom_left => .{ .x = rect.x, .y = rect.bottom() },
-        .bottom_right => .{ .x = rect.right(), .y = rect.bottom() },
-    };
-}
 
 /// Wrap one logical row into visual lines that each fit `content_width`.
 /// Text is split on spaces (the only break opportunities); each word keeps
@@ -1156,19 +1180,10 @@ pub fn buildTooltip(
     const panel_width = content_width + 2 * tooltip_padding;
     const panel_height = content_height + 2 * tooltip_padding;
 
-    // Place the chosen tooltip corner at the chosen source corner, then clamp
-    // the whole panel on screen.
-    const corners = selectTooltipCorners(source_position, source_width, source_height, panel_width, panel_height);
-    const source_rect = Rectangle{ .x = source_position.x, .y = source_position.y, .width = source_width, .height = source_height };
-    const anchor = cornerPoint(source_rect, corners.source_corner);
-    const panel_x = std.math.clamp(switch (corners.tooltip_corner) {
-        .top_left, .bottom_left => anchor.x,
-        .top_right, .bottom_right => anchor.x - panel_width,
-    }, 0, types.reference_width - panel_width);
-    const panel_y = std.math.clamp(switch (corners.tooltip_corner) {
-        .top_left, .top_right => anchor.y,
-        .bottom_left, .bottom_right => anchor.y - panel_height,
-    }, 0, types.reference_height - panel_height);
+    // Place flush against one side of the source (shared edge), clamped on screen.
+    const placement = placeTooltip(source_position, source_width, source_height, panel_width, panel_height);
+    const panel_x = placement.x;
+    const panel_y = placement.y;
 
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = tooltip_panel_sprite,

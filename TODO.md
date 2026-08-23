@@ -200,11 +200,13 @@ Open:
   square, no measurement) — fine while no text label has a tooltip. Wire
   boundsOf for text_label to measureSpanWidth once the real font lands, if/
   when we want tooltips on text elements.
-- Tooltip can overlap its own source: selectTooltipCorners picks a corner
-  purely by the source's screen quadrant and buildTooltip only clamps on
-  screen — it never checks the panel doesn't cover the hovered element (worse
-  for center-screen sources / large tooltips). Make corner selection size-
-  and overflow-aware.
+- Tooltip cross-axis clamp can still overlap the source in the degenerate
+  case: `placeTooltip` (side-based, DONE — see DONE.md) picks the side with
+  most clearance and aligns to the near corner, but on-screen clamping shifts
+  the panel along the cross-axis; if the tooltip is larger than the available
+  cross-axis space the clamp can pull it back over the source. Rare in
+  practice (needs a tooltip taller/wider than the screen space on the cross
+  axis); revisit if a large tooltip lands over its source.
 - PLACEHOLDER ASSET: the original ui/panel.png was NOT a valid 9-slice source
   (a 176×176 rounded rect centered with a 104px transparent margin), so
   9-slicing collapsed it to thin lines. Regenerated procedurally as a proper
