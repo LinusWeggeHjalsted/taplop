@@ -18,6 +18,13 @@ if [ "${1:-}" = "--raw" ]; then
     raw=1
 fi
 
+# A panicking test triggers the custom panic namespace (crash_dump.zig),
+# which writes crashes/crash_*.txt into the cwd before trapping. Those
+# artifacts pollute the working tree and don't correspond to a real crash
+# (just a failing test). Clean them up before running so a prior run's
+# leftovers don't linger, and again after so a passing run leaves none.
+rm -rf crashes 2>/dev/null || true
+
 # Run the build, capturing stdout+stderr together and the exit code separately.
 output="$(zig build test 2>&1)"
 status=$?
@@ -50,6 +57,8 @@ if [ -n "$summary" ]; then
 fi
 
 if [ "$status" -eq 0 ]; then
+    # A passing run should leave no crash artifacts.
+    rm -rf crashes 2>/dev/null || true
     printf 'PASS (exit 0)\n'
 else
     printf 'FAIL (exit %d)\n' "$status"
