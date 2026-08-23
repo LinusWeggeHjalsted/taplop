@@ -466,6 +466,49 @@ designed:
 - Server component: out of scope for the single-file exe — a separate
   backend. The game client only needs a thin HTTP fetch/submit seam.
 
+## Rename to taplop + migrate to GitHub
+
+The game's name is taplop (friends already call it that); "ziglop" is a
+development codename that never should be player-facing. Rename + migrate
+as ONE task at the playable-demo milestone (the data-dir rename is free
+pre-release — no real players with saves yet — and the web build's
+URL/filename starts mattering exactly when GitHub Pages hosting does).
+Do it as a dedicated focused session, not interleaved with feature work;
+do the whole sweep or don't start (a half-renamed project is worse than
+either clean state).
+
+The project is currently on sr.ht; there is no GitHub repo yet. Migrate
+to GitHub as part of this task so GitHub never knows "ziglop" existed.
+
+Steps:
+1. Free the name: rename the Unity repo on GitHub `taplop` → `taplop-unity`
+   (Settings → Rename; GitHub auto-redirects old URLs, so existing links
+   keep working — stars/watchers/history all follow).
+2. Migrate: create a new GitHub repo named `taplop`, push the sr.ht history
+   up (`git remote add origin <github-url>` + push, or `git push --mirror`
+   for everything). Keep sr.ht as a mirror or archive it (don't delete —
+   avoid surprise 404s).
+3. Code sweep, one commit on top of the migrated history:
+   - `build.zig.zon` package name
+   - exe name (`build.zig`)
+   - web build output (`ziglop.html` → `taplop.html` or `index.html`)
+   - persistent data dir `~/.ziglop/` → `~/.taplop/` (the one player-facing
+     surface that's annoying to migrate later — free now, costly post-release)
+   - doc references: the `https://github.com/LinusWeggeHjalsted/taplop`
+     URLs in AGENTS.md + DONE.md → `taplop-unity` (those currently point at
+     the Unity project, which is now at `taplop-unity` after step 1)
+   - any remaining internal "ziglop" strings
+4. GitHub Pages: project sites serve at
+   `linusweggehjalsted.github.io/taplop/` (a SUBPATH, not repo root).
+   raylib/emscripten web builds default to assuming root, so the HTML needs
+   relative asset paths or a `<base>` tag / build-time base-path config.
+   Solve this here, not on demo day.
+
+Reversible throughout (GitHub renames back if needed; redirects cover the
+transition). Never delete-and-recreate to shuffle names — rename always,
+or GitHub's redirect gets shadowed.
+
+
 ## Determinism & Tiebreaking
 
 Convention in AGENTS → Determinism & Tiebreaking. Replay is immune to
