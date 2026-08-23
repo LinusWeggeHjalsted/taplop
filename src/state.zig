@@ -1219,3 +1219,58 @@ test "SessionState pending error: overwrite replaces the message" {
     try std.testing.expectEqualStrings("second error with more detail", session.pendingError().?);
     session.clearPendingError();
 }
+
+test "SessionState sound queue: queue + drain returns sounds in order" {
+    const allocator = std.testing.allocator;
+    var session: SessionState = .{};
+    defer session.pending_sounds.deinit(allocator);
+
+    session.queueSound(allocator, .move);
+    session.queueSound(allocator, .weapon_swing);
+    session.queueSound(allocator, .damage);
+
+    const drained = session.drainPendingSounds();
+    try std.testing.expectEqual(@as(usize, 3), drained.len);
+    try std.testing.expectEqual(types.SoundId.move, drained[0]);
+    try std.testing.expectEqual(types.SoundId.weapon_swing, drained[1]);
+    try std.testing.expectEqual(types.SoundId.damage, drained[2]);
+
+    // A second drain returns empty (the queue was cleared).
+    const drained_again = session.drainPendingSounds();
+    try std.testing.expectEqual(@as(usize, 0), drained_again.len);
+}
+
+test "SessionState sound queue: drained slice stays valid after clear" {
+    // Regression: drainPendingSounds must NOT memset the backing bytes
+    // before the caller reads them. Zig's clearRetainingCapacity does
+    // @memset(items, undefined), which would clobber the returned slice.
+    // We reset items.len directly instead. This test guards that.
+    const allocator = std.testing.allocator;
+    var session: SessionState = .{};
+    defer session.pending_sounds.deinit(allocator);
+
+    session.queueSound(allocator, .pickup);
+    session.queueSound(allocator, .skip);
+
+    const drained = session.drainPendingSounds();
+    // Read the slice AFTER the drain cleared the queue — the values must
+    // still be the originals, not undefined garbage.
+    try std.testing.expectEqual(@as(usize, 2), drained.len);
+    try std.testing.expectEqual(types.SoundId.pickup, drained[0]);
+    try std.testing.expectEqual(types.SoundId.skip, drained[1]);
+}
+
+test "SessionState sound queue: reuse after drain" {
+    const allocator = std.testing.allocator;
+    var session: SessionState = .{};
+    defer session.pending_sounds.deinit(allocator);
+
+    session.queueSound(allocator, .move);
+    _ = session.drainPendingSounds();
+    session.queueSound(allocator, .equip);
+
+    const drained = session.drainPendingSounds();
+    try std.testing.expectEqual(@as(usize, 1), drained.len);
+    try std.testing.expectEqual(types.SoundId.equip, drained[0]);
+}
+

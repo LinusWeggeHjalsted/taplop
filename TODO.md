@@ -394,12 +394,12 @@ Open:
 
 Architecture DONE — see AGENTS → Audio. Sound queue on `SessionState`,
 backend sfx cache + looping music stream, `frame()` drains + updates music.
-Vertical-slice sounds wired (move, attack, pickup, button_click_down). Open:
+All shipped sfx wired except the two that wait for mission end-state screens.
+Open:
 
-- Wire the remaining sfx: `skip`, `swap_skill`, `menu`, `button_click_up`
-  (input-path triggers). `defeat` + `mission_completion` land with the
-  mission end-state screens. Cantrip/enchantment/curse currently reuse the
-  `spell` sound (placeholder until dedicated assets ship).
+- `defeat` + `mission_completion` land with the mission end-state screens.
+  Cantrip/enchantment/curse currently reuse the `spell` sound (placeholder
+  until dedicated assets ship).
 - Options menu volume controls (settings fields exist; UI is the TODO
   `buildOptionsMenu`). `applyVolumes` is called at init; re-call it when the
   settings change in the options menu so volume adjusts live.
@@ -408,6 +408,9 @@ Vertical-slice sounds wired (move, attack, pickup, button_click_down). Open:
   on the web build.
 - Tune volumes / mix against real assets (current volumes are the Unity
   defaults carried over).
+- Per-sfx cooldown in `playSounds` if multi-hit overlap (N `attack` events
+  in one frame → N damage sounds) sounds bad. Trigger sites stay clean; the
+  throttle is backend-only.
 
 ## Memory / Budget
 

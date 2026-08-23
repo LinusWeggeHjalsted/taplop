@@ -300,6 +300,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             history.session.tile_cursor = null;
             history.session.camera_pan = null;
             history.session.camera_pan_anchor = null;
+            history.session.pressed_button = null;
         }
 
         if (had_events and !has_events) {
@@ -329,6 +330,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             history.session.tile_cursor = null;
             history.session.camera_pan = null;
             history.session.camera_pan_anchor = null;
+            history.session.pressed_button = null;
         }
         // An anytime action (e.g. swap_weapons) can push events onto the
         // empty stack and process them within this one update() call. If

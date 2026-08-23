@@ -2605,3 +2605,39 @@ one place. AI gets sounds for free (enemies push the same events).
 - **Multi-hit:** each `attack` fires one `damage` (N hits → N impacts). If
   overlapping same-sfx-in-one-frame becomes an audio mess, throttle in the
   backend's `playSounds` (per-sfx cooldown) — NOT at trigger sites.
+
+### Slice 7 — remaining sfx, button press/release model, queue fix (DONE)
+
+**Sound queue bug fix.** `drainPendingSounds` used `clearRetainingCapacity`,
+which does `@memset(self.items, undefined)` before resetting the length —
+clobbering the slice the caller just received. SFX loaded valid, `playSound`
+was called, but the slice held garbage `SoundId` values that matched nothing
+in the cache → silent no-op. Fixed by resetting `items.len = 0` directly
+(leaving the backing bytes intact for the caller to read). Regression tests
+added (state.zig): queue+drain order, drained-slice-stays-valid-after-clear,
+reuse after drain.
+
+**Button press/release model.** Button actions now fire on mouse RELEASE, not
+press (standard UI behavior; drag-off cancels). `SessionState.pressed_button:
+?Action` records the button under the press; release fires the action only if
+the release is over the same button. Cleared on screen transition alongside
+`ui_state`/`tile_cursor`/`camera_pan` (was missing initially — a press that
+spanned a screen transition would fire on the new screen's UI).
+
+**Sound routing.** `releaseSoundForAction` (types.zig) maps an Action to its
+specific release sound (skip, swap_weapons→swap_skill, panel
+toggles→menu) or null (generic `button_click_up`). Skill slots suppress the
+generic up on release: auto-fire lets the `use_skill` event's
+weapon_swing/spell play alone; the prepare (targeting) path plays
+`button_click_up` explicitly. Keybind-triggered actions queue their specific
+sound at the input-handler site (no click sounds).
+
+**Remaining sfx wired:** skip (`player_skip_move`/`player_skip_attack` events),
+swap_weapons (swap_skill), panel toggles inventory/gear/skills/world_map/
+options_menu (menu). `defeat` + `mission_completion` wait for the mission
+end-state screens.
+
+**Music-load-order gotcha:** SFX must load AFTER the music stream starts, or
+`LoadSoundFromWave`'s format conversion targets a stale device state and
+sounds silently never play (no error, no log). `initAudio` order: open device
+→ load+start music → load sfx. Documented in AGENTS → Audio.

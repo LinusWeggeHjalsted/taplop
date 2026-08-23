@@ -275,10 +275,26 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   The full map: `move_entity`/`move_player`→move, `use_skill`(weapon)→
   weapon_swing, `use_skill`(spell/cantrip/enchantment/curse)→spell,
   `attack`/`collision`→damage, `pickup_items`→pickup, `equip_item`→equip,
-  `learn_skill`→learn_skill, `salvage_item`→salvage. UI click sounds queue
-  from the input path (`update`). Multi-hit skills fire one damage sound per
-  `attack` (N hits → N impacts); if that becomes an audio mess, throttle in
-  the backend's `playSounds` (per-sfx cooldown), NOT at trigger sites.
+  `learn_skill`→learn_skill, `salvage_item`→salvage. Multi-hit skills fire one
+  damage sound per `attack` (N hits → N impacts); if that becomes an audio
+  mess, throttle in the backend's `playSounds` (per-sfx cooldown), NOT at
+  trigger sites.
+- **Button press/release model.** Button actions fire on mouse RELEASE, not
+  press (standard UI behavior; drag-off cancels). `SessionState.pressed_button:
+  ?Action` records the button under the press; release fires the action only
+  if the release is over the same button. Press always queues
+  `button_click_down`. Release queues: the generic `button_click_up` for
+  actions WITHOUT a specific sound; actions WITH a specific sound (skip,
+  swap_weapons, panel toggles, skill slots) get their specific sound from the
+  input/event handler that processes the action — so no generic up (would
+  double-play). Skill slots are special: auto-fire suppresses the generic up
+  and lets the `use_skill` event's weapon_swing/spell play alone; the prepare
+  (targeting) path plays `button_click_up` explicitly so the player gets
+  feedback that targeting started. `releaseSoundForAction` (types.zig) maps an
+  Action to its specific release sound (or null = generic up). Keybind-
+  triggered actions queue their specific sound at the input-handler site (no
+  click sounds, since no button was involved). `pressed_button` is transient —
+  cleared on screen transition alongside `ui_state`/`tile_cursor`/`camera_pan`.
 - **Backend (`raylib_backend.zig`):** `initAudio(settings)` opens the audio
   device, loads all sfx via `loadWaveFromMemory` + `loadSoundFromWave` from
   the `FileSource` (never the filesystem — same seam as textures), loads the
@@ -293,6 +309,13 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   outlive the stream — held in `music_data` and freed in `deinitAudio`
   alongside the stream unload. Freeing the bytes right after load (the
   texture-cache pattern) crashes on the next `updateMusicStream`.
+  **MUSIC-MUST-LOAD-FIRST GOTCHA:** the music stream must be loaded + started
+  BEFORE the sfx. `LoadSoundFromWave` converts samples to the active device
+  format; if the music stream hasn't initialized the audio system's state
+  yet, the sfx convert to a stale format and silently never play (no error,
+  no log — the sounds load valid, `playSound` is called, but no audio). The
+  order in `initAudio` is: open device → load+start music → load sfx. No
+  compile-time guard — reordering silently breaks sfx.
 - **Per-frame:** `frame()` calls `backend.updateMusic()` at the top (raylib
   requires it for streaming) + `backend.playSounds(drained, settings)` after
   the drain. Sfx volume = `sound_effects_volume * master_volume`; music
