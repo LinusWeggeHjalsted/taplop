@@ -1658,7 +1658,7 @@ pub fn buildMainMenu(
     button_count += 1;
     buttons[button_count] = .{ .label = "Load Save", .action = .load_save };
     button_count += 1;
-    // Dev entry point (hardcoded first_mission).
+    // Dev entry point (hardcoded beginnings mission).
     buttons[button_count] = .{ .label = "Editor", .action = .open_editor };
     button_count += 1;
     buttons[button_count] = .{ .label = "Settings", .action = .open_settings };

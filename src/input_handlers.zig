@@ -444,11 +444,12 @@ pub fn handleIdleInput(
                 .new_game => event_handlers.pushEvents(current, &.{
                     .{ .meta_event = .start_new_game },
                 }, allocator),
-                // Dev entry point: open the editor on the shipped first_mission
-                // (hardcoded path so the editor building blocks are reachable).
+                // Dev entry point: open the editor on the shipped beginnings
+                // mission (hardcoded path so the editor building blocks are
+                // reachable).
                 .open_editor => event_handlers.pushEvents(current, &.{
                     .{ .meta_event = .{ .open_editor = .{
-                        .mission_path = "data/campaigns/main_campaign/missions/first_mission",
+                        .mission_path = "data/campaigns/main_campaign/missions/beginnings",
                     } } },
                 }, allocator),
                 // continue_game / load_save need an autosave path + file picker,

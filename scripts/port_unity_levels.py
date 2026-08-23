@@ -2,8 +2,9 @@
 """Convert Unity level/hub files (~/Development/taplop) into ziglop format.
 
 One-off port script. Run from the ziglop project root. Writes into
-data/campaigns/main_campaign/. Does NOT touch first_mission/starting_village
-(dev/sample content referenced by tests + editor entry).
+data/campaigns/main_campaign/. The original dev/sample first_mission /
+starting_village have since been removed; the editor dev entry + tests now
+point at the ported `beginnings` mission.
 """
 import os, re, sys, struct
 

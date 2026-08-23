@@ -27,7 +27,7 @@ pub const ContentHash = [32]u8;
 
 /// Compute the content hash of a mission. `mission_path` is the project-root-
 /// relative folder path (e.g. "data/campaigns/main_campaign/missions/
-/// first_mission" or a VFS/persistent-dir custom-mission path). `level_count`
+/// beginnings" or a VFS/persistent-dir custom-mission path). `level_count`
 /// is the mission's declared level count (from mission.txt); levels are read
 /// as `{mission_path}/level_{1..level_count}.txt`.
 ///

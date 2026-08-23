@@ -1758,6 +1758,36 @@ live alongside the existing dev/sample `first_mission` + `starting_village`
   each ported mission via `start_mission` through the event path and asserts
   it reaches `.level` with entities + a mission loaded.
 
+### Removed dev/sample first_mission + starting_village (DONE)
+
+The original dev/sample content (`first_mission`, `starting_village`) was
+removed now that the real designed missions are ported. The campaign starts
+at Camp at the Crossroads with the 4 designed missions reachable via hub
+exits.
+
+- **Deleted:** `data/campaigns/main_campaign/missions/first_mission/` +
+  `data/campaigns/main_campaign/hubs/starting_village/`.
+- **`new_player.txt` + `autosave.txt`:** `current_hub` repointed
+  `starting_village` → `camp_at_the_crossroads` (this was why a new game
+  still started in the old hub after the campaign `start_hub` was repointed).
+- **Editor dev entry** (`input_handlers.zig`, `ui.zig`) + the main.zig editor
+  tests repointed `first_mission` → `beginnings`. Test assertions updated:
+  the editor palette is mission-wide, so `beginnings` (3 levels) has 2 enemy
+  types (Skeleton Warrior + Javelineer) not 1; level 0 has 3 enemy placements
+  (char '1' × 3); instantiated level has 4 entities (player + 3 skeletons).
+- **Turn-counters test** made phase-aware: `beginnings/level_1`'s enemies are
+  out of aggro range, so `auto_skip_attack_step_out_of_combat` completes the
+  turn during `player_skip_move`'s drain. The old test pushed
+  `player_skip_attack` unconditionally (a second `turn_end` → turns_spent=2);
+  now it only pushes `skip_attack` if the turn is still in the attack phase.
+- **Reconstruction-read-failure test:** the broken-mission writeFile path
+  repointed `first_mission` → `beginnings` to match the `start_mission` path
+  (a mismatch meant the scratch dir had a broken `first_mission/mission.txt`
+  while `start_mission` read the valid embedded `beginnings/mission.txt` →
+  no load_error).
+- parser.zig test fixtures that use `first_mission`/`starting_village` as
+  inline string literals are self-contained (not file reads) — left as-is.
+
 ### Crash dump (panic → session log) (DONE)
 
 A `@panic` now writes `crashes/crash_YYYYMMDD_HHMMSS.txt` (a replayable

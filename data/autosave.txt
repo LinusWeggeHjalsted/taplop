@@ -4,7 +4,7 @@ file_format_version 1
 Info
 player_name New Player
 current_campaign main_campaign
-current_hub starting_village
+current_hub camp_at_the_crossroads
 turns 390
 deaths 8
 defeated_enemies 89

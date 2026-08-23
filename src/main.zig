@@ -693,25 +693,25 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
     runToIdle(&history);
 
-    // Open the editor on the shipped first_mission.
+    // Open the editor on the shipped beginnings mission.
     event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .open_editor = .{
-        .mission_path = "data/campaigns/main_campaign/missions/first_mission",
+        .mission_path = "data/campaigns/main_campaign/missions/beginnings",
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
 
     // Editor is populated: screen is .editor, mission loaded, levels array
     // has the mission's level_count entries, mode is .edit. The palette is
-    // reference-based: first_mission's level_1 has one enemy (Skeleton
-    // Warrior at char '1'), so entity_types has one entry and the level has
-    // one placement referencing it. player_def carries the player loadout
-    // from player.txt.
+    // reference-based: beginnings' level_1 has one enemy type (Skeleton
+    // Warrior at char '1') placed three times, so entity_types has one entry
+    // and level 0 has three placements referencing it. player_def carries
+    // the player loadout from player.txt.
     try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
     try std.testing.expect(history.current_state.editor != null);
     const editor = &history.current_state.editor.?;
-    try std.testing.expectEqual(@as(usize, 1), editor.levels.len); // first_mission has 1 level
+    try std.testing.expectEqual(@as(usize, 3), editor.levels.len); // beginnings has 3 levels
     try std.testing.expectEqual(types.EditorMode.edit, editor.mode);
-    try std.testing.expectEqual(@as(usize, 1), editor.entity_types.len); // one enemy type (Skeleton Warrior)
-    try std.testing.expectEqual(@as(usize, 1), editor.levels[0].entity_placements.len);
+    try std.testing.expectEqual(@as(usize, 2), editor.entity_types.len); // two enemy types (Skeleton Warrior + Javelineer, mission-wide palette)
+    try std.testing.expectEqual(@as(usize, 3), editor.levels[0].entity_placements.len);
     try std.testing.expectEqual(@as(u32, 0), editor.levels[0].entity_placements[0].type_id);
     try std.testing.expect(std.mem.eql(u8, "Player", editor.player_def.template.name));
     try std.testing.expect(std.mem.eql(u8, "player", editor.player_def.template.sprite));
@@ -723,11 +723,11 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     runToIdle(&history);
 
     // Gameplay is live: screen is .level, current.level populated (entity 0
-    // = player from player_def at the '!', entity 1 = the skeleton from the
-    // palette type at its placement), editor dormant with mode .playtest.
+    // = player from player_def at the '!', entities 1-3 = the three skeleton
+    // placements of the palette type), editor dormant with mode .playtest.
     try std.testing.expectEqual(state.Screen.level, history.current_state.screen);
     try std.testing.expect(history.current_state.level != null);
-    try std.testing.expectEqual(@as(usize, 2), history.current_state.level.?.entities.len); // player + 1 enemy
+    try std.testing.expectEqual(@as(usize, 4), history.current_state.level.?.entities.len); // player + 3 enemies
     try std.testing.expect(std.mem.eql(u8, "Player", history.current_state.level.?.entities[0].name));
     try std.testing.expect(std.mem.eql(u8, "skeleton_1", history.current_state.level.?.entities[1].sprite));
     try std.testing.expectEqual(types.EditorMode.playtest, history.current_state.editor.?.mode);
@@ -744,7 +744,7 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     try std.testing.expect(history.current_state.level == null);
     try std.testing.expect(history.current_state.mission == null);
     try std.testing.expectEqual(types.EditorMode.edit, history.current_state.editor.?.mode);
-    try std.testing.expectEqual(@as(usize, 1), history.current_state.editor.?.levels.len);
+    try std.testing.expectEqual(@as(usize, 3), history.current_state.editor.?.levels.len);
 
     // Close the editor.
     event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .close_editor }}, history.current_arena.allocator());
@@ -794,9 +794,9 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
     runToIdle(&history);
 
-    // Open editor + start playtest on first_mission level 0.
+    // Open editor + start playtest on beginnings level 0.
     event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .open_editor = .{
-        .mission_path = "data/campaigns/main_campaign/missions/first_mission",
+        .mission_path = "data/campaigns/main_campaign/missions/beginnings",
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
     event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
@@ -808,13 +808,20 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     try std.testing.expectEqual(@as(u32, 0), history.current_state.mission.?.turns_spent);
     try std.testing.expectEqual(@as(u32, 0), history.current_state.player_data.turns);
 
-    // Skip the player's move phase (goes to attack phase), then skip the
-    // attack phase (pushes turn_end entity_index 0). The per-mission counter
-    // increments; the cumulative counter does NOT (editor mode).
+    // Skip the player's move phase. If enemies are active, this enters the
+    // attack phase; if not, auto_skip_attack_step_out_of_combat completes
+    // the whole turn (turn_end fires during the drain). The per-mission
+    // counter increments; the cumulative counter does NOT (editor mode).
     event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = .{ .player_skip_move = .{} } }}, history.current_arena.allocator());
     runToIdle(&history);
-    event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = .player_skip_attack }}, history.current_arena.allocator());
-    runToIdle(&history);
+
+    // If auto-skip didn't fire (we're in the attack phase), skip it to
+    // complete the turn. If it did fire, we're back in player_move for the
+    // next turn — don't push another skip (it would start a second turn).
+    if (history.current_state.level.?.turn_phase == .player_attack) {
+        event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = .player_skip_attack }}, history.current_arena.allocator());
+        runToIdle(&history);
+    }
 
     try std.testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
     try std.testing.expectEqual(@as(u32, 0), history.current_state.player_data.turns);
@@ -851,12 +858,12 @@ test "reconstruction read failure: handler sets load_error, drain loop reverts s
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = FileSource.init(io, dir);
 
-    // Write a broken mission.txt at the first_mission path (shadows the
+    // Write a broken mission.txt at the beginnings path (shadows the
     // embedded copy). Invalid content → parseConfigFile fails.
-    dir.createDirPath(io, "data/campaigns/main_campaign/missions/first_mission") catch
+    dir.createDirPath(io, "data/campaigns/main_campaign/missions/beginnings") catch
         @panic("failed to create mission dir");
     dir.writeFile(io, .{
-        .sub_path = "data/campaigns/main_campaign/missions/first_mission/mission.txt",
+        .sub_path = "data/campaigns/main_campaign/missions/beginnings/mission.txt",
         .data = "this is not valid config",
     }) catch @panic("failed to write broken mission");
 
@@ -890,7 +897,7 @@ test "reconstruction read failure: handler sets load_error, drain loop reverts s
 
     // Push start_mission pointing at the broken mission.
     event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
-        .mission_path = "data/campaigns/main_campaign/missions/first_mission",
+        .mission_path = "data/campaigns/main_campaign/missions/beginnings",
         .start_hub_id = null,
         .end_hub_id = null,
     } } }}, history.current_arena.allocator());
