@@ -1683,3 +1683,36 @@ otherwise silently drop.
 
 This test would have caught both manual-test typos (`chracter_code`,
 `Metadata`) this session before they leaked into the working tree.
+
+### Skill activation during the move step (DONE)
+
+Pressing a skill slot during the `player_move` phase now skips the move step
+and acts in the attack step instead of being silently ignored — so the
+player doesn't have to manually skip the move when they don't intend to move
+(matching the original Unity feel).
+
+- **New orchestrator** `player_skip_move_to_skill` (LevelEvent): carries the
+  RESOLVED intent `{skill_id, target, prepare}`. Targeting resolution depends
+  on the transient `tile_cursor` (SessionState, off GameState), so it happens
+  in the input path and the orchestrator carries the result — replay doesn't
+  re-resolve input (same convention as the other player-action orchestrators).
+  The handler always forces `player_turn_attack.force_attack_step = true` so
+  `auto_skip_attack_step_out_of_combat` can't end the turn before the skill
+  fires (the player explicitly asked to act); the cost is an out-of-combat
+  weapon-skill press enters the attack phase with a prepared skill but no
+  valid targets (player cancels/skips) — accepted edge case. Composes the
+  existing verbs: `clear_highlights` (drop move highlights) →
+  `player_turn_attack` (forced) → `player_prepare_skill` or `player_use_skill`
+  (the nested orchestrator owns turn_end / clear / use_skill).
+- **Shared resolution helper** `resolveSkillSlotAction` (input_handlers.zig):
+  returns `SkillSlotAction { use | prepare }` from a slot press, factoring out
+  the cooldown / targeting / auto-target-at-cursor logic that was inline in
+  the `.player_attack` case. Both `.player_move` (skip-to-skill) and
+  `.player_attack` (in-phase) now call it; `.player_move` wraps the result in
+  `player_skip_move_to_skill`, `.player_attack` pushes
+  `player_prepare_skill` / `player_use_skill` directly (unchanged behavior).
+  Returns null on empty slot / cooldown / missing definition → the caller
+  drops the input silently (matches the prior inline behavior).
+- Tests: two tier-4 ordering tests pinning the LIFO fan-out for both branches
+  (prepare + use) and asserting `force_attack_step` is true on the pushed
+  `player_turn_attack`.
