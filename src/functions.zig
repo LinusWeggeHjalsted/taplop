@@ -75,10 +75,13 @@ pub fn shortestPath(
         tile_set.put(tile, {}) catch return null;
     }
 
-    // Build a set of occupied positions (all entities except the mover)
+    // Build a set of occupied positions (all live entities except the
+    // mover). Dead entities (current_health == 0) don't block movement — a
+    // tile they died on is traversable.
     var occupied = std.AutoHashMap(Vector2, void).init(allocator);
     defer occupied.deinit();
     for (level.entities) |entity| {
+        if (entity.current_health == 0) continue;
         // Skip the entity standing at start_position (the mover)
         if (entity.position.x == start_position.x and
             entity.position.y == start_position.y) continue;
@@ -235,10 +238,13 @@ pub fn reachableTiles(
         tile_set.put(tile, {}) catch return &.{};
     }
 
-    // Build a set of occupied positions (all entities except the mover)
+    // Build a set of occupied positions (all live entities except the
+    // mover). Dead entities (current_health == 0) don't block movement — a
+    // tile they died on is traversable.
     var occupied = std.AutoHashMap(Vector2, void).init(allocator);
     defer occupied.deinit();
     for (level.entities) |entity| {
+        if (entity.current_health == 0) continue;
         if (entity.position.x == start_position.x and
             entity.position.y == start_position.y) continue;
         occupied.put(entity.position, {}) catch return &.{};
