@@ -391,6 +391,10 @@ combat-log UI rendering + replay-viewer UI still TODO)
 
 ## Error Handling
 
+A `@panic` (unrecoverable failure) dumps the live `event_history` to
+`crashes/crash_YYYYMMDD_HHMMSS.txt` in the persistent dir before trapping —
+see "Crash dump" below.
+
 Two error classes, with different responses:
 
 - **Unrecoverable** — OOM, broken invariants, the `current.level.?` force-
@@ -461,6 +465,41 @@ code (replay verification, the reconstruction cache's `current_event_index -
 transaction commit) was considered and rejected: its independent benefits
 are marginal with no current consumer, and its costs land in replay-
 verification code where a subtle bug is most damaging.
+
+### Crash dump (panic → session log)
+
+A `@panic` (invariant failure, OOM panic, replay-verification mismatch,
+force-unwrap, safety check) dumps the live `event_history` to
+`crashes/crash_YYYYMMDD_HHMMSS.txt` in the persistent dir before trapping.
+`event_history` is always a complete real-time log (B-simple per-dispatch
+recording), so a crash file carries every event up to the crash and is a
+replayable session log (standard format, loadable by `parser.loadEventLog` +
+`reconstructFromEventLog`) — just named `crash_*` instead of `session_log_*`.
+
+- **Mechanism:** `src/crash_dump.zig` is a custom panic namespace installed
+  as `pub const panic = crash_dump.panic;` in BOTH entry files (native.zig,
+  web.zig — replacing web's prior `std.debug.simple_panic`). It mirrors
+  simple_panic's full safety-check helper set, but `call` first prints the
+  message to stderr, attempts the dump, THEN `@trap`s. A file-private global
+  `crash_history: ?*GameStateHistory` is `install`ed by `main.run` (native)
+  / `web.main` (web) at startup and `uninstall`ed at clean shutdown (native
+  defer; web skips uninstall — tab close IS shutdown). null outside a session
+  (e.g. a panic during startup config load) → the handler skips the dump.
+- **Safety:** the dump uses `std.heap.page_allocator` for its OUTPUT buffer
+  (never the game's arenas, which may be inconsistent at panic time). It
+  READS `event_history.items` (history_arena-backed) — a panic is almost
+  always a logic error, not heap corruption, so the arenas are normally
+  intact. The io handle + persistent dir are entry-file-owned (independent
+  of the game arenas), so reusing them is safe. Every failure in the dump
+  path is swallowed — we're already crashing; the dump is a bonus, never a
+  cascade.
+- **Scope: Zig panics ONLY.** A raw segfault (wild pointer) bypasses this
+  and goes straight to the OS — the arena/integer-only model makes that
+  rare; a SIGSEGV signal handler is a separate, more invasive step we don't
+  take.
+- **Web is best-effort:** the IDBFS `syncfs` flush may not complete before
+  the tab closes on a panic, so a web crash file may be lost (in-memory FS
+  only for that session). Native is the reliable path. Accepted.
 
 ## Code Style
 

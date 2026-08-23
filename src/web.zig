@@ -23,6 +23,7 @@ const session_setup = @import("session_setup.zig");
 const RaylibBackend = @import("raylib_backend.zig").RaylibBackend;
 const types = @import("types.zig");
 const FileSource = @import("file_source.zig").FileSource;
+const crash_dump = @import("crash_dump.zig");
 
 // --- Emscripten externs (minimal subset of what zemscripten wraps) ---
 
@@ -35,10 +36,13 @@ extern fn emscripten_set_main_loop_arg(
 ) void;
 extern fn emscripten_run_script(script: [*:0]const u8) void;
 
-/// Panic handler for web — uses std's simple_panic namespace (prints to
-/// stderr → browser console, traps). The default FullPanic pulls in symbol
-/// formatting that does not work on wasm; this stays minimal.
-pub const panic = std.debug.simple_panic;
+/// Panic handler: dumps the live session log before trapping. Replaces the
+/// minimal `std.debug.simple_panic` (which only prints to stderr) with a
+/// handler that also writes `crashes/crash_<timestamp>.txt` to the persistent
+/// dir. Best-effort on web — the IDBFS flush may not complete before the tab
+/// closes, so the crash file may be lost on a web crash (native is the
+/// reliable path). See crash_dump.zig.
+pub const panic = crash_dump.panic;
 
 /// The virtual path where the IDBFS-backed persistent dir is mounted. Mirrors
 /// $HOME/.ziglop on native — FileSource reads/writes against this path.
@@ -143,6 +147,11 @@ pub fn main() void {
     // Fix up the history's weapon_type_definitions pointer to point at the
     // SessionSetup's field (now in its stable heap location).
     session.setup.fixupPointers();
+
+    // Register the live history so a panic can dump its event log before
+    // trapping (best-effort on web — see crash_dump.zig). No uninstall: the
+    // tab/process closing IS the shutdown.
+    crash_dump.install(&session.setup.frame_state.history);
 
     // Register the callback and let emscripten drive the frame loop.
     // fps = -1 lets the browser use requestAnimationFrame (~monitor refresh).

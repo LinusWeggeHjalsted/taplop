@@ -11,6 +11,11 @@ const session_setup = @import("session_setup.zig");
 const RaylibBackend = @import("raylib_backend.zig").RaylibBackend;
 const types = @import("types.zig");
 const FileSource = @import("file_source.zig").FileSource;
+const crash_dump = @import("crash_dump.zig");
+
+/// Panic handler: dumps the live session log before trapping. See
+/// crash_dump.zig.
+pub const panic = crash_dump.panic;
 
 pub fn main(init: std.process.Init.Minimal) void {
     var debug_allocator: std.heap.DebugAllocator(.{}) = .init;

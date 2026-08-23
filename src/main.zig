@@ -22,6 +22,7 @@ const input_handlers = @import("input_handlers.zig");
 const view_mod = @import("view.zig");
 const build_info = @import("build_info");
 const file_source_mod = @import("file_source.zig");
+const crash_dump = @import("crash_dump.zig");
 
 const FileSource = file_source_mod.FileSource;
 
@@ -378,6 +379,8 @@ pub fn run(
     setup: *session_setup.SessionSetup,
 ) void {
     defer setup.frame_state.frame_arena.deinit();
+    crash_dump.install(&setup.frame_state.history);
+    defer crash_dump.uninstall();
     gameLoop(backend, &setup.frame_state);
 }
 

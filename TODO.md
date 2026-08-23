@@ -67,6 +67,11 @@ Test by running `zig build run` and clicking through.
     fine, just the file didn't write). Session-log `file_format_version`
     hard-gate softening deferred to the replay viewer (not user-wired yet).
     History in DONE.md.
+  - [x] **Crash dump:** `@panic` writes `crashes/crash_*.txt` (a replayable
+    session log) to the persistent dir before trapping, via a custom panic
+    namespace in both entry files. Zig panics only (not SIGSEGV); web
+    best-effort. See AGENTS → Error Handling → Crash dump. History in
+    DONE.md.
 - **Key validation (approach A)** — per-section key whitelists warn on
   unknown keys (the permissive parser silently drops them today; see AGENTS
   → Error Handling). Infrastructure: `parser.validateKeys` + comptime

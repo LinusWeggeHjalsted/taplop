@@ -1716,3 +1716,37 @@ player doesn't have to manually skip the move when they don't intend to move
 - Tests: two tier-4 ordering tests pinning the LIFO fan-out for both branches
   (prepare + use) and asserting `force_attack_step` is true on the pushed
   `player_turn_attack`.
+
+### Crash dump (panic → session log) (DONE)
+
+A `@panic` now writes `crashes/crash_YYYYMMDD_HHMMSS.txt` (a replayable
+session log) to the persistent dir before trapping, so a crash leaves behind
+a full event history up to the failure — enough to reconstruct the session.
+
+- **`src/crash_dump.zig`** — a custom panic namespace (`pub const panic =
+  crash_dump.panic;` in both native.zig and web.zig, replacing web's prior
+  `std.debug.simple_panic`). Mirrors simple_panic's full safety-check helper
+  set; `call` prints the message to stderr, attempts the dump, then `@trap`s.
+- **Global crash pointer:** `crash_history: ?*GameStateHistory`, `install`ed
+  by `main.run` (native, `defer uninstall`) and `web.main` (web, no uninstall
+  — tab close is shutdown). null outside a session → skip the dump.
+- **Emergency allocator:** the dump uses `std.heap.page_allocator` for its
+  output buffer, never the game's arenas (which may be inconsistent at panic
+  time). Reads `event_history.items` (history_arena-backed — a panic is
+  almost always a logic error, not heap corruption, so arenas are normally
+  intact). io handle + persistent dir are entry-file-owned, safe to reuse.
+  Every failure swallowed — the dump is best-effort, never a cascade.
+- **Scope: Zig panics ONLY** (not SIGSEGV signal handlers — deferred; the
+  arena/integer-only model makes wild-pointer segfaults rare). Web is
+  best-effort (IDBFS syncfs may not flush before tab close); native is the
+  reliable path.
+- **Output = standard session-log format** (via `parser.writeEventLog`),
+  loadable by `parser.loadEventLog` + `reconstructFromEventLog` — a crash
+  file IS a replayable session log, just named `crash_*` and filed under
+  `crashes/` (distinct from manual ctrl+L `session_log_*` in `logs/`).
+- **Tests:** `dump` writes a parseable crash file to a scratch persistent dir
+  (reuses the harness for configs, repoints `history.file_source` at the
+  scratch dir, asserts one file under `crashes/` that round-trips to the same
+  event count via `loadEventLog`); `install`/`uninstall` compile-test (the
+  pointer's effect is only observable via `panic.call`, which traps — not
+  unit-testable).
