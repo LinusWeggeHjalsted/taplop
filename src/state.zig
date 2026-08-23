@@ -111,6 +111,22 @@ pub const SessionState = struct {
     /// anims start at frame 0 (raw wall-clock mod would start mid-loop).
     animation_clock: u64 = 0,
 
+    /// Non-pause-gated session-relative monotonic clock (accumulated
+    /// microseconds). Unlike `animation_clock` (which freezes during pause),
+    /// this advances every frame regardless — used for debounced write
+    /// deadlines (settings persistence, future editor autosave) so writes fire
+    /// even while the options menu is open. Off the undoable GameState, so
+    /// replay-safe by construction. See AGENTS → Input.
+    session_clock: u64 = 0,
+
+    /// Pending debounced writes (settings persistence, future editor
+    /// autosave). A small fixed array keyed by `PendingWrite.Tag`; each tag
+    /// coalesces (a new dirty-mark refreshes the deadline rather than
+    /// enqueueing a second write). Fired by `frame()` when the deadline
+    /// elapses (gated `!replaying` — but `frame()` is the live path, so the
+    /// gate is automatic). See AGENTS → Input.
+    pending_writes: [max_pending_writes]?PendingWrite = .{null} ** max_pending_writes,
+
     // A recoverable load failure (a corrupt/overridden config file, an
     // incompatible session log, etc.) surfaced to the player as a modal
     // popup. Set by the drain loop after a handler returns an error and
@@ -155,6 +171,101 @@ pub const SessionState = struct {
     pub fn pendingError(self: *const SessionState) ?[]const u8 {
         return self.pending_error;
     }
+
+    /// Mark a debounced write as dirty. If a write with the same tag is
+    /// already pending, refresh its deadline (debounce — a burst of changes
+    /// coalesces into one write). If not, enqueue a new one. The max-wait cap
+    /// guarantees a write fires within `write_max_wait_microseconds` of the
+    /// first dirty mark even under continuous change (a steady stream that
+    /// keeps refreshing the debounce would otherwise never fire). `now` is
+    /// `session_clock` at the call site. See AGENTS → Input.
+    pub fn markWriteDirty(
+        self: *SessionState,
+        tag: PendingWrite.Tag,
+        write_fn: *const fn (*GameStateHistory) void,
+        now: u64,
+    ) void {
+        // Refresh existing entry (debounce).
+        for (&self.pending_writes) |*slot| {
+            if (slot.*) |*entry| {
+                if (entry.tag == tag) {
+                    // If the dirty-since age already exceeds max-wait, fire
+                    // immediately; otherwise push the deadline out by the
+                    // debounce interval from now.
+                    if (now - entry.dirty_since >= write_max_wait_microseconds) {
+                        entry.deadline = now;
+                    } else {
+                        entry.deadline = now + write_debounce_microseconds;
+                    }
+                    return;
+                }
+            }
+        }
+        // Enqueue a new entry.
+        for (&self.pending_writes) |*slot| {
+            if (slot.* == null) {
+                slot.* = .{
+                    .tag = tag,
+                    .write_fn = write_fn,
+                    .dirty_since = now,
+                    .deadline = now + write_debounce_microseconds,
+                };
+                return;
+            }
+        }
+        // No room — the array is too small (a real bug; max_pending_writes
+        // should cover all tags). Fire immediately as a fallback.
+        write_fn(undefined);
+    }
+
+    /// Fire any pending writes whose deadline has elapsed. Called by `frame()`
+    /// each tick after advancing `session_clock`. `history` is passed to each
+    /// writer fn. Gated `!replaying` — but `frame()` is the live path (replay
+    /// goes through `restoreTo`/`replayTo`, not `frame()`), so the gate is
+    /// automatic. See AGENTS → Input.
+    pub fn fireElapsedWrites(self: *SessionState, history: *GameStateHistory, now: u64) void {
+        for (&self.pending_writes) |*slot| {
+            if (slot.*) |entry| {
+                if (now >= entry.deadline) {
+                    entry.write_fn(history);
+                    slot.* = null;
+                }
+            }
+        }
+    }
+
+    /// Flush all pending writes immediately (shutdown safety net). Called by
+    /// the native driver's `defer` and the web `beforeunload` handler so a
+    /// quick change-then-quit isn't lost. See AGENTS → Input.
+    pub fn flushPendingWrites(self: *SessionState, history: *GameStateHistory) void {
+        for (&self.pending_writes) |*slot| {
+            if (slot.*) |entry| {
+                entry.write_fn(history);
+                slot.* = null;
+            }
+        }
+    }
+};
+
+/// Maximum number of concurrent pending writes (one per tag). Covers all
+/// debounced-write systems; growing past this is a real bug.
+const max_pending_writes: usize = 4;
+
+/// Debounced-write cadence. A dirty mark fires after `write_debounce_microseconds`
+/// of quiet, or immediately if dirty for longer than `write_max_wait_microseconds`
+/// (so a continuous stream of changes can't starve the write forever).
+const write_debounce_microseconds: u64 = 1 * std.time.us_per_s;
+const write_max_wait_microseconds: u64 = 5 * std.time.us_per_s;
+
+/// One pending debounced write. `write_fn` is called with the `GameStateHistory`
+/// when the deadline elapses. See `SessionState.markWriteDirty`.
+pub const PendingWrite = struct {
+    pub const Tag = enum { settings };
+
+    tag: Tag,
+    write_fn: *const fn (*GameStateHistory) void,
+    dirty_since: u64,
+    deadline: u64,
 };
 
 /// The world point grabbed at the start of a camera-pan drag, in float tile

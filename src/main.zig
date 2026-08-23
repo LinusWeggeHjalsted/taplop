@@ -195,6 +195,13 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // without inspecting events.
     const player_position_before = view_mod.playerPosition(&history.current_state);
 
+    // Advance the non-pause-gated session clock (used for debounced write
+    // deadlines). Unlike animation_clock, this advances every frame regardless
+    // of pause so writes fire even while the options menu is open. Done before
+    // the drain so markWriteDirty (called during the drain via
+    // handleAnytimeInput) sees an up-to-date clock. See AGENTS → Input.
+    history.session.session_clock +%= delta_microseconds;
+
     // Drain: call update() repeatedly until the stack empties, a wait
     // activates, or the drain budget elapses — whichever comes first. update()
     // handles one event OR one idle input per call (plus anytime input, drag,
@@ -295,6 +302,13 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         history.session.animation_clock +%= delta_microseconds;
     }
 
+    // Fire any debounced writes whose deadline has elapsed (settings
+    // persistence, future editor autosave). Runs after all updates so dirty
+    // marks from this frame's input are registered before the check.
+    // `frame()` is the live path — replay goes through restoreTo/replayTo,
+    // not here — so the !replaying gate is automatic. See AGENTS → Input.
+    history.session.fireElapsedWrites(history, history.session.session_clock);
+
     // Render gate: only build+render a frame when enough real time has elapsed
     // since the last render AND we're not mid-drain. During an active event
     // drain (stack non-empty, no wait) we skip rendering — intermediate states
@@ -393,6 +407,10 @@ pub fn run(
     defer setup.frame_state.frame_arena.deinit();
     crash_dump.install(&setup.frame_state.history);
     defer crash_dump.uninstall();
+    // Shutdown safety net: flush any pending debounced writes (e.g. settings
+    // changed moments before quit) so a quick change-then-exit isn't lost.
+    // Runs before the arena deinit. See AGENTS → Input.
+    defer setup.frame_state.history.session.flushPendingWrites(&setup.frame_state.history);
     gameLoop(backend, &setup.frame_state);
 }
 

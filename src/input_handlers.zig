@@ -36,6 +36,24 @@ const camera_zoom_step: f32 = 0.25;
 const min_camera_zoom: f32 = camera_zoom_step;
 const max_camera_zoom: f32 = 1.0;
 const default_camera_zoom: f32 = 0.5;
+
+/// Write the current settings to `~/.ziglop/settings.txt` (best-effort —
+/// errors are swallowed since a failed preferences write is not critical;
+/// the preference just doesn't persist). Called as a `PendingWrite` writer
+/// when the settings debounce fires. See AGENTS → Input.
+pub fn writeSettingsToFile(history: *GameStateHistory) void {
+    const allocator = history.backing_allocator;
+    const bytes = parser.writeSettings(history.settings, allocator) catch return;
+    defer allocator.free(bytes);
+    history.file_source.writeFile("settings.txt", bytes) catch return;
+}
+
+/// Mark settings as dirty for debounced persistence. Called after any tunable
+/// setting actually changes (zoom now; volumes/gameplay when their UI lands).
+/// See AGENTS → Input.
+fn markSettingsDirty(history: *GameStateHistory) void {
+    history.session.markWriteDirty(.settings, writeSettingsToFile, history.session.session_clock);
+}
 const PlayerInput = input.PlayerInput;
 const Vector2 = types.Vector2;
 const Entity = types.Entity;
@@ -334,19 +352,33 @@ pub fn handleAnytimeInput(
         const zoom_step: f32 = camera_zoom_step;
         const delta: f32 = anytime.scroll_delta * zoom_step;
         const clamped = @max(min_camera_zoom, @min(max_camera_zoom, history.settings.camera_zoom + delta));
-        history.settings.camera_zoom = clamped;
+        if (clamped != history.settings.camera_zoom) {
+            history.settings.camera_zoom = clamped;
+            markSettingsDirty(history);
+        }
     }
 
     // Keyboard zoom shortcuts (ctrl+I / ctrl+O / ctrl+0). Same additive
     // step + bounds as the wheel. Reset snaps to the default.
     if (anytime.zoom_in) {
-        history.settings.camera_zoom = @min(max_camera_zoom, history.settings.camera_zoom + camera_zoom_step);
+        const new_zoom = @min(max_camera_zoom, history.settings.camera_zoom + camera_zoom_step);
+        if (new_zoom != history.settings.camera_zoom) {
+            history.settings.camera_zoom = new_zoom;
+            markSettingsDirty(history);
+        }
     }
     if (anytime.zoom_out) {
-        history.settings.camera_zoom = @max(min_camera_zoom, history.settings.camera_zoom - camera_zoom_step);
+        const new_zoom = @max(min_camera_zoom, history.settings.camera_zoom - camera_zoom_step);
+        if (new_zoom != history.settings.camera_zoom) {
+            history.settings.camera_zoom = new_zoom;
+            markSettingsDirty(history);
+        }
     }
     if (anytime.zoom_reset) {
-        history.settings.camera_zoom = default_camera_zoom;
+        if (history.settings.camera_zoom != default_camera_zoom) {
+            history.settings.camera_zoom = default_camera_zoom;
+            markSettingsDirty(history);
+        }
     }
 
     // In-game inputs only apply when in a hub or level
