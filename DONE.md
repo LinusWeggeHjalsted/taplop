@@ -2429,6 +2429,20 @@ FreeZilla TTF slice above (the font is loaded; this makes layout measure it).
   codepoints 32..126 (missing glyphs keep zero-init; the 0.5em fallback
   covers them in `measureSpanWidth`). Uniform for the TTF and the default-
   font fallback, so layout matches whichever font is active.
+- **Per-glyph spacing (the fit fix):** raylib's `DrawTextEx` advances the
+  cursor by `advanceX * (font_size/base_size) + spacing` per glyph, where
+  `spacing = font_size/10`. The first cut of `measureSpanWidth` summed only
+  `advanceX * (font_size/base_size)` — no spacing — so the measured width
+  was smaller than the rendered width by `spacing × glyph_count`, and text
+  overflowed panel right edges. Fix: `measureSpanWidth` now mirrors
+  `DrawTextEx`'s cursor exactly — `advanceX * scaleFactor + spacing` per
+  glyph, float-accumulated — so the measure matches where the renderer's
+  cursor lands and multi-span emit (`x += measureSpanWidth`) flows like one
+  continuous string. The spacing divisor lives once as
+  `ui.glyph_spacing_font_divisor = 10`, shared by `measureSpanWidth` and
+  `drawTextLabel` (replacing its hardcoded `font_size/10`) — one source of
+  truth. Zero-advance glyphs (not in the font / blank) fall back to 0.5em +
+  spacing, approximating raylib's `recs.width` fallback.
 - **Threading:** `RenderContext` gained `font_metrics: ui.FontMetrics`;
   `frame()` reads `backend.fontMetrics()` into it; `view()` passes it to
   `buildBottomBar` / `buildMainMenu` / `buildTooltip` / `buildErrorPopup`,

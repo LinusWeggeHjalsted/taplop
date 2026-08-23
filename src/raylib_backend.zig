@@ -735,12 +735,13 @@ pub const RaylibBackend = struct {
         // bold/italic are still ignored (no bold/italic faces loaded).
         const text = self.frame_arena.allocator().dupeZ(u8, label.text) catch return;
         const font_size: f32 = @floatFromInt(label.font_size);
+        const spacing: f32 = font_size / @as(f32, @floatFromInt(ui.glyph_spacing_font_divisor));
         rl.drawTextEx(
             self.font,
             text,
             .{ .x = @floatFromInt(label.screen_position.x), .y = @floatFromInt(label.screen_position.y) },
             font_size,
-            font_size / 10, // spacing (roughly one base-size pixel per glyph)
+            spacing, // per-glyph spacing shared with FontMetrics measure
             toRaylibColor(label.color, 255),
         );
     }

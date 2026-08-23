@@ -183,6 +183,13 @@ pub fn italic(value: []const u8) Span {
 // value type (no raylib import) so the measurement seam stays testable in
 // the headless build.
 
+/// Per-glyph extra spacing the renderer adds between glyphs, expressed as
+/// `font_size / glyph_spacing_font_divisor`. Shared by `FontMetrics`
+/// measurement and `RaylibBackend.drawTextLabel` so layout measure matches
+/// render advance (raylib's `DrawTextEx` adds this per glyph to the cursor).
+/// One source of truth — keep the two in sync.
+pub const glyph_spacing_font_divisor: i32 = 10;
+
 /// Per-glyph advance widths for the loaded font, in source pixels at
 /// `base_size`. Indexed by ASCII codepoint (32..126); a codepoint outside
 /// that range falls back to a rough 0.5em advance. The backend fills this
@@ -195,18 +202,23 @@ pub const FontMetrics = struct {
     /// Advance width at `base_size` for ASCII codepoint `(index + 32)`.
     advances: [95]i32,
 
-    /// Advance width of a span at `font_size`, in reference pixels. Scales
-    /// the per-glyph advances by `font_size / base_size`. UTF-8-aware: ASCII
-    /// bytes (one byte = one codepoint) index `advances`; a multibyte
-    /// sequence skips its full byte length and uses the 0.5em fallback (its
-    /// codepoint is always > 126, so it never indexes `advances`).
+    /// Advance width of a span at `font_size`, in reference pixels. Mirrors
+    /// raylib's `DrawTextEx` cursor advance per glyph — `advanceX *
+    /// (font_size / base_size) + spacing` — so the measure matches where the
+    /// renderer's cursor actually lands (and multi-span emit flows like one
+    /// continuous string). Float-accumulated per glyph, truncated to i32 at
+    /// the end. UTF-8-aware: ASCII bytes index `advances`; a multibyte
+    /// sequence skips its full byte length (clamped to the slice end) and
+    /// uses the 0.5em fallback + spacing.
     pub fn measureSpanWidth(self: FontMetrics, span: Span, font_size: i32) i32 {
-        var total: i32 = 0;
+        const scale_factor: f32 = @as(f32, @floatFromInt(font_size)) / @as(f32, @floatFromInt(self.base_size));
+        const spacing: f32 = @as(f32, @floatFromInt(font_size)) / @as(f32, @floatFromInt(glyph_spacing_font_divisor));
+        var total: f32 = 0;
         var i: usize = 0;
         while (i < span.text.len) {
             const byte = span.text[i];
             if (byte < 0x80) {
-                total += self.asciiAdvance(byte, font_size);
+                total += self.asciiAdvance(byte, font_size, scale_factor, spacing);
                 i += 1;
             } else {
                 // Multibyte lead byte: skip the whole sequence (clamped to
@@ -220,20 +232,28 @@ pub const FontMetrics = struct {
                     else => 1, // invalid lead byte — skip one, stay in bounds
                 };
                 i += @min(len, span.text.len - i);
-                total += @divTrunc(font_size, 2);
+                total += @as(f32, @floatFromInt(font_size)) * 0.5 + spacing;
             }
         }
-        return total;
+        return @intFromFloat(total);
     }
 
-    /// Advance for a single ASCII byte at `font_size`.
-    fn asciiAdvance(self: FontMetrics, byte: u8, font_size: i32) i32 {
+    /// Per-glyph advance for one ASCII byte at `font_size`. Matches raylib's
+    /// `DrawTextEx`: `advanceX * scaleFactor + spacing` when the glyph has a
+    /// nonzero advance, else a 0.5em fallback (raylib falls back to
+    /// `recs.width`; we approximate with 0.5em — close enough for the rare
+    /// zero-advance glyph).
+    fn asciiAdvance(self: FontMetrics, byte: u8, font_size: i32, scale_factor: f32, spacing: f32) f32 {
         if (byte >= 32 and byte <= 126) {
             const advance = self.advances[byte - 32];
-            return @divTrunc(advance * font_size, self.base_size);
+            if (advance > 0) {
+                return @as(f32, @floatFromInt(advance)) * scale_factor + spacing;
+            }
+            // Zero-advance glyph (not in the font / blank). Use 0.5em.
+            return @as(f32, @floatFromInt(font_size)) * 0.5 + spacing;
         }
         // Control character or DEL — 0.5em fallback.
-        return @divTrunc(font_size, 2);
+        return @as(f32, @floatFromInt(font_size)) * 0.5 + spacing;
     }
 
     /// Total width of a row's spans laid out on one line, in reference pixels.
@@ -253,13 +273,14 @@ pub fn lineHeight(font_size: i32) i32 {
 }
 
 test "measurement seam: row width sums spans, bold equals plain" {
-    // Synthetic metrics: base_size 100, uniform 50px advance per ASCII glyph
-    // — reproduces the old placeholder arithmetic (0.5em per char) so the
-    // wrapping/layout tests below stay deterministic and font-agnostic.
+    // Synthetic metrics: base_size 100, uniform 50px advance per ASCII glyph.
+    // With the shared per-glyph spacing (font_size/10 = 10px), each glyph
+    // measures 50 + 10 = 60px — reproduces raylib's DrawTextEx cursor advance
+    // so the wrapping/layout tests below stay deterministic and font-agnostic.
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const font_size: i32 = 100;
-    // Plain: 4 glyphs * 50px = 200.
-    try std.testing.expectEqual(@as(i32, 200), metrics.measureSpanWidth(text("abcd"), font_size));
+    // Plain: 4 glyphs * (50 advance + 10 spacing) = 240.
+    try std.testing.expectEqual(@as(i32, 240), metrics.measureSpanWidth(text("abcd"), font_size));
     // Only the regular face is loaded, so bold renders identical to plain —
     // the metrics reflect that honestly (no bold inflation).
     try std.testing.expectEqual(
@@ -1244,12 +1265,12 @@ test "buildSkillTooltip lays out name, description, type, then non-null vars" {
 }
 
 test "wrapRow breaks at spaces and drops the break space" {
-    const font_size: i32 = 100; // 1 char = 50px plain
+    const font_size: i32 = 100; // 1 char = 60px (50 advance + 10 spacing)
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const row: TooltipRow = &.{text("aa bb cc")};
 
-    // content_width 260 fits "aa bb" (100+50+100=250) but not a third word.
-    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 260);
+    // content_width 310 fits "aa bb" (120+60+120=300) but not a third word.
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 310);
     defer {
         for (lines) |line| std.testing.allocator.free(line);
         std.testing.allocator.free(lines);
@@ -1894,13 +1915,14 @@ test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
 }
 
 test "wrapRow breaks on '/' for paths" {
-    // font_size 100 → 1 char = 50px plain. content_width 350 fits 7 chars.
-    // "aa/bb/cc" is 8 chars = 400px > 350, so it wraps at a '/'.
+    // font_size 100 → 1 char = 60px (50 advance + 10 spacing). content_width
+    // 380 fits "aa/bb/" (6 glyphs = 360) but not a third segment, so it
+    // wraps at a '/' and the first line keeps the trailing slash.
     const font_size: i32 = 100;
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const row: TooltipRow = &.{text("aa/bb/cc")};
 
-    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 350);
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 380);
     defer {
         for (lines) |line| std.testing.allocator.free(line);
         std.testing.allocator.free(lines);
@@ -1915,13 +1937,13 @@ test "wrapRow breaks on '/' for paths" {
 }
 
 test "wrapRow character-wraps a token wider than the content width" {
-    // font_size 100 → 1 char = 50px. content_width 200 fits 4 chars.
-    // "abcdefgh" is 8 chars = 400px > 200, no spaces or slashes → char-wrap.
+    // font_size 100 → 1 char = 60px. content_width 240 fits 4 chars.
+    // "abcdefgh" is 8 chars = 480px > 240, no spaces or slashes → char-wrap.
     const font_size: i32 = 100;
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const row: TooltipRow = &.{text("abcdefgh")};
 
-    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 200);
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 240);
     defer {
         for (lines) |line| std.testing.allocator.free(line);
         std.testing.allocator.free(lines);
@@ -1943,7 +1965,7 @@ test "wrapRow: normal space wrapping still works" {
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const row: TooltipRow = &.{text("aa bb cc")};
 
-    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 260);
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 310);
     defer {
         for (lines) |line| std.testing.allocator.free(line);
         std.testing.allocator.free(lines);
