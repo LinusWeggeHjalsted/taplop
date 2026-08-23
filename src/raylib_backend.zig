@@ -87,8 +87,9 @@ const mouse_mappings = [_]MouseMapping{
 };
 
 /// Upper bound on events emitted in a single frame: one edge per mapped
-/// key/button (down or up, never both in one frame) plus one mouse-move.
-const max_events_per_frame = key_mappings.len + mouse_mappings.len + 1;
+/// key/button (down or up, never both in one frame), one mouse-move, and one
+/// mouse-scroll (accumulated wheel delta).
+const max_events_per_frame = key_mappings.len + mouse_mappings.len + 1 + 1;
 
 /// Maps reference-space content to the actual window: a uniform scale plus a
 /// centering offset (the letterbox bars). `render` uses it to blit; `pollInput`
@@ -308,6 +309,16 @@ pub const RaylibBackend = struct {
                 self.event_buffer[count] = .{ .mouse_button_up = mapping.id };
                 count += 1;
             }
+        }
+
+        // Mouse wheel: accumulated scroll delta since last frame (positive =
+        // scroll up = zoom in). Not an edge — raylib accumulates it internally
+        // and resets on pollInputEvents — so reading before the pump is fine
+        // (same as the mouse position read above).
+        const wheel = rl.getMouseWheelMove();
+        if (wheel != 0) {
+            self.event_buffer[count] = .{ .mouse_scroll = wheel };
+            count += 1;
         }
 
         // Pump the OS event queue AFTER reading edges. On native this calls

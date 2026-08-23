@@ -25,6 +25,15 @@ const build_info = @import("build_info");
 const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
 const Event = events.Event;
+
+/// Mouse-wheel zoom cadence + bounds. Additive in fixed steps (one zoom-in
+/// then one zoom-out returns to the exact same value — no float drift).
+/// Default 1.0; scroll up zooms in, scroll down zooms out. Tune from feel;
+/// if linear spacing feels uneven across the range, swap the additive step
+/// for a generated level table (a localized change here).
+const camera_zoom_step: f32 = 0.125;
+const min_camera_zoom: f32 = 0.125;
+const max_camera_zoom: f32 = 2.0;
 const PlayerInput = input.PlayerInput;
 const Vector2 = types.Vector2;
 const Entity = types.Entity;
@@ -315,8 +324,15 @@ pub fn handleAnytimeInput(
     if (history.session.ui_state.options_menu_open) return;
 
     if (anytime.scroll_delta != 0) {
-        const zoom_speed: f32 = 0.1;
-        history.settings.camera_zoom = @max(0.1, history.settings.camera_zoom + anytime.scroll_delta * zoom_speed);
+        // Additive zoom in fixed steps, clamped to [min, max]. Additive (not
+        // multiplicative) so one zoom-in followed by one zoom-out always
+        // returns to the exact same value (no float drift). scroll_delta is
+        // accumulated wheel notches (positive = scroll up = zoom in); a single
+        // notch is ±1.0, scaled by the step. Tune the step/bounds from feel.
+        const zoom_step: f32 = camera_zoom_step;
+        const delta: f32 = anytime.scroll_delta * zoom_step;
+        const clamped = @max(min_camera_zoom, @min(max_camera_zoom, history.settings.camera_zoom + delta));
+        history.settings.camera_zoom = clamped;
     }
 
     // In-game inputs only apply when in a hub or level
