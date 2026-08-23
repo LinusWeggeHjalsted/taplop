@@ -484,7 +484,10 @@ fn collectEntityEntries(
     camera: types.Camera,
     zoom: f32,
 ) void {
+    // Dead entities (current_health == 0) are not rendered — their sprite
+    // vanishes on death.
     for (entities) |entity| {
+        if (entity.current_health == 0) continue;
         list.append(allocator, .{
             .sort_y = entity.position.y,
             .sort_x = entity.position.x,
