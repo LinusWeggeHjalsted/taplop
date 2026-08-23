@@ -2131,3 +2131,31 @@ persistent dir, overlaid on the shipped `data/default_settings.txt`.
   critical). `markSettingsDirty` is called after any actual zoom change
   (guarded by `new != current` so a clamped no-op scroll doesn't queue a
   write).
+
+### Reflection fixes (done)
+
+Two small hardenings from a mid-session reflection:
+
+**`max_events_per_frame` made update-proof.** Was `key_mappings.len +
+mouse_mappings.len + 1 + 1` with two unexplained magic `+1`s; adding a new
+mapping array (gamepad, touch) or a new non-edge event source needed a
+manual bump (a missed bump = silent runtime buffer overflow, no compile
+error). Now `key_mappings.len + mouse_mappings.len + non_edge_events_per_frame`
+where `non_edge_events_per_frame = 2` (mouse-move + mouse-scroll) is a named
+constant. Adding a mapping array only needs `+ new_mappings.len` in the sum;
+adding a non-edge source bumps the one named constant. The formula
+self-documents the "at most one edge per mapped source per frame" invariant.
+
+**Convention comment in `data/decorations.txt`.** The footprint coordinate
+convention (sprite-grid, top-left origin, y-down) was documented in AGENTS
+but invisible at the authoring point — a previous session authored ruins
+1-3 under a bottom-left (y-up) assumption and the mismatch only surfaced on
+review. Added a `#`-comment block at the top of the file (after Metadata)
+stating the convention. The parser treats `#` lines as raw content in
+non-Layout sections (ignored by loaders), so comments are safe outside
+Layout sections. Layout sections cannot have comments (a `#` line becomes a
+grid row), so the y-down grid convention stays AGENTS-only.
+
+**AGENTS "Zig 0.16 Gotchas" expanded** with the two I hit this session: no
+default parameter values, `///` doc comments invalid inside function bodies,
+`opaque` is a reserved keyword.

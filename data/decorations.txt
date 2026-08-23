@@ -1,6 +1,12 @@
 Metadata
 file_format_version 1
 
+# Decoration footprint coordinates are in the SPRITE'S OWN tile grid (each
+# 256x256 cell), top-left origin, y increasing DOWNWARD (standard PNG/image
+# coords). One `footprint x y` line per reserved tile. The anchor (layout
+# char position) is derived as the bottom-most-then-left-most footprint tile.
+# See AGENTS → Decorations & Footprint.
+
 Decorations
 sprite tree_1
 color_index 4

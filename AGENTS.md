@@ -1545,7 +1545,14 @@ download from ~39 MB to ~8 MB, mostly art.
 - PriorityQueue: `.empty`, `.push(allocator, item)`, `.pop()`, `.deinit(allocator)`
 - Dir.writeFile takes an options struct: `.{ .sub_path = path, .data = data }`
 - File I/O needs Io handle: `std.Io.Threaded.init(allocator, .{})`, `std.Io.Dir.cwd()`
-- No `std.enums.count()` — use `@typeInfo(MyEnum).@"enum".fields.len`
+- No `std.enums.count()` — use `@typeInfo(MyEnum)."@"enum".fields.len`
+- No default parameter values — `fn f(x: i32 = 0)` is a compile error. Use
+  a required param + callers pass the default, or an optional `?T` the
+  caller fills with `null`.
+- `///` doc comments are valid ONLY on declarations (top-level consts,
+  fns, types, fields). Inside a function body it's always `//` — a `///`
+  there is "expected statement, found a document comment".
+- `opaque` is a reserved keyword (opaque types) — don't name a variable it.
 
 ## Key Files
 

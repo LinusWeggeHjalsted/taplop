@@ -88,10 +88,16 @@ const mouse_mappings = [_]MouseMapping{
     .{ .button = .middle, .id = "middle" },
 };
 
-/// Upper bound on events emitted in a single frame: one edge per mapped
-/// key/button (down or up, never both in one frame), one mouse-move, and one
-/// mouse-scroll (accumulated wheel delta).
-const max_events_per_frame = key_mappings.len + mouse_mappings.len + 1 + 1;
+/// Upper bound on events emitted in a single frame. Each mapped key/button
+/// contributes at most ONE event per frame (down or up — never both, the
+/// pollInput loop uses `else if`), so `key_mappings.len + mouse_mappings.len`
+/// bounds the edge events. The non-edge events (always-one mouse-move, the
+/// mouse-scroll wheel delta) add `non_edge_events_per_frame`. Adding a new
+/// mapping array (gamepad, touch) only needs to be added to the sum below;
+/// adding a new non-edge event source bumps `non_edge_events_per_frame`.
+/// No manual bumping on per-source changes — the formula tracks the counts.
+const non_edge_events_per_frame: usize = 2; // mouse-move + mouse-scroll
+const max_events_per_frame = key_mappings.len + mouse_mappings.len + non_edge_events_per_frame;
 
 /// Maps reference-space content to the actual window: a uniform scale plus a
 /// centering offset (the letterbox bars). `render` uses it to blit; `pollInput`
