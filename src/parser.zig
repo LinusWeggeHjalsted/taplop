@@ -142,7 +142,7 @@ pub const KeyValuePair = struct {
 };
 
 /// A group of key-value pairs separated by blank lines within a section.
-/// For example, each input binding in settings.txt is one entry group.
+/// For example, each input binding in default_settings.txt is one entry group.
 pub const EntryGroup = struct {
     pairs: []const KeyValuePair,
 };
@@ -3205,7 +3205,7 @@ test "parseConfigFileFromPath reads a file from disk without error" {
 
     const parsed = try parseConfigFileFromPath(
         &file_source,
-        "data/settings.txt",
+        "data/default_settings.txt",
         allocator,
     );
     defer allocator.free(parsed.raw_text);
@@ -4464,7 +4464,7 @@ test "writeEventLog serializes representative event shapes" {
     try std.testing.expectEqualStrings("meta_event open_main_menu", sections[1].entry_groups[0].pairs[1].value);
 }
 
-test "data/settings.txt binds ctrl+L to dump_event_log" {
+test "data/default_settings.txt binds ctrl+L to dump_event_log" {
     const allocator = std.testing.allocator;
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
@@ -4473,7 +4473,7 @@ test "data/settings.txt binds ctrl+L to dump_event_log" {
 
     const parsed = try parseConfigFileFromPath(
         &file_source,
-        "data/settings.txt",
+        "data/default_settings.txt",
         allocator,
     );
     defer allocator.free(parsed.raw_text);

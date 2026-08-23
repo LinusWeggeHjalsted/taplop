@@ -1,6 +1,6 @@
 //! Input pipeline. Translates raw platform input (keyboard, mouse, touch)
 //! into `PlayerInput` (anytime actions, idle game actions, pointer/drag
-//! state) against the keybindings in `data/settings.txt`. Owns the camera
+//! state) against the keybindings in `data/default_settings.txt`. Owns the camera
 //! transforms: `screenToTile` (reference-space inverse) and `floatWorldPoint`
 //! (sub-tile float inverse, for camera pan). `tile_size_pixels` (256) is the
 //! shared gameplay↔screen scale.

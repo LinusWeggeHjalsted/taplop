@@ -186,7 +186,7 @@ in sync with the lifecycle above as work lands.
   are excluded from the test-root scan in `build.zig` (`collectZigFiles`). If
   you add another raylib-linked file, exclude it too.
 - raylib key ids are emitted in Web `KeyboardEvent.code` form (`KeyZ`, `Escape`,
-  `Digit1`, `ControlLeft`, ...) to match `data/settings.txt` bindings.
+  `Digit1`, `ControlLeft`, ...) to match `data/default_settings.txt` bindings.
 - Coordinate space: `pollInput` reports the viewport AS the reference
   resolution and maps the pointer into reference space (inverse letterbox), so
   the whole game — UI hit-testing and screenToTile alike — works in reference
@@ -271,7 +271,7 @@ units, so pause freezing also freezes one-shots mid-flight.
 
 ### Frame rate
 
-`settings.animation_fps: u32 = 8` (Display section of `data/settings.txt`) is
+`settings.animation_fps: u32 = 8` (Display section of `data/default_settings.txt`) is
 the ONE global rate all anims share; frame duration = `1_000_000 /
 animation_fps` microseconds. `view()` reads it (for the flag now; for one-shot
 gating later). A future anim needing a different rate becomes a per-anim
@@ -655,7 +655,7 @@ ALL content + artifact reads go through ONE `FileSource` object living on
 `GameStateHistory` next to `settings` (never deep-copied into snapshots,
 never touched by replay). It exposes:
   - `readFile(allocator, path) -> []const u8` — reads against a normalized
-    project-root-relative path (`"data/settings.txt"`, `"assets/world/tile.png"`).
+    project-root-relative path (`"data/default_settings.txt"`, `"assets/world/tile.png"`).
   - `writeFile(path, bytes)` — writes to the persistent dir ONLY; rejects
     `data/`/`assets/` prefixes with a panic (shipped content is immutable
     from the game's perspective).

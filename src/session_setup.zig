@@ -112,17 +112,19 @@ fn loadWeaponTypeDefinitionWrapped(
     return parser.loadWeaponTypeDefinition(sections);
 }
 
-/// Load settings from data/settings.txt, falling back to the embedded copy on
-/// parse failure (see AGENTS → Error Handling). The embedded copy is a better
-/// fallback than hardcoded defaults — it preserves keybindings and other
-/// authored values; hardcoded defaults are only the "embedded copy missing
-/// entirely" panic case (a real bug).
+/// Load settings from data/default_settings.txt, falling back to the embedded
+/// copy on parse failure (see AGENTS → Error Handling). The embedded copy is a
+/// better fallback than hardcoded defaults — it preserves keybindings and
+/// other authored values; hardcoded defaults are only the "embedded copy
+/// missing entirely" panic case (a real bug). User preferences live in a
+/// separate persistent `settings.txt` overlaid on top of these defaults —
+/// see `overlayUserSettings`.
 pub fn loadSettingsFromDisk(
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
     warnings: Warnings,
 ) Settings {
-    return loadConfigWithFallback(Settings, file_source, allocator, "data/settings.txt", parser.loadSettings, parser.settings_key_map, warnings);
+    return loadConfigWithFallback(Settings, file_source, allocator, "data/default_settings.txt", parser.loadSettings, parser.settings_key_map, warnings);
 }
 
 /// Load color theme definitions from data/color_themes.txt, falling back to
@@ -281,7 +283,7 @@ test "loadConfigWithFallback: broken persistent shadow falls back to embedded + 
     defer threaded_io.deinit();
     const io = threaded_io.io();
 
-    // Scratch persistent dir with a broken data/settings.txt shadow.
+    // Scratch persistent dir with a broken data/default_settings.txt shadow.
     const scratch = "zig-cache/test-startup-fallback";
     const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
         .open_options = .{ .access_sub_paths = true, .iterate = true },
@@ -293,7 +295,7 @@ test "loadConfigWithFallback: broken persistent shadow falls back to embedded + 
     // parse. Goes directly through the persistent dir (FileSource.writeFile
     // rejects data/ paths by policy, so we write via the dir handle).
     dir.createDirPath(io, "data") catch @panic("failed to create data dir");
-    dir.writeFile(io, .{ .sub_path = "data/settings.txt", .data = "this is not valid config" }) catch
+    dir.writeFile(io, .{ .sub_path = "data/default_settings.txt", .data = "this is not valid config" }) catch
         @panic("failed to write broken shadow");
 
     var warnings: std.ArrayList([]const u8) = .empty;
@@ -304,7 +306,7 @@ test "loadConfigWithFallback: broken persistent shadow falls back to embedded + 
     // One warning was recorded.
     try testing.expectEqual(@as(usize, 1), warnings.items.len);
     // The warning mentions the path.
-    try testing.expect(std.mem.indexOf(u8, warnings.items[0], "data/settings.txt") != null);
+    try testing.expect(std.mem.indexOf(u8, warnings.items[0], "data/default_settings.txt") != null);
 }
 
 test "loadConfigWithFallback: no shadow uses embedded directly, no warning" {
@@ -315,7 +317,7 @@ test "loadConfigWithFallback: no shadow uses embedded directly, no warning" {
     defer threaded_io.deinit();
     const io = threaded_io.io();
 
-    // Scratch persistent dir with NO data/settings.txt shadow.
+    // Scratch persistent dir with NO data/default_settings.txt shadow.
     const scratch = "zig-cache/test-startup-no-shadow";
     const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
         .open_options = .{ .access_sub_paths = true, .iterate = true },

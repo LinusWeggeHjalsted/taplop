@@ -49,7 +49,7 @@ const key_mappings = [_]KeyMapping{
     .{ .key = .right_shift, .id = "ShiftRight" },
     .{ .key = .left_alt, .id = "AltLeft" },
     .{ .key = .right_alt, .id = "AltRight" },
-    // Action keys bound in data/settings.txt.
+    // Action keys bound in data/default_settings.txt.
     .{ .key = .z, .id = "KeyZ" },
     .{ .key = .y, .id = "KeyY" },
     .{ .key = .i, .id = "KeyI" },
