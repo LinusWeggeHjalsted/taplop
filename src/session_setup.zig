@@ -154,9 +154,18 @@ pub fn overlayUserSettings(
     const user_bytes = file_source.readFile(allocator, "settings.txt") catch {
         return defaults; // No user settings file → defaults are authoritative.
     };
-    defer allocator.free(user_bytes);
+    // Lifetime contract: parseConfigFile slices KeyValuePair values directly
+    // into the raw file buffer (no duping), and loadSettings stores those
+    // input_name slices into the returned Settings.input_bindings. So the
+    // merged bindings BORROW into user_bytes. On a successful overlay,
+    // user_bytes must stay alive for the session (process-lifetime, same
+    // contract as loadConfigWithFallback); it is freed explicitly only on
+    // the error paths below, where nothing borrows from it yet.
+    // freeParsedSections frees only the section containers (pairs/
+    // entry_groups arrays), not the borrowed text, so that defer is safe.
 
     const user_sections = parser.parseConfigFile(user_bytes, allocator) catch {
+        allocator.free(user_bytes);
         warnings.append(allocator, std.fmt.allocPrint(allocator,
             "Failed to parse user settings.txt; using defaults.", .{}) catch
             @panic("failed to allocate startup warning")) catch
@@ -170,6 +179,7 @@ pub fn overlayUserSettings(
     // section. A file_format_version mismatch or parse failure is recoverable
     // (warn + keep defaults) per AGENTS → Error Handling.
     const merged = parser.loadSettings(user_sections, allocator, defaults) catch {
+        allocator.free(user_bytes);
         warnings.append(allocator, std.fmt.allocPrint(allocator,
             "Failed to load user settings.txt; using defaults.", .{}) catch
             @panic("failed to allocate startup warning")) catch
@@ -387,4 +397,119 @@ test "loadConfigWithFallback: no shadow uses embedded directly, no warning" {
     // No warning — the normal read path (persistent miss → embedded hit) is
     // not a "fallback"; only a parse failure that retries embedded is.
     try testing.expectEqual(@as(usize, 0), warnings.items.len);
+}
+
+// A wrapper allocator that POISONS freed memory (fills it with 0xAA) before
+// forwarding free to a parent allocator whose free is otherwise a no-op (an
+// arena). This turns a use-after-free into a deterministic failure: a slice
+// that dangles into a freed buffer reads back as 0xAA bytes instead of its
+// original content, so an equality assertion on the slice fails. The arena
+// keeps the freed region mapped (no segfault) and reclaims everything on
+// deinit (no leak complaints). Used only by the overlayUserSettings
+// regression test below.
+const PoisonAllocator = struct {
+    parent: std.mem.Allocator,
+    const poison_byte: u8 = 0xAA;
+
+    fn allocator(self: *PoisonAllocator) std.mem.Allocator {
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .alloc = alloc,
+                .resize = resize,
+                .remap = remap,
+                .free = free,
+            },
+        };
+    }
+
+    fn alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
+        const self: *PoisonAllocator = @ptrCast(@alignCast(ctx));
+        return self.parent.rawAlloc(len, alignment, ret_addr);
+    }
+
+    fn resize(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
+        const self: *PoisonAllocator = @ptrCast(@alignCast(ctx));
+        return self.parent.rawResize(buf, alignment, new_len, ret_addr);
+    }
+
+    fn remap(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+        const self: *PoisonAllocator = @ptrCast(@alignCast(ctx));
+        return self.parent.rawRemap(buf, alignment, new_len, ret_addr);
+    }
+
+    fn free(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
+        const self: *PoisonAllocator = @ptrCast(@alignCast(ctx));
+        @memset(buf, poison_byte);
+        self.parent.rawFree(buf, alignment, ret_addr);
+    }
+};
+
+// Regression test for a use-after-free in overlayUserSettings. parseConfigFile
+// slices input_name values directly into the raw file buffer (no duping), and
+// loadSettings stores those slices into the returned bindings — so the merged
+// bindings BORROW into the user file bytes. The old code freed user_bytes with
+// `defer` as overlayUserSettings returned, leaving every input_name slice
+// dangling; the next debounced writeSettings read freed memory and emitted
+// garbage input_name fields (the mangled ~/.ziglop/settings.txt). This test
+// drives that exact path under a poison-on-free allocator: on the old code the
+// freed user_bytes is poisoned, so the merged bindings' input_name reads back
+// as 0xAA and the assertions fail; on the fixed code user_bytes stays alive
+// (leaked for the bindings' lifetime, same contract as loadConfigWithFallback)
+// and the names round-trip intact through writeSettings.
+test "overlayUserSettings: merged bindings survive past user_bytes free (no dangle)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var poison: PoisonAllocator = .{ .parent = arena.allocator() };
+    const allocator = poison.allocator();
+    var threaded_io = std.Io.Threaded.init(testing.allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    // Scratch persistent dir so no settings.txt lands in the project root.
+    const scratch = "zig-cache/test-startup-overlay";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    // Load shipped defaults (embedded copy, leaked for process lifetime —
+    // same contract as production). These become the overlay base.
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const defaults = loadSettingsFromDisk(&file_source, allocator, &warnings);
+    try testing.expect(defaults.input_bindings.len > 0);
+
+    // Write a user settings.txt with a couple of distinct, checkable bindings.
+    // Values differ from the defaults so a dangle is observable: if the slice
+    // points at freed (poisoned) memory, it reads 0xAA, not "KeyZ"/"KeyY".
+    const user_settings =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name KeyZ
+        \\action undo
+        \\
+        \\input_type key
+        \\input_name KeyY
+        \\action redo
+    ;
+    dir.writeFile(io, .{ .sub_path = "settings.txt", .data = user_settings }) catch
+        @panic("failed to write user settings.txt");
+
+    const merged = overlayUserSettings(defaults, &file_source, allocator, &warnings);
+
+    // Overlay replaced the binding set with the two user bindings. Under the
+    // old use-after-free, these slices read as 0xAA and fail here.
+    try testing.expectEqual(@as(usize, 2), merged.input_bindings.len);
+    try testing.expectEqualStrings("KeyZ", merged.input_bindings[0].input.key);
+    try testing.expectEqualStrings("KeyY", merged.input_bindings[1].input.key);
+
+    // The real-world symptom: writeSettings read the freed input_name bytes
+    // and emitted garbage. Re-serialize and assert the names round-trip intact.
+    const written = try parser.writeSettings(merged, arena.allocator());
+    try testing.expect(std.mem.indexOf(u8, written, "input_name KeyZ") != null);
+    try testing.expect(std.mem.indexOf(u8, written, "input_name KeyY") != null);
 }

@@ -2159,3 +2159,31 @@ grid row), so the y-down grid convention stays AGENTS-only.
 **AGENTS "Zig 0.16 Gotchas" expanded** with the two I hit this session: no
 default parameter values, `///` doc comments invalid inside function bodies,
 `opaque` is a reserved keyword.
+
+### Settings persistence use-after-free fix
+
+`overlayUserSettings` (session_setup.zig) freed the user `settings.txt` bytes
+with `defer allocator.free(user_bytes)` as the function returned — but
+`parseConfigFile` slices `KeyValuePair.value` directly into the raw file
+buffer (no duping), and `loadSettings` stores those `input_name` slices into
+the returned `Settings.input_bindings`. So every merged binding's
+`input_name` dangled into freed memory. The next debounced `writeSettings`
+read freed/overwritten bytes and emitted garbage `input_name` fields (the
+mangled `~/.ziglop/settings.txt`). Only manifested on the SECOND launch
+(launch 1 had no user file → only the leaked-defaults path, whose bytes stay
+valid; launch 2 overlaid the user file → dangle).
+
+Fix: match the established `loadConfigWithFallback` contract — leak
+`user_bytes` into the session allocator on the success path (the merged
+bindings borrow from it for process lifetime); free it explicitly only on the
+two error paths (parse/load failure) where nothing borrows yet. Comment
+added documenting the lifetime. `freeParsedSections` (containers only) stays
+as a defer — it frees the section arrays, not the borrowed text.
+
+Regression test: `overlayUserSettings: merged bindings survive past
+user_bytes free` drives the overlay path under a `PoisonAllocator` (a wrapper
+that fills freed memory with 0xAA before forwarding free to a backing arena —
+turns a use-after-free into a deterministic equality-assertion failure without
+segfaulting or tripping leak detection). Fails on the old code (input_name
+reads as 0xAA); passes on the fix. Scratch dir under `zig-cache/` so no
+`settings.txt` lands in the project root.
