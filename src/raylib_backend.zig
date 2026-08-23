@@ -519,7 +519,7 @@ pub const RaylibBackend = struct {
                         .screen_position = marker.screen_position,
                         .draw_offset = .{ .x = 0, .y = 0 },
                         .source_rectangle = banner_rect,
-                        .color = marker.color,
+                        .color = marker.banner_color,
                     }, world_scale);
                 }
             },

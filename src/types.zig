@@ -963,6 +963,10 @@ pub const LevelEndDrawable = struct {
     sprite_id: []const u8,
     screen_position: ScreenPosition,
     color: Color,
+    /// Tint for the animated banner overlay (drawn over the pole). The pole
+    /// and banner are colored independently — pole = world gradient index 5,
+    /// banner = index 0 (see AGENTS → Decorations & Footprint / flag pole).
+    banner_color: Color = .{ .r = 255, .g = 255, .b = 255 },
     /// Source rectangle for the animated banner overlay (`world/flag`), or
     /// null when there is no banner (keeps the drawable backward-compatible).
     /// The banner is drawn over the pole at the same screen position + pivot;
