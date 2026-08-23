@@ -77,11 +77,30 @@ pub const InputState = struct {
     gamepad_buttons_held: [max_held_gamepad]?[]const u8 = .{null} ** max_held_gamepad,
     mouse_screen_position: ScreenPosition = .{ .x = 0, .y = 0 },
     active_touches: [max_touch_points]?ActiveTouch = .{null} ** max_touch_points,
+    /// Per-key hold timer for synthetic key repeat (see AGENTS → Input).
+    /// Parallel to `keys_held`: an entry is created on a key_down edge and
+    /// removed on key_up. Advanced by `advanceKeyRepeats` each tick; when a
+    /// held key crosses its next-repeat threshold it fires a synthetic edge
+    /// into `keys_repeated` for `checkAction` to consult. Only actions in the
+    /// repeat whitelist (movement cursors, undo/redo, skip, error-scroll)
+    /// pass `keys_repeated` to `checkAction`, so non-whitelisted bindings
+    /// (skill slots, toggles, confirm/cancel) never repeat.
+    key_repeat_state: [max_held_keys]?KeyRepeatEntry = .{null} ** max_held_keys,
 
     pub const max_held_keys = 16;
     pub const max_held_mouse = 5;
     pub const max_held_gamepad = 16;
     pub const max_touch_points = 10;
+
+    /// Per-key synthetic-repeat timer. `held_microseconds` accumulates since
+    /// the press edge; `next_repeat_at` is the held-time threshold at which
+    /// the next synthetic edge fires (initialized to the initial delay, then
+    /// bumped by the repeat interval after each fire).
+    pub const KeyRepeatEntry = struct {
+        key_id: []const u8,
+        held_microseconds: u64 = 0,
+        next_repeat_at: u64 = key_repeat_initial_delay_microseconds,
+    };
 
     pub const ActiveTouch = struct {
         id: TouchId,
@@ -122,6 +141,64 @@ pub const InputState = struct {
             }
         }
     }
+
+    /// Start (or reset) synthetic-repeat tracking for a key. Called on a
+    /// key_down edge alongside `addHeld(&keys_held, ...)`.
+    fn addRepeat(self: *InputState, id: []const u8) void {
+        // If an entry already exists for this key, reset its timer (a fresh
+        // press edge restarts the initial-delay countdown).
+        for (&self.key_repeat_state) |*slot| {
+            if (slot.*) |*entry| {
+                if (std.mem.eql(u8, entry.key_id, id)) {
+                    entry.held_microseconds = 0;
+                    entry.next_repeat_at = key_repeat_initial_delay_microseconds;
+                    return;
+                }
+            }
+        }
+        for (&self.key_repeat_state) |*slot| {
+            if (slot.* == null) {
+                slot.* = .{ .key_id = id };
+                return;
+            }
+        }
+    }
+
+    /// Stop synthetic-repeat tracking for a key. Called on key_up.
+    fn removeRepeat(self: *InputState, id: []const u8) void {
+        for (&self.key_repeat_state) |*slot| {
+            if (slot.*) |entry| {
+                if (std.mem.eql(u8, entry.key_id, id)) {
+                    slot.* = null;
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Advance all held-key repeat timers by `delta_microseconds` and, for
+    /// each key that has crossed its next-repeat threshold, append a
+    /// synthetic edge to `repeated`. Fires at most once per key per tick
+    /// (a stall that jumps past several intervals catches up by one repeat,
+    /// not a burst — real-time input does not accumulate).
+    fn advanceKeyRepeats(
+        self: *InputState,
+        delta_microseconds: u64,
+        repeated: []?[]const u8,
+    ) void {
+        for (&self.key_repeat_state) |*slot| {
+            if (slot.*) |*entry| {
+                entry.held_microseconds +%= delta_microseconds;
+                if (entry.held_microseconds >= entry.next_repeat_at) {
+                    addHeld(repeated, entry.key_id);
+                    // Skip any backlog from a large delta: schedule the next
+                    // fire one interval from now, not from the missed target.
+                    entry.next_repeat_at = entry.held_microseconds +
+                        key_repeat_interval_microseconds;
+                }
+            }
+        }
+    }
 };
 
 // ============================================================
@@ -146,6 +223,13 @@ pub const PlayerInput = struct {
 /// tuned in one place if real-world use shows it needs a dead zone for jittery
 /// clicks. Referenced by handleCameraPan.
 pub const drag_threshold_pixels: i32 = 0;
+
+/// Synthetic key-repeat cadence (see `InputState.KeyRepeatEntry`). A held
+/// key fires its first repeat after this delay, then repeats at this
+/// interval. Owns the cadence so players cannot gain a real-time advantage
+/// by twiddling OS key-repeat settings. Tuned from in-game feel.
+const key_repeat_initial_delay_microseconds: u64 = 300 * std.time.us_per_ms;
+const key_repeat_interval_microseconds: u64 = 40 * std.time.us_per_ms;
 
 /// Raw primary-pointer facts for the UI-resolution step (hit-testing, drag
 /// lifecycle). Deliberately semantic-free: main.zig decides what a press/
@@ -331,10 +415,14 @@ fn getModifiers(state: *const InputState) Modifiers {
 }
 
 /// Check if an action was triggered by any just-pressed input this tick.
+/// `keys_repeated` carries synthetic key-repeat edges for held keys (see
+/// `InputState.advanceKeyRepeats`); callers pass a non-empty slice only for
+/// actions in the repeat whitelist so non-whitelisted bindings never repeat.
 fn checkAction(
     action: types.Action,
     bindings: []const InputBinding,
     keys_pressed: []const ?[]const u8,
+    keys_repeated: []const ?[]const u8,
     mouse_pressed: []const ?[]const u8,
     gamepad_pressed: []const ?[]const u8,
     modifiers: Modifiers,
@@ -351,9 +439,11 @@ fn checkAction(
         if (binding.modifiers.shift and !modifiers.shift) continue;
         if (binding.modifiers.alt and !modifiers.alt) continue;
 
-        // Check if the bound input was just pressed
+        // Check if the bound input was just pressed (real edge) or repeated
+        // (synthetic edge for held keys, whitelist-permitting).
         const pressed = switch (binding.input) {
-            .key => |key| InputState.isHeld(keys_pressed, key),
+            .key => |key| InputState.isHeld(keys_pressed, key) or
+                InputState.isHeld(keys_repeated, key),
             .mouse_button => |button| InputState.isHeld(mouse_pressed, button),
             .gamepad_button => |gamepad| InputState.isHeld(gamepad_pressed, gamepad),
         };
@@ -370,12 +460,17 @@ pub fn translateInput(
     state: *InputState,
     settings: Settings,
     camera: Camera,
+    delta_microseconds: u64,
 ) PlayerInput {
     // Track which inputs were just pressed this tick (edge detection)
     var keys_pressed: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;
+    var keys_repeated: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;
     var mouse_pressed: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
     var mouse_released: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
     var gamepad_pressed: [InputState.max_held_gamepad]?[]const u8 = .{null} ** InputState.max_held_gamepad;
+    // Empty slice for non-whitelisted actions: checkAction never sees a
+    // synthetic edge for them. (isHeld on a zero-length slice is always false.)
+    const no_repeat: [0]?[]const u8 = .{};
 
     // Accumulate scroll delta across all events this tick
     var scroll_delta: f32 = 0;
@@ -389,11 +484,14 @@ pub fn translateInput(
             .key_down => |key| {
                 if (!InputState.isHeld(&state.keys_held, key)) {
                     InputState.addHeld(&keys_pressed, key);
+                    // Start synthetic-repeat tracking on the press edge.
+                    state.addRepeat(key);
                 }
                 InputState.addHeld(&state.keys_held, key);
             },
             .key_up => |key| {
                 InputState.removeHeld(&state.keys_held, key);
+                state.removeRepeat(key);
             },
             .mouse_button_down => |button| {
                 if (!InputState.isHeld(&state.mouse_buttons_held, button)) {
@@ -465,29 +563,37 @@ pub fn translateInput(
     const bindings = settings.input_bindings;
     const zoom = settings.camera_zoom;
 
+    // Advance synthetic key-repeat timers now that all edges for this tick
+    // have been processed (new presses start at delay, releases are gone).
+    // Fires synthetic edges into `keys_repeated` for held keys that crossed
+    // their next-repeat threshold.
+    state.advanceKeyRepeats(delta_microseconds, &keys_repeated);
+
     // Build PlayerInput from triggered actions
     var result = PlayerInput{};
 
-    // Anytime actions
-    result.anytime.undo = checkAction(.undo, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.redo = checkAction(.redo, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.toggle_options_menu = checkAction(.toggle_options_menu, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.dump_event_log = checkAction(.dump_event_log, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.error_scroll_up = checkAction(.error_scroll_up, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.error_scroll_down = checkAction(.error_scroll_down, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
+    // Anytime actions. Repeat whitelist: undo, redo, skip, error-scroll.
+    // Toggles / dump_event_log / dismiss_error are press-only.
+    result.anytime.undo = checkAction(.undo, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.redo = checkAction(.redo, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.toggle_options_menu = checkAction(.toggle_options_menu, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.dump_event_log = checkAction(.dump_event_log, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.error_scroll_up = checkAction(.error_scroll_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.error_scroll_down = checkAction(.error_scroll_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.scroll_delta = scroll_delta;
 
-    // In-game anytime actions
-    result.anytime.in_game.toggle_inventory = checkAction(.toggle_inventory, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.toggle_gear = checkAction(.toggle_gear, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.toggle_skills = checkAction(.toggle_skills, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.toggle_world_map = checkAction(.toggle_world_map, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.swap_weapons = checkAction(.swap_weapons, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.move_cursor_up = checkAction(.move_cursor_up, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.move_cursor_down = checkAction(.move_cursor_down, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.move_cursor_left = checkAction(.move_cursor_left, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.move_cursor_right = checkAction(.move_cursor_right, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
+    // In-game anytime actions. Repeat whitelist: movement cursors only.
+    // Toggles / swap_weapons are press-only.
+    result.anytime.in_game.toggle_inventory = checkAction(.toggle_inventory, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.toggle_gear = checkAction(.toggle_gear, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.toggle_skills = checkAction(.toggle_skills, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.toggle_world_map = checkAction(.toggle_world_map, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.swap_weapons = checkAction(.swap_weapons, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.move_cursor_up = checkAction(.move_cursor_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.move_cursor_down = checkAction(.move_cursor_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.move_cursor_left = checkAction(.move_cursor_left, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.move_cursor_right = checkAction(.move_cursor_right, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
 
     // Raw mouse-over-tile (unvalidated; the cursor resolution in update()
     // checks it against world tiles + UI occlusion). Plus whether the mouse
@@ -495,18 +601,18 @@ pub fn translateInput(
     result.anytime.in_game.mouse_tile = screenToTile(state.mouse_screen_position, camera, zoom, platform.viewport);
     result.anytime.in_game.mouse_moved_this_tick = mouse_moved_this_tick;
 
-    // Idle actions
-    result.idle.confirm = checkAction(.confirm, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.idle.cancel = checkAction(.cancel, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.idle.skip = checkAction(.skip, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers);
+    // Idle actions. Repeat whitelist: skip. confirm/cancel are press-only.
+    result.idle.confirm = checkAction(.confirm, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.idle.cancel = checkAction(.cancel, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.idle.skip = checkAction(.skip, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
 
-    // Skill slots 1-8
+    // Skill slots 1-8 (press-only — repeating would queue uses by accident).
     const skill_slot_actions = [_]types.Action{
         .skill_slot_1, .skill_slot_2, .skill_slot_3, .skill_slot_4,
         .skill_slot_5, .skill_slot_6, .skill_slot_7, .skill_slot_8,
     };
     for (skill_slot_actions, 1..) |action, slot| {
-        if (checkAction(action, bindings, &keys_pressed, &mouse_pressed, &gamepad_pressed, modifiers)) {
+        if (checkAction(action, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers)) {
             result.idle.skill_slot_selected = @intCast(slot);
             break;
         }

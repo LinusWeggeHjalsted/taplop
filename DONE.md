@@ -1999,3 +1999,33 @@ previously those did nothing. No current conflict: the only ctrl bindings
 are z/y/l, none of which share a key with a plain binding. If an exclusive
 chord need ever shows up (plain X vs ctrl+X doing different things),
 most-specific-wins can be layered on top; not needed today.
+
+### Synthetic key repeat (done)
+
+A held bound key now repeats after a delay: first repeat at 300ms, then every
+40ms. Effect: holding Right arrow moves the cursor one tile, then keeps
+moving; holding ctrl+z keeps undoing. The cadence is owned by the engine
+(`key_repeat_initial_delay_microseconds` / `key_repeat_interval_microseconds`
+constants in `input.zig`), NOT the OS — so players cannot gain a real-time
+advantage by twiddling OS key-repeat settings (the motivation for choosing
+our-own-logic over raylib's `IsKeyPressedRepeat`).
+
+- `InputState.key_repeat_state`: per-held-key `KeyRepeatEntry` (held
+  microseconds + next-repeat threshold), parallel to `keys_held`. Created on
+  a key_down edge (`addRepeat`), removed on key_up (`removeRepeat`), advanced
+  each tick by `advanceKeyRepeats(delta)` which fires synthetic edges into a
+  `keys_repeated` list. A large delta (stall) catches up by ONE repeat, not a
+  burst (next_repeat_at is set to held + interval, skipping backlog).
+- `translateInput` gained a `delta_microseconds` param; `main.frame()`
+  computes the real-clock delta before calling it (moved from after to before
+  translateInput) so the repeat cadence is framerate-independent.
+- `checkAction` gained a `keys_repeated` param; a binding fires on a real
+  edge OR a synthetic edge. The REPEAT WHITELIST is enforced at the call
+  site: whitelisted actions (undo, redo, skip, move_cursor_*, error_scroll_*)
+  pass `&keys_repeated`; everyone else passes an empty slice so a held key
+  never repeats them (skill slots, toggles, confirm/cancel, dump_event_log,
+  dismiss_error).
+- Replay-safe by construction: repeat state is on `InputState` (off
+  GameState), and the resulting events are identical to a single press —
+  replay records events, not input timing.
+- Known caveat: drain multi-fire — see AGENTS → Input.

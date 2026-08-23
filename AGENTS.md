@@ -453,6 +453,38 @@ combat-log UI rendering + replay-viewer UI still TODO)
   right tiebreak (lowest entity_index / first slot); document it with a comment
   rather than restructuring.
 
+## Input
+
+- **Binding modifier match is subset, not exact.** A binding's modifiers are
+  REQUIREMENTS, not an exact match: a plain binding fires regardless of held
+  modifiers (so ctrl+key works for any plain-bound action — e.g. ctrl+Space
+  skip with `force_attack_step`); a ctrl binding fires only when ctrl is held.
+  `checkAction` skips only when a REQUIRED modifier is NOT held. This matches
+  the button-click path (`applyAction` sets the action directly with no
+  modifier filtering) so keyboard chords and clicks behave the same.
+- **Synthetic key repeat is owned by the engine, not the OS.** A held key
+  fires its first repeat after `key_repeat_initial_delay_microseconds` (300ms)
+  then repeats at `key_repeat_interval_microseconds` (40ms), tracked in
+  `InputState.key_repeat_state` and advanced by the real-clock delta passed
+  into `translateInput`. Owning the cadence means players cannot gain a
+  real-time advantage by twiddling OS key-repeat settings. Only the repeat
+  whitelist fires on a synthetic edge: movement cursors, undo/redo, skip,
+  error-scroll. Non-whitelisted bindings (skill slots, toggles, confirm/cancel)
+  are press-only — `checkAction` is passed an empty `keys_repeated` slice for
+  them so a held key never repeats. Mouse buttons have no repeat.
+- **Replay safety.** Repeat state lives on `InputState` (off the undoable
+  GameState), and the resulting actions produce the same events a single
+  press would — replay records events, not input timing, so a held-key
+  session and a tapped-key session record identical event histories.
+- **Known minor caveat: drain multi-fire.** `frame()` passes one
+  `player_input` to every `update()` in a multi-event drain (≤10ms budget).
+  Edge-triggered anytime actions (undo/redo, cursor nudge) can therefore fire
+  on each drain iteration within a single frame. For undo/redo this is
+  self-limiting (the first undo clears the event stack, ending the drain); for
+  cursor nudges it can burst a few tiles during a drain that overlaps a held
+  arrow. Pre-existing for real key presses; repeat makes it visible on held
+  keys too. Brief and harmless; revisit if felt.
+
 ## Error Handling
 
 A `@panic` (unrecoverable failure) dumps the live `event_history` to

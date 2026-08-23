@@ -175,16 +175,18 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // view. The render camera is recomputed post-update below so it tracks
     // the state being drawn (see the render gate).
     const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
+    // Real-clock delta since the last frame (NOT frame-rate based), so the
+    // wait timer drains in real time regardless of how often frame() is called.
+    // Computed before translateInput so synthetic key-repeat cadence (see
+    // AGENTS → Input) is framerate-independent too.
+    const delta_microseconds = backend.deltaMicroseconds();
     const player_input = input.translateInput(
         platform_input,
         &history.session.input_state,
         history.settings,
         camera,
+        delta_microseconds,
     );
-
-    // Real-clock delta since the last frame (NOT frame-rate based), so the
-    // wait timer drains in real time regardless of how often frame() is called.
-    const delta_microseconds = backend.deltaMicroseconds();
 
     // Player position before the drain, for the pan-recenter check: if the
     // player moved this frame (a move event in the drain, or a click-to-move
