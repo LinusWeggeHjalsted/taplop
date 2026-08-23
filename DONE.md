@@ -2029,3 +2029,29 @@ our-own-logic over raylib's `IsKeyPressedRepeat`).
   GameState), and the resulting events are identical to a single press —
   replay records events, not input timing.
 - Known caveat: drain multi-fire — see AGENTS → Input.
+
+### Diagonal cursor nudge: coalesce from held keys (done)
+
+Holding two arrow keys (e.g. Down+Left) to move the cursor diagonally was
+inconsistent: sometimes it worked, sometimes only one axis moved. Root cause:
+the nudge read four independent edge/repeat-triggered bools and applied all
+true axes at once. Two physical presses edges rarely land in the same tick
+(press Down → nudge down; press Left next frame → nudge left — two single-
+axis steps, not one diagonal), and per-key synthetic-repeat timers drift
+(each key repeats on its own schedule), so even while holding both, the two
+axes fired in the same frame only sometimes. On a checkerboard where only the
+diagonal is a valid tile, a single-axis nudge targets an invalid intermediate
+tile and is rejected entirely (the all-or-nothing tile clamp), so a diagonal-
+only path was traversable only when both axes happened to fire together.
+
+Fix: separate TRIGGER from VECTOR. The four `move_cursor_*` bools remain the
+trigger ("a nudge should fire this frame"), but the nudge vector is derived
+from HELD cursor keys (`InGameInput.cursor_direction`, new field computed in
+`translateInput` via `isActionHeld`). So a diagonal nudge fires when ANY one
+of the two held keys edges/repeats: hold Down, press Left → Left edges
+(trigger) + Down held (direction) → nudge down+left. Opposite keys on one
+axis cancel (sensible). Replay-safe by construction (cursor state stays off
+GameState; the resulting events are identical to a single press).
+
+- `isActionHeld` in input.zig mirrors `checkAction` but reads held state;
+  same subset modifier semantics.

@@ -668,7 +668,12 @@ pub fn resolveTileCursor(
         return;
     }
 
-    // Mouse idle — arrow keys nudge the cursor.
+    // Mouse idle — arrow keys nudge the cursor. The four move_cursor_* bools
+    // are the TRIGGER (an edge/repeat fired this frame); the nudge VECTOR is
+    // derived from HELD cursor keys (cursor_direction), so a diagonal nudge
+    // fires when any one of the two held keys edges/repeats — two physical
+    // presses rarely land in one tick, and per-key repeat timers drift, so
+    // requiring both to fire in the same frame was inconsistent.
     const nudge_up = in_game.move_cursor_up;
     const nudge_down = in_game.move_cursor_down;
     const nudge_left = in_game.move_cursor_left;
@@ -686,11 +691,10 @@ pub fn resolveTileCursor(
         break :blk player_pos;
     };
 
-    // Nudge (each axis independently; diagonals work via two keys at once).
-    if (nudge_up) cursor.y -= 1;
-    if (nudge_down) cursor.y += 1;
-    if (nudge_left) cursor.x -= 1;
-    if (nudge_right) cursor.x += 1;
+    // Nudge by the held-key direction (each axis independently; diagonals
+    // work via two held keys, opposite keys cancel).
+    cursor.x += in_game.cursor_direction.x;
+    cursor.y += in_game.cursor_direction.y;
 
     // Clamp to a real tile — if the nudged position isn't a world tile, leave
     // the cursor where it was (don't follow the cursor off the map).

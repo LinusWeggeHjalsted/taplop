@@ -285,11 +285,18 @@ pub const InGameInput = struct {
     /// (mouse takes precedence when it moved; otherwise arrows nudge).
     mouse_moved_this_tick: bool = false,
     // Arrow-key cursor nudges (edge-triggered this tick). Consumed by the
-    // cursor resolution when the mouse didn't move.
+    // cursor resolution as the TRIGGER ("should a nudge fire this frame?").
     move_cursor_up: bool = false,
     move_cursor_down: bool = false,
     move_cursor_left: bool = false,
     move_cursor_right: bool = false,
+    /// Current cursor-direction vector derived from HELD cursor keys
+    /// (independent of which fired this frame). (-1/0/+1 per axis; opposite
+    /// keys cancel.) Lets a diagonal nudge fire when ANY one of the two held
+    /// keys edges/repeats, instead of requiring both to fire in the same tick
+    /// (two physical presses rarely land in one tick, and per-key repeat
+    /// timers drift, so the old all-edges-this-frame model was inconsistent).
+    cursor_direction: Vector2 = .{ .x = 0, .y = 0 },
 };
 
 /// Actions that are only handled when the event stack is empty
@@ -412,6 +419,34 @@ fn getModifiers(state: *const InputState) Modifiers {
         .alt = InputState.isHeld(&state.keys_held, "AltLeft") or
             InputState.isHeld(&state.keys_held, "AltRight"),
     };
+}
+
+/// Check if an action is currently HELD (any bound input is down), ignoring
+/// edges. Used to derive cursor direction from held cursor keys so a diagonal
+/// nudge fires when ANY one of the two held keys edges/repeats (see
+/// `InGameInput.cursor_direction`). Modifier matching is the same subset
+/// semantics as `checkAction`.
+fn isActionHeld(
+    action: types.Action,
+    bindings: []const InputBinding,
+    keys_held: []const ?[]const u8,
+    mouse_buttons_held: []const ?[]const u8,
+    gamepad_buttons_held: []const ?[]const u8,
+    modifiers: Modifiers,
+) bool {
+    for (bindings) |binding| {
+        if (binding.action != action) continue;
+        if (binding.modifiers.ctrl and !modifiers.ctrl) continue;
+        if (binding.modifiers.shift and !modifiers.shift) continue;
+        if (binding.modifiers.alt and !modifiers.alt) continue;
+        const held = switch (binding.input) {
+            .key => |key| InputState.isHeld(keys_held, key),
+            .mouse_button => |button| InputState.isHeld(mouse_buttons_held, button),
+            .gamepad_button => |gamepad| InputState.isHeld(gamepad_buttons_held, gamepad),
+        };
+        if (held) return true;
+    }
+    return false;
 }
 
 /// Check if an action was triggered by any just-pressed input this tick.
@@ -594,6 +629,16 @@ pub fn translateInput(
     result.anytime.in_game.move_cursor_down = checkAction(.move_cursor_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.in_game.move_cursor_left = checkAction(.move_cursor_left, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.in_game.move_cursor_right = checkAction(.move_cursor_right, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
+    // Cursor direction from HELD cursor keys (not edges) so a diagonal nudge
+    // fires when any one of the two held keys edges/repeats. Opposite keys on
+    // one axis cancel.
+    var dir_x: i32 = 0;
+    var dir_y: i32 = 0;
+    if (isActionHeld(.move_cursor_up, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers)) dir_y -= 1;
+    if (isActionHeld(.move_cursor_down, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers)) dir_y += 1;
+    if (isActionHeld(.move_cursor_left, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers)) dir_x -= 1;
+    if (isActionHeld(.move_cursor_right, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers)) dir_x += 1;
+    result.anytime.in_game.cursor_direction = .{ .x = dir_x, .y = dir_y };
 
     // Raw mouse-over-tile (unvalidated; the cursor resolution in update()
     // checks it against world tiles + UI occlusion). Plus whether the mouse
