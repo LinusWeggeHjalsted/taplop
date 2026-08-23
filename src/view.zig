@@ -89,6 +89,13 @@ pub fn view(
             for (pieces) |entry| ground_entries.append(frame_allocator, entry) catch
                 @panic("failed to append decoration piece entry");
         }
+        for (level.ground_items) |stack| {
+            ground_entries.append(frame_allocator, .{
+                .sort_y = stack.position.y,
+                .sort_x = stack.position.x,
+                .drawable = .{ .ground_items = groundItemsDrawable(stack.position, @intCast(stack.items.len), active_theme, camera, camera_zoom) },
+            }) catch @panic("failed to append ground-items entry");
+        }
     } else if (current_state.hub) |*hub| {
         buildTiles(&tiles, frame_allocator, hub.hub_tiles, active_theme, camera, camera_zoom);
         buildCursorOverlay(&tile_overlays, frame_allocator, hub.hub_tiles, session, active_theme, camera, camera_zoom);
@@ -284,6 +291,16 @@ const entity_pivot_y: f32 = 0.8;
 
 const world_white: types.Color = .{ .r = 255, .g = 255, .b = 255 };
 
+/// Ground-items sprite: `world/ground_items.png` (256x256, centered pivot
+/// 0.5/0.5). Tinted at world gradient index 5 (a fixed color independent of
+/// the player's body color, like the UI palette). Drawn at the stack's tile;
+/// `item_count` is carried for a future count badge (the renderer draws just
+/// the sprite for now).
+const ground_items_sprite_id = "world/ground_items";
+const ground_items_size: f32 = 256.0;
+const ground_items_pivot_x: f32 = 0.5;
+const ground_items_pivot_y: f32 = 0.5;
+
 /// Flag pole frame: 256x512 (1 tile wide x 2 tall). Pivot (0.5, 0.75) centers
 /// the bottom tile-half of the frame on the marker's tile. Used for both level
 /// ends and hub mission-start markers; only the static pole is drawn here.
@@ -334,6 +351,32 @@ fn levelEndDrawable(
             .width = flag_banner_frame_width,
             .height = flag_banner_frame_height,
         },
+    };
+}
+
+/// Build a `GroundItemDrawable` for a ground-item stack at `tile`. The sprite
+/// is centered on the tile (pivot 0.5/0.5), tinted at world gradient index 5
+/// (fixed, independent of the player's body color). `item_count` is carried
+/// for a future count badge.
+fn groundItemsDrawable(
+    tile: types.Vector2,
+    item_count: u32,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) types.GroundItemDrawable {
+    const tile_top_left = tileToScreen(tile, camera, zoom);
+    const tile_pixels = input.tile_size_pixels * zoom;
+    const center_x = @as(f32, @floatFromInt(tile_top_left.x)) + tile_pixels / 2;
+    const center_y = @as(f32, @floatFromInt(tile_top_left.y)) + tile_pixels / 2;
+    return .{
+        .sprite_id = ground_items_sprite_id,
+        .screen_position = .{
+            .x = @intFromFloat(@round(center_x - ground_items_pivot_x * ground_items_size * zoom)),
+            .y = @intFromFloat(@round(center_y - ground_items_pivot_y * ground_items_size * zoom)),
+        },
+        .color = worldGradientColor(active_theme, 5),
+        .item_count = item_count,
     };
 }
 
