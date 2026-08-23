@@ -249,6 +249,47 @@ dump doesn't pollute the tree.
   shipped `assets/**/*.png`, keyed by sprite id) and `generated_assets.zig`
   (embedded content map). All are gitignored.
 
+## Audio
+
+Sound is a **side effect**, never gameplay state. Same replay-safety rule as
+file writes: event handlers queue sounds gated `!replaying`, so undo/redo
+scrubbing is silent. The architecture mirrors `PendingWrite`:
+
+- **`SessionState.pending_sounds: std.ArrayListUnmanaged(SoundId)`** (off
+  the undoable GameState → replay-safe by construction; `backing_allocator`-
+  backed, cleared each frame). Event handlers + input handlers call
+  `session.queueSound(allocator, .id)`; `frame()` drains via
+  `session.drainPendingSounds()` after the update drain and plays them through
+  the backend. The `!replaying` gate is at the PUSH site, so replay pushes
+  nothing.
+- **`SoundId` enum** (types.zig) — one variant per sfx file under
+  `assets/audio/sfx/` (15 shipped: move, attack, spell, damage, pickup, skip,
+  equip, learn_skill, salvage, swap_skill, button_click_down,
+  button_click_up, menu, defeat, mission_completion). Music is a single
+  always-on stream, NOT a `SoundId`.
+- **Backend (`raylib_backend.zig`):** `initAudio(settings)` opens the audio
+  device, loads all sfx via `loadWaveFromMemory` + `loadSoundFromWave` from
+  the `FileSource` (never the filesystem — same seam as textures), loads the
+  music via `loadMusicStreamFromMemory`, sets it looping, starts it. A sound
+  cache (`AutoHashMap(SoundId, ?rl.Sound)`) holds loaded sounds; missing
+  audio caches null and skips play (like missing sprites → magenta, but for
+  audio it's silent). `deinitAudio` (called from `deinit`) unloads everything
+  + closes the device. If the audio device can't open, `audio_ready` stays
+  false and ALL audio methods no-op — the game runs silent, never crashes.
+- **Per-frame:** `frame()` calls `backend.updateMusic()` at the top (raylib
+  requires it for streaming) + `backend.playSounds(drained, settings)` after
+  the drain. Sfx volume = `sound_effects_volume * master_volume`; music
+  volume = `music_volume * master_volume` (set via `applyVolumes`, called at
+  init; re-call when settings change in the options menu).
+- **Assets:** all audio shipped as OGG (ported from the Unity project's WAVs
+  via ffmpeg). Music: `assets/audio/music/ambient.ogg` (looping, ~3.3 MB).
+  SFX: `assets/audio/sfx/*.ogg` (~220 KB total). Embedding OGG (not WAV) keeps
+  the single-file exe small (the Unity Ambient.wav was 34 MB → 3.3 MB OGG).
+- **Entry files:** `native.zig` / `web.zig` call `backend.initAudio(settings)`
+  after `createSessionSetup` + `fixupPointers` (settings must be loaded).
+  Web autoplay policy: browsers may block audio until a user gesture; the
+  stream simply won't play until then, never crashing.
+
 ## Animation
 
 Sprite animations are a **rendering** concern, never a gameplay one. They are

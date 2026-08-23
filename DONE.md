@@ -2533,3 +2533,52 @@ Three cleanups from a session reflection:
   oversized tooltip pins to the top-left instead of panicking. A tooltip with
   enough wrapped rows could exceed screen height, so this wasn't purely
   theoretical.
+
+## Audio
+
+### Slice 1–4 — architecture + vertical-slice sounds (DONE)
+
+Sound is a side effect, gated `!replaying` (same rule as file writes). The
+architecture mirrors `PendingWrite`:
+
+- **`SoundId` enum** (types.zig) — one variant per sfx file under
+  `assets/audio/sfx/` (15 shipped). Music is a single always-on stream, not a
+  `SoundId`.
+- **`SessionState.pending_sounds`** — `std.ArrayListUnmanaged(SoundId)` on
+  `backing_allocator`, off the undoable GameState → replay-safe by
+  construction. `queueSound` appends (callers gate `!replaying`);
+  `drainPendingSounds` returns the slice + `clearRetainingCapacity`. Freed
+  in `run`'s defer chain.
+- **Backend (`raylib_backend.zig`):** `initAudio(settings)` opens the audio
+  device, loads all sfx via `loadWaveFromMemory` + `loadSoundFromWave` from
+  the `FileSource` (never the filesystem — same seam as textures), loads the
+  music via `loadMusicStreamFromMemory`, sets it looping, starts it. A sound
+  cache (`AutoHashMap(SoundId, ?rl.Sound)`) holds loaded sounds; missing
+  audio caches null and skips play. `deinitAudio` (from `deinit`) unloads
+  everything + closes the device. If the audio device can't open,
+  `audio_ready` stays false and ALL audio methods no-op — the game runs
+  silent, never crashes.
+- **Per-frame:** `frame()` calls `backend.updateMusic()` at the top (raylib
+  requires it for streaming) + `backend.playSounds(drained, settings)` after
+  the update drain. Sfx volume = `sound_effects_volume * master_volume`;
+  music volume = `music_volume * master_volume` (set via `applyVolumes`).
+- **Assets:** ported the Unity project's 16 WAVs to OGG via ffmpeg (Ambient
+  34 MB → 3.3 MB; SFX 2.2 MB → 220 KB). Music: `assets/audio/music/ambient.ogg`
+  (looping). SFX: `assets/audio/sfx/*.ogg`. All embedded via
+  `generated_assets.zig` (build walks `assets/**`).
+- **Settings:** added `master_volume: f32 = 1.0` (scales music + sfx alike);
+  `music_volume` + `sound_effects_volume` already existed. Parser + writer +
+  `data/default_settings.txt` updated; key whitelist updated.
+- **Entry files:** `native.zig` / `web.zig` call `backend.initAudio(settings)`
+  after `createSessionSetup` + `fixupPointers`.
+- **Wired sounds (vertical slice):** `move` (level `move_entity` + hub
+  `move_player`), `attack` (`attack` sub-level event), `pickup` (`pickup_items`),
+  `button_click_down` (UI button press in `update`). All gated `!replaying`.
+
+### Remaining (open — see TODO → Audio)
+
+Wire the rest of the sfx (spell/damage/skip/equip/learn_skill/salvage/
+swap_skill/menu/button_click_up; defeat + mission_completion land with the
+mission end-state screens), the spell-vs-attack split (skill-type lookup in
+the `use_skill` handler), live volume re-apply from the options menu, and web
+autoplay verification.

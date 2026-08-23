@@ -392,8 +392,27 @@ Open:
 
 ## Audio
 
-- Play music and sound effects via raylib audio API.
-- Hook into events (attack → hit sound, etc.).
+Architecture DONE — see AGENTS → Audio. Sound queue on `SessionState`,
+backend sfx cache + looping music stream, `frame()` drains + updates music.
+Vertical-slice sounds wired (move, attack, pickup, button_click_down). Open:
+
+- Wire the remaining sfx: `spell` (spell-type `use_skill`), `damage`
+  (incoming damage applied), `skip`, `equip`, `learn_skill`, `salvage`,
+  `swap_skill`, `menu`, `button_click_up`, `defeat`, `mission_completion`.
+  The last two land with the mission end-state screens.
+- Spell vs attack split: `use_skill` is one event; distinguishing spell-type
+  from melee needs a skill-type lookup at the handler (see how `useSkill`
+  resolves `skill_type`). Decide whether the sound trigger lives in the
+  `use_skill` handler (per-skill type) or in each skill's `useSkill` (per-
+  skill override).
+- Options menu volume controls (settings fields exist; UI is the TODO
+  `buildOptionsMenu`). `applyVolumes` is called at init; re-call it when the
+  settings change in the options menu so volume adjusts live.
+- Web autoplay policy: browsers may block audio until a user gesture. The
+  stream no-ops until then by design; verify it resumes after the first click
+  on the web build.
+- Tune volumes / mix against real assets (current volumes are the Unity
+  defaults carried over).
 
 ## Memory / Budget
 
