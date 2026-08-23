@@ -28,11 +28,12 @@ const Event = events.Event;
 
 /// Mouse-wheel zoom cadence + bounds. Additive in fixed steps (one zoom-in
 /// then one zoom-out returns to the exact same value — no float drift).
-/// Default 1.0; scroll up zooms in, scroll down zooms out. Tune from feel;
-/// if linear spacing feels uneven across the range, swap the additive step
-/// for a generated level table (a localized change here).
-const camera_zoom_step: f32 = 0.125;
-const min_camera_zoom: f32 = 0.125;
+/// Default 1.0; scroll up zooms in, scroll down zooms out. The minimum is
+/// always one step (so the floor divides evenly into the range). Tune from
+/// feel; if linear spacing feels uneven across the range, swap the additive
+/// step for a generated level table (a localized change here).
+const camera_zoom_step: f32 = 0.25;
+const min_camera_zoom: f32 = camera_zoom_step;
 const max_camera_zoom: f32 = 2.0;
 const PlayerInput = input.PlayerInput;
 const Vector2 = types.Vector2;
