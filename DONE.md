@@ -2406,3 +2406,53 @@ rasterizes crisp at all sizes in use.
 Follow-ups (not in this slice): real per-glyph metrics exported from the font
 to replace the `measureSpanWidth`/`lineHeight` placeholder in ui.zig (TODO →
 UI Framework → Real font metrics); honoring TextLabel bold/italic + color.
+
+### Real glyph metrics wired into the text measurement seam (done)
+
+Replaced the fixed-advance placeholder (`0.5em per byte`, bold inflated 5%)
+in `ui.zig` with real per-glyph advances from the loaded font, so laid-out
+text fits panels the way the renderer actually draws it. Pairs with the
+FreeZilla TTF slice above (the font is loaded; this makes layout measure it).
+
+- **`ui.FontMetrics`** — a raylib-free value type: `base_size` + `advances:
+  [95]i32` (advance at base size for ASCII codepoint `i + 32`). Methods
+  `measureSpanWidth` / `measureRowWidth` scale per-glyph advances by
+  `font_size / base_size`. UTF-8-aware: ASCII bytes index `advances` directly
+  (one byte = one codepoint); a multibyte lead byte skips its full byte
+  length (clamped to the slice end) and uses a 0.5em fallback — its codepoint
+  is always > 126, so it never indexes `advances`, and no actual decode is
+  needed (keeps it panic-free on malformed bytes). `lineHeight` stays a free
+  function (a 1.2em layout factor; raylib doesn't expose hhea/OS·2 line
+  metrics, so it isn't font data).
+- **Backend extraction:** `RaylibBackend.fontMetrics()` scans
+  `font.glyphs[0..glyphCount]`, fills `advances[value - 32] = advanceX` for
+  codepoints 32..126 (missing glyphs keep zero-init; the 0.5em fallback
+  covers them in `measureSpanWidth`). Uniform for the TTF and the default-
+  font fallback, so layout matches whichever font is active.
+- **Threading:** `RenderContext` gained `font_metrics: ui.FontMetrics`;
+  `frame()` reads `backend.fontMetrics()` into it; `view()` passes it to
+  `buildBottomBar` / `buildMainMenu` / `buildTooltip` / `buildErrorPopup`,
+  which thread it down to `wrapRow` / `emitPanelButton` / `emitSkillButton` /
+  `emitCenteredNumber`. ~7 builder signatures gained a `font_metrics` param
+  (mechanical).
+- **`emitCenteredNumber` fixed:** was centering on a `font_size` square
+  (placeholder); now measures the formatted number's width and centers on
+  that + line height, so multi-digit cooldown/momentum/effect-duration
+  numbers sit truly centered (the TODO "Center cooldown/label text using
+  measured text width" item).
+- **Tests:** the `ui.zig` measurement/wrapping tests build a synthetic
+  `FontMetrics{ base_size=100, advances=[50]*95 }` (reproduces the old 0.5em
+  arithmetic so the wrapping assertions stay deterministic and font-
+  agnostic). The "bold is wider" assertion flipped to "bold equals plain" —
+  only the regular face is loaded, so bold renders identical and the metrics
+  reflect that honestly (no bold inflation). No test calls `view()`, so the
+  `RenderContext`/signature changes don't ripple into the test build.
+
+Deliberately deferred (called out in TODO):
+- `boundsOf(text_label)` stays a `font_size`-square placeholder — no text
+  label has a tooltip today and they're all `blocks_input = false` (the
+  button behind wins hit-tests). Wire when a text label needs a tooltip.
+- Bold/italic faces — only the regular face is loaded, so bold/italic render
+  as plain. Loading separate faces is a separate follow-up.
+- Non-ASCII glyphs use the 0.5em fallback advance; the Calligraphr font only
+  covers 76/95 ASCII anyway (the gap flagged in the TTF slice).

@@ -173,46 +173,102 @@ pub fn italic(value: []const u8) Span {
 }
 
 // ============================================================
-// Tooltip text measurement
+// Text measurement
 // ============================================================
-// The ONLY font-dependent code in tooltip layout. Everything else (wrapping,
-// panel sizing, corner selection) is written against these two functions and
-// will not change when the real font arrives — at that point their innards
-// read the font's exported per-glyph advance table instead of assuming a
-// fixed advance.
-//
-// PLACEHOLDER metrics: the current font is placeholder, so we assume a fixed
-// advance of ~0.5em per byte (bold a touch wider) and 1.2em line spacing.
-// Byte length stands in for glyph count until real (UTF-8-aware) metrics land.
+// The ONLY font-dependent code in text layout. Everything else (wrapping,
+// panel sizing, corner selection, label centering) is written against the
+// `FontMetrics` methods below and `lineHeight`; their innards read the font's
+// per-glyph advance table (extracted from the loaded raylib `Font` by the
+// backend) instead of assuming a fixed advance. `FontMetrics` is a plain
+// value type (no raylib import) so the measurement seam stays testable in
+// the headless build.
 
-/// Advance width of a span at `font_size`, in reference pixels.
-pub fn measureSpanWidth(span: Span, font_size: i32) i32 {
-    const advance_percent_of_em: i32 = if (span.bold) 55 else 50;
-    const byte_count: i32 = @intCast(span.text.len);
-    return @divTrunc(byte_count * font_size * advance_percent_of_em, 100);
-}
+/// Per-glyph advance widths for the loaded font, in source pixels at
+/// `base_size`. Indexed by ASCII codepoint (32..126); a codepoint outside
+/// that range falls back to a rough 0.5em advance. The backend fills this
+/// from the loaded `rl.Font` (`RaylibBackend.fontMetrics`); layout code
+/// receives it via `RenderContext.font_metrics` so `view()` and its builders
+/// measure text with the same advances the renderer draws with.
+pub const FontMetrics = struct {
+    /// The font size the `advances` were rasterized at (raylib `Font.baseSize`).
+    base_size: i32,
+    /// Advance width at `base_size` for ASCII codepoint `(index + 32)`.
+    advances: [95]i32,
 
-/// Total width of a row's spans laid out on one line, in reference pixels.
-pub fn measureRowWidth(row: TooltipRow, font_size: i32) i32 {
-    var total: i32 = 0;
-    for (row) |span| total += measureSpanWidth(span, font_size);
-    return total;
-}
+    /// Advance width of a span at `font_size`, in reference pixels. Scales
+    /// the per-glyph advances by `font_size / base_size`. UTF-8-aware: ASCII
+    /// bytes (one byte = one codepoint) index `advances`; a multibyte
+    /// sequence skips its full byte length and uses the 0.5em fallback (its
+    /// codepoint is always > 126, so it never indexes `advances`).
+    pub fn measureSpanWidth(self: FontMetrics, span: Span, font_size: i32) i32 {
+        var total: i32 = 0;
+        var i: usize = 0;
+        while (i < span.text.len) {
+            const byte = span.text[i];
+            if (byte < 0x80) {
+                total += self.asciiAdvance(byte, font_size);
+                i += 1;
+            } else {
+                // Multibyte lead byte: skip the whole sequence (clamped to
+                // the slice end so a truncated tail can't overrun) and use the
+                // non-ASCII fallback. The decoded value is > 126 regardless, so
+                // it never indexes `advances` — no need to decode it.
+                const len: usize = switch (byte & 0xF0) {
+                    0xC0, 0xD0 => 2,
+                    0xE0 => 3,
+                    0xF0 => 4,
+                    else => 1, // invalid lead byte — skip one, stay in bounds
+                };
+                i += @min(len, span.text.len - i);
+                total += @divTrunc(font_size, 2);
+            }
+        }
+        return total;
+    }
 
-/// Baseline-to-baseline height for one line at `font_size`, in reference pixels.
+    /// Advance for a single ASCII byte at `font_size`.
+    fn asciiAdvance(self: FontMetrics, byte: u8, font_size: i32) i32 {
+        if (byte >= 32 and byte <= 126) {
+            const advance = self.advances[byte - 32];
+            return @divTrunc(advance * font_size, self.base_size);
+        }
+        // Control character or DEL — 0.5em fallback.
+        return @divTrunc(font_size, 2);
+    }
+
+    /// Total width of a row's spans laid out on one line, in reference pixels.
+    pub fn measureRowWidth(self: FontMetrics, row: TooltipRow, font_size: i32) i32 {
+        var total: i32 = 0;
+        for (row) |span| total += self.measureSpanWidth(span, font_size);
+        return total;
+    }
+};
+
+/// Baseline-to-baseline height for one line at `font_size`, in reference
+/// pixels. A layout factor (1.2em leading), not font data — raylib doesn't
+/// expose hhea/OS·2 line metrics, so this stays a free function independent
+/// of `FontMetrics`.
 pub fn lineHeight(font_size: i32) i32 {
     return @divTrunc(font_size * 120, 100);
 }
 
-test "measurement seam: row width sums spans, bold is wider" {
+test "measurement seam: row width sums spans, bold equals plain" {
+    // Synthetic metrics: base_size 100, uniform 50px advance per ASCII glyph
+    // — reproduces the old placeholder arithmetic (0.5em per char) so the
+    // wrapping/layout tests below stay deterministic and font-agnostic.
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const font_size: i32 = 100;
-    // Plain: 4 bytes * 100px * 0.50 = 200.
-    try std.testing.expectEqual(@as(i32, 200), measureSpanWidth(text("abcd"), font_size));
-    // Bold is wider than plain for the same text.
-    try std.testing.expect(measureSpanWidth(bold("abcd"), font_size) > measureSpanWidth(text("abcd"), font_size));
+    // Plain: 4 glyphs * 50px = 200.
+    try std.testing.expectEqual(@as(i32, 200), metrics.measureSpanWidth(text("abcd"), font_size));
+    // Only the regular face is loaded, so bold renders identical to plain —
+    // the metrics reflect that honestly (no bold inflation).
+    try std.testing.expectEqual(
+        metrics.measureSpanWidth(text("abcd"), font_size),
+        metrics.measureSpanWidth(bold("abcd"), font_size),
+    );
     // A row's width is the sum of its spans.
     const row: TooltipRow = &.{ text("ab"), colored("cd", default_tint) };
-    try std.testing.expectEqual(measureSpanWidth(text("abcd"), font_size), measureRowWidth(row, font_size));
+    try std.testing.expectEqual(metrics.measureSpanWidth(text("abcd"), font_size), metrics.measureRowWidth(row, font_size));
     // Line height exceeds the font size (leading).
     try std.testing.expect(lineHeight(font_size) > font_size);
 }
@@ -734,6 +790,7 @@ pub const error_scrollbar_gap: i32 = 16; // gap between body text and scrollbar
 pub fn buildErrorPopup(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     session: *state.SessionState,
     message: []const u8,
 ) !void {
@@ -741,12 +798,14 @@ pub fn buildErrorPopup(
 
     const header_lines = try wrapRow(
         allocator,
+        font_metrics,
         try spanRow(allocator, text("Error")),
         error_header_font_size,
         content_width_limit,
     );
     const body_lines = try wrapRow(
         allocator,
+        font_metrics,
         try spanRow(allocator, text(message)),
         error_body_font_size,
         content_width_limit,
@@ -768,11 +827,11 @@ pub fn buildErrorPopup(
     var content_width: i32 = error_dismiss_button_width;
     if (scrolls) content_width += error_scrollbar_width + error_scrollbar_gap;
     for (header_lines) |line| {
-        const line_width = @min(measureRowWidth(line, error_header_font_size), content_width_limit);
+        const line_width = @min(font_metrics.measureRowWidth(line, error_header_font_size), content_width_limit);
         if (line_width > content_width) content_width = line_width;
     }
     for (body_lines) |line| {
-        const line_width = @min(measureRowWidth(line, error_body_font_size), content_width_limit);
+        const line_width = @min(font_metrics.measureRowWidth(line, error_body_font_size), content_width_limit);
         if (line_width > content_width) content_width = line_width;
     }
 
@@ -816,7 +875,7 @@ pub fn buildErrorPopup(
                 .bold = true,
                 .blocks_input = false,
             } });
-            x += measureSpanWidth(span, error_header_font_size);
+            x += font_metrics.measureSpanWidth(span, error_header_font_size);
         }
         y += lineHeight(error_header_font_size);
     }
@@ -843,7 +902,7 @@ pub fn buildErrorPopup(
                 .font_size = error_body_font_size,
                 .blocks_input = false,
             } });
-            x += measureSpanWidth(span, error_body_font_size);
+            x += font_metrics.measureSpanWidth(span, error_body_font_size);
         }
         y += body_line_height;
     }
@@ -886,6 +945,7 @@ pub fn buildErrorPopup(
     try emitPanelButton(
         elements,
         allocator,
+        font_metrics,
         button_rect,
         "Dismiss",
         error_dismiss_button_font_size,
@@ -909,6 +969,7 @@ fn cornerPoint(rect: Rectangle, corner: Corner) ScreenPosition {
 /// `content_width` sits alone on its line and is allowed to overflow.
 fn wrapRow(
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     row: TooltipRow,
     font_size: i32,
     content_width: i32,
@@ -948,8 +1009,8 @@ fn wrapRow(
                 pending_space = piece;
                 continue;
             }
-            const word_width = measureSpanWidth(piece, font_size);
-            const space_width = if (pending_space) |s| measureSpanWidth(s, font_size) else 0;
+            const word_width = font_metrics.measureSpanWidth(piece, font_size);
+            const space_width = if (pending_space) |s| font_metrics.measureSpanWidth(s, font_size) else 0;
             // If the word itself is wider than the content width, character-
             // wrap it: emit chunks that fit, each on its own line. This is
             // the fallback for any token (path segment, long key, etc.) that
@@ -965,7 +1026,7 @@ fn wrapRow(
                     current_width = 0;
                 }
                 // Split the long piece into char-chunks that each fit.
-                const char_width = measureSpanWidth(.{ .text = "x", .color = piece.color, .bold = piece.bold }, font_size);
+                const char_width = font_metrics.measureSpanWidth(.{ .text = "x", .color = piece.color, .bold = piece.bold }, font_size);
                 if (char_width == 0) {
                     // Degenerate (zero-width font); emit the whole piece to
                     // avoid an infinite loop.
@@ -1031,6 +1092,7 @@ const WrappedRow = struct {
 pub fn buildTooltip(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     source_position: ScreenPosition,
     source_width: i32,
     source_height: i32,
@@ -1043,14 +1105,14 @@ pub fn buildTooltip(
     if (tooltip.header) |header| {
         try wrapped.append(allocator, .{
             .font_size = tooltip_header_font_size,
-            .lines = try wrapRow(allocator, header, tooltip_header_font_size, content_width_limit),
+            .lines = try wrapRow(allocator, font_metrics, header, tooltip_header_font_size, content_width_limit),
             .is_header = true,
         });
     }
     for (tooltip.body) |body_row| {
         try wrapped.append(allocator, .{
             .font_size = tooltip_body_font_size,
-            .lines = try wrapRow(allocator, body_row, tooltip_body_font_size, content_width_limit),
+            .lines = try wrapRow(allocator, font_metrics, body_row, tooltip_body_font_size, content_width_limit),
             .is_header = false,
         });
     }
@@ -1063,7 +1125,7 @@ pub fn buildTooltip(
     for (wrapped.items, 0..) |wrapped_row, row_index| {
         if (row_index > 0) content_height += tooltip_row_gap;
         for (wrapped_row.lines) |line| {
-            const line_width = @min(measureRowWidth(line, wrapped_row.font_size), content_width_limit);
+            const line_width = @min(font_metrics.measureRowWidth(line, wrapped_row.font_size), content_width_limit);
             if (line_width > content_width) content_width = line_width;
             content_height += lineHeight(wrapped_row.font_size);
         }
@@ -1112,7 +1174,7 @@ pub fn buildTooltip(
                     .italic = span.italic,
                     .blocks_input = false,
                 } });
-                x += measureSpanWidth(span, wrapped_row.font_size);
+                x += font_metrics.measureSpanWidth(span, wrapped_row.font_size);
             }
             y += lineHeight(wrapped_row.font_size);
         }
@@ -1183,10 +1245,11 @@ test "buildSkillTooltip lays out name, description, type, then non-null vars" {
 
 test "wrapRow breaks at spaces and drops the break space" {
     const font_size: i32 = 100; // 1 char = 50px plain
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const row: TooltipRow = &.{text("aa bb cc")};
 
     // content_width 260 fits "aa bb" (100+50+100=250) but not a third word.
-    const lines = try wrapRow(std.testing.allocator, row, font_size, 260);
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 260);
     defer {
         for (lines) |line| std.testing.allocator.free(line);
         std.testing.allocator.free(lines);
@@ -1230,13 +1293,19 @@ const overlay_font_size: i32 = 64;
 fn emitCenteredNumber(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     cell: Rectangle,
     value: u32,
     font_size: i32,
 ) !void {
+    const label = try std.fmt.allocPrint(allocator, "{d}", .{value});
+    // Center on the MEASURED text width (not a font_size square) so multi-digit
+    // numbers sit truly centered. Vertical centering uses line height.
+    const label_width = font_metrics.measureSpanWidth(text(label), font_size);
+    const label_box = cell.placeCenter(label_width, lineHeight(font_size));
     try elements.append(allocator, .{ .text_label = .{
-        .text = try std.fmt.allocPrint(allocator, "{d}", .{value}),
-        .screen_position = cell.placeCenter(font_size, font_size).position(),
+        .text = label,
+        .screen_position = label_box.position(),
         .font_size = font_size,
         // Sits on top of its parent icon/button; let its tooltip win the hover.
         .blocks_input = false,
@@ -1292,6 +1361,7 @@ fn emitIconButton(
 fn emitPanelButton(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     cell: Rectangle,
     label: []const u8,
     font_size: i32,
@@ -1311,7 +1381,7 @@ fn emitPanelButton(
     } });
     // Centered label. Horizontal centering uses the measurement seam;
     // vertical centering uses the label's line height.
-    const label_width = measureSpanWidth(text(label), font_size);
+    const label_width = font_metrics.measureSpanWidth(text(label), font_size);
     const label_box = cell.placeCenter(label_width, lineHeight(font_size));
     try elements.append(allocator, .{ .text_label = .{
         .text = label,
@@ -1346,6 +1416,7 @@ fn skillSlotAction(slot: u8) Action {
 fn emitSkillButton(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     cell: Rectangle,
     slot: u8,
     player: Entity,
@@ -1397,7 +1468,7 @@ fn emitSkillButton(
             // Overlay on the skill button — pass hover through to the button.
             .blocks_input = false,
         } });
-        try emitCenteredNumber(elements, allocator, cell, cooldown, cooldown_font_size);
+        try emitCenteredNumber(elements, allocator, font_metrics, cell, cooldown, cooldown_font_size);
     }
 }
 
@@ -1410,6 +1481,7 @@ fn emitSkillButton(
 pub fn buildBottomBar(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     screen: Rectangle,
     game_state: *const GameState,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
@@ -1516,7 +1588,7 @@ pub fn buildBottomBar(
         var inner = Row.init(weapon_sub_bar.position(), bottom_bar_height, 0);
         var slot: u8 = 1;
         while (slot <= 3) : (slot += 1) {
-            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill);
+            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill);
         }
     }
 
@@ -1540,7 +1612,7 @@ pub fn buildBottomBar(
         var inner = Row.init(utility_sub_bar.position(), bottom_bar_height, 0);
         var slot: u8 = 4;
         while (slot <= 8) : (slot += 1) {
-            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill);
+            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill);
         }
     }
 
@@ -1587,7 +1659,7 @@ pub fn buildBottomBar(
                 }),
             },
         } });
-        try emitCenteredNumber(elements, allocator, momentum_cell, player.momentum, overlay_font_size);
+        try emitCenteredNumber(elements, allocator, font_metrics, momentum_cell, player.momentum, overlay_font_size);
     }
 
     // Active effects: flush 128 grid spanning the skill bars, filling
@@ -1623,7 +1695,7 @@ pub fn buildBottomBar(
                     }),
                 },
             } });
-            try emitCenteredNumber(elements, allocator, cell, effect.duration, overlay_font_size);
+            try emitCenteredNumber(elements, allocator, font_metrics, cell, effect.duration, overlay_font_size);
         }
     }
 
@@ -1669,6 +1741,7 @@ pub fn buildBottomBar(
 pub fn buildMainMenu(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     screen: Rectangle,
     continue_available: bool,
 ) !void {
@@ -1707,6 +1780,7 @@ pub fn buildMainMenu(
         try emitPanelButton(
             elements,
             allocator,
+            font_metrics,
             cell,
             menu_button.label,
             menu_button_font_size,
@@ -1721,8 +1795,9 @@ test "buildErrorPopup emits a modal panel, header, body, and a Dismiss button" {
 
     var session: state.SessionState = .{};
 
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     var elements: UiElementList = .empty;
-    try buildErrorPopup(&elements, arena.allocator(), &session, "failed to parse data/campaigns/act_one.txt: missing Campaign section");
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "failed to parse data/campaigns/act_one.txt: missing Campaign section");
 
     // Panel + header label(s) + body label(s) + (panel + button + label) from emitPanelButton.
     // At minimum: 1 nine_slice (popup) + 1 header text + N body texts + 1 nine_slice (button) + 1 button + 1 label.
@@ -1750,8 +1825,9 @@ test "buildErrorPopup: short message — no scrollbar, scroll offset clamped to 
     var session: state.SessionState = .{};
     session.error_scroll_offset = 500; // should be clamped to 0 (content fits)
 
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     var elements: UiElementList = .empty;
-    try buildErrorPopup(&elements, arena.allocator(), &session, "short error");
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "short error");
 
     // No scrollbar (no solid_rect) since content fits in the visible region.
     for (elements.items) |element| switch (element) {
@@ -1776,8 +1852,9 @@ test "buildErrorPopup: long message — scrollbar present, only visible lines em
         msg.appendSlice(std.testing.allocator, "This is warning line number X with some text.") catch @panic("msg");
     }
 
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     var elements: UiElementList = .empty;
-    try buildErrorPopup(&elements, arena.allocator(), &session, msg.items);
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items);
 
     // Scrollbar present (at least 2 solid_rects: track + thumb).
     var solid_count: usize = 0;
@@ -1805,8 +1882,9 @@ test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
         msg.appendSlice(std.testing.allocator, "This is warning line number X with some text.") catch @panic("msg");
     }
 
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     var elements: UiElementList = .empty;
-    try buildErrorPopup(&elements, arena.allocator(), &session, msg.items);
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items);
 
     // Clamped to max_scroll (which is body_content_height - visible_body_height,
     // both positive since content overflows). Exact value depends on wrapping,
@@ -1819,9 +1897,10 @@ test "wrapRow breaks on '/' for paths" {
     // font_size 100 → 1 char = 50px plain. content_width 350 fits 7 chars.
     // "aa/bb/cc" is 8 chars = 400px > 350, so it wraps at a '/'.
     const font_size: i32 = 100;
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const row: TooltipRow = &.{text("aa/bb/cc")};
 
-    const lines = try wrapRow(std.testing.allocator, row, font_size, 350);
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 350);
     defer {
         for (lines) |line| std.testing.allocator.free(line);
         std.testing.allocator.free(lines);
@@ -1839,9 +1918,10 @@ test "wrapRow character-wraps a token wider than the content width" {
     // font_size 100 → 1 char = 50px. content_width 200 fits 4 chars.
     // "abcdefgh" is 8 chars = 400px > 200, no spaces or slashes → char-wrap.
     const font_size: i32 = 100;
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const row: TooltipRow = &.{text("abcdefgh")};
 
-    const lines = try wrapRow(std.testing.allocator, row, font_size, 200);
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 200);
     defer {
         for (lines) |line| std.testing.allocator.free(line);
         std.testing.allocator.free(lines);
@@ -1860,9 +1940,10 @@ test "wrapRow character-wraps a token wider than the content width" {
 test "wrapRow: normal space wrapping still works" {
     // Regression: the existing space-based wrapping behavior is unchanged.
     const font_size: i32 = 100;
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const row: TooltipRow = &.{text("aa bb cc")};
 
-    const lines = try wrapRow(std.testing.allocator, row, font_size, 260);
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 260);
     defer {
         for (lines) |line| std.testing.allocator.free(line);
         std.testing.allocator.free(lines);

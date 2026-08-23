@@ -256,6 +256,30 @@ pub const RaylibBackend = struct {
         }
     }
 
+    /// Extract per-glyph advance widths from the loaded font into a
+    /// raylib-free `ui.FontMetrics` value, so the layout seam (`view()` +
+    /// UI builders) measures text with the same advances the renderer draws
+    /// with. ASCII codepoints 32..126 index `font.glyphs`; missing glyphs
+    /// keep the zero-init advance (the 0.5em fallback handles them in
+    /// `measureSpanWidth`). Uniform for the TTF and the default-font
+    /// fallback, so layout matches whichever font is active.
+    pub fn fontMetrics(self: *RaylibBackend) ui.FontMetrics {
+        var metrics = ui.FontMetrics{
+            .base_size = @intCast(self.font.baseSize),
+            .advances = [_]i32{0} ** 95,
+        };
+        const count: usize = @intCast(self.font.glyphCount);
+        var i: usize = 0;
+        while (i < count) : (i += 1) {
+            const glyph = self.font.glyphs[i];
+            const value: i32 = @intCast(glyph.value);
+            if (value >= 32 and value <= 126) {
+                metrics.advances[@intCast(value - 32)] = @intCast(glyph.advanceX);
+            }
+        }
+        return metrics;
+    }
+
     pub fn shouldClose(_: *RaylibBackend) bool {
         return rl.windowShouldClose();
     }

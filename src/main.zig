@@ -385,6 +385,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
                 .level_start_index = history.levelStartEventIndex(),
                 .current_event_index = history.current_event_index,
                 .frame_allocator = frame_state.frame_arena.allocator(),
+                .font_metrics = backend.fontMetrics(),
             },
         );
         backend.render(frame_state.previous_view_state.?, platform_input.viewport);

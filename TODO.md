@@ -35,9 +35,10 @@ Test by running `zig build run` and clicking through.
 - **Input/camera leftovers** — tab-targeting (cycle highlighted tiles
   with Tab; reuse cursor resolution). (Right-click-drag camera pan DONE
   — see DONE.md.)
-- **Cross-cutting polish** — real TTF font (text is blurry), 9-slice TILING
+- **Cross-cutting polish** — 9-slice TILING
   (currently stretched), `highlighted` edge outlines, missing art
-  (ui/icon_swap, ui/momentum, ui/cooldown_overlay draw magenta).
+  (ui/icon_swap, ui/momentum, ui/cooldown_overlay draw magenta). (Real TTF
+  font + glyph metrics DONE — see DONE.md.)
 - **Larger systems (beyond MVP)** — middle panels (inventory/gear/skills/enemy
   inspect) + overlays (world map, full combat log) + options/settings/top bar
   (drag-drop needs panels to be usable); NPC interaction/dialogue; audio.
@@ -187,12 +188,12 @@ Open:
   turn_attack; ui/skill_button; ui/skill_slot_empty; skills/*;
   ui/health_globe (+ _border); ui/panel. Still placeholder ids:
   ui/icon_swap, ui/momentum, ui/cooldown_overlay.
-- Center cooldown/label text using measured text width — reuse the tooltip
-  measurement seam (measureSpanWidth/lineHeight in ui.zig).
-- Real font metrics: export a per-glyph advance table (per style if bold/
-  italic are separate faces) at font-finalization time and read it inside the
-  measurement seam, replacing the fixed-advance placeholder; make it
-  UTF-8-aware (glyph count, not byte length).
+- Center cooldown/label text using measured text width — DONE (emitCenteredNumber
+  measures the formatted number via FontMetrics; see DONE.md).
+- Real font metrics — DONE: `ui.FontMetrics` (per-glyph advance table,
+  UTF-8-aware) extracted from the loaded raylib `Font` by the backend and
+  threaded through `RenderContext` into the builders. See DONE.md. Bold/italic
+  still render as plain (only the regular face is loaded — separate follow-up).
 - Author real tooltips on elements (skills: range/radius/cooldown rows;
   items; effects) using the span constructors.
 - text_label hover bounds are a placeholder (boundsOf reports a font_size
@@ -383,9 +384,10 @@ Open:
 - Draw offset support (decoration overhang; SpriteDrawable.draw_offset).
 - Programmatic edge highlight for highlighted Button/Image (shader outline of
   opaque pixels, or fallback highlight sprite) — currently ignored.
-- Real font: default bitmap font blurs when scaled up and drawTextLabel
-  ignores bold/italic. Load a TTF + per-glyph metrics (feeds the ui.zig
-  measurement seam) and honor TextLabel bold/italic + color.
+- Real font: TTF loaded + per-glyph metrics feed the ui.zig measurement seam
+  (DONE — see DONE.md). `drawTextLabel` still ignores bold/italic (only the
+  regular face is loaded); honoring TextLabel bold/italic + color is a
+  follow-up (needs separate bold/italic faces).
 - Missing-art audit: some bottom-bar sprite ids are still placeholders
   (ui/icon_swap, ui/momentum, ui/cooldown_overlay) and will draw magenta until
   real assets land.

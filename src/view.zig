@@ -38,6 +38,11 @@ pub const RenderContext = struct {
     level_start_index: ?u32,
     current_event_index: u32,
     frame_allocator: std.mem.Allocator,
+    /// Per-glyph font advances for the loaded font, so `view()` and the UI
+    /// builders measure text with the same advances the renderer draws with.
+    /// Extracted from the loaded raylib `Font` by the backend; raylib-free
+    /// value type so it threads through the headless-tested `view()` path.
+    font_metrics: ui.FontMetrics,
 };
 
 pub fn view(
@@ -55,6 +60,7 @@ pub fn view(
     const event_history = render.event_history;
     const level_start_index = render.level_start_index;
     const current_event_index = render.current_event_index;
+    const font_metrics = render.font_metrics;
 
     const active_theme = activeThemeFor(current_state, color_theme_definitions);
 
@@ -136,6 +142,7 @@ pub fn view(
         ui.buildBottomBar(
             &ui_elements,
             frame_allocator,
+            font_metrics,
             ui.screenRect(),
             current_state,
             weapon_type_definitions,
@@ -149,6 +156,7 @@ pub fn view(
         ui.buildMainMenu(
             &ui_elements,
             frame_allocator,
+            font_metrics,
             ui.screenRect(),
             continue_available,
         ) catch @panic("failed to build main menu");
@@ -185,6 +193,7 @@ pub fn view(
             ui.buildTooltip(
                 &ui_elements,
                 frame_allocator,
+                font_metrics,
                 bounds.position(),
                 bounds.width,
                 bounds.height,
@@ -197,7 +206,7 @@ pub fn view(
     // UI (including tooltips). Pure over SessionState.pending_error. See
     // AGENTS → Error Handling.
     if (session.pendingError()) |message| {
-        ui.buildErrorPopup(&ui_elements, frame_allocator, session, message) catch
+        ui.buildErrorPopup(&ui_elements, frame_allocator, font_metrics, session, message) catch
             @panic("failed to build error popup");
     }
 
