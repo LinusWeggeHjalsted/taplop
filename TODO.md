@@ -129,20 +129,23 @@ Open / in-progress:
 - [~] Entity sub-layer assembly: base sprite + WEAPONS done. Still TODO:
   gear sprites, effect sprites (back/front), and health bars.
 - Sprite animation (view-side, cosmetic; NEVER gameplay state, so replay-safe
-  — frame is purely a function of wall-clock time, like the pointer/tooltip):
-  - Frame chosen IN view(): read a monotonic animation_clock (elapsed
-    microseconds on SessionState, advanced by the game loop, off GameState)
-    and emit a concrete SpriteDrawable with the resolved source rectangle.
-    Renderer stays dumb (draw sprite + source rect) — reuses the same
-    source-rectangle path as decoration footprint cropping.
-  - frame_index = (elapsed_ms / ms_per_frame) % frame_count; source rect =
-    (frame_index * frame_w, 0, frame_w, frame_h).
-  - 8 fps CONSTANT for ALL animations (125 ms/frame). Flag = 8 frames → 1.0 s.
+  — frame is purely a function of wall-clock time, like the pointer/tooltip).
+  Settled design + flag banner DONE — see AGENTS → Animation.
+  - [x] `SessionState.animation_clock` (session-relative microseconds, pause-
+        gated, advanced by `frame()`).
+  - [x] `settings.animation_fps` (default 8) — the one global rate all anims
+        read; frame duration = 1_000_000 / fps µs.
+  - [x] Flag banner: `world/flag` (8 frames × 256×512) drawn over the pole
+        via `LevelEndDrawable.banner_source_rectangle`, frame from the clock.
+        Used for both level-end + hub mission-start markers.
+  - [ ] One-shot anims (attack swings, hit flashes, death dissolves): trigger
+        in the LIVE DRAIN (gated `!replaying`), not event handlers (handlers
+        reading the clock would break replay purity — see AGENTS → Animation).
+        `SessionState.active_anims` + `current_event_index` gating (undo
+        suppresses, redo doesn't re-show stale). Lands with the first one-shot.
   - Per-sheet frame data (count, frame size) hardcoded per builder for now
     (flag is the only animation); general per-sprite metadata table is the
     "Sprite asset metadata" item below.
-  - Revisit view()-side selection only if view() is ever throttled below
-    display rate.
 - Decoration footprint splitting (per-tile pieces with source rectangles)
   DONE — see "Decoration Footprint" below.
 - Sprite asset metadata (dimensions) DONE — `generated_sprite_metadata.zig`

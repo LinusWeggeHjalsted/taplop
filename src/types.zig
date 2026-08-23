@@ -100,6 +100,11 @@ pub const Settings = struct {
     // vsync is off and this is >0, renders are gated to 1/cap seconds; when 0
     // and vsync off, the loop renders every iteration (uncapped).
     render_fps_cap: u32 = 0,
+    /// Animation frame rate for ALL sprite animations (flag banner, future
+    /// entity/effect anims). One global rate so pacing is uniform; frame
+    /// duration = 1_000_000 / animation_fps microseconds. Read by `view()`
+    /// only (never by event handlers — see AGENTS → Animation). Default 8.
+    animation_fps: u32 = 8,
     auto_skip_attack_step_out_of_combat: bool = true,
     auto_target_at_cursor: bool = true,
     /// Player color index into the current theme's player gradient. Read at
@@ -958,6 +963,13 @@ pub const LevelEndDrawable = struct {
     sprite_id: []const u8,
     screen_position: ScreenPosition,
     color: Color,
+    /// Source rectangle for the animated banner overlay (`world/flag`), or
+    /// null when there is no banner (keeps the drawable backward-compatible).
+    /// The banner is drawn over the pole at the same screen position + pivot;
+    /// each frame is 256x512, advanced at `settings.animation_fps`. Computed
+    /// in view() from `session.animation_clock` (looping anim — no per-instance
+    /// state). See AGENTS → Animation.
+    banner_source_rectangle: ?Rectangle = null,
 };
 
 pub const GroundDrawable = union(enum) {

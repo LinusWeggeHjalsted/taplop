@@ -283,6 +283,16 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         history.session.camera_pan_anchor = null;
     }
 
+    // Advance the animation clock by this frame's real-time delta, but only
+    // when the world isn't paused (options menu / pending error open — same
+    // gates as `update()`). The clock is session-relative (starts at 0) and
+    // off the undoable GameState, so looping anims wave continuously across
+    // undo/redo without phase jumps, and pausing freezes anims in place. Read
+    // by view() for sprite-animation frame selection. See AGENTS → Animation.
+    if (!history.session.ui_state.options_menu_open and history.session.pending_error == null) {
+        history.session.animation_clock +%= delta_microseconds;
+    }
+
     // Render gate: only build+render a frame when enough real time has elapsed
     // since the last render AND we're not mid-drain. During an active event
     // drain (stack non-empty, no wait) we skip rendering — intermediate states

@@ -1830,6 +1830,48 @@ built-in decoration to the tools." See AGENTS → Decorations & Footprint.
   primitive is ready; `editor_add_decoration_type` will consume it when the
   palette's "add new" button lands.
 
+### Animation foundation + flag banner (DONE)
+
+Settled the animation design and wired the looping flag banner (the first
+sprite animation). See AGENTS → Animation for the settled design; this is the
+implementation record.
+
+- **`SessionState.animation_clock: u64`** — accumulated session-relative
+  microseconds, off the undoable GameState → never in snapshots → replay-safe
+  by construction (replay doesn't render anyway). Advanced by `frame()`
+  **pause-gated**: when the world is paused (options menu / pending_error
+  open), the clock freezes too, so anims freeze in place and resume cleanly.
+  A fresh session starts at 0 so looping anims begin at frame 0 (raw
+  wall-clock mod would start mid-loop).
+- **`settings.animation_fps: u32 = 8`** (Display section) — the ONE global
+  rate all anims share; frame duration = `1_000_000 / animation_fps` µs.
+  Read by `view()` only. A `0` fps is treated as 8 (divide-by-zero guard).
+  Added to `settings_display_keys` whitelist + `data/settings.txt`.
+- **Flag banner:** `world/flag.png` (2048×512 = 8 frames of 256×512, same
+  pivot as the pole) drawn over `world/flag_pole` at the same screen
+  position. `LevelEndDrawable` gained `banner_source_rectangle: ?Rectangle`;
+  `levelEndDrawable` (view.zig) computes it from `session.animation_clock` +
+  `settings.animation_fps` (`frame = (clock / frame_duration) % 8`). Both
+  call sites (level-end + hub mission-start markers) pass the clock + fps.
+  The renderer's `.level_end` arm draws the pole, then the banner via
+  `drawSpriteDrawable` (source rect + world_scale). Constants
+  (`flag_banner_frame_count`, `_frame_width`, `_frame_height`) in view.zig.
+- **The replay-purity invariant (settled, documented):** event handlers must
+  NOT read `animation_clock` (or any wall-clock time). `verifyReplayMatch`
+  compares events, not GameState fields, so a handler that read the clock and
+  wrote a timestamp into GameState would be impure and diverge silently during
+  replay (the clock is on SessionState, off the snapshot timeline → holds the
+  undo-time value, not the original-fire-time value → the anim would re-play
+  on undo, nondeterministically). One-shot anim triggers therefore live in
+  the LIVE DRAIN (`frame()`/`update()`, gated `!replaying`), never handlers —
+  the drain never runs during replay (undo/redo go through `restoreTo` →
+  `replayTo` with `replaying=true`, calling `processEvent` directly). See
+  AGENTS → Animation for the full one-shot design (deferred — lands with the
+  first one-shot anim).
+- **Test:** headless `view.zig` test asserts frame 0 at t=0, frame 4 at
+  t=500ms, wraps to frame 0 at t=1000ms (fps=8), plus fps=16 (no divide-by-
+  zero, valid frame) and fps=0 (treated as 8).
+
 ### Crash dump (panic → session log) (DONE)
 
 A `@panic` now writes `crashes/crash_YYYYMMDD_HHMMSS.txt` (a replayable

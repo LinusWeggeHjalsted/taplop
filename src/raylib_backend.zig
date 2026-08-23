@@ -473,7 +473,22 @@ pub const RaylibBackend = struct {
                 }
             },
             .ground_items => |items| self.drawWorldSprite(items.sprite_id, items.screen_position, world_scale, items.color),
-            .level_end => |marker| self.drawWorldSprite(marker.sprite_id, marker.screen_position, world_scale, marker.color),
+            .level_end => |marker| {
+                self.drawWorldSprite(marker.sprite_id, marker.screen_position, world_scale, marker.color);
+                // Animated banner over the pole: same screen position + pivot,
+                // each banner frame is 256x512 (identical to the pole). Drawn
+                // via drawSpriteDrawable so the source rectangle + world_scale
+                // apply. See AGENTS → Animation.
+                if (marker.banner_source_rectangle) |banner_rect| {
+                    self.drawSpriteDrawable(.{
+                        .sprite_id = "world/flag",
+                        .screen_position = marker.screen_position,
+                        .draw_offset = .{ .x = 0, .y = 0 },
+                        .source_rectangle = banner_rect,
+                        .color = marker.color,
+                    }, world_scale);
+                }
+            },
         }
     }
 

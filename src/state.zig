@@ -98,6 +98,19 @@ pub const SessionState = struct {
     camera_pan: ?types.Vector2 = null,
     camera_pan_anchor: ?CameraPanAnchor = null,
 
+    /// Monotonic session-relative animation clock (accumulated microseconds).
+    /// Advanced by `frame()` only when the world isn't paused (options menu /
+    /// pending error open), so anims freeze during pause and resume cleanly.
+    /// Read by `view()` to pick sprite-animation frames (flag banner now;
+    /// one-shot anim gating later). NEVER read by event handlers — that would
+    /// make a handler impure (its output would depend on wall-clock time),
+    /// breaking the replay-verification invariant (handlers are deterministic
+    /// functions of (state, event)). See AGENTS → Animation. Off the
+    /// undoable GameState → never in snapshots → replay-safe by construction
+    /// (replay doesn't render anyway). A fresh session starts at 0 so looping
+    /// anims start at frame 0 (raw wall-clock mod would start mid-loop).
+    animation_clock: u64 = 0,
+
     // A recoverable load failure (a corrupt/overridden config file, an
     // incompatible session log, etc.) surfaced to the player as a modal
     // popup. Set by the drain loop after a handler returns an error and

@@ -215,6 +215,70 @@ in sync with the lifecycle above as work lands.
   shipped `assets/**/*.png`, keyed by sprite id) and `generated_assets.zig`
   (embedded content map). All are gitignored.
 
+## Animation
+
+Sprite animations are a **rendering** concern, never a gameplay one. They are
+purely a function of wall-clock time and live in `view()`; the renderer stays
+dumb (draw sprite + source rect). Two classes, with different state homes:
+
+- **Looping anims** (the flag banner): `frame = (animation_clock /
+  frame_duration) % frame_count`, computed in `view()`. No per-instance state.
+  The flag banner (`world/flag.png`, 8 frames of 256×512, same pivot as the
+  pole) is drawn over `world/flag_pole` at the same screen position via
+  `LevelEndDrawable.banner_source_rectangle`. Used for both level-end and hub
+  mission-start markers.
+- **One-shot anims** (future — attack swings, hit flashes, death dissolves):
+  the trigger lives in the **live drain** (`frame()`/`update()`, gated on
+  `!history.replaying`), NOT in event handlers. After `processEvent` runs an
+  attack during live forward play, the drain appends a descriptor to
+  `SessionState.active_anims` (`{event_index, kind, end_clock}`). `view()`
+  shows anims whose `event_index <= current_event_index` AND
+  `animation_clock < end_clock` — the same `current_event_index` truncation
+  the combat log uses. Undo lowers `current_event_index` → the undone anim
+  vanishes (not removed, just gated out). Redo raises it → a stale anim's
+  `end_clock` is in the past → not re-shown. No explicit clearing, no
+  coupling undo into SessionState.
+
+### The replay-purity invariant (why handlers don't read the clock)
+
+**Event handlers must not read `animation_clock` (or any wall-clock time).**
+`verifyReplayMatch` (state.zig) compares *events* — the stack-top event about
+  to dispatch vs. `event_history[current_event_index]` — via `deepEqual`. It
+does NOT compare GameState fields after a handler runs. So a handler that
+read the clock and wrote `entity.swing_end = clock + duration` into GameState
+would be **impure** (its output would depend on wall-clock time, not just
+`(state, event)`), and the divergent field would land silently in
+`current_state` during replay — invisible nondeterminism, worse than a panic.
+Also, the clock is on `SessionState` (off the snapshot timeline), so during
+replay it holds the undo-time value, not the original-fire-time value → the
+anim would re-play on undo (the behavior we explicitly don't want) and be
+nondeterministic. The one-shot design above keeps handlers pure by moving the
+trigger out of handlers and into the live drain (which never runs during
+replay — undo/redo go through `restoreTo` → `replayTo` with `replaying=true`,
+calling `processEvent` directly, never the drain).
+
+### The animation clock
+
+`SessionState.animation_clock: u64` — accumulated session-relative
+microseconds, off the undoable GameState → never in snapshots → replay-safe by
+construction (replay doesn't render anyway). Advanced by `frame()` **pause-
+gated** alongside the wait timer: when the world is paused (options menu /
+pending error open), the clock freezes too, so anims freeze in place and
+resume cleanly; when waits drain, anims advance. A fresh session starts at 0
+so looping anims begin at frame 0 (raw wall-clock mod would start mid-loop).
+One-shots store `end_clock = animation_clock + duration` in session-relative
+units, so pause freezing also freezes one-shots mid-flight.
+
+### Frame rate
+
+`settings.animation_fps: u32 = 8` (Display section of `data/settings.txt`) is
+the ONE global rate all anims share; frame duration = `1_000_000 /
+animation_fps` microseconds. `view()` reads it (for the flag now; for one-shot
+gating later). A future anim needing a different rate becomes a per-anim
+override (deferred). A `0` fps is treated as the default (8) to avoid
+divide-by-zero. It's a display/pacing preference (like `camera_zoom`), not
+gameplay — not in snapshots, not touched by replay.
+
 ## Replay & Side Effects
 
 - Undo/redo reconstruct past states by replaying the event history through

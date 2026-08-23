@@ -74,7 +74,7 @@ pub fn view(
             ground_entries.append(frame_allocator, .{
                 .sort_y = end_position.y,
                 .sort_x = end_position.x,
-                .drawable = .{ .level_end = levelEndDrawable(end_position, camera, camera_zoom) },
+                .drawable = .{ .level_end = levelEndDrawable(end_position, camera, camera_zoom, session.animation_clock, settings.animation_fps) },
             }) catch @panic("failed to append level-end entry");
         }
         // Level entities: build a pointer slice for the unified collector.
@@ -96,7 +96,7 @@ pub fn view(
             ground_entries.append(frame_allocator, .{
                 .sort_y = exit.position.y,
                 .sort_x = exit.position.x,
-                .drawable = .{ .level_end = levelEndDrawable(exit.position, camera, camera_zoom) },
+                .drawable = .{ .level_end = levelEndDrawable(exit.position, camera, camera_zoom, session.animation_clock, settings.animation_fps) },
             }) catch @panic("failed to append mission-start entry");
         }
         // Hub entities: the player + NPCs as a pointer slice.
@@ -292,15 +292,35 @@ const flag_pole_height: f32 = 512.0;
 const flag_pivot_x: f32 = 0.5;
 const flag_pivot_y: f32 = 0.75;
 
+/// Animated banner sprite (`world/flag.png`): a horizontal strip of 8 frames,
+/// each 256x512 (same dims + pivot as the pole). Drawn over the pole at the
+/// same screen position. Looping at `settings.animation_fps` (default 8 →
+/// 125 ms/frame, 1.0 s loop). See AGENTS → Animation.
+const flag_banner_sprite_id = "world/flag";
+const flag_banner_frame_count: u32 = 8;
+const flag_banner_frame_width: i32 = 256;
+const flag_banner_frame_height: i32 = 512;
+
 fn levelEndDrawable(
     tile: types.Vector2,
     camera: types.Camera,
     zoom: f32,
+    animation_clock_microseconds: u64,
+    animation_fps: u32,
 ) types.LevelEndDrawable {
     const tile_top_left = tileToScreen(tile, camera, zoom);
     const tile_pixels = input.tile_size_pixels * zoom;
     const center_x = @as(f32, @floatFromInt(tile_top_left.x)) + tile_pixels / 2;
     const center_y = @as(f32, @floatFromInt(tile_top_left.y)) + tile_pixels / 2;
+
+    // Pick the banner frame: frame = (elapsed / frame_duration) % frame_count.
+    // animation_fps is the one global rate all anims share (settings). A zero
+    // fps is treated as the default (8) to avoid a divide-by-zero.
+    const effective_fps: u32 = if (animation_fps == 0) 8 else animation_fps;
+    const frame_duration_us: u64 = 1_000_000 / effective_fps;
+    const elapsed_frames: u64 = animation_clock_microseconds / frame_duration_us;
+    const frame_index: u32 = @intCast(elapsed_frames % flag_banner_frame_count);
+
     return .{
         .sprite_id = "world/flag_pole",
         .screen_position = .{
@@ -308,6 +328,12 @@ fn levelEndDrawable(
             .y = @intFromFloat(@round(center_y - flag_pivot_y * flag_pole_height * zoom)),
         },
         .color = world_white,
+        .banner_source_rectangle = .{
+            .x = @as(i32, @intCast(frame_index)) * flag_banner_frame_width,
+            .y = 0,
+            .width = flag_banner_frame_width,
+            .height = flag_banner_frame_height,
+        },
     };
 }
 
@@ -716,4 +742,40 @@ fn buildTiles(
             .color = color,
         }) catch @panic("failed to append tile drawable");
     }
+}
+
+test "flag banner: frame advances with the animation clock and wraps" {
+    // The flag banner is a looping anim: frame = (clock / frame_duration)
+    // % frame_count. At fps=8 (default), frame_duration = 125ms and the loop
+    // is 8 frames = 1.0s. Verify frame 0 at t=0, frame 4 at t=500ms, wraps to
+    // frame 0 at t=1000ms. A camera at the origin + zoom 1.0 keeps screen
+    // position stable so the test can focus on the source rectangle.
+    const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
+
+    const d0 = levelEndDrawable(.{ .x = 0, .y = 0 }, camera, 1.0, 0, 8);
+    const rect0 = d0.banner_source_rectangle.?;
+    try std.testing.expectEqual(@as(i32, 0), rect0.x);
+    try std.testing.expectEqual(@as(i32, 0), rect0.y);
+    try std.testing.expectEqual(@as(i32, 256), rect0.width);
+    try std.testing.expectEqual(@as(i32, 512), rect0.height);
+
+    // 500ms / 125ms = frame 4.
+    const d4 = levelEndDrawable(.{ .x = 0, .y = 0 }, camera, 1.0, 500_000, 8);
+    try std.testing.expectEqual(@as(i32, 4 * 256), d4.banner_source_rectangle.?.x);
+
+    // 1000ms = 8 frames elapsed → wraps to frame 0.
+    const d_wrap = levelEndDrawable(.{ .x = 0, .y = 0 }, camera, 1.0, 1_000_000, 8);
+    try std.testing.expectEqual(@as(i32, 0), d_wrap.banner_source_rectangle.?.x);
+
+    // fps=16 → frame_duration 62.5ms (integer div → 62ms); 500_000/62 = 8064
+    // frames elapsed, % 8 = 0. Just assert it doesn't divide-by-zero and
+    // produces a valid frame index (the exact frame at a fractional-duration
+    // boundary isn't worth pinning).
+    const d_fast = levelEndDrawable(.{ .x = 0, .y = 0 }, camera, 1.0, 500_000, 16);
+    try std.testing.expect(d_fast.banner_source_rectangle.?.x >= 0);
+    try std.testing.expect(d_fast.banner_source_rectangle.?.x < 8 * 256);
+
+    // fps=0 is treated as 8 (no divide-by-zero).
+    const d_zero = levelEndDrawable(.{ .x = 0, .y = 0 }, camera, 1.0, 500_000, 0);
+    try std.testing.expectEqual(@as(i32, 4 * 256), d_zero.banner_source_rectangle.?.x);
 }

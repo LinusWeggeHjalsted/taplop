@@ -642,7 +642,7 @@ pub const campaign_key_map = std.StaticStringMap([]const []const u8).initComptim
 // action + modifier flags.
 
 const settings_audio_keys = [_][]const u8{ "music_volume", "sound_effects_volume" };
-const settings_display_keys = [_][]const u8{ "vsync", "render_fps_cap", "camera_zoom" };
+const settings_display_keys = [_][]const u8{ "vsync", "render_fps_cap", "camera_zoom", "animation_fps" };
 const settings_gameplay_keys = [_][]const u8{ "auto_skip_attack_step_out_of_combat", "auto_target_at_cursor", "player_color_index" };
 const settings_input_bindings_keys = [_][]const u8{ "input_type", "input_name", "action", "ctrl", "shift", "alt" };
 
@@ -852,6 +852,9 @@ pub fn loadSettings(
             }
             if (findValue(pairs, "camera_zoom")) |value| {
                 settings.camera_zoom = asF32(value) orelse settings.camera_zoom;
+            }
+            if (findValue(pairs, "animation_fps")) |value| {
+                settings.animation_fps = asU32(value) orelse settings.animation_fps;
             }
         }
     }
