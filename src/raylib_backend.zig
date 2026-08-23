@@ -197,6 +197,11 @@ pub const RaylibBackend = struct {
     /// the asset failed to load. Looping; updated each frame by
     /// `updateMusic`. See AGENTS → Audio.
     music: ?rl.Music = null,
+    /// The raw OGG bytes backing `music`. raylib's `LoadMusicStreamFromMemory`
+    /// (stb_vorbis) keeps a POINTER to the passed buffer (no internal copy),
+    /// so the bytes must outlive the stream — freed in `deinitAudio` alongside
+    /// the music unload. null when no music loaded.
+    music_data: ?[]const u8 = null,
     /// Whether `initAudio` succeeded in opening the audio device. If false,
     /// all audio methods no-op (the game runs silent, never crashes).
     audio_ready: bool = false,
@@ -288,15 +293,19 @@ pub const RaylibBackend = struct {
             self.ensureSoundLoaded(sound);
         }
 
-        // Load + start the music stream (looping).
+        // Load + start the music stream (looping). raylib's stb_vorbis keeps
+        // a POINTER to the buffer (no copy), so the bytes must outlive the
+        // stream — hold them in `music_data`, freed in `deinitAudio`.
         const music_path = "assets/audio/music/ambient.ogg";
         if (self.file_source.readFile(self.allocator, music_path)) |bytes| {
-            defer self.allocator.free(bytes);
             if (rl.loadMusicStreamFromMemory(".ogg", bytes) catch null) |music_value| {
                 var music = music_value;
                 music.looping = true;
                 self.music = music;
+                self.music_data = bytes; // keep alive for the stream's lifetime
                 rl.playMusicStream(music);
+            } else {
+                self.allocator.free(bytes);
             }
         } else |_| {}
 
@@ -358,6 +367,10 @@ pub const RaylibBackend = struct {
             rl.stopMusicStream(music);
             rl.unloadMusicStream(music);
             self.music = null;
+        }
+        if (self.music_data) |bytes| {
+            self.allocator.free(bytes);
+            self.music_data = null;
         }
         var sounds = self.sound_cache.valueIterator();
         while (sounds.next()) |maybe_sound| {

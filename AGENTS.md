@@ -276,6 +276,11 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   audio it's silent). `deinitAudio` (called from `deinit`) unloads everything
   + closes the device. If the audio device can't open, `audio_ready` stays
   false and ALL audio methods no-op — the game runs silent, never crashes.
+  **MUSIC LIFETIME GOTCHA:** raylib's `LoadMusicStreamFromMemory` (stb_vorbis)
+  keeps a POINTER to the passed buffer (no internal copy), so the bytes must
+  outlive the stream — held in `music_data` and freed in `deinitAudio`
+  alongside the stream unload. Freeing the bytes right after load (the
+  texture-cache pattern) crashes on the next `updateMusicStream`.
 - **Per-frame:** `frame()` calls `backend.updateMusic()` at the top (raylib
   requires it for streaming) + `backend.playSounds(drained, settings)` after
   the drain. Sfx volume = `sound_effects_volume * master_volume`; music
