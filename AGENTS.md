@@ -1357,23 +1357,38 @@ list (decorations selectable through their full bbox, not just footprint —
 to be confirmed when the editor viewport is wired).
 
 **Implemented:** types (`Editor`/`EditorLevel`/`EntityTypeDef`/
-`DecorationTypeDef`/`EditorMode`), event variants + handlers (framing +
-`editor_set_active_level`), exit guard in `end_level`/`end_mission`,
-`open_editor` action + main-menu "Editor" button (dev entry, hardcoded to
-`first_mission`), `parseEntityDefinition` (extracted, shared by enemy + player
-loading), `loadPlayerLoadout` + `player.txt` format (`PlayerLoadout` section),
-`buildEditorMission` (dedup-on-load), `instantiateEditorLevel`, round-trip test
-(open → playtest → end → close, asserts palette + player_def + instantiated
-entities). `first_mission` ships a `player.txt`. **Pending:** editor UI/input
-— the layout + active-tool + selection model above, implemented as a vertical
-slice (static shell first: tabs + viewport + bottom bar + inspector rendering
-with real data, no interaction; then wire input per tool). New events needed:
-`editor_add_level` / `editor_delete_level` / `editor_add_entity_type` /
-`editor_add_decoration_type` / `editor_add_item_type` / `editor_place_*` /
-`editor_delete_placement` / `editor_move_placement` / `editor_edit_type_*`
-(field-level edits) / `editor_toggle_inspector` / `editor_set_tool`. Default
-level template (`data/default_level.txt`). Validation result + replay
-attachment (deferred with online services), editor autosave (nice-to-have).
+`DecorationTypeDef`/`EditorMode`), the framing events (`open_editor` /
+`close_editor` / `start_playtest` / `end_playtest` / `start_validation` /
+`end_validation`) + `editor_set_active_level` with full handlers, exit guard in
+`end_level`/`end_mission`, `open_editor` action + main-menu "Editor" button
+(dev entry, hardcoded to `beginnings`), `parseEntityDefinition` (extracted,
+shared by enemy + player loading), `loadPlayerLoadout` + `player.txt` format
+(`PlayerLoadout` section), `buildEditorMission` (dedup-on-load),
+`instantiateEditorLevel`, round-trip test (open → playtest → end → close,
+asserts palette + player_def + instantiated entities). `beginnings` ships a
+`player.txt`.
+
+**Event structs DEFINED, handlers PENDING.** Every edit-verb event struct
+exists in events.zig (`editor_add_level` / `editor_delete_level` /
+`editor_set_tile` / `editor_set_level_name` / `editor_set_level_color_wheel`
+/ `editor_set_level_custom_theme` / `editor_set_mission_name` /
+`editor_set_player_start` / `editor_set_level_end` / `editor_add_entity_type`
+/ `editor_add_decoration_type` / `editor_add_item_type` /
+`editor_delete_type` / `editor_place_entity` / `editor_place_decoration` /
+`editor_place_item` / `editor_delete_*_placement` / `editor_move_*_placement`
+/ `editor_set_entity_*` (20+ field setters) / `editor_set_decoration_*` /
+`editor_set_item_*` / `editor_add_*_layer` / `editor_remove_*_layer` /
+`editor_set_*_layer`), but `handleEditorEvent` is a `@panic` stub — every
+edit verb except `editor_set_active_level` (handled inline in `processEvent`)
+traps. Wiring the handlers is part of the UI slice.
+
+**Pending:** editor UI/input — the layout + active-tool + selection model
+above, implemented as a vertical slice (static shell first: tabs + viewport +
+bottom bar + inspector rendering with real data, no interaction; then wire
+input per tool + the edit-verb handlers). Still-needed event structs:
+`editor_toggle_inspector` / `editor_set_tool`. Default level template
+(`data/default_level.txt`). Validation result + replay attachment (deferred
+with online services), editor autosave (nice-to-have).
 
 ## Decorations & Footprint
 
@@ -1557,12 +1572,13 @@ measurements (see TODO.md).
 
 ### Asset memory (from the Unity project audit)
 
-Disk size is NOT memory size. Textures are the dominant consumer (~80× the
-PNG folder once decoded), not gamestate: GPU needs raw RGBA = w×h×4, and
-source art is oversized (Flag 4096×1024 = 16 MB; every weapon 2048×1280 =
-10 MB) for a grid game rendering at ~256px. Current assets: 122 PNGs = 4.1
-MB on disk but ~325 MB decoded RGBA (~433 MB w/ mipmaps); 16 WAVs = 34.8 MB
-(one 33.5 MB Ambient track, SFX ~1.3 MB combined).
+Disk size is NOT memory size. Textures are the dominant consumer (~30× the
+PNG folder once decoded), not gamestate: GPU needs raw RGBA = w×h×4. Source
+art has ALREADY been downscaled to display resolution (the Unity audit's
+lever 1 is done): weapons are 512×640 single-pose (~1.3 MB decoded), the
+flag banner is 2048×512 (4 MB, an 8-frame sheet). Current assets: 88 PNGs =
+1.9 MB on disk, ~60 MB decoded RGBA (~80 MB w/ mipmaps). No audio assets
+have been ported yet (0 WAVs/OGGs).
 
 Two separate budgets:
 - **wasm linear heap** — gamestate / events / decoded SFX / temp; small.
@@ -1570,18 +1586,19 @@ Two separate budgets:
   the wasm heap. Streamed music also stays off the heap; fully decoded audio
   lands on it.
 
-Levers, in impact order (in-memory lossless compression is NOT one of them):
-1. **Downscale source sprites to display resolution** (~325 MB → <50 MB, no
-   perceptible loss). Biggest memory + web-download win. (Confirm whether
-   sprites are animation sheets first — affects how far we can shrink.)
-2. **Stream music as OGG** (raylib `LoadMusicStream`): ~33 MB → tiny ring
-   buffer + decoder; disk ~33 MB → ~3–4 MB.
+Levers, in impact order (downscaling is DONE; the rest are future work):
+1. **Downscale source sprites to display resolution** — DONE. Weapons at
+   512×640, flag at 2048×512, entities 512×640, tiles 256×256. Decoded RGBA
+   is ~60 MB, reasonable for web.
+2. **Stream music as OGG** (raylib `LoadMusicStream`): once audio is ported,
+   stream rather than fully decode — tiny ring buffer + decoder vs the full
+   PCM on the heap.
 3. **SFX:** fully decode to PCM (memory trivial); OGG only helps download.
 4. **GPU texture compression** (ASTC/ETC2/BC via KTX2/Basis) only if later
    measurements demand it — lossy, WebGL/raylib support fiddly.
 
-Web download budget: PNG (lossless) for art + OGG for audio takes asset
-download from ~39 MB to ~8 MB, mostly art.
+Web download budget: art is already ~1.9 MB PNG. Audio port will add the
+bulk of the download (streamed OGG keeps it small).
 
 ## UI Framework
 
@@ -1657,6 +1674,12 @@ download from ~39 MB to ~8 MB, mostly art.
   mission's config files; see Custom Missions & Online Services → Content
   identity). v1 hashes config files only; extends to custom assets when the
   VFS lands with directory listing.
+- `src/crash_dump.zig` — custom panic namespace installed in both entry files;
+  dumps `event_history` to `crashes/crash_*.txt` before `@trap`. See
+  AGENTS → Error Handling → Crash dump.
+- `src/deep_copy.zig` — comptime-generic `deepCopy`/`deepEqual`/
+  `firstDiffField` over GameState + Event; `deepEqual` backs replay
+  verification (`verifyReplayMatch`). See AGENTS → Determinism & Tiebreaking.
 - `src/skills/` — one file per skill, Skill interface
 - `src/effects/` — Effect interface with 18 callbacks (interception +
   on-effect/turn/attack hooks + outgoing/incoming pairs for damage/stun/effect/

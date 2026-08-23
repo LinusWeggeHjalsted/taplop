@@ -103,15 +103,15 @@ Reference notes that matter while working here (sprite/asset conventions):
 
 - Entity + weapon assets share one 512×640 frame + pivot (0.5, 0.8)
   (normalized fraction; horizontal center, at the feet). Renderer aligns
-  pivot → tile anchor; weapons register with no per-sprite offset. Source
-  2048×1280 two-pose sheets, LEFT pose only, stored at 0.5 (256px/tile).
-  Player bodies use weapons/<type>, enemies weapons/enemy_<type>; off-hand
-  mirrored via flip_horizontal. Right pose reserved for animation later.
-- Tiles: assets/world/tile.png (source 600×600 → 256×256; jagged edges
-  overlap to outline the grid). Checkerboard tint per tile.
+  pivot → tile anchor; weapons register with no per-sprite offset. Source art
+  is already at display resolution (512×640 single-pose, 256px/tile). Player
+  bodies use weapons/<type>, enemies weapons/enemy_<type>; off-hand mirrored
+  via flip_horizontal.
+- Tiles: assets/world/tile.png (256×256; jagged edges overlap to outline the
+  grid). Checkerboard tint per tile.
 - Flag: static pole world/flag_pole.png (256×512 = 1×2, pivot 0.5/0.75) +
-  animated banner world/flag.png overlaid (same frame/pivot). Both stored
-  ×0.5. Same sprite for level-end and hub mission-start markers.
+  animated banner world/flag.png overlaid (same frame/pivot). Same sprite
+  for level-end and hub mission-start markers.
 - Ground items: world/ground_items.png (256×256, centered pivot 0.5/0.5).
 
 Open / in-progress:
@@ -121,14 +121,12 @@ Open / in-progress:
   Overlays have no art — renderer draws them as primitives. The cursor is
   derived in view() from the session pointer (screenToTile), replay-safe.
   range/radius/aggro outline types aren't emitted yet (renderer handles them).
-- [~] GroundDrawable slice: ENTITIES + flag poles DONE (base sprite only,
-  pivot 0.5/0.8, ascending-tile.y back-to-front sort). Decorations + ground
-  items still TODO.
-  - REFINEMENT: the level-end marker is drawn before all entities (actors
-    always occlude it) rather than participating in the y-sort — do a proper
-    mixed y-sort of entities + markers + decorations later.
-- [~] Entity sub-layer assembly: base sprite + WEAPONS done. Still TODO:
-  gear sprites, effect sprites (back/front), and health bars.
+- [x] GroundDrawable slice: entities + flag poles + decorations + ground
+  items all rendered, unified ascending (y, x) y-sort across entities +
+  decoration pieces + level-end/mission-start markers (DONE — see
+  DONE.md). Base sprite only (pivot 0.5/0.8).
+- [~] Entity sub-layer assembly: base sprite + WEAPONS + entity LAYERS done.
+  Still TODO: gear sprites, effect sprites (back/front), and health bars.
 - Sprite animation (view-side, cosmetic; NEVER gameplay state, so replay-safe
   — frame is purely a function of wall-clock time, like the pointer/tooltip).
   Settled design + flag banner DONE — see AGENTS → Animation.
@@ -229,8 +227,8 @@ Settled — see AGENTS → Decorations & Footprint. WIRING progress:
 - [x] View splitting (per-bbox-tile `DecorationPieceDrawable` with assigned
       footprint sort y + unified ground-drawable y-sort). Entities +
       decoration pieces + level-end/mission-start markers now share one
-      ascending (y, x) sort. Shipped level_1 + starting_village carry sample
-      decorations (tree_1, stone_1).
+      ascending (y, x) sort. Shipped beginnings/level_1 +
+      camp_at_the_crossroads carry sample decorations (ruin_*, stone_*).
 - [x] Color indexing: `color_index` per decoration entry → world gradient
       color; view resolves it to the raylib tint. Default 0.
 - [x] Multi-sprite layers: `layer` sub-groups (delimiter syntax) with
@@ -288,28 +286,23 @@ the replay/cache story, AND the full UI layout + active-tool model +
 left inspector; no dialogs; Test/Validate top-right; Upload deferred). Not
 yet implemented. Remaining work:
 
-- `Editor` / `EditorMode` types + event variants + `processEvent` arms for
-  the framing + edit verbs. DONE (building blocks: `open_editor` /
-  `close_editor` / `start_playtest` / `end_playtest` / `start_validation` /
-  `end_validation` + `editor_set_active_level`; exit guard in `end_level` /
-  `end_mission`; round-trip test). See AGENTS → Architecture → Level Editor.
+- Types + framing event handlers DONE (`open_editor` / `close_editor` /
+  `start_playtest` / `end_playtest` / `start_validation` / `end_validation` +
+  `editor_set_active_level`; exit guard in `end_level` / `end_mission`;
+  round-trip test). See AGENTS → Architecture → Level Editor.
+- Edit-verb event structs DEFINED, handlers PENDING: every edit verb exists
+  in events.zig but `handleEditorEvent` is a `@panic` stub (only
+  `editor_set_active_level` is handled, inline in `processEvent`). Wiring
+  the handlers is part of the UI slice.
 - Editor input/UI: the settled layout/interaction design (AGENTS →
   Architecture → Level Editor → Editor UI layout). Build as a vertical
   slice — static shell first (tabs + viewport + bottom bar + inspector
-  rendering with real data, no interaction), then wire input per tool.
-  New events: `editor_add_level` / `editor_delete_level` /
-  `editor_add_entity_type` / `editor_add_decoration_type` /
-  `editor_add_item_type` / `editor_place_*` / `editor_delete_placement` /
-  `editor_move_placement` / `editor_edit_type_*` / `editor_toggle_inspector` /
-  `editor_set_tool`. Default level template (`data/default_level.txt`).
-  Currently the `.editor` screen has no view or
+  rendering with real data, no interaction), then wire input per tool +
+  the edit-verb handlers. Still-needed event structs:
+  `editor_toggle_inspector` / `editor_set_tool`. Default level template
+  (`data/default_level.txt`). Currently the `.editor` screen has no view or
   input handler — the building blocks are reachable (main-menu "Editor"
   button) but the screen is blank.
-- The exit guard in `end_level` / `end_mission` (suppress default
-  continuation in `.playtest`; redirect to next editor level /
-  `end_validation` in `.validate`).
-- `open_editor` entry point (from main menu for now; later from a custom-
-  mission browser).
 - Validation result + replay attachment: on successful validation, attach a
   saved mission replay to the custom mission (next save writes it into the
   custom mission dir) for re-validation before uploading to the online
@@ -350,7 +343,7 @@ Logging follow-ups (open):
   field-presence contract (writer emits every field; reader requires every
   non-optional field).
 - Combat reconstruction test: extend the runToIdle harness to enter
-  first_mission's level and script a few combat actions with ADAPTIVE
+  beginnings' level and script a few combat actions with ADAPTIVE
   targeting (read enemy position from live state), then serialize → load →
   reconstruct → expectEqualDeep. Self-referential (no golden values). Guards
   handler PURITY (state,event)→state, not AI determinism. NOTE: runToIdle
