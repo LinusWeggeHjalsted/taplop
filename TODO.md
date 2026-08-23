@@ -231,8 +231,9 @@ Settled — see AGENTS → Decorations & Footprint. WIRING progress:
       sprite + color_index; validated same pixel dims as base; per-bbox-tile
       layer chunks drawn over the base. `DecorationLayer` type +
       `DecorationPieceDrawable.layers` slice.
-- [ ] `data/decorations.txt` registry (editor-palette prefabs — pending editor
-      UI).
+- [x] `data/decorations.txt` registry (editor-palette prefabs — pending editor
+      UI). Built + loader (`loadDecorationRegistry`) + validation wired; lands
+      in the editor palette when the editor UI slice does.
 - [ ] Editor custom-decoration acquisition (pick PNG → write to file source →
       resolve dims → `editor_add_decoration_type` event).
 - [ ] Editor footprint editing event + UI.

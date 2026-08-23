@@ -1,0 +1,98 @@
+Metadata
+file_format_version 1
+
+Decorations
+sprite tree_1
+color_index 4
+footprint 1 2
+layer
+sprite tree_1_canopy
+color_index 2
+
+sprite ruin_1
+color_index 0
+footprint 0 1
+
+sprite ruin_2
+color_index 0
+footprint 0 1
+
+sprite ruin_3
+color_index 0
+footprint 0 2
+
+sprite ruin_4
+color_index 0
+footprint 0 0
+
+sprite ruin_5
+color_index 0
+footprint 0 0
+
+sprite ruin_6
+color_index 0
+footprint 0 0
+
+sprite ruin_7
+color_index 0
+footprint 0 0
+
+sprite ruin_8
+color_index 0
+footprint 0 0
+
+sprite ruin_9
+color_index 0
+footprint 0 0
+
+sprite ruin_10
+color_index 0
+footprint 1 1
+
+sprite ruin_11
+color_index 0
+footprint 1 1
+
+sprite statue_1
+color_index 0
+footprint 0 1
+
+sprite statue_2
+color_index 0
+footprint 0 1
+
+sprite statue_3
+color_index 0
+footprint 0 1
+
+sprite statue_4
+color_index 0
+footprint 0 1
+
+sprite statue_5
+color_index 0
+footprint 0 2
+
+sprite stone_1
+color_index 5
+footprint 0 0
+
+sprite stone_2
+color_index 5
+footprint 0 0
+
+sprite stone_3
+color_index 5
+footprint 0 0
+
+sprite stone_4
+color_index 5
+footprint 0 0
+
+sprite stone_5
+color_index 5
+footprint 0 0
+
+sprite stone_6
+color_index 5
+footprint 0 1

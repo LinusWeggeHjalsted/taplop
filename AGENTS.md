@@ -1314,7 +1314,8 @@ mission's levels populate the palette at editor launch via the existing
 dedup-on-load (same as enemies). Custom decorations carry their footprint
 inline in the level file (same format), so official and custom share ONE
 parser path; the registry is never read during gameplay/replay, only when the
-editor adds a new prefab to the palette.
+editor adds a new prefab to the palette. Loaded by
+`parser.loadDecorationRegistry` (returns `[]DecorationTypeDef`).
 
 ## Entity & UI Coloring
 

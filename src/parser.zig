@@ -98,6 +98,7 @@ pub const player_save_file_format_version: u32 = 1;
 pub const settings_file_format_version: u32 = 1;
 pub const color_themes_file_format_version: u32 = 1;
 pub const player_loadout_file_format_version: u32 = 1;
+pub const decorations_file_format_version: u32 = 1;
 
 const Settings = types.Settings;
 const Level = types.Level;
@@ -476,6 +477,7 @@ const level_sections = [_][]const u8{ "Metadata", "Layout", "Enemies", "Decorati
 const hub_sections = [_][]const u8{ "Metadata", "Layout", "NPCs", "Decorations", "Exits" };
 const campaign_sections = [_][]const u8{"Metadata"};
 const mission_sections = [_][]const u8{"Metadata"};
+const decoration_registry_sections = [_][]const u8{ "Metadata", "Decorations" };
 const player_save_sections = [_][]const u8{
     "Metadata",       "Info",           "DiscoveredHubs",  "UnlockedSkills", "MainHandWeapon",
     "OffHandWeapon",  "Amulet",          "Coat",           "Gloves",
@@ -550,6 +552,15 @@ const level_decorations_keys = [_][]const u8{
     "layer",
 };
 
+/// Same as level_decorations_keys but without `character_code` — registry
+/// entries are prefabs identified by sprite stem, not placed by layout char.
+const decoration_registry_decorations_keys = [_][]const u8{
+    "sprite",
+    "color_index",
+    "footprint",
+    "layer",
+};
+
 const level_items_keys = [_][]const u8{
     "character_code",
     "item_type",
@@ -571,6 +582,15 @@ pub const level_key_map = std.StaticStringMap([]const []const u8).initComptime(.
     .{ "Enemies", &level_enemies_keys },
     .{ "Decorations", &level_decorations_keys },
     .{ "Items", &level_items_keys },
+});
+
+/// Static key map for the decoration registry (data/decorations.txt). The
+/// Decorations section uses the same keys as a level's Decorations section
+/// minus `character_code` (registry entries are prefabs, not placed by
+/// layout char). See AGENTS → Decorations & Footprint.
+pub const decoration_registry_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "Metadata", &level_metadata_keys },
+    .{ "Decorations", &decoration_registry_decorations_keys },
 });
 
 // --- Hub file key whitelists ---
@@ -1373,8 +1393,113 @@ fn validateDecorationFootprint(
     }
 }
 
-/// Parse all decoration definitions from the Decorations section into a
-/// hashmap keyed by character code. Each entry group has:
+/// Parse one decoration entry's pairs (sprite / color_index / footprint /
+/// layers) into a `DecorationDefinition`. Shared by the per-level inline
+/// parser (keyed by `character_code`) and the registry parser (no
+/// `character_code`). The `character_code` key, if present, is ignored here —
+/// the caller handles it. See `parseDecorationDefinitions` for the entry
+/// shape + `layer` delimiter semantics.
+fn parseDecorationEntry(
+    pairs: []const KeyValuePair,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+) DecorationDefinition {
+    const base_sprite = findValue(pairs, "sprite") orelse &.{};
+    const base_color_index = asU32(findValue(pairs, "color_index") orelse "0") orelse 0;
+    const base_pixel_dims = resolveDecorationSpriteDimensions(base_sprite, file_source, allocator);
+
+    // Collect base footprint + parse layer sub-groups. The pairs list is
+    // flat; a `layer` key delimits a new sub-group whose following
+    // `sprite`/`color_index` pairs belong to it.
+    var footprint: std.ArrayList(types.Vector2) = .empty;
+    var layers: std.ArrayList(types.DecorationLayer) = .empty;
+    var current_layer_sprite: ?[]const u8 = null;
+    var current_layer_color: u32 = 0;
+    var in_layer = false;
+
+    for (pairs) |pair| {
+        if (std.mem.eql(u8, pair.key, "layer")) {
+            // Finish the previous layer sub-group (if any).
+            if (in_layer) finishLayer(
+                current_layer_sprite,
+                current_layer_color,
+                base_pixel_dims,
+                file_source,
+                allocator,
+                &layers,
+            );
+            // Start a new layer sub-group.
+            in_layer = true;
+            current_layer_sprite = null;
+            current_layer_color = 0;
+            continue;
+        }
+
+        if (in_layer) {
+            if (std.mem.eql(u8, pair.key, "sprite")) {
+                current_layer_sprite = pair.value;
+            } else if (std.mem.eql(u8, pair.key, "color_index")) {
+                current_layer_color = asU32(pair.value) orelse 0;
+            }
+            // Other keys (footprint, character_code) are ignored inside a
+            // layer sub-group.
+        } else {
+            // Base-level fields.
+            if (std.mem.eql(u8, pair.key, "footprint")) {
+                const coords = parseVector2Pair(pair.value) orelse
+                    @panic("malformed footprint coordinate line");
+                footprint.append(allocator, coords) catch @panic("failed to append footprint");
+            }
+            // character_code / sprite / color_index are already handled
+            // above; ignore them here.
+        }
+    }
+    // Finish the last layer sub-group (if the entry ended mid-layer).
+    if (in_layer) finishLayer(
+        current_layer_sprite,
+        current_layer_color,
+        base_pixel_dims,
+        file_source,
+        allocator,
+        &layers,
+    );
+
+    return .{
+        .sprite = base_sprite,
+        .footprint = footprint.toOwnedSlice(allocator) catch @panic("failed to own footprint slice"),
+        .pixel_dims = base_pixel_dims,
+        .color_index = base_color_index,
+        .layers = layers.toOwnedSlice(allocator) catch @panic("failed to own layers slice"),
+    };
+}
+
+/// Resolve a pending layer sub-group's sprite + color into a `DecorationLayer`,
+/// validate its pixel dims match the base, and append it. Shared by the two
+/// layer-finish sites in `parseDecorationEntry` (mid-entry `layer` delimiter
+/// + end-of-entry). No-op (appends nothing) when the layer had no `sprite`.
+fn finishLayer(
+    layer_sprite: ?[]const u8,
+    layer_color: u32,
+    base_pixel_dims: types.Vector2,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+    layers: *std.ArrayList(types.DecorationLayer),
+) void {
+    if (layer_sprite) |sprite| {
+        const layer_dims = resolveDecorationSpriteDimensions(sprite, file_source, allocator);
+        if (layer_dims.x != base_pixel_dims.x or layer_dims.y != base_pixel_dims.y) {
+            @panic("decoration layer sprite must be the same pixel dimensions as the base");
+        }
+        layers.append(allocator, .{
+            .sprite = sprite,
+            .color_index = layer_color,
+            .pixel_dims = layer_dims,
+        }) catch @panic("failed to append decoration layer");
+    }
+}
+
+/// Parse all decoration definitions from a level/hub's Decorations section
+/// into a hashmap keyed by character code. Each entry group has:
 ///   character_code X  (single char)
 ///   sprite <name>        (base sprite)
 ///   color_index N        (optional, default 0 — world gradient index)
@@ -1394,91 +1519,49 @@ fn parseDecorationDefinitions(
     var definitions = std.AutoHashMap(u8, DecorationDefinition).init(allocator);
     if (findSection(sections, "Decorations")) |section| {
         for (section.entry_groups) |group| {
-            const pairs = group.pairs;
-            const code_string = findValue(pairs, "character_code") orelse continue;
+            const code_string = findValue(group.pairs, "character_code") orelse continue;
             if (code_string.len != 1) continue;
-            const base_sprite = findValue(pairs, "sprite") orelse &.{};
-            const base_color_index = asU32(findValue(pairs, "color_index") orelse "0") orelse 0;
-            const base_pixel_dims = resolveDecorationSpriteDimensions(base_sprite, file_source, allocator);
-
-            // Collect base footprint + parse layer sub-groups. The pairs list
-            // is flat; a `layer` key delimits a new sub-group whose following
-            // `sprite`/`color_index` pairs belong to it.
-            var footprint: std.ArrayList(types.Vector2) = .empty;
-            var layers: std.ArrayList(types.DecorationLayer) = .empty;
-            var current_layer_sprite: ?[]const u8 = null;
-            var current_layer_color: u32 = 0;
-            var in_layer = false;
-
-            for (pairs) |pair| {
-                if (std.mem.eql(u8, pair.key, "layer")) {
-                    // Finish the previous layer sub-group (if any).
-                    if (in_layer) {
-                        if (current_layer_sprite) |layer_sprite| {
-                            const layer_dims = resolveDecorationSpriteDimensions(layer_sprite, file_source, allocator);
-                            if (layer_dims.x != base_pixel_dims.x or layer_dims.y != base_pixel_dims.y) {
-                                @panic("decoration layer sprite must be the same pixel dimensions as the base");
-                            }
-                            layers.append(allocator, .{
-                                .sprite = layer_sprite,
-                                .color_index = current_layer_color,
-                                .pixel_dims = layer_dims,
-                            }) catch @panic("failed to append decoration layer");
-                        }
-                    }
-                    // Start a new layer sub-group.
-                    in_layer = true;
-                    current_layer_sprite = null;
-                    current_layer_color = 0;
-                    continue;
-                }
-
-                if (in_layer) {
-                    if (std.mem.eql(u8, pair.key, "sprite")) {
-                        current_layer_sprite = pair.value;
-                    } else if (std.mem.eql(u8, pair.key, "color_index")) {
-                        current_layer_color = asU32(pair.value) orelse 0;
-                    }
-                    // Other keys (footprint, character_code) are ignored
-                    // inside a layer sub-group.
-                } else {
-                    // Base-level fields.
-                    if (std.mem.eql(u8, pair.key, "footprint")) {
-                        const coords = parseVector2Pair(pair.value) orelse
-                            @panic("malformed footprint coordinate line");
-                        footprint.append(allocator, coords) catch @panic("failed to append footprint");
-                    }
-                    // character_code / sprite / color_index are already
-                    // handled above; ignore them here.
-                }
-            }
-            // Finish the last layer sub-group (if the entry ended mid-layer).
-            if (in_layer) {
-                if (current_layer_sprite) |layer_sprite| {
-                    const layer_dims = resolveDecorationSpriteDimensions(layer_sprite, file_source, allocator);
-                    if (layer_dims.x != base_pixel_dims.x or layer_dims.y != base_pixel_dims.y) {
-                        @panic("decoration layer sprite must be the same pixel dimensions as the base");
-                    }
-                    layers.append(allocator, .{
-                        .sprite = layer_sprite,
-                        .color_index = current_layer_color,
-                        .pixel_dims = layer_dims,
-                    }) catch @panic("failed to append decoration layer");
-                }
-            }
-
-            const footprint_owned = footprint.toOwnedSlice(allocator) catch @panic("failed to own footprint slice");
-            const layers_owned = layers.toOwnedSlice(allocator) catch @panic("failed to own layers slice");
-            definitions.put(code_string[0], .{
-                .sprite = base_sprite,
-                .footprint = footprint_owned,
-                .pixel_dims = base_pixel_dims,
-                .color_index = base_color_index,
-                .layers = layers_owned,
-            }) catch @panic("failed to insert decoration definition");
+            definitions.put(code_string[0], parseDecorationEntry(group.pairs, file_source, allocator)) catch
+                @panic("failed to insert decoration definition");
         }
     }
     return definitions;
+}
+
+/// Load the decoration registry (`data/decorations.txt`) — one entry per
+/// shipped decoration sprite, as editor-palette prefabs for "add new
+/// decoration." Each entry has the same shape as a level's Decorations entry
+/// MINUS `character_code` (registry entries are prefabs identified by sprite
+/// stem, not placed by layout char). Returns `[]DecorationTypeDef` (the
+/// editor palette type): `id` = sprite stem. Used ONLY by the editor; never
+/// read during gameplay/replay (custom decorations carry their footprint
+/// inline in the level file, sharing this parser path). See AGENTS →
+/// Decorations & Footprint.
+pub fn loadDecorationRegistry(
+    sections: []const Section,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+) ![]types.DecorationTypeDef {
+    try validateSections(sections, &decoration_registry_sections);
+    try validateFileFormatVersion(sections, "Metadata", decorations_file_format_version);
+    var list: std.ArrayList(types.DecorationTypeDef) = .empty;
+    if (findSection(sections, "Decorations")) |section| {
+        for (section.entry_groups) |group| {
+            // Skip an empty group (no sprite) — e.g. a trailing blank-line
+            // artifact. A real entry must have a `sprite` key.
+            if (findValue(group.pairs, "sprite") == null) continue;
+            const def = parseDecorationEntry(group.pairs, file_source, allocator);
+            list.append(allocator, .{
+                .id = def.sprite,
+                .sprite = def.sprite,
+                .footprint = def.footprint,
+                .pixel_dims = def.pixel_dims,
+                .color_index = def.color_index,
+                .layers = def.layers,
+            }) catch @panic("failed to append decoration registry entry");
+        }
+    }
+    return list.toOwnedSlice(allocator) catch @panic("failed to own decoration registry slice");
 }
 
 /// Parse a `"x y"` pair of integers into a Vector2. Returns null on failure.
@@ -1587,6 +1670,19 @@ pub fn freeDecoration(decoration: types.Decoration, allocator: std.mem.Allocator
     allocator.free(decoration.footprint);
     for (decoration.layers) |layer| allocator.free(layer.sprite);
     allocator.free(decoration.layers);
+}
+
+/// Free owned arrays (footprint + layers) in a decoration-registry slice.
+/// String fields (`id`, `sprite`, each layer's `sprite`) are borrowed from
+/// the parsed sections and freed by `freeParsedSections`; only the
+/// `footprint` and `layers` arrays are owned. Mirrors `freeDecoration` but
+/// for `DecorationTypeDef` (registry prefab, no cloned strings).
+pub fn freeDecorationRegistry(registry: []types.DecorationTypeDef, allocator: std.mem.Allocator) void {
+    for (registry) |def| {
+        allocator.free(def.footprint);
+        allocator.free(def.layers);
+    }
+    allocator.free(registry);
 }
 
 /// Deep-clone an item's name string into `allocator`.
@@ -3470,6 +3566,64 @@ test "loadLevel decoration with layers" {
     try std.testing.expectEqual(@as(u32, 2), level.decorations[0].layers[0].color_index);
     try std.testing.expectEqual(@as(i32, 768), level.decorations[0].layers[0].pixel_dims.x);
     try std.testing.expectEqual(@as(i32, 768), level.decorations[0].layers[0].pixel_dims.y);
+}
+
+test "loadDecorationRegistry parses prefabs (no character_code)" {
+    const allocator = std.testing.allocator;
+    // The shipped registry: Metadata + Decorations with one entry per sprite,
+    // no character_code. Entries are blank-line-separated; the tree carries a
+    // canopy layer. Read from the embedded map via the real FileSource so the
+    // test exercises the shipped file.
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = @import("file_source.zig").FileSource.init(io, std.Io.Dir.cwd());
+
+    const bytes = try file_source.readFile(allocator, "data/decorations.txt");
+    defer allocator.free(bytes);
+    const sections = try parseConfigFile(bytes, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    const registry = try loadDecorationRegistry(sections, &file_source, allocator);
+    defer freeDecorationRegistry(registry, allocator);
+
+    // One entry per shipped decoration sprite: tree_1 + 11 ruins + 5 statues
+    // + 6 stones = 23. (tree_1_canopy is a layer of tree_1, not its own entry.)
+    try std.testing.expectEqual(@as(usize, 23), registry.len);
+
+    // Find the tree entry (first, with a layer) and a stone (single-tile).
+    var tree: ?types.DecorationTypeDef = null;
+    var stone_6: ?types.DecorationTypeDef = null;
+    for (registry) |def| {
+        if (std.mem.eql(u8, def.sprite, "tree_1")) tree = def;
+        if (std.mem.eql(u8, def.sprite, "stone_6")) stone_6 = def;
+    }
+    try std.testing.expect(tree != null);
+    try std.testing.expect(stone_6 != null);
+
+    // tree_1: 3x3 bbox (768x768), footprint at (1,2), color 4, one canopy
+    // layer (color 2, same dims).
+    const t = tree.?;
+    try std.testing.expectEqual(@as(i32, 768), t.pixel_dims.x);
+    try std.testing.expectEqual(@as(i32, 768), t.pixel_dims.y);
+    try std.testing.expectEqual(@as(usize, 1), t.footprint.len);
+    try std.testing.expectEqual(@as(i32, 1), t.footprint[0].x);
+    try std.testing.expectEqual(@as(i32, 2), t.footprint[0].y);
+    try std.testing.expectEqual(@as(u32, 4), t.color_index);
+    try std.testing.expectEqual(@as(usize, 1), t.layers.len);
+    try std.testing.expectEqualStrings("tree_1_canopy", t.layers[0].sprite);
+    try std.testing.expectEqual(@as(u32, 2), t.layers[0].color_index);
+    try std.testing.expect(std.mem.eql(u8, "tree_1", t.id));
+
+    // stone_6: 1x2 bbox (256x512), footprint at (0,1), color 5, no layers.
+    const s = stone_6.?;
+    try std.testing.expectEqual(@as(i32, 256), s.pixel_dims.x);
+    try std.testing.expectEqual(@as(i32, 512), s.pixel_dims.y);
+    try std.testing.expectEqual(@as(usize, 1), s.footprint.len);
+    try std.testing.expectEqual(@as(i32, 0), s.footprint[0].x);
+    try std.testing.expectEqual(@as(i32, 1), s.footprint[0].y);
+    try std.testing.expectEqual(@as(u32, 5), s.color_index);
+    try std.testing.expectEqual(@as(usize, 0), s.layers.len);
 }
 
 test "loadLevel rejects unexpected sections" {

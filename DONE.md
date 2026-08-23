@@ -1788,6 +1788,48 @@ exits.
 - parser.zig test fixtures that use `first_mission`/`starting_village` as
   inline string literals are self-contained (not file reads) — left as-is.
 
+### Decoration registry file + loader (DONE)
+
+Built `data/decorations.txt` (the registry of official decoration prefabs)
+and `parser.loadDecorationRegistry`, the editor-palette primitive for "add a
+built-in decoration to the tools." See AGENTS → Decorations & Footprint.
+
+- **`data/decorations.txt`:** `Metadata` + `Decorations` section, one
+  entry per shipped decoration sprite (23 entries: tree_1 + 11 ruins + 5
+  statues + 6 stones). Same entry shape as a level's Decorations entry MINUS
+  `character_code` — registry entries are prefabs identified by sprite stem,
+  not placed by layout char. Each carries a default `color_index` (ruins /
+  statues = 0, stones = 5, tree = 4) + `footprint` (single-tile, derived
+  from the Unity sprite pivots, same values the port script wrote inline into
+  level files). `tree_1` carries its `tree_1_canopy` layer (color 2).
+- **`loadDecorationRegistry(sections, file_source, allocator)
+  ![]DecorationTypeDef`:** validates sections + file_format_version, parses
+  each Decorations entry group via the shared `parseDecorationEntry` helper,
+  returns `[]DecorationTypeDef` with `id = sprite` (matching
+  `buildEditorMission`'s convention). Skips empty groups (no `sprite`).
+- **Refactor:** extracted `parseDecorationEntry` (one entry's pairs →
+  `DecorationDefinition`) + `finishLayer` (pending layer sub-group →
+  `DecorationLayer` + validate dims) from `parseDecorationDefinitions`, so
+  the per-level inline parser and the registry parser share one entry-parsing
+  path. Behavior unchanged for levels/hubs (the existing decoration tests
+  + content validation cover the refactor).
+- **Validation wiring:** `decorations_file_format_version` (= 1),
+  `decoration_registry_sections` (`Metadata` + `Decorations`),
+  `decoration_registry_key_map` (Decorations keys = level decorations keys
+  minus `character_code`). Added to `content_validation_tests.zig`
+  classification (`data/decorations.txt` → `loadDecorationRegistry` +
+  `decoration_registry_key_map`).
+- **`freeDecorationRegistry`:** frees the owned `footprint` + `layers`
+  arrays per entry (string fields are borrowed from the parsed sections,
+  freed by `freeParsedSections`). For tests; production uses arenas.
+- **Tests:** dedicated loader test reads the shipped `data/decorations.txt`
+  via the real FileSource, asserts 23 entries, and checks tree_1 (3x3, layer,
+  footprint 1 2, color 4) + stone_6 (1x2, footprint 0 1, color 5) in detail.
+  The global shipped-content validation test covers it too.
+- **Not wired into the editor yet** (the editor UI slice is pending). The
+  primitive is ready; `editor_add_decoration_type` will consume it when the
+  palette's "add new" button lands.
+
 ### Crash dump (panic → session log) (DONE)
 
 A `@panic` now writes `crashes/crash_YYYYMMDD_HHMMSS.txt` (a replayable

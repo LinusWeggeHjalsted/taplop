@@ -42,6 +42,9 @@ fn validateConfigFile(
     } else if (std.mem.eql(u8, path, "data/salvage.txt")) {
         _ = try parser.loadSalvageDefinitions(sections, allocator);
         parser.validateKeys(sections, parser.salvage_key_map, path, allocator, warnings);
+    } else if (std.mem.eql(u8, path, "data/decorations.txt")) {
+        _ = try parser.loadDecorationRegistry(sections, file_source, allocator);
+        parser.validateKeys(sections, parser.decoration_registry_key_map, path, allocator, warnings);
     } else if (std.mem.startsWith(u8, path, "data/weapon_types/") and std.mem.endsWith(u8, path, ".txt")) {
         _ = try parser.loadWeaponTypeDefinition(sections);
         parser.validateKeys(sections, parser.weapon_type_key_map, path, allocator, warnings);
