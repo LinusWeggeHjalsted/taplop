@@ -100,6 +100,21 @@ pub const color_themes_file_format_version: u32 = 1;
 pub const player_loadout_file_format_version: u32 = 1;
 pub const decorations_file_format_version: u32 = 1;
 
+// ── Balance bounds (parse-time, uniform across all content) ──
+//
+// Every parsed gear-stat field routes through `boundedU32`, which clamps
+// out-of-range values to the max and appends a warning (so the game stays
+// playable + the author is told). See AGENTS → Custom Missions → Balance
+// bounds. Entity base stats (max_health, defense, speed, aggro_range) are
+// NOT bounded — only gear stats.
+pub const max_weapon_damage: u32 = 10;
+pub const max_spell_damage: u32 = 10;
+pub const max_health_bonus: u32 = 10;
+pub const max_defense_bonus: u32 = 5;
+pub const max_gloves_damage: u32 = 5;
+pub const max_pickup_radius: u32 = 5;
+pub const max_boots_speed: u32 = 2;
+
 const Settings = types.Settings;
 const Level = types.Level;
 const Hub = types.Hub;
@@ -389,6 +404,32 @@ fn validateFileFormatVersion(
 
 pub fn asU32(value: []const u8) ?u32 {
     return std.fmt.parseInt(u32, value, 10) catch null;
+}
+
+/// Parse a gear-stat value and clamp it to `max`. If the value exceeds `max`,
+/// append a warning to `warnings` (when non-null) naming the field, value,
+/// file, and max — then return `max` so the game stays playable. Returns 0 on
+/// parse failure (same as `asU32`). See AGENTS → Custom Missions → Balance
+/// bounds.
+fn boundedU32(
+    value_str: []const u8,
+    max: u32,
+    field_name: []const u8,
+    file_path: []const u8,
+    warnings: ?*std.ArrayList([]const u8),
+    allocator: std.mem.Allocator,
+) u32 {
+    const parsed = asU32(value_str) orelse return 0;
+    if (parsed > max) {
+        if (warnings) |w| {
+            const msg = std.fmt.allocPrint(allocator, "Value {d} for '{s}' in {s} exceeds max {d}; clamped", .{
+                parsed, field_name, file_path, max,
+            }) catch return max;
+            w.append(allocator, msg) catch return max;
+        }
+        return max;
+    }
+    return parsed;
 }
 
 pub fn asI32(value: []const u8) ?i32 {
@@ -929,6 +970,8 @@ pub fn parseEntityDefinition(
     default_name: []const u8,
     default_sprite: []const u8,
     allocator: std.mem.Allocator,
+    file_path: []const u8,
+    warnings: ?*std.ArrayList([]const u8),
 ) types.Entity {
     var entity: types.Entity = .{ .team = team };
     entity.name = findValue(pairs, "name") orelse default_name;
@@ -952,7 +995,7 @@ pub fn parseEntityDefinition(
         entity.main_hand_weapon = .{
             .name = name,
             .weapon_type = if (findValue(pairs, "main_hand_weapon_type")) |value| parseEnum(types.WeaponType, value) orelse .sword else .sword,
-            .weapon_damage = if (findValue(pairs, "main_hand_weapon_damage")) |value| asU32(value) orelse 0 else 0,
+            .weapon_damage = if (findValue(pairs, "main_hand_weapon_damage")) |value| boundedU32(value, max_weapon_damage, "main_hand_weapon_damage", file_path, warnings, allocator) else 0,
         };
     }
     // Off hand weapon
@@ -960,39 +1003,39 @@ pub fn parseEntityDefinition(
         entity.off_hand_weapon = .{
             .name = name,
             .weapon_type = if (findValue(pairs, "off_hand_weapon_type")) |value| parseEnum(types.WeaponType, value) orelse .sword else .sword,
-            .weapon_damage = if (findValue(pairs, "off_hand_weapon_damage")) |value| asU32(value) orelse 0 else 0,
+            .weapon_damage = if (findValue(pairs, "off_hand_weapon_damage")) |value| boundedU32(value, max_weapon_damage, "off_hand_weapon_damage", file_path, warnings, allocator) else 0,
         };
     }
     // Gear
     if (findValue(pairs, "amulet_name")) |name| {
-        entity.amulet = .{ .name = name, .spell_damage = if (findValue(pairs, "amulet_spell_damage")) |value| asU32(value) orelse 0 else 0 };
+        entity.amulet = .{ .name = name, .spell_damage = if (findValue(pairs, "amulet_spell_damage")) |value| boundedU32(value, max_spell_damage, "amulet_spell_damage", file_path, warnings, allocator) else 0 };
     }
     if (findValue(pairs, "coat_name")) |name| {
         entity.coat = .{
             .name = name,
-            .defense_bonus = if (findValue(pairs, "coat_defense_bonus")) |value| asU32(value) orelse 0 else 0,
-            .health_bonus = if (findValue(pairs, "coat_health_bonus")) |value| asU32(value) orelse 0 else 0,
+            .defense_bonus = if (findValue(pairs, "coat_defense_bonus")) |value| boundedU32(value, max_defense_bonus, "coat_defense_bonus", file_path, warnings, allocator) else 0,
+            .health_bonus = if (findValue(pairs, "coat_health_bonus")) |value| boundedU32(value, max_health_bonus, "coat_health_bonus", file_path, warnings, allocator) else 0,
         };
     }
     if (findValue(pairs, "gloves_name")) |name| {
         entity.gloves = .{
             .name = name,
-            .damage_bonus = if (findValue(pairs, "gloves_damage_bonus")) |value| asU32(value) orelse 0 else 0,
-            .health_bonus = if (findValue(pairs, "gloves_health_bonus")) |value| asU32(value) orelse 0 else 0,
+            .damage_bonus = if (findValue(pairs, "gloves_damage_bonus")) |value| boundedU32(value, max_gloves_damage, "gloves_damage_bonus", file_path, warnings, allocator) else 0,
+            .health_bonus = if (findValue(pairs, "gloves_health_bonus")) |value| boundedU32(value, max_health_bonus, "gloves_health_bonus", file_path, warnings, allocator) else 0,
         };
     }
     if (findValue(pairs, "pants_name")) |name| {
         entity.pants = .{
             .name = name,
-            .pickup_radius_bonus = if (findValue(pairs, "pants_pickup_radius_bonus")) |value| asU32(value) orelse 0 else 0,
-            .health_bonus = if (findValue(pairs, "pants_health_bonus")) |value| asU32(value) orelse 0 else 0,
+            .pickup_radius_bonus = if (findValue(pairs, "pants_pickup_radius_bonus")) |value| boundedU32(value, max_pickup_radius, "pants_pickup_radius_bonus", file_path, warnings, allocator) else 0,
+            .health_bonus = if (findValue(pairs, "pants_health_bonus")) |value| boundedU32(value, max_health_bonus, "pants_health_bonus", file_path, warnings, allocator) else 0,
         };
     }
     if (findValue(pairs, "boots_name")) |name| {
         entity.boots = .{
             .name = name,
-            .speed_bonus = if (findValue(pairs, "boots_speed_bonus")) |value| asU32(value) orelse 0 else 0,
-            .health_bonus = if (findValue(pairs, "boots_health_bonus")) |value| asU32(value) orelse 0 else 0,
+            .speed_bonus = if (findValue(pairs, "boots_speed_bonus")) |value| boundedU32(value, max_boots_speed, "boots_speed_bonus", file_path, warnings, allocator) else 0,
+            .health_bonus = if (findValue(pairs, "boots_health_bonus")) |value| boundedU32(value, max_health_bonus, "boots_health_bonus", file_path, warnings, allocator) else 0,
         };
     }
 
@@ -1059,11 +1102,13 @@ pub fn parseEntityDefinition(
 pub fn loadPlayerLoadout(
     sections: []const Section,
     allocator: std.mem.Allocator,
+    file_path: []const u8,
+    warnings: ?*std.ArrayList([]const u8),
 ) !types.Entity {
     try validateFileFormatVersion(sections, "Metadata", player_loadout_file_format_version);
     for (sections) |section| {
         for (section.entry_groups) |group| {
-            return parseEntityDefinition(group.pairs, 0, "Player", "player", allocator);
+            return parseEntityDefinition(group.pairs, 0, "Player", "player", allocator, file_path, warnings);
         }
     }
     return .{ .name = "Player", .sprite = "player", .team = 0 };
@@ -1174,13 +1219,15 @@ pub fn buildEditorMission(
     parsed_level_sections: []const []const Section,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
+    file_path: []const u8,
+    warnings: ?*std.ArrayList([]const u8),
 ) !types.Editor {
     var entity_types: std.ArrayList(types.EntityTypeDef) = .empty;
     var decoration_types: std.ArrayList(types.DecorationTypeDef) = .empty;
     var editor_levels: std.ArrayList(types.EditorLevel) = .empty;
 
     for (parsed_level_sections) |sections| {
-        const level = try loadLevel(sections, file_source, allocator);
+        const level = try loadLevel(sections, file_source, allocator, file_path, warnings);
 
         // Entity placements: entity 0 is the player (skip — loadout comes from
         // player_def, spawn is player_start). entities 1..N dedup into the palette.
@@ -1768,6 +1815,8 @@ pub fn loadLevel(
     sections: []const Section,
     file_source: ?*const FileSource,
     allocator: std.mem.Allocator,
+    file_path: []const u8,
+    warnings: ?*std.ArrayList([]const u8),
 ) !Level {
     try validateSections(sections, &level_sections);
     try validateFileFormatVersion(sections, "Metadata", level_file_format_version);
@@ -1796,7 +1845,7 @@ pub fn loadLevel(
             const pairs = group.pairs;
             const code_string = findValue(pairs, "character_code") orelse continue;
             if (code_string.len != 1) continue;
-            const entity = parseEntityDefinition(pairs, 1, &.{}, &.{}, allocator);
+            const entity = parseEntityDefinition(pairs, 1, &.{}, &.{}, allocator, file_path, warnings);
             try enemy_definitions.put(code_string[0], entity);
         }
     }
@@ -1819,31 +1868,31 @@ pub fn loadLevel(
                 .weapon => .{ .weapon = .{
                     .name = item_name,
                     .weapon_type = parseEnum(types.WeaponType, findValue(pairs, "weapon_type") orelse "sword") orelse .sword,
-                    .weapon_damage = asU32(findValue(pairs, "damage") orelse "0") orelse 0,
+                    .weapon_damage = boundedU32(findValue(pairs, "damage") orelse "0", max_weapon_damage, "damage", file_path, warnings, allocator),
                 } },
                 .amulet => .{ .amulet = .{
                     .name = item_name,
-                    .spell_damage = asU32(findValue(pairs, "spell_damage") orelse "0") orelse 0,
+                    .spell_damage = boundedU32(findValue(pairs, "spell_damage") orelse "0", max_spell_damage, "spell_damage", file_path, warnings, allocator),
                 } },
                 .coat => .{ .coat = .{
                     .name = item_name,
-                    .defense_bonus = asU32(findValue(pairs, "defense") orelse "0") orelse 0,
-                    .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                    .defense_bonus = boundedU32(findValue(pairs, "defense") orelse "0", max_defense_bonus, "defense", file_path, warnings, allocator),
+                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
                 } },
                 .gloves => .{ .gloves = .{
                     .name = item_name,
-                    .damage_bonus = asU32(findValue(pairs, "damage") orelse "0") orelse 0,
-                    .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                    .damage_bonus = boundedU32(findValue(pairs, "damage") orelse "0", max_gloves_damage, "damage", file_path, warnings, allocator),
+                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
                 } },
                 .pants => .{ .pants = .{
                     .name = item_name,
-                    .pickup_radius_bonus = asU32(findValue(pairs, "pickup_radius") orelse "0") orelse 0,
-                    .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                    .pickup_radius_bonus = boundedU32(findValue(pairs, "pickup_radius") orelse "0", max_pickup_radius, "pickup_radius", file_path, warnings, allocator),
+                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
                 } },
                 .boots => .{ .boots = .{
                     .name = item_name,
-                    .speed_bonus = asU32(findValue(pairs, "speed") orelse "0") orelse 0,
-                    .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                    .speed_bonus = boundedU32(findValue(pairs, "speed") orelse "0", max_boots_speed, "speed", file_path, warnings, allocator),
+                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
                 } },
             };
 
@@ -2124,6 +2173,8 @@ pub fn loadMission(
 pub fn loadPlayerSave(
     sections: []const Section,
     allocator: std.mem.Allocator,
+    file_path: []const u8,
+    warnings: ?*std.ArrayList([]const u8),
 ) !PlayerData {
     try validateSections(sections, &player_save_sections);
     try validateFileFormatVersion(sections, "Metadata", player_save_file_format_version);
@@ -2168,7 +2219,7 @@ pub fn loadPlayerSave(
             player_data.main_hand_weapon = .{
                 .name = findValue(pairs, "item_name") orelse &.{},
                 .weapon_type = parseEnum(types.WeaponType, findValue(pairs, "weapon_type") orelse "sword") orelse .sword,
-                .weapon_damage = asU32(findValue(pairs, "damage") orelse "0") orelse 0,
+                .weapon_damage = boundedU32(findValue(pairs, "damage") orelse "0", max_weapon_damage, "damage", file_path, warnings, allocator),
             };
         }
     }
@@ -2180,7 +2231,7 @@ pub fn loadPlayerSave(
             player_data.off_hand_weapon = .{
                 .name = findValue(pairs, "item_name") orelse &.{},
                 .weapon_type = parseEnum(types.WeaponType, findValue(pairs, "weapon_type") orelse "sword") orelse .sword,
-                .weapon_damage = asU32(findValue(pairs, "damage") orelse "0") orelse 0,
+                .weapon_damage = boundedU32(findValue(pairs, "damage") orelse "0", max_weapon_damage, "damage", file_path, warnings, allocator),
             };
         }
     }
@@ -2191,7 +2242,7 @@ pub fn loadPlayerSave(
             const pairs = section.entry_groups[0].pairs;
             player_data.amulet = .{
                 .name = findValue(pairs, "item_name") orelse &.{},
-                .spell_damage = asU32(findValue(pairs, "spell_damage") orelse "0") orelse 0,
+                .spell_damage = boundedU32(findValue(pairs, "spell_damage") orelse "0", max_spell_damage, "spell_damage", file_path, warnings, allocator),
             };
         }
     }
@@ -2202,8 +2253,8 @@ pub fn loadPlayerSave(
             const pairs = section.entry_groups[0].pairs;
             player_data.coat = .{
                 .name = findValue(pairs, "item_name") orelse &.{},
-                .defense_bonus = asU32(findValue(pairs, "armor") orelse "0") orelse 0,
-                .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                .defense_bonus = boundedU32(findValue(pairs, "armor") orelse "0", max_defense_bonus, "armor", file_path, warnings, allocator),
+                .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
             };
         }
     }
@@ -2214,8 +2265,8 @@ pub fn loadPlayerSave(
             const pairs = section.entry_groups[0].pairs;
             player_data.gloves = .{
                 .name = findValue(pairs, "item_name") orelse &.{},
-                .damage_bonus = asU32(findValue(pairs, "damage") orelse "0") orelse 0,
-                .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                .damage_bonus = boundedU32(findValue(pairs, "damage") orelse "0", max_gloves_damage, "damage", file_path, warnings, allocator),
+                .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
             };
         }
     }
@@ -2226,8 +2277,8 @@ pub fn loadPlayerSave(
             const pairs = section.entry_groups[0].pairs;
             player_data.pants = .{
                 .name = findValue(pairs, "item_name") orelse &.{},
-                .pickup_radius_bonus = asU32(findValue(pairs, "pickup_radius") orelse "0") orelse 0,
-                .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                .pickup_radius_bonus = boundedU32(findValue(pairs, "pickup_radius") orelse "0", max_pickup_radius, "pickup_radius", file_path, warnings, allocator),
+                .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
             };
         }
     }
@@ -2238,8 +2289,8 @@ pub fn loadPlayerSave(
             const pairs = section.entry_groups[0].pairs;
             player_data.boots = .{
                 .name = findValue(pairs, "item_name") orelse &.{},
-                .speed_bonus = asU32(findValue(pairs, "speed") orelse "0") orelse 0,
-                .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                .speed_bonus = boundedU32(findValue(pairs, "speed") orelse "0", max_boots_speed, "speed", file_path, warnings, allocator),
+                .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
             };
         }
     }
@@ -2260,31 +2311,31 @@ pub fn loadPlayerSave(
                 .weapon => .{ .weapon = .{
                     .name = item_name,
                     .weapon_type = parseEnum(types.WeaponType, findValue(pairs, "weapon_type") orelse "sword") orelse .sword,
-                    .weapon_damage = asU32(findValue(pairs, "damage") orelse "0") orelse 0,
+                    .weapon_damage = boundedU32(findValue(pairs, "damage") orelse "0", max_weapon_damage, "damage", file_path, warnings, allocator),
                 } },
                 .amulet => .{ .amulet = .{
                     .name = item_name,
-                    .spell_damage = asU32(findValue(pairs, "spell_damage") orelse "0") orelse 0,
+                    .spell_damage = boundedU32(findValue(pairs, "spell_damage") orelse "0", max_spell_damage, "spell_damage", file_path, warnings, allocator),
                 } },
                 .coat => .{ .coat = .{
                     .name = item_name,
-                    .defense_bonus = asU32(findValue(pairs, "armor") orelse "0") orelse 0,
-                    .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                    .defense_bonus = boundedU32(findValue(pairs, "armor") orelse "0", max_defense_bonus, "armor", file_path, warnings, allocator),
+                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
                 } },
                 .gloves => .{ .gloves = .{
                     .name = item_name,
-                    .damage_bonus = asU32(findValue(pairs, "damage") orelse "0") orelse 0,
-                    .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                    .damage_bonus = boundedU32(findValue(pairs, "damage") orelse "0", max_gloves_damage, "damage", file_path, warnings, allocator),
+                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
                 } },
                 .pants => .{ .pants = .{
                     .name = item_name,
-                    .pickup_radius_bonus = asU32(findValue(pairs, "pickup_radius") orelse "0") orelse 0,
-                    .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                    .pickup_radius_bonus = boundedU32(findValue(pairs, "pickup_radius") orelse "0", max_pickup_radius, "pickup_radius", file_path, warnings, allocator),
+                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
                 } },
                 .boots => .{ .boots = .{
                     .name = item_name,
-                    .speed_bonus = asU32(findValue(pairs, "speed") orelse "0") orelse 0,
-                    .health_bonus = asU32(findValue(pairs, "health") orelse "0") orelse 0,
+                    .speed_bonus = boundedU32(findValue(pairs, "speed") orelse "0", max_boots_speed, "speed", file_path, warnings, allocator),
+                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", max_health_bonus, "health", file_path, warnings, allocator),
                 } },
                 .skill_tome => .{ .skill_tome = .{
                     .skill = parseEnum(types.SkillId, findValue(pairs, "skill_name") orelse "") orelse continue,
@@ -3390,7 +3441,7 @@ test "loadLevel parses a complete level" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, null, allocator);
+    const level = try loadLevel(sections, null, allocator, "", null);
     defer freeLevel(level, allocator);
 
     // Metadata
@@ -3453,7 +3504,7 @@ test "loadLevel decorations do not create tiles" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, null, allocator);
+    const level = try loadLevel(sections, null, allocator, "", null);
     defer freeLevel(level, allocator);
 
     // 8 tiles: 9 positions minus 1 decoration
@@ -3504,7 +3555,7 @@ test "loadLevel multi-tile decoration footprint" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, null, allocator);
+    const level = try loadLevel(sections, null, allocator, "", null);
     defer freeLevel(level, allocator);
 
     // T is at row 0, col 0 -> world (0, 0) (natural reading order). The
@@ -3556,7 +3607,7 @@ test "loadLevel decoration with layers" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const level = try loadLevel(sections, null, allocator);
+    const level = try loadLevel(sections, null, allocator, "", null);
     defer freeLevel(level, allocator);
 
     try std.testing.expectEqual(1, level.decorations.len);
@@ -3629,6 +3680,36 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
     try std.testing.expectEqual(@as(usize, 0), s.layers.len);
 }
 
+test "boundedU32 clamps out-of-range gear stats and warns" {
+    // Out-of-range gear stats are clamped to max + a warning is appended.
+    // In-range values pass through unchanged. A null warnings list clamps
+    // silently (the test/no-warnings path).
+    const allocator = std.testing.allocator;
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer warnings.deinit(allocator);
+
+    // Over max → clamped + warned.
+    try std.testing.expectEqual(@as(u32, 10), boundedU32("99", max_weapon_damage, "damage", "test.txt", &warnings, allocator));
+    try std.testing.expectEqual(@as(u32, 5), boundedU32("6", max_defense_bonus, "armor", "test.txt", &warnings, allocator));
+    try std.testing.expectEqual(@as(u32, 2), boundedU32("3", max_boots_speed, "speed", "test.txt", &warnings, allocator));
+    // At max → unchanged, no warning.
+    try std.testing.expectEqual(@as(u32, 10), boundedU32("10", max_weapon_damage, "damage", "test.txt", &warnings, allocator));
+    // Under max → unchanged, no warning.
+    try std.testing.expectEqual(@as(u32, 3), boundedU32("3", max_weapon_damage, "damage", "test.txt", &warnings, allocator));
+    // Unparseable → 0, no warning.
+    try std.testing.expectEqual(@as(u32, 0), boundedU32("abc", max_weapon_damage, "damage", "test.txt", &warnings, allocator));
+    // Null warnings → clamps silently.
+    try std.testing.expectEqual(@as(u32, 10), boundedU32("99", max_weapon_damage, "damage", "test.txt", null, allocator));
+
+    // 3 warnings appended (the 99, 6, and 3 over-max; the at-max and under-max
+    // values produced none).
+    try std.testing.expectEqual(@as(usize, 3), warnings.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "exceeds max") != null);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "99") != null);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "damage") != null);
+    for (warnings.items) |w| allocator.free(w);
+}
+
 test "loadLevel rejects unexpected sections" {
     const allocator = std.testing.allocator;
     const raw_text =
@@ -3653,7 +3734,7 @@ test "loadLevel rejects unexpected sections" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const result = loadLevel(sections, null, allocator);
+    const result = loadLevel(sections, null, allocator, "", null);
     try std.testing.expectError(error.UnexpectedSection, result);
 }
 
@@ -3840,7 +3921,7 @@ test "loadPlayerSave parses a save file" {
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const player_data = try loadPlayerSave(sections, allocator);
+    const player_data = try loadPlayerSave(sections, allocator, "", null);
     defer allocator.free(player_data.learned_skills);
     defer allocator.free(player_data.clones);
 
@@ -3979,7 +4060,7 @@ test "writePlayerSave round-trips through loadPlayerSave" {
     const sections = try parseConfigFile(save_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const loaded = try loadPlayerSave(sections, allocator);
+    const loaded = try loadPlayerSave(sections, allocator, "", null);
     defer allocator.free(loaded.learned_skills);
     defer allocator.free(loaded.clones);
 
@@ -4056,7 +4137,7 @@ test "new_player.txt parses and round-trips correctly" {
     defer allocator.free(parsed.raw_text);
     defer freeParsedSections(parsed.sections, allocator);
 
-    const player_data = try loadPlayerSave(parsed.sections, allocator);
+    const player_data = try loadPlayerSave(parsed.sections, allocator, "", null);
     defer allocator.free(player_data.learned_skills);
     defer allocator.free(player_data.clones);
 
@@ -4085,7 +4166,7 @@ test "new_player.txt parses and round-trips correctly" {
     const sections2 = try parseConfigFile(written, allocator);
     defer freeParsedSections(sections2, allocator);
 
-    const reloaded = try loadPlayerSave(sections2, allocator);
+    const reloaded = try loadPlayerSave(sections2, allocator, "", null);
     defer allocator.free(reloaded.learned_skills);
     defer allocator.free(reloaded.clones);
 

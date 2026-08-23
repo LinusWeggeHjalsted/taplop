@@ -888,32 +888,35 @@ format is the session-log format + reconstruction cache (`file_format_version`
 2), not yet built — so `listCustomMissions` shows "unvalidated" for all
 missions until it lands.
 
-### Balance bounds (parse-time, fail-fast)
+### Balance bounds (parse-time, warn + clamp)
 
 All gear-stat variables (health, defense, damage, speed, etc.) have UNIFORM
 `max_*` constants (one set for ALL content — official + custom; "custom
 missions ARE official content" supports uniform bounds). Every parsed
-gear-stat field routes through a bounded-int helper that **panics** on
-out-of-range. Parse time is the single chokepoint: enemy gear definitions in
+gear-stat field routes through `boundedU32`, which **clamps out-of-range
+values to the max and appends a warning** (so the game stays playable + the
+author is told). Parse time is the single chokepoint: enemy gear definitions in
 level files ARE the loot table (enemies drop their entire inventory + equipped
 gear + a skill tome per equipped utility skill), and that loot persists into
 PlayerData — so bounding enemy gear stats at parse bounds what can ever enter
 the campaign.
 
-- Fail-fast panic (not silent clamp) matches the codebase error policy
-  (parser already panics on malformed input, file_format_version mismatch,
-  footprint overlaps, etc.). Silent clamping would be the one place we
-  swallow a bad value and would confuse authors ("I set damage 9999, why is
-  it 500?").
+- Warn + clamp (not fail-fast panic) so a broken file doesn't crash the game —
+  the player sees a popup naming the field, value, file, and max, then the game
+  continues with the clamped value. Matches the recoverable-error policy
+  (AGENTS → Error Handling): the warning surfaces via `setPendingError` (the
+  same popup as key validation), and the clamped value keeps the game playable.
 - Editor `validate` mode catches over-max stats pre-publish (the validator
-  runs the mission; a parse panic = "fix your mission"). Local import
-  catches it on load (honest "broken mission" feedback, same spirit as the
-  magenta-box fallback for missing art — don't hide the problem).
-- **Graceful error handling for over-max stats is landing in the error-
-  handling pass** (see AGENTS → Error Handling): the parse panic becomes a
-  recoverable failure (warn + popup + abort the load) rather than a crash.
-  Applies to this and the other parse-failure contexts (startup config,
-  in-event reconstruction reads, writes/reloads).
+  runs the mission; a warning = "fix your mission"). Local import catches it
+  on load (honest "broken mission" feedback, same spirit as the magenta-box
+  fallback for missing art — don't hide the problem).
+- The constants live in parser.zig (the parse-time chokepoint): `max_weapon_damage`
+  (10), `max_spell_damage` (10), `max_health_bonus` (10, for coat/gloves/
+  pants/boots health bonuses), `max_defense_bonus` (5, coat), `max_gloves_damage`
+  (5), `max_pickup_radius` (5, pants), `max_boots_speed` (2). Entity base
+  stats (max_health, defense, speed, aggro_range) are NOT bounded — only gear
+  stats. `boundedU32(value_str, max, field_name, file_path, warnings, allocator)`
+  is the helper; a null `warnings` list clamps silently (the test path).
 
 ### Auth & the server seam (deferred)
 

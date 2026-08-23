@@ -157,16 +157,26 @@ fn validateConfigKeys(
     if (history.replaying) return;
     var key_warnings: std.ArrayList([]const u8) = .empty;
     parser.validateKeys(sections, key_map, file_path, allocator, &key_warnings);
-    if (key_warnings.items.len > 0) {
-        var message: std.ArrayList(u8) = .empty;
-        for (key_warnings.items, 0..) |warning, index| {
-            if (index > 0) message.appendSlice(allocator, "\n") catch
-                @panic("failed to assemble key warning message");
-            message.appendSlice(allocator, warning) catch
-                @panic("failed to assemble key warning message");
-        }
-        history.session.setPendingError(history.history_arena.allocator(), message.items);
+    surfaceWarnings(history, &key_warnings, allocator);
+}
+
+/// Surface collected warnings (key-validation or balance-bound) as a single
+/// `pending_error` popup. No-op when the list is empty or during replay.
+fn surfaceWarnings(
+    history: *GameStateHistory,
+    warnings: *std.ArrayList([]const u8),
+    allocator: std.mem.Allocator,
+) void {
+    if (history.replaying) return;
+    if (warnings.items.len == 0) return;
+    var message: std.ArrayList(u8) = .empty;
+    for (warnings.items, 0..) |warning, index| {
+        if (index > 0) message.appendSlice(allocator, "\n") catch
+            @panic("failed to assemble warning message");
+        message.appendSlice(allocator, warning) catch
+            @panic("failed to assemble warning message");
     }
+    history.session.setPendingError(history.history_arena.allocator(), message.items);
 }
 
 /// sync_player=true — the level's bare player entity gets its loadout from
@@ -423,6 +433,7 @@ pub fn processEvent(
                     current.transitionScreen(.main_menu);
                 },
                 .start_new_game => {
+                    var balance_warnings: std.ArrayList([]const u8) = .empty;
                     const parsed_sections = parser.parseConfigFile(
                         history.readReconstructionFile("data/new_player.txt"),
                         allocator,
@@ -435,15 +446,19 @@ pub fn processEvent(
                     current.player_data = parser.loadPlayerSave(
                         parsed_sections,
                         allocator,
+                        "data/new_player.txt",
+                        &balance_warnings,
                     ) catch {
                         failReconstructionRead(history, "failed to parse new_player.txt");
                         return;
                     };
+                    surfaceWarnings(history, &balance_warnings, allocator);
 
                     loadCampaignAndPushHub(current, history, allocator);
                     if (history.load_error) return;
                 },
                 .load_save => |load| {
+                    var balance_warnings: std.ArrayList([]const u8) = .empty;
                     const parsed_sections = parser.parseConfigFile(
                         history.readReconstructionFile(load.save_path),
                         allocator,
@@ -456,10 +471,13 @@ pub fn processEvent(
                     current.player_data = parser.loadPlayerSave(
                         parsed_sections,
                         allocator,
+                        load.save_path,
+                        &balance_warnings,
                     ) catch {
                         failReconstructionRead(history, "failed to parse save file");
                         return;
                     };
+                    surfaceWarnings(history, &balance_warnings, allocator);
 
                     loadCampaignAndPushHub(current, history, allocator);
                     if (history.load_error) return;
@@ -545,6 +563,7 @@ pub fn processEvent(
                     } } }}, allocator);
                 },
                 .open_editor => |start| {
+                    var balance_warnings: std.ArrayList([]const u8) = .empty;
                     // Load a mission into an Editor session. All reads go through
                     // history.readReconstructionFile so the reconstruction cache
                     // makes undo replay deterministic (see AGENTS → File System
@@ -586,7 +605,7 @@ pub fn processEvent(
                         return;
                     };
                     validateConfigKeys(history, player_sections, parser.player_loadout_key_map, player_file_path, allocator);
-                    const player_entity = parser.loadPlayerLoadout(player_sections, allocator) catch {
+                    const player_entity = parser.loadPlayerLoadout(player_sections, allocator, player_file_path, &balance_warnings) catch {
                         failReconstructionRead(history, "failed to parse player.txt");
                         return;
                     };
@@ -616,10 +635,13 @@ pub fn processEvent(
                         level_sections.items,
                         history.file_source,
                         allocator,
+                        start.mission_path,
+                        &balance_warnings,
                     ) catch {
                         failReconstructionRead(history, "failed to build editor mission");
                         return;
                     };
+                    surfaceWarnings(history, &balance_warnings, allocator);
                     current.transitionScreen(.editor);
                 },
                 .close_editor => {
@@ -729,6 +751,7 @@ pub fn processEvent(
                     }
                 },
                 .start_level => |start| {
+                    var balance_warnings: std.ArrayList([]const u8) = .empty;
                     const level_path = std.fmt.allocPrint(
                         allocator,
                         "{s}/level_{d}.txt",
@@ -753,10 +776,13 @@ pub fn processEvent(
                         level_sections,
                         history.file_source,
                         allocator,
+                        level_path,
+                        &balance_warnings,
                     ) catch {
                         failReconstructionRead(history, "failed to parse level file");
                         return;
                     };
+                    surfaceWarnings(history, &balance_warnings, allocator);
 
                     if (current.mission) |*mission| {
                         mission.current_level_index = start.level_index;

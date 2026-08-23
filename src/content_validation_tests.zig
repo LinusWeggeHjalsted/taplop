@@ -49,7 +49,7 @@ fn validateConfigFile(
         _ = try parser.loadWeaponTypeDefinition(sections);
         parser.validateKeys(sections, parser.weapon_type_key_map, path, allocator, warnings);
     } else if (std.mem.eql(u8, path, "data/new_player.txt") or std.mem.eql(u8, path, "data/autosave.txt")) {
-        _ = try parser.loadPlayerSave(sections, allocator);
+        _ = try parser.loadPlayerSave(sections, allocator, path, warnings);
         parser.validateKeys(sections, parser.player_save_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/campaign.txt")) {
         _ = try parser.loadCampaign(sections, allocator);
@@ -61,10 +61,10 @@ fn validateConfigFile(
         _ = try parser.loadMission(sections, allocator);
         parser.validateKeys(sections, parser.mission_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/player.txt")) {
-        _ = try parser.loadPlayerLoadout(sections, allocator);
+        _ = try parser.loadPlayerLoadout(sections, allocator, path, warnings);
         parser.validateKeys(sections, parser.player_loadout_key_map, path, allocator, warnings);
     } else if (std.mem.indexOf(u8, path, "/level_") != null and std.mem.endsWith(u8, path, ".txt")) {
-        _ = try parser.loadLevel(sections, file_source, allocator);
+        _ = try parser.loadLevel(sections, file_source, allocator, path, warnings);
         parser.validateKeys(sections, parser.level_key_map, path, allocator, warnings);
     } else {
         // Not a recognized config file pattern (e.g. a .txt that isn't a
