@@ -495,13 +495,13 @@ fn hitTest(
     ui_elements: []const UiElement,
     position: ScreenPosition,
     comptime matches: fn (UiElement) bool,
-) ?UiElement {
+) ?usize {
     var index = ui_elements.len;
     while (index > 0) {
         index -= 1;
         const element = ui_elements[index];
         if (!boundsOf(element).contains(position)) continue;
-        if (matches(element)) return element;
+        if (matches(element)) return index;
         if (blocksInputOf(element)) return null;
     }
     return null;
@@ -531,7 +531,7 @@ pub fn tooltipAt(
     ui_elements: []const UiElement,
     position: ScreenPosition,
 ) ?UiElement {
-    return hitTest(ui_elements, position, hasTooltip);
+    return if (hitTest(ui_elements, position, hasTooltip)) |i| ui_elements[i] else null;
 }
 
 /// The topmost Button under `position` (respecting occlusion), or null. Used
@@ -540,7 +540,18 @@ pub fn buttonAt(
     ui_elements: []const UiElement,
     position: ScreenPosition,
 ) ?Button {
-    return if (hitTest(ui_elements, position, isButton)) |element| element.button else null;
+    return if (hitTest(ui_elements, position, isButton)) |i| ui_elements[i].button else null;
+}
+
+/// The index in `ui_elements` of the topmost button under `position`
+/// (respecting occlusion), or null. Used by the view() hover pass to mark the
+/// hovered button's `highlighted` flag in place (the ArrayList owns the
+/// element; `buttonAt` returns a copy, which can't be written back).
+pub fn buttonIndexAt(
+    ui_elements: []const UiElement,
+    position: ScreenPosition,
+) ?usize {
+    return hitTest(ui_elements, position, isButton);
 }
 
 /// The topmost input-blocking element under `position`, or null. Used for
@@ -550,7 +561,7 @@ pub fn blockingElementAt(
     ui_elements: []const UiElement,
     position: ScreenPosition,
 ) ?UiElement {
-    return hitTest(ui_elements, position, blocksInputOf);
+    return if (hitTest(ui_elements, position, blocksInputOf)) |i| ui_elements[i] else null;
 }
 
 /// The topmost ref-bearing slot under `position` (respecting occlusion),
@@ -559,7 +570,7 @@ pub fn slotAt(
     ui_elements: []const UiElement,
     position: ScreenPosition,
 ) ?Slot {
-    return if (hitTest(ui_elements, position, isRefSlot)) |element| element.slot else null;
+    return if (hitTest(ui_elements, position, isRefSlot)) |i| ui_elements[i].slot else null;
 }
 
 /// The SlotRef of the topmost ref-bearing slot under `position`, or null.

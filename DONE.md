@@ -2055,3 +2055,26 @@ GameState; the resulting events are identical to a single press).
 
 - `isActionHeld` in input.zig mirrors `checkAction` but reads held state;
   same subset modifier semantics.
+
+### Hover highlight on UI buttons (done)
+
+All `Button` UI elements get an edge-outline highlight when the mouse pointer
+is over them, reusing the precomputed outline-mask system built for the
+turn-step indicators. The outline tint is the active theme's `lightest` (same
+as the active-state highlight — one outline system, one color; split later if
+hover-vs-active contrast is wanted).
+
+- The hover pass lives in `view()`, right after all UI elements are built
+  (bottom bar, main menu, error popup) and before the combat-log projection.
+  view() already reads `session.input_state.mouse_screen_position` for the
+  tooltip hover pass, so the seam was already there.
+- `ui.buttonIndexAt` (new) returns the index of the topmost button under the
+  pointer (occlusion-aware via the shared `hitTest` walk); view() mutates
+  `ui_elements.items[i].button.highlighted = true` in place. `buttonAt`
+  returns a copy, which can't be written back, hence the index variant.
+- `hitTest` refactored to return `?usize` (index) instead of `?UiElement`
+  (copy); `buttonAt`/`blockingElementAt`/`slotAt`/`tooltipAt` dereference by
+  index. One walk primitive, same occlusion semantics.
+- Suppressed while dragging (mirrors tooltip suppression — the pointer is
+  dragging, not hovering). Modal popups shield buttons behind them naturally
+  (hitTest respects `blocks_input`).

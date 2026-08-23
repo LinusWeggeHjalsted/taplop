@@ -201,6 +201,22 @@ pub fn view(
             @panic("failed to build error popup");
     }
 
+    // Hover highlight: the topmost button under the pointer gets an edge
+    // outline (same `highlighted` path as the active turn-step indicator).
+    // Suppressed while dragging (the pointer is dragging, not hovering).
+    // Mutates the element in place by index so the renderer sees the flag.
+    // Occlusion-aware: a modal popup on top shields buttons behind it.
+    if (session.ui_state.drag == null) {
+        const hover_pointer = session.input_state.mouse_screen_position;
+        const hover_point = types.ScreenPosition{
+            .x = @intFromFloat(hover_pointer.x),
+            .y = @intFromFloat(hover_pointer.y),
+        };
+        if (ui.buttonIndexAt(ui_elements.items, hover_point)) |i| {
+            ui_elements.items[i].button.highlighted = true;
+        }
+    }
+
     // Combat log: project the current level's events (up to the current
     // position) into a chronological filtered slice. None when not in a level
     // (no enclosing start_level in the prefix). Pure, per-frame, frame-arena.
