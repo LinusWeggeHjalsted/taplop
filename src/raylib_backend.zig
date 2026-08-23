@@ -27,6 +27,14 @@ const reference_height_int: i32 = types.reference_height;
 const reference_width: f32 = @floatFromInt(reference_width_int);
 const reference_height: f32 = @floatFromInt(reference_height_int);
 
+/// Base rasterization size for the TTF font. raylib bakes glyphs into an
+/// atlas at this fixed size; `drawTextEx` scales from it. Sized to cover the
+/// largest `font_size` in use (96, menu buttons) with a modest supersample,
+/// so all current sizes render crisp; the atlas texture is bilinear-filtered
+/// so downscaling to smaller sizes stays smooth. This is a runtime GPU/texture
+/// memory cost, not binary size (only the raw ~12 KB TTF bytes are embedded).
+const font_base_size: i32 = 128;
+
 /// Edge-highlight outline thickness in source pixels (inner band hugging the
 /// sprite silhouette). Drawn via a precomputed outline mask (see
 /// `getOutlineTexture`). Tune from in-game viewing.
@@ -119,6 +127,33 @@ fn viewTransform() ViewTransform {
     };
 }
 
+/// Load the game font. Reads the embedded TTF (`assets/fonts/freezilla.ttf`)
+/// through the FileSource and rasterizes a glyph atlas at `font_base_size`.
+/// On any failure (missing file, decode error) falls back to raylib's default
+/// bitmap font so the game stays playable — the recoverable-error policy
+/// applies because a persistent-dir shadow (`~/.ziglop/assets/fonts/...`)
+/// can break the read at runtime. Returns the font + whether it is the
+/// default (so deinit can skip unloading raylib-owned the default).
+fn loadFont(file_source: *const @import("file_source.zig").FileSource) struct { font: rl.Font, is_default: bool } {
+    const bytes = file_source.readFile(std.heap.page_allocator, "assets/fonts/freezilla.ttf") catch |err| {
+        std.debug.print("warning: failed to load font ({}); falling back to default\n", .{err});
+        const fallback = rl.getFontDefault() catch @panic("failed to load default font");
+        return .{ .font = fallback, .is_default = true };
+    };
+    defer std.heap.page_allocator.free(bytes);
+
+    const font = rl.loadFontFromMemory(".ttf", bytes, font_base_size, null) catch {
+        std.debug.print("warning: failed to decode font; falling back to default\n", .{});
+        const fallback = rl.getFontDefault() catch @panic("failed to load default font");
+        return .{ .font = fallback, .is_default = true };
+    };
+    // Bilinear so downscaling from the base size to smaller `font_size`s is
+    // smooth (matches the reference->window blit). Upcasting would blur, but
+    // no size in use exceeds `font_base_size`.
+    rl.setTextureFilter(font.texture, .bilinear);
+    return .{ .font = font, .is_default = false };
+}
+
 pub const RaylibBackend = struct {
     allocator: std.mem.Allocator,
     /// sprite_id -> loaded texture. A cached `null` means "known missing" so a
@@ -134,8 +169,13 @@ pub const RaylibBackend = struct {
     outline_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
     /// Reference-resolution offscreen target; blitted to the window each frame.
     render_target: rl.RenderTexture2D,
-    /// Default bitmap font for text labels.
+    /// Text-label font. Normally the embedded TTF (loaded from
+    /// `assets/fonts/freezilla.ttf` via the FileSource); falls back to
+    /// raylib's default bitmap font if the TTF is missing or fails to load
+    /// (e.g. a broken persistent-dir shadow). `font_is_default` tracks the
+    /// fallback so deinit skips unloading raylib-owned the default.
     font: rl.Font,
+    font_is_default: bool,
     /// Transient per-frame allocations (null-terminated strings for raylib,
     /// asset paths). Reset at the start of every render.
     frame_arena: std.heap.ArenaAllocator,
@@ -174,12 +214,13 @@ pub const RaylibBackend = struct {
         // (every content layer passes through this blit). Bilinear fixes the
         // transparent-edge artifact at no per-frame cost.
         rl.setTextureFilter(render_target.texture, .bilinear);
-        const font = rl.getFontDefault() catch @panic("failed to load default font");
+        const font = loadFont(file_source);
 
         return .{
             .allocator = allocator,
             .render_target = render_target,
-            .font = font,
+            .font = font.font,
+            .font_is_default = font.is_default,
             .frame_arena = std.heap.ArenaAllocator.init(allocator),
             .last_time_microseconds = @intFromFloat(rl.getTime() * std.time.us_per_s),
             .file_source = file_source,
@@ -197,6 +238,7 @@ pub const RaylibBackend = struct {
             if (maybe_texture.*) |texture| rl.unloadTexture(texture);
         }
         self.outline_cache.deinit(self.allocator);
+        if (!self.font_is_default) rl.unloadFont(self.font);
         self.frame_arena.deinit();
         rl.unloadRenderTexture(self.render_target);
         rl.closeWindow();
@@ -666,8 +708,7 @@ pub const RaylibBackend = struct {
 
     fn drawTextLabel(self: *RaylibBackend, label: ui.TextLabel) void {
         // raylib needs a null-terminated string; copy into the frame arena.
-        // bold/italic are ignored and the default bitmap font blurs when
-        // scaled up.
+        // bold/italic are still ignored (no bold/italic faces loaded).
         const text = self.frame_arena.allocator().dupeZ(u8, label.text) catch return;
         const font_size: f32 = @floatFromInt(label.font_size);
         rl.drawTextEx(
@@ -675,7 +716,7 @@ pub const RaylibBackend = struct {
             text,
             .{ .x = @floatFromInt(label.screen_position.x), .y = @floatFromInt(label.screen_position.y) },
             font_size,
-            font_size / 10, // spacing (roughly one default-font pixel per glyph)
+            font_size / 10, // spacing (roughly one base-size pixel per glyph)
             toRaylibColor(label.color, 255),
         );
     }

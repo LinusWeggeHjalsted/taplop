@@ -2366,3 +2366,43 @@ Lesson: when factoring out a helper called from the production loop, add a
 test that exercises it from the *initial* state (empty collections, index 0),
 not just from the states existing tests reach. The `runToIdle`-first pattern
 in the test harness systematically skips startup invariants.
+
+### TTF font (FreeZilla) wired into the raylib backend (done)
+
+Replaced raylib's built-in bitmap font (`getFontDefault`) with the artist's
+TrueType font (`assets/fonts/freezilla.ttf`, copied from the Unity project's
+`Assets/Resources/FreeZilla-Regular.ttf` — a Calligraphr handwriting face).
+The default font blurred when scaled up (it's a small bitmap atlas); the TTF
+rasterizes crisp at all sizes in use.
+
+- `build.zig`'s asset walk (`collectContentFiles`) has no extension filter,
+  so dropping the `.ttf` under `assets/fonts/` embedded it into the
+  single-file exe automatically (~12 KB binary cost). No build changes.
+- `raylib_backend.zig`: a `loadFont` helper reads the bytes through the
+  `FileSource` (`assets/fonts/freezilla.ttf`) and rasterizes via
+  `rl.loadFontFromMemory(".ttf", bytes, font_base_size, null)` at
+  `font_base_size = 128`. The atlas texture is set to bilinear filtering so
+  downscaling to smaller `font_size`s is smooth (matches the reference→window
+  blit). `font_base_size` covers the largest size in use (96, menu buttons)
+  with a modest supersample; atlas is GPU/texture memory (off the wasm heap),
+  not binary size.
+- Fallback: on read/decode failure, logs to stderr and falls back to
+  `getFontDefault` (keeps the game playable). A `font_is_default` flag tracks
+  the fallback so `deinit` skips `unloadFont` on raylib-owned the default.
+  Surfacing a `pending_error` popup from backend init is awkward (no
+  `SessionState` yet), so stderr is the diagnostic channel — honest, not
+  silent. The recoverable-error policy motivation: a persistent-dir shadow
+  (`~/.ziglop/assets/fonts/freezilla.ttf`) can break the read at runtime.
+- Character set: `null` → raylib's 95 printable ASCII glyphs. The Calligraphr
+  font covers only 76 of those (raylib logs `Requested codepoints glyphs
+  found: [76/95]`); missing characters render as the missing-glyph box. ASCII
+  letters/digits/punctuation used by current UI text are mostly covered;
+  revisit if a screen hits a gap (fill the glyphs in Calligraphr or keep a
+  fallback face).
+- `drawTextLabel` comment updated (no longer claims the default font blurs);
+  bold/italic still ignored (no bold/italic faces loaded — the measurement
+  seam in ui.zig still uses the fixed-advance placeholder, separate concern).
+
+Follow-ups (not in this slice): real per-glyph metrics exported from the font
+to replace the `measureSpanWidth`/`lineHeight` placeholder in ui.zig (TODO →
+UI Framework → Real font metrics); honoring TextLabel bold/italic + color.
