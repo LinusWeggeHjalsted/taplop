@@ -1263,6 +1263,7 @@ fn emitIconButton(
     tooltip: ?Tooltip,
     background_color: Color,
     icon_color: Color,
+    highlighted: bool,
 ) !void {
     try elements.append(allocator, .{ .button = .{
         .sprite_id = background_sprite_id,
@@ -1272,6 +1273,7 @@ fn emitIconButton(
         .action = action,
         .color = background_color,
         .tooltip = tooltip,
+        .highlighted = highlighted,
     } });
     try elements.append(allocator, .{ .image = .{
         .sprite_id = icon_sprite_id,
@@ -1350,6 +1352,7 @@ fn emitSkillButton(
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
     background_color: Color,
     icon_color: Color,
+    prepared_skill: ?SkillId,
 ) !void {
     const skill_id = player.skillInSlot(slot, weapon_type_definitions);
     const definition = if (skill_id) |id| lookups.getSkillDefinition(id) else null;
@@ -1367,7 +1370,9 @@ fn emitSkillButton(
     }
 
     // Filled slot: skill frame background + the skill's icon on top. The icon
-    // id mirrors the SkillId tag name (assets/skills/<tag>.png).
+    // id mirrors the SkillId tag name (assets/skills/<tag>.png). Highlighted
+    // when this slot holds the prepared skill awaiting target confirmation.
+    const is_prepared = prepared_skill != null and prepared_skill.? == skill_id.?;
     const icon_sprite_id = try std.fmt.allocPrint(allocator, "skills/{s}", .{@tagName(skill_id.?)});
     try emitIconButton(
         elements,
@@ -1379,6 +1384,7 @@ fn emitSkillButton(
         try buildSkillTooltip(allocator, definition.?),
         background_color,
         icon_color,
+        is_prepared,
     );
 
     const cooldown = player.skill_cooldowns.get(skill_id.?);
@@ -1412,6 +1418,13 @@ pub fn buildBottomBar(
 ) !void {
     const player = playerEntity(game_state) orelse return;
     const in_level = game_state.screen == .level;
+    // The skill awaiting target confirmation (player_prepare_skill set it;
+    // confirm/cancel/clear_prepared_skill clears it). Null in a hub (no
+    // level) or when no skill is prepared. Used to highlight its slot.
+    const prepared_skill: ?SkillId = if (in_level) blk: {
+        if (game_state.level) |level| break :blk level.prepared_skill;
+        break :blk null;
+    } else null;
 
     // Player-gradient colors for the bottom bar elements.
     const p = active_theme.player_gradient.colors;
@@ -1503,7 +1516,7 @@ pub fn buildBottomBar(
         var inner = Row.init(weapon_sub_bar.position(), bottom_bar_height, 0);
         var slot: u8 = 1;
         while (slot <= 3) : (slot += 1) {
-            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon);
+            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill);
         }
     }
 
@@ -1527,7 +1540,7 @@ pub fn buildBottomBar(
         var inner = Row.init(utility_sub_bar.position(), bottom_bar_height, 0);
         var slot: u8 = 4;
         while (slot <= 8) : (slot += 1) {
-            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon);
+            try emitSkillButton(elements, allocator, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill);
         }
     }
 
@@ -1546,6 +1559,7 @@ pub fn buildBottomBar(
             .{ .header = try spanRow(allocator, text("Skip turn step")) },
             c_skip_bg,
             c_icon,
+            false,
         );
     }
 

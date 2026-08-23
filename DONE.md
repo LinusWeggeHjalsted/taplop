@@ -2187,3 +2187,16 @@ turns a use-after-free into a deterministic equality-assertion failure without
 segfaulting or tripping leak detection). Fails on the old code (input_name
 reads as 0xAA); passes on the fix. Scratch dir under `zig-cache/` so no
 `settings.txt` lands in the project root.
+
+### Prepared-skill highlight on the bottom bar
+
+When the player prepares a skill that awaits target confirmation
+(`player_prepare_skill` sets `Level.prepared_skill`; confirm/cancel/
+`clear_prepared_skill` clears it), the matching skill slot in the bottom bar
+now carries the `highlighted` outline so it's visually clear which skill is
+prepared. Implemented in `ui.zig`: `buildBottomBar` reads `prepared_skill`
+from `game_state.level` (null in hub / when none prepared) and threads it
+into `emitSkillButton`, which sets `highlighted` on the emitted Button when
+the slot's `skillId` matches. `emitIconButton` gained a `highlighted: bool`
+param (passed `false` by the skip button, the only other caller). No `view()`
+signature change — `buildBottomBar` already receives `game_state`.
