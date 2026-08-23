@@ -10,3 +10,9 @@ generated_sprite_metadata.zig
 # (~/.ziglop/logs/), not the working directory — no longer gitignore-relevant
 # here. Kept for safety in case any old dumps linger in the tree.
 session_log_*.txt
+
+# Crash session-log dumps (panic handler writes crashes/crash_*.txt via the
+# session FileSource). In production this lands in ~/.ziglop/crashes/; in the
+# test build the test FileSource uses cwd as its persistent dir, so a test
+# panic drops the file at the repo root. Kept for debugging test crashes.
+crashes/
