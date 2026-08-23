@@ -145,6 +145,13 @@ pub const SessionState = struct {
     /// See AGENTS → Audio.
     pending_sounds: std.ArrayListUnmanaged(types.SoundId) = .empty,
 
+    /// The button currently under a press (the `Action` it carries), for the
+    /// press-then-release click model: the action fires on release over the
+    /// SAME button, drag-off cancels. Null when no button is pressed. Off the
+    /// undoable GameState → replay-safe by construction (UI interaction is
+    /// live-only, never replayed). See AGENTS → Audio / Input.
+    pressed_button: ?types.Action = null,
+
     // A recoverable load failure (a corrupt/overridden config file, an
     // incompatible session log, etc.) surfaced to the player as a modal
     // popup. Set by the drain loop after a handler returns an error and
@@ -204,13 +211,17 @@ pub const SessionState = struct {
     }
 
     /// Drain and return the pending sounds slice. The caller owns playing
-    /// them; the queue is cleared (capacity retained) for the next frame.
-    /// `allocator` is `history.backing_allocator`.
+    /// them; the queue length is reset to 0 (capacity retained) WITHOUT
+    /// memset — Zig's `clearRetainingCapacity` does `@memset(items,
+    /// undefined)` which would clobber the slice the caller just received
+    /// before they play it. We reset the length directly instead, leaving
+    /// the backing bytes intact (they'll be overwritten on the next
+    /// `append`). See AGENTS → Audio.
     pub fn drainPendingSounds(
         self: *SessionState,
     ) []const types.SoundId {
         const sounds = self.pending_sounds.items;
-        self.pending_sounds.clearRetainingCapacity();
+        self.pending_sounds.items.len = 0;
         return sounds;
     }
 

@@ -75,20 +75,41 @@ fn update(
     const ui_elements: []const ui.UiElement =
         if (previous_view_state) |view_state| view_state.ui_elements else &.{};
 
-    // Resolve a primary-button press over the UI. A press on a Button folds its
-    // Action into the input (so a click drives the same path as the keybind); a
-    // press on any blocking UI surface consumes the world click so it does not
-    // also act on the level/hub behind it (world/UI arbitration).
+    // Button click resolution: press records the button + queues the
+    // down-sound + consumes the world click; release fires the action +
+    // queues the up-sound ONLY if the release is over the same button that
+    // was pressed (drag-off cancels — no sound, no action). This is the
+    // standard UI press/release model. A press on any blocking UI surface
+    // (button or not) consumes the world click so it doesn't also act on the
+    // level/hub behind it (world/UI arbitration). See AGENTS → Input.
     if (player_input.pointer.pressed) {
         const pointer_position = player_input.pointer.position;
         if (ui.buttonAt(ui_elements, pointer_position)) |button| {
-            input.applyAction(&player_input, button.action);
+            history.session.pressed_button = button.action;
             history.session.queueSound(history.backing_allocator, .button_click_down);
             player_input.idle.tile_clicked = null;
             player_input.idle.confirm = false;
         } else if (ui.blockingElementAt(ui_elements, pointer_position) != null) {
+            history.session.pressed_button = null;
             player_input.idle.tile_clicked = null;
             player_input.idle.confirm = false;
+        } else {
+            history.session.pressed_button = null;
+        }
+    }
+    if (player_input.pointer.released) {
+        const pointer_position = player_input.pointer.position;
+        if (history.session.pressed_button) |pressed_action| {
+            // Fire only if the release is over the same button that was pressed.
+            if (ui.buttonAt(ui_elements, pointer_position)) |button| {
+                if (button.action == pressed_action) {
+                    input.applyAction(&player_input, button.action);
+                    history.session.queueSound(history.backing_allocator, .button_click_up);
+                    player_input.idle.tile_clicked = null;
+                    player_input.idle.confirm = false;
+                }
+            }
+            history.session.pressed_button = null;
         }
     }
 

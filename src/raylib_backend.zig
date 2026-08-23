@@ -287,27 +287,30 @@ pub const RaylibBackend = struct {
         if (!rl.isAudioDeviceReady()) return;
         self.audio_ready = true;
 
-        // Load every sfx. A missing/unreadable file caches null (the game
-        // continues silent for that sound, like missing sprites).
-        for (std.meta.tags(types.SoundId)) |sound| {
-            self.ensureSoundLoaded(sound);
-        }
-
-        // Load + start the music stream (looping). raylib's stb_vorbis keeps
-        // a POINTER to the buffer (no copy), so the bytes must outlive the
-        // stream — hold them in `music_data`, freed in `deinitAudio`.
+        // Load + start the music stream FIRST (looping). raylib's stb_vorbis
+        // keeps a POINTER to the buffer (no copy), so the bytes must outlive
+        // the stream — hold them in `music_data`, freed in `deinitAudio`.
+        // Loading music before sfx: LoadSoundFromWave converts to the device
+        // format, and the music stream's setup must happen first so the sfx
+        // conversion targets the right state.
         const music_path = "assets/audio/music/ambient.ogg";
         if (self.file_source.readFile(self.allocator, music_path)) |bytes| {
             if (rl.loadMusicStreamFromMemory(".ogg", bytes) catch null) |music_value| {
                 var music = music_value;
                 music.looping = true;
                 self.music = music;
-                self.music_data = bytes; // keep alive for the stream's lifetime
+                self.music_data = bytes;
                 rl.playMusicStream(music);
             } else {
                 self.allocator.free(bytes);
             }
         } else |_| {}
+
+        // Load every sfx AFTER the music stream is set up. A missing/unreadable
+        // file caches null (the game continues silent for that sound).
+        for (std.meta.tags(types.SoundId)) |sound| {
+            self.ensureSoundLoaded(sound);
+        }
 
         self.applyVolumes(settings);
     }
