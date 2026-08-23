@@ -1321,9 +1321,12 @@ fn emitCenteredNumber(
 ) !void {
     const label = try std.fmt.allocPrint(allocator, "{d}", .{value});
     // Center on the MEASURED text width (not a font_size square) so multi-digit
-    // numbers sit truly centered. Vertical centering uses line height.
+    // numbers sit truly centered. Vertical centering uses the `font_size` glyph
+    // cell (not `lineHeight`) — raylib draws a glyph from the top of a
+    // font_size-tall cell, so centering that cell puts the visual mass on the
+    // button's center; centering the taller lineHeight box would sit text high.
     const label_width = font_metrics.measureSpanWidth(text(label), font_size);
-    const label_box = cell.placeCenter(label_width, lineHeight(font_size));
+    const label_box = cell.placeCenter(label_width, font_size);
     try elements.append(allocator, .{ .text_label = .{
         .text = label,
         .screen_position = label_box.position(),
@@ -1401,9 +1404,12 @@ fn emitPanelButton(
         .action = action,
     } });
     // Centered label. Horizontal centering uses the measurement seam;
-    // vertical centering uses the label's line height.
+    // vertical centering uses the `font_size` glyph cell (not `lineHeight`) —
+    // raylib draws from the top of a font_size-tall cell, so centering that
+    // cell (not the taller lineHeight box) puts the visual mass on the
+    // button's center.
     const label_width = font_metrics.measureSpanWidth(text(label), font_size);
-    const label_box = cell.placeCenter(label_width, lineHeight(font_size));
+    const label_box = cell.placeCenter(label_width, font_size);
     try elements.append(allocator, .{ .text_label = .{
         .text = label,
         .screen_position = label_box.position(),
