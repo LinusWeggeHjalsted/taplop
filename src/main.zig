@@ -104,7 +104,14 @@ fn update(
             if (ui.buttonAt(ui_elements, pointer_position)) |button| {
                 if (button.action == pressed_action) {
                     input.applyAction(&player_input, button.action);
-                    history.session.queueSound(history.backing_allocator, .button_click_up);
+                    // Release sound: generic button-up for actions without a
+                    // specific sound. Actions WITH a specific sound (skip,
+                    // swap_weapons, panel toggles) get their sound from the
+                    // input/event handler that processes the action, so no
+                    // generic up here (would double-play). See AGENTS → Audio.
+                    if (types.releaseSoundForAction(button.action) == null) {
+                        history.session.queueSound(history.backing_allocator, .button_click_up);
+                    }
                     player_input.idle.tile_clicked = null;
                     player_input.idle.confirm = false;
                 }

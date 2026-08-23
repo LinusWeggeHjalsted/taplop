@@ -336,6 +336,7 @@ pub fn handleAnytimeInput(
     }
 
     if (anytime.toggle_options_menu) {
+        if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
         history.session.ui_state.options_menu_open = !history.session.ui_state.options_menu_open;
     }
 
@@ -388,14 +389,17 @@ pub fn handleAnytimeInput(
         const in_game = anytime.in_game;
 
         if (in_game.toggle_inventory) {
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
             ui_state.toggleMiddlePanel(.inventory);
         }
 
         if (in_game.toggle_gear) {
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
             ui_state.toggleMiddlePanel(.gear);
         }
 
         if (in_game.toggle_skills) {
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
             ui_state.toggleMiddlePanel(.skills);
         }
 
@@ -417,6 +421,7 @@ pub fn handleAnytimeInput(
         }
 
         if (in_game.toggle_world_map) {
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
             ui_state.toggleFullScreenOverlay(.world_map);
         }
         // Cursor resolution (mouse vs arrows vs UI occlusion) happens in a
@@ -424,6 +429,7 @@ pub fn handleAnytimeInput(
         // ui_elements + world tiles, which live in main.zig's world.
 
         if (in_game.swap_weapons) {
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .swap_skill);
             event_handlers.pushEvents(current, &.{
                 .{ .player_event = .swap_hands },
             }, allocator);
@@ -541,13 +547,16 @@ pub fn handleIdleInput(
                                         .prepare = false,
                                     } } },
                                 }, allocator),
-                                .prepare => |skill_id| event_handlers.pushEvents(current, &.{
-                                    .{ .level_event = .{ .player_skip_move_to_skill = .{
-                                        .skill_id = skill_id,
-                                        .target = null,
-                                        .prepare = true,
-                                    } } },
-                                }, allocator),
+                                .prepare => |skill_id| {
+                                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
+                                    event_handlers.pushEvents(current, &.{
+                                        .{ .level_event = .{ .player_skip_move_to_skill = .{
+                                            .skill_id = skill_id,
+                                            .target = null,
+                                            .prepare = true,
+                                        } } },
+                                    }, allocator);
+                                },
                             }
                             return;
                         }
@@ -590,12 +599,15 @@ pub fn handleIdleInput(
                                     use.target,
                                     allocator,
                                 ),
-                                .prepare => |skill_id| event_handlers.pushEvents(current, &.{
-                                    .{ .level_event = .{ .player_prepare_skill = .{
-                                        .caster_index = 0,
-                                        .skill_id = skill_id,
-                                    } } },
-                                }, allocator),
+                                .prepare => |skill_id| {
+                                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
+                                    event_handlers.pushEvents(current, &.{
+                                        .{ .level_event = .{ .player_prepare_skill = .{
+                                            .caster_index = 0,
+                                            .skill_id = skill_id,
+                                        } } },
+                                    }, allocator);
+                                },
                             }
                             return;
                         }

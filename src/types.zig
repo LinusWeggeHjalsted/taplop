@@ -100,6 +100,24 @@ pub const Action = enum {
     open_credits,
 };
 
+/// The context-specific sound an action plays on button release, if any.
+/// Actions without a specific sound use the generic `button_click_up`.
+/// Press-down is always `button_click_down` regardless of action. See
+/// AGENTS → Audio.
+pub fn releaseSoundForAction(action: Action) ?SoundId {
+    return switch (action) {
+        .skip => .skip,
+        .swap_weapons => .swap_skill,
+        .toggle_inventory, .toggle_gear, .toggle_skills, .toggle_world_map, .toggle_options_menu => .menu,
+        // Skill slots: suppress the generic button-up (the use_skill event
+        // plays weapon_swing/spell on auto-fire; the prepare path plays
+        // button_click_up explicitly). See AGENTS → Audio.
+        .skill_slot_1, .skill_slot_2, .skill_slot_3, .skill_slot_4,
+        .skill_slot_5, .skill_slot_6, .skill_slot_7, .skill_slot_8 => .button_click_up,
+        else => null,
+    };
+}
+
 /// Raw input identifier — uses human-readable strings so config files
 /// are legible and editable. Key codes follow the W3C KeyboardEvent.code
 /// spec (e.g. "KeyA", "Space", "ShiftLeft"). Mouse buttons are "left",
