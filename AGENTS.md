@@ -352,11 +352,15 @@ gameplay — not in snapshots, not touched by replay.
   (snapping to the player tile if null).
 - **Replay must not create events; new actions branch the timeline.**
   `processEvent` records into `event_history` only when `!replaying` (via
-  `GameStateHistory.recordEvent`); the event index still advances so
-  `replayTo`'s loop progresses. Taking a new action after an undo discards the
-  stale future first (`discardFutureTimeline`: trims `event_history` +
-  `idle_points`, frees snapshots/checkpoints ahead of the branch), so the new
-  action continues a fresh timeline from the undone position.
+  `GameStateHistory.recordEvent`); the event index still advances (processEvent
+  increments it before dispatch) so `replayTo`'s loop progresses, and each
+  stack-top event is verified against the recording (`verifyReplayMatch`) —
+  replay is strict-validation, not just rebuild. See Determinism & Tiebreaking →
+  Replay VERIFICATION for the natural-stack machinery. Taking a new action
+  after an undo discards the stale future first (`discardFutureTimeline`:
+  trims `event_history` + `idle_points`, frees snapshots/checkpoints ahead of
+  the branch), so the new action continues a fresh timeline from the undone
+  position.
 
 ## Versioning
 
