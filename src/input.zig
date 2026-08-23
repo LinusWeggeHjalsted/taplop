@@ -342,10 +342,14 @@ fn checkAction(
     for (bindings) |binding| {
         if (binding.action != action) continue;
 
-        // Check modifiers match
-        if (binding.modifiers.ctrl != modifiers.ctrl) continue;
-        if (binding.modifiers.shift != modifiers.shift) continue;
-        if (binding.modifiers.alt != modifiers.alt) continue;
+        // A binding's modifiers are REQUIREMENTS, not an exact match: a plain
+        // binding fires regardless of held modifiers (so ctrl+key works for
+        // any plain-bound action, e.g. ctrl+Space skip with force-attack);
+        // a ctrl binding fires only when ctrl is held. Skip only when a
+        // REQUIRED modifier is not held.
+        if (binding.modifiers.ctrl and !modifiers.ctrl) continue;
+        if (binding.modifiers.shift and !modifiers.shift) continue;
+        if (binding.modifiers.alt and !modifiers.alt) continue;
 
         // Check if the bound input was just pressed
         const pressed = switch (binding.input) {

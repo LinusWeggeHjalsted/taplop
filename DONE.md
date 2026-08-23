@@ -1975,3 +1975,27 @@ theme's `lightest` color (the artist's slightly-off-white).
 - `drawUiElement` takes `highlight_color`; `.button`/`.image` draw the
   sprite's mask over it when `highlighted`, via `drawHighlightOutline`.
   `render()` passes `view_state.active_color_theme.lightest`.
+
+### Input binding modifier match: subset, not exact (done)
+
+`checkAction` matched bindings by EXACT modifier equality
+(`binding.modifiers.ctrl != modifiers.ctrl`), so a plain binding (no
+modifier requirement) would NOT fire while ctrl was held. That broke
+ctrl+Space skip: the `skip` binding is plain `Space`, so holding ctrl
+suppressed it entirely — even though `handleIdleInput` reads `modifiers.ctrl`
+to set `force_attack_step` (override the auto-skip-attack-out-of-combat
+setting). The skip BUTTON worked (UI clicks go through `applyAction`, which
+sets `skip` directly with no modifier filtering); only the keyboard chord
+was broken.
+
+Fix: a binding's modifiers are now REQUIREMENTS, not an exact match. A plain
+binding fires regardless of held modifiers (so ctrl+key works for any
+plain-bound action); a ctrl binding fires only when ctrl is held. Skip only
+when a REQUIRED modifier is NOT held.
+
+Behavior widening: holding ctrl and pressing any plain-bound key now fires
+that action (ctrl+g toggles gear, ctrl+1 fires skill slot 1, etc.) —
+previously those did nothing. No current conflict: the only ctrl bindings
+are z/y/l, none of which share a key with a plain binding. If an exclusive
+chord need ever shows up (plain X vs ctrl+X doing different things),
+most-specific-wins can be layered on top; not needed today.
