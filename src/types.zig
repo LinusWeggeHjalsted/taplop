@@ -119,7 +119,7 @@ pub const Settings = struct {
     /// render time to tint the player entity + UI. Default 0 (lightest).
     player_color_index: u32 = 0,
     input_bindings: []const InputBinding,
-    camera_zoom: f32 = 1.0, // 1.0 = no zoom, <1 = zoomed out, >1 = zoomed in
+    camera_zoom: f32 = 0.5, // 1.0 = no zoom, <1 = zoomed out, >1 = zoomed in
 };
 
 pub const Camera = struct {
