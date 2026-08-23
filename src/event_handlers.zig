@@ -913,6 +913,7 @@ pub fn processEvent(
                     cancelPreparedSkill(current);
                 },
                 .learn_skill => |learn| {
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .learn_skill);
                     const player = getPlayerEntity(current, 0);
                     const slot = &player.inventory.slots[learn.inventory_slot_index];
 
@@ -941,6 +942,7 @@ pub fn processEvent(
                         @panic("failed to allocate learned skills");
                 },
                 .salvage_item => |salvage| {
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .salvage);
                     const player = getPlayerEntity(current, 0);
                     const slot = &player.inventory.slots[salvage.inventory_slot_index];
 
@@ -954,6 +956,7 @@ pub fn processEvent(
                     slot.* = null;
                 },
                 .equip_item => |equip| {
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .equip);
                     const player = getPlayerEntity(current, 0);
                     const slot = &player.inventory.slots[equip.inventory_slot_index];
 
@@ -1627,6 +1630,17 @@ pub fn processEvent(
                     entity.momentum += 1;
 
                     if (lookups.getSkillDefinition(use.skill_id)) |skill_definition| {
+                        // Sound for the cast/swing, by skill type: weapon skills
+                        // play the swing; spells/cantrips/enchantments/curses play
+                        // the spell cast (cantrip/enchantment assets are TODO; spell
+                        // is the placeholder). See AGENTS → Audio.
+                        if (!history.replaying) {
+                            const cast_sound: types.SoundId = switch (skill_definition.skill_type) {
+                                .weapon_skill => .weapon_swing,
+                                .spell, .cantrip, .enchantment, .curse => .spell,
+                            };
+                            history.session.queueSound(history.backing_allocator, cast_sound);
+                        }
                         // Push the skill's events
                         const skill_events = skill_definition.useSkill(
                             use.caster_index,
@@ -1906,6 +1920,7 @@ pub fn processEvent(
                     }
                 },
                 .collision => |collision| {
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .damage);
                     const attacker = getLevelEntity(current, collision.attacker_index);
                     const defender = getLevelEntity(current, collision.defender_index);
 
@@ -1960,7 +1975,7 @@ pub fn processEvent(
                     }
                 },
                 .attack => |attack| {
-                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .attack);
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .damage);
                     const attacker = getLevelEntity(current, attack.attacker_index);
                     const defender = getLevelEntity(current, attack.defender_index);
 

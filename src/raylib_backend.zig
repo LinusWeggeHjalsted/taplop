@@ -342,7 +342,7 @@ pub const RaylibBackend = struct {
     fn soundFileName(sound: types.SoundId) []const u8 {
         return switch (sound) {
             .move => "move",
-            .attack => "attack",
+            .weapon_swing => "weapon_swing",
             .spell => "spell",
             .damage => "damage",
             .pickup => "pickup",

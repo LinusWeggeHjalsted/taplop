@@ -2582,3 +2582,26 @@ swap_skill/menu/button_click_up; defeat + mission_completion land with the
 mission end-state screens), the spell-vs-attack split (skill-type lookup in
 the `use_skill` handler), live volume re-apply from the options menu, and web
 autoplay verification.
+
+### Slice 6 — full event→sound map + naming alignment (DONE)
+
+Settled the trigger-placement approach: **one sound per semantic event,
+triggered in the event handler** (not in skill `useSkill` functions, not on
+orchestrators). Skills compose events; events carry sounds; the map lives in
+one place. AI gets sounds for free (enemies push the same events).
+
+- **Naming alignment:** renamed `attack` sound → `weapon_swing` so `attack`
+  refers to exactly one thing (the damage-primitive event). `damage` is fired
+  by `attack` + `collision` (many-to-one, no `damage` event → no clash). Asset
+  file renamed `attack.ogg` → `weapon_swing.ogg`.
+- **`use_skill` split by skill_type:** weapon_skill → `weapon_swing` (the
+  swing); spell/cantrip/enchantment/curse → `spell` (the cast; cantrip/
+  enchantment/curse assets are TODO, `spell` is the placeholder). One switch
+  arm in the handler — not 25 per-skill trigger sites.
+- **Full map wired:** move_entity/move_player→move, use_skill(weapon)→
+  weapon_swing, use_skill(spell-type)→spell, attack→damage, collision→damage,
+  pickup_items→pickup, equip_item→equip, learn_skill→learn_skill,
+  salvage_item→salvage. UI: button_click_down on press (input path).
+- **Multi-hit:** each `attack` fires one `damage` (N hits → N impacts). If
+  overlapping same-sfx-in-one-frame becomes an audio mess, throttle in the
+  backend's `playSounds` (per-sfx cooldown) — NOT at trigger sites.

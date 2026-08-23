@@ -20,7 +20,7 @@ pub const utility_skill_count = 5;
 /// AGENTS → Audio.
 pub const SoundId = enum {
     move,
-    attack,
+    weapon_swing,
     spell,
     damage,
     pickup,

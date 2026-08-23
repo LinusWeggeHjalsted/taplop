@@ -263,10 +263,22 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   the backend. The `!replaying` gate is at the PUSH site, so replay pushes
   nothing.
 - **`SoundId` enum** (types.zig) — one variant per sfx file under
-  `assets/audio/sfx/` (15 shipped: move, attack, spell, damage, pickup, skip,
-  equip, learn_skill, salvage, swap_skill, button_click_down,
+  `assets/audio/sfx/` (15 shipped: move, weapon_swing, spell, damage, pickup,
+  skip, equip, learn_skill, salvage, swap_skill, button_click_down,
   button_click_up, menu, defeat, mission_completion). Music is a single
-  always-on stream, NOT a `SoundId`.
+  always-on stream, NOT a `SoundId`. **Sound names align with their trigger
+  events where one exists** (move↔move, pickup↔pickup, equip↔equip, etc.); the
+  one intentional divergence is `damage` (fired by the `attack` + `collision`
+  events — many-to-one, no `damage` event so no name clash) and
+  `weapon_swing` (fired by `use_skill` for weapon skills — renamed from
+  `attack` so `attack` refers to exactly one thing: the damage-primitive event).
+  The full map: `move_entity`/`move_player`→move, `use_skill`(weapon)→
+  weapon_swing, `use_skill`(spell/cantrip/enchantment/curse)→spell,
+  `attack`/`collision`→damage, `pickup_items`→pickup, `equip_item`→equip,
+  `learn_skill`→learn_skill, `salvage_item`→salvage. UI click sounds queue
+  from the input path (`update`). Multi-hit skills fire one damage sound per
+  `attack` (N hits → N impacts); if that becomes an audio mess, throttle in
+  the backend's `playSounds` (per-sfx cooldown), NOT at trigger sites.
 - **Backend (`raylib_backend.zig`):** `initAudio(settings)` opens the audio
   device, loads all sfx via `loadWaveFromMemory` + `loadSoundFromWave` from
   the `FileSource` (never the filesystem — same seam as textures), loads the
