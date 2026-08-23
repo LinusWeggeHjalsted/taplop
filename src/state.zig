@@ -702,6 +702,30 @@ pub const GameStateHistory = struct {
         self.compactCurrentArena();
     }
 
+    /// Record an idle point when an event boundary just completed, shared by
+    /// `frame()`'s drain loop and idle branch so the detection condition lives
+    /// in one place. `events_processed` is the caller's signal that `update()`
+    /// actually ran events this tick (drain loop: `had_events`; idle branch:
+    /// `current_event_index` advanced). The recording fires only when events
+    /// ran, the stack is now empty, and the current position isn't ALREADY an
+    /// idle point — that last check excludes undo/redo, which are anytime
+    /// actions handled inside `update()` and land on an existing idle point
+    /// (recording a duplicate there would corrupt the timeline and make
+    /// undo/redo cycle between adjacent states). Reconstruction does not call
+    /// this — it records idle points from virtual stack depth in
+    /// `replayToWithIdleTracking`.
+    pub fn maybeRecordIdlePoint(
+        self: *GameStateHistory,
+        events_processed: bool,
+    ) void {
+        if (events_processed and
+            self.current_state.event_stack.len == 0 and
+            self.idle_points.items[self.current_idle_index] != self.current_event_index)
+        {
+            self.recordIdlePoint();
+        }
+    }
+
     /// Compact current_state into a fresh arena, reclaiming the per-turn churn
     /// (abandoned event-stack reallocations, rebuilt slices, exited levels/hubs)
     /// that accumulated in current_arena since the last reset. Call at idle

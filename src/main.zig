@@ -273,8 +273,10 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             // Stack just emptied — record the idle point (snapshot + compact
             // current_arena so per-turn churn and any exited level/hub are
             // reclaimed instead of accumulating across the session). Shared
-            // with reconstruction via recordIdlePoint.
-            history.recordIdlePoint();
+            // with reconstruction via recordIdlePoint. Condition delegated to
+            // maybeRecordIdlePoint (one place for the idle-point detection
+            // logic, shared with the idle branch).
+            history.maybeRecordIdlePoint(had_events);
         }
     }
 
@@ -298,32 +300,18 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // An anytime action (e.g. swap_weapons) can push events onto the
         // empty stack and process them within this one update() call. If
         // events were processed and the stack is empty again with no active
-        // wait, it's an idle boundary — record the undo stop, mirroring the
-        // drain loop's had_events/!has_events check. The `waiting == null`
-        // gate avoids a spurious idle point if a wait was pushed at an empty
-        // stack (no such event today, but defensive). A mid-wait anytime
-        // interjection is drained to baseline inside update() and leaves the
-        // stack at baseline (non-empty during an enemy turn), so it does not
-        // record an idle point here — it stays absorbed into the surrounding
-        // drain's idle point, as intended.
-        //
-        // The `idle_points[current_idle_index] != current_event_index` clause
-        // excludes undo/redo, which are also anytime actions handled inside
-        // update(). undo/redo set `current_idle_index` and `restoreTo` sets
-        // `current_event_index` to that idle point, so after update() they're
-        // equal — the position is already indexed and must NOT get a
-        // duplicate idle point (which would corrupt the timeline and make
-        // undo/redo cycle between adjacent states). A genuine new action
-        // advances `current_event_index` via processEvent without touching
-        // `current_idle_index`, leaving them unequal — the signal that a new
-        // idle point is needed.
-        if (history.current_event_index != event_index_before_update and
-            history.current_state.event_stack.len == 0 and
-            history.current_state.waiting == null and
-            history.idle_points.items[history.current_idle_index] != history.current_event_index)
-        {
-            history.recordIdlePoint();
-        }
+        // wait, it's an idle boundary — record the undo stop via
+        // maybeRecordIdlePoint (shared with the drain loop). The helper's
+        // "not already an idle point" check excludes undo/redo, which are
+        // also anytime actions handled inside update() and land on an
+        // existing idle point (recording a duplicate there would make
+        // undo/redo cycle). A mid-wait anytime interjection is drained to
+        // baseline inside update() and leaves the stack at baseline
+        // (non-empty during an enemy turn), so it does not record an idle
+        // point here — it stays absorbed into the surrounding drain's idle
+        // point, as intended.
+        const events_processed = history.current_event_index != event_index_before_update;
+        history.maybeRecordIdlePoint(events_processed);
     }
 
     // Player-move recenter: if the player's tile changed this frame (a move
@@ -1270,13 +1258,8 @@ fn runIdleUpdate(history: *GameStateHistory, player_input: input.PlayerInput) vo
     const event_index_before = history.current_event_index;
     const camera = view_mod.computeCamera(&history.current_state, history.settings.camera_zoom, history.session.camera_pan);
     update(history, player_input, null, 16_000, camera, history.settings.camera_zoom, .{ .width = 3840, .height = 2160 });
-    if (history.current_event_index != event_index_before and
-        history.current_state.event_stack.len == 0 and
-        history.current_state.waiting == null and
-        history.idle_points.items[history.current_idle_index] != history.current_event_index)
-    {
-        history.recordIdlePoint();
-    }
+    const events_processed = history.current_event_index != event_index_before;
+    history.maybeRecordIdlePoint(events_processed);
 }
 
 /// Drive an idle swap_weapons through update() and replicate frame()'s
