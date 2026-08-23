@@ -1,0 +1,6 @@
+Metadata
+file_format_version 1
+name Seatown
+start_hub camp_at_the_crossroads
+end_hub camp_at_the_crossroads
+level_count 3

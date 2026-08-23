@@ -543,6 +543,66 @@ test "replay verification: clean replay through the slow path passes" {
     try std.testing.expectEqual(state.Screen.hub, history.current_state.screen);
 }
 
+test "ported campaign missions load through the event path" {
+    // The 4 designed missions ported from the Unity project (beginnings,
+    // forest, wetlands, seatown) plus the Camp at the Crossroads hub must
+    // load end-to-end through the event path — not just the parser. Each
+    // start_mission reads mission.txt + level_1.txt via the reconstruction
+    // cache, transitions to .level, and instantiates entities. This catches
+    // mission/hub wiring + level loading issues that parser-only tests miss.
+    const allocator = std.testing.allocator;
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    const missions = [_]struct { path: []const u8, min_entities: usize }{
+        .{ .path = "data/campaigns/main_campaign/missions/beginnings", .min_entities = 2 },
+        .{ .path = "data/campaigns/main_campaign/missions/forest", .min_entities = 2 },
+        .{ .path = "data/campaigns/main_campaign/missions/wetlands", .min_entities = 2 },
+        .{ .path = "data/campaigns/main_campaign/missions/seatown", .min_entities = 2 },
+    };
+    for (missions) |mission| {
+        // Fresh history per mission so each load is independent.
+        var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+        runToIdle(&history);
+        event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
+            .mission_path = mission.path,
+            .start_hub_id = null,
+            .end_hub_id = null,
+        } } }}, history.current_arena.allocator());
+        runToIdle(&history);
+        try std.testing.expectEqual(state.Screen.level, history.current_state.screen);
+        const level = history.current_state.level orelse return error.expectedLevel;
+        // Player (entity 0) + at least one enemy.
+        try std.testing.expect(level.entities.len >= mission.min_entities);
+        try std.testing.expect(history.current_state.mission != null);
+    }
+}
+
 test "reconstruction cache: undo replay reads original bytes after the file is overwritten" {
     // The reconstruction cache makes replay deterministic regardless of later
     // file changes (the editor-saves-overwrite-mid-session case). A live

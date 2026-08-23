@@ -1717,6 +1717,47 @@ player doesn't have to manually skip the move when they don't intend to move
   (prepare + use) and asserting `force_attack_step` is true on the pushed
   `player_turn_attack`.
 
+### Ported the designed Unity levels (DONE)
+
+Ported all 4 designed missions from the Unity project (~/Development/taplop)
++ the single hub (Camp at the Crossroads) into ziglop's config format. They
+live alongside the existing dev/sample `first_mission` + `starting_village`
+(which stay — referenced by editor dev entry + tests).
+
+- **Missions:** `beginnings` (3 levels), `forest` (4), `wetlands` (3),
+  `seatown` (3) — 13 levels total. Each has `mission.txt` + `player.txt`
+  (shared starter loadout, from Unity's `New Game.txt`) + `level_N.txt`.
+- **Hub:** `camp_at_the_crossroads/hub.txt` with 4 exits (one per mission).
+  `campaign.txt` `start_hub` repointed to it.
+- **Conversion** via `scripts/port_unity_levels.py` (one-off, kept for
+  reference): Unity `Enemy Info`/`Decoration Info`/`Item Info`/`Exit Info` →
+  ziglop `Enemies`/`Decorations`/`Items`/`Exits`; CamelCase sprite names →
+  bare snake_case stems (`Skeleton1`→`skeleton_1`, `GiantCrab`→
+  `giant_crab`); Unity field names → ziglop (`maxHealth`→`max_health`,
+  `armor`→`defense`, `usesWeapons 0`→`displays_weapons false`, `mainHandX`→
+  `main_hand_weapon_X`, `colorCode`→`color_index`); weapon types (`Wand`→
+  `staff`); utility skills (`utilitySkill X` lines → `slot_{4+i}` keys);
+  items (`type Weapon`/`Boots` → `item_type weapon`/`boots`).
+- **Decoration footprints:** Unity had no footprint field (decorations were
+  non-blocking visual props). Authored a single-tile footprint per sprite,
+  derived from each Unity sprite's pivot (the pivot maps to the anchor grid
+  tile). Minimal — only the anchor cell is reserved (no floor-tile conflicts,
+  since the layout char IS the anchor and is non-floor by definition);
+  the rest of the bbox is overhang. Decorations don't block movement
+  (pathfinding ignores them), so single-tile footprints are purely cosmetic
+  on the reserved area. `tree_1` uses `footprint 1 2` (bottom-center) to
+  match the existing sample convention.
+- **Converter bug fixed:** empty sections (`Decorations`/`Items` with no
+  entries) were emitted without a trailing blank line, so the next section
+  header wasn't recognized (the parser requires a blank line before a
+  section header) and its entries leaked into the empty section → a
+  decoration entry with no `sprite` → sprite-dims panic. Fixed by always
+  emitting a blank line after each section header.
+- **Tests:** the global shipped-content validation test loads every ported
+  file (parser + key validation); a new main.zig integration test enters
+  each ported mission via `start_mission` through the event path and asserts
+  it reaches `.level` with entities + a mission loaded.
+
 ### Crash dump (panic → session log) (DONE)
 
 A `@panic` now writes `crashes/crash_YYYYMMDD_HHMMSS.txt` (a replayable

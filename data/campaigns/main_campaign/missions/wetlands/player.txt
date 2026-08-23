@@ -1,0 +1,31 @@
+Metadata
+file_format_version 1
+
+PlayerLoadout
+name Player
+sprite player
+max_health 20
+defense 0
+speed 1
+aggro_range 3
+main_hand_weapon_name Starter Sword
+main_hand_weapon_type sword
+main_hand_weapon_damage 3
+off_hand_weapon_name Starter Shield
+off_hand_weapon_type shield
+off_hand_weapon_damage 3
+amulet_name Starter Amulet
+amulet_spell_damage 3
+coat_name Starter Coat
+coat_defense_bonus 0
+coat_health_bonus 1
+gloves_name Starter Gloves
+gloves_damage_bonus 0
+gloves_health_bonus 1
+pants_name Starter Pants
+pants_pickup_radius_bonus 0
+pants_health_bonus 1
+boots_name Starter Boots
+boots_speed_bonus 0
+boots_health_bonus 1
+slot_4 replenish

@@ -1,0 +1,60 @@
+Metadata
+file_format_version 1
+name Forest 3
+
+Layout
+  AA
+ A.AAA  AAAA
+AAC..AAA...AAA
+ AA...=...B.A
+ AA..1.1.DAAA
+  A......AA
+  AD.....A
+ A A....CA
+    A..BAAA
+      !
+
+
+Enemies
+
+character_code 1
+sprite skeleton_1
+name Skeleton Javelineer
+max_health 20
+defense 0
+speed 1
+aggro_range 3
+main_hand_weapon_name Skeleton Spear
+main_hand_weapon_damage 5
+coat_name Skeleton Coat
+coat_health_bonus 2
+coat_defense_bonus 1
+pants_name Skeleton Pants
+pants_health_bonus 2
+pants_pickup_radius_bonus 1
+displays_weapons true
+main_hand_weapon_type spear
+
+Decorations
+
+character_code A
+sprite tree_1
+footprint 1 2
+color_index 4
+
+character_code B
+sprite stone_2
+footprint 0 0
+color_index 5
+
+character_code C
+sprite stone_4
+footprint 0 0
+color_index 5
+
+character_code D
+sprite stone_6
+footprint 0 1
+color_index 5
+
+Items

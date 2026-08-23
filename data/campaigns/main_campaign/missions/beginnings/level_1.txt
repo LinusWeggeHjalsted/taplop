@@ -1,0 +1,95 @@
+Metadata
+file_format_version 1
+name Beginnings 0
+
+Layout
+       1.. 
+    ECD.1..
+    ....
+   .....H     .
+   !......   .=.
+  .   F...   1.
+   aB  ...G J.
+  A     .....
+           I
+
+
+Enemies
+
+character_code 1
+sprite skeleton_1
+name Skeleton Warrior
+max_health 20
+defense 0
+speed 1
+aggro_range 3
+main_hand_weapon_name Skeleton Sword
+main_hand_weapon_damage 4
+coat_name Skeleton Coat
+coat_health_bonus 1
+coat_defense_bonus 1
+pants_name Skeleton Pants
+pants_health_bonus 1
+pants_pickup_radius_bonus 1
+displays_weapons true
+main_hand_weapon_type sword
+
+Decorations
+
+character_code A
+sprite ruin_11
+footprint 1 1
+color_index 0
+
+character_code B
+sprite ruin_8
+footprint 0 0
+color_index 0
+
+character_code C
+sprite stone_2
+footprint 0 0
+color_index 5
+
+character_code D
+sprite stone_6
+footprint 0 1
+color_index 5
+
+character_code E
+sprite stone_1
+footprint 0 0
+color_index 5
+
+character_code F
+sprite statue_4
+footprint 0 1
+color_index 0
+
+character_code G
+sprite ruin_10
+footprint 1 1
+color_index 0
+
+character_code H
+sprite ruin_1
+footprint 0 1
+color_index 0
+
+character_code I
+sprite ruin_4
+footprint 0 0
+color_index 0
+
+character_code J
+sprite stone_4
+footprint 0 0
+color_index 5
+
+Items
+
+character_code a
+item_type boots
+item_name Comfortable Boots
+health 1
+speed 1

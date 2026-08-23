@@ -1,0 +1,105 @@
+Metadata
+file_format_version 1
+name Wetlands 2
+
+Layout
+     !
+     .
+   D..
+  .....
+ .C....
+ ....B2.
+D..E...
+...A..C
+ .....
+ .121.
+ F.=.G
+ H  I
+
+
+Enemies
+
+character_code 1
+sprite crab
+name Crab
+max_health 20
+defense 0
+speed 1
+aggro_range 3
+main_hand_weapon_name Crab Sword
+main_hand_weapon_damage 5
+off_hand_weapon_name Crab Shield
+off_hand_weapon_damage 5
+gloves_name Crab Gloves
+gloves_health_bonus 2
+gloves_damage_bonus 1
+displays_weapons true
+main_hand_weapon_type sword
+off_hand_weapon_type shield
+slot_4 stone_form
+
+character_code 2
+sprite giant_crab
+name Giant Crab
+max_health 20
+defense 0
+speed 1
+aggro_range 3
+main_hand_weapon_name Crab Axe
+main_hand_weapon_damage 6
+off_hand_weapon_name Crab Shield
+off_hand_weapon_damage 6
+displays_weapons true
+main_hand_weapon_type axe
+off_hand_weapon_type shield
+slot_4 that_which_lingers
+slot_5 stone_form
+
+Decorations
+
+character_code A
+sprite stone_6
+footprint 0 1
+color_index 5
+
+character_code B
+sprite stone_4
+footprint 0 0
+color_index 5
+
+character_code C
+sprite stone_2
+footprint 0 0
+color_index 5
+
+character_code D
+sprite stone_1
+footprint 0 0
+color_index 5
+
+character_code E
+sprite tree_1
+footprint 1 2
+color_index 4
+
+character_code F
+sprite ruin_8
+footprint 0 0
+color_index 0
+
+character_code G
+sprite ruin_9
+footprint 0 0
+color_index 0
+
+character_code H
+sprite ruin_5
+footprint 0 0
+color_index 0
+
+character_code I
+sprite ruin_6
+footprint 0 0
+color_index 0
+
+Items

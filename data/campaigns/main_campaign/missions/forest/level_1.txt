@@ -1,0 +1,102 @@
+Metadata
+file_format_version 1
+name Forest 0
+
+Layout
+                 A
+     AA    AA  AA
+    AA  AAAAAAA..=FA
+ A A.2AA..AAA...E ..A  A
+  A2....AA.....AAAA.aAA
+  AAA...AAAAA...AA.2.A
+   AA..AAA.A.AA.A.B..2A
+    AAC..AAA.AA..BAAA..A
+   AA  A.AAAA...AAA  AAAA
+        D......A
+        .....   A
+       .1..C
+        ....
+       B..
+      ..
+      !
+
+
+Enemies
+
+character_code 1
+sprite skeleton_1
+name Skeleton Warrior
+max_health 20
+defense 0
+speed 1
+aggro_range 3
+main_hand_weapon_name Skeleton Sword
+main_hand_weapon_damage 5
+coat_name Skeleton Coat
+coat_health_bonus 2
+coat_defense_bonus 1
+gloves_name Skeleton Gloves
+gloves_health_bonus 2
+gloves_damage_bonus 1
+pants_name Skeleton Pants
+pants_health_bonus 2
+pants_pickup_radius_bonus 1
+displays_weapons true
+main_hand_weapon_type sword
+
+character_code 2
+sprite wolf
+name Wolf
+max_health 20
+defense 0
+speed 1
+aggro_range 6
+main_hand_weapon_name Wolf Sword
+main_hand_weapon_damage 5
+boots_name Wolf Boots
+boots_health_bonus 2
+boots_speed_bonus 1
+displays_weapons false
+main_hand_weapon_type sword
+slot_4 blink
+slot_5 howl
+
+Decorations
+
+character_code A
+sprite tree_1
+footprint 1 2
+color_index 4
+
+character_code B
+sprite stone_4
+footprint 0 0
+color_index 5
+
+character_code C
+sprite stone_2
+footprint 0 0
+color_index 5
+
+character_code D
+sprite stone_1
+footprint 0 0
+color_index 5
+
+character_code E
+sprite ruin_5
+footprint 0 0
+color_index 0
+
+character_code F
+sprite ruin_9
+footprint 0 0
+color_index 0
+
+Items
+
+character_code a
+item_type weapon
+item_name Rusty Dagger
+weapon_type dagger
+damage 5
