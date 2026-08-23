@@ -720,7 +720,14 @@ pub const GameStateHistory = struct {
     ) void {
         if (events_processed and
             self.current_state.event_stack.len == 0 and
-            self.idle_points.items[self.current_idle_index] != self.current_event_index)
+            // "Not already an idle point" — excludes undo/redo, which land
+            // on an existing idle point (recording a duplicate would corrupt
+            // the timeline). Only meaningful when idle_points is non-empty;
+            // when empty (the very first idle point at startup) the position
+            // can't already be indexed, so record. takeSnapshot appends before
+            // indexing, so the empty case never reached this read before.
+            (self.idle_points.items.len == 0 or
+                self.idle_points.items[self.current_idle_index] != self.current_event_index))
         {
             self.recordIdlePoint();
         }

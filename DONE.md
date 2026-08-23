@@ -2337,3 +2337,32 @@ panic namespace, which writes `crashes/crash_*.txt` into the cwd before
 trapping — polluting the tree. The script now `rm -rf crashes` before running
 and after a passing run, so a prior run's leftovers don't linger and a passing
 run leaves none.
+
+### Fix: maybeRecordIdlePoint crashed the exe on the first frame (out-of-bounds)
+
+`maybeRecordIdlePoint` reads `idle_points[current_idle_index]` to check "not
+already an idle point." At startup `idle_points` is empty and
+`current_idle_index` is 0, so that read was out of bounds → the exe crashed
+immediately on the first `frame()` (the `open_main_menu` drain called
+`maybeRecordIdlePoint(true)` with an empty list). The old `recordIdlePoint`/
+`takeSnapshot` appended to `idle_points` before ever indexing (set
+`current_idle_index = len - 1` after append), so it never indexed into an
+empty list; the new check did, and the empty-list case (the very first idle
+point) was unguarded.
+
+Fix: guard the "not already indexed" check with `idle_points.items.len == 0 or
+...`. When empty, the position can't already be indexed → record (gated by the
+other conditions). When non-empty, the check runs as before.
+
+Why the tests missed it: every test calls `runToIdle` first, which populates
+`idle_points` via `recordIdlePoint` before any `maybeRecordIdlePoint` call —
+so the empty-list path was never exercised. Added a regression test that
+drives `maybeRecordIdlePoint` directly on a fresh history with empty
+`idle_points` (push swap_hands, processEvent, call maybeRecordIdlePoint →
+records the first idle point, no crash). Verified the test reproduces the
+exact `index out of bounds: index 0, len 0` panic on the unguarded code.
+
+Lesson: when factoring out a helper called from the production loop, add a
+test that exercises it from the *initial* state (empty collections, index 0),
+not just from the states existing tests reach. The `runToIdle`-first pattern
+in the test harness systematically skips startup invariants.

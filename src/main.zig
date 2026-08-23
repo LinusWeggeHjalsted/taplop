@@ -1278,3 +1278,35 @@ fn doAnytime(history: *GameStateHistory, anytime: input.AnytimeInput) void {
     player_input.anytime = anytime;
     runIdleUpdate(history, player_input);
 }
+
+test "maybeRecordIdlePoint: first idle point from empty idle_points (no out-of-bounds)" {
+    // Regression: maybeRecordIdlePoint reads idle_points[current_idle_index]
+    // to check "not already an idle point." At startup idle_points is empty
+    // and current_idle_index is 0, so that read was out of bounds and crashed
+    // the exe on the first frame (the open_main_menu drain). The tests missed
+    // it because every test calls runToIdle first, which populates idle_points
+    // via recordIdlePoint before any maybeRecordIdlePoint call. This test
+    // drives the empty-list path directly.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{playerWithWeapons()},
+        &three_by_three_tiles,
+    ));
+    // Fresh history: idle_points empty, current_idle_index 0, no events yet.
+    try std.testing.expectEqual(@as(usize, 0), history.idle_points.items.len);
+    try std.testing.expectEqual(@as(u32, 0), history.current_event_index);
+
+    // Process one event (swap_hands) directly, then call maybeRecordIdlePoint
+    // with empty idle_points — must record the first idle point, not crash.
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_event = .swap_hands }}, history.current_arena.allocator());
+    event_handlers.processEvent(&history);
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expect(history.current_event_index > 0);
+
+    history.maybeRecordIdlePoint(true);
+    try std.testing.expectEqual(@as(usize, 1), history.idle_points.items.len);
+    try std.testing.expectEqual(history.current_event_index, history.idle_points.items[0]);
+}
