@@ -395,69 +395,19 @@ test "loadConfigWithFallback: no shadow uses embedded directly, no warning" {
     try testing.expectEqual(@as(usize, 0), warnings.items.len);
 }
 
-// A wrapper allocator that POISONS freed memory (fills it with 0xAA) before
-// forwarding free to a parent allocator whose free is otherwise a no-op (an
-// arena). This turns a use-after-free into a deterministic failure: a slice
-// that dangles into a freed buffer reads back as 0xAA bytes instead of its
-// original content, so an equality assertion on the slice fails. The arena
-// keeps the freed region mapped (no segfault) and reclaims everything on
-// deinit (no leak complaints). Used only by the overlayUserSettings
-// regression test below.
-const PoisonAllocator = struct {
-    parent: std.mem.Allocator,
-    const poison_byte: u8 = 0xAA;
-
-    fn allocator(self: *PoisonAllocator) std.mem.Allocator {
-        return .{
-            .ptr = self,
-            .vtable = &.{
-                .alloc = alloc,
-                .resize = resize,
-                .remap = remap,
-                .free = free,
-            },
-        };
-    }
-
-    fn alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
-        const self: *PoisonAllocator = @ptrCast(@alignCast(ctx));
-        return self.parent.rawAlloc(len, alignment, ret_addr);
-    }
-
-    fn resize(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
-        const self: *PoisonAllocator = @ptrCast(@alignCast(ctx));
-        return self.parent.rawResize(buf, alignment, new_len, ret_addr);
-    }
-
-    fn remap(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
-        const self: *PoisonAllocator = @ptrCast(@alignCast(ctx));
-        return self.parent.rawRemap(buf, alignment, new_len, ret_addr);
-    }
-
-    fn free(ctx: *anyopaque, buf: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
-        const self: *PoisonAllocator = @ptrCast(@alignCast(ctx));
-        @memset(buf, poison_byte);
-        self.parent.rawFree(buf, alignment, ret_addr);
-    }
-};
-
-// Regression test for a use-after-free in overlayUserSettings. parseConfigFile
-// slices input_name values directly into the raw file buffer (no duping), and
-// loadSettings stores those slices into the returned bindings — so the merged
-// bindings BORROW into the user file bytes. The old code freed user_bytes with
-// `defer` as overlayUserSettings returned, leaving every input_name slice
-// dangling; the next debounced writeSettings read freed memory and emitted
-// garbage input_name fields (the mangled ~/.ziglop/settings.txt). This test
-// drives that exact path under a poison-on-free allocator: on the old code the
-// freed user_bytes is poisoned, so the merged bindings' input_name reads back
-// as 0xAA and the assertions fail; on the fixed code user_bytes stays alive
-// (leaked for the bindings' lifetime, same contract as loadConfigWithFallback)
-// and the names round-trip intact through writeSettings.
-test "overlayUserSettings: merged bindings survive past user_bytes free (no dangle)" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
-    var poison: PoisonAllocator = .{ .parent = arena.allocator() };
-    const allocator = poison.allocator();
+// Leak-checked regression test for overlayUserSettings under `testing.allocator`
+// (no arena). Arena-wrapping masks two classes of bug: leaks (arena free is a
+// no-op, so a forgotten free is invisible) and use-after-free (freed memory
+// stays mapped and readable, so a dangling slice returns stale-but-valid
+// bytes). loadSettings now dupes each input_name so the merged Settings OWNS
+// its strings and overlayUserSettings frees user_bytes + the parsed sections
+// eagerly — so the overlay path is leak-clean and can be tested under
+// testing.allocator, whose leak detection catches a forgotten free (the
+// remaining risk after the ownership fix). The use-after-free class is gone
+// by construction (nothing borrows from user_bytes anymore). See AGENTS →
+// File System & IO → Settings ownership + Testing discipline.
+test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
+    const allocator = testing.allocator;
     var threaded_io = std.Io.Threaded.init(testing.allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
@@ -470,15 +420,21 @@ test "overlayUserSettings: merged bindings survive past user_bytes free (no dang
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = FileSource.init(io, dir);
 
-    // Load shipped defaults (embedded copy, leaked for process lifetime —
-    // same contract as production). These become the overlay base.
-    var warnings: std.ArrayList([]const u8) = .empty;
-    const defaults = loadSettingsFromDisk(&file_source, allocator, &warnings);
+    // Build self-owned defaults WITHOUT going through loadConfigWithFallback
+    // (which intentionally leaks the raw bytes for process lifetime — a leak
+    // testing.allocator would flag). readEmbeddedFile + parse + loadSettings
+    // (dupes) + free bytes + free sections gives owned defaults with no leak.
+    const defaults_bytes = file_source.readEmbeddedFile(allocator, "data/default_settings.txt") catch
+        @panic("embedded default settings missing");
+    const defaults_sections = parser.parseConfigFile(defaults_bytes, allocator) catch
+        @panic("failed to parse embedded default settings");
+    const defaults = parser.loadSettings(defaults_sections, allocator, null) catch
+        @panic("failed to load embedded default settings");
+    parser.freeParsedSections(defaults_sections, allocator);
+    allocator.free(defaults_bytes);
     try testing.expect(defaults.input_bindings.len > 0);
 
     // Write a user settings.txt with a couple of distinct, checkable bindings.
-    // Values differ from the defaults so a dangle is observable: if the slice
-    // points at freed (poisoned) memory, it reads 0xAA, not "KeyZ"/"KeyY".
     const user_settings =
         \\Metadata
         \\file_format_version 1
@@ -495,17 +451,28 @@ test "overlayUserSettings: merged bindings survive past user_bytes free (no dang
     dir.writeFile(io, .{ .sub_path = "settings.txt", .data = user_settings }) catch
         @panic("failed to write user settings.txt");
 
+    var warnings: std.ArrayList([]const u8) = .empty;
     const merged = overlayUserSettings(defaults, &file_source, allocator, &warnings);
+    // No warnings on a valid user file — so no warning strings were allocated
+    // into `allocator` (which would leak since the test doesn't free them).
+    try testing.expectEqual(@as(usize, 0), warnings.items.len);
 
-    // Overlay replaced the binding set with the two user bindings. Under the
-    // old use-after-free, these slices read as 0xAA and fail here.
+    // Overlay replaced the binding set with the two user bindings (owned
+    // strings, duped by loadSettings). The old base bindings were freed
+    // inside loadSettings on replace — no leak.
     try testing.expectEqual(@as(usize, 2), merged.input_bindings.len);
     try testing.expectEqualStrings("KeyZ", merged.input_bindings[0].input.key);
     try testing.expectEqualStrings("KeyY", merged.input_bindings[1].input.key);
 
-    // The real-world symptom: writeSettings read the freed input_name bytes
-    // and emitted garbage. Re-serialize and assert the names round-trip intact.
-    const written = try parser.writeSettings(merged, arena.allocator());
+    // Round-trip through writeSettings (buffer lives in allocator; free it).
+    const written = try parser.writeSettings(merged, allocator);
+    defer allocator.free(written);
     try testing.expect(std.mem.indexOf(u8, written, "input_name KeyZ") != null);
     try testing.expect(std.mem.indexOf(u8, written, "input_name KeyY") != null);
+
+    // Free the merged bindings (owned strings + slice). testing.allocator's
+    // leak detection at test-end catches if overlayUserSettings or
+    // loadSettings forgot to free user_bytes / the old base strings / the
+    // parsed sections — the arena-wrapped tests can't see those.
+    parser.freeSettings(merged, allocator);
 }

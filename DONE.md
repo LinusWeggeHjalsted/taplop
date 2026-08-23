@@ -2285,3 +2285,55 @@ no-op undo at earliest, then redo twice forward without duplicates. Uses a
 shared `runIdleUpdate` helper that replicates `frame()`'s idle-branch
 condition exactly. Fails on the old condition (first undo grows
 `idle_points`); passes with the `!= current_event_index` clause.
+
+### Reflection followups: idle-point helper, settings ownership, leak-checked tests, crash cleanup
+
+Four items from a mid-session reflection:
+
+**Idle-point detection factored into `maybeRecordIdlePoint` (state.zig).** The
+drain loop and the idle branch in `frame()` both record idle points after
+`update()`, with subtly different conditions (drain: `had_events/!has_events`;
+idle: index-advanced + stack-empty + not-already-indexed). The idle branch
+condition was where the undo/redo cycling bug lived (it fired for undo/redo
+too, recording duplicate idle points). Factored the shared condition into
+`GameStateHistory.maybeRecordIdlePoint(events_processed)` — one place for
+"events ran this update, stack is empty, and the position isn't already an
+idle point (excludes navigation)." Both `frame()` sites and the test helper
+`runIdleIdleUpdate` call it. The `waiting == null` defensive gate was dropped
+(the case it guarded — a wait pushed at an empty stack — doesn't exist today,
+and if it did, recording an idle point there is fine).
+
+**`loadSettings` is self-owned (dupes `input_name`).** The durable fix for the
+mangled-settings bug class: `loadSettings` now dupes each `input_name` into
+the passed allocator, so the returned `Settings` owns its `InputBindings`
+strings and doesn't borrow from the raw file buffer. `overlayUserSettings`
+frees `user_bytes` + the parsed sections eagerly on every path (no more
+leak-on-success contract mismatch). When `loadSettings` replaces a base's
+bindings (overlay), it frees the base's owned strings + slice — so re-overlay
+doesn't leak the old names. Added `parser.freeSettings` (frees bindings
+strings + slice) for test cleanup. `loadConfigWithFallback` still leaks raw
+bytes + sections for process lifetime (generic over T, can't selectively
+free); after the ownership fix the `Settings` it returns no longer references
+those bytes. The other loaders (levels, hubs, themes) still borrow — same
+ownership direction, deferred. Settled in AGENTS → File System & IO → Settings
+ownership.
+
+**Leak-checked test under `testing.allocator` (session_setup.zig).** Replaced
+the `PoisonAllocator` regression test (which tested a use-after-free bug class
+that the ownership fix removed by construction) with a `testing.allocator`-
+backed test that leak-checks the overlay path: builds self-owned defaults via
+`readEmbeddedFile` (bypassing `loadConfigWithFallback`'s intentional leak),
+overlays a user file, round-trips through `writeSettings`, frees via
+`freeSettings`. `testing.allocator`'s leak detection catches a forgotten free
+(the remaining risk after the ownership fix) — the arena-wrapped tests can't
+see those. Verified the test fails (reports a leak) when `overlayUserSettings`
+forgets to free `user_bytes`. Settled as the testing-discipline convention in
+AGENTS → Build & Test → Testing discipline: self-owned loaders get leak-
+checked tests; arena-wrapping masks leaks + use-after-free; the ownership fix
+is the prerequisite for leak-checked testing.
+
+**`scripts/test.sh` cleans `crashes/`.** A panicking test triggers the custom
+panic namespace, which writes `crashes/crash_*.txt` into the cwd before
+trapping — polluting the tree. The script now `rm -rf crashes` before running
+and after a passing run, so a prior run's leftovers don't linger and a passing
+run leaves none.

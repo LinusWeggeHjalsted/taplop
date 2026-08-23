@@ -49,6 +49,34 @@ in sync with the lifecycle above as work lands.
   `scripts/test.sh --raw` prints the full verbatim output if needed.
 - OK to run these directly without asking
 
+### Testing discipline (arena blind spots)
+
+Most tests wrap in an `ArenaAllocator` for easy cleanup (every sub-allocation
+freed at once on deinit). Arena-wrapping MASKS two classes of bug:
+- **Leaks** — arena `free` is a no-op, so a forgotten `free` is invisible
+  (the arena reclaims everything at deinit anyway). Under `testing.allocator`
+  a forgotten free is a hard leak error.
+- **Use-after-free** — arena free does nothing, so a dangling slice into
+  "freed" memory stays mapped and returns stale-but-valid bytes (test passes
+  silently). `testing.allocator` reclaims freed memory and may reuse it, but
+  doesn't deterministically detect reads of freed memory.
+
+So: once a loader is made self-owned (see AGENTS → File System & IO →
+Settings ownership), its tests should run under `testing.allocator` (no
+arena) so leak detection fires — this is the path that caught nothing for the
+mangled-settings bug while arena-wrapped. The overlay-user-settings test in
+`session_setup.zig` is the model: it builds self-owned defaults WITHOUT going
+through `loadConfigWithFallback` (which intentionally leaks for process
+lifetime and would flag under `testing.allocator`), then overlays + frees via
+`freeSettings`, asserting no leaks. The use-after-free class is removed by
+construction (owned strings, no borrows); the leak class is now catchable.
+
+Loaders that still borrow into leaked bytes (levels, hubs, themes — not yet
+self-owned) stay arena-wrapped; their ownership fix is the prerequisite for
+leak-checked testing, deferred until a load change lands. `scripts/test.sh`
+cleans `crashes/` before and after a passing run so a panicking test's crash
+dump doesn't pollute the tree.
+
 ### Commit policy
 
 - **Commit at each TODO slice checkoff.** The TODO slice boundaries are the
@@ -764,6 +792,29 @@ not through the file abstraction). All call sites across `main.zig`,
 the embedded map, so the test build is hermetic. The VFS layer (layer 1 of
 the read order) is the only piece still outstanding — it lands with
 custom-mission support.
+
+### Settings ownership (loadSettings is self-owned)
+
+`parser.loadSettings` DUPES each `input_name` into the passed allocator, so
+the returned `Settings` OWNS its `InputBindings` strings — it does not
+borrow from the raw file buffer. This is the durable fix for the mangled-
+settings bug (where `overlayUserSettings` freed `user_bytes` while the merged
+bindings still borrowed into it) and the general direction for any loader
+whose result outlives the bytes it was parsed from: make the result
+self-owned so the caller may free the raw bytes immediately. When
+`loadSettings` replaces a base's bindings (overlay path), it frees the base's
+owned strings + slice — so re-overlay doesn't leak the old names.
+`parser.freeSettings(settings, allocator)` frees a `Settings`' bindings
+(strings + slice); used in tests under `testing.allocator`, never in
+production (settings live for the session).
+
+`loadConfigWithFallback` still leaks the raw config bytes + parsed sections
+for process lifetime (it's generic over `T`, can't selectively free). After
+the ownership fix the `Settings` it returns no longer references those bytes —
+they're unreferenced garbage that stays leaked (fine, process lifetime). The
+other loaders (levels, hubs, themes, etc.) still borrow into the leaked
+bytes; making them self-owned is the same direction, deferred until a load
+change lands. See Testing discipline for why the leak matters for tests.
 
 ### Reconstruction cache (deterministic replay over mutable files)
 
