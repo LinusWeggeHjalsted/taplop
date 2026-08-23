@@ -2500,3 +2500,36 @@ flush against one *side* of the source, sharing an edge segment.
 The old "Tooltip can overlap its own source" TODO is resolved for the common
 case (the preference order + flush placement naturally avoids the source)
 and narrowed to the degenerate cross-axis-clamp case (see TODO).
+
+### Reflection follow-ups: docs, comment sweep, placement tests (done)
+
+Three cleanups from a session reflection:
+
+- **AGENTS → UI Framework:** added the "text measurement seam" rule —
+  `ui.FontMetrics`'s contract is to mirror the renderer's cursor advance
+  exactly (`advanceX × font_size/base_size + spacing`, float-accumulated, with
+  the shared `glyph_spacing_font_divisor` as the one source of truth for any
+  draw parameter layout must know), and the vertical rule "center on the
+  `font_size` glyph cell, stack on `lineHeight`." Captures the two bugs fixed
+  this session (the spacing drift and the top-heavy centering) as a general
+  principle so the next draw-parameter addition doesn't re-drift.
+- **Imagined-future / stale comment sweep:** removed "temporary — the artist
+  will finalize", "placeholder until text measurement lands" (stale — it
+  landed), "for a future count badge … for now", "when their UI lands",
+  "future editor autosave" (3 sites), "future entity/effect anims", and
+  softened two panic messages from "not yet …" to present tense. The
+  `boundsOf(text_label)` comment now states the real reason it's still a
+  `font_size` square (no text label needs measured hit-bounds today, none has
+  a tooltip) instead of pointing at a missing feature. Kept accurate
+  "future"-worded comments (the "future timeline" term of art, the
+  load-bearing "temporary pointer" invariant in session_setup, swap `temp`).
+- **`placeTooltip` tests + latent-bug fix:** added 6 pure-geometry tests
+  (each quadrant, the above/below/right preference fall-through, near-corner
+  alignment, the shared-edge invariant, and the degenerate oversized case).
+  The oversized case surfaced a real bug: the fallback path did
+  `clamp(x, 0, screen - tooltip)` and crashed with "reached unreachable"
+  when the tooltip was larger than the reference screen (screen - tooltip < 0
+  → clamp with lo > hi). Fixed with `@max(0, screen - tooltip)` so an
+  oversized tooltip pins to the top-left instead of panicking. A tooltip with
+  enough wrapped rows could exceed screen height, so this wasn't purely
+  theoretical.

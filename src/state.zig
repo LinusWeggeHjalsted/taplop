@@ -124,13 +124,12 @@ pub const SessionState = struct {
     /// Non-pause-gated session-relative monotonic clock (accumulated
     /// microseconds). Unlike `animation_clock` (which freezes during pause),
     /// this advances every frame regardless — used for debounced write
-    /// deadlines (settings persistence, future editor autosave) so writes fire
+    /// deadlines (currently settings persistence) so writes fire
     /// even while the options menu is open. Off the undoable GameState, so
     /// replay-safe by construction. See AGENTS → Input.
     session_clock: u64 = 0,
 
-    /// Pending debounced writes (settings persistence, future editor
-    /// autosave). A small fixed array keyed by `PendingWrite.Tag`; each tag
+    /// Pending debounced writes (currently settings persistence). A small fixed array keyed by `PendingWrite.Tag`; each tag
     /// coalesces (a new dirty-mark refreshes the deadline rather than
     /// enqueueing a second write). Fired by `frame()` when the deadline
     /// elapses (gated `!replaying` — but `frame()` is the live path, so the
@@ -569,7 +568,7 @@ pub const GameStateHistory = struct {
             // missions they're whatever is on disk now — the known cross-
             // session limitation until the cache is serialized (format v2).
             if (!self.cross_session_replay) {
-                @panic("reconstruction cache miss: no cached bytes for this event+path (live read did not cache — cross-session reload not yet supported)");
+                @panic("reconstruction cache miss: no cached bytes for this event+path (live read did not cache — cross-session reload not supported)");
             }
             const arena = self.history_arena.allocator();
             const durable_path = arena.dupe(u8, path) catch @panic("failed to dupe reconstruction cache path");

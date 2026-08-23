@@ -317,8 +317,7 @@ const entity_pivot_y: f32 = 0.8;
 /// Ground-items sprite: `world/ground_items.png` (256x256, centered pivot
 /// 0.5/0.5). Tinted at world gradient index 5 (a fixed color independent of
 /// the player's body color, like the UI palette). Drawn at the stack's tile;
-/// `item_count` is carried for a future count badge (the renderer draws just
-/// the sprite for now).
+/// `item_count` is unused at draw time (the renderer draws just the sprite).
 const ground_items_sprite_id = "world/ground_items";
 const ground_items_size: f32 = 256.0;
 const ground_items_pivot_x: f32 = 0.5;
@@ -382,7 +381,8 @@ fn levelEndDrawable(
 /// Build a `GroundItemDrawable` for a ground-item stack at `tile`. The sprite
 /// is centered on the tile (pivot 0.5/0.5), tinted at world gradient index 5
 /// (fixed, independent of the player's body color). `item_count` is carried
-/// for a future count badge.
+/// on the drawable but unused at draw time (the renderer draws just the
+/// sprite, no count badge).
 fn groundItemsDrawable(
     tile: types.Vector2,
     item_count: u32,

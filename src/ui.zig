@@ -313,9 +313,9 @@ pub const menu_button_height: i32 = 256;
 pub const menu_button_font_size: i32 = 96;
 /// Secondary indicator icons above the bar (momentum, effects, turn steps).
 pub const small_icon_size: i32 = 128;
-/// Health globe sizes match the downscaled Unity art (temporary — the artist
-/// will finalize). The ball sits inside the ornamented border, which is a
-/// touch wider than the 256 cell and overhangs horizontally.
+/// Health globe sizes match the downscaled Unity art. The ball sits inside
+/// the ornamented border, which is a touch wider than the 256 cell and
+/// overhangs horizontally.
 pub const health_globe_ball_size: i32 = 212;
 pub const health_globe_border_width: i32 = 297;
 pub const health_globe_border_height: i32 = slot_size; // 256 tall by design
@@ -529,8 +529,10 @@ pub const SolidRect = struct {
 
 /// The screen rectangle an element occupies, derived from its own geometry
 /// (single source of truth — no bounds stored alongside the element).
-/// A `text_label` has no measured extent yet, so it reports a `font_size`
-/// square placeholder until text measurement lands.
+/// A `text_label` reports a `font_size`-square extent: no text label today
+/// needs measured hit-bounds (they are all `blocks_input = false`, so the
+/// button behind wins the hit-test), and none carries a tooltip. Wire
+/// `measureSpanWidth` into this arm if a text label ever needs a real extent.
 pub fn boundsOf(element: UiElement) Rectangle {
     return switch (element) {
         .nine_slice_panel => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
@@ -759,10 +761,14 @@ pub fn placeTooltip(
     }
 
     // None fit fully — fall back to the top preference (above), clamped.
+    // `@max(0, …)` guards an oversized tooltip (taller/wider than the
+    // reference screen): screen - tooltip goes negative, and clamp requires
+    // lo <= hi. Clamping to 0 pins the top-left corner — the best placement
+    // when the panel can't fit anywhere.
     const fallback = positions[0];
     return .{
-        .x = std.math.clamp(fallback.x, 0, screen_w - tooltip_width),
-        .y = std.math.clamp(fallback.y, 0, screen_h - tooltip_height),
+        .x = std.math.clamp(fallback.x, 0, @max(0, screen_w - tooltip_width)),
+        .y = std.math.clamp(fallback.y, 0, @max(0, screen_h - tooltip_height)),
     };
 }
 
@@ -1977,4 +1983,71 @@ test "wrapRow: normal space wrapping still works" {
     try std.testing.expectEqualStrings(" ", lines[0][1].text);
     try std.testing.expectEqualStrings("bb", lines[0][2].text);
     try std.testing.expectEqualStrings("cc", lines[1][0].text);
+}
+
+// ============================================================
+// Tooltip placement (placeTooltip) — pure geometry over (source, screen, size)
+// ============================================================
+
+test "placeTooltip: source in bottom bar prefers above" {
+    // A bottom-bar element: source near the bottom edge, centered horizontally.
+    // `above` has ~1900px clearance (fits a 600px tooltip) and is the top
+    // preference, so the tooltip sits flush over the source.
+    const placement = placeTooltip(.{ .x = 1600, .y = 1900 }, 256, 256, 400, 600);
+    // Flush above: panel bottom edge meets source top edge (y = 1900 - 600).
+    try std.testing.expectEqual(@as(i32, 1900 - 600), placement.y);
+    try std.testing.expectEqual(@as(i32, 1600), placement.x); // left-aligned (left half)
+}
+
+test "placeTooltip: source in top-left quadrant goes below" {
+    // Source in the top half → `above` doesn't fit (clearance = source.y = 100
+    // < tooltip height 600), so the preference order falls to `below`.
+    const placement = placeTooltip(.{ .x = 200, .y = 100 }, 256, 256, 400, 600);
+    // Flush below: panel top edge meets source bottom edge (y = 100 + 256).
+    try std.testing.expectEqual(@as(i32, 100 + 256), placement.y);
+    try std.testing.expectEqual(@as(i32, 200), placement.x); // left-aligned (left half)
+}
+
+test "placeTooltip: above doesn't fit and below doesn't fit → falls sideways" {
+    // A tall source spanning most of the screen leaves no vertical room on
+    // either side (above clearance = source.y = 200, below = 360, both < tooltip
+    // height 400), so the preference order falls past above/below to `right`.
+    // The tooltip is short enough that its vertical alignment (top-align) stays
+    // on screen, so `right` fits.
+    const placement = placeTooltip(.{ .x = 1000, .y = 200 }, 256, 1600, 500, 400);
+    // Flush right: panel left edge meets source right edge (x = 1000 + 256).
+    try std.testing.expectEqual(@as(i32, 1000 + 256), placement.x);
+    // top-aligned (source center y = 200+800 = 1000 < screen center 1080).
+    try std.testing.expectEqual(@as(i32, 200), placement.y);
+}
+
+test "placeTooltip: near-corner alignment follows the near corner" {
+    // Source in the bottom-right quadrant, `above` fits (clearance = y = 1700 >
+    // tooltip height 400). Right-align: shared edge runs from the source's
+    // top-right corner leftward.
+    const source_x: i32 = 3400;
+    const source_w: i32 = 256;
+    const placement = placeTooltip(.{ .x = source_x, .y = 1700 }, source_w, 256, 400, 400);
+    try std.testing.expectEqual(@as(i32, 1700 - 400), placement.y); // flush above
+    // right-aligned: panel right edge == source right edge
+    try std.testing.expectEqual(source_x + source_w, placement.x + 400);
+}
+
+test "placeTooltip: nothing fits → falls back to top preference (above), clamped" {
+    // Tooltip taller than the screen on every side's cross axis and larger
+    // than the vertical clearance. Falls back to `above` and clamps on screen.
+    const placement = placeTooltip(.{ .x = 1000, .y = 1000 }, 256, 256, 5000, 5000);
+    // Clamped to [0, screen - tooltip] on both axes (tooltip > screen →
+    // screen - tooltip is negative, clamp yields 0).
+    try std.testing.expectEqual(@as(i32, 0), placement.x);
+    try std.testing.expectEqual(@as(i32, 0), placement.y);
+}
+
+test "placeTooltip: shared edge — panel sits flush on the chosen side" {
+    // Top preference `above` fits: the panel's bottom edge must equal the
+    // source's top edge (shared edge, not just a corner touch).
+    const source_y: i32 = 1500;
+    const tooltip_h: i32 = 500;
+    const placement = placeTooltip(.{ .x = 1500, .y = source_y }, 256, 256, 400, tooltip_h);
+    try std.testing.expectEqual(source_y, placement.y + tooltip_h);
 }

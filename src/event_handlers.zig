@@ -219,7 +219,7 @@ fn handleEditorEvent(
     _ = current;
     _ = event;
     _ = allocator;
-    @panic("editor event handler not yet implemented");
+    @panic("editor event handler not implemented");
 }
 
 fn tileBefore(a: Vector2, b: Vector2) bool {

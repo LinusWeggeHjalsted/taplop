@@ -337,8 +337,8 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         history.session.animation_clock +%= delta_microseconds;
     }
 
-    // Fire any debounced writes whose deadline has elapsed (settings
-    // persistence, future editor autosave). Runs after all updates so dirty
+    // Fire any debounced writes whose deadline has elapsed (currently
+    // settings persistence). Runs after all updates so dirty
     // marks from this frame's input are registered before the check.
     // `frame()` is the live path — replay goes through restoreTo/replayTo,
     // not here — so the !replaying gate is automatic. See AGENTS → Input.

@@ -108,8 +108,8 @@ pub const Settings = struct {
     // vsync is off and this is >0, renders are gated to 1/cap seconds; when 0
     // and vsync off, the loop renders every iteration (uncapped).
     render_fps_cap: u32 = 0,
-    /// Animation frame rate for ALL sprite animations (flag banner, future
-    /// entity/effect anims). One global rate so pacing is uniform; frame
+    /// Animation frame rate for ALL sprite animations (currently the flag
+    /// banner). One global rate so pacing is uniform; frame
     /// duration = 1_000_000 / animation_fps microseconds. Read by `view()`
     /// only (never by event handlers — see AGENTS → Animation). Default 8.
     animation_fps: u32 = 8,

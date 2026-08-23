@@ -48,9 +48,8 @@ pub fn writeSettingsToFile(history: *GameStateHistory) void {
     history.file_source.writeFile("settings.txt", bytes) catch return;
 }
 
-/// Mark settings as dirty for debounced persistence. Called after any tunable
-/// setting actually changes (zoom now; volumes/gameplay when their UI lands).
-/// See AGENTS → Input.
+/// Mark settings as dirty for debounced persistence. Called after a tunable
+/// setting changes (currently `camera_zoom`). See AGENTS → Input.
 fn markSettingsDirty(history: *GameStateHistory) void {
     history.session.markWriteDirty(.settings, writeSettingsToFile, history.session.session_clock);
 }
