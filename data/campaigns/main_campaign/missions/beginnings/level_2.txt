@@ -69,10 +69,13 @@ color_index 0
 character_code C
 sprite ruin_4
 footprint 0 0
+footprint 1 0
 color_index 0
 
 character_code D
 sprite ruin_2
+footprint 0 0
+footprint 1 0
 footprint 0 1
 color_index 0
 
@@ -98,12 +101,16 @@ color_index 0
 
 character_code I
 sprite ruin_10
+footprint 1 0
+footprint 2 0
+footprint 0 1
 footprint 1 1
 color_index 0
 
 character_code J
 sprite ruin_6
 footprint 0 0
+footprint 1 0
 color_index 0
 
 character_code K
@@ -118,6 +125,8 @@ color_index 5
 
 character_code M
 sprite ruin_1
+footprint 0 0
+footprint 1 0
 footprint 0 1
 color_index 0
 

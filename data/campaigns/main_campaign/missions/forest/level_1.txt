@@ -86,6 +86,7 @@ color_index 5
 character_code E
 sprite ruin_5
 footprint 0 0
+footprint 1 0
 color_index 0
 
 character_code F

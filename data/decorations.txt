@@ -11,27 +11,36 @@ color_index 2
 
 sprite ruin_1
 color_index 0
+footprint 0 0
+footprint 1 0
 footprint 0 1
 
 sprite ruin_2
 color_index 0
+footprint 0 0
+footprint 1 0
 footprint 0 1
 
 sprite ruin_3
 color_index 0
+footprint 0 1
+footprint 1 1
 footprint 0 2
 
 sprite ruin_4
 color_index 0
 footprint 0 0
+footprint 1 0
 
 sprite ruin_5
 color_index 0
 footprint 0 0
+footprint 1 0
 
 sprite ruin_6
 color_index 0
 footprint 0 0
+footprint 1 0
 
 sprite ruin_7
 color_index 0
@@ -47,11 +56,17 @@ footprint 0 0
 
 sprite ruin_10
 color_index 0
+footprint 1 0
+footprint 2 0
+footprint 0 1
 footprint 1 1
 
 sprite ruin_11
 color_index 0
+footprint 0 0
+footprint 0 1
 footprint 1 1
+footprint 2 1
 
 sprite statue_1
 color_index 0

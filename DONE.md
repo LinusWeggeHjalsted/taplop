@@ -1905,3 +1905,34 @@ a full event history up to the failure — enough to reconstruct the session.
   event count via `loadEventLog`); `install`/`uninstall` compile-test (the
   pointer's effect is only observable via `panic.call`, which traps — not
   unit-testable).
+
+### Decoration footprint data correction (done)
+
+The `data/decorations.txt` registry had been authored under two wrong
+assumptions: (1) each decoration carries a single footprint coordinate,
+and (2) sprite-grid coords use a bottom-left (y-up) origin. Both are
+wrong — the implemented + AGENTS-documented convention is top-left
+(y-down, matching PNG pixel layout), and multi-tile decorations need one
+`footprint x y` line per reserved bbox tile.
+
+`data/decorations.txt` was corrected to the artist's intended footprints
+under the top-left convention. Single-base-tile decorations (statues,
+stone_6) keep footprint = the base tile only; the art above it is
+overhang, not reservation (entities can walk behind/around the upper
+tiles). Ruins with broken corners list only the solid tiles.
+
+The 9 shipped level/hub files that carry inline decoration footprints
+(`beginnings/level_1..3`, `forest/level_1..3`, `wetlands/level_1`,
+`wetlands/level_3`, `camp_at_the_crossroads/hub.txt`) were regenerated
+from the registry so each entry matches its canonical footprint. Change
+is purely additive (36 new `footprint` lines; no other edits). The
+`validateDecorationFootprint` placement-invariant check (no footprint
+tile overlaps a level/hub tile) passes for every shipped placement — the
+Unity-authored placements were already overlap-free, and the corrected
+footprints are <= the alpha coverage, so no new overlaps were introduced.
+`forest/level_4` + `wetlands/level_2` were already correct (only
+single-tile decorations present) and untouched.
+
+The `loadDecorationRegistry` test (parser.zig) already asserted
+stone_6's footprint as the single tile `(0,1)` at HEAD, so no test
+change was needed for the registry correction.

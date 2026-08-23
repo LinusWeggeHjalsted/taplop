@@ -56,6 +56,9 @@ Decorations
 
 character_code A
 sprite ruin_10
+footprint 1 0
+footprint 2 0
+footprint 0 1
 footprint 1 1
 color_index 0
 
@@ -76,6 +79,8 @@ color_index 0
 
 character_code E
 sprite ruin_3
+footprint 0 1
+footprint 1 1
 footprint 0 2
 color_index 0
 

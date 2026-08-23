@@ -95,11 +95,13 @@ color_index 0
 character_code H
 sprite ruin_5
 footprint 0 0
+footprint 1 0
 color_index 0
 
 character_code I
 sprite ruin_6
 footprint 0 0
+footprint 1 0
 color_index 0
 
 Items

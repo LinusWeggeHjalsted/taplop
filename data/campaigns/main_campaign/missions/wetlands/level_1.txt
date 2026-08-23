@@ -86,6 +86,8 @@ color_index 4
 
 character_code F
 sprite ruin_1
+footprint 0 0
+footprint 1 0
 footprint 0 1
 color_index 0
 
