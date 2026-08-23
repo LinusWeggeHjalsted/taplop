@@ -154,15 +154,10 @@ pub fn overlayUserSettings(
     const user_bytes = file_source.readFile(allocator, "settings.txt") catch {
         return defaults; // No user settings file → defaults are authoritative.
     };
-    // Lifetime contract: parseConfigFile slices KeyValuePair values directly
-    // into the raw file buffer (no duping), and loadSettings stores those
-    // input_name slices into the returned Settings.input_bindings. So the
-    // merged bindings BORROW into user_bytes. On a successful overlay,
-    // user_bytes must stay alive for the session (process-lifetime, same
-    // contract as loadConfigWithFallback); it is freed explicitly only on
-    // the error paths below, where nothing borrows from it yet.
-    // freeParsedSections frees only the section containers (pairs/
-    // entry_groups arrays), not the borrowed text, so that defer is safe.
+    // `loadSettings` dupes each input_name into the allocator, so the merged
+    // Settings OWNS its strings — it does not borrow from user_bytes. We free
+    // user_bytes + the parsed sections eagerly on every path below (success
+    // and error). See AGENTS → File System & IO → Settings ownership.
 
     const user_sections = parser.parseConfigFile(user_bytes, allocator) catch {
         allocator.free(user_bytes);
@@ -173,13 +168,14 @@ pub fn overlayUserSettings(
         return defaults;
     };
     defer parser.freeParsedSections(user_sections, allocator);
+    defer allocator.free(user_bytes);
 
     // Load with the defaults as the base — loadSettings overlays present
     // fields and replaces bindings if the user file has an InputBindings
-    // section. A file_format_version mismatch or parse failure is recoverable
-    // (warn + keep defaults) per AGENTS → Error Handling.
+    // section (freeing the base's owned binding strings on replace). A
+    // file_format_version mismatch or parse failure is recoverable (warn +
+    // keep defaults) per AGENTS → Error Handling.
     const merged = parser.loadSettings(user_sections, allocator, defaults) catch {
-        allocator.free(user_bytes);
         warnings.append(allocator, std.fmt.allocPrint(allocator,
             "Failed to load user settings.txt; using defaults.", .{}) catch
             @panic("failed to allocate startup warning")) catch

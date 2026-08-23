@@ -932,10 +932,18 @@ pub fn loadSettings(
             const InputTypeId = enum { key, mouse_button, gamepad_button };
             const input_type_id = parseEnum(InputTypeId, input_type) orelse continue;
 
+            // Dupe the input_name into the allocator so the returned Settings
+            // OWNS its strings (it doesn't borrow from the raw file buffer).
+            // This makes the result self-contained — the caller may free the
+            // raw bytes immediately — and enables leak-checked tests under
+            // testing.allocator (the old borrow-into-freed-bytes pattern was
+            // invisible under an arena). See AGENTS → File System & IO →
+            // Settings ownership.
+            const input_name_owned = try allocator.dupe(u8, input_name);
             const input: types.RawInput = switch (input_type_id) {
-                .key => .{ .key = input_name },
-                .mouse_button => .{ .mouse_button = input_name },
-                .gamepad_button => .{ .gamepad_button = input_name },
+                .key => .{ .key = input_name_owned },
+                .mouse_button => .{ .mouse_button = input_name_owned },
+                .gamepad_button => .{ .gamepad_button = input_name_owned },
             };
 
             const modifiers = types.Modifiers{
@@ -952,15 +960,50 @@ pub fn loadSettings(
         }
 
         // Free the base's bindings before replacing (when a base is provided,
-        // its bindings were heap-allocated by a prior loadSettings call; when
-        // no base, input_bindings is the static &.{} and must not be freed).
+        // its bindings — and their owned input_name strings — were heap-
+        // allocated by a prior loadSettings call; when no base,
+        // input_bindings is the static &.{} and must not be freed). The
+        // strings are owned (duped above), so free them too, not just the
+        // slice — otherwise replacing bindings leaks the old names.
         if (has_base and settings.input_bindings.len > 0) {
+            for (settings.input_bindings) |*binding| {
+                freeRawInputString(binding.input, allocator);
+            }
             allocator.free(settings.input_bindings);
         }
         settings.input_bindings = try bindings.toOwnedSlice(allocator);
     }
 
     return settings;
+}
+
+/// Free a `RawInput`'s owned string slice (the active union variant).
+/// Only valid for inputs whose string was duped by `loadSettings` — a
+/// borrowed slice (e.g. the static `&.{}` empty-bindings default, which has
+/// no strings) must not be passed. Used by `freeSettings` and by the
+/// binding-replace path in `loadSettings`.
+fn freeRawInputString(input: types.RawInput, allocator: std.mem.Allocator) void {
+    switch (input) {
+        .key => |s| allocator.free(s),
+        .mouse_button => |s| allocator.free(s),
+        .gamepad_button => |s| allocator.free(s),
+    }
+}
+
+/// Free a `Settings`' owned InputBindings (the slice + each binding's duped
+/// input_name string). The non-binding fields are scalars/stack values with
+/// no allocation. Use in tests under `testing.allocator` to assert no leaks;
+/// production never frees settings (process lifetime). A `Settings` whose
+/// `input_bindings` is the static `&.{}` default (len 0, never passed through
+/// `loadSettings`) is safe to pass — the loop is empty and the len guard
+/// skips the slice free.
+pub fn freeSettings(settings: types.Settings, allocator: std.mem.Allocator) void {
+    for (settings.input_bindings) |*binding| {
+        freeRawInputString(binding.input, allocator);
+    }
+    if (settings.input_bindings.len > 0) {
+        allocator.free(settings.input_bindings);
+    }
 }
 
 /// Parse an entity definition (the shared body of an Enemies entry, a player
@@ -3334,7 +3377,7 @@ test "loadSettings parses settings sections into a Settings struct" {
     defer freeParsedSections(sections, allocator);
 
     const settings = try loadSettings(sections, allocator, null);
-    defer allocator.free(settings.input_bindings);
+    defer freeSettings(settings, allocator);
 
     // Audio values
     try std.testing.expectApproxEqAbs(0.8, settings.music_volume, 0.001);
@@ -4547,7 +4590,7 @@ test "data/default_settings.txt binds ctrl+L to dump_event_log" {
     defer freeParsedSections(parsed.sections, allocator);
 
     const settings = try loadSettings(parsed.sections, allocator, null);
-    defer allocator.free(settings.input_bindings);
+    defer freeSettings(settings, allocator);
 
     var found = false;
     for (settings.input_bindings) |binding| {
