@@ -87,6 +87,12 @@ dump doesn't pollute the tree.
   separate step. Don't hold uncommitted work across sessions — 27 files of
   uncommitted changes across multiple sessions makes it impossible to tell
   whether a breakage is from the latest change or latent prior work.
+- **Commit non-slice work as it happens.** Not every commit is a TODO slice —
+  doc edits, tooling, quick fixes, and small refactors land on their own
+  commit when the change is coherent and self-contained, rather than batching
+  them into a pile to sort out later. A good unit is "one thing that builds
+  and is done"; if a change has no DONE.md entry, the commit body is the
+  record (see below).
 - **Commit message: one line by default.** Shape: `<area>: <summary>` (e.g.
   `error handling: slice 1 — modal error popup surface`). `<area>` is the
   conceptual bucket (matches AGENTS.md sections / TODO items); `<summary>` is
