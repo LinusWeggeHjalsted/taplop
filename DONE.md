@@ -3145,3 +3145,20 @@ Non-number anim → `start_clock = end_clock - duration` (starts immediately).
 - `buildWorldOverlays` `.aggro_indicator` arm + `aggro_indicator_size_native`
   (128) constant (view.zig).
 - Asset: `assets/world/aggro.png` (128×128, ported 1:1 — no downscale).
+
+### Text color inherits theme lightest (DONE)
+
+All UI text now defaults to the active theme's `lightest` (the artist's
+offwhite) instead of pure white. Single change in the renderer's
+`drawTextLabel`: it receives `view_state.active_color_theme.lightest` (already
+passed to `drawUiElement` as `highlight_color`) and substitutes it when a
+`TextLabel`'s `color` is `ui.default_tint` (pure white). `default_tint` becomes
+the "unset" sentinel for text; explicitly colored spans (`ui.colored(...)`)
+pass a non-`default_tint` color and are unaffected. Sprite tints
+(Button/Slot/Image) keep `default_tint` = "no tint" — the substitution is
+text-only. Damage/heal numbers (`floating_text`) already passed
+`active_theme.lightest` explicitly, so they're unchanged. The old
+`default_tint` doc comment ("until colors are wired to the active color
+theme") is resolved — the wiring is the renderer-side sentinel substitution
+(`default_tint` is comptime; `lightest` is runtime per level, so the
+substitution must be at draw time, not in the struct default).

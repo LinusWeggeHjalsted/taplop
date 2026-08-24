@@ -327,7 +327,12 @@ pub const inventory_panel_width: i32 = 1100;
 pub const skills_panel_width: i32 = 800;
 pub const enemy_inspect_panel_width: i32 = 600;
 
-/// Default tint until colors are wired to the active color theme.
+/// Default tint for UI elements. For sprites (Button/Slot/Image) this means
+/// "no tint" (pure white, show original art). For text it is the "unset"
+/// sentinel: the renderer's `drawTextLabel` substitutes the active theme's
+/// `lightest` (the artist's offwhite) so uncolored text inherits the theme
+/// without builders needing a runtime color. Explicitly colored text (via
+/// `colored(...)`) passes a non-`default_tint` color and is unaffected.
 pub const default_tint: Color = .{ .r = 255, .g = 255, .b = 255 };
 
 // ============================================================

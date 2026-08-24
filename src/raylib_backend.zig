@@ -897,7 +897,7 @@ pub const RaylibBackend = struct {
                     if (button.highlighted) self.drawHighlightOutline(sprite_id, dest, highlight_color);
                 }
             },
-            .text_label => |label| self.drawTextLabel(label),
+            .text_label => |label| self.drawTextLabel(label, highlight_color),
             .fill_sprite => |fill| self.drawFillSprite(fill),
             .image => |image| {
                 const dest = referenceRectangle(image.screen_position, image.width, image.height);
@@ -997,19 +997,26 @@ pub const RaylibBackend = struct {
         }
     }
 
-    fn drawTextLabel(self: *RaylibBackend, label: ui.TextLabel) void {
+    fn drawTextLabel(self: *RaylibBackend, label: ui.TextLabel, theme_lightest: types.Color) void {
         // raylib needs a null-terminated string; copy into the frame arena.
         // bold/italic are still ignored (no bold/italic faces loaded).
+        // `default_tint` (pure white) is the "unset" sentinel: a text label
+        // or span that didn't pick an explicit color inherits the active
+        // theme's `lightest` (the artist's offwhite). Explicitly colored
+        // spans pass a non-`default_tint` color and are unaffected. Sprite
+        // tints (Button/Slot/Image) keep `default_tint` meaning "no tint" —
+        // this substitution is text-only.
         const text = self.frame_arena.allocator().dupeZ(u8, label.text) catch return;
         const font_size: f32 = @floatFromInt(label.font_size);
         const spacing: f32 = font_size / @as(f32, @floatFromInt(ui.glyph_spacing_font_divisor));
+        const color = if (std.meta.eql(label.color, ui.default_tint)) theme_lightest else label.color;
         rl.drawTextEx(
             self.font,
             text,
             .{ .x = @floatFromInt(label.screen_position.x), .y = @floatFromInt(label.screen_position.y) },
             font_size,
             spacing, // per-glyph spacing shared with FontMetrics measure
-            toRaylibColor(label.color, 255),
+            toRaylibColor(color, 255),
         );
     }
 
