@@ -379,8 +379,9 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
     `sprite_bounds`). Tinted with the active theme's `lightest` color (the
     artist's offwhite). Triggered by the `attack` and `collision` handlers
     **only when the defender takes nonzero damage** (a Reflect-zeroed or
-    0-damage hit does not flash), inside the `if (incoming_damage > 0)`
-    block right after the health subtraction; a killing blow still flashes
+    0-damage hit does not flash — the damage number still shows a "0"),
+    inside the `if (incoming_damage > 0)` block right after the health
+    subtraction; a killing blow still flashes
     (`death` zeroes health but leaves the slot). `sprite_bounds` is
     populated per-frame in `frame()` (one decode per sprite via
     `ensureSpriteBoundsLoaded`, caching the full bbox).
@@ -399,7 +400,9 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
     readback (which perturbs the main render target mid-pass). 9 draws per
     active number per frame; negligible since numbers are rare. Triggered
     by the `attack` and `collision`
-    handlers alongside the hit flash, only when damage is nonzero.
+    handlers; unlike the hit flash it shows even on a 0-damage hit (a
+    fully-absorbed collision/attack renders a "0") so a connecting hit is
+    observable — only the hit flash is gated on `incoming_damage > 0`.
   - **Heal number** (500ms): `heal_number` kind, floats `+value` up-right
     from the entity's top-left bbox corner (heals have no attacker, so the
     direction is fixed), same easing + outline + tint. Triggered by the

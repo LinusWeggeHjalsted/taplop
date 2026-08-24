@@ -80,6 +80,10 @@ fn useSkill(
     if (target_indices.len == 0) return &.{};
 
     const main_hand_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
+    // Collision damage uses the effective outgoing damage (gloves +
+    // converted momentum + outgoing effects), same as an `attack` would —
+    // unifying collision and attack damage on one outgoing pipeline.
+    const collision_damage = caster.getEffectiveOutgoingDamage(main_hand_damage);
     const push_distance = caster.getEffectiveDistance(skill.distance.?);
     const stun_duration = caster.getEffectiveOutgoingStunDuration(skill.stun_duration.?);
 
@@ -89,7 +93,7 @@ fn useSkill(
             .attacker_index = caster_index,
             .defender_index = defender_index,
             .distance = push_distance,
-            .knockback_damage = main_hand_damage,
+            .knockback_damage = collision_damage,
         } } }) catch @panic("failed to append knockback event");
         skill_events.append(allocator, .{ .sub_level_event = .{ .stun = .{
             .attacker_index = caster_index,

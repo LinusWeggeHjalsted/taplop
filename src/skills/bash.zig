@@ -108,8 +108,9 @@ fn playerPrepareSkill(
     return helpers.highlightTargets(getValidTargets(caster_index, game_state, allocator));
 }
 
-/// Use: attack for main-hand damage, then knock back. Collision damage is a
-/// raw +0.5x main-hand (the knockback handler applies it only on collision and
+/// Use: attack for main-hand damage, then knock back. Collision damage is
+/// +0.5x the effective outgoing main-hand damage (same outgoing modifiers
+/// as the attack; the knockback handler applies it only on collision and
 /// runs the defender's incoming modifiers).
 fn useSkill(
     caster_index: u32,
@@ -124,8 +125,13 @@ fn useSkill(
     const defender_index = helpers.hostileEntityAt(caster_index, target_position, game_state) orelse return &.{};
 
     const main_hand_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
+    // Both attack and collision damage derive from the effective outgoing
+    // damage (gloves + converted momentum + outgoing effects), then scale —
+    // collision is half. Mirrors how `attack` applies outgoing modifiers at
+    // the skill site; the collision handler still applies only the
+    // defender's incoming modifiers.
     const damage = caster.getEffectiveOutgoingDamage(main_hand_damage);
-    const collision_damage = main_hand_damage / 2; // +0.5x, raw
+    const collision_damage = damage / 2; // +0.5x effective outgoing
     const push_distance = caster.getEffectiveDistance(skill.distance.?);
 
     return helpers.ownedEvents(allocator, &.{

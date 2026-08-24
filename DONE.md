@@ -3086,3 +3086,42 @@ recording is skipped. `restoreTo` finds a snapshot at every idle point
 clears `waiting`. `discardFutureTimeline` trims `event_history` to target,
 `idle_points` to `current_idle_index + 1`, frees snapshots/checkpoints/cache
 ahead. `redo()` is unaffected (only meaningful when idle). Test in main.zig.
+
+### Bash collision: 0-damage number + outgoing-damage unification (DONE)
+
+Two fixes from one troubleshooting session. Symptom: Bash into a wall showed
+only one damage number (the attack's), not the collision's — looked like the
+collision did nothing.
+
+**Root cause:** the collision event fired correctly (verified via the session
+log: `attack` then `knockback` then `collision`), but dealt 0 damage. Bash's
+collision damage was `main_hand_damage / 2` (raw, integer-truncated) = 3/2 =
+1, and the skeleton's coat defense bonus (1) fully absorbed it:
+`getEffectiveIncomingDamage(1) = max(0, 1 − 1) = 0`. The damage-number + hit-
+flash were both gated on `incoming_damage > 0`, so a 0-damage hit showed
+nothing — the collision looked like a whiff.
+
+**Fix 1 — 0 renders as a number (observability):** the `damage_number` queue
+moved OUT of the `if (incoming_damage > 0)` guard in both the `attack` and
+`collision` handlers, so a fully-absorbed hit floats a "0" — a connecting hit
+is always observable. The `hit_flash` stays inside the guard (a flash reads
+as "damage was dealt"; a 0 shouldn't flash). Damage application, death,
+lifesteal, and `on_*_damage` callbacks remain gated on `> 0`. Docs synced:
+AGENTS → Animation + the `AnimKind.damage_number` doc comment.
+
+**Fix 2 — unify collision + attack outgoing damage (balance):** collision
+damage now goes through `getEffectiveOutgoingDamage` (gloves + converted
+momentum + outgoing effects) at the SKILL SITE, then scales — same pipeline
+as `attack`. Before, `knockback_damage` was the raw weapon damage.
+- `bash.zig`: `collision_damage = damage / 2` (half the effective outgoing,
+  reusing the already-computed `damage`), was `main_hand_damage / 2`.
+- `slam.zig`: `knockback_damage = caster.getEffectiveOutgoingDamage(
+  main_hand_damage)`, was raw `main_hand_damage`.
+- `event_handlers.zig` collision-handler comment corrected (no longer claims
+  "no attacker outgoing damage modifiers apply" — they apply at the skill
+  site now). Collision still does NOT go through damage intercepts (Reflect
+  doesn't reflect collision damage — by design, unchanged).
+
+The balance quirk that produced the original 0 (`main_hand_damage / 2`
+truncating dagger collision to 1, cancelable by any defense ≥ 1) is accepted
+as fine; the unification is about consistency, not changing that edge case.

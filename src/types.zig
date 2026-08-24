@@ -1073,10 +1073,12 @@ pub const AnimKind = union(enum) {
     /// Float a damage number away from the defender's sprite, in the
     /// normalized attacker→defender direction (one of 8), starting from the
     /// bbox edge/corner nearest that direction and traveling 1 tile with
-    /// ease-out. `value` is the incoming damage dealt. Triggered by
-    /// `attack`/`collision` only when damage is nonzero. Per-entity staggered
-    /// (0.125s gap) so same-entity multi-hits (e.g. Bash's attack+collision)
-    /// don't overlap. See AGENTS → Animation.
+    /// ease-out. `value` is the incoming damage dealt (may be 0 — a
+    /// fully-absorbed hit still renders a "0" so the connection is
+    /// observable; only the hit flash is gated on > 0). Triggered by
+    /// `attack`/`collision`. Per-entity staggered (0.125s gap) so
+    /// same-entity multi-hits (e.g. Bash's attack+collision) don't
+    /// overlap. See AGENTS → Animation.
     damage_number: struct {
         entity_index: u32,
         value: u32,

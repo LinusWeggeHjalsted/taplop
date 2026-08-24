@@ -1981,10 +1981,31 @@ pub fn processEvent(
                         }
                     }
 
-                    // Apply collision damage (only the defender's incoming
-                    // modifiers — collision isn't a weapon hit, so no attacker
-                    // outgoing damage modifiers apply).
+                    // Apply collision damage. The skill site already
+                    // applied the attacker's outgoing modifiers (same as
+                    // `attack`); the handler applies only the defender's
+                    // incoming modifiers. Collision does NOT go through
+                    // damage intercepts (Reflect doesn't reflect collision
+                    // damage — by design).
                     const incoming_damage = defender.getEffectiveIncomingDamage(collision.damage);
+
+                    // Damage number always shows (even 0) so a connecting
+                    // collision is observable — a fully-absorbed hit no longer
+                    // looks like a whiff. The hit flash stays gated on > 0
+                    // (a flash reads as "damage was dealt"). See AGENTS →
+                    // Animation.
+                    if (!history.replaying) {
+                        history.session.queueAnim(history.backing_allocator, .{
+                            .event_index = history.current_event_index - 1,
+                            .kind = .{ .damage_number = .{
+                                .entity_index = collision.defender_index,
+                                .value = incoming_damage,
+                                .direction = damageNumberDirection(attacker.position, defender.position),
+                            } },
+                            .duration_us = number_anim_duration_microseconds,
+                        });
+                    }
+
                     if (incoming_damage > 0) {
                         if (incoming_damage >= defender.current_health) {
                             defender.current_health = 0;
@@ -2003,18 +2024,6 @@ pub fn processEvent(
                                     .entity_index = collision.defender_index,
                                 } },
                                 .duration_us = 250_000,
-                            });
-                            // Damage number floating away from the attacker
-                            // (normalized defender - attacker delta). See
-                            // AGENTS Animation.
-                            history.session.queueAnim(history.backing_allocator, .{
-                                .event_index = history.current_event_index - 1,
-                                .kind = .{ .damage_number = .{
-                                    .entity_index = collision.defender_index,
-                                    .value = incoming_damage,
-                                    .direction = damageNumberDirection(attacker.position, defender.position),
-                                } },
-                                .duration_us = number_anim_duration_microseconds,
                             });
                         }
 
@@ -2083,6 +2092,23 @@ pub fn processEvent(
                     // Calculate effective incoming damage
                     const incoming_damage = defender.getEffectiveIncomingDamage(effective_outgoing);
 
+                    // Damage number always shows (even 0) so a connecting
+                    // hit is observable — a fully-absorbed attack no longer
+                    // looks like a whiff. The hit flash stays gated on > 0
+                    // (a flash reads as "damage was dealt"). See AGENTS →
+                    // Animation.
+                    if (!history.replaying) {
+                        history.session.queueAnim(history.backing_allocator, .{
+                            .event_index = history.current_event_index - 1,
+                            .kind = .{ .damage_number = .{
+                                .entity_index = attack.defender_index,
+                                .value = incoming_damage,
+                                .direction = damageNumberDirection(attacker.position, defender.position),
+                            } },
+                            .duration_us = number_anim_duration_microseconds,
+                        });
+                    }
+
                     if (incoming_damage > 0) {
                         // Apply damage
                         if (incoming_damage >= defender.current_health) {
@@ -2102,18 +2128,6 @@ pub fn processEvent(
                                     .entity_index = attack.defender_index,
                                 } },
                                 .duration_us = 250_000,
-                            });
-                            // Damage number floating away from the attacker
-                            // (normalized defender - attacker delta). See
-                            // AGENTS Animation.
-                            history.session.queueAnim(history.backing_allocator, .{
-                                .event_index = history.current_event_index - 1,
-                                .kind = .{ .damage_number = .{
-                                    .entity_index = attack.defender_index,
-                                    .value = incoming_damage,
-                                    .direction = damageNumberDirection(attacker.position, defender.position),
-                                } },
-                                .duration_us = number_anim_duration_microseconds,
                             });
                         }
 
