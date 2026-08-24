@@ -11,12 +11,13 @@ const GameState = state.GameState;
 const Event = events.Event;
 const Skill = skill_mod.Skill;
 
-/// Howl: a cantrip. Aggros (activates) every enemy within radius. Self-centered,
+/// Howl: a cantrip. Aggros (activates) every entity within radius —
+/// same-team (rallying the pack) and opposing. Self-centered,
 /// non-turn-ending.
 pub const skill = Skill{
     .name = "Howl",
     .skill_type = .cantrip,
-    .description = "Aggro each enemy within radius",
+    .description = "Aggro each entity within radius",
     .uses_targeting = false,
     .range = null,
     .radius = 16,
@@ -36,7 +37,7 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority (cantrip): 0 if on cooldown or no inactive opponent within
+/// AI priority (cantrip): 0 if on cooldown or no inactive entity within
 /// radius (nothing to aggro), else 1.
 fn priority(caster_index: u32, game_state: GameState) u32 {
     const level = game_state.level orelse return 0;
@@ -47,7 +48,6 @@ fn priority(caster_index: u32, game_state: GameState) u32 {
     for (level.entities, 0..) |entity, entity_index| {
         if (entity_index == caster_index) continue;
         if (entity.current_health == 0) continue;
-        if (entity.team == caster.team) continue;
         if (entity.is_active) continue; // already aggroed
         if (functions.chebyshevDistance(caster.position, entity.position) <= radius) return 1;
     }

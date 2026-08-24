@@ -2457,7 +2457,11 @@ pub fn processEvent(
                     for (level.entities, 0..) |*other_entity, other_index| {
                         if (other_index == aggro.entity_index) continue;
                         if (other_entity.current_health == 0) continue;
-                        if (other_entity.team == entity.team) continue;
+                        // No team filter: Howl rallies same-team entities
+                        // (a wolf howling to aggro its pack), and aggroing
+                        // opposing entities (including the player) is
+                        // harmless — `is_active` on the player is ignored by
+                        // the loops that skip entity 0.
                         if (functions.chebyshevDistance(entity.position, other_entity.position) <= radius) {
                             @constCast(other_entity).is_active = true;
                         }

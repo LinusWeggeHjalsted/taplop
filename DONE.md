@@ -3162,3 +3162,17 @@ text-only. Damage/heal numbers (`floating_text`) already passed
 theme") is resolved — the wiring is the renderer-side sentinel substitution
 (`default_tint` is comptime; `lightest` is runtime per level, so the
 substitution must be at draw time, not in the struct default).
+
+### Howl aggros all entities, not just opponents (DONE)
+
+Howl (wolf cantrip) was filtered to opposing-team entities only — so a wolf
+howling to rally its pack (same-team wolves in the other pack) found nothing
+to aggro and returned priority 0, never firing. The expected behavior is that
+a wolf uses Howl ASAP to activate nearby same-team wolves.
+
+Fix: removed the team filter in both the `aggro_in_radius` handler
+(event_handlers.zig) and Howl's `priority` (skills/howl.zig). Howl now aggros
+every entity within radius regardless of team. Aggroing the player (team 0)
+is harmless — `is_active` on the player is ignored by the loops that skip
+entity 0 (enemy turn ordering, auto-skip-attack). Description + doc comments
+updated.
