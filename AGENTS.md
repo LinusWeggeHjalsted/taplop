@@ -367,7 +367,9 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
   Two landed cases (both single-frame, no sheet):
   - **Skill-icon pop** (500ms): `skill_icon` kind, shows the skill's icon
     above the caster's actual art top (runtime topmost-opaque-pixel scan via
-    `RenderContext.sprite_top_y`), offset above the always-on health bar.
+    `RenderContext.sprite_top_y`), offset above the always-on health bar,
+    tinted with the caster's team gradient index 1 (player → player gradient,
+    enemy → enemy gradient — same convention as weapon colors).
   - **Hit flash** (250ms): `hit_flash` kind, shows the `world/hit_flash`
     sprite (256×256, ported from the Unity project's 512×512 Hit.png at
     0.5x) centered on the defender's rendered art — horizontal frame center

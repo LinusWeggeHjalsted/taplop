@@ -532,6 +532,13 @@ fn buildWorldOverlays(
                 const icon_y = art_top_y - health_bar_total - drawn_size - gap;
                 const sprite_id = std.fmt.allocPrint(allocator, "skills/{s}", .{@tagName(info.skill_id)}) catch
                     @panic("failed to build skill-icon sprite id");
+                // Tinted with the caster's team gradient index 1 (player →
+                // player gradient, enemy → enemy gradient — same convention
+                // as weapon colors). See AGENTS → Entity & UI Coloring.
+                const icon_color = if (entity.team == 0)
+                    playerColor(active_theme, 1)
+                else
+                    enemyColor(active_theme, 1);
                 overlays.append(allocator, .{ .floating_icon = .{
                     .sprite_id = sprite_id,
                     .screen_position = .{
@@ -539,7 +546,7 @@ fn buildWorldOverlays(
                         .y = @intFromFloat(@round(icon_y)),
                     },
                     .size = skill_icon_size_native,
-                    .color = .{ .r = 255, .g = 255, .b = 255 },
+                    .color = icon_color,
                 } }) catch @panic("failed to append world overlay");
             },
             .hit_flash => |info| {
