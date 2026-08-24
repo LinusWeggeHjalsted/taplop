@@ -361,6 +361,9 @@ const stun_icon_size_native: i32 = 128;
 /// (via `sprite_bounds` top + bottom). Tunable -- eyeball in
 /// `zig build run`. See AGENTS → Animation.
 const hit_flash_size_native: i32 = 256;
+/// Native (unscaled) pixel size of an effect overlay sprite (drawn centered
+/// on the entity's art bbox, scaled by `zoom` at render time). Tunable.
+const effect_overlay_size_native: i32 = 90;
 
 /// One-shot number anims (damage/heal): the number travels 1 tile from the
 /// entity's sprite bbox edge/corner, eased with `tween.easeOutCubic` (fast
@@ -654,6 +657,44 @@ fn buildWorldOverlays(
                 } }) catch @panic("failed to append world overlay");
             },
         }
+    }
+
+    // Stun overlay: a persistent icon drawn above the health bar of any
+    // entity with `stun_duration > 0`. Not an anim — no clock, no duration,
+    // no `active_anims` entry — just a direct GameState read, so it's
+    // replay-safe by construction (stun_duration is on the snapshot
+    // timeline). Shares the skill-icon's placement (above the health bar,
+    // which sits above the art top). A stunned entity skips its turn (no
+    // skill use) so the stun icon and a skill-icon pop never co-occur on
+    // the same entity — same position is safe. See AGENTS → Animation.
+    for (level.entities) |*entity| {
+        if (entity.stun_duration == 0) continue;
+        if (entity.current_health == 0) continue;
+
+        const top_left = entityFrameTopLeft(entity, camera, zoom);
+        const draw_width = entity_frame_width * zoom;
+        const drawn_size: f32 = @as(f32, @floatFromInt(stun_icon_size_native)) * zoom;
+        const gap: f32 = @as(f32, @floatFromInt(skill_icon_gap_native)) * zoom;
+        const icon_x = @as(f32, @floatFromInt(top_left.x)) + draw_width / 2 - drawn_size / 2;
+        const art_top_y: f32 = if (sprite_bounds.get(entity.sprite)) |maybe_bounds|
+            if (maybe_bounds) |bounds|
+                @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bounds.top.?)) * zoom
+            else
+                @as(f32, @floatFromInt(top_left.y))
+        else
+            @as(f32, @floatFromInt(top_left.y));
+        const health_bar_total: f32 =
+            @as(f32, @floatFromInt(health_bar_native_height + health_bar_gap_native)) * zoom;
+        const icon_y = art_top_y - health_bar_total - drawn_size - gap;
+        overlays.append(allocator, .{ .floating_icon = .{
+            .sprite_id = "effects/stun",
+            .screen_position = .{
+                .x = @intFromFloat(@round(icon_x)),
+                .y = @intFromFloat(@round(icon_y)),
+            },
+            .size = stun_icon_size_native,
+            .color = active_theme.lightest,
+        } }) catch @panic("failed to append stun overlay");
     }
     return overlays.items;
 }

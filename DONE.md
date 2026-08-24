@@ -3017,3 +3017,30 @@ declared overlay sprite.
   current effect needs it. Animation (looping sheet) is likewise a localized
   extension (`frame_count` + reuse `animation_clock`) when an effect ships a
   sheet — the static-sprite field doesn't paint us into a corner.
+### Stun overlay above the health bar (DONE)
+
+A persistent `effects/stun` icon now renders above the health bar of any
+entity with `stun_duration > 0`. Stun isn't an `Effect`-system effect — it's
+just a duration checked at turn start to decide skip — so this is a direct
+GameState read, not an `active_anims` entry.
+
+- **Asset:** `Assets/Resources/StunEffect.png` (128×128) moved from the Unity
+  project at full size → `assets/effects/stun.png` (128×128). Same
+  `assets/effects/` folder as the reflect overlay.
+- **Rendering** (`buildWorldOverlays` in `view.zig`): a second loop after the
+  one-shot anim drain iterates `level.entities`; any entity with
+  `stun_duration > 0` and `current_health > 0` emits a `floating_icon`
+  `WorldOverlayDrawable` at the skill-icon's placement (horizontally centered
+  on the frame; vertically `art_top_y - health_bar_total - drawn_size - gap`,
+  i.e. above the always-on health bar). Native size `stun_icon_size_native =
+  128` (1:1 with the art, no upscaling), scaled by `zoom`. Tinted with
+  `active_theme.lightest`.
+- **Not an anim:** no `queueAnim`, no `active_anims` entry, no clock, no
+  duration. Pure rendering — `view()` reads `stun_duration` from `GameState`
+  (already on the snapshot timeline) → replay-safe by construction. Visible
+  for as long as the entity is stunned; vanishes the frame `stun_duration`
+  hits 0.
+- **Position sharing with skill-icon pop:** a stunned entity skips its turn
+  (no skill use), and the skill-icon pop is on the caster, so the stun icon
+  and a skill icon never co-occur on the same entity — the shared
+  above-health-bar position is safe.
