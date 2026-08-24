@@ -149,8 +149,7 @@ Open / in-progress:
         pixel scan, same lazy-cache shape as the outline-mask cache); hit
         flash on `attack`/`collision` (250ms, single-frame) — `world/hit_flash`
         centered on the defender's rendered art (horizontal frame center +
-        vertical center of the opaque bbox via `sprite_top_y` + new
-        `sprite_bottom_y`), tinted with `active_theme.lightest`, only on
+        vertical center of the opaque bbox via `sprite_bounds`), tinted with `active_theme.lightest`, only on
         nonzero damage.
     - [ ] Future: attack swings, death dissolves (multi-frame one-shots;
           same machinery, richer `AnimKind`).
@@ -550,7 +549,7 @@ Done items in DONE.md. Open:
 
 - **`RenderContext` backend-derived-value fields are ad hoc.** Two
   precedents now thread a backend-derived value into the pure/raylib-free
-  `view()`: `font_metrics` (a value struct) and `sprite_top_y` (a
+  `view()`: `font_metrics` (a value struct) and `sprite_bounds` (a
   frame-arena `StringHashMap`). Different shapes, both fine on their own.
   If a third backend-derived value lands, the `RenderContext` struct starts
   reading like a grab bag — consider a small "backend-provided context"

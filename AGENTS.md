@@ -366,23 +366,24 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
   transition clear.
   Two landed cases (both single-frame, no sheet):
   - **Skill-icon pop** (500ms): `skill_icon` kind, shows the skill's icon
-    above the caster's actual art top (runtime topmost-opaque-pixel scan via
-    `RenderContext.sprite_top_y`), offset above the always-on health bar,
-    tinted with the caster's team gradient index 1 (player → player gradient,
-    enemy → enemy gradient — same convention as weapon colors).
+    above the caster's actual art top (the `top` edge of the sprite's
+    opaque-pixel bbox, via `RenderContext.sprite_bounds`), offset above the
+    always-on health bar, tinted with the caster's team gradient index 1
+    (player → player gradient, enemy → enemy gradient — same convention as
+    weapon colors).
   - **Hit flash** (250ms): `hit_flash` kind, shows the `world/hit_flash`
     sprite (256×256, ported from the Unity project's 512×512 Hit.png at
     0.5x) centered on the defender's rendered art — horizontal frame center
     (entities are always horizontally centered) + vertical center of the
-    opaque art bbox (midpoint of `sprite_top_y` and `sprite_bottom_y`, the
-    latter a mirror scan added for this anim). Tinted with the active
-    theme's `lightest` color (the artist's offwhite). Triggered by the
-    `attack` and `collision` handlers **only when the defender takes nonzero
-    damage** (a Reflect-zeroed or 0-damage hit does not flash), inside the
-    `if (incoming_damage > 0)` block right after the health subtraction; a
-    killing blow still flashes (`death` zeroes health but leaves the slot).
-    `sprite_bottom_y` is populated alongside `sprite_top_y` in `frame()`
-    (single decode via `ensureSpriteBoundsLoaded`, filling both caches).
+    opaque art bbox (midpoint of the `top` and `bottom` edges from
+    `sprite_bounds`). Tinted with the active theme's `lightest` color (the
+    artist's offwhite). Triggered by the `attack` and `collision` handlers
+    **only when the defender takes nonzero damage** (a Reflect-zeroed or
+    0-damage hit does not flash), inside the `if (incoming_damage > 0)`
+    block right after the health subtraction; a killing blow still flashes
+    (`death` zeroes health but leaves the slot). `sprite_bounds` is
+    populated per-frame in `frame()` (one decode per sprite via
+    `ensureSpriteBoundsLoaded`, caching the full bbox).
 
 ### The replay-purity invariant (why the clock is read in `frame()`, not handlers)
 
@@ -1659,11 +1660,13 @@ index 1 (player → player gradient, enemy → enemy gradient) and are suppresse
 when the entity's `displays_weapons: bool` is false (e.g. wolves); parsed
 from `displays_weapons true|false` in the enemy definition (default true).
 **Health bars** are always-on, drawn above the entity's actual art top (same
-`sprite_top_y` runtime scan as the skill-icon anim — see AGENTS → Animation).
-`sprite_top_y` has a mirror `sprite_bottom_y` (bottommost-opaque-pixel scan,
-populated in the same decode via `ensureSpriteBoundsLoaded`), used by the hit
-flash to center on the rendered art's real vertical center. Both are
-frame-arena-backed lookups keyed by bare sprite stem. See AGENTS → Animation.
+opaque-bbox scan as the skill-icon anim — see AGENTS → Animation). The scan
+is a full `SpriteBounds { top, bottom, left, right }` (one decode per sprite,
+cached in the backend as `sprite_bounds_cache`, threaded through
+`RenderContext.sprite_bounds`), so the hit flash can center on the rendered
+art's real vertical center (top + bottom) and damage numbers can start at a
+corner (top/bottom + left/right). Frame-arena-backed lookup keyed by bare
+sprite stem. See AGENTS → Animation.
 The bar canvas + outline frame are 155×31 native (cropped to the outline's
 opaque bbox and downscaled 0.5x from the 384×128 Unity art, at
 `assets/world/entity_health_bar_background.png` + `entity_health_bar_outline.png`).

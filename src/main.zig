@@ -450,23 +450,14 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // the outline-mask cache). Keyed by bare sprite stem; `view()` looks
         // up `entity.sprite`. Frame-arena-backed (no deinit). See AGENTS →
         // Animation.
-        var sprite_top_y: std.StringHashMapUnmanaged(?i32) = .{};
-        // Mirror of `sprite_top_y`: bottommost-opaque-pixel y per entity sprite,
-        // so `view()` can place overlays at the rendered art's real vertical
-        // center (e.g. the hit flash). Populated in the same loop; the second
-        // `entitySprite*Y` call is a cache hit (`ensureSpriteBoundsLoaded`
-        // fills both caches in one decode). See AGENTS → Animation.
-        var sprite_bottom_y: std.StringHashMapUnmanaged(?i32) = .{};
+        var sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds) = .{};
         const frame_alloc = frame_state.frame_arena.allocator();
         if (history.current_state.level) |*level| {
             for (level.entities) |*entity| {
-                if (sprite_top_y.contains(entity.sprite)) continue;
-                const top_y = backend.entitySpriteTopY(frame_alloc, entity.sprite);
-                const bottom_y = backend.entitySpriteBottomY(frame_alloc, entity.sprite);
-                sprite_top_y.put(frame_alloc, entity.sprite, top_y) catch
-                    @panic("failed to populate sprite_top_y");
-                sprite_bottom_y.put(frame_alloc, entity.sprite, bottom_y) catch
-                    @panic("failed to populate sprite_bottom_y");
+                if (sprite_bounds.contains(entity.sprite)) continue;
+                const bounds = backend.entitySpriteBounds(frame_alloc, entity.sprite);
+                sprite_bounds.put(frame_alloc, entity.sprite, bounds) catch
+                    @panic("failed to populate sprite_bounds");
             }
         } else if (history.current_state.hub) |*hub| {
             const hub_entity_count = 1 + hub.npcs.len;
@@ -475,13 +466,10 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             hub_entity_ptrs[0] = &hub.player;
             for (hub.npcs, 0..) |*npc, index| hub_entity_ptrs[index + 1] = &npc.entity;
             for (hub_entity_ptrs) |entity| {
-                if (sprite_top_y.contains(entity.sprite)) continue;
-                const top_y = backend.entitySpriteTopY(frame_alloc, entity.sprite);
-                const bottom_y = backend.entitySpriteBottomY(frame_alloc, entity.sprite);
-                sprite_top_y.put(frame_alloc, entity.sprite, top_y) catch
-                    @panic("failed to populate sprite_top_y");
-                sprite_bottom_y.put(frame_alloc, entity.sprite, bottom_y) catch
-                    @panic("failed to populate sprite_bottom_y");
+                if (sprite_bounds.contains(entity.sprite)) continue;
+                const bounds = backend.entitySpriteBounds(frame_alloc, entity.sprite);
+                sprite_bounds.put(frame_alloc, entity.sprite, bounds) catch
+                    @panic("failed to populate sprite_bounds");
             }
         }
         frame_state.previous_view_state = view_mod.view(
@@ -498,8 +486,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
                 .current_event_index = history.current_event_index,
                 .frame_allocator = frame_alloc,
                 .font_metrics = backend.fontMetrics(),
-                .sprite_top_y = sprite_top_y,
-                .sprite_bottom_y = sprite_bottom_y,
+                .sprite_bounds = sprite_bounds,
             },
         );
         backend.render(frame_state.previous_view_state.?, platform_input.viewport);

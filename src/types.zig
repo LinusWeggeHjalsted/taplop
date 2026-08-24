@@ -1048,6 +1048,21 @@ pub const GroundDrawable = union(enum) {
 /// duration in microseconds; `frame()` stamps `end_clock` when it moves the
 /// anim from the pending queue to the active list. The kind carries the
 /// payload `view()` needs to place and draw it.
+/// The opaque-pixel bounding box of a sprite, in SOURCE pixels (0-based from
+/// the top-left). Each edge is the coordinate of the outermost non-transparent
+/// pixel on that side, or null if the sprite can't be loaded/decoded or is
+/// fully transparent (the caller falls back to the frame edge). Lazily decoded
+/// + cached in the backend, threaded through `RenderContext.sprite_bounds` so
+/// `view()` can place overlays against an entity's actual rendered art
+/// (skill icon above the top, hit flash at the vertical center, damage number
+/// at a corner). See AGENTS → Animation.
+pub const SpriteBounds = struct {
+    top: ?i32,
+    bottom: ?i32,
+    left: ?i32,
+    right: ?i32,
+};
+
 pub const AnimKind = union(enum) {
     /// Show a skill's icon above the casting entity for `duration_us`.
     skill_icon: struct { entity_index: u32, skill_id: SkillId },

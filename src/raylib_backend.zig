@@ -167,19 +167,14 @@ pub const RaylibBackend = struct {
     /// + highlighted UI icons). A cached `null` means the sprite is missing
     /// (or the mask failed) -> callers skip the outline.
     outline_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
-    /// sprite_id -> y-coordinate (0-based from the top, in SOURCE pixels) of
-    /// the topmost non-transparent pixel. Generated lazily by
-    /// `ensureSpriteBoundsLoaded` on the first `getSpriteTopY` request (same
-    /// shape as `outline_cache`). A cached `null` means the sprite is missing
-    /// (or the scan failed) -> the caller falls back to the frame top. Used
-    /// by `view()` to place floating indicators above an entity's actual art.
-    /// See AGENTS → Animation.
-    sprite_top_y_cache: std.StringHashMapUnmanaged(?i32) = .empty,
-    /// Bottommost-opaque-pixel y per entity sprite (mirror of `sprite_top_y_cache`),
-    /// populated in the SAME decode by `ensureSpriteBoundsLoaded` so `view()` can
-    /// place overlays at the rendered art's real vertical center. See AGENTS →
+    /// sprite_id -> opaque-pixel bounding box (top/bottom/left/right, in
+    /// SOURCE pixels), generated lazily by `ensureSpriteBoundsLoaded` on the
+    /// first `getSpriteBounds` request (same shape as `outline_cache`). A
+    /// cached `null` means the sprite is missing (or the scan failed) -> the
+    /// caller falls back to the frame edges. Used by `view()` to place
+    /// overlays against an entity's actual rendered art. See AGENTS →
     /// Animation.
-    sprite_bottom_y_cache: std.StringHashMapUnmanaged(?i32) = .empty,
+    sprite_bounds_cache: std.StringHashMapUnmanaged(?types.SpriteBounds) = .empty,
     /// Reference-resolution offscreen target; blitted to the window each frame.
     render_target: rl.RenderTexture2D,
     /// Text-label font. Normally the embedded TTF (loaded from
@@ -270,8 +265,7 @@ pub const RaylibBackend = struct {
             if (maybe_texture.*) |texture| rl.unloadTexture(texture);
         }
         self.outline_cache.deinit(self.allocator);
-        self.sprite_top_y_cache.deinit(self.allocator);
-        self.sprite_bottom_y_cache.deinit(self.allocator);
+        self.sprite_bounds_cache.deinit(self.allocator);
         self.deinitAudio();
         if (!self.font_is_default) rl.unloadFont(self.font);
         self.frame_arena.deinit();
@@ -1113,53 +1107,26 @@ pub const RaylibBackend = struct {
     /// topmost non-transparent pixel of `sprite_id`, or null if the sprite
     /// can't be loaded/decoded. Lazily generated on first request via
     /// `ensureSpriteBoundsLoaded` (same shape as the outline cache). Used by
-    /// `view()` (via the `RenderContext.sprite_top_y` callback) to place
+    /// `view()` (via the `RenderContext.sprite_bounds` lookup) to place
     /// floating indicators just above an entity's actual art top. See
     /// AGENTS → Animation.
-    pub fn getSpriteTopY(self: *RaylibBackend, sprite_id: []const u8) ?i32 {
-        if (!self.sprite_top_y_cache.contains(sprite_id)) self.ensureSpriteBoundsLoaded(sprite_id);
-        return self.sprite_top_y_cache.get(sprite_id).?;
+    pub fn getSpriteBounds(self: *RaylibBackend, sprite_id: []const u8) ?types.SpriteBounds {
+        if (!self.sprite_bounds_cache.contains(sprite_id)) self.ensureSpriteBoundsLoaded(sprite_id);
+        return self.sprite_bounds_cache.get(sprite_id).?;
     }
 
-    /// The y-coordinate (0-based from the top, in SOURCE pixels) of the
-    /// bottommost non-transparent pixel of `sprite_id`, or null on miss/
-    /// failure. Mirror of `getSpriteTopY`; populated by the same decode. Used
-    /// by `view()` to place overlays at the rendered art's real vertical
-    /// center (e.g. the hit flash). See AGENTS → Animation.
-    pub fn getSpriteBottomY(self: *RaylibBackend, sprite_id: []const u8) ?i32 {
-        if (!self.sprite_bottom_y_cache.contains(sprite_id)) self.ensureSpriteBoundsLoaded(sprite_id);
-        return self.sprite_bottom_y_cache.get(sprite_id).?;
-    }
-
-    /// Convenience wrapper: look up the topmost-opaque y for an ENTITY sprite
-    /// given its bare stem (e.g. `skeleton_1`), prefixing the `entities/`
-    /// folder so `frame()` can query without knowing the asset-path format.
-    /// See AGENTS → Animation.
-    pub fn entitySpriteTopY(self: *RaylibBackend, allocator: std.mem.Allocator, bare_stem: []const u8) ?i32 {
+    /// Convenience wrapper: look up the opaque-pixel bounding box for an
+    /// ENTITY sprite given its bare stem (e.g. `skeleton_1`), prefixing the
+    /// `entities/` folder so `frame()` can query without knowing the
+    /// asset-path format. See AGENTS Animation.
+    pub fn entitySpriteBounds(self: *RaylibBackend, allocator: std.mem.Allocator, bare_stem: []const u8) ?types.SpriteBounds {
         const sprite_id = std.fmt.allocPrint(allocator, "entities/{s}", .{bare_stem}) catch
-            @panic("failed to build entity sprite id for top-y lookup");
-        return self.getSpriteTopY(sprite_id);
+            @panic("failed to build entity sprite id for bounds lookup");
+        return self.getSpriteBounds(sprite_id);
     }
 
-    /// Convenience wrapper: look up the bottommost-opaque y for an ENTITY
-    /// sprite given its bare stem (e.g. `skeleton_1`), prefixing the
-    /// `entities/` folder. See AGENTS → Animation.
-    pub fn entitySpriteBottomY(self: *RaylibBackend, allocator: std.mem.Allocator, bare_stem: []const u8) ?i32 {
-        const sprite_id = std.fmt.allocPrint(allocator, "entities/{s}", .{bare_stem}) catch
-            @panic("failed to build entity sprite id for bottom-y lookup");
-        return self.getSpriteBottomY(sprite_id);
-    }
-
-    /// Scan `sprite_id`'s pixels for the topmost non-transparent row and cache
-    /// the y-coordinate. Re-reads the asset bytes and decodes — like the
-    /// outline mask, this is requested for few sprites (entity sprites that
-    /// have an active skill-icon anim), so a second read per scanned sprite is
-    /// cheap, and the cache makes it once-per-sprite. Uses the same alpha
-    /// threshold (`> 16`) as the outline mask for consistency. Caches null on
-    /// miss/failure. Idempotent via `sprite_top_y_cache` presence.
     fn ensureSpriteBoundsLoaded(self: *RaylibBackend, sprite_id: []const u8) void {
-        if (self.sprite_top_y_cache.contains(sprite_id) and
-            self.sprite_bottom_y_cache.contains(sprite_id)) return;
+        if (self.sprite_bounds_cache.contains(sprite_id)) return;
 
         const path = std.fmt.allocPrintSentinel(
             self.frame_arena.allocator(),
@@ -1170,68 +1137,50 @@ pub const RaylibBackend = struct {
 
         const key = self.allocator.dupe(u8, sprite_id) catch @panic("failed to dupe sprite id");
 
-        const bounds: struct { top: ?i32, bottom: ?i32 } = blk: {
+        const bounds: ?types.SpriteBounds = blk: {
             const bytes = self.file_source.readFile(self.allocator, path) catch
-                break :blk .{ .top = null, .bottom = null };
+                break :blk null;
             defer self.allocator.free(bytes);
-            const image = rl.loadImageFromMemory(".png", bytes) catch
-                break :blk .{ .top = null, .bottom = null };
+            const image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
             defer rl.unloadImage(image);
             // `loadImageColors` returns []rl.Color regardless of source format
             // (raylib normalizes internally), so no manual setFormat needed.
-            const top_y = self.scanTopmostOpaqueY(image) catch null;
-            const bottom_y = self.scanBottommostOpaqueY(image) catch null;
-            break :blk .{ .top = top_y, .bottom = bottom_y };
+            break :blk self.scanOpaqueBounds(image) catch null;
         };
 
-        self.sprite_top_y_cache.put(self.allocator, key, bounds.top) catch
-            @panic("failed to cache sprite top-y");
-        self.sprite_bottom_y_cache.put(self.allocator, key, bounds.bottom) catch
-            @panic("failed to cache sprite bottom-y");
+        self.sprite_bounds_cache.put(self.allocator, key, bounds) catch
+            @panic("failed to cache sprite bounds");
     }
 
-    /// Find the smallest y (0-based from the top) containing a pixel with
-    /// alpha > 16 (same threshold as the outline mask). Scans top-down, row
-    /// by row, returning at the first opaque pixel. Returns null for a fully
-    /// transparent image (no opaque pixel) — the caller falls back to the
-    /// frame top.
-    fn scanTopmostOpaqueY(self: *RaylibBackend, image: rl.Image) !?i32 {
+    /// Find the opaque-pixel bounding box of `image`: the min/max x and y of
+    /// pixels with alpha > 16 (same threshold as the outline mask). One pass
+    /// over the pixels. Returns null for a fully transparent image (no opaque
+    /// pixel) -- the caller falls back to the frame edges.
+    fn scanOpaqueBounds(self: *RaylibBackend, image: rl.Image) !?types.SpriteBounds {
         _ = self;
         const width: i32 = image.width;
         const height: i32 = image.height;
         const colors = try rl.loadImageColors(image);
         defer rl.unloadImageColors(colors);
+        var min_x: i32 = std.math.maxInt(i32);
+        var min_y: i32 = std.math.maxInt(i32);
+        var max_x: i32 = std.math.minInt(i32);
+        var max_y: i32 = std.math.minInt(i32);
         var y: i32 = 0;
         while (y < height) : (y += 1) {
             const row_start: usize = @intCast(y * width);
             var x: i32 = 0;
             while (x < width) : (x += 1) {
-                if (colors[row_start + @as(usize, @intCast(x))].a > 16) return y;
+                if (colors[row_start + @as(usize, @intCast(x))].a > 16) {
+                    if (x < min_x) min_x = x;
+                    if (x > max_x) max_x = x;
+                    if (y < min_y) min_y = y;
+                    if (y > max_y) max_y = y;
+                }
             }
         }
-        return null;
-    }
-
-    /// Find the largest y (0-based from the top) containing a pixel with alpha
-    /// > 16. Scans bottom-up, returning at the first opaque pixel. Returns
-    /// null for a fully transparent image — the caller falls back to the
-    /// frame bottom. Mirror of `scanTopmostOpaqueY`; both run in one decode
-    /// via `ensureSpriteBoundsLoaded`.
-    fn scanBottommostOpaqueY(self: *RaylibBackend, image: rl.Image) !?i32 {
-        _ = self;
-        const width: i32 = image.width;
-        const height: i32 = image.height;
-        const colors = try rl.loadImageColors(image);
-        defer rl.unloadImageColors(colors);
-        var y: i32 = height - 1;
-        while (y >= 0) : (y -= 1) {
-            const row_start: usize = @intCast(y * width);
-            var x: i32 = 0;
-            while (x < width) : (x += 1) {
-                if (colors[row_start + @as(usize, @intCast(x))].a > 16) return y;
-            }
-        }
-        return null;
+        if (max_x < min_x) return null; // no opaque pixel
+        return .{ .top = min_y, .bottom = max_y, .left = min_x, .right = max_x };
     }
 
     /// Build a white-opaque edge-outline mask as an OUTER band: transparent

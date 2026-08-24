@@ -2841,3 +2841,29 @@ variant and a new `sprite_bottom_y` lookup for the real vertical center.
   Replay-safety holds by construction: the anim is a `SessionState` side
   effect gated `!replaying`, the clock read stays in `frame()`, and undo
   hides it via the `event_index < current_event_index` bound.
+
+### Sprite bounding-box cache refactor (DONE)
+
+Generalized the per-entity opaque-pixel edge lookups from two separate
+single-edge caches (`sprite_top_y_cache` + `sprite_bottom_y_cache`) into one
+full-bbox cache, ahead of damage numbers needing `left`/`right` edges too.
+Pure refactor — no behavior change to the skill-icon or hit-flash placement.
+
+- **`types.SpriteBounds`** = `{ top, bottom, left, right: ?i32 }` (SOURCE
+  pixels, 0-based from the top-left; each edge null on miss/transparent).
+- **Backend (`raylib_backend.zig`):** `sprite_bounds_cache:
+  StringHashMapUnmanaged(?SpriteBounds)` replaces the two caches.
+  `ensureSpriteBoundsLoaded` decodes once and calls a single new
+  `scanOpaqueBounds` (one pass over the pixels tracking min/max x and y of
+  pixels with alpha > 16; returns null for a fully transparent image).
+  `getSpriteBounds`/`entitySpriteBounds` replace the four
+  `getSprite*Y`/`entitySprite*Y` getters. `deinit` frees one cache.
+- **`main.zig` `frame()`:** populates one `sprite_bounds` map (one backend
+  query per entity) instead of two, threaded through `RenderContext`.
+- **`view.zig`:** `RenderContext.sprite_bounds` replaces the two fields;
+  `buildWorldOverlays`, `collectEntityEntries`, `entityDrawable`, and
+  `buildHealthBar` all take the one map and read `.top` / `.bottom` from it.
+  The hit-flash and skill-icon placement is identical (just reads
+  `bounds.top.?` / `bounds.bottom.?` instead of the prior `?i32`);
+  `scanOpaqueBounds` guarantees all four edges non-null when it returns
+  non-null, so the `.?` unwraps are safe.

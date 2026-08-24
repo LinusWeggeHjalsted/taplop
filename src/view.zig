@@ -43,23 +43,16 @@ pub const RenderContext = struct {
     /// Extracted from the loaded raylib `Font` by the backend; raylib-free
     /// value type so it threads through the headless-tested `view()` path.
     font_metrics: ui.FontMetrics,
-    /// Per-frame lookup of entity-sprite top-y: bare sprite stem (e.g.
-    /// `skeleton_1`) -> y-coordinate (0-based from the top, in SOURCE pixels)
-    /// of the topmost non-transparent pixel, or null if the sprite can't be
-    /// loaded/decoded. Built by `frame()` by querying the backend (which
-    /// lazily decodes + caches — same shape as the outline-mask cache) for
-    /// each entity in the current world. Used by `view()` to place floating
-    /// indicators just above an entity's actual art top rather than the
-    /// 512x640 frame edge. Frame-arena-backed (no deinit). See AGENTS →
-    /// Animation.
-    sprite_top_y: std.StringHashMapUnmanaged(?i32),
-    /// Per-frame lookup of entity-sprite bottom-y: mirror of `sprite_top_y`,
-    /// the y-coordinate (0-based from the top, in SOURCE pixels) of the
-    /// bottommost non-transparent pixel, or null on miss/failure. Lets
-    /// `view()` place overlays at the rendered art's real vertical center
-    /// (e.g. the hit flash) instead of the 512x640 frame edge. See AGENTS →
-    /// Animation.
-    sprite_bottom_y: std.StringHashMapUnmanaged(?i32),
+    /// Per-frame lookup of entity-sprite opaque-pixel bounding boxes: bare
+    /// sprite stem (e.g. `skeleton_1`) -> `SpriteBounds` (top/bottom/left/
+    /// right in SOURCE pixels), or null if the sprite can't be loaded/decoded.
+    /// Built by `frame()` by querying the backend (which lazily decodes +
+    /// caches -- same shape as the outline-mask cache) for each entity in the
+    /// current world. Used by `view()` to place overlays against an entity's
+    /// actual rendered art (skill icon above the top, hit flash at the
+    /// vertical center, damage number at a corner) rather than the 512x640
+    /// frame edges. Frame-arena-backed (no deinit). See AGENTS Animation.
+    sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
 };
 
 pub fn view(
@@ -105,7 +98,7 @@ pub fn view(
             const entity_ptrs = frame_allocator.alloc(*const Entity, level.entities.len) catch
                 @panic("failed to alloc entity pointer slice");
             for (level.entities, 0..) |*entity, index| entity_ptrs[index] = entity;
-            collectEntityEntries(&ground_entries, frame_allocator, entity_ptrs, active_theme, settings.player_color_index, camera, camera_zoom, render.sprite_top_y, true);
+            collectEntityEntries(&ground_entries, frame_allocator, entity_ptrs, active_theme, settings.player_color_index, camera, camera_zoom, render.sprite_bounds, true);
         }
         for (level.decorations) |decoration| {
             const pieces = buildDecorationPieces(decoration, active_theme, camera, camera_zoom, frame_allocator);
@@ -135,7 +128,7 @@ pub fn view(
                 @panic("failed to alloc hub entity pointer slice");
             hub_entity_ptrs[0] = &hub.player;
             for (hub.npcs, 0..) |*npc, index| hub_entity_ptrs[index + 1] = &npc.entity;
-            collectEntityEntries(&ground_entries, frame_allocator, hub_entity_ptrs, active_theme, settings.player_color_index, camera, camera_zoom, render.sprite_top_y, false);
+            collectEntityEntries(&ground_entries, frame_allocator, hub_entity_ptrs, active_theme, settings.player_color_index, camera, camera_zoom, render.sprite_bounds, false);
         }
         for (hub.decorations) |decoration| {
             const pieces = buildDecorationPieces(decoration, active_theme, camera, camera_zoom, frame_allocator);
@@ -162,8 +155,7 @@ pub fn view(
         camera,
         camera_zoom,
         current_event_index,
-        render.sprite_top_y,
-        render.sprite_bottom_y,
+        render.sprite_bounds,
         active_theme,
     );
 
@@ -349,7 +341,7 @@ const entity_pivot_y: f32 = 0.8;
 /// One-shot skill-icon anim: square edge in native reference pixels (the
 /// renderer multiplies by `world_scale`, matching tiles/entities), and the
 /// gap above the entity's actual art top (found at runtime from the sprite's
-/// topmost non-transparent pixel — see `RenderContext.sprite_top_y`). Tunable
+/// topmost non-transparent pixel — see `RenderContext.sprite_bounds`). Tunable
 /// — eyeball in `zig build run`. See AGENTS → Animation.
 const skill_icon_size_native: i32 = 256;
 const skill_icon_gap_native: i32 = 16;
@@ -359,13 +351,13 @@ const skill_icon_gap_native: i32 = 16;
 /// entity's rendered art center for 250ms, tinted with the active theme's
 /// `lightest` color (the artist's offwhite). Drawn centered on the entity's
 /// horizontal frame center and the real vertical center of its opaque art
-/// (via `sprite_top_y` + `sprite_bottom_y`). Tunable — eyeball in
+/// (via `sprite_bounds` top + bottom). Tunable -- eyeball in
 /// `zig build run`. See AGENTS → Animation.
 const hit_flash_size_native: i32 = 256;
 
 /// Entity health bar. The bar + outline sprites are 155x31 native (cropped
 /// to the outline's opaque bbox and downscaled 0.5x from the 384x128 Unity
-/// art). Drawn above the entity's actual art top (same `sprite_top_y` scan
+/// art). Drawn above the entity's actual art top (same `sprite_bounds` scan
 /// as the skill icon). The skill icon sits above the health bar, so it's
 /// offset by the bar's height + this gap. Tunable — eyeball in `zig build
 /// run`. See AGENTS → Entity & UI Coloring.
@@ -497,8 +489,7 @@ fn buildWorldOverlays(
     camera: types.Camera,
     zoom: f32,
     current_event_index: u32,
-    sprite_top_y: std.StringHashMapUnmanaged(?i32),
-    sprite_bottom_y: std.StringHashMapUnmanaged(?i32),
+    sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
     active_theme: types.ActiveColorTheme,
 ) []const types.WorldOverlayDrawable {
     const level = current_state.level orelse return &.{};
@@ -517,9 +508,9 @@ fn buildWorldOverlays(
                 const drawn_size: f32 = @as(f32, @floatFromInt(skill_icon_size_native)) * zoom;
                 const gap: f32 = @as(f32, @floatFromInt(skill_icon_gap_native)) * zoom;
                 const icon_x = @as(f32, @floatFromInt(top_left.x)) + draw_width / 2 - drawn_size / 2;
-                const art_top_y: f32 = if (sprite_top_y.get(entity.sprite)) |maybe_top_y|
-                    if (maybe_top_y) |top_y|
-                        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(top_y)) * zoom
+                const art_top_y: f32 = if (sprite_bounds.get(entity.sprite)) |maybe_bounds|
+                    if (maybe_bounds) |bounds|
+                        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bounds.top.?)) * zoom
                     else
                         @as(f32, @floatFromInt(top_left.y))
                 else
@@ -567,16 +558,16 @@ fn buildWorldOverlays(
                 // Vertical: real center of the opaque art via top-y +
                 // bottom-y; fall back to the frame's vertical center on a
                 // miss/transparent sprite.
-                const art_top_y: f32 = if (sprite_top_y.get(entity.sprite)) |maybe_top_y|
-                    if (maybe_top_y) |top_y|
-                        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(top_y)) * zoom
+                const art_top_y: f32 = if (sprite_bounds.get(entity.sprite)) |maybe_bounds|
+                    if (maybe_bounds) |bounds|
+                        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bounds.top.?)) * zoom
                     else
                         @as(f32, @floatFromInt(top_left.y))
                 else
                     @as(f32, @floatFromInt(top_left.y));
-                const art_bottom_y: f32 = if (sprite_bottom_y.get(entity.sprite)) |maybe_bottom_y|
-                    if (maybe_bottom_y) |bottom_y|
-                        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bottom_y)) * zoom
+                const art_bottom_y: f32 = if (sprite_bounds.get(entity.sprite)) |maybe_bounds|
+                    if (maybe_bounds) |bounds|
+                        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bounds.bottom.?)) * zoom
                     else
                         @as(f32, @floatFromInt(top_left.y)) + draw_height
                 else
@@ -602,7 +593,7 @@ fn buildWorldOverlays(
 /// the center of the entity's tile. Populates the base sprite, body overlay
 /// layers, and weapons; gear/effect sprites are not wired. The health bar
 /// is populated (always-on for alive entities), placed above the entity's
-/// actual art top via the `sprite_top_y` lookup. See AGENTS → Entity & UI
+/// actual art top via the `sprite_bounds` lookup. See AGENTS → Entity & UI
 /// Coloring.
 fn entityDrawable(
     entity: *const Entity,
@@ -611,7 +602,7 @@ fn entityDrawable(
     camera: types.Camera,
     zoom: f32,
     allocator: std.mem.Allocator,
-    sprite_top_y: std.StringHashMapUnmanaged(?i32),
+    sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
     show_health_bar: bool,
 ) types.EntityDrawable {
     const top_left = entityFrameTopLeft(entity, camera, zoom);
@@ -677,7 +668,7 @@ fn entityDrawable(
         .weapon_sprites = weapon_sprites,
         .gear_sprites = &.{},
         .front_effect_sprites = &.{},
-        .health_bar = if (show_health_bar) buildHealthBar(entity, active_theme, top_left, zoom, sprite_top_y) else null,
+        .health_bar = if (show_health_bar) buildHealthBar(entity, active_theme, top_left, zoom, sprite_bounds) else null,
     };
 }
 
@@ -691,16 +682,16 @@ fn buildHealthBar(
     active_theme: types.ActiveColorTheme,
     frame_top_left: types.ScreenPosition,
     zoom: f32,
-    sprite_top_y: std.StringHashMapUnmanaged(?i32),
+    sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
 ) ?types.HealthBarDrawable {
     if (entity.max_health == 0) return null;
     const draw_width = entity_frame_width * zoom;
-    const art_top_y: f32 = if (sprite_top_y.get(entity.sprite)) |maybe_top_y|
-        if (maybe_top_y) |top_y|
-            // `top_y` is in source pixels (0..640); the drawn frame height is
+    const art_top_y: f32 = if (sprite_bounds.get(entity.sprite)) |maybe_bounds|
+        if (maybe_bounds) |bounds|
+            // `bounds.top` is in source pixels (0..640); the drawn frame height is
             // `entity_frame_height * zoom`, so the art top in screen space is
-            // `frame_top + top_y * zoom`.
-            @as(f32, @floatFromInt(frame_top_left.y)) + @as(f32, @floatFromInt(top_y)) * zoom
+            // `frame_top + bounds.top * zoom`.
+            @as(f32, @floatFromInt(frame_top_left.y)) + @as(f32, @floatFromInt(bounds.top.?)) * zoom
         else
             @as(f32, @floatFromInt(frame_top_left.y))
     else
@@ -784,7 +775,7 @@ fn collectEntityEntries(
     player_color_index: u32,
     camera: types.Camera,
     zoom: f32,
-    sprite_top_y: std.StringHashMapUnmanaged(?i32),
+    sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
     show_health_bar: bool,
 ) void {
     // Dead entities (current_health == 0) are not rendered — their sprite
@@ -794,7 +785,7 @@ fn collectEntityEntries(
         list.append(allocator, .{
             .sort_y = entity.position.y,
             .sort_x = entity.position.x,
-            .drawable = .{ .entity = entityDrawable(entity, active_theme, player_color_index, camera, zoom, allocator, sprite_top_y, show_health_bar) },
+            .drawable = .{ .entity = entityDrawable(entity, active_theme, player_color_index, camera, zoom, allocator, sprite_bounds, show_health_bar) },
         }) catch @panic("failed to append entity entry");
     }
 }
