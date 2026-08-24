@@ -348,6 +348,11 @@ const entity_pivot_y: f32 = 0.8;
 /// — eyeball in `zig build run`. See AGENTS → Animation.
 const skill_icon_size_native: i32 = 256;
 const skill_icon_gap_native: i32 = 16;
+/// Native (unscaled) pixel size of the aggro indicator icon drawn above an
+/// entity's health bar when it gets aggroed (one-shot, 500ms). 1:1 with the
+/// ported EnemyAggro.png art (128×128). Placed like the skill icon. See
+/// AGENTS → Animation.
+const aggro_indicator_size_native: i32 = 128;
 /// Native (unscaled) pixel size of the stun overlay icon drawn above the
 /// health bar of a stunned entity (while `stun_duration > 0`). 1:1 with the
 /// StunEffect.png art (128×128). Tunable. See AGENTS → Animation.
@@ -562,6 +567,41 @@ fn buildWorldOverlays(
                     },
                     .size = skill_icon_size_native,
                     .color = icon_color,
+                } }) catch @panic("failed to append world overlay");
+            },
+            .aggro_indicator => |info| {
+                // Mirrors the skill-icon placement (above the health bar)
+                // but tinted with the active theme's `lightest`. The
+                // indicator is a one-shot cosmetic marker that the entity
+                // was aggroed this event; skip dead entities (a newly-dead
+                // aggroed entity shouldn't show it). See AGENTS → Animation.
+                if (info.entity_index >= level.entities.len) continue;
+                const entity = &level.entities[info.entity_index];
+                if (entity.current_health == 0) continue;
+
+                const top_left = entityFrameTopLeft(entity, camera, zoom);
+                const draw_width = entity_frame_width * zoom;
+                const drawn_size: f32 = @as(f32, @floatFromInt(aggro_indicator_size_native)) * zoom;
+                const gap: f32 = @as(f32, @floatFromInt(skill_icon_gap_native)) * zoom;
+                const icon_x = @as(f32, @floatFromInt(top_left.x)) + draw_width / 2 - drawn_size / 2;
+                const art_top_y: f32 = if (sprite_bounds.get(entity.sprite)) |maybe_bounds|
+                    if (maybe_bounds) |bounds|
+                        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bounds.top.?)) * zoom
+                    else
+                        @as(f32, @floatFromInt(top_left.y))
+                else
+                    @as(f32, @floatFromInt(top_left.y));
+                const health_bar_total: f32 =
+                    @as(f32, @floatFromInt(health_bar_native_height + health_bar_gap_native)) * zoom;
+                const icon_y = art_top_y - health_bar_total - drawn_size - gap;
+                overlays.append(allocator, .{ .floating_icon = .{
+                    .sprite_id = "world/aggro",
+                    .screen_position = .{
+                        .x = @intFromFloat(@round(icon_x)),
+                        .y = @intFromFloat(@round(icon_y)),
+                    },
+                    .size = aggro_indicator_size_native,
+                    .color = active_theme.lightest,
                 } }) catch @panic("failed to append world overlay");
             },
             .hit_flash => |info| {

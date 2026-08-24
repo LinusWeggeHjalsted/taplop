@@ -364,7 +364,7 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
   `active_anims` grows unbounded within a screen (accepted, same tradeoff as
   `event_history`) and is bounded in practice by short durations + the
   transition clear.
-  Two landed cases (both single-frame, no sheet):
+  Three landed cases (all single-frame, no sheet):
   - **Skill-icon pop** (500ms): `skill_icon` kind, shows the skill's icon
     above the caster's actual art top (the `top` edge of the sprite's
     opaque-pixel bbox, via `RenderContext.sprite_bounds`), offset above the
@@ -408,6 +408,14 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
     direction is fixed), same easing + outline + tint. Triggered by the
     `heal` handler only when heal is actually applied (a full-health heal
     shows nothing).
+  - **Aggro indicator** (500ms): `aggro_indicator` kind, shows the
+    `world/aggro` sprite (128×128, ported from the Unity project's
+    EnemyAggro.png) above the entity's health bar (same placement as the
+    skill-icon pop), tinted with the active theme's `lightest`. Triggered
+    by the `aggro_around` handler when an entity's `is_active` flips true
+    (gated `!replaying`) — once per entity per level (the handler skips
+    already-active entities). Skip dead entities at render time. See
+    AGENTS → Animation.
   - **Per-entity stagger:** number anims share a `last_number_start_by_entity`
     map on `SessionState`; `frame()` stamps `start_clock =
     max(animation_clock, last_for_entity + 125ms)` so a same-entity multi-hit

@@ -3125,3 +3125,23 @@ as `attack`. Before, `knockback_damage` was the raw weapon damage.
 The balance quirk that produced the original 0 (`main_hand_damage / 2`
 truncating dagger collision to 1, cancelable by any defense ≥ 1) is accepted
 as fine; the unification is about consistency, not changing that edge case.
+
+### Aggro indicator one-shot anim (DONE)
+
+A new one-shot anim showing the `world/aggro` sprite (128×128, ported from the
+Unity project's `EnemyAggro.png`) above an entity's health bar for 500ms when
+it gets aggroed. Mirrors the skill-icon pop placement (above the always-on
+health bar, offset by the bar height + gap from the entity's art top via
+`sprite_bounds`), tinted with `active_theme.lightest` (not the team gradient —
+aggro is a neutral status, not team-coded). Triggered in the `aggro_around`
+handler when an entity's `is_active` flips true (gated `!replaying`, same
+shape as `queueSound`/the skill-icon anim); once per entity per level (the
+handler skips already-active entities). Skips dead entities at render time.
+Non-number anim → `start_clock = end_clock - duration` (starts immediately).
+
+- `AnimKind.aggro_indicator { entity_index }` (types.zig).
+- `aggro_around` handler queues the anim on the `is_active` flip
+  (event_handlers.zig).
+- `buildWorldOverlays` `.aggro_indicator` arm + `aggro_indicator_size_native`
+  (128) constant (view.zig).
+- Asset: `assets/world/aggro.png` (128×128, ported 1:1 — no downscale).

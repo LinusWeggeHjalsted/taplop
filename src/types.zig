@@ -1085,6 +1085,11 @@ pub const AnimKind = union(enum) {
         /// Unit vector (-1/0/1 per axis) the number travels along.
         direction: Vector2,
     },
+    /// Show the aggro indicator above an entity's head for `duration_us`
+    /// when it gets aggroed (its `is_active` flips true in the `aggro_around`
+    /// handler). Placed above the health bar like the skill icon, tinted with
+    /// the active theme's `lightest`. See AGENTS → Animation.
+    aggro_indicator: struct { entity_index: u32 },
     /// Float a heal number (`+value`) up-right from the entity's top-left
     /// bbox corner, traveling 1 tile with ease-out. Heals have no attacker,
     /// so the direction is fixed. Triggered by the `heal` event. Shares the

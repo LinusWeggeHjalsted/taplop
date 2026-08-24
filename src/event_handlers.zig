@@ -1745,6 +1745,18 @@ pub fn processEvent(
                         const distance = functions.chebyshevDistance(entity.position, other_entity.position);
                         if (distance <= aggro_range) {
                             @constCast(other_entity).is_active = true;
+                            // One-shot aggro indicator above the newly-aggroed
+                            // entity's head (gated `!replaying`, same shape as
+                            // the skill-icon anim). See AGENTS → Animation.
+                            if (!history.replaying) {
+                                history.session.queueAnim(history.backing_allocator, .{
+                                    .event_index = history.current_event_index - 1,
+                                    .kind = .{ .aggro_indicator = .{
+                                        .entity_index = @intCast(other_index),
+                                    } },
+                                    .duration_us = 500_000,
+                                });
+                            }
                         }
                     }
 
