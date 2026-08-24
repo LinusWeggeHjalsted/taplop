@@ -360,11 +360,12 @@ const hit_flash_size_native: i32 = 256;
 /// One-shot number anims (damage/heal): the number travels 1 tile from the
 /// entity's sprite bbox edge/corner, eased with `tween.easeOutCubic` (fast
 /// then slow). 500ms duration (queued by handlers; the constant lives here
-/// for the `view()`-side travel distance + font size). Font size matches the
-/// tooltip body (`ui.tooltip_body_font_size`). Tunable — eyeball in
-/// `zig build run`. See AGENTS → Animation.
+/// for the `view()`-side travel distance + font size). Font size is
+/// independent of the tooltip body — damage numbers read best large.
+/// Tunable — eyeball in `zig build run`. See AGENTS → Animation.
 const number_anim_duration_microseconds: u32 = 500_000;
-const number_travel_tiles: f32 = 1.0;
+const number_travel_tiles: f32 = 0.5;
+const number_font_size: i32 = 112;
 
 /// Entity health bar. The bar + outline sprites are 155x31 native (cropped
 /// to the outline's opaque bbox and downscaled 0.5x from the 384x128 Unity
@@ -618,7 +619,7 @@ fn buildWorldOverlays(
                 overlays.append(allocator, .{ .floating_text = .{
                     .text = text,
                     .screen_position = pos,
-                    .font_size = ui.tooltip_body_font_size,
+                    .font_size = number_font_size,
                     .color = active_theme.lightest,
                 } }) catch @panic("failed to append world overlay");
             },
@@ -643,7 +644,7 @@ fn buildWorldOverlays(
                 overlays.append(allocator, .{ .floating_text = .{
                     .text = text,
                     .screen_position = pos,
-                    .font_size = ui.tooltip_body_font_size,
+                    .font_size = number_font_size,
                     .color = active_theme.lightest,
                 } }) catch @panic("failed to append world overlay");
             },
@@ -726,9 +727,9 @@ fn numberAnimPosition(
     // at anchor; up-going → bottom at anchor; pure vertical → horizontally
     // centered; pure horizontal → vertically centered.
     const text_width: f32 = @as(f32, @floatFromInt(
-        font_metrics.measureSpanWidth(.{ .text = text }, ui.tooltip_body_font_size),
+        font_metrics.measureSpanWidth(.{ .text = text }, number_font_size),
     )) * zoom;
-    const text_height: f32 = @as(f32, @floatFromInt(ui.tooltip_body_font_size)) * zoom;
+    const text_height: f32 = @as(f32, @floatFromInt(number_font_size)) * zoom;
     if (dx < 0) {
         x -= text_width;
     } else if (dx == 0) {

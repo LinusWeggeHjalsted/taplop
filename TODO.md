@@ -157,6 +157,18 @@ Open / in-progress:
         black text outline, per-entity 0.125s stagger.
     - [ ] Future: attack swings, death dissolves (multi-frame one-shots;
           same machinery, richer `AnimKind`).
+    - [ ] **Programmatic text outline** (replace the 9-draw drop-shadow
+          ring for `floating_text`). The sprite-outline dilation (`generate-
+          OutlineMask`) can't run on text today: `rl.imageTextEx` returns a
+          degenerate raster for our TTF font (its internal `MeasureTextEx`
+          at `baseSize` yields `textSize.y` ~0 → resize-by-0 → invalid
+          image), and a GPU `RenderTexture2D` readback perturbs the main
+          render target mid-pass (visible flash). Needs a working CPU font
+          raster — a custom rasterizer, fixing why `imageTextEx` mis-
+          measures our font, or pre-rasterizing each unique string at load
+          time outside the render pass. The `generateOutlineMask(image,
+          thickness)` parameterization is already in place; the gap is the
+          source `Image`. See DONE.md (slice 3 revert) for the diagnosis.
   - Per-sheet frame data (count, frame size) hardcoded per builder for now
     (flag is the only animation); general per-sprite metadata table is the
     "Sprite asset metadata" item below.
@@ -550,6 +562,11 @@ Already total (no action): A* comparePathNodes (f→x→y); entity draw sort
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
+
+- **`WorldOverlayDrawable` variant consistency.** `floating_icon` uses a
+  named `FloatingIconDrawable` type; `floating_text` is an inline anonymous
+  struct. Pure consistency nit — extract a `FloatingTextDrawable` named
+  type if a second text-overlay consumer lands or if the union grows.
 
 - **`RenderContext` backend-derived-value fields are ad hoc.** Two
   precedents now thread a backend-derived value into the pure/raylib-free

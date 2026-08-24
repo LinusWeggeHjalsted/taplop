@@ -47,6 +47,18 @@ fn sign(value: i32) i32 {
     return if (value > 0) 1 else if (value < 0) @as(i32, -1) else 0;
 }
 
+/// Damage-number travel direction: the normalized attacker→defender delta
+/// (one of 8), or top-right `{1, -1}` (same as heals) when the delta is
+/// `{0,0}` — i.e. self-damage (attacker == defender, no direction away from
+/// an attacker exists). The fallback avoids a divide-by-zero NaN in
+/// `view.numberAnimPosition`'s unit-vector math. See AGENTS Animation.
+fn damageNumberDirection(attacker_position: Vector2, defender_position: Vector2) Vector2 {
+    const dx = sign(defender_position.x - attacker_position.x);
+    const dy = sign(defender_position.y - attacker_position.y);
+    if (dx == 0 and dy == 0) return .{ .x = 1, .y = -1 };
+    return .{ .x = dx, .y = dy };
+}
+
 /// Duration of the damage/heal number one-shot anim (matches
 /// `view.number_anim_duration_microseconds`). 500ms.
 const number_anim_duration_microseconds: u32 = 500_000;
@@ -2000,10 +2012,7 @@ pub fn processEvent(
                                 .kind = .{ .damage_number = .{
                                     .entity_index = collision.defender_index,
                                     .value = incoming_damage,
-                                    .direction = .{
-                                        .x = sign(defender.position.x - attacker.position.x),
-                                        .y = sign(defender.position.y - attacker.position.y),
-                                    },
+                                    .direction = damageNumberDirection(attacker.position, defender.position),
                                 } },
                                 .duration_us = number_anim_duration_microseconds,
                             });
@@ -2102,10 +2111,7 @@ pub fn processEvent(
                                 .kind = .{ .damage_number = .{
                                     .entity_index = attack.defender_index,
                                     .value = incoming_damage,
-                                    .direction = .{
-                                        .x = sign(defender.position.x - attacker.position.x),
-                                        .y = sign(defender.position.y - attacker.position.y),
-                                    },
+                                    .direction = damageNumberDirection(attacker.position, defender.position),
                                 } },
                                 .duration_us = number_anim_duration_microseconds,
                             });

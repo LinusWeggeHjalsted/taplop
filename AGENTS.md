@@ -386,13 +386,19 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
     `ensureSpriteBoundsLoaded`, caching the full bbox).
   - **Damage number** (500ms): `damage_number` kind, floats the incoming
     damage value away from the defender's sprite in the normalized
-    attacker→defender direction (one of 8), starting from the bbox edge/corner
-    nearest that direction and traveling 1 tile, eased with
+    attacker→defender direction (one of 8; self-damage where the delta is
+    `(0,0)` falls back to top-right `{1,-1}`, same as heals), starting from
+    the bbox edge/corner nearest that direction and traveling half a tile, eased with
     `tween.easeOutCubic` (fast then slow). The number tracks the entity
     (resolved from the live level each frame, like the skill icon). Tinted
-    with `active_theme.lightest` + a black edge-outline band (the sprite-
-    outline dilation run on an `rl.imageTextEx` raster, cached in
-    `text_outline_cache`). Triggered by the `attack` and `collision`
+    with `active_theme.lightest` + a black edge-outline drawn as an
+    8-direction drop-shadow ring (8 black `DrawTextEx` calls at ±
+    `text_outline_thickness` offset, then the fill on top). This avoids
+    `rl.imageTextEx` (which fails for our TTF font — its CPU-side per-glyph
+    images are degenerate after `loadFontFromMemory`) and GPU render-texture
+    readback (which perturbs the main render target mid-pass). 9 draws per
+    active number per frame; negligible since numbers are rare. Triggered
+    by the `attack` and `collision`
     handlers alongside the hit flash, only when damage is nonzero.
   - **Heal number** (500ms): `heal_number` kind, floats `+value` up-right
     from the entity's top-left bbox corner (heals have no attacker, so the

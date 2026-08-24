@@ -2868,7 +2868,30 @@ Pure refactor — no behavior change to the skill-icon or hit-flash placement.
   `scanOpaqueBounds` guarantees all four edges non-null when it returns
   non-null, so the `.?` unwraps are safe.
 
-### Text outline via the dilation machinery (DONE)
+### Text outline via the dilation machinery (DONE — then REVERTED)
+
+Extended the sprite-outline dilation to floating text so damage/heal numbers
+get a black edge-outline band under the fill. Slice 3 of the damage-number
+feature; no trigger sites wired yet (the `floating_text` drawable is ready
+for slice 4 to emit).
+
+> **Reverted.** The dilation-mask approach was replaced by an 8-direction
+> drop-shadow ring (see the "Damage + heal numbers" entry below). Root
+> cause: `rl.imageTextEx` fails for our TTF font — `LoadFontFromMemory`
+> populates per-glyph CPU `image`s, but `ImageTextEx`'s internal
+> `MeasureTextEx` at `baseSize` returns a degenerate `textSize.y` (~0) for
+> our font, so the resize-to-`fontSize` step scales by ~0 → an invalid
+> (0-width) image. A GPU readback path (`DrawTextEx` to a
+> `RenderTexture2D` → `LoadImageFromTexture` → dilate) was tried next but
+> perturbed the main render target mid-pass (a visible screen flash on each
+> damage event). The 9-draw drop-shadow avoids both issues. The
+> `generateOutlineMask(image, thickness)` parameterization landed here is
+> KEPT (sprite callers use it); only the text-specific `text_outline_cache`/
+> `getTextOutlineTexture`/`ensureTextOutlineLoaded` were removed. A proper
+> programmatic text outline (one dilated mask texture per string) is a
+> deferred TODO — needs a working CPU font raster (custom rasterizer, or
+> fixing why `imageTextEx` mis-measures our font, or pre-rasterizing at
+> load time outside the render pass).
 
 Extended the sprite-outline dilation to floating text so damage/heal numbers
 get a black edge-outline band under the fill. Slice 3 of the damage-number
@@ -2902,7 +2925,8 @@ for slice 4 to emit).
 The third one-shot anim class and the first to move + carry a dynamic text
 payload. Floats the damage/heal value away from the entity's sprite, eased
 with `tween.easeOutCubic` (fast then slow), 1 tile over 500ms, tinted
-`active_theme.lightest` + a black text-outline band (slice 3's machinery).
+`active_theme.lightest` + a black edge-outline (8-direction drop-shadow
+ring — see the reverted slice 3 entry above).
 Reuses the one-shot anim pipeline (`queueAnim` → `frame()` stamps clocks →
 `view()` gates by event-index + time) with two additions: `start_clock` for
 per-entity stagger and `tween.zig` for easing. Slice 4 of the damage-number
@@ -2938,17 +2962,22 @@ feature.
   the sprite (left-going → right edge at anchor; up-going → bottom at
   anchor; pure-vertical → horizontally centered). Font size =
   `ui.tooltip_body_font_size` (56). The number tracks the entity (resolved
-  from the live level each frame, like the skill icon).
-- **Rendering**: `WorldOverlayDrawable.floating_text` (slice 3) — the band
-  (black) then the fill (`drawTextEx`, lightest) at the eased screen
-  position. `font_metrics` threaded into `buildWorldOverlays` to measure
-  text width for centering/offset.
+  from the live level each frame, like the skill icon). Travel distance is
+  half a tile (`number_travel_tiles = 0.5`); font size is `number_font_size`
+  (112, ~2× the tooltip body, independently tunable).
+- **Rendering**: `WorldOverlayDrawable.floating_text` (slice 3) — an
+  8-direction black drop-shadow ring (8 `DrawTextEx` calls at ±
+  `text_outline_thickness` offset) then the fill (`drawTextEx`, lightest) at
+  the eased screen position. `font_metrics` threaded into
+  `buildWorldOverlays` to measure text width for centering/offset.
 - **Triggers** (`event_handlers.zig`): `attack` and `collision` queue a
   `damage_number` (carrying `incoming_damage` + `sign(defender - attacker)`
   direction) alongside the hit flash, inside `if (incoming_damage > 0)`;
   `heal` queues a `heal_number` (carrying the APPLIED amount, so a full-
   health heal shows nothing). All gated `!replaying`. New file-private
-  `sign` helper + `number_anim_duration_microseconds` constant (matches
+  `sign` + `damageNumberDirection` helpers (the latter falls back to
+  top-right `{1,-1}` for self-damage where the attacker→defender delta is
+  `(0,0)`, avoiding a divide-by-zero NaN in the unit-vector math) + `number_anim_duration_microseconds` constant (matches
   `view.number_anim_duration_microseconds`).
 - **Replay safety** holds by construction: the anim is a `SessionState` side
   effect gated `!replaying`; the clock read + stagger math stay in `frame()`;
