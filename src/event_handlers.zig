@@ -2482,9 +2482,27 @@ pub fn processEvent(
                     const entity_a = getLevelEntity(current, swap.entity_a_index);
                     const entity_b = getLevelEntity(current, swap.entity_b_index);
                     if (entity_a.current_health == 0 or entity_b.current_health == 0) return;
-                    const temp = entity_a.position;
-                    entity_a.position = entity_b.position;
-                    entity_b.position = temp;
+                    // Capture both positions before either move, then reuse
+                    // `move_entity` for both legs so all post-move events
+                    // (sound, momentum, pickup, aggro, level-end) fire
+                    // uniformly. `is_forced`: a swap is a magical teleport,
+                    // not a voluntary walk. LIFO: entity_b moves first (to
+                    // pos_a), then entity_a (to pos_b). See AGENTS →
+                    // Architecture.
+                    const pos_a = entity_a.position;
+                    const pos_b = entity_b.position;
+                    pushEvents(current, &.{
+                        .{ .level_event = .{ .move_entity = .{
+                            .entity_index = swap.entity_a_index,
+                            .destination = pos_b,
+                            .is_forced = true,
+                        } } },
+                        .{ .level_event = .{ .move_entity = .{
+                            .entity_index = swap.entity_b_index,
+                            .destination = pos_a,
+                            .is_forced = true,
+                        } } },
+                    }, allocator);
                 },
                 .aggro_in_radius => |aggro| {
                     const level = &current.level.?;
