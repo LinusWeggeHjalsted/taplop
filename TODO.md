@@ -542,6 +542,14 @@ Already total (no action): A* comparePathNodes (f→x→y); entity draw sort
 
 Done items in DONE.md. Open:
 
+- **`RenderContext` backend-derived-value fields are ad hoc.** Two
+  precedents now thread a backend-derived value into the pure/raylib-free
+  `view()`: `font_metrics` (a value struct) and `sprite_top_y` (a
+  frame-arena `StringHashMap`). Different shapes, both fine on their own.
+  If a third backend-derived value lands, the `RenderContext` struct starts
+  reading like a grab bag — consider a small "backend-provided context"
+  sub-struct or a named bundle instead of another top-level field. No
+  action now; flag for the next time one is added.
 - **Split `parser.zig`** (4400+ lines) along its natural seams:
   `config_parser.zig` (the generic format layer: Section/EntryGroup/
   KeyValuePair types, parseConfigFile, findSection/findValue, asBool/asU32/
