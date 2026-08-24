@@ -145,6 +145,22 @@ pub const SessionState = struct {
     /// See AGENTS → Audio.
     pending_sounds: std.ArrayListUnmanaged(types.SoundId) = .empty,
 
+    /// Pending one-shot anims queued by event handlers (gated `!replaying`)
+    /// during a frame. `frame()` drains this after the update drain, stamps
+    /// `end_clock = animation_clock + duration_us`, and appends to
+    /// `active_anims`. Mirrors `pending_sounds` (see AGENTS → Audio /
+    /// Animation). Backed by `backing_allocator` (cleared each frame).
+    pending_anims: std.ArrayListUnmanaged(types.PendingAnim) = .empty,
+
+    /// Active one-shot anims. `view()` filters this each frame (event_index
+    /// < current_event_index AND animation_clock < end_clock) — no explicit
+    /// removal of elapsed/undone entries. Cleared on screen/world transition
+    /// (an anim is out of scope once the world it belonged to is gone).
+    /// Grows unbounded within a screen (accepted, same tradeoff as
+    /// `event_history`); bounded in practice by short durations + the
+    /// transition clear. See AGENTS → Animation.
+    active_anims: std.ArrayListUnmanaged(types.ActiveAnim) = .empty,
+
     /// The button currently under a press (the `Action` it carries), for the
     /// press-then-release click model: the action fires on release over the
     /// SAME button, drag-off cancels. Null when no button is pressed. Off the
@@ -223,6 +239,41 @@ pub const SessionState = struct {
         const sounds = self.pending_sounds.items;
         self.pending_sounds.items.len = 0;
         return sounds;
+    }
+
+    /// Append a pending one-shot anim. Callers gate on `!history.replaying`
+    /// (same convention as `queueSound`). `allocator` is
+    /// `history.backing_allocator`. See AGENTS → Animation.
+    pub fn queueAnim(
+        self: *SessionState,
+        allocator: std.mem.Allocator,
+        anim: types.PendingAnim,
+    ) void {
+        self.pending_anims.append(allocator, anim) catch
+            @panic("failed to queue anim");
+    }
+
+    /// Drain and return the pending anims slice. The caller stamps
+    /// `end_clock` and moves entries into `active_anims`; the queue length is
+    /// reset to 0 (capacity retained) without memset, like
+    /// `drainPendingSounds` — the backing bytes stay valid until the next
+    /// `append` overwrites them. See AGENTS → Animation.
+    pub fn drainPendingAnims(
+        self: *SessionState,
+    ) []const types.PendingAnim {
+        const anims = self.pending_anims.items;
+        self.pending_anims.items.len = 0;
+        return anims;
+    }
+
+    /// Clear all active + pending anims. Called on screen/world transition
+    /// (an anim belongs to the world it was triggered in; a level-to-level
+    /// or hub-to-level change invalidates it). See AGENTS → Animation.
+    pub fn clearAnims(
+        self: *SessionState,
+    ) void {
+        self.active_anims.clearRetainingCapacity();
+        self.pending_anims.clearRetainingCapacity();
     }
 
     /// Mark a debounced write as dirty. If a write with the same tag is

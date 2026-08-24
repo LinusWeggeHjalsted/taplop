@@ -1033,6 +1033,59 @@ pub const GroundDrawable = union(enum) {
     level_end: LevelEndDrawable,
 };
 
+// -- Layer 3.5: World overlays (floating indicators above world sprites) --
+
+/// A one-shot sprite animation tied to a gameplay moment (see AGENTS →
+/// Animation). `event_index` is the index of the triggering event in
+/// `event_history` (stored as `current_event_index - 1` at push time, since
+/// `processEvent` increments before dispatch). `duration_us` is the display
+/// duration in microseconds; `frame()` stamps `end_clock` when it moves the
+/// anim from the pending queue to the active list. The kind carries the
+/// payload `view()` needs to place and draw it.
+pub const AnimKind = union(enum) {
+    /// Show a skill's icon above the casting entity for `duration_us`.
+    skill_icon: struct { entity_index: u32, skill_id: SkillId },
+};
+
+/// A pending one-shot anim pushed by an event handler (gated `!replaying`,
+/// same convention as `pending_sounds`). `frame()` drains the pending queue
+/// after the update drain, stamps `end_clock = animation_clock + duration_us`,
+/// and appends to `active_anims`. See AGENTS → Animation / Audio.
+pub const PendingAnim = struct {
+    event_index: u32,
+    kind: AnimKind,
+    duration_us: u32,
+};
+
+/// An active one-shot anim. `view()` shows it when `event_index <
+/// current_event_index` (the triggering event is in the projected history —
+/// same exclusive bound the combat log uses, so undo hides it) AND
+/// `animation_clock < end_clock` (not yet elapsed). No explicit clearing:
+/// elapsed anims are gated out by time, undone anims by index; a screen/world
+/// transition clears the whole list (see AGENTS → Animation).
+pub const ActiveAnim = struct {
+    event_index: u32,
+    kind: AnimKind,
+    end_clock: u64,
+};
+
+/// A floating icon drawn above world sprites, after ground drawables and
+/// before the UI. The `screen_position` is the top-left in reference world
+/// space (camera + zoom already applied); the renderer scales `size` by
+/// `world_scale`.
+pub const FloatingIconDrawable = struct {
+    sprite_id: []const u8,
+    screen_position: ScreenPosition,
+    /// Square edge length in reference-world pixels; multiplied by
+    /// `world_scale` at draw time.
+    size: i32,
+    color: Color,
+};
+
+pub const WorldOverlayDrawable = union(enum) {
+    floating_icon: FloatingIconDrawable,
+};
+
 // -- Layer 4+5: UI elements --
 // UI is a flat list of UiElement from ui.zig, sorted back to front.
 // The view function builds and flattens the full UI layout.
@@ -1051,6 +1104,10 @@ pub const ViewState = struct {
     tiles: []const TileDrawable,
     tile_overlays: []const TileOverlayDrawable,
     ground_drawables: []const GroundDrawable,
+    /// Floating indicators (one-shot anims) drawn above world sprites, after
+    /// ground drawables and before the UI. Built per-frame from
+    /// `session.active_anims`; see AGENTS → Animation.
+    world_overlays: []const WorldOverlayDrawable,
     ui_elements: []const @import("ui.zig").UiElement,
     /// Chronological combat-log projection of the current level's events up to
     /// the current position (empty outside a level). Built per-frame in the

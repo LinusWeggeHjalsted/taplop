@@ -137,11 +137,17 @@ Open / in-progress:
   - [x] Flag banner: `world/flag` (8 frames × 256×512) drawn over the pole
         via `LevelEndDrawable.banner_source_rectangle`, frame from the clock.
         Used for both level-end + hub mission-start markers.
-  - [ ] One-shot anims (attack swings, hit flashes, death dissolves): trigger
-        in the LIVE DRAIN (gated `!replaying`), not event handlers (handlers
-        reading the clock would break replay purity — see AGENTS → Animation).
-        `SessionState.active_anims` + `current_event_index` gating (undo
-        suppresses, redo doesn't re-show stale). Lands with the first one-shot.
+  - [~] One-shot anims (attack swings, hit flashes, death dissolves):
+        trigger in EVENT HANDLERS via `session.queueAnim` (gated `!replaying`,
+        same shape as `queueSound`); `frame()` stamps `end_clock` from the
+        live clock; `view()` gates by `event_index < current_event_index` AND
+        `animation_clock < end_clock`; screen/world transition clears via
+        `session.clearAnims()`. See AGENTS → Animation. First case LANDED:
+        skill-icon pop above the caster on `use_skill` (500ms, single-frame),
+        placed above the entity's actual art top (runtime topmost-opaque-pixel
+        scan, same lazy-cache shape as the outline-mask cache).
+    - [ ] Future: attack swings, hit flashes, death dissolves (multi-frame
+          one-shots; same machinery, richer `AnimKind`).
   - Per-sheet frame data (count, frame size) hardcoded per builder for now
     (flag is the only animation); general per-sprite metadata table is the
     "Sprite asset metadata" item below.

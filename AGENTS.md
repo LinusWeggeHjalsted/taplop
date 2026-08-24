@@ -342,19 +342,31 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
   pole) is drawn over `world/flag_pole` at the same screen position via
   `LevelEndDrawable.banner_source_rectangle`. Used for both level-end and hub
   mission-start markers.
-- **One-shot anims** (future — attack swings, hit flashes, death dissolves):
-  the trigger lives in the **live drain** (`frame()`/`update()`, gated on
-  `!history.replaying`), NOT in event handlers. After `processEvent` runs an
-  attack during live forward play, the drain appends a descriptor to
-  `SessionState.active_anims` (`{event_index, kind, end_clock}`). `view()`
-  shows anims whose `event_index <= current_event_index` AND
-  `animation_clock < end_clock` — the same `current_event_index` truncation
-  the combat log uses. Undo lowers `current_event_index` → the undone anim
-  vanishes (not removed, just gated out). Redo raises it → a stale anim's
-  `end_clock` is in the past → not re-shown. No explicit clearing, no
-  coupling undo into SessionState.
+- **One-shot anims** (attack swings, hit flashes, death dissolves; the
+  first landed case is a skill-icon pop above the caster): the trigger lives
+  in **event handlers** — exactly where one-shot sounds live (see Audio). A
+  handler calls `session.queueAnim(allocator, PendingAnim{ event_index,
+  kind, duration_us })` gated `!history.replaying`, right next to its
+  `queueSound` call. `frame()` drains `session.pending_anims` after the update
+  drain (alongside `drainPendingSounds`), stamps `end_clock =
+  animation_clock + duration_us` from the LIVE clock, and appends to
+  `session.active_anims`. `view()` shows anims whose `event_index <
+  current_event_index` (the triggering event is in the projected history —
+  same exclusive bound the combat log uses, so undo hides it) AND
+  `animation_clock < end_clock` (not yet elapsed). Undo lowers
+  `current_event_index` → the undone anim vanishes (gated out, not removed).
+  Redo raises it → a stale anim's `end_clock` is in the past → not re-shown.
+  A screen/world transition clears `active_anims` + `pending_anims` (an anim
+  belongs to the world it was triggered in; a level-to-level or
+  hub-to-level change invalidates it) via `session.clearAnims()`, in the same
+  live-loop reset block that clears `ui_state`/`tile_cursor`/`camera_pan`.
+  Later-pushed anims append later → draw later → stack on top (the most
+  recent skill use reads on top). No explicit removal of elapsed entries;
+  `active_anims` grows unbounded within a screen (accepted, same tradeoff as
+  `event_history`) and is bounded in practice by short durations + the
+  transition clear.
 
-### The replay-purity invariant (why handlers don't read the clock)
+### The replay-purity invariant (why the clock is read in `frame()`, not handlers)
 
 **Event handlers must not read `animation_clock` (or any wall-clock time).**
 `verifyReplayMatch` (state.zig) compares *events* — the stack-top event about
@@ -367,10 +379,19 @@ would be **impure** (its output would depend on wall-clock time, not just
 Also, the clock is on `SessionState` (off the snapshot timeline), so during
 replay it holds the undo-time value, not the original-fire-time value → the
 anim would re-play on undo (the behavior we explicitly don't want) and be
-nondeterministic. The one-shot design above keeps handlers pure by moving the
-trigger out of handlers and into the live drain (which never runs during
-replay — undo/redo go through `restoreTo` → `replayTo` with `replaying=true`,
-calling `processEvent` directly, never the drain).
+nondeterministic. The one-shot design keeps handlers pure by splitting the
+trigger from the clock read: the handler pushes a `PendingAnim` carrying
+only `{event_index, kind, duration_us}` (a pure side effect gated
+`!replaying`, same shape as `queueSound` — it touches `SessionState`, never
+`GameState`), and `frame()` is the ONE place that reads the live
+`animation_clock` to stamp `end_clock`. So handlers never touch wall-clock,
+the invariant stays a bright line, and the `!replaying` gate at the push
+site is what prevents re-fire on undo/redo (replay queues nothing). This
+mirrors Audio exactly: `queueSound` pushes a side effect gated `!replaying`;
+`queueAnim` does the same with a richer payload. The only anim-specific
+machinery is the `end_clock` stamp (the irreducible cost of being temporal —
+a sound is done at push, an anim has to stay visible for a duration and
+react to timeline scrubbing) and the `view()` event-index/time gating.
 
 ### The animation clock
 

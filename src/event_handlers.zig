@@ -1646,6 +1646,19 @@ pub fn processEvent(
                                 .spell, .cantrip, .enchantment, .curse => .spell,
                             };
                             history.session.queueSound(history.backing_allocator, cast_sound);
+                            // One-shot anim: show the skill's icon above the
+                            // caster for 500ms. `current_event_index - 1` is
+                            // this `use_skill` event's index (processEvent
+                            // increments before dispatch). See AGENTS →
+                            // Animation.
+                            history.session.queueAnim(history.backing_allocator, .{
+                                .event_index = history.current_event_index - 1,
+                                .kind = .{ .skill_icon = .{
+                                    .entity_index = use.caster_index,
+                                    .skill_id = use.skill_id,
+                                } },
+                                .duration_us = 500_000,
+                            });
                         }
                         // Push the skill's events
                         const skill_events = skill_definition.useSkill(

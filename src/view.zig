@@ -43,6 +43,16 @@ pub const RenderContext = struct {
     /// Extracted from the loaded raylib `Font` by the backend; raylib-free
     /// value type so it threads through the headless-tested `view()` path.
     font_metrics: ui.FontMetrics,
+    /// Per-frame lookup of entity-sprite top-y: bare sprite stem (e.g.
+    /// `skeleton_1`) -> y-coordinate (0-based from the top, in SOURCE pixels)
+    /// of the topmost non-transparent pixel, or null if the sprite can't be
+    /// loaded/decoded. Built by `frame()` by querying the backend (which
+    /// lazily decodes + caches — same shape as the outline-mask cache) for
+    /// each entity in the current world. Used by `view()` to place floating
+    /// indicators just above an entity's actual art top rather than the
+    /// 512x640 frame edge. Frame-arena-backed (no deinit). See AGENTS →
+    /// Animation.
+    sprite_top_y: std.StringHashMapUnmanaged(?i32),
 };
 
 pub fn view(
@@ -135,6 +145,18 @@ pub fn view(
         ground_drawables.append(frame_allocator, entry.drawable) catch
             @panic("failed to append ground drawable");
     }
+
+    // World overlays: one-shot anims (skill icons, etc.) drawn above ground
+    // sprites. Built from `session.active_anims`; see AGENTS → Animation.
+    const world_overlays = buildWorldOverlays(
+        frame_allocator,
+        session,
+        current_state,
+        camera,
+        camera_zoom,
+        current_event_index,
+        render.sprite_top_y,
+    );
 
     var ui_elements: std.ArrayList(ui.UiElement) = .empty;
 
@@ -241,6 +263,7 @@ pub fn view(
         .tiles = tiles.items,
         .tile_overlays = tile_overlays.items,
         .ground_drawables = ground_drawables.items,
+        .world_overlays = world_overlays,
         .ui_elements = ui_elements.items,
         .combat_log = projected_log,
     };
@@ -313,6 +336,14 @@ const entity_frame_width: f32 = 512.0;
 const entity_frame_height: f32 = 640.0;
 const entity_pivot_x: f32 = 0.5;
 const entity_pivot_y: f32 = 0.8;
+
+/// One-shot skill-icon anim: square edge in native reference pixels (the
+/// renderer multiplies by `world_scale`, matching tiles/entities), and the
+/// gap above the entity's actual art top (found at runtime from the sprite's
+/// topmost non-transparent pixel — see `RenderContext.sprite_top_y`). Tunable
+/// — eyeball in `zig build run`. See AGENTS → Animation.
+const skill_icon_size_native: i32 = 256;
+const skill_icon_gap_native: i32 = 16;
 
 /// Ground-items sprite: `world/ground_items.png` (256x256, centered pivot
 /// 0.5/0.5). Tinted at world gradient index 5 (a fixed color independent of
@@ -405,6 +436,89 @@ fn groundItemsDrawable(
     };
 }
 
+/// Top-left of an entity's 512x640 frame in reference-resolution space,
+/// aligning the shared pivot (0.5, 0.8) to the center of the entity's tile.
+/// Shared by `entityDrawable` (body + weapons + layers register here) and
+/// the world-overlay builder (floating icons place above this point).
+fn entityFrameTopLeft(entity: *const Entity, camera: types.Camera, zoom: f32) types.ScreenPosition {
+    const tile_top_left = tileToScreen(entity.position, camera, zoom);
+    const tile_pixels = input.tile_size_pixels * zoom;
+    const center_x = @as(f32, @floatFromInt(tile_top_left.x)) + tile_pixels / 2;
+    const center_y = @as(f32, @floatFromInt(tile_top_left.y)) + tile_pixels / 2;
+    const draw_width = entity_frame_width * zoom;
+    const draw_height = entity_frame_height * zoom;
+    return .{
+        .x = @intFromFloat(@round(center_x - entity_pivot_x * draw_width)),
+        .y = @intFromFloat(@round(center_y - entity_pivot_y * draw_height)),
+    };
+}
+
+/// Build the world-overlay list from `session.active_anims`. An anim shows
+/// when its triggering event is in the projected history (`event_index <
+/// current_event_index` — same exclusive bound the combat log uses, so undo
+/// hides it) AND it hasn't elapsed (`animation_clock < end_clock`). Skill
+/// icons track the entity (resolved from the CURRENT level each frame) and
+/// skip dead entities; a screen/world transition clears the list, so an anim
+/// never outlives its level. Later-pushed anims append later → draw later →
+/// stack on top (the most recent skill use reads on top). See AGENTS →
+/// Animation.
+fn buildWorldOverlays(
+    allocator: std.mem.Allocator,
+    session: *state.SessionState,
+    current_state: *const GameState,
+    camera: types.Camera,
+    zoom: f32,
+    current_event_index: u32,
+    sprite_top_y: std.StringHashMapUnmanaged(?i32),
+) []const types.WorldOverlayDrawable {
+    const level = current_state.level orelse return &.{};
+    var overlays: std.ArrayList(types.WorldOverlayDrawable) = .empty;
+    for (session.active_anims.items) |anim| {
+        if (anim.event_index >= current_event_index) continue;
+        if (session.animation_clock >= anim.end_clock) continue;
+        switch (anim.kind) {
+            .skill_icon => |info| {
+                if (info.entity_index >= level.entities.len) continue;
+                const entity = &level.entities[info.entity_index];
+                if (entity.current_health == 0) continue;
+
+                const top_left = entityFrameTopLeft(entity, camera, zoom);
+                const draw_width = entity_frame_width * zoom;
+                const draw_height = entity_frame_height * zoom;
+                const drawn_size: f32 = @as(f32, @floatFromInt(skill_icon_size_native)) * zoom;
+                const gap: f32 = @as(f32, @floatFromInt(skill_icon_gap_native)) * zoom;
+                const icon_x = @as(f32, @floatFromInt(top_left.x)) + draw_width / 2 - drawn_size / 2;
+                // Place the icon just above the entity's actual art top, not
+                // the 512x640 frame edge: map the sprite's topmost
+                // non-transparent pixel (source space) into drawn space. Falls
+                // back to the frame top if the sprite can't be scanned (e.g.
+                // missing art). See AGENTS → Animation.
+                const art_top_y: f32 = if (sprite_top_y.get(entity.sprite)) |maybe_top_y|
+                    if (maybe_top_y) |top_y|
+                        @as(f32, @floatFromInt(top_left.y)) +
+                            (@as(f32, @floatFromInt(top_y)) / entity_frame_height) * draw_height
+                    else
+                        @as(f32, @floatFromInt(top_left.y))
+                else
+                    @as(f32, @floatFromInt(top_left.y));
+                const icon_y = art_top_y - drawn_size - gap;
+                const sprite_id = std.fmt.allocPrint(allocator, "skills/{s}", .{@tagName(info.skill_id)}) catch
+                    @panic("failed to build skill-icon sprite id");
+                overlays.append(allocator, .{ .floating_icon = .{
+                    .sprite_id = sprite_id,
+                    .screen_position = .{
+                        .x = @intFromFloat(@round(icon_x)),
+                        .y = @intFromFloat(@round(icon_y)),
+                    },
+                    .size = skill_icon_size_native,
+                    .color = .{ .r = 255, .g = 255, .b = 255 },
+                } }) catch @panic("failed to append world overlay");
+            },
+        }
+    }
+    return overlays.items;
+}
+
 /// Build an EntityDrawable for `entity`, aligning the shared sprite pivot to
 /// the center of the entity's tile. Populates the base sprite, body overlay
 /// layers, and weapons; gear/effect sprites and the health bar are not wired.
@@ -416,18 +530,7 @@ fn entityDrawable(
     zoom: f32,
     allocator: std.mem.Allocator,
 ) types.EntityDrawable {
-    const tile_top_left = tileToScreen(entity.position, camera, zoom);
-    const tile_pixels = input.tile_size_pixels * zoom;
-    const center_x = @as(f32, @floatFromInt(tile_top_left.x)) + tile_pixels / 2;
-    const center_y = @as(f32, @floatFromInt(tile_top_left.y)) + tile_pixels / 2;
-    const draw_width = entity_frame_width * zoom;
-    const draw_height = entity_frame_height * zoom;
-    // Body and every weapon overlay share this pivot-aligned top-left, so they
-    // register with no per-sprite offset (same 512x640 frame + pivot).
-    const top_left = types.ScreenPosition{
-        .x = @intFromFloat(@round(center_x - entity_pivot_x * draw_width)),
-        .y = @intFromFloat(@round(center_y - entity_pivot_y * draw_height)),
-    };
+    const top_left = entityFrameTopLeft(entity, camera, zoom);
     const base_sprite_id = std.fmt.allocPrint(allocator, "entities/{s}", .{entity.sprite}) catch
         @panic("failed to build entity sprite id");
 

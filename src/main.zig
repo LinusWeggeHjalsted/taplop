@@ -308,6 +308,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             history.session.camera_pan = null;
             history.session.camera_pan_anchor = null;
             history.session.pressed_button = null;
+            history.session.clearAnims();
         }
 
         if (had_events and !has_events) {
@@ -341,6 +342,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             history.session.camera_pan = null;
             history.session.camera_pan_anchor = null;
             history.session.pressed_button = null;
+            history.session.clearAnims();
         }
         // An anytime action (e.g. swap_weapons) can push events onto the
         // empty stack and process them within this one update() call. If
@@ -367,6 +369,20 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const pending_sounds = history.session.drainPendingSounds();
     if (pending_sounds.len > 0) {
         backend.playSounds(pending_sounds, history.settings);
+    }
+
+    // Drain queued one-shot anims: stamp `end_clock` from the live animation
+    // clock and move them into `active_anims`, where `view()` gates them by
+    // event index + time. Handlers push gated `!replaying` (same as sounds);
+    // the clock is read HERE, not in handlers, so the replay-purity invariant
+    // holds (handlers never touch wall-clock). See AGENTS → Animation.
+    const pending_anims = history.session.drainPendingAnims();
+    for (pending_anims) |anim| {
+        history.session.active_anims.append(history.backing_allocator, .{
+            .event_index = anim.event_index,
+            .kind = anim.kind,
+            .end_clock = history.session.animation_clock + anim.duration_us,
+        }) catch @panic("failed to activate anim");
     }
 
     // Player-move recenter: if the player's tile changed this frame (a move
@@ -427,6 +443,35 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // here so render never lags the state by a frame.
         const render_camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
         _ = frame_state.frame_arena.reset(.retain_capacity);
+        // Per-frame lookup of entity-sprite top-y (topmost non-transparent
+        // pixel), so `view()` can place floating indicators above the actual
+        // art top. Built here (not in `view()`) because `view()` is pure /
+        // raylib-free — the backend owns the decode + cache (same shape as
+        // the outline-mask cache). Keyed by bare sprite stem; `view()` looks
+        // up `entity.sprite`. Frame-arena-backed (no deinit). See AGENTS →
+        // Animation.
+        var sprite_top_y: std.StringHashMapUnmanaged(?i32) = .{};
+        const frame_alloc = frame_state.frame_arena.allocator();
+        if (history.current_state.level) |*level| {
+            for (level.entities) |*entity| {
+                if (sprite_top_y.contains(entity.sprite)) continue;
+                const top_y = backend.entitySpriteTopY(frame_alloc, entity.sprite);
+                sprite_top_y.put(frame_alloc, entity.sprite, top_y) catch
+                    @panic("failed to populate sprite_top_y");
+            }
+        } else if (history.current_state.hub) |*hub| {
+            const hub_entity_count = 1 + hub.npcs.len;
+            const hub_entity_ptrs = frame_alloc.alloc(*const types.Entity, hub_entity_count) catch
+                @panic("failed to alloc hub entity pointer slice");
+            hub_entity_ptrs[0] = &hub.player;
+            for (hub.npcs, 0..) |*npc, index| hub_entity_ptrs[index + 1] = &npc.entity;
+            for (hub_entity_ptrs) |entity| {
+                if (sprite_top_y.contains(entity.sprite)) continue;
+                const top_y = backend.entitySpriteTopY(frame_alloc, entity.sprite);
+                sprite_top_y.put(frame_alloc, entity.sprite, top_y) catch
+                    @panic("failed to populate sprite_top_y");
+            }
+        }
         frame_state.previous_view_state = view_mod.view(
             &history.current_state,
             &history.session,
@@ -439,8 +484,9 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
                 .event_history = history.event_history.items,
                 .level_start_index = history.levelStartEventIndex(),
                 .current_event_index = history.current_event_index,
-                .frame_allocator = frame_state.frame_arena.allocator(),
+                .frame_allocator = frame_alloc,
                 .font_metrics = backend.fontMetrics(),
+                .sprite_top_y = sprite_top_y,
             },
         );
         backend.render(frame_state.previous_view_state.?, platform_input.viewport);
@@ -503,6 +549,8 @@ pub fn run(
     // Runs before the arena deinit. See AGENTS → Input.
     defer setup.frame_state.history.session.flushPendingWrites(&setup.frame_state.history);
     defer setup.frame_state.history.session.pending_sounds.deinit(setup.frame_state.history.backing_allocator);
+    defer setup.frame_state.history.session.pending_anims.deinit(setup.frame_state.history.backing_allocator);
+    defer setup.frame_state.history.session.active_anims.deinit(setup.frame_state.history.backing_allocator);
     gameLoop(backend, &setup.frame_state);
 }
 

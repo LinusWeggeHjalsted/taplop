@@ -2641,3 +2641,111 @@ end-state screens.
 `LoadSoundFromWave`'s format conversion targets a stale device state and
 sounds silently never play (no error, no log). `initAudio` order: open device
 → load+start music → load sfx. Documented in AGENTS → Audio.
+
+## Animation
+
+### One-shot anim infrastructure + skill-icon pop (DONE)
+
+First one-shot animation, establishing the one-shot machinery. Design converges
+with Audio (AGENTS → Animation): the trigger lives in EVENT HANDLERS via
+`session.queueAnim` (gated `!replaying`, same shape as `queueSound`), NOT in
+the live drain as the original design had it. `frame()` drains
+`session.pending_anims` after the update drain (alongside `drainPendingSounds`),
+stamps `end_clock = animation_clock + duration_us` from the LIVE clock, and
+appends to `session.active_anims`. This keeps the replay-purity invariant a
+bright line — handlers never read `animation_clock`; the clock is read in
+exactly one place (`frame()`). The `!replaying` gate at the push site is what
+prevents re-fire on undo/redo (replay queues nothing). The only anim-specific
+machinery vs. Audio is the `end_clock` stamp (a sound is done at push; an anim
+is temporal) and the `view()` event-index + time gating.
+
+- **Types (types.zig):** `AnimKind` union (first variant `skill_icon{entity_index,
+  skill_id}`), `PendingAnim{event_index, kind, duration_us}`, `ActiveAnim{
+  event_index, kind, end_clock}`, `FloatingIconDrawable{sprite_id,
+  screen_position, size, color}`, `WorldOverlayDrawable` union. `ViewState`
+  gained `world_overlays: []const WorldOverlayDrawable` (new layer 3.5 — drawn
+  after ground drawables, before UI; does NOT participate in the ground y-sort).
+- **SessionState (state.zig):** `pending_anims` + `active_anims`
+  (ArrayListUnmanaged, backing_allocator-backed) mirroring `pending_sounds`;
+  `queueAnim`/`drainPendingAnims` (same no-memset drain as sounds) +
+  `clearAnims` (transition reset). Deinit wired in `main.run` defer.
+- **Push site (event_handlers.zig, `use_skill`):** right next to the existing
+  `queueSound`, same `!replaying` gate, `event_index = current_event_index - 1`
+  (processEvent increments before dispatch, so this is the `use_skill` event's
+  index), `duration_us = 500_000`, kind `skill_icon{caster_index, skill_id}`.
+  Applies to ALL entities (player + enemy) — enemy casts show their icon too
+  (informative; enemies can't overlap themselves, 0.5s wait between actions).
+- **`frame()` (main.zig):** drains pending anims → stamps `end_clock` → appends
+  to `active_anims`, right after the sounds drain. Both screen/world-transition
+  reset blocks (drain branch + idle branch) call `session.clearAnims()` so an
+  anim never outlives its level/hub (level-to-level, hub-to-level, etc.).
+- **`view()` (view.zig):** `buildWorldOverlays` filters `active_anims` by
+  `event_index < current_event_index` (exclusive bound, matching the combat
+  log's `event_history[0..current_event_index]` — so undo hides the anim
+  exactly when its event leaves the projected history) AND
+  `animation_clock < end_clock` (not elapsed). Skill icons track the entity
+  (resolved from the CURRENT level each frame — if the entity moves during the
+  500ms the icon follows), skip dead entities (`current_health == 0`) and
+  out-of-range indices. Position: centered horizontally over the entity's
+  512×640 frame, above the frame top by a fixed native gap
+  (`skill_icon_gap_native`). `entityFrameTopLeft` extracted from `entityDrawable`
+  so the icon and the body share one pivot-aligned-top-left computation.
+  Later-pushed anims append later → draw later → stack on top (most recent
+  skill use on top).
+- **Renderer (raylib_backend.zig):** `drawWorldOverlay` draws a floating icon
+  as a square (`size * world_scale`) via `drawTexturePro`, full-texture source,
+  tinted. Rendered in the world layer loop after ground drawables, before UI.
+  White tint for now (raw icon art); tune later.
+- **Gating semantics:** `event_index < current_event_index` (NOT `<=`) matches
+  the combat log's exclusive upper bound. The AGENTS design text said `<=`
+  loosely; the precise version stores the actual triggering event's index and
+  gates with `<`.
+- **Deferred (TODO):** replace the fixed head-gap with the topmost
+  non-transparent pixel of the entity's rendered sprite (runtime scan), so the
+  icon sits just above the actual art regardless of sprite. Future one-shots
+  (attack swings, hit flashes, death dissolves) reuse the machinery with
+  richer `AnimKind` variants + multi-frame source rects.
+
+### Skill-icon placement via runtime topmost-pixel scan (DONE)
+
+Replaced the fixed head-gap (`icon_y = frame_top - size - gap`) with the
+entity's actual art top: the y-coordinate of the topmost non-transparent pixel
+of the entity's sprite, found at runtime. Same lazy-decode-and-cache shape as
+the edge-outline mask cache (`outline_cache` in raylib_backend.zig):
+
+- **Backend (`raylib_backend.zig`):** `sprite_top_y_cache:
+  StringHashMapUnmanaged(?i32)` (sprite_id -> topmost-opaque y, or null on
+  miss/failure). `getSpriteTopY(sprite_id)` lazily populates via
+  `ensureSpriteTopYLoaded` (re-reads bytes, `loadImageFromMemory`,
+  `loadImageColors`, scans top-down for the first pixel with alpha > 16 — same
+  threshold as the outline mask). `entitySpriteTopY(allocator, bare_stem)`
+  prefixes `entities/` so callers don't know the asset-path format. Cache
+  deinits alongside `outline_cache`. Caches null on miss (caller falls back to
+  the frame top).
+- **Seam (view.zig `RenderContext`):** `sprite_top_y:
+  std.StringHashMapUnmanaged(?i32)` keyed by bare sprite stem. Built by
+  `frame()` (the one place with backend access) by querying the backend for
+  each entity in the current world (level entities OR hub player + NPCs), into
+  the frame arena. `view()` stays pure / raylib-free — it just reads the map.
+  Mirrors the `FontMetrics` precedent (backend-derived value precomputed in
+  `frame()`, passed into `view()`), not a callback — because `main.zig` is
+  raylib-free and can't import the backend, and method-pointer-via-`anytype`
+  doesn't bind cleanly in Zig 0.16. The map is tiny (~one entry per distinct
+  entity sprite) and the backend cache makes per-sprite cost zero after first
+  load.
+- **Placement (view.zig `buildWorldOverlays`):** `art_top_y = top_left.y +
+  (top_y / entity_frame_height) * draw_height` (maps the source-space topmost
+  pixel into the drawn, zoomed frame), then `icon_y = art_top_y - size - gap`.
+  Falls back to the frame top (`top_left.y`) if the sprite isn't in the map or
+  returned null (e.g. missing art). The small `skill_icon_gap_native` (16px)
+  stays as the gap above the art top.
+- **Icon size doubled** (`skill_icon_size_native` 128 -> 256) per playtesting.
+
+Why a runtime scan over a build-time comptime table: `view()` is pure (no
+I/O), so the value must be available without reading files at render time. A
+build-time table (like `generated_sprite_metadata.zig` dims) would need a full
+PNG decode (zlib inflate + unfilter) in `build.zig` — notably more build-step
+code than the IHDR-only dims scan — and couldn't serve custom runtime sprites.
+The runtime lazy-cache handles any sprite the backend can load (shipped or
+custom), uniform with the outline-mask precedent, at the cost of one decode
+per sprite on first request (amortized by the cache).
