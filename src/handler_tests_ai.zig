@@ -1,8 +1,7 @@
 //! Tier 3 handler tests — AI + determinism. `enemy_turn_move` (nearest-target
 //! tiebreak, min-range hold, reachable-tile fallback tiebreak), `enemy_turn_
 //! attack` (non-turn-ending-first by priority, then turn-ending; cooldown
-//! skip), `aggro_around` (radius activation + level-end coupling),
-//! `pickup_around` (pure check → pushes pickup_items per in-range stack).
+//! skip), `aggro_check` (self-centric radius activation), `pickup_around` (pure check → pushes pickup_items per in-range stack).
 //! See TODO → Tech debt (handler coverage), AGENTS → Determinism & Tiebreaking.
 
 const std = @import("std");
@@ -44,30 +43,32 @@ fn pushAndRunSub(history: *state.GameStateHistory, event: SubLevelEvent) void {
     runToIdle(history);
 }
 
-// ───────────────────────── aggro_around ─────────────────────────
+// ───────────────────────── aggro_check ─────────────────────────
 
-test "aggro_around: activates opposing entities within aggro_range" {
+test "aggro_check: activates inactive entities that see an opponent in their own aggro_range" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
     var history = harness.newHistory(test_harness.levelStateWithEntities(
         backing.allocator(),
         &.{
-            .{ .team = 0, .position = .{ .x = 2, .y = 2 }, .aggro_range = 2 },
-            .{ .team = 1, .position = .{ .x = 4, .y = 2 }, .is_active = false }, // distance 2
-            .{ .team = 1, .position = .{ .x = 0, .y = 2 }, .is_active = false }, // distance 2
-            .{ .team = 1, .position = .{ .x = 0, .y = 0 }, .is_active = false }, // distance 2
+            // Player at center; aggro_range 3 → sees both enemies.
+            .{ .team = 0, .position = .{ .x = 2, .y = 2 }, .aggro_range = 3 },
+            // Enemy at distance 2 from player; aggro_range 6 → sees player.
+            .{ .team = 1, .position = .{ .x = 4, .y = 2 }, .aggro_range = 6, .is_active = false },
+            // Enemy at distance 2 from player; aggro_range 1 → does NOT see player.
+            .{ .team = 1, .position = .{ .x = 0, .y = 2 }, .aggro_range = 1, .is_active = false },
         },
         &five_by_five,
     ));
-    pushAndRunSub(&history, .{ .aggro_around = .{ .entity_index = 0 } });
-    // All three enemies are at Chebyshev distance 2 → all activated.
+    pushAndRunSub(&history, .{ .aggro_check = .{} });
+    // Player (already active by convention) and enemy 1 (sees player) active.
+    // Enemy 2 (aggro_range 1, player at distance 2) stays inactive.
     try testing.expect(levelEntity(&history, 1).is_active);
-    try testing.expect(levelEntity(&history, 2).is_active);
-    try testing.expect(levelEntity(&history, 3).is_active);
+    try testing.expectEqual(false, levelEntity(&history, 2).is_active);
 }
 
-test "aggro_around: out-of-range enemies stay inactive" {
+test "aggro_check: out-of-range opponents keep entities inactive" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -75,15 +76,15 @@ test "aggro_around: out-of-range enemies stay inactive" {
         backing.allocator(),
         &.{
             .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .aggro_range = 1 },
-            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .is_active = false }, // distance 4
+            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .aggro_range = 1, .is_active = false },
         },
         &five_by_five,
     ));
-    pushAndRunSub(&history, .{ .aggro_around = .{ .entity_index = 0 } });
+    pushAndRunSub(&history, .{ .aggro_check = .{} });
     try testing.expectEqual(false, levelEntity(&history, 1).is_active);
 }
 
-test "aggro_around: same-team entities are not activated" {
+test "aggro_check: same-team entities do not aggro each other" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -91,15 +92,15 @@ test "aggro_around: same-team entities are not activated" {
         backing.allocator(),
         &.{
             .{ .team = 0, .position = .{ .x = 2, .y = 2 }, .aggro_range = 3 },
-            .{ .team = 0, .position = .{ .x = 2, .y = 3 }, .is_active = false }, // same team
+            .{ .team = 0, .position = .{ .x = 2, .y = 3 }, .aggro_range = 3, .is_active = false },
         },
         &five_by_five,
     ));
-    pushAndRunSub(&history, .{ .aggro_around = .{ .entity_index = 0 } });
+    pushAndRunSub(&history, .{ .aggro_check = .{} });
     try testing.expectEqual(false, levelEntity(&history, 1).is_active);
 }
 
-test "aggro_around: dead enemies are not activated" {
+test "aggro_check: dead entities are not activated" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -107,15 +108,15 @@ test "aggro_around: dead enemies are not activated" {
         backing.allocator(),
         &.{
             .{ .team = 0, .position = .{ .x = 2, .y = 2 }, .aggro_range = 3 },
-            .{ .team = 1, .position = .{ .x = 2, .y = 3 }, .current_health = 0, .max_health = 10 },
+            .{ .team = 1, .position = .{ .x = 2, .y = 3 }, .aggro_range = 3, .current_health = 0, .max_health = 10 },
         },
         &five_by_five,
     ));
-    pushAndRunSub(&history, .{ .aggro_around = .{ .entity_index = 0 } });
+    pushAndRunSub(&history, .{ .aggro_check = .{} });
     try testing.expectEqual(false, levelEntity(&history, 1).is_active);
 }
 
-test "aggro_around: already-active enemies stay active (no deactivation)" {
+test "aggro_check: already-active entities stay active (no deactivation)" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -123,11 +124,11 @@ test "aggro_around: already-active enemies stay active (no deactivation)" {
         backing.allocator(),
         &.{
             .{ .team = 0, .position = .{ .x = 2, .y = 2 }, .aggro_range = 3 },
-            .{ .team = 1, .position = .{ .x = 2, .y = 3 }, .is_active = true },
+            .{ .team = 1, .position = .{ .x = 2, .y = 3 }, .aggro_range = 3, .is_active = true },
         },
         &five_by_five,
     ));
-    pushAndRunSub(&history, .{ .aggro_around = .{ .entity_index = 0 } });
+    pushAndRunSub(&history, .{ .aggro_check = .{} });
     try testing.expect(levelEntity(&history, 1).is_active);
 }
 

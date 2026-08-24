@@ -145,7 +145,7 @@ test "combatLogTier classifies the whitelist" {
         .level_event = .{ .turn_start = .{ .entity_index = 0 } },
     }));
     try std.testing.expectEqual(CombatLogTier.none, combatLogTier(.{
-        .sub_level_event = .{ .aggro_around = .{ .entity_index = 0 } },
+        .sub_level_event = .{ .aggro_check = .{} },
     }));
     try std.testing.expectEqual(CombatLogTier.none, combatLogTier(.{
         .sub_level_event = .{ .pickup_around = .{ .entity_index = 0 } },

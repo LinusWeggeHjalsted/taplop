@@ -3176,3 +3176,34 @@ every entity within radius regardless of team. Aggroing the player (team 0)
 is harmless — `is_active` on the player is ignored by the loops that skip
 entity 0 (enemy turn ordering, auto-skip-attack). Description + doc comments
 updated.
+
+### Aggro + level-end decoupling (DONE)
+
+Two bugs in one fix:
+
+**Bug 1 — aggro was mover-centric, not self-centric.** The old `aggro_around`
+event carried an `entity_index` and used the MOVER's `aggro_range` to scan for
+inactive opponents. So after the player (aggro_range 3) moved, only entities
+within 3 of the *player* aggroed — a wolf with aggro_range 6 never detected the
+player from 6; it only aggroed at level start (where `aggro_around` fired
+per-entity) or on its own move. The fix makes aggro self-centric: the renamed
+`aggro_check` (no payload) scans every inactive entity and activates it if IT
+sees an opposing entity within ITS OWN `aggro_range`. One event covers the whole
+level. Pushed at level start (single event, replacing the per-entity loop) and
+after every `move_entity`.
+
+**Bug 2 — level-end check only fired after moves.** The old `aggro_around`
+handler carried the level-end win condition (player on `level_end` + no active
+enemies → `end_level`), so it only ran after moves. Killing the last enemy while
+standing on the exit (ranged skill, Reflect, etc.) did nothing until the player
+moved again. The fix extracts the win condition into `check_level_end` (no
+payload), pushed after `aggro_check` (LIFO → runs after, so newly-aggroed
+enemies are counted) AND after `death` (the only event that changes the
+alive-enemy count). Not pushed at level start (spawn and exit are always
+different tiles).
+
+Events: `aggro_around { entity_index }` → `aggro_check {}` (renamed + field
+dropped); new `check_level_end {}`. Session-log format changes (renamed event +
+new variant) but pre-release with no real saved sessions — the comptime
+serializer/deserializer adapts automatically. 5 AI handler tests rewritten for
+the new self-centric semantics.

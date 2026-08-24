@@ -412,7 +412,7 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
     `world/aggro` sprite (128×128, ported from the Unity project's
     EnemyAggro.png) above the entity's health bar (same placement as the
     skill-icon pop), tinted with the active theme's `lightest`. Triggered
-    by the `aggro_around` handler when an entity's `is_active` flips true
+    by the `aggro_check` handler when an entity's `is_active` flips true
     (gated `!replaying`) — once per entity per level (the handler skips
     already-active entities). Skip dead entities at render time. See
     AGENTS → Animation.
@@ -1255,13 +1255,23 @@ the campaign.
   one dimension of entity/level state (health: `attack`/`heal`; momentum:
   `change_momentum`; cooldowns: `change_cooldown`; position: `move_entity`/
   `swap_positions`/`knockback`/`retreat`; status: `stun`/`create_effect`/
-  `end_effect`; world: `aggro_around`/`pickup_around`/`death`) — a basis set
+  `end_effect`; world: `aggro_check`/`pickup_around`/`death`) — a basis set
   over the mutable fields. A skill is a recipe: its `useSkill` computes and
   emits a sequence of these generic events. All skill-specific cleverness
   (conditionals, multipliers, radius loops) lives in `useSkill`, never in a new
   event. Only add a new event when a skill must mutate a state dimension no
   existing event covers; prefer composing existing primitives. Reactive
   mechanics (e.g. Reflect) belong in the effect system, not as skill events.
+  **Aggro + level-end are decoupled.** `aggro_check` (no payload) scans every
+  inactive entity and activates it if it sees an opposing entity within ITS
+  OWN `aggro_range` — self-centric, one event covers the whole level. Pushed
+  at level start (single event, not per-entity) and after every `move_entity`.
+  `check_level_end` (no payload) is the win condition: if the player is on
+  `level_end` and no active enemies remain → push `end_level`. Pushed after
+  `aggro_check` (LIFO → runs after, so newly-aggroed enemies are counted)
+  and after `death` (killing the last enemy while standing on the exit ends
+  the level without an extra move). Not pushed at level start (player spawn
+  and level end are always different tiles).
   Scalar-field primitives clamp (heal to max_health; momentum/cooldown at 0 via
   functions.applySignedDelta)
 - **One top-level event per player action (orchestrator convention).** Each

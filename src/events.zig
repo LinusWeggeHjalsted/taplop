@@ -529,9 +529,18 @@ pub const SubLevelEvent = union(enum) {
     pickup_around: struct {
         entity_index: u32,
     },
-    aggro_around: struct {
-        entity_index: u32,
-    },
+    /// Scan every inactive entity; for each, if any opposing entity is
+    /// within ITS OWN `aggro_range`, activate it (+ aggro indicator anim).
+    /// Self-centric — one event covers the whole level. Pushed at level
+    /// start and after every `move_entity`. See AGENTS → Architecture.
+    aggro_check: struct {},
+    /// Win-condition check: if the player is on `level_end` and no active
+    /// enemies remain, push `end_level`. Decoupled from `aggro_check` so it
+    /// can also fire after `death` (killing the last enemy while standing on
+    /// the exit ends the level without an extra move). Pushed AFTER
+    /// `aggro_check` on the stack (LIFO → runs after) so newly-aggroed
+    /// enemies are counted. See AGENTS → Architecture.
+    check_level_end: struct {},
     attack: struct {
         attacker_index: u32,
         defender_index: u32,
@@ -596,8 +605,9 @@ pub const SubLevelEvent = union(enum) {
         entity_b_index: u32,
     },
     // Activate all opposing entities within an explicit radius (Howl).
-    // Distinct from aggro_around, which uses the entity's own aggro_range and
-    // carries level-end coupling.
+    // Distinct from aggro_check, which uses each entity's own aggro_range.
+    // aggro_in_radius uses an explicit radius and activates ALL entities
+    // (no team filter — Howl rallies same-team entities).
     aggro_in_radius: struct {
         entity_index: u32,
         radius: u32,

@@ -1086,7 +1086,7 @@ pub const AnimKind = union(enum) {
         direction: Vector2,
     },
     /// Show the aggro indicator above an entity's head for `duration_us`
-    /// when it gets aggroed (its `is_active` flips true in the `aggro_around`
+    /// when it gets aggroed (its `is_active` flips true in the `aggro_check`
     /// handler). Placed above the health bar like the skill icon, tinted with
     /// the active theme's `lightest`. See AGENTS → Animation.
     aggro_indicator: struct { entity_index: u32 },

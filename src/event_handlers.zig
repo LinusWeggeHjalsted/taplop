@@ -211,12 +211,11 @@ fn pushGameplayStartEvents(current: *GameState, allocator: std.mem.Allocator, sy
     start_events.append(allocator, .{ .level_event = .{ .turn_start = .{
         .entity_index = 0,
     } } }) catch @panic("failed to append turn_start");
-    // Aggro checks in the middle.
-    for (0..current.level.?.entities.len) |entity_index| {
-        start_events.append(allocator, .{ .sub_level_event = .{ .aggro_around = .{
-            .entity_index = @intCast(entity_index),
-        } } }) catch @panic("failed to append aggro event");
-    }
+    // Aggro check: one event scans every inactive entity against its own
+    // aggro_range. No `check_level_end` at level start — the player spawn
+    // (`!`) and the level end (`=`) are always different tiles.
+    start_events.append(allocator, .{ .sub_level_event = .{ .aggro_check = .{} } }) catch
+        @panic("failed to append aggro_check event");
     // Player sync on top (processed first) — only for normal gameplay.
     if (sync_player) {
         start_events.append(allocator, .{ .super_event = .{ .build_player_from_data = .{
@@ -443,7 +442,7 @@ pub fn processEvent(
             // checkpoint taken before the handler would capture the PRE-
             // transition state (e.g. hub with level=null) labeled with the
             // post-event index — replaying from it would hit in-level sub-
-            // events (aggro_around) with no level loaded and crash.
+            // events (aggro_check) with no level loaded and crash.
             const should_checkpoint = switch (meta) {
                 .start_level => |level| level.sets_checkpoint,
                 .start_hub => |hub| hub.sets_checkpoint,
@@ -1718,11 +1717,15 @@ pub fn processEvent(
                     entity.position = move.destination;
                     entity.momentum += 1;
 
-                    // Push pickup and aggro checks after movement
+                    // Push pickup, aggro check, and level-end check after
+                    // movement. LIFO (last in array runs first), so the
+                    // array order is: check_level_end, aggro_check,
+                    // pickup_around → execution: pickup → aggro → level-end.
+                    // check_level_end runs after aggro_check so newly-aggroed
+                    // enemies are counted before the win check.
                     pushEvents(current, &.{
-                        .{ .sub_level_event = .{ .aggro_around = .{
-                            .entity_index = move.entity_index,
-                        } } },
+                        .{ .sub_level_event = .{ .check_level_end = .{} } },
+                        .{ .sub_level_event = .{ .aggro_check = .{} } },
                         .{ .sub_level_event = .{ .pickup_around = .{
                             .entity_index = move.entity_index,
                         } } },
@@ -1732,19 +1735,29 @@ pub fn processEvent(
         },
         .sub_level_event => |sub_level_event| {
             switch (sub_level_event) {
-                .aggro_around => |aggro| {
+                .aggro_check => {
+                    // Scan every inactive entity; for each, if any opposing
+                    // entity is within ITS OWN aggro_range, activate it.
+                    // Self-centric — one event covers the whole level. See
+                    // AGENTS → Architecture.
                     const level = &current.level.?;
-                    const entity = level.entities[aggro.entity_index];
-                    const aggro_range: i32 = @intCast(entity.aggro_range);
+                    for (level.entities, 0..) |*entity, entity_index| {
+                        if (entity.current_health == 0) continue;
+                        if (entity.is_active) continue; // already aggroed
 
-                    for (level.entities, 0..) |*other_entity, other_index| {
-                        if (other_index == aggro.entity_index) continue;
-                        if (other_entity.current_health == 0) continue;
-                        if (other_entity.team == entity.team) continue;
-                        if (other_entity.is_active) continue;
-                        const distance = functions.chebyshevDistance(entity.position, other_entity.position);
-                        if (distance <= aggro_range) {
-                            @constCast(other_entity).is_active = true;
+                        const aggro_range: i32 = @intCast(entity.aggro_range);
+                        var sees_opponent = false;
+                        for (level.entities, 0..) |other_entity, other_index| {
+                            if (other_index == entity_index) continue;
+                            if (other_entity.current_health == 0) continue;
+                            if (other_entity.team == entity.team) continue;
+                            if (functions.chebyshevDistance(entity.position, other_entity.position) <= aggro_range) {
+                                sees_opponent = true;
+                                break;
+                            }
+                        }
+                        if (sees_opponent) {
+                            @constCast(entity).is_active = true;
                             // One-shot aggro indicator above the newly-aggroed
                             // entity's head (gated `!replaying`, same shape as
                             // the skill-icon anim). See AGENTS → Animation.
@@ -1752,34 +1765,40 @@ pub fn processEvent(
                                 history.session.queueAnim(history.backing_allocator, .{
                                     .event_index = history.current_event_index - 1,
                                     .kind = .{ .aggro_indicator = .{
-                                        .entity_index = @intCast(other_index),
+                                        .entity_index = @intCast(entity_index),
                                     } },
                                     .duration_us = 500_000,
                                 });
                             }
                         }
                     }
-
-                    // After player aggro check: if player is on level_end,
-                    // no active enemies alive, and stack is empty, end the level
-                    if (aggro.entity_index == 0) {
-                        if (level.level_end) |level_end| {
-                            if (entity.position.x == level_end.x and entity.position.y == level_end.y) {
-                                var has_active_enemies = false;
-                                for (level.entities, 0..) |other_entity, other_index| {
-                                    if (other_index == 0) continue;
-                                    if (other_entity.current_health == 0) continue;
-                                    if (!other_entity.is_active) continue;
-                                    if (other_entity.team != entity.team) {
-                                        has_active_enemies = true;
-                                        break;
-                                    }
+                },
+                .check_level_end => {
+                    // Win condition: if the player is on level_end and no
+                    // active enemies remain, end the level. Decoupled from
+                    // aggro_check so it can also fire after `death` (killing
+                    // the last enemy while standing on the exit ends the
+                    // level without an extra move). Pushed AFTER aggro_check
+                    // on the stack (LIFO → runs after) so newly-aggroed
+                    // enemies are counted. See AGENTS → Architecture.
+                    const level = &current.level.?;
+                    const player = level.entities[0];
+                    if (level.level_end) |level_end| {
+                        if (player.position.x == level_end.x and player.position.y == level_end.y) {
+                            var has_active_enemies = false;
+                            for (level.entities, 0..) |entity, entity_index| {
+                                if (entity_index == 0) continue;
+                                if (entity.current_health == 0) continue;
+                                if (!entity.is_active) continue;
+                                if (entity.team != player.team) {
+                                    has_active_enemies = true;
+                                    break;
                                 }
-                                if (!has_active_enemies) {
-                                    pushEvents(current, &.{
-                                        .{ .meta_event = .end_level },
-                                    }, allocator);
-                                }
+                            }
+                            if (!has_active_enemies) {
+                                pushEvents(current, &.{
+                                    .{ .meta_event = .end_level },
+                                }, allocator);
                             }
                         }
                     }
@@ -2330,6 +2349,14 @@ pub fn processEvent(
                                 @panic("failed to allocate ground items");
                         }
                     }
+
+                    // A death changes the alive-enemy count; if the player
+                    // is standing on the exit, re-check the win condition so
+                    // killing the last enemy ends the level without an extra
+                    // move. See AGENTS → Architecture.
+                    pushEvents(current, &.{
+                        .{ .sub_level_event = .{ .check_level_end = .{} } },
+                    }, allocator);
                 },
                 .end_effect => |end| {
                     const entity = getLevelEntity(current, end.entity_index);
