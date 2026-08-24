@@ -2896,3 +2896,61 @@ for slice 4 to emit).
   (`drawTextEx` at the same top-left, lightest color) -- both originate at
   `screen_position` so they auto-align. The band texture is sized to the
   text's bbox, so scaling it by `world_scale` matches the fill's drawn size.
+
+### Damage + heal numbers (DONE)
+
+The third one-shot anim class and the first to move + carry a dynamic text
+payload. Floats the damage/heal value away from the entity's sprite, eased
+with `tween.easeOutCubic` (fast then slow), 1 tile over 500ms, tinted
+`active_theme.lightest` + a black text-outline band (slice 3's machinery).
+Reuses the one-shot anim pipeline (`queueAnim` → `frame()` stamps clocks →
+`view()` gates by event-index + time) with two additions: `start_clock` for
+per-entity stagger and `tween.zig` for easing. Slice 4 of the damage-number
+feature.
+
+- **`AnimKind`** (`types.zig`): `damage_number { entity_index, value,
+  direction: Vector2 }` (direction = normalized attacker→defender delta, one
+  of 8) + `heal_number { entity_index, value }` (no direction — fixed
+  up-right from the top-left bbox corner).
+- **`ActiveAnim.start_clock: u64`** (`types.zig`): when the anim begins
+  visibly advancing. Non-number anims get `start = end - duration` (start
+  immediately); `view()` adds a `animation_clock >= start_clock` gate (a
+  staggered number is invisible before its start).
+- **Per-entity stagger** (`state.zig` + `main.zig`): `SessionState.
+  last_number_start_by_entity: AutoHashMapUnmanaged(u32, u64)` (backing-
+  allocator-backed). `frame()`'s drain stamps `start_clock =
+  max(animation_clock, last_for_entity + 125ms)` for number kinds and
+  updates the map; cleared on screen/world transition via `clearAnims`. So
+  Bash's attack+collision on one defender space their numbers 0.125s apart
+  instead of overlapping. Constant `number_stagger_gap_microseconds` (main).
+- **`tween.zig`**: `easeOutCubic` (1 - (1-t)³), pure `fn(f32) f32`. `view()`
+  computes `progress = (clock - start) / duration` clamped to [0, 1], eases
+  it, interpolates position. Unit tests for endpoints, monotonicity, and
+  front-loaded shape.
+- **Placement** (`view.zig` `buildWorldOverlays`, new `.damage_number`/
+  `.heal_number` arms + `numberAnimPosition` helper): resolves the sprite's
+  opaque bbox in screen space (via `sprite_bounds`, falling back to frame
+  edges); picks the start point = the bbox edge/corner nearest the travel
+  direction (pure-vertical → horizontal center; pure-horizontal → vertical
+  center); travels `number_travel_tiles` (1) along the NORMALIZED direction
+  (diagonal → magnitude 1, not √2, so the visual distance is consistent
+  across the 8 directions); offsets the text top-left so it grows AWAY from
+  the sprite (left-going → right edge at anchor; up-going → bottom at
+  anchor; pure-vertical → horizontally centered). Font size =
+  `ui.tooltip_body_font_size` (56). The number tracks the entity (resolved
+  from the live level each frame, like the skill icon).
+- **Rendering**: `WorldOverlayDrawable.floating_text` (slice 3) — the band
+  (black) then the fill (`drawTextEx`, lightest) at the eased screen
+  position. `font_metrics` threaded into `buildWorldOverlays` to measure
+  text width for centering/offset.
+- **Triggers** (`event_handlers.zig`): `attack` and `collision` queue a
+  `damage_number` (carrying `incoming_damage` + `sign(defender - attacker)`
+  direction) alongside the hit flash, inside `if (incoming_damage > 0)`;
+  `heal` queues a `heal_number` (carrying the APPLIED amount, so a full-
+  health heal shows nothing). All gated `!replaying`. New file-private
+  `sign` helper + `number_anim_duration_microseconds` constant (matches
+  `view.number_anim_duration_microseconds`).
+- **Replay safety** holds by construction: the anim is a `SessionState` side
+  effect gated `!replaying`; the clock read + stagger math stay in `frame()`;
+  the direction is a deterministic gameplay value (computed from positions);
+  undo hides via `event_index < current_event_index`.

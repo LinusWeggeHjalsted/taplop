@@ -384,6 +384,34 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
     (`death` zeroes health but leaves the slot). `sprite_bounds` is
     populated per-frame in `frame()` (one decode per sprite via
     `ensureSpriteBoundsLoaded`, caching the full bbox).
+  - **Damage number** (500ms): `damage_number` kind, floats the incoming
+    damage value away from the defender's sprite in the normalized
+    attacker→defender direction (one of 8), starting from the bbox edge/corner
+    nearest that direction and traveling 1 tile, eased with
+    `tween.easeOutCubic` (fast then slow). The number tracks the entity
+    (resolved from the live level each frame, like the skill icon). Tinted
+    with `active_theme.lightest` + a black edge-outline band (the sprite-
+    outline dilation run on an `rl.imageTextEx` raster, cached in
+    `text_outline_cache`). Triggered by the `attack` and `collision`
+    handlers alongside the hit flash, only when damage is nonzero.
+  - **Heal number** (500ms): `heal_number` kind, floats `+value` up-right
+    from the entity's top-left bbox corner (heals have no attacker, so the
+    direction is fixed), same easing + outline + tint. Triggered by the
+    `heal` handler only when heal is actually applied (a full-health heal
+    shows nothing).
+  - **Per-entity stagger:** number anims share a `last_number_start_by_entity`
+    map on `SessionState`; `frame()` stamps `start_clock =
+    max(animation_clock, last_for_entity + 125ms)` so a same-entity multi-hit
+    in one drain (e.g. Bash's attack+collision) spaces its numbers 0.125s
+    apart instead of overlapping. `ActiveAnim.start_clock` holds the start;
+    `view()` gates by `animation_clock >= start_clock` (invisible before
+    start) AND `< end_clock`. Non-number anims get `start_clock = end_clock -
+    duration` (start immediately). The stagger map clears on screen/world
+    transition alongside the anim lists.
+  - **Tweening:** `src/tween.zig` holds pure easing fns (`easeOutCubic`);
+    `view()` computes `progress = (clock - start) / duration` clamped to
+    [0, 1], eases it, and interpolates position. Pure, rendering-side,
+    replay-safe.
 
 ### The replay-purity invariant (why the clock is read in `frame()`, not handlers)
 

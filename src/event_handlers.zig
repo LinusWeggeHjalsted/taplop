@@ -41,6 +41,16 @@ const WeaponType = types.WeaponType;
 // wait handling in update() (main.zig).
 const turn_flow_wait_milliseconds: u32 = 500;
 
+/// Sign of an i32: -1, 0, or 1. Used to normalize a position delta into a
+/// unit direction (one of 8) for the damage-number anim's travel vector.
+fn sign(value: i32) i32 {
+    return if (value > 0) 1 else if (value < 0) @as(i32, -1) else 0;
+}
+
+/// Duration of the damage/heal number one-shot anim (matches
+/// `view.number_anim_duration_microseconds`). 500ms.
+const number_anim_duration_microseconds: u32 = 500_000;
+
 /// Compute the minimum effective range across all off-cooldown skills an entity
 /// has — the closest distance it needs to be to use at least one skill. Uses
 /// range if the skill has it, radius if not. Returns null if no skills are off
@@ -1982,6 +1992,21 @@ pub fn processEvent(
                                 } },
                                 .duration_us = 250_000,
                             });
+                            // Damage number floating away from the attacker
+                            // (normalized defender - attacker delta). See
+                            // AGENTS Animation.
+                            history.session.queueAnim(history.backing_allocator, .{
+                                .event_index = history.current_event_index - 1,
+                                .kind = .{ .damage_number = .{
+                                    .entity_index = collision.defender_index,
+                                    .value = incoming_damage,
+                                    .direction = .{
+                                        .x = sign(defender.position.x - attacker.position.x),
+                                        .y = sign(defender.position.y - attacker.position.y),
+                                    },
+                                } },
+                                .duration_us = number_anim_duration_microseconds,
+                            });
                         }
 
                         // Trigger on_outgoing_damage / on_incoming_damage
@@ -2068,6 +2093,21 @@ pub fn processEvent(
                                     .entity_index = attack.defender_index,
                                 } },
                                 .duration_us = 250_000,
+                            });
+                            // Damage number floating away from the attacker
+                            // (normalized defender - attacker delta). See
+                            // AGENTS Animation.
+                            history.session.queueAnim(history.backing_allocator, .{
+                                .event_index = history.current_event_index - 1,
+                                .kind = .{ .damage_number = .{
+                                    .entity_index = attack.defender_index,
+                                    .value = incoming_damage,
+                                    .direction = .{
+                                        .x = sign(defender.position.x - attacker.position.x),
+                                        .y = sign(defender.position.y - attacker.position.y),
+                                    },
+                                } },
+                                .duration_us = number_anim_duration_microseconds,
                             });
                         }
 
@@ -2342,7 +2382,22 @@ pub fn processEvent(
                     const entity = getLevelEntity(current, heal_event.entity_index);
                     if (entity.current_health == 0) return; // no reviving via heal
                     const capacity = entity.max_health - entity.current_health;
-                    entity.current_health += @min(heal_event.amount, capacity);
+                    const applied = @min(heal_event.amount, capacity);
+                    entity.current_health += applied;
+                    // Heal number (`+value`) floating up-right from the
+                    // entity's top-left bbox corner. Gated `!replaying`.
+                    // Only when heal is actually applied (a full-health heal
+                    // shows nothing). See AGENTS Animation.
+                    if (!history.replaying and applied > 0) {
+                        history.session.queueAnim(history.backing_allocator, .{
+                            .event_index = history.current_event_index - 1,
+                            .kind = .{ .heal_number = .{
+                                .entity_index = heal_event.entity_index,
+                                .value = applied,
+                            } },
+                            .duration_us = number_anim_duration_microseconds,
+                        });
+                    }
                 },
                 .change_momentum => |change| {
                     const entity = getLevelEntity(current, change.entity_index);

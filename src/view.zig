@@ -12,6 +12,7 @@ const types = @import("types.zig");
 const events = @import("events.zig");
 const state = @import("state.zig");
 const input = @import("input.zig");
+const tween = @import("tween.zig");
 const ui = @import("ui.zig");
 const parser = @import("parser.zig");
 const combat_log = @import("combat_log.zig");
@@ -157,6 +158,7 @@ pub fn view(
         current_event_index,
         render.sprite_bounds,
         active_theme,
+        font_metrics,
     );
 
     var ui_elements: std.ArrayList(ui.UiElement) = .empty;
@@ -355,6 +357,15 @@ const skill_icon_gap_native: i32 = 16;
 /// `zig build run`. See AGENTS → Animation.
 const hit_flash_size_native: i32 = 256;
 
+/// One-shot number anims (damage/heal): the number travels 1 tile from the
+/// entity's sprite bbox edge/corner, eased with `tween.easeOutCubic` (fast
+/// then slow). 500ms duration (queued by handlers; the constant lives here
+/// for the `view()`-side travel distance + font size). Font size matches the
+/// tooltip body (`ui.tooltip_body_font_size`). Tunable — eyeball in
+/// `zig build run`. See AGENTS → Animation.
+const number_anim_duration_microseconds: u32 = 500_000;
+const number_travel_tiles: f32 = 1.0;
+
 /// Entity health bar. The bar + outline sprites are 155x31 native (cropped
 /// to the outline's opaque bbox and downscaled 0.5x from the 384x128 Unity
 /// art). Drawn above the entity's actual art top (same `sprite_bounds` scan
@@ -491,11 +502,15 @@ fn buildWorldOverlays(
     current_event_index: u32,
     sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
     active_theme: types.ActiveColorTheme,
+    font_metrics: ui.FontMetrics,
 ) []const types.WorldOverlayDrawable {
     const level = current_state.level orelse return &.{};
     var overlays: std.ArrayList(types.WorldOverlayDrawable) = .empty;
     for (session.active_anims.items) |anim| {
         if (anim.event_index >= current_event_index) continue;
+        // `start_clock` gate: a staggered number anim is invisible before its
+        // start; all anims vanish past `end_clock`. See AGENTS Animation.
+        if (session.animation_clock < anim.start_clock) continue;
         if (session.animation_clock >= anim.end_clock) continue;
         switch (anim.kind) {
             .skill_icon => |info| {
@@ -584,9 +599,150 @@ fn buildWorldOverlays(
                     .color = active_theme.lightest,
                 } }) catch @panic("failed to append world overlay");
             },
+            .damage_number => |info| {
+                if (info.entity_index >= level.entities.len) continue;
+                const entity = &level.entities[info.entity_index];
+                const progress = animProgress(anim, session.animation_clock);
+                const text = std.fmt.allocPrint(allocator, "{d}", .{info.value}) catch
+                    @panic("failed to format damage number");
+                const pos = numberAnimPosition(
+                    entity,
+                    sprite_bounds,
+                    camera,
+                    zoom,
+                    info.direction,
+                    progress,
+                    font_metrics,
+                    text,
+                );
+                overlays.append(allocator, .{ .floating_text = .{
+                    .text = text,
+                    .screen_position = pos,
+                    .font_size = ui.tooltip_body_font_size,
+                    .color = active_theme.lightest,
+                } }) catch @panic("failed to append world overlay");
+            },
+            .heal_number => |info| {
+                if (info.entity_index >= level.entities.len) continue;
+                const entity = &level.entities[info.entity_index];
+                const progress = animProgress(anim, session.animation_clock);
+                // Heals have no attacker: fixed up-right from the top-left
+                // bbox corner. See AGENTS Animation.
+                const text = std.fmt.allocPrint(allocator, "+{d}", .{info.value}) catch
+                    @panic("failed to format heal number");
+                const pos = numberAnimPosition(
+                    entity,
+                    sprite_bounds,
+                    camera,
+                    zoom,
+                    .{ .x = 1, .y = -1 },
+                    progress,
+                    font_metrics,
+                    text,
+                );
+                overlays.append(allocator, .{ .floating_text = .{
+                    .text = text,
+                    .screen_position = pos,
+                    .font_size = ui.tooltip_body_font_size,
+                    .color = active_theme.lightest,
+                } }) catch @panic("failed to append world overlay");
+            },
         }
     }
     return overlays.items;
+}
+
+/// Eased progress for a one-shot anim: `(clock - start) / duration` clamped
+/// to [0, 1], passed through `tween.easeOutCubic` (fast then slow). Callers
+/// that don't move (skill icon, hit flash) ignore this; number anims use it
+/// to interpolate position. Pure, rendering-side, reads the pause-gated
+/// session clock. See AGENTS Animation.
+fn animProgress(anim: types.ActiveAnim, animation_clock: u64) f32 {
+    if (anim.end_clock <= anim.start_clock) return 1.0;
+    const elapsed: f32 = @floatFromInt(animation_clock - anim.start_clock);
+    const duration: f32 = @floatFromInt(anim.end_clock - anim.start_clock);
+    const raw = std.math.clamp(elapsed / duration, 0.0, 1.0);
+    return tween.easeOutCubic(raw);
+}
+
+/// Compute the screen-space top-left for a floating number anim, given the
+/// entity, its sprite bbox, the travel `direction` (-1/0/1 per axis), and the
+/// eased `progress` in [0, 1]. The number starts at the bbox edge/corner
+/// nearest the direction and travels `number_travel_tiles` along the
+/// normalized direction. The text is offset so it grows AWAY from the sprite
+/// (left-going → right edge at anchor; up-going → bottom at anchor; centered
+/// on the pure-vertical/horizontal axes). See AGENTS Animation.
+fn numberAnimPosition(
+    entity: *const types.Entity,
+    sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
+    camera: types.Camera,
+    zoom: f32,
+    direction: types.Vector2,
+    progress: f32,
+    font_metrics: ui.FontMetrics,
+    text: []const u8,
+) types.ScreenPosition {
+    const top_left = entityFrameTopLeft(entity, camera, zoom);
+    const draw_width = entity_frame_width * zoom;
+    const draw_height = entity_frame_height * zoom;
+    // Resolve the opaque-art bbox in screen space; fall back to the frame
+    // edges on a miss/transparent sprite.
+    const maybe_bounds = sprite_bounds.get(entity.sprite);
+    const left_x: f32 = if (maybe_bounds) |b| if (b) |bounds|
+        @as(f32, @floatFromInt(top_left.x)) + @as(f32, @floatFromInt(bounds.left.?)) * zoom
+    else
+        @as(f32, @floatFromInt(top_left.x)) else @as(f32, @floatFromInt(top_left.x));
+    const right_x: f32 = if (maybe_bounds) |b| if (b) |bounds|
+        @as(f32, @floatFromInt(top_left.x)) + @as(f32, @floatFromInt(bounds.right.?)) * zoom
+    else
+        @as(f32, @floatFromInt(top_left.x)) + draw_width else @as(f32, @floatFromInt(top_left.x)) + draw_width;
+    const top_y: f32 = if (maybe_bounds) |b| if (b) |bounds|
+        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bounds.top.?)) * zoom
+    else
+        @as(f32, @floatFromInt(top_left.y)) else @as(f32, @floatFromInt(top_left.y));
+    const bottom_y: f32 = if (maybe_bounds) |b| if (b) |bounds|
+        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bounds.bottom.?)) * zoom
+    else
+        @as(f32, @floatFromInt(top_left.y)) + draw_height else @as(f32, @floatFromInt(top_left.y)) + draw_height;
+
+    // Start point: the bbox edge/corner nearest the travel direction.
+    const dx: i32 = direction.x;
+    const dy: i32 = direction.y;
+    const start_x: f32 = if (dx < 0) left_x else if (dx > 0) right_x else (left_x + right_x) / 2;
+    const start_y: f32 = if (dy < 0) top_y else if (dy > 0) bottom_y else (top_y + bottom_y) / 2;
+
+    // Travel 1 tile along the normalized direction (diagonal → magnitude 1,
+    // not √2, so the visual distance is consistent across the 8 directions).
+    const mag = @sqrt(@as(f32, @floatFromInt(dx * dx + dy * dy)));
+    const unit_x = @as(f32, @floatFromInt(dx)) / mag;
+    const unit_y = @as(f32, @floatFromInt(dy)) / mag;
+    const travel = number_travel_tiles * input.tile_size_pixels * zoom;
+    const end_x = start_x + unit_x * travel;
+    const end_y = start_y + unit_y * travel;
+    var x = start_x + (end_x - start_x) * progress;
+    var y = start_y + (end_y - start_y) * progress;
+
+    // Offset so the text grows away from the sprite: left-going → right edge
+    // at anchor; up-going → bottom at anchor; pure vertical → horizontally
+    // centered; pure horizontal → vertically centered.
+    const text_width: f32 = @as(f32, @floatFromInt(
+        font_metrics.measureSpanWidth(.{ .text = text }, ui.tooltip_body_font_size),
+    )) * zoom;
+    const text_height: f32 = @as(f32, @floatFromInt(ui.tooltip_body_font_size)) * zoom;
+    if (dx < 0) {
+        x -= text_width;
+    } else if (dx == 0) {
+        x -= text_width / 2;
+    }
+    if (dy < 0) {
+        y -= text_height;
+    } else if (dy == 0) {
+        y -= text_height / 2;
+    }
+    return .{
+        .x = @intFromFloat(@round(x)),
+        .y = @intFromFloat(@round(y)),
+    };
 }
 
 /// Build an EntityDrawable for `entity`, aligning the shared sprite pivot to

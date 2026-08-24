@@ -1070,6 +1070,24 @@ pub const AnimKind = union(enum) {
     /// for `duration_us`. Triggered by `attack`/`collision` only when the
     /// defender takes nonzero damage. See AGENTS → Animation.
     hit_flash: struct { entity_index: u32 },
+    /// Float a damage number away from the defender's sprite, in the
+    /// normalized attacker→defender direction (one of 8), starting from the
+    /// bbox edge/corner nearest that direction and traveling 1 tile with
+    /// ease-out. `value` is the incoming damage dealt. Triggered by
+    /// `attack`/`collision` only when damage is nonzero. Per-entity staggered
+    /// (0.125s gap) so same-entity multi-hits (e.g. Bash's attack+collision)
+    /// don't overlap. See AGENTS → Animation.
+    damage_number: struct {
+        entity_index: u32,
+        value: u32,
+        /// Unit vector (-1/0/1 per axis) the number travels along.
+        direction: Vector2,
+    },
+    /// Float a heal number (`+value`) up-right from the entity's top-left
+    /// bbox corner, traveling 1 tile with ease-out. Heals have no attacker,
+    /// so the direction is fixed. Triggered by the `heal` event. Shares the
+    /// per-entity stagger queue with damage numbers. See AGENTS → Animation.
+    heal_number: struct { entity_index: u32, value: u32 },
 };
 
 /// A pending one-shot anim pushed by an event handler (gated `!replaying`,
@@ -1085,12 +1103,17 @@ pub const PendingAnim = struct {
 /// An active one-shot anim. `view()` shows it when `event_index <
 /// current_event_index` (the triggering event is in the projected history —
 /// same exclusive bound the combat log uses, so undo hides it) AND
-/// `animation_clock < end_clock` (not yet elapsed). No explicit clearing:
-/// elapsed anims are gated out by time, undone anims by index; a screen/world
-/// transition clears the whole list (see AGENTS → Animation).
+/// `animation_clock < end_clock` (not yet elapsed) AND `animation_clock >=
+/// start_clock` (a staggered number anim hasn't started yet → invisible).
+/// No explicit clearing: elapsed anims are gated out by time, undone anims
+/// by index; a screen/world transition clears the whole list (see AGENTS →
+/// Animation). `start_clock` is the session-relative microsecond the anim
+/// begins visibly advancing; for non-staggered anims it equals
+/// `end_clock - duration_us` (starts immediately).
 pub const ActiveAnim = struct {
     event_index: u32,
     kind: AnimKind,
+    start_clock: u64,
     end_clock: u64,
 };
 

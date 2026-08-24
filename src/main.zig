@@ -29,6 +29,11 @@ const FileSource = file_source_mod.FileSource;
 const test_harness = @import("test_harness.zig");
 
 const GameState = state.GameState;
+
+/// Per-entity stagger gap for number anims (damage/heal): a same-entity
+/// multi-hit in one drain spaces its numbers this far apart so they don't
+/// overlap (e.g. Bash's attack+collision). 0.125s. See AGENTS → Animation.
+const number_stagger_gap_microseconds: u64 = 125_000;
 const GameStateHistory = state.GameStateHistory;
 const Event = events.Event;
 const MetaEvent = events.MetaEvent;
@@ -378,10 +383,38 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // holds (handlers never touch wall-clock). See AGENTS → Animation.
     const pending_anims = history.session.drainPendingAnims();
     for (pending_anims) |anim| {
+        // Number anims are per-entity staggered (0.125s gap) so same-entity
+        // multi-hits in one drain don't overlap; other anims start immediately.
+        // `start_clock` is when the anim begins visibly advancing; `end_clock`
+        // is `start_clock + duration_us`. The clock is read HERE, not in
+        // handlers, so the replay-purity invariant holds. See AGENTS →
+        // Animation.
+        const start_clock: u64 = switch (anim.kind) {
+            .damage_number => |info| blk: {
+                const stagger_gap: u64 = number_stagger_gap_microseconds;
+                const earliest = history.session.animation_clock;
+                const last = history.session.last_number_start_by_entity.get(info.entity_index) orelse 0;
+                const s = if (last == 0) earliest else @max(earliest, last + stagger_gap);
+                history.session.last_number_start_by_entity.put(history.backing_allocator, info.entity_index, s) catch
+                    @panic("failed to update number stagger map");
+                break :blk s;
+            },
+            .heal_number => |info| blk: {
+                const stagger_gap: u64 = number_stagger_gap_microseconds;
+                const earliest = history.session.animation_clock;
+                const last = history.session.last_number_start_by_entity.get(info.entity_index) orelse 0;
+                const s = if (last == 0) earliest else @max(earliest, last + stagger_gap);
+                history.session.last_number_start_by_entity.put(history.backing_allocator, info.entity_index, s) catch
+                    @panic("failed to update number stagger map");
+                break :blk s;
+            },
+            else => history.session.animation_clock,
+        };
         history.session.active_anims.append(history.backing_allocator, .{
             .event_index = anim.event_index,
             .kind = anim.kind,
-            .end_clock = history.session.animation_clock + anim.duration_us,
+            .start_clock = start_clock,
+            .end_clock = start_clock + anim.duration_us,
         }) catch @panic("failed to activate anim");
     }
 
@@ -551,6 +584,7 @@ pub fn run(
     defer setup.frame_state.history.session.pending_sounds.deinit(setup.frame_state.history.backing_allocator);
     defer setup.frame_state.history.session.pending_anims.deinit(setup.frame_state.history.backing_allocator);
     defer setup.frame_state.history.session.active_anims.deinit(setup.frame_state.history.backing_allocator);
+    defer setup.frame_state.history.session.last_number_start_by_entity.deinit(setup.frame_state.history.backing_allocator);
     gameLoop(backend, &setup.frame_state);
 }
 

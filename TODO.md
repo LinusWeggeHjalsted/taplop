@@ -150,7 +150,11 @@ Open / in-progress:
         flash on `attack`/`collision` (250ms, single-frame) — `world/hit_flash`
         centered on the defender's rendered art (horizontal frame center +
         vertical center of the opaque bbox via `sprite_bounds`), tinted with `active_theme.lightest`, only on
-        nonzero damage.
+        nonzero damage; damage numbers on `attack`/`collision` (500ms) and
+        heal numbers on `heal` (500ms) — float 1 tile eased with
+        `tween.easeOutCubic` from the bbox edge/corner (damage: away from
+        attacker; heal: up-right from top-left), `active_theme.lightest` +
+        black text outline, per-entity 0.125s stagger.
     - [ ] Future: attack swings, death dissolves (multi-frame one-shots;
           same machinery, richer `AnimKind`).
   - Per-sheet frame data (count, frame size) hardcoded per builder for now

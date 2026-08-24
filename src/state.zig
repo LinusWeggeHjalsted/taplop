@@ -160,6 +160,14 @@ pub const SessionState = struct {
     /// `event_history`); bounded in practice by short durations + the
     /// transition clear. See AGENTS → Animation.
     active_anims: std.ArrayListUnmanaged(types.ActiveAnim) = .empty,
+    /// Per-entity last number-anim start clock (session-relative us), for the
+    /// 0.125s per-entity stagger: a same-entity multi-hit in one drain (e.g.
+    /// Bash's attack+collision) spaces its numbers so they don't overlap.
+    /// `frame()` reads + updates this when activating a `damage_number`/
+    /// `heal_number`; cleared on screen/world transition alongside the anim
+    /// lists. Off the undoable GameState → replay-safe. Backed by
+    /// `backing_allocator`. See AGENTS → Animation.
+    last_number_start_by_entity: std.AutoHashMapUnmanaged(u32, u64) = .empty,
 
     /// The button currently under a press (the `Action` it carries), for the
     /// press-then-release click model: the action fires on release over the
@@ -274,6 +282,7 @@ pub const SessionState = struct {
     ) void {
         self.active_anims.clearRetainingCapacity();
         self.pending_anims.clearRetainingCapacity();
+        self.last_number_start_by_entity.clearRetainingCapacity();
     }
 
     /// Mark a debounced write as dirty. If a write with the same tag is
