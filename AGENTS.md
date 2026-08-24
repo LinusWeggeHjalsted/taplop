@@ -516,6 +516,17 @@ gameplay — not in snapshots, not touched by replay.
   trims `event_history` + `idle_points`, frees snapshots/checkpoints ahead of
   the branch), so the new action continues a fresh timeline from the undone
   position.
+- **Undo mid-drain reverts to the current idle point.** Idle points (undo
+  stops) are recorded only when the event stack EMPTIES — a player action's
+  full subtree completing. So during a drain (e.g. enemy turns with waits
+  after the player ended their turn), `current_idle_index` still points at
+  the idle point BEFORE the drain started — the state the player was just
+  at. `undo()` detects mid-drain (stack non-empty OR wait active) and
+  reverts TO that current idle point (cancelling the partial drain via
+  `discardFutureTimeline`) rather than decrementing past it (which would
+  land one idle point further back than expected). The partial drain's
+  recorded events are discarded — the action never completed, so there's
+  nothing to redo. A second undo (now idle) decrements normally.
 
 ## Versioning
 

@@ -1097,10 +1097,28 @@ pub const GameStateHistory = struct {
 
     /// Undo to the previous idle point.
     /// Returns true if undo was performed, false if already at the earliest point.
+    ///
+    /// Mid-drain special case: if an in-progress player action's subtree is
+    /// still on the stack (e.g. enemy turns draining after the player ended
+    /// their turn) or a wait is active, the last idle point
+    /// (`current_idle_index`) is the state just before this drain started.
+    /// Revert TO it — cancelling the partial drain — rather than decrementing
+    /// to the idle point before it, which would skip past the state the
+    /// player was just at. The partial drain's recorded events are discarded
+    /// (the action never completed, so there's nothing to redo). See AGENTS
+    /// → Replay & Side Effects.
     pub fn undo(
         self: *GameStateHistory,
         apply_event: *const fn (*GameStateHistory) void,
     ) bool {
+        if (self.current_state.event_stack.len > 0 or self.current_state.waiting != null) {
+            if (self.idle_points.items.len == 0) return false;
+            const target_event_index = self.idle_points.items[self.current_idle_index];
+            self.restoreTo(target_event_index, apply_event);
+            self.discardFutureTimeline();
+            return true;
+        }
+
         if (self.current_idle_index == 0) return false;
 
         self.current_idle_index -= 1;

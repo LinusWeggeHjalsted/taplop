@@ -2983,6 +2983,7 @@ feature.
   effect gated `!replaying`; the clock read + stagger math stay in `frame()`;
   the direction is a deterministic gameplay value (computed from positions);
   undo hides via `event_index < current_event_index`.
+
 ### Active-effect overlays on entities (DONE)
 
 Effect sprites now render on top of an entity while an effect is active. The
@@ -3017,6 +3018,7 @@ declared overlay sprite.
   current effect needs it. Animation (looping sheet) is likewise a localized
   extension (`frame_count` + reuse `animation_clock`) when an effect ships a
   sheet — the static-sprite field doesn't paint us into a corner.
+
 ### Stun overlay above the health bar (DONE)
 
 A persistent `effects/stun` icon now renders above the health bar of any
@@ -3044,3 +3046,43 @@ GameState read, not an `active_anims` entry.
   (no skill use), and the skill-icon pop is on the caster, so the stun icon
   and a skill icon never co-occur on the same entity — the shared
   above-health-bar position is safe.
+### Fix: undo during a mid-drain reverts to the current idle point (DONE)
+
+**Symptom:** pressing undo while enemy turns are draining (a mid-drain state
+with the event stack non-empty and/or a wait active) reverted the gamestate
+one idle point FURTHER BACK than expected — past the attack step the player
+was just at, back to the move phase.
+
+**Root cause:** idle points (undo stops) are recorded only when the event
+stack EMPTIES — a player action's full subtree completing. During a drain
+(e.g. `player_skip_attack` → `turn_end` → enemy turns with waits → next
+round's `turn_start`), no idle point is recorded until the ENTIRE round
+completes. So `current_idle_index` still points at the idle point BEFORE the
+drain started (the state the player was just at). The old `undo()`
+unconditionally decremented `current_idle_index` before restoring — correct
+when idle (the index points at where you sit, decrement goes to the previous
+state), but mid-drain it decremented PAST the "current" position, skipping
+the state the player expected to land on.
+
+**Fix:** `undo()` detects mid-drain (`event_stack.len > 0` or `waiting != null`)
+and reverts TO the current idle point WITHOUT decrementing, then calls
+`discardFutureTimeline()` to trim the partial drain's recorded events (the
+action never completed, so there's nothing to redo). When idle, the old
+decrement-then-restore path is unchanged. Guard: if `idle_points` is empty
+(no idle point to revert to — only possible during the very first drain
+before any stack-empty), returns false.
+
+**Behavior after fix:**
+- 1st undo (mid-drain): cancel the enemy-turn drain, revert to the attack
+  step (the current idle point). No redo (partial drain discarded).
+- 2nd undo (now idle): revert to the move phase (previous idle point). Redo
+  available (back to the attack step).
+
+**Safety:** `maybeRecordIdlePoint`'s "not already an idle point" guard
+already excludes undo/redo from recording duplicates — after mid-drain undo
+lands on an existing idle point, the drain loop's `had_events && !has_events`
+recording is skipped. `restoreTo` finds a snapshot at every idle point
+(`takeSnapshot` via `recordIdlePoint`); the fast path restores directly and
+clears `waiting`. `discardFutureTimeline` trims `event_history` to target,
+`idle_points` to `current_idle_index + 1`, frees snapshots/checkpoints/cache
+ahead. `redo()` is unaffected (only meaningful when idle). Test in main.zig.

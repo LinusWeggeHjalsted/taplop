@@ -1418,6 +1418,60 @@ fn doAnytime(history: *GameStateHistory, anytime: input.AnytimeInput) void {
     runIdleUpdate(history, player_input);
 }
 
+test "undo during a mid-drain reverts to the current idle point, not one further back" {
+    // Regression: undo mid-drain (an in-progress player action's subtree on
+    // the stack, e.g. enemy turns draining after the player ended their turn)
+    // decremented current_idle_index past the state the player was just at,
+    // landing one idle point further back than expected. The fix reverts TO
+    // the current idle point (cancelling the partial drain) instead of
+    // decrementing, and discards the partial drain's recorded events. See
+    // AGENTS → Replay & Side Effects.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{playerWithWeapons()},
+        &three_by_three_tiles,
+    ));
+    runToIdle(&history); // idle point 0
+    doIdleSwap(&history); // idle point 1 (sword → staff)
+    doIdleSwap(&history); // idle point 2 (staff → sword)
+    try std.testing.expectEqual(@as(usize, 3), history.idle_points.items.len);
+    const idle_index_before = history.current_idle_index; // 2
+    try std.testing.expectEqual(@as(?types.WeaponType, .sword), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
+
+    // Simulate a mid-drain: an in-progress player action's subtree is on the
+    // stack with a wait active (e.g. enemy turns draining). current_idle_index
+    // still points at idle point 2 — the state just before the drain started.
+    event_handlers.pushEvents(&history.current_state, &.{.{
+        .level_event = .clear_highlights,
+    }}, history.current_arena.allocator());
+    history.current_state.waiting = .{
+        .remaining_microseconds = 500_000,
+        .baseline_stack_depth = 1,
+    };
+    try std.testing.expect(history.current_state.event_stack.len > 0);
+
+    // Undo mid-drain: reverts to idle point 2 (the current idle point), NOT
+    // decrement to idle point 1.
+    try std.testing.expect(history.undo(&event_handlers.processEvent));
+    try std.testing.expectEqual(idle_index_before, history.current_idle_index); // didn't decrement
+    try std.testing.expectEqual(history.idle_points.items[idle_index_before], history.current_event_index);
+    // Stack cleared + wait cleared (restoreTo clears waiting).
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expect(history.current_state.waiting == null);
+    // The partial drain's events were discarded — event_history trimmed to
+    // the current event index, idle_points trimmed to current_idle_index + 1.
+    try std.testing.expectEqual(@as(usize, history.current_event_index), history.event_history.items.len);
+    try std.testing.expectEqual(@as(usize, idle_index_before + 1), history.idle_points.items.len);
+
+    // Now idle: a second undo decrements normally to idle point 1 (staff).
+    try std.testing.expect(history.undo(&event_handlers.processEvent));
+    try std.testing.expectEqual(@as(?types.WeaponType, .staff), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
+    try std.testing.expectEqual(idle_index_before - 1, history.current_idle_index);
+}
+
 test "maybeRecordIdlePoint: first idle point from empty idle_points (no out-of-bounds)" {
     // Regression: maybeRecordIdlePoint reads idle_points[current_idle_index]
     // to check "not already an idle point." At startup idle_points is empty
