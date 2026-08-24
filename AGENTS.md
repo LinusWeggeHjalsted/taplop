@@ -1640,6 +1640,17 @@ color_index + layers for editor palette dedup. **Weapons** are team-gradient
 index 1 (player → player gradient, enemy → enemy gradient) and are suppressed
 when the entity's `displays_weapons: bool` is false (e.g. wolves); parsed
 from `displays_weapons true|false` in the enemy definition (default true).
+**Health bars** are always-on, drawn above the entity's actual art top (same
+`sprite_top_y` runtime scan as the skill-icon anim — see AGENTS → Animation).
+The bar canvas + outline frame are 155×31 native (cropped to the outline's
+opaque bbox and downscaled 0.5x from the 384×128 Unity art, at
+`assets/world/entity_health_bar_background.png` + `entity_health_bar_outline.png`).
+Three draw passes at the same rect: depleted background (full,
+`active_theme.darkest`), fill (cropped to `fill_fraction` from the left, team
+gradient index 1), outline frame on top (tinted with the same team gradient
+index 1 as the fill). The skill-icon anim sits above the health bar (offset
+by the bar height + gap) so the two don't overlap. **Levels only** (not hubs);
+the gate is a `show_health_bar` bool threaded through `collectEntityEntries`.
 
 **UI** is tinted by the **player gradient** with FIXED indices (not the
 player's chosen index — the UI palette is independent of the player's body

@@ -974,8 +974,14 @@ pub const SpriteDrawable = struct {
 pub const HealthBarDrawable = struct {
     screen_position: ScreenPosition,
     width: i32,
-    current_health: u32,
-    max_health: u32,
+    height: i32,
+    /// 0 = empty, 1 = full. `current_health / max_health`.
+    fill_fraction: f32,
+    /// Depleted portion (the background drawn full). Global theme darkest.
+    depleted_color: Color,
+    /// Filled portion. Team gradient index 1 (player → player gradient,
+    /// enemy → enemy gradient).
+    fill_color: Color,
 };
 
 pub const EntityDrawable = struct {

@@ -98,7 +98,7 @@ pub fn view(
             const entity_ptrs = frame_allocator.alloc(*const Entity, level.entities.len) catch
                 @panic("failed to alloc entity pointer slice");
             for (level.entities, 0..) |*entity, index| entity_ptrs[index] = entity;
-            collectEntityEntries(&ground_entries, frame_allocator, entity_ptrs, active_theme, settings.player_color_index, camera, camera_zoom);
+            collectEntityEntries(&ground_entries, frame_allocator, entity_ptrs, active_theme, settings.player_color_index, camera, camera_zoom, render.sprite_top_y, true);
         }
         for (level.decorations) |decoration| {
             const pieces = buildDecorationPieces(decoration, active_theme, camera, camera_zoom, frame_allocator);
@@ -128,7 +128,7 @@ pub fn view(
                 @panic("failed to alloc hub entity pointer slice");
             hub_entity_ptrs[0] = &hub.player;
             for (hub.npcs, 0..) |*npc, index| hub_entity_ptrs[index + 1] = &npc.entity;
-            collectEntityEntries(&ground_entries, frame_allocator, hub_entity_ptrs, active_theme, settings.player_color_index, camera, camera_zoom);
+            collectEntityEntries(&ground_entries, frame_allocator, hub_entity_ptrs, active_theme, settings.player_color_index, camera, camera_zoom, render.sprite_top_y, false);
         }
         for (hub.decorations) |decoration| {
             const pieces = buildDecorationPieces(decoration, active_theme, camera, camera_zoom, frame_allocator);
@@ -345,6 +345,16 @@ const entity_pivot_y: f32 = 0.8;
 const skill_icon_size_native: i32 = 256;
 const skill_icon_gap_native: i32 = 16;
 
+/// Entity health bar. The bar + outline sprites are 155x31 native (cropped
+/// to the outline's opaque bbox and downscaled 0.5x from the 384x128 Unity
+/// art). Drawn above the entity's actual art top (same `sprite_top_y` scan
+/// as the skill icon). The skill icon sits above the health bar, so it's
+/// offset by the bar's height + this gap. Tunable — eyeball in `zig build
+/// run`. See AGENTS → Entity & UI Coloring.
+const health_bar_native_width: i32 = 155;
+const health_bar_native_height: i32 = 31;
+const health_bar_gap_native: i32 = 8;
+
 /// Ground-items sprite: `world/ground_items.png` (256x256, centered pivot
 /// 0.5/0.5). Tinted at world gradient index 5 (a fixed color independent of
 /// the player's body color, like the UI palette). Drawn at the stack's tile;
@@ -484,24 +494,22 @@ fn buildWorldOverlays(
 
                 const top_left = entityFrameTopLeft(entity, camera, zoom);
                 const draw_width = entity_frame_width * zoom;
-                const draw_height = entity_frame_height * zoom;
                 const drawn_size: f32 = @as(f32, @floatFromInt(skill_icon_size_native)) * zoom;
                 const gap: f32 = @as(f32, @floatFromInt(skill_icon_gap_native)) * zoom;
                 const icon_x = @as(f32, @floatFromInt(top_left.x)) + draw_width / 2 - drawn_size / 2;
-                // Place the icon just above the entity's actual art top, not
-                // the 512x640 frame edge: map the sprite's topmost
-                // non-transparent pixel (source space) into drawn space. Falls
-                // back to the frame top if the sprite can't be scanned (e.g.
-                // missing art). See AGENTS → Animation.
                 const art_top_y: f32 = if (sprite_top_y.get(entity.sprite)) |maybe_top_y|
                     if (maybe_top_y) |top_y|
-                        @as(f32, @floatFromInt(top_left.y)) +
-                            (@as(f32, @floatFromInt(top_y)) / entity_frame_height) * draw_height
+                        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(top_y)) * zoom
                     else
                         @as(f32, @floatFromInt(top_left.y))
                 else
                     @as(f32, @floatFromInt(top_left.y));
-                const icon_y = art_top_y - drawn_size - gap;
+                // The health bar sits above the art top (always-on), so the
+                // icon is offset further by the bar's height + gap to avoid
+                // overlap. See AGENTS → Animation / Entity & UI Coloring.
+                const health_bar_total: f32 =
+                    @as(f32, @floatFromInt(health_bar_native_height + health_bar_gap_native)) * zoom;
+                const icon_y = art_top_y - health_bar_total - drawn_size - gap;
                 const sprite_id = std.fmt.allocPrint(allocator, "skills/{s}", .{@tagName(info.skill_id)}) catch
                     @panic("failed to build skill-icon sprite id");
                 overlays.append(allocator, .{ .floating_icon = .{
@@ -521,7 +529,10 @@ fn buildWorldOverlays(
 
 /// Build an EntityDrawable for `entity`, aligning the shared sprite pivot to
 /// the center of the entity's tile. Populates the base sprite, body overlay
-/// layers, and weapons; gear/effect sprites and the health bar are not wired.
+/// layers, and weapons; gear/effect sprites are not wired. The health bar
+/// is populated (always-on for alive entities), placed above the entity's
+/// actual art top via the `sprite_top_y` lookup. See AGENTS → Entity & UI
+/// Coloring.
 fn entityDrawable(
     entity: *const Entity,
     active_theme: types.ActiveColorTheme,
@@ -529,6 +540,8 @@ fn entityDrawable(
     camera: types.Camera,
     zoom: f32,
     allocator: std.mem.Allocator,
+    sprite_top_y: std.StringHashMapUnmanaged(?i32),
+    show_health_bar: bool,
 ) types.EntityDrawable {
     const top_left = entityFrameTopLeft(entity, camera, zoom);
     const base_sprite_id = std.fmt.allocPrint(allocator, "entities/{s}", .{entity.sprite}) catch
@@ -593,7 +606,53 @@ fn entityDrawable(
         .weapon_sprites = weapon_sprites,
         .gear_sprites = &.{},
         .front_effect_sprites = &.{},
-        .health_bar = null,
+        .health_bar = if (show_health_bar) buildHealthBar(entity, active_theme, top_left, zoom, sprite_top_y) else null,
+    };
+}
+
+/// Build the always-on health bar above the entity's actual art top.
+/// Depleted = global theme darkest; fill = team gradient index 1. The bar
+/// canvas (155x31 native) is centered horizontally over the entity frame;
+/// the outline sprite is drawn on top by the renderer at the same rect.
+/// See AGENTS → Entity & UI Coloring.
+fn buildHealthBar(
+    entity: *const Entity,
+    active_theme: types.ActiveColorTheme,
+    frame_top_left: types.ScreenPosition,
+    zoom: f32,
+    sprite_top_y: std.StringHashMapUnmanaged(?i32),
+) ?types.HealthBarDrawable {
+    if (entity.max_health == 0) return null;
+    const draw_width = entity_frame_width * zoom;
+    const art_top_y: f32 = if (sprite_top_y.get(entity.sprite)) |maybe_top_y|
+        if (maybe_top_y) |top_y|
+            // `top_y` is in source pixels (0..640); the drawn frame height is
+            // `entity_frame_height * zoom`, so the art top in screen space is
+            // `frame_top + top_y * zoom`.
+            @as(f32, @floatFromInt(frame_top_left.y)) + @as(f32, @floatFromInt(top_y)) * zoom
+        else
+            @as(f32, @floatFromInt(frame_top_left.y))
+    else
+        @as(f32, @floatFromInt(frame_top_left.y));
+    const bar_width: f32 = @as(f32, @floatFromInt(health_bar_native_width)) * zoom;
+    const bar_height: f32 = @as(f32, @floatFromInt(health_bar_native_height)) * zoom;
+    const gap: f32 = @as(f32, @floatFromInt(health_bar_gap_native)) * zoom;
+    const bar_x = @as(f32, @floatFromInt(frame_top_left.x)) + draw_width / 2 - bar_width / 2;
+    const bar_y = art_top_y - bar_height - gap;
+    const fill_color = if (entity.team == 0)
+        playerColor(active_theme, 1)
+    else
+        enemyColor(active_theme, 1);
+    return .{
+        .screen_position = .{
+            .x = @intFromFloat(@round(bar_x)),
+            .y = @intFromFloat(@round(bar_y)),
+        },
+        .width = health_bar_native_width,
+        .height = health_bar_native_height,
+        .fill_fraction = @as(f32, @floatFromInt(entity.current_health)) / @as(f32, @floatFromInt(entity.max_health)),
+        .depleted_color = active_theme.darkest,
+        .fill_color = fill_color,
     };
 }
 
@@ -654,6 +713,8 @@ fn collectEntityEntries(
     player_color_index: u32,
     camera: types.Camera,
     zoom: f32,
+    sprite_top_y: std.StringHashMapUnmanaged(?i32),
+    show_health_bar: bool,
 ) void {
     // Dead entities (current_health == 0) are not rendered — their sprite
     // vanishes on death.
@@ -662,7 +723,7 @@ fn collectEntityEntries(
         list.append(allocator, .{
             .sort_y = entity.position.y,
             .sort_x = entity.position.x,
-            .drawable = .{ .entity = entityDrawable(entity, active_theme, player_color_index, camera, zoom, allocator) },
+            .drawable = .{ .entity = entityDrawable(entity, active_theme, player_color_index, camera, zoom, allocator, sprite_top_y, show_health_bar) },
         }) catch @panic("failed to append entity entry");
     }
 }

@@ -2749,3 +2749,50 @@ code than the IHDR-only dims scan — and couldn't serve custom runtime sprites.
 The runtime lazy-cache handles any sprite the backend can load (shipped or
 custom), uniform with the outline-mask precedent, at the cost of one decode
 per sprite on first request (amortized by the cache).
+
+### Entity health bars (DONE)
+
+Always-on health bars above each entity's head, the Phase 4b combat-readability
+piece. Placed above the entity's actual art top (same runtime `sprite_top_y`
+scan as the skill-icon anim — topmost non-transparent pixel, lazily decoded +
+cached in the backend, mirroring the outline-mask cache). The skill-icon anim
+sits above the health bar (offset by the bar height + gap) so the two don't
+overlap.
+
+- **Assets:** cropped from the Unity project's `EntityHealthBarBackground.png`
+  (the white bar) and `EntityHealthBars.png` left-most frame (the outline
+  frame) to the outline's opaque bbox (310×62 at (37,33)), downscaled 0.5x →
+  155×31 each. Shipped at `assets/world/entity_health_bar_background.png` +
+  `entity_health_bar_outline.png` (world-space drawables that move with the
+  entity, like `flag_pole`). Both share the same 155×31 canvas so they
+  auto-register (drawn at the same rect).
+- **Type (`types.zig`):** `HealthBarDrawable` redesigned from the old
+  `{position, width, current_health, max_health}` scaffolding to
+  `{position, width, height, fill_fraction, depleted_color, fill_color}` —
+  the renderer needs the fraction + colors, not raw health (view computes the
+  fraction; the renderer is dumb). `EntityDrawable.health_bar: ?HealthBarDrawable`
+  populated for alive entities (null for dead / `max_health == 0`).
+- **Colors:** depleted = `active_theme.darkest` (global, not team-specific —
+  reads as "empty" regardless of team); fill = team gradient index 1 (player →
+  player gradient, enemy → enemy gradient — consistent with the weapon-color
+  convention). Outline frame tinted with the same team gradient index 1 as
+  the fill (the border matches the entity's team color).
+- **Builder (`view.zig`):** `buildHealthBar` computes the bar rect: centered
+  horizontally over the entity's 512×640 frame, `art_top_y - bar_height - gap`
+  vertically. `entityDrawable` now takes `sprite_top_y` (threaded through
+  `collectEntityEntries` from `render.sprite_top_y`) to resolve the art top,
+  and a `show_health_bar` bool (levels only — the hub call site passes false).
+  Constants: `health_bar_native_width/height` (155/31), `health_bar_gap_native`
+  (8) — tunable, eyeball in `zig build run`.
+- **Renderer (`raylib_backend.zig`):** `drawHealthBar` — three passes at the
+  same rect: (1) depleted background full (`drawSprite`, darkest tint), (2)
+  fill cropped to `fill_fraction` from the left (`drawTexturePro` with
+  `source.width = tex_w * fraction`, `dest.width = dest_w * fraction` — same
+  source-rect technique as `drawFillSprite`, keeping the left portion so the
+  bar depletes from the right), (3) outline frame full (`drawSprite`, fill-color
+  tint). Drawn in the entity arm of `drawGroundDrawable`, after front effects.
+- **Skill-icon offset:** `buildWorldOverlays` offsets the icon by
+  `health_bar_native_height + health_bar_gap_native` beyond the art top, so
+  the icon sits above the bar. Both use the same constants → they agree.
+- **Scope:** levels only (hub NPCs don't show bars — `show_health_bar` false
+  on the hub path).

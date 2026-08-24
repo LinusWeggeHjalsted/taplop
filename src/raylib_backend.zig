@@ -747,7 +747,7 @@ pub const RaylibBackend = struct {
                 }
                 for (entity.gear_sprites) |sprite| self.drawSpriteDrawable(sprite, world_scale);
                 for (entity.front_effect_sprites) |sprite| self.drawSpriteDrawable(sprite, world_scale);
-                // health_bar is not rendered (the field is currently null).
+                if (entity.health_bar) |bar| self.drawHealthBar(bar, world_scale);
             },
             .decoration_piece => |decoration| {
                 self.drawSpriteDrawable(.{
@@ -809,6 +809,39 @@ pub const RaylibBackend = struct {
                 rl.drawTexturePro(texture, source, destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(icon.color, 255));
             },
         }
+    }
+
+    /// Draw the entity health bar: depleted background (full, darkest),
+    /// fill (cropped to `fill_fraction` from the left, team gradient index 1),
+    /// then the outline frame on top — all at the same rect (the bar +
+    /// outline share a 155x31 canvas). `size` fields are native reference
+    /// pixels; `world_scale` (camera zoom) scales them at draw time. See
+    /// AGENTS → Entity & UI Coloring.
+    fn drawHealthBar(
+        self: *RaylibBackend,
+        bar: types.HealthBarDrawable,
+        world_scale: f32,
+    ) void {
+        const destination = rl.Rectangle{
+            .x = @floatFromInt(bar.screen_position.x),
+            .y = @floatFromInt(bar.screen_position.y),
+            .width = @as(f32, @floatFromInt(bar.width)) * world_scale,
+            .height = @as(f32, @floatFromInt(bar.height)) * world_scale,
+        };
+        // Depleted background (drawn full).
+        self.drawSprite("world/entity_health_bar_background", destination, null, bar.depleted_color);
+        // Fill (cropped to fraction from the left — `.right` keeps the left
+        // portion, matching a health bar that depletes from the right).
+        const fill_texture = self.getTexture("world/entity_health_bar_background") orelse return;
+        const fraction = std.math.clamp(bar.fill_fraction, 0, 1);
+        const tex_w: f32 = @floatFromInt(fill_texture.width);
+        const tex_h: f32 = @floatFromInt(fill_texture.height);
+        const fill_source = rl.Rectangle{ .x = 0, .y = 0, .width = tex_w * fraction, .height = tex_h };
+        const fill_dest = rl.Rectangle{ .x = destination.x, .y = destination.y, .width = destination.width * fraction, .height = destination.height };
+        rl.drawTexturePro(fill_texture, fill_source, fill_dest, .{ .x = 0, .y = 0 }, 0, toRaylibColor(bar.fill_color, 255));
+        // Outline frame on top (same rect), tinted with the fill color so the
+        // bar's border matches the entity's team gradient index 1.
+        self.drawSprite("world/entity_health_bar_outline", destination, null, bar.fill_color);
     }
 
     // -- UI element drawing --
