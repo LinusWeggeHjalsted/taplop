@@ -1272,6 +1272,17 @@ the campaign.
   and after `death` (killing the last enemy while standing on the exit ends
   the level without an extra move). Not pushed at level start (player spawn
   and level end are always different tiles).
+  **Prefer composing an existing primitive over re-implementing it.** When a
+  second event/skill does semantically what an existing one does, reuse the
+  primitive (push the existing event) instead of re-implementing the
+  behavior — this keeps all post-effects in one place. `swap_positions`
+  pushes two `move_entity` events (so sound, momentum, pickup, aggro,
+  level-end all fire uniformly); `aggro_in_radius` and `aggro_check` share an
+  `activateEntity` helper so the aggro-indicator anim can't drift between
+  them. Where you can't compose (different range source or team filter),
+  extract the shared core into a helper and leave a comment naming the ONE
+  intended difference. The seam between sibling implementations is where
+  silent drift bugs live; composition removes the seam.
   Scalar-field primitives clamp (heal to max_health; momentum/cooldown at 0 via
   functions.applySignedDelta)
 - **One top-level event per player action (orchestrator convention).** Each

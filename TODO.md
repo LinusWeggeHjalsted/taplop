@@ -609,6 +609,19 @@ Done items in DONE.md. Open:
   Orchestrator/ordering tests call `processEvent` once + inspect
   `event_stack` (LIFO order) rather than `runToIdle`. FUTURE: keep adding
   tests when new handlers land (editor events are the next big set).
+  **Coverage gap: the "boring" primitives.** Coverage is concentrated on the
+  "interesting" verbs (combat, AI, turn-flow) and thin on the boring
+  primitives (`swap_positions`, `retreat`, `swap_hands`, the cantrip handler
+  arms). `swap_positions` had NO test before it was rewritten to compose
+  `move_entity` — the rewrite changed behavior and nothing caught it either
+  way. The boring verbs are exactly where sibling-drift bugs live (see
+  AGENTS → Architecture → "Prefer composing"). A coverage matrix (event
+  variant → has at least one test) would surface the gaps mechanically;
+  `pushAndRunSub` makes adding them cheap. Prefer CONTRACT tests (player-
+  visible behavior) over MECHANICS tests (implementation details) — the old
+  `aggro_around` tests locked in the mover-centric bug by asserting the
+  mechanic ("mover's range is used") instead of the contract ("entities
+  aggro when they detect an opponent").
 - Consistent slot-index bounds checking: utility-skill handlers guard
   slot_index < utility_skill_count, but equip_item/unequip_item/learn_skill/
   salvage_item index inventory.slots[...] directly (panic on out-of-range).
