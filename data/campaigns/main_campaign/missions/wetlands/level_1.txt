@@ -52,7 +52,7 @@ off_hand_weapon_damage 5
 gloves_name Crab Gloves
 gloves_health_bonus 2
 gloves_damage_bonus 1
-displays_weapons true
+displays_weapons false
 main_hand_weapon_type sword
 off_hand_weapon_type shield
 slot_4 stone_form
