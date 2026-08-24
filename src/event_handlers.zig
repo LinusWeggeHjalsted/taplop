@@ -63,6 +63,27 @@ fn damageNumberDirection(attacker_position: Vector2, defender_position: Vector2)
 /// `view.number_anim_duration_microseconds`). 500ms.
 const number_anim_duration_microseconds: u32 = 500_000;
 
+/// Duration of the aggro indicator one-shot anim. 500ms.
+const aggro_indicator_duration_microseconds: u32 = 500_000;
+
+/// Activate an entity (flip `is_active = true`) and queue the one-shot
+/// aggro indicator above its head. Shared by `aggro_check` and
+/// `aggro_in_radius` (Howl) so both paths show the graphic. Gated
+/// `!replaying` (same as all anim/sound side effects). See AGENTS → Animation.
+fn activateEntity(
+    history: *GameStateHistory,
+    entity: *types.Entity,
+    entity_index: u32,
+) void {
+    entity.is_active = true;
+    if (history.replaying) return;
+    history.session.queueAnim(history.backing_allocator, .{
+        .event_index = history.current_event_index - 1,
+        .kind = .{ .aggro_indicator = .{ .entity_index = entity_index } },
+        .duration_us = aggro_indicator_duration_microseconds,
+    });
+}
+
 /// Compute the minimum effective range across all off-cooldown skills an entity
 /// has — the closest distance it needs to be to use at least one skill. Uses
 /// range if the skill has it, radius if not. Returns null if no skills are off
@@ -1757,19 +1778,7 @@ pub fn processEvent(
                             }
                         }
                         if (sees_opponent) {
-                            @constCast(entity).is_active = true;
-                            // One-shot aggro indicator above the newly-aggroed
-                            // entity's head (gated `!replaying`, same shape as
-                            // the skill-icon anim). See AGENTS → Animation.
-                            if (!history.replaying) {
-                                history.session.queueAnim(history.backing_allocator, .{
-                                    .event_index = history.current_event_index - 1,
-                                    .kind = .{ .aggro_indicator = .{
-                                        .entity_index = @intCast(entity_index),
-                                    } },
-                                    .duration_us = 500_000,
-                                });
-                            }
+                            activateEntity(history, @constCast(entity), @intCast(entity_index));
                         }
                     }
                 },
@@ -2490,7 +2499,7 @@ pub fn processEvent(
                         // harmless — `is_active` on the player is ignored by
                         // the loops that skip entity 0.
                         if (functions.chebyshevDistance(entity.position, other_entity.position) <= radius) {
-                            @constCast(other_entity).is_active = true;
+                            activateEntity(history, @constCast(other_entity), @intCast(other_index));
                         }
                     }
                 },
