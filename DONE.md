@@ -2796,3 +2796,48 @@ overlap.
   the icon sits above the bar. Both use the same constants → they agree.
 - **Scope:** levels only (hub NPCs don't show bars — `show_health_bar` false
   on the hub path).
+
+### Hit flash one-shot anim (DONE)
+
+The second landed one-shot anim: the `world/hit_flash` sprite flashed over a
+damaged entity's rendered art center for 250ms when it takes nonzero damage.
+Reuses the skill-icon one-shot machinery (`queueAnim` → `frame()` stamps
+`end_clock` → `view()` gates by event-index + time) with a new `AnimKind`
+variant and a new `sprite_bottom_y` lookup for the real vertical center.
+
+- **Asset:** the Unity project's 512×512 `Assets/Resources/Hit.png`
+  downscaled 0.5x → 256×256 RGBA at `assets/world/hit_flash.png` (renamed
+  from `Hit` to match the code's `hit_flash` identifier; picked up by the
+  generated assets + sprite-metadata tables on rebuild). Single-frame, no
+  sheet.
+- **`AnimKind.hit_flash`** (`types.zig`): `{ entity_index: u32 }` alongside
+  `skill_icon`.
+- **`sprite_bottom_y`** (`raylib_backend.zig`): mirror of `sprite_top_y` —
+  the bottommost-opaque-pixel y. `ensureSpriteTopYLoaded` refactored into
+  `ensureSpriteBoundsLoaded`, which decodes the sprite ONCE and fills BOTH
+  caches (`sprite_top_y_cache` + new `sprite_bottom_y_cache`). New
+  `scanBottommostOpaqueY` (bottom-up scan, same `>16` alpha threshold). New
+  `getSpriteBottomY` / `entitySpriteBottomY` wrappers. `frame()` (main.zig)
+  populates a parallel `sprite_bottom_y` map in the same entity loops (second
+  call is a cache hit) and threads it through `RenderContext.sprite_bottom_y`.
+  No second decode per sprite.
+- **Placement** (`view.zig` `buildWorldOverlays`, new `.hit_flash` arm):
+  horizontal center = the entity frame's horizontal center (entities are
+  always horizontally centered in the 512×640 frame); vertical center =
+  midpoint of `sprite_top_y` and `sprite_bottom_y` (the opaque-art bbox),
+  falling back to the frame's vertical center on a miss/transparent sprite.
+  Drawn at `hit_flash_size_native` (256) × `world_scale`, tinted with
+  `active_theme.lightest` (the artist's offwhite). A killing blow still
+  flashes — only bounds-checked (not `current_health == 0`, which the
+  skill-icon path uses to skip dead casters); `death` zeroes health but
+  leaves the slot in the array.
+- **Trigger** (`event_handlers.zig`): in both the `attack` and `collision`
+  handlers, inside the `if (incoming_damage > 0)` block right after the
+  health subtraction, `queueAnim` with `entity_index = defender`,
+  `duration_us = 250_000`, `event_index = current_event_index - 1`, gated
+  `!history.replaying`. Only nonzero-damage hits flash (a Reflect-zeroed or
+  0-damage hit does not), matching the spec. The existing `queueSound(.damage)`
+  at the top of each handler is unchanged (still fires unconditionally).
+  Replay-safety holds by construction: the anim is a `SessionState` side
+  effect gated `!replaying`, the clock read stays in `frame()`, and undo
+  hides it via the `event_index < current_event_index` bound.

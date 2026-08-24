@@ -143,12 +143,17 @@ Open / in-progress:
         same shape as `queueSound`); `frame()` stamps `end_clock` from the
         live clock; `view()` gates by `event_index < current_event_index` AND
         `animation_clock < end_clock`; screen/world transition clears via
-        `session.clearAnims()`. See AGENTS → Animation. First case LANDED:
+        `session.clearAnims()`. See AGENTS → Animation. Landed cases:
         skill-icon pop above the caster on `use_skill` (500ms, single-frame),
-        placed above the entity's actual art top (runtime topmost-opaque-pixel
-        scan, same lazy-cache shape as the outline-mask cache).
-    - [ ] Future: attack swings, hit flashes, death dissolves (multi-frame
-          one-shots; same machinery, richer `AnimKind`).
+        placed above the entity's actual art top (runtime topmost-opaque-
+        pixel scan, same lazy-cache shape as the outline-mask cache); hit
+        flash on `attack`/`collision` (250ms, single-frame) — `world/hit_flash`
+        centered on the defender's rendered art (horizontal frame center +
+        vertical center of the opaque bbox via `sprite_top_y` + new
+        `sprite_bottom_y`), tinted with `active_theme.lightest`, only on
+        nonzero damage.
+    - [ ] Future: attack swings, death dissolves (multi-frame one-shots;
+          same machinery, richer `AnimKind`).
   - Per-sheet frame data (count, frame size) hardcoded per builder for now
     (flag is the only animation); general per-sprite metadata table is the
     "Sprite asset metadata" item below.

@@ -53,6 +53,13 @@ pub const RenderContext = struct {
     /// 512x640 frame edge. Frame-arena-backed (no deinit). See AGENTS →
     /// Animation.
     sprite_top_y: std.StringHashMapUnmanaged(?i32),
+    /// Per-frame lookup of entity-sprite bottom-y: mirror of `sprite_top_y`,
+    /// the y-coordinate (0-based from the top, in SOURCE pixels) of the
+    /// bottommost non-transparent pixel, or null on miss/failure. Lets
+    /// `view()` place overlays at the rendered art's real vertical center
+    /// (e.g. the hit flash) instead of the 512x640 frame edge. See AGENTS →
+    /// Animation.
+    sprite_bottom_y: std.StringHashMapUnmanaged(?i32),
 };
 
 pub fn view(
@@ -156,6 +163,8 @@ pub fn view(
         camera_zoom,
         current_event_index,
         render.sprite_top_y,
+        render.sprite_bottom_y,
+        active_theme,
     );
 
     var ui_elements: std.ArrayList(ui.UiElement) = .empty;
@@ -345,6 +354,15 @@ const entity_pivot_y: f32 = 0.8;
 const skill_icon_size_native: i32 = 256;
 const skill_icon_gap_native: i32 = 16;
 
+/// One-shot hit-flash anim: the `world/hit_flash` sprite (256x256, ported
+/// from the Unity project's 512x512 Hit.png at 0.5x) flashed over a damaged
+/// entity's rendered art center for 250ms, tinted with the active theme's
+/// `lightest` color (the artist's offwhite). Drawn centered on the entity's
+/// horizontal frame center and the real vertical center of its opaque art
+/// (via `sprite_top_y` + `sprite_bottom_y`). Tunable — eyeball in
+/// `zig build run`. See AGENTS → Animation.
+const hit_flash_size_native: i32 = 256;
+
 /// Entity health bar. The bar + outline sprites are 155x31 native (cropped
 /// to the outline's opaque bbox and downscaled 0.5x from the 384x128 Unity
 /// art). Drawn above the entity's actual art top (same `sprite_top_y` scan
@@ -480,6 +498,8 @@ fn buildWorldOverlays(
     zoom: f32,
     current_event_index: u32,
     sprite_top_y: std.StringHashMapUnmanaged(?i32),
+    sprite_bottom_y: std.StringHashMapUnmanaged(?i32),
+    active_theme: types.ActiveColorTheme,
 ) []const types.WorldOverlayDrawable {
     const level = current_state.level orelse return &.{};
     var overlays: std.ArrayList(types.WorldOverlayDrawable) = .empty;
@@ -520,6 +540,50 @@ fn buildWorldOverlays(
                     },
                     .size = skill_icon_size_native,
                     .color = .{ .r = 255, .g = 255, .b = 255 },
+                } }) catch @panic("failed to append world overlay");
+            },
+            .hit_flash => |info| {
+                // A killing blow still flashes: `death` zeroes health but
+                // leaves the entity slot in the array, so the index stays
+                // valid. We bounds-check only (not `current_health == 0`,
+                // which the skill-icon path uses to skip dead casters).
+                if (info.entity_index >= level.entities.len) continue;
+                const entity = &level.entities[info.entity_index];
+
+                const top_left = entityFrameTopLeft(entity, camera, zoom);
+                const draw_width = entity_frame_width * zoom;
+                const draw_height = entity_frame_height * zoom;
+                // Horizontal: entities are always horizontally centered in
+                // the frame, so the art center is the frame's horizontal
+                // center.
+                const center_x: f32 = @as(f32, @floatFromInt(top_left.x)) + draw_width / 2;
+                // Vertical: real center of the opaque art via top-y +
+                // bottom-y; fall back to the frame's vertical center on a
+                // miss/transparent sprite.
+                const art_top_y: f32 = if (sprite_top_y.get(entity.sprite)) |maybe_top_y|
+                    if (maybe_top_y) |top_y|
+                        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(top_y)) * zoom
+                    else
+                        @as(f32, @floatFromInt(top_left.y))
+                else
+                    @as(f32, @floatFromInt(top_left.y));
+                const art_bottom_y: f32 = if (sprite_bottom_y.get(entity.sprite)) |maybe_bottom_y|
+                    if (maybe_bottom_y) |bottom_y|
+                        @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bottom_y)) * zoom
+                    else
+                        @as(f32, @floatFromInt(top_left.y)) + draw_height
+                else
+                    @as(f32, @floatFromInt(top_left.y)) + draw_height;
+                const center_y: f32 = (art_top_y + art_bottom_y) / 2;
+                const drawn_size: f32 = @as(f32, @floatFromInt(hit_flash_size_native)) * zoom;
+                overlays.append(allocator, .{ .floating_icon = .{
+                    .sprite_id = "world/hit_flash",
+                    .screen_position = .{
+                        .x = @intFromFloat(@round(center_x - drawn_size / 2)),
+                        .y = @intFromFloat(@round(center_y - drawn_size / 2)),
+                    },
+                    .size = hit_flash_size_native,
+                    .color = active_theme.lightest,
                 } }) catch @panic("failed to append world overlay");
             },
         }

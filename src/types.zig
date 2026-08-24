@@ -1051,6 +1051,10 @@ pub const GroundDrawable = union(enum) {
 pub const AnimKind = union(enum) {
     /// Show a skill's icon above the casting entity for `duration_us`.
     skill_icon: struct { entity_index: u32, skill_id: SkillId },
+    /// Flash the hit sprite centered on a damaged entity's rendered art
+    /// for `duration_us`. Triggered by `attack`/`collision` only when the
+    /// defender takes nonzero damage. See AGENTS → Animation.
+    hit_flash: struct { entity_index: u32 },
 };
 
 /// A pending one-shot anim pushed by an event handler (gated `!replaying`,

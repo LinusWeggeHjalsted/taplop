@@ -451,13 +451,22 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // up `entity.sprite`. Frame-arena-backed (no deinit). See AGENTS →
         // Animation.
         var sprite_top_y: std.StringHashMapUnmanaged(?i32) = .{};
+        // Mirror of `sprite_top_y`: bottommost-opaque-pixel y per entity sprite,
+        // so `view()` can place overlays at the rendered art's real vertical
+        // center (e.g. the hit flash). Populated in the same loop; the second
+        // `entitySprite*Y` call is a cache hit (`ensureSpriteBoundsLoaded`
+        // fills both caches in one decode). See AGENTS → Animation.
+        var sprite_bottom_y: std.StringHashMapUnmanaged(?i32) = .{};
         const frame_alloc = frame_state.frame_arena.allocator();
         if (history.current_state.level) |*level| {
             for (level.entities) |*entity| {
                 if (sprite_top_y.contains(entity.sprite)) continue;
                 const top_y = backend.entitySpriteTopY(frame_alloc, entity.sprite);
+                const bottom_y = backend.entitySpriteBottomY(frame_alloc, entity.sprite);
                 sprite_top_y.put(frame_alloc, entity.sprite, top_y) catch
                     @panic("failed to populate sprite_top_y");
+                sprite_bottom_y.put(frame_alloc, entity.sprite, bottom_y) catch
+                    @panic("failed to populate sprite_bottom_y");
             }
         } else if (history.current_state.hub) |*hub| {
             const hub_entity_count = 1 + hub.npcs.len;
@@ -468,8 +477,11 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             for (hub_entity_ptrs) |entity| {
                 if (sprite_top_y.contains(entity.sprite)) continue;
                 const top_y = backend.entitySpriteTopY(frame_alloc, entity.sprite);
+                const bottom_y = backend.entitySpriteBottomY(frame_alloc, entity.sprite);
                 sprite_top_y.put(frame_alloc, entity.sprite, top_y) catch
                     @panic("failed to populate sprite_top_y");
+                sprite_bottom_y.put(frame_alloc, entity.sprite, bottom_y) catch
+                    @panic("failed to populate sprite_bottom_y");
             }
         }
         frame_state.previous_view_state = view_mod.view(
@@ -487,6 +499,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
                 .frame_allocator = frame_alloc,
                 .font_metrics = backend.fontMetrics(),
                 .sprite_top_y = sprite_top_y,
+                .sprite_bottom_y = sprite_bottom_y,
             },
         );
         backend.render(frame_state.previous_view_state.?, platform_input.viewport);

@@ -342,13 +342,12 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
   pole) is drawn over `world/flag_pole` at the same screen position via
   `LevelEndDrawable.banner_source_rectangle`. Used for both level-end and hub
   mission-start markers.
-- **One-shot anims** (attack swings, hit flashes, death dissolves; the
-  first landed case is a skill-icon pop above the caster): the trigger lives
-  in **event handlers** — exactly where one-shot sounds live (see Audio). A
-  handler calls `session.queueAnim(allocator, PendingAnim{ event_index,
-  kind, duration_us })` gated `!history.replaying`, right next to its
-  `queueSound` call. `frame()` drains `session.pending_anims` after the update
-  drain (alongside `drainPendingSounds`), stamps `end_clock =
+- **One-shot anims** (attack swings, hit flashes, death dissolves): the
+  trigger lives in **event handlers** — exactly where one-shot sounds live
+  (see Audio). A handler calls `session.queueAnim(allocator, PendingAnim{
+  event_index, kind, duration_us })` gated `!history.replaying`, right next
+  to its `queueSound` call. `frame()` drains `session.pending_anims` after
+  the update drain (alongside `drainPendingSounds`), stamps `end_clock =
   animation_clock + duration_us` from the LIVE clock, and appends to
   `session.active_anims`. `view()` shows anims whose `event_index <
   current_event_index` (the triggering event is in the projected history —
@@ -365,6 +364,23 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
   `active_anims` grows unbounded within a screen (accepted, same tradeoff as
   `event_history`) and is bounded in practice by short durations + the
   transition clear.
+  Two landed cases (both single-frame, no sheet):
+  - **Skill-icon pop** (500ms): `skill_icon` kind, shows the skill's icon
+    above the caster's actual art top (runtime topmost-opaque-pixel scan via
+    `RenderContext.sprite_top_y`), offset above the always-on health bar.
+  - **Hit flash** (250ms): `hit_flash` kind, shows the `world/hit_flash`
+    sprite (256×256, ported from the Unity project's 512×512 Hit.png at
+    0.5x) centered on the defender's rendered art — horizontal frame center
+    (entities are always horizontally centered) + vertical center of the
+    opaque art bbox (midpoint of `sprite_top_y` and `sprite_bottom_y`, the
+    latter a mirror scan added for this anim). Tinted with the active
+    theme's `lightest` color (the artist's offwhite). Triggered by the
+    `attack` and `collision` handlers **only when the defender takes nonzero
+    damage** (a Reflect-zeroed or 0-damage hit does not flash), inside the
+    `if (incoming_damage > 0)` block right after the health subtraction; a
+    killing blow still flashes (`death` zeroes health but leaves the slot).
+    `sprite_bottom_y` is populated alongside `sprite_top_y` in `frame()`
+    (single decode via `ensureSpriteBoundsLoaded`, filling both caches).
 
 ### The replay-purity invariant (why the clock is read in `frame()`, not handlers)
 
@@ -1642,6 +1658,10 @@ when the entity's `displays_weapons: bool` is false (e.g. wolves); parsed
 from `displays_weapons true|false` in the enemy definition (default true).
 **Health bars** are always-on, drawn above the entity's actual art top (same
 `sprite_top_y` runtime scan as the skill-icon anim — see AGENTS → Animation).
+`sprite_top_y` has a mirror `sprite_bottom_y` (bottommost-opaque-pixel scan,
+populated in the same decode via `ensureSpriteBoundsLoaded`), used by the hit
+flash to center on the rendered art's real vertical center. Both are
+frame-arena-backed lookups keyed by bare sprite stem. See AGENTS → Animation.
 The bar canvas + outline frame are 155×31 native (cropped to the outline's
 opaque bbox and downscaled 0.5x from the 384×128 Unity art, at
 `assets/world/entity_health_bar_background.png` + `entity_health_bar_outline.png`).

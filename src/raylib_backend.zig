@@ -169,12 +169,17 @@ pub const RaylibBackend = struct {
     outline_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
     /// sprite_id -> y-coordinate (0-based from the top, in SOURCE pixels) of
     /// the topmost non-transparent pixel. Generated lazily by
-    /// `ensureSpriteTopYLoaded` on the first `getSpriteTopY` request (same
+    /// `ensureSpriteBoundsLoaded` on the first `getSpriteTopY` request (same
     /// shape as `outline_cache`). A cached `null` means the sprite is missing
     /// (or the scan failed) -> the caller falls back to the frame top. Used
     /// by `view()` to place floating indicators above an entity's actual art.
     /// See AGENTS → Animation.
     sprite_top_y_cache: std.StringHashMapUnmanaged(?i32) = .empty,
+    /// Bottommost-opaque-pixel y per entity sprite (mirror of `sprite_top_y_cache`),
+    /// populated in the SAME decode by `ensureSpriteBoundsLoaded` so `view()` can
+    /// place overlays at the rendered art's real vertical center. See AGENTS →
+    /// Animation.
+    sprite_bottom_y_cache: std.StringHashMapUnmanaged(?i32) = .empty,
     /// Reference-resolution offscreen target; blitted to the window each frame.
     render_target: rl.RenderTexture2D,
     /// Text-label font. Normally the embedded TTF (loaded from
@@ -266,6 +271,7 @@ pub const RaylibBackend = struct {
         }
         self.outline_cache.deinit(self.allocator);
         self.sprite_top_y_cache.deinit(self.allocator);
+        self.sprite_bottom_y_cache.deinit(self.allocator);
         self.deinitAudio();
         if (!self.font_is_default) rl.unloadFont(self.font);
         self.frame_arena.deinit();
@@ -1106,13 +1112,23 @@ pub const RaylibBackend = struct {
     /// The y-coordinate (0-based from the top, in SOURCE pixels) of the
     /// topmost non-transparent pixel of `sprite_id`, or null if the sprite
     /// can't be loaded/decoded. Lazily generated on first request via
-    /// `ensureSpriteTopYLoaded` (same shape as the outline cache). Used by
+    /// `ensureSpriteBoundsLoaded` (same shape as the outline cache). Used by
     /// `view()` (via the `RenderContext.sprite_top_y` callback) to place
     /// floating indicators just above an entity's actual art top. See
     /// AGENTS → Animation.
     pub fn getSpriteTopY(self: *RaylibBackend, sprite_id: []const u8) ?i32 {
-        if (!self.sprite_top_y_cache.contains(sprite_id)) self.ensureSpriteTopYLoaded(sprite_id);
+        if (!self.sprite_top_y_cache.contains(sprite_id)) self.ensureSpriteBoundsLoaded(sprite_id);
         return self.sprite_top_y_cache.get(sprite_id).?;
+    }
+
+    /// The y-coordinate (0-based from the top, in SOURCE pixels) of the
+    /// bottommost non-transparent pixel of `sprite_id`, or null on miss/
+    /// failure. Mirror of `getSpriteTopY`; populated by the same decode. Used
+    /// by `view()` to place overlays at the rendered art's real vertical
+    /// center (e.g. the hit flash). See AGENTS → Animation.
+    pub fn getSpriteBottomY(self: *RaylibBackend, sprite_id: []const u8) ?i32 {
+        if (!self.sprite_bottom_y_cache.contains(sprite_id)) self.ensureSpriteBoundsLoaded(sprite_id);
+        return self.sprite_bottom_y_cache.get(sprite_id).?;
     }
 
     /// Convenience wrapper: look up the topmost-opaque y for an ENTITY sprite
@@ -1125,6 +1141,15 @@ pub const RaylibBackend = struct {
         return self.getSpriteTopY(sprite_id);
     }
 
+    /// Convenience wrapper: look up the bottommost-opaque y for an ENTITY
+    /// sprite given its bare stem (e.g. `skeleton_1`), prefixing the
+    /// `entities/` folder. See AGENTS → Animation.
+    pub fn entitySpriteBottomY(self: *RaylibBackend, allocator: std.mem.Allocator, bare_stem: []const u8) ?i32 {
+        const sprite_id = std.fmt.allocPrint(allocator, "entities/{s}", .{bare_stem}) catch
+            @panic("failed to build entity sprite id for bottom-y lookup");
+        return self.getSpriteBottomY(sprite_id);
+    }
+
     /// Scan `sprite_id`'s pixels for the topmost non-transparent row and cache
     /// the y-coordinate. Re-reads the asset bytes and decodes — like the
     /// outline mask, this is requested for few sprites (entity sprites that
@@ -1132,8 +1157,9 @@ pub const RaylibBackend = struct {
     /// cheap, and the cache makes it once-per-sprite. Uses the same alpha
     /// threshold (`> 16`) as the outline mask for consistency. Caches null on
     /// miss/failure. Idempotent via `sprite_top_y_cache` presence.
-    fn ensureSpriteTopYLoaded(self: *RaylibBackend, sprite_id: []const u8) void {
-        if (self.sprite_top_y_cache.contains(sprite_id)) return;
+    fn ensureSpriteBoundsLoaded(self: *RaylibBackend, sprite_id: []const u8) void {
+        if (self.sprite_top_y_cache.contains(sprite_id) and
+            self.sprite_bottom_y_cache.contains(sprite_id)) return;
 
         const path = std.fmt.allocPrintSentinel(
             self.frame_arena.allocator(),
@@ -1144,18 +1170,24 @@ pub const RaylibBackend = struct {
 
         const key = self.allocator.dupe(u8, sprite_id) catch @panic("failed to dupe sprite id");
 
-        const top_y: ?i32 = blk: {
+        const bounds: struct { top: ?i32, bottom: ?i32 } = blk: {
             const bytes = self.file_source.readFile(self.allocator, path) catch
-                break :blk null;
+                break :blk .{ .top = null, .bottom = null };
             defer self.allocator.free(bytes);
-            const image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
+            const image = rl.loadImageFromMemory(".png", bytes) catch
+                break :blk .{ .top = null, .bottom = null };
             defer rl.unloadImage(image);
             // `loadImageColors` returns []rl.Color regardless of source format
             // (raylib normalizes internally), so no manual setFormat needed.
-            break :blk self.scanTopmostOpaqueY(image) catch null;
+            const top_y = self.scanTopmostOpaqueY(image) catch null;
+            const bottom_y = self.scanBottommostOpaqueY(image) catch null;
+            break :blk .{ .top = top_y, .bottom = bottom_y };
         };
 
-        self.sprite_top_y_cache.put(self.allocator, key, top_y) catch @panic("failed to cache sprite top-y");
+        self.sprite_top_y_cache.put(self.allocator, key, bounds.top) catch
+            @panic("failed to cache sprite top-y");
+        self.sprite_bottom_y_cache.put(self.allocator, key, bounds.bottom) catch
+            @panic("failed to cache sprite bottom-y");
     }
 
     /// Find the smallest y (0-based from the top) containing a pixel with
@@ -1171,6 +1203,28 @@ pub const RaylibBackend = struct {
         defer rl.unloadImageColors(colors);
         var y: i32 = 0;
         while (y < height) : (y += 1) {
+            const row_start: usize = @intCast(y * width);
+            var x: i32 = 0;
+            while (x < width) : (x += 1) {
+                if (colors[row_start + @as(usize, @intCast(x))].a > 16) return y;
+            }
+        }
+        return null;
+    }
+
+    /// Find the largest y (0-based from the top) containing a pixel with alpha
+    /// > 16. Scans bottom-up, returning at the first opaque pixel. Returns
+    /// null for a fully transparent image — the caller falls back to the
+    /// frame bottom. Mirror of `scanTopmostOpaqueY`; both run in one decode
+    /// via `ensureSpriteBoundsLoaded`.
+    fn scanBottommostOpaqueY(self: *RaylibBackend, image: rl.Image) !?i32 {
+        _ = self;
+        const width: i32 = image.width;
+        const height: i32 = image.height;
+        const colors = try rl.loadImageColors(image);
+        defer rl.unloadImageColors(colors);
+        var y: i32 = height - 1;
+        while (y >= 0) : (y -= 1) {
             const row_start: usize = @intCast(y * width);
             var x: i32 = 0;
             while (x < width) : (x += 1) {

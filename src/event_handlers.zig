@@ -1970,6 +1970,20 @@ pub fn processEvent(
                             defender.current_health -= incoming_damage;
                         }
 
+                        // One-shot hit flash on the defender (gated
+                        // `!replaying`, same shape as the skill-icon anim).
+                        // Only when damage is actually dealt. See AGENTS →
+                        // Animation.
+                        if (!history.replaying) {
+                            history.session.queueAnim(history.backing_allocator, .{
+                                .event_index = history.current_event_index - 1,
+                                .kind = .{ .hit_flash = .{
+                                    .entity_index = collision.defender_index,
+                                } },
+                                .duration_us = 250_000,
+                            });
+                        }
+
                         // Trigger on_outgoing_damage / on_incoming_damage
                         for (attacker.active_effects) |active_effect| {
                             const definition = lookups.getEffectDefinition(active_effect.effect_id);
@@ -2041,6 +2055,20 @@ pub fn processEvent(
                             defender.current_health = 0;
                         } else {
                             defender.current_health -= incoming_damage;
+                        }
+
+                        // One-shot hit flash on the defender (gated
+                        // `!replaying`, same shape as the skill-icon anim).
+                        // Only when damage is actually dealt. See AGENTS →
+                        // Animation.
+                        if (!history.replaying) {
+                            history.session.queueAnim(history.backing_allocator, .{
+                                .event_index = history.current_event_index - 1,
+                                .kind = .{ .hit_flash = .{
+                                    .entity_index = attack.defender_index,
+                                } },
+                                .duration_us = 250_000,
+                            });
                         }
 
                         // Trigger on_outgoing_damage / on_incoming_damage effect callbacks
