@@ -2867,3 +2867,32 @@ Pure refactor — no behavior change to the skill-icon or hit-flash placement.
   `bounds.top.?` / `bounds.bottom.?` instead of the prior `?i32`);
   `scanOpaqueBounds` guarantees all four edges non-null when it returns
   non-null, so the `.?` unwraps are safe.
+
+### Text outline via the dilation machinery (DONE)
+
+Extended the sprite-outline dilation to floating text so damage/heal numbers
+get a black edge-outline band under the fill. Slice 3 of the damage-number
+feature; no trigger sites wired yet (the `floating_text` drawable is ready
+for slice 4 to emit).
+
+- **Parameterized `generateOutlineMask(image, thickness)`** (`raylib_backend.zig`):
+  was hardcoded to the `outline_thickness` const (8). Sprite callers now pass
+  `outline_thickness` explicitly (no behavior change); text callers pass the
+  new `text_outline_thickness` const (also 8, tunable separately since text
+  glyphs are much smaller than sprites and a thick band reads differently).
+- **`text_outline_cache: StringHashMapUnmanaged(?rl.Texture2D)`** keyed by
+  `"{text}\x1f{font_size}\x1f{thickness}"` (unit separator avoids collisions).
+  `getTextOutlineTexture(text, font_size)` lazily populates via
+  `ensureTextOutlineLoaded`: rasterizes the string with `rl.imageTextEx`
+  (white opaque glyphs on transparent -- the dilation only cares about
+  alpha, so the tint is irrelevant; the band is drawn tinted black by the
+  caller), normalizes to RGBA, and runs `generateOutlineMask(image,
+  text_outline_thickness)` unchanged. Caches null on failure (renderer draws
+  the fill without an outline). `deinit` unloads + frees the cache. Tiny
+  cache (damage numbers are 1-3 digits at one font size).
+- **`WorldOverlayDrawable.floating_text`** (`types.zig`): `{ text,
+  screen_position, font_size, color }`. `drawWorldOverlay`'s new arm draws
+  the band (black, `drawTexturePro` scaled by `world_scale`) then the fill
+  (`drawTextEx` at the same top-left, lightest color) -- both originate at
+  `screen_position` so they auto-align. The band texture is sized to the
+  text's bbox, so scaling it by `world_scale` matches the fill's drawn size.

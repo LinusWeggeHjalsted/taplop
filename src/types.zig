@@ -1109,6 +1109,18 @@ pub const FloatingIconDrawable = struct {
 
 pub const WorldOverlayDrawable = union(enum) {
     floating_icon: FloatingIconDrawable,
+    /// Floating text (damage/heal numbers). The `screen_position` is the
+    /// top-left of the text's drawn bbox in reference world space (camera +
+    /// zoom already applied). The renderer draws a black edge-outline band
+    /// (dilation of a rasterized string, same machinery as sprite outlines)
+    /// under the fill text so it reads over any art. `font_size` is the
+    /// native reference font size; `world_scale` scales it at draw time.
+    floating_text: struct {
+        text: []const u8,
+        screen_position: ScreenPosition,
+        font_size: i32,
+        color: Color,
+    },
 };
 
 // -- Layer 4+5: UI elements --

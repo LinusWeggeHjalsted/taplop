@@ -40,6 +40,13 @@ const font_base_size: i32 = 128;
 /// `getOutlineTexture`). Tune from in-game viewing.
 const outline_thickness: i32 = 8;
 
+/// Outline thickness in source pixels for floating TEXT overlays (damage/
+/// heal numbers). Same dilation machinery as `outline_thickness` but applied
+/// to a rasterized string; tuned separately because text glyphs are much
+/// smaller than sprites and a thick band reads differently. Tune from
+/// in-game viewing.
+const text_outline_thickness: i32 = 8;
+
 /// A raylib key mapped to the game's binding id (Web KeyboardEvent.code style,
 /// e.g. "KeyZ", "Escape", "Digit1"). Only the keys the game actually binds are
 /// listed; unmapped keys are ignored. Modifiers are included so getModifiers()
@@ -175,6 +182,15 @@ pub const RaylibBackend = struct {
     /// overlays against an entity's actual rendered art. See AGENTS →
     /// Animation.
     sprite_bounds_cache: std.StringHashMapUnmanaged(?types.SpriteBounds) = .empty,
+    /// `(text, font_size, thickness)` -> precomputed edge-outline mask
+    /// texture for a rasterized string (the black band drawn under floating
+    /// text overlays). Generated lazily by `ensureTextOutlineLoaded` on the
+    /// first `getTextOutlineTexture` request, reusing the sprite-outline
+    /// dilation (`generateOutlineMask`) on an `rl.imageTextEx` raster. A
+    /// cached `null` means rasterization or mask generation failed -> the
+    /// renderer draws the fill text without an outline. Tiny cache (damage
+    /// numbers are 1-3 digits at one font size). See AGENTS -> Animation.
+    text_outline_cache: std.StringHashMapUnmanaged(?rl.Texture2D) = .empty,
     /// Reference-resolution offscreen target; blitted to the window each frame.
     render_target: rl.RenderTexture2D,
     /// Text-label font. Normally the embedded TTF (loaded from
@@ -265,6 +281,11 @@ pub const RaylibBackend = struct {
             if (maybe_texture.*) |texture| rl.unloadTexture(texture);
         }
         self.outline_cache.deinit(self.allocator);
+        var text_outlines = self.text_outline_cache.valueIterator();
+        while (text_outlines.next()) |maybe_texture| {
+            if (maybe_texture.*) |texture| rl.unloadTexture(texture);
+        }
+        self.text_outline_cache.deinit(self.allocator);
         self.sprite_bounds_cache.deinit(self.allocator);
         self.deinitAudio();
         if (!self.font_is_default) rl.unloadFont(self.font);
@@ -808,6 +829,36 @@ pub const RaylibBackend = struct {
                 };
                 rl.drawTexturePro(texture, source, destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(icon.color, 255));
             },
+            .floating_text => |ftext| {
+                // Draw a black edge-outline band (dilation of the rasterized
+                // string) under the fill text so it reads over any art. The
+                // band texture is sized to the text's bbox and drawn at the
+                // same top-left as the fill, so the two auto-align (both
+                // originate at `screen_position`). See AGENTS -> Animation.
+                const drawn_font_size: f32 = @as(f32, @floatFromInt(ftext.font_size)) * world_scale;
+                const spacing: f32 = drawn_font_size / @as(f32, @floatFromInt(ui.glyph_spacing_font_divisor));
+                const pos = rl.Vector2{
+                    .x = @floatFromInt(ftext.screen_position.x),
+                    .y = @floatFromInt(ftext.screen_position.y),
+                };
+                if (self.getTextOutlineTexture(ftext.text, ftext.font_size)) |mask| {
+                    const dest = rl.Rectangle{
+                        .x = pos.x,
+                        .y = pos.y,
+                        .width = @as(f32, @floatFromInt(mask.width)) * world_scale,
+                        .height = @as(f32, @floatFromInt(mask.height)) * world_scale,
+                    };
+                    const source = rl.Rectangle{
+                        .x = 0,
+                        .y = 0,
+                        .width = @floatFromInt(mask.width),
+                        .height = @floatFromInt(mask.height),
+                    };
+                    rl.drawTexturePro(mask, source, dest, .{ .x = 0, .y = 0 }, 0, toRaylibColor(.{ .r = 0, .g = 0, .b = 0 }, 255));
+                }
+                const text_z = self.frame_arena.allocator().dupeZ(u8, ftext.text) catch return;
+                rl.drawTextEx(self.font, text_z, pos, drawn_font_size, spacing, toRaylibColor(ftext.color, 255));
+            },
         }
     }
 
@@ -1097,10 +1148,57 @@ pub const RaylibBackend = struct {
             defer rl.unloadImage(image);
             // Normalize to RGBA so alpha is always at the same byte offset.
             image.setFormat(.uncompressed_r8g8b8a8);
-            break :blk self.generateOutlineMask(image) catch null;
+            break :blk self.generateOutlineMask(image, outline_thickness) catch null;
         };
 
         self.outline_cache.put(self.allocator, key, outline) catch @panic("failed to cache outline mask");
+    }
+
+    /// The precomputed edge-outline mask for a rasterized string (the black
+    /// band drawn under floating text overlays), or null on miss/failure.
+    /// Lazily generated by `ensureTextOutlineLoaded` on first request. Keyed
+    /// by `"{text}\x1f{font_size}\x1f{thickness}"` (the unit separator avoids
+    /// collisions between text and size). Reuses `generateOutlineMask` on an
+    /// `rl.imageTextEx` raster — same dilation machinery as sprite outlines,
+    /// just a different source image. See AGENTS -> Animation.
+    fn getTextOutlineTexture(self: *RaylibBackend, text: []const u8, font_size: i32) ?rl.Texture2D {
+        const raw_key = std.fmt.allocPrint(self.frame_arena.allocator(), "{s}\x1f{d}\x1f{d}", .{
+            text,
+            font_size,
+            text_outline_thickness,
+        }) catch @panic("failed to build text-outline cache key");
+        defer self.frame_arena.allocator().free(raw_key);
+        if (!self.text_outline_cache.contains(raw_key)) {
+            self.ensureTextOutlineLoaded(raw_key, text, font_size);
+        }
+        return self.text_outline_cache.get(raw_key).?;
+    }
+
+    /// Rasterize `text` with the loaded font at `font_size`, build its
+    /// outline mask via `generateOutlineMask(image, text_outline_thickness)`,
+    /// and cache it under `key`. `rl.imageTextEx` rasterizes white opaque
+    /// glyphs on transparent ground; the dilation only cares about alpha, so
+    /// the tint color is irrelevant (the band is drawn tinted black by the
+    /// caller). Caches null on failure. Idempotent via cache presence.
+    fn ensureTextOutlineLoaded(self: *RaylibBackend, key: []const u8, text: []const u8, font_size: i32) void {
+        const dup_key = self.allocator.dupe(u8, key) catch @panic("failed to dupe text-outline key");
+        const mask: ?rl.Texture2D = blk: {
+            const text_z = self.frame_arena.allocator().dupeZ(u8, text) catch break :blk null;
+            const spacing: f32 = @as(f32, @floatFromInt(font_size)) / @as(f32, @floatFromInt(ui.glyph_spacing_font_divisor));
+            var image = rl.imageTextEx(
+                self.font,
+                text_z,
+                @as(f32, @floatFromInt(font_size)),
+                spacing,
+                rl.Color.white,
+            ) catch break :blk null;
+            defer rl.unloadImage(image);
+            // Normalize to RGBA so alpha is always at the same byte offset
+            // (matches the sprite-outline path).
+            image.setFormat(.uncompressed_r8g8b8a8);
+            break :blk self.generateOutlineMask(image, text_outline_thickness) catch null;
+        };
+        self.text_outline_cache.put(self.allocator, dup_key, mask) catch @panic("failed to cache text-outline mask");
     }
 
     /// The y-coordinate (0-based from the top, in SOURCE pixels) of the
@@ -1191,7 +1289,7 @@ pub const RaylibBackend = struct {
     /// O(w·h·(2t+1)) instead of O(w·h·(2t+1)²). The band is clipped at the
     /// canvas border (a sprite filling its canvas edge-to-edge gets no halo on
     /// that side); current art ships with enough margin that this never shows.
-    fn generateOutlineMask(self: *RaylibBackend, image: rl.Image) !rl.Texture2D {
+    fn generateOutlineMask(self: *RaylibBackend, image: rl.Image, thickness: i32) !rl.Texture2D {
         const width: i32 = image.width;
         const height: i32 = image.height;
         const colors = try rl.loadImageColors(image);
@@ -1207,7 +1305,7 @@ pub const RaylibBackend = struct {
         // `t` columns (same row), else 0.
         const opaque_h_mask = try self.allocator.alloc(u8, pixel_count);
         defer self.allocator.free(opaque_h_mask);
-        const t = outline_thickness;
+        const t = thickness;
         var y: i32 = 0;
         while (y < height) : (y += 1) {
             const row_start: usize = @intCast(y * width);
