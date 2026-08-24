@@ -2983,3 +2983,37 @@ feature.
   effect gated `!replaying`; the clock read + stagger math stay in `frame()`;
   the direction is a deterministic gameplay value (computed from positions);
   undo hides via `event_index < current_event_index`.
+### Active-effect overlays on entities (DONE)
+
+Effect sprites now render on top of an entity while an effect is active. The
+`EntityDrawable.front_effect_sprites` slot (empty scaffolding since the
+drawable type was introduced) is now populated from each active effect's
+declared overlay sprite.
+
+- **`Effect.effect_sprite: ?[]const u8`** (new field on the `Effect` struct in
+  `effects/effect.zig`, default `null`): the bare sprite stem under
+  `assets/effects/` for an overlay drawn while the effect is active. Each
+  effect self-declares its visual (same self-defining pattern as modifiers +
+  callbacks); `view()` stays effect-agnostic via `getEffectDefinition`.
+- **Reflect** sets `effect_sprite = "reflect"`. The asset was moved from the
+  Unity project (`Assets/Resources/ReflectEffect.png`, 180×180) and scaled
+  0.5x → `assets/effects/reflect.png` (90×90). StoneForm / ThatWhichLingers
+  leave it null (no art yet). `Skills/Reflect.png` (256×256) is the separate
+  skill-icon concern (bottom bar), not moved here.
+- **Rendering** (`entityDrawable` in `view.zig`): one `SpriteDrawable` per
+  active effect with a non-null `effect_sprite`, centered on the entity's
+  opaque-art bbox (horizontal = frame center; vertical = midpoint of
+  `sprite_bounds` top/bottom, frame-center fallback on a miss/transparent
+  sprite — same resolution as the hit-flash one-shot). Native size
+  `effect_overlay_size_native = 90`, scaled by `zoom`. Tinted with
+  `active_theme.lightest`. Drawn as a front_effect_sprite (above weapons/gear,
+  below the health bar, which sits above the art top so no overlap).
+- **Replay safety** is free: `view()` reads `active_effects` from `GameState`
+  (already on the snapshot timeline). Pure rendering — no new events, no side
+  effects, no `queueAnim`/`queueSound`. Deterministic function of `GameState`.
+- **Back vs front:** all overlays default to `front_effect_sprites` for now
+  (Unity draws Reflect in front of the body). A `behind: bool` / draw-layer
+  enum is a localized add if a future effect wants to sit behind the body; no
+  current effect needs it. Animation (looping sheet) is likewise a localized
+  extension (`frame_count` + reuse `animation_clock`) when an effect ships a
+  sheet — the static-sprite field doesn't paint us into a corner.

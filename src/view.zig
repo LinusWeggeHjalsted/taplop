@@ -17,6 +17,7 @@ const ui = @import("ui.zig");
 const parser = @import("parser.zig");
 const combat_log = @import("combat_log.zig");
 const event_handlers = @import("event_handlers.zig");
+const lookups = @import("generated_lookups.zig");
 
 const GameState = state.GameState;
 const SessionState = state.SessionState;
@@ -347,6 +348,10 @@ const entity_pivot_y: f32 = 0.8;
 /// — eyeball in `zig build run`. See AGENTS → Animation.
 const skill_icon_size_native: i32 = 256;
 const skill_icon_gap_native: i32 = 16;
+/// Native (unscaled) pixel size of the stun overlay icon drawn above the
+/// health bar of a stunned entity (while `stun_duration > 0`). 1:1 with the
+/// StunEffect.png art (128×128). Tunable. See AGENTS → Animation.
+const stun_icon_size_native: i32 = 128;
 
 /// One-shot hit-flash anim: the `world/hit_flash` sprite (256x256, ported
 /// from the Unity project's 512x512 Hit.png at 0.5x) flashed over a damaged
@@ -748,8 +753,9 @@ fn numberAnimPosition(
 
 /// Build an EntityDrawable for `entity`, aligning the shared sprite pivot to
 /// the center of the entity's tile. Populates the base sprite, body overlay
-/// layers, and weapons; gear/effect sprites are not wired. The health bar
-/// is populated (always-on for alive entities), placed above the entity's
+/// layers, and weapons; active-effect overlays populate front_effect_sprites
+/// from each effect's `effect_sprite`. Gear sprites are not wired. The health
+/// bar is populated (always-on for alive entities), placed above the entity's
 /// actual art top via the `sprite_bounds` lookup. See AGENTS → Entity & UI
 /// Coloring.
 fn entityDrawable(
@@ -812,6 +818,53 @@ fn entityDrawable(
         }
     }
 
+    // Active-effect overlays: one front_effect_sprite per effect that
+    // declares an `effect_sprite`, centered on the entity's opaque-art bbox
+    // (horizontal = frame center; vertical = midpoint of the bbox top/bottom,
+    // falling back to the frame's vertical center on a miss/transparent
+    // sprite — same resolution as the hit-flash one-shot). Tinted with the
+    // active theme's lightest color. See AGENTS → Entity & UI Coloring.
+    var front_effect_sprites: std.ArrayList(types.SpriteDrawable) = .empty;
+    if (entity.active_effects.len > 0) {
+        const draw_width = entity_frame_width * zoom;
+        const draw_height = entity_frame_height * zoom;
+        const center_x: f32 = @as(f32, @floatFromInt(top_left.x)) + draw_width / 2;
+        const maybe_bounds = sprite_bounds.get(entity.sprite);
+        const art_top_y: f32 = if (maybe_bounds) |maybe| if (maybe) |bounds|
+            @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bounds.top.?)) * zoom
+        else
+            @as(f32, @floatFromInt(top_left.y))
+        else
+            @as(f32, @floatFromInt(top_left.y));
+        const art_bottom_y: f32 = if (maybe_bounds) |maybe| if (maybe) |bounds|
+            @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(bounds.bottom.?)) * zoom
+        else
+            @as(f32, @floatFromInt(top_left.y)) + draw_height
+        else
+            @as(f32, @floatFromInt(top_left.y)) + draw_height;
+        const center_y: f32 = (art_top_y + art_bottom_y) / 2;
+        const drawn_size: f32 = @as(f32, @floatFromInt(effect_overlay_size_native)) * zoom;
+        const overlay_top_left: types.ScreenPosition = .{
+            .x = @intFromFloat(@round(center_x - drawn_size / 2)),
+            .y = @intFromFloat(@round(center_y - drawn_size / 2)),
+        };
+        for (entity.active_effects) |active_effect| {
+            const definition = lookups.getEffectDefinition(active_effect.effect_id);
+            const effect_stem = definition.effect_sprite orelse continue;
+            const sprite_id = std.fmt.allocPrint(allocator, "effects/{s}", .{effect_stem}) catch
+                @panic("failed to build effect overlay sprite id");
+            front_effect_sprites.append(allocator, .{
+                .sprite_id = sprite_id,
+                .screen_position = overlay_top_left,
+                .draw_offset = .{ .x = 0, .y = 0 },
+                .source_rectangle = null,
+                .color = active_theme.lightest,
+            }) catch @panic("failed to append effect overlay sprite");
+        }
+    }
+    const front_effect_slice = front_effect_sprites.toOwnedSlice(allocator) catch
+        @panic("failed to own effect overlay sprites");
+
     return .{
         .back_effect_sprites = &.{},
         .base_sprite = .{
@@ -824,7 +877,7 @@ fn entityDrawable(
         .layer_sprites = layer_slice,
         .weapon_sprites = weapon_sprites,
         .gear_sprites = &.{},
-        .front_effect_sprites = &.{},
+        .front_effect_sprites = front_effect_slice,
         .health_bar = if (show_health_bar) buildHealthBar(entity, active_theme, top_left, zoom, sprite_bounds) else null,
     };
 }

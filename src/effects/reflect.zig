@@ -15,6 +15,7 @@ pub const effect = Effect{
     .name = "Reflect",
     .description = "Incoming damage is prevented and dealt to the attacker",
     .additive_effect_modifiers = .{},
+    .effect_sprite = "reflect",
     .intercept_incoming_damage_fn = &interceptIncomingDamage,
     .on_effect_creation_fn = effect_mod.no_op,
     .on_effect_end_fn = effect_mod.no_op,

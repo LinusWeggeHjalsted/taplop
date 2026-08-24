@@ -37,6 +37,12 @@ pub const Effect = struct {
     name: []const u8,
     description: []const u8,
     additive_effect_modifiers: AdditiveEffectModifiers,
+    /// Bare sprite stem under assets/effects/ for an overlay drawn on top of
+    /// the entity's rendered art while this effect is active (null = no
+    /// overlay). Centered on the entity's opaque-art bbox, tinted with the
+    /// active theme's lightest color. Drawn as a front_effect_sprite (above
+    /// weapons/gear, below the health bar). See AGENTS → Entity & UI Coloring.
+    effect_sprite: ?[]const u8 = null,
 
     // --- damage pipeline: transform stage (see the doc above) ---
     // Runs before defense; may change the damage and/or emit events.

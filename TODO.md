@@ -30,7 +30,11 @@ Test by running `zig build run` and clicking through.
   tinting: entity color (player settings-driven index into player gradient,
   enemies color_index into enemy gradient) + bottom-bar UI coloring DONE;
   health bars DONE (always-on, above the entity's art top; depleted = theme
-  darkest, fill = team gradient index 1; outline frame on top). See DONE.md.
+  darkest, fill = team gradient index 1; outline frame on top). Active-effect
+  overlays DONE (front_effect_sprites from each effect's `effect_sprite`,
+  centered on art bbox, tinted lightest; Reflect wired). Stun overlay DONE
+  (persistent `effects/stun` icon above the health bar while `stun_duration
+  > 0`, not an anim). See DONE.md.
 - **Remaining 4b visuals** — gear + effect sprites, sprite animation (8 fps) +
   animated flag banner, ground items, decorations (footprint splitting DONE).
 - **Input/camera leftovers** — tab-targeting (cycle highlighted tiles
@@ -127,7 +131,9 @@ Open / in-progress:
   decoration pieces + level-end/mission-start markers (DONE — see
   DONE.md). Base sprite only (pivot 0.5/0.8).
 - [~] Entity sub-layer assembly: base sprite + WEAPONS + entity LAYERS done.
-  Still TODO: gear sprites, effect sprites (back/front). Health bars DONE.
+  Effect overlays DONE (front_effect_sprites from each effect's
+  `effect_sprite`, centered on the art bbox, tinted lightest; Reflect wired).
+  Still TODO: gear sprites. Health bars DONE.
 - Sprite animation (view-side, cosmetic; NEVER gameplay state, so replay-safe
   — frame is purely a function of wall-clock time, like the pointer/tooltip).
   Settled design + flag banner DONE — see AGENTS → Animation.
