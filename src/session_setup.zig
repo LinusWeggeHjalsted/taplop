@@ -10,6 +10,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const state = @import("state.zig");
 const parser = @import("parser.zig");
+const writers = @import("writers.zig");
 const file_source_mod = @import("file_source.zig");
 
 const FileSource = file_source_mod.FileSource;
@@ -465,7 +466,7 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     try testing.expectEqualStrings("KeyY", merged.input_bindings[1].input.key);
 
     // Round-trip through writeSettings (buffer lives in allocator; free it).
-    const written = try parser.writeSettings(merged, allocator);
+    const written = try writers.writeSettings(merged, allocator);
     defer allocator.free(written);
     try testing.expect(std.mem.indexOf(u8, written, "input_name KeyZ") != null);
     try testing.expect(std.mem.indexOf(u8, written, "input_name KeyY") != null);

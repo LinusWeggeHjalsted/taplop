@@ -18,6 +18,7 @@ const events = @import("events.zig");
 const state = @import("state.zig");
 const functions = @import("functions.zig");
 const parser = @import("parser.zig");
+const writers = @import("writers.zig");
 const lookups = @import("generated_lookups.zig");
 const deep_copy = @import("deep_copy.zig");
 const Skill = @import("skills/skill.zig").Skill;
@@ -548,7 +549,7 @@ pub fn processEvent(
                     // A write failure is recoverable: the state is fine, just
                     // the file didn't write. Surface a popup + abort the write;
                     // don't crash. See DESIGN → Error Handling → three contexts.
-                    parser.writePlayerSaveToFile(
+                    writers.writePlayerSaveToFile(
                         history.file_source,
                         write.save_path,
                         current.player_data,

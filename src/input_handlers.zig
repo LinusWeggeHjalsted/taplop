@@ -16,6 +16,7 @@ const events = @import("events.zig");
 const state = @import("state.zig");
 const input = @import("input.zig");
 const parser = @import("parser.zig");
+const writers = @import("writers.zig");
 const session_log = @import("session_log.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
@@ -44,7 +45,7 @@ const default_camera_zoom: f32 = 0.5;
 /// when the settings debounce fires. See DESIGN → Input.
 pub fn writeSettingsToFile(history: *GameStateHistory) void {
     const allocator = history.backing_allocator;
-    const bytes = parser.writeSettings(history.settings, allocator) catch return;
+    const bytes = writers.writeSettings(history.settings, allocator) catch return;
     defer allocator.free(bytes);
     history.file_source.writeFile("settings.txt", bytes) catch return;
 }
