@@ -181,7 +181,7 @@ pub const RaylibBackend = struct {
     /// first `getSpriteBounds` request (same shape as `outline_cache`). A
     /// cached `null` means the sprite is missing (or the scan failed) -> the
     /// caller falls back to the frame edges. Used by `view()` to place
-    /// overlays against an entity's actual rendered art. See AGENTS →
+    /// overlays against an entity's actual rendered art. See DESIGN →
     /// Animation.
     sprite_bounds_cache: std.StringHashMapUnmanaged(?types.SpriteBounds) = .empty,
     /// Reference-resolution offscreen target; blitted to the window each frame.
@@ -207,12 +207,12 @@ pub const RaylibBackend = struct {
     /// One-shot sound effects, one per `SoundId`, loaded via
     /// `loadWaveFromMemory` + `loadSoundFromWave` from the file source.
     /// Missing audio is a normal in-progress state (like missing sprites) ->
-    /// cache null and skip play. See AGENTS → Audio.
+    /// cache null and skip play. See DESIGN → Audio.
     sound_cache: std.AutoHashMapUnmanaged(types.SoundId, ?rl.Sound) = .empty,
     /// The always-on ambient music stream, loaded via
     /// `loadMusicStreamFromMemory`. null if the audio device isn't ready or
     /// the asset failed to load. Looping; updated each frame by
-    /// `updateMusic`. See AGENTS → Audio.
+    /// `updateMusic`. See DESIGN → Audio.
     music: ?rl.Music = null,
     /// The raw OGG bytes backing `music`. raylib's `LoadMusicStreamFromMemory`
     /// (stb_vorbis) keeps a POINTER to the passed buffer (no internal copy),
@@ -298,7 +298,7 @@ pub const RaylibBackend = struct {
     /// file source. Called once after construction (settings are available).
     /// Idempotent: a second call when already ready no-ops. If the audio
     /// device can't open, `audio_ready` stays false and all audio methods
-    /// no-op — the game runs silent, never crashes. See AGENTS → Audio.
+    /// no-op — the game runs silent, never crashes. See DESIGN → Audio.
     pub fn initAudio(self: *RaylibBackend, settings: types.Settings) void {
         if (self.audio_ready) return;
         rl.initAudioDevice();
@@ -414,7 +414,7 @@ pub const RaylibBackend = struct {
 
     /// Play all queued one-shot sounds (drained from `SessionState`), each at
     /// `sfx_volume * master_volume`. Missing sounds (cached null) are skipped.
-    /// No-op when audio isn't ready. See AGENTS → Audio.
+    /// No-op when audio isn't ready. See DESIGN → Audio.
     pub fn playSounds(self: *RaylibBackend, sounds: []const types.SoundId, settings: types.Settings) void {
         if (!self.audio_ready) return;
         const volume = settings.sound_effects_volume * settings.master_volume;
@@ -782,7 +782,7 @@ pub const RaylibBackend = struct {
                 // Animated banner over the pole: same screen position + pivot,
                 // each banner frame is 256x512 (identical to the pole). Drawn
                 // via drawSpriteDrawable so the source rectangle + world_scale
-                // apply. See AGENTS → Animation.
+                // apply. See DESIGN → Animation.
                 if (marker.banner_source_rectangle) |banner_rect| {
                     self.drawSpriteDrawable(.{
                         .sprite_id = "world/flag",
@@ -797,7 +797,7 @@ pub const RaylibBackend = struct {
     }
 
     /// Draw a world overlay (floating indicator above world sprites). Drawn
-    /// after ground drawables, before the UI. See AGENTS → Animation.
+    /// after ground drawables, before the UI. See DESIGN → Animation.
     fn drawWorldOverlay(
         self: *RaylibBackend,
         overlay: types.WorldOverlayDrawable,
@@ -854,7 +854,7 @@ pub const RaylibBackend = struct {
     /// then the outline frame on top — all at the same rect (the bar +
     /// outline share a 155x31 canvas). `size` fields are native reference
     /// pixels; `world_scale` (camera zoom) scales them at draw time. See
-    /// AGENTS → Entity & UI Coloring.
+    /// DESIGN → Entity & UI Coloring.
     fn drawHealthBar(
         self: *RaylibBackend,
         bar: types.HealthBarDrawable,

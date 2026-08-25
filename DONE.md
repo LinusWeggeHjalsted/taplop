@@ -6,7 +6,8 @@ every session (see AGENTS.md → Documentation for the file roles).
 
 Newest slices are appended at the bottom of their section. Entries are
 historical: they're not maintained after archiving (if a design described here
-changed later, the current truth lives in AGENTS.md).
+changed later, the current truth lives in DESIGN.md for design / AGENTS.md for
+working rules).
 
 ---
 
@@ -175,7 +176,7 @@ DONE; settled conventions live in AGENTS.md, this is the history.
   from data/weapon_types/; load color themes from data/color_themes.txt;
   initial GameState with open_main_menu queued; Screen enum (main_menu,
   hub, level, editor, replay_viewer). File access now goes through the
-  session-resident FileSource (see AGENTS → File System & IO).
+  session-resident FileSource (see DESIGN → File System & IO).
 
 ### Event processing — Meta/Super (done)
 
@@ -191,7 +192,7 @@ DONE; settled conventions live in AGENTS.md, this is the history.
 - end_level / end_hub own the entity→PlayerData sync (push
   build_data_from_player{0} while the old world is still live). end_hub
   activated (was no-op) + pushed on the hub mission-exit path. (Convention
-  in AGENTS → Architecture.)
+  in DESIGN → Architecture.)
 - save_game orchestrates: build_data_from_player (in hub/level) then
   write_save (pure file write, skipped during replay).
 
@@ -249,7 +250,7 @@ DONE; settled conventions live in AGENTS.md, this is the history.
 
 ### Turn-flow pacing (done)
 
-Settled design in AGENTS → Platform Seam (budget-driven drain, render
+Settled design in DESIGN → Platform Seam (budget-driven drain, render
  gating, CAVEAT). History:
 - wait MetaEvent carries duration_milliseconds only (cosmetic,
   non-skippable). GameState.waiting (?WaitState, microseconds) drained by
@@ -333,7 +334,7 @@ Settled design in AGENTS → Platform Seam (budget-driven drain, render
 Ported from the Unity project (https://github.com/LinusWeggeHjalsted/taplop, Assets/Scripts/Skills).
 Pattern: C# SkillScript → Zig Skill struct + 5 fns (getValidTargets /
 priority / selectTarget / playerPrepareSkill / useSkill). Skills compose
-generic events (AGENTS → Architecture). Porting note: Unity inverts AI
+generic events (DESIGN → Architecture). Porting note: Unity inverts AI
 priority (lower = higher, -1 = don't use); ziglop is higher = higher, 0 =
 don't use — FLIP when porting (see skill.zig priority_fn doc).
 
@@ -497,7 +498,7 @@ Phase 4 plumbing: tile_size_pixels = 256 (matches assets; screenToTile +
 
 ### Determinism & Tiebreaking — full audit (done)
 
-Convention in AGENTS → Determinism & Tiebreaking. All audit sites made
+Convention in DESIGN → Determinism & Tiebreaking. All audit sites made
 explicit (was: deterministic-but-implicit, flagged for commenting/sign-off):
 
 - turn_end enemy ordering: std.mem.sort (unstable) comparator breaks
@@ -544,7 +545,7 @@ file changes (the editor-saves-overwrite-mid-session case).
   with v2, replays, asserts v1.
 - NOT serialized yet (within-session only). Cross-session serialization
   (session-log `ReconstructionCache` section, `file_format_version` 2) lands
-  with custom-mission sharing. See AGENTS → File System & IO → Reconstruction
+  with custom-mission sharing. See DESIGN → File System & IO → Reconstruction
 cache.
 
 ### Camera pan (right-drag) + render-camera snap fix (done)
@@ -943,7 +944,7 @@ replay bypasses it). `GameStateHistory.validatePlayerAction` closes that gap.
   vs. null target, non-targeting skill accepts null. The panic path itself
   isn't unit-tested (same stance as `verifyReplayMatch`).
 - **Failure mode:** fail-fast `@panic` for now (malicious replay = reject).
-  A future viewer-facing load may soften to the error popup (AGENTS → Error
+  A future viewer-facing load may soften to the error popup (DESIGN → Error
   Handling); server-side leaderboard validation keeps it hard. This is the
   primitive Online Services wants for server-side replay validation.
 - **Cost:** one BFS + one `getValidTargets` per player move/skill event
@@ -975,7 +976,7 @@ replay bypasses it). `GameStateHistory.validatePlayerAction` closes that gap.
 - NOT wired yet (computation primitive only). Session-log recording of the
   mission content hash (for replay pinning) + reading it on
   cross-session replay lands with the VFS / custom-mission replay work.
-  See AGENTS → Custom Missions & Online Services → Content identity.
+  See DESIGN → Custom Missions & Online Services → Content identity.
 
 ### Turn counters (DONE)
 
@@ -995,7 +996,7 @@ replay bypasses it). `GameStateHistory.validatePlayerAction` closes that gap.
   full player turn), asserts `turns_spent == 1` and `player_data.turns == 0`
   (editor mode guard).
 - Medal derivation (gold/silver/bronze from author turns) and the validation
-  replay metadata format are DESIGNED (see AGENTS → Custom Missions → Turn
+  replay metadata format are DESIGNED (see DESIGN → Custom Missions → Turn
   counters + author medals) but NOT yet implemented — they land with the
   validation replay format (session-log + reconstruction cache,
   `file_format_version` 2) and the browser/mission-complete UI.
@@ -1091,7 +1092,7 @@ arm dispatches `editor_set_active_level` inline (existing) and routes the rest
 to `handleEditorEvent`. Implementation is the next slice (mechanical — each
 sets a field on `current.editor.?.levels[]` or the palette).
 
-**Design decisions settled (AGENTS → Architecture → Level Editor):** full UI
+**Design decisions settled (DESIGN → Architecture → Level Editor):** full UI
 layout spec (tabs/viewport/bottom-bar palette/left inspector/right metadata
 panel), active-tool model (fully modal), `Selectable` union + multi-select +
 type-inference rule, no-dialogs (inline inspector selectors), commit-on-blur/
@@ -1139,7 +1140,7 @@ Cleanup pass under that convention:
   done work as "future"/"later" (world drawing, entity weapons/layers,
   FillSprite/health-globe tints, arrow-key cursor nudging) or pointed at the
   old `TODO.txt` (now `TODO.md`) — reworded to as-is descriptions or
-  `AGENTS → <section>` links.
+  `DESIGN → <section>` links.
 - **`//!` headers added** to the 10 core files lacking one (`main.zig`,
   `state.zig`, `types.zig`, `events.zig`, `functions.zig`, `input.zig`,
   `parser.zig`, `ui.zig`, `combat_log.zig`, `deep_copy.zig`);
@@ -1379,7 +1380,7 @@ are legitimate settled-deferral scope notes (AGENTS.md's job), left as-is.
 ### Slice 1 — error surface (DONE)
 
 Settled the two-class error policy and built the player-facing surface for
-recoverable failures. Settled design + B-simple recording choice in AGENTS →
+recoverable failures. Settled design + B-simple recording choice in DESIGN →
 Error Handling; active slice tracking in TODO → Error handling pass.
 
 - **`SessionState.pending_error: ?[]const u8`** (state.zig): message duped
@@ -1479,7 +1480,7 @@ the worst class. The current model's "always-committed, always-consistent
 index" is a genuinely good property. The edge case (redo unavailable after a
 failed post-undo action — no crash, no corruption) is accepted; the
 transactional fix remains available if it ever bites in playtesting. Full
-reasoning in AGENTS → Error Handling → B-simple.
+reasoning in DESIGN → Error Handling → B-simple.
 
 ### Slice 2 — startup-config fallback (DONE)
 
@@ -1525,7 +1526,7 @@ and surfaced as a single `pending_error` popup after the history is created.
 
 Per-section key whitelists that warn on unknown keys, catching the typo'd-key
 class (e.g. `chracter_code` → the permissive parser silently drops the entry;
-A names the typo directly). See AGENTS → Error Handling. Soft policy: unknown
+A names the typo directly). See DESIGN → Error Handling. Soft policy: unknown
 keys warn but don't reject (forward-compatible — a newer file still loads on
 an older parser with an advisory warning).
 
@@ -1584,7 +1585,7 @@ The 6 handlers that do reconstruction reads (`start_new_game` / `start_mission`
 + `load_save` share `loadCampaignAndPushHub` which reads the campaign file)
 now recover from parse/load failures instead of crashing. The handler sets a
 flag + descriptive error, returns from `processEvent`, and the drain loop
-reverts + surfaces the popup. See AGENTS → Error Handling → three contexts.
+reverts + surfaces the popup. See DESIGN → Error Handling → three contexts.
 
 - **`GameStateHistory.load_error: bool`** (state.zig): set by a handler when
   its reconstruction read fails during LIVE play. Distinct from
@@ -1626,14 +1627,14 @@ reverts + surfaces the popup. See AGENTS → Error Handling → three contexts.
 - **B-simple edge case** (accepted): if the player undoes, then triggers a
   failing load, `discardFutureTimeline` already trimmed the redo future. The
   revert restores state but the redo future is gone. No crash, no corruption
-  — redo just unavailable. See AGENTS → Error Handling → B-simple.
+  — redo just unavailable. See DESIGN → Error Handling → B-simple.
 
 ### Slice 4 — write/reload failures (DONE)
 
 The two write sites (`write_save` handler + `dumpEventLog` dev tool) now
 recover from write failures instead of crashing. Session-log reload is not
 user-wired yet (the replay viewer is TODO), so its `file_format_version`
-hard-gate softening is deferred to that work. See AGENTS → Error Handling →
+hard-gate softening is deferred to that work. See DESIGN → Error Handling →
 three contexts.
 
 - **`write_save` handler** (event_handlers.zig): `writePlayerSaveToFile`
@@ -1668,7 +1669,7 @@ three contexts.
 
 ### Key validation — all file types (DONE)
 
-Extended approach A from level files to every config file type. See AGENTS →
+Extended approach A from level files to every config file type. See DESIGN →
 Error Handling → key validation. Each file type has a comptime
 `StaticStringMap([]const []const u8)` key map; `validateKeys` checks every
 key in every entry group against the map and warns on unknowns.
@@ -1839,7 +1840,7 @@ exits.
 
 Built `data/decorations.txt` (the registry of official decoration prefabs)
 and `parser.loadDecorationRegistry`, the editor-palette primitive for "add a
-built-in decoration to the tools." See AGENTS → Decorations & Footprint.
+built-in decoration to the tools." See DESIGN → Decorations & Footprint.
 
 - **`data/decorations.txt`:** `Metadata` + `Decorations` section, one
   entry per shipped decoration sprite (23 entries: tree_1 + 11 ruins + 5
@@ -1880,7 +1881,7 @@ built-in decoration to the tools." See AGENTS → Decorations & Footprint.
 ### Animation foundation + flag banner (DONE)
 
 Settled the animation design and wired the looping flag banner (the first
-sprite animation). See AGENTS → Animation for the settled design; this is the
+sprite animation). See DESIGN → Animation for the settled design; this is the
 implementation record.
 
 - **`SessionState.animation_clock: u64`** — accumulated session-relative
@@ -1913,7 +1914,7 @@ implementation record.
   the LIVE DRAIN (`frame()`/`update()`, gated `!replaying`), never handlers —
   the drain never runs during replay (undo/redo go through `restoreTo` →
   `replayTo` with `replaying=true`, calling `processEvent` directly). See
-  AGENTS → Animation for the full one-shot design (deferred — lands with the
+  DESIGN → Animation for the full one-shot design (deferred — lands with the
   first one-shot anim).
 - **Test:** headless `view.zig` test asserts frame 0 at t=0, frame 4 at
   t=500ms, wraps to frame 0 at t=1000ms (fps=8), plus fps=16 (no divide-by-
@@ -2075,7 +2076,7 @@ our-own-logic over raylib's `IsKeyPressedRepeat`).
 - Replay-safe by construction: repeat state is on `InputState` (off
   GameState), and the resulting events are identical to a single press —
   replay records events, not input timing.
-- Known caveat: drain multi-fire — see AGENTS → Input.
+- Known caveat: drain multi-fire — see DESIGN → Input.
 
 ### Diagonal cursor nudge: coalesce from held keys (done)
 
@@ -2362,7 +2363,7 @@ strings + slice) for test cleanup. `loadConfigWithFallback` still leaks raw
 bytes + sections for process lifetime (generic over T, can't selectively
 free); after the ownership fix the `Settings` it returns no longer references
 those bytes. The other loaders (levels, hubs, themes) still borrow — same
-ownership direction, deferred. Settled in AGENTS → File System & IO → Settings
+ownership direction, deferred. Settled in DESIGN → File System & IO → Settings
 ownership.
 
 **Leak-checked test under `testing.allocator` (session_setup.zig).** Replaced
@@ -2552,7 +2553,7 @@ and narrowed to the degenerate cross-axis-clamp case (see TODO).
 
 Three cleanups from a session reflection:
 
-- **AGENTS → UI Framework:** added the "text measurement seam" rule —
+- **DESIGN → UI Framework:** added the "text measurement seam" rule —
   `ui.FontMetrics`'s contract is to mirror the renderer's cursor advance
   exactly (`advanceX × font_size/base_size + spacing`, float-accumulated, with
   the shared `glyph_spacing_font_divisor` as the one source of truth for any
@@ -2687,14 +2688,14 @@ end-state screens.
 **Music-load-order gotcha:** SFX must load AFTER the music stream starts, or
 `LoadSoundFromWave`'s format conversion targets a stale device state and
 sounds silently never play (no error, no log). `initAudio` order: open device
-→ load+start music → load sfx. Documented in AGENTS → Audio.
+→ load+start music → load sfx. Documented in DESIGN → Audio.
 
 ## Animation
 
 ### One-shot anim infrastructure + skill-icon pop (DONE)
 
 First one-shot animation, establishing the one-shot machinery. Design converges
-with Audio (AGENTS → Animation): the trigger lives in EVENT HANDLERS via
+with Audio (DESIGN → Animation): the trigger lives in EVENT HANDLERS via
 `session.queueAnim` (gated `!replaying`, same shape as `queueSound`), NOT in
 the live drain as the original design had it. `frame()` drains
 `session.pending_anims` after the update drain (alongside `drainPendingSounds`),
@@ -3154,7 +3155,7 @@ moved OUT of the `if (incoming_damage > 0)` guard in both the `attack` and
 is always observable. The `hit_flash` stays inside the guard (a flash reads
 as "damage was dealt"; a 0 shouldn't flash). Damage application, death,
 lifesteal, and `on_*_damage` callbacks remain gated on `> 0`. Docs synced:
-AGENTS → Animation + the `AnimKind.damage_number` doc comment.
+DESIGN → Animation + the `AnimKind.damage_number` doc comment.
 
 **Fix 2 — unify collision + attack outgoing damage (balance):** collision
 damage now goes through `getEffectiveOutgoingDamage` (gloves + converted
@@ -3318,3 +3319,52 @@ previews the sweep as the cursor moves.
 - **Test** (view.zig): Flash Strike prepared + cursor set → radius_outline
   extent 3; no skill prepared → none; Spinblade (non-targeting radius)
   prepared → none; cursor null → none.
+
+## Documentation
+
+### Split AGENTS.md → AGENTS.md + DESIGN.md (DONE)
+
+AGENTS.md had grown to ~122 KB / ~1950 lines, overwhelmingly settled design
+prose (subsystem architecture, invariants, the "why X is shaped this way"),
+not the "how to work here" rules the "read AGENTS at the start of every
+session" contract assumes. Factored the settled-design sections into a new
+DESIGN.md (read on demand, like DONE.md); AGENTS.md is now thin (Documentation,
+Build & Test + Testing discipline + Commit policy, Code Style, Config File
+Format, Zig 0.16 Gotchas, Key Files) + a new **Subsystem Map** — one line per
+subsystem pointing into DESIGN (`Replay & side effects — see DESIGN → Replay
+& Side Effects`).
+
+Moved to DESIGN.md (16 sections, original order kept): Platform Seam, Audio,
+Animation, Replay & Side Effects, Versioning, Logging & Replay, Determinism &
+Tiebreaking, Input, Error Handling, File System & IO, Custom Missions &
+Online Services, Architecture, Decorations & Footprint, Entity & UI Coloring,
+Memory & Budget, UI Framework. (Versioning + Logging & Replay were not in the
+original TODO list of sections to move but are settled design — moved too.)
+
+Lifecycle adapted to four files: open question → TODO; settles → move prose
+to DESIGN.md (not AGENTS); task completes → DONE. Bright line unchanged — a
+fact lives in ONE place; AGENTS never restates design, it points; DESIGN never
+restates a working rule, it links to AGENTS.
+
+Cross-reference sweep done in ONE pass across all five surfaces (a half-split
+leaves broken pointers, which is worse than either clean state — matches the
+rename-to-taplop philosophy):
+- **DESIGN.md:** internal `AGENTS → <design-section>` → `DESIGN →`; the two
+  cross-refs to staying sections became `AGENTS → Build & Test` (web-build
+  workflow) and `AGENTS → Build & Test → Testing discipline`.
+- **AGENTS.md:** the Build & Test / Code Style / Key Files refs to design
+  sections → `DESIGN →`; Code Style's comment convention now links via
+  `DESIGN → <section>` and notes "the design lives in DESIGN.md"; the
+  Documentation section rewritten to the four-file model.
+- **TODO.md (21 refs) + DONE.md (31 refs):** design-section refs → `DESIGN →`;
+  the 4 DONE refs to staying sections (Code Style ×2, Build & Test ×2) kept
+  as `AGENTS →`; the TODO tech-debt entry for the split checked off.
+- **Source code comments (169 refs across `src/**/*.zig`):** `AGENTS →` →
+  `DESIGN →` blanket, then the 2 refs to staying sections (`Config File
+  Format` in parser.zig, `Build & Test` in test_harness.zig) fixed back to
+  `AGENTS →`. Comments only — zero build risk.
+
+No prose edits to the moved design content — pure relocation + ref-target
+rewriting. Content drift is a separate follow-up. `scripts/test.sh` confirmed
+no breakage (the build generates files from `src/`, not the `.md`s, so the
+split is a no-op build-wise; the code-comment sweep is comments-only).

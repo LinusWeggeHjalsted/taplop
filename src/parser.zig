@@ -89,7 +89,7 @@ pub const session_log_file_format_version: u32 = 1;
 /// constant and returns `error.UnsupportedFileFormatVersion` on mismatch — a
 /// HARD gate. The version is validate-and-discard (not stored on the parsed
 /// type): it's a parse-time compatibility check, not runtime state. The save
-/// writer emits the current constant. See AGENTS → Versioning.
+/// writer emits the current constant. See DESIGN → Versioning.
 pub const level_file_format_version: u32 = 1;
 pub const hub_file_format_version: u32 = 1;
 pub const mission_file_format_version: u32 = 1;
@@ -104,7 +104,7 @@ pub const decorations_file_format_version: u32 = 1;
 //
 // Every parsed gear-stat field routes through `boundedU32`, which clamps
 // out-of-range values to the max and appends a warning (so the game stays
-// playable + the author is told). See AGENTS → Custom Missions → Balance
+// playable + the author is told). See DESIGN → Custom Missions → Balance
 // bounds. Entity base stats (max_health, defense, speed, aggro_range) are
 // NOT bounded — only gear stats.
 pub const max_weapon_damage: u32 = 10;
@@ -409,7 +409,7 @@ pub fn asU32(value: []const u8) ?u32 {
 /// Parse a gear-stat value and clamp it to `max`. If the value exceeds `max`,
 /// append a warning to `warnings` (when non-null) naming the field, value,
 /// file, and max — then return `max` so the game stays playable. Returns 0 on
-/// parse failure (same as `asU32`). See AGENTS → Custom Missions → Balance
+/// parse failure (same as `asU32`). See DESIGN → Custom Missions → Balance
 /// bounds.
 fn boundedU32(
     value_str: []const u8,
@@ -527,7 +527,7 @@ const player_save_sections = [_][]const u8{
 };
 
 // ============================================================
-// Key validation (approach A — see AGENTS → Error Handling)
+// Key validation (approach A — see DESIGN → Error Handling)
 // ============================================================
 //
 // Per-section key whitelists, analogous to the section whitelists above.
@@ -628,7 +628,7 @@ pub const level_key_map = std.StaticStringMap([]const []const u8).initComptime(.
 /// Static key map for the decoration registry (data/decorations.txt). The
 /// Decorations section uses the same keys as a level's Decorations section
 /// minus `character_code` (registry entries are prefabs, not placed by
-/// layout char). See AGENTS → Decorations & Footprint.
+/// layout char). See DESIGN → Decorations & Footprint.
 pub const decoration_registry_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &level_metadata_keys },
     .{ "Decorations", &decoration_registry_decorations_keys },
@@ -940,7 +940,7 @@ pub fn loadSettings(
             // This makes the result self-contained — the caller may free the
             // raw bytes immediately — and enables leak-checked tests under
             // testing.allocator (the old borrow-into-freed-bytes pattern was
-            // invisible under an arena). See AGENTS → File System & IO →
+            // invisible under an arena). See DESIGN → File System & IO →
             // Settings ownership.
             const input_name_owned = try allocator.dupe(u8, input_name);
             const input: types.RawInput = switch (input_type_id) {
@@ -1266,7 +1266,7 @@ pub fn decorationLayersEqual(a: []const types.DecorationLayer, b: []const types.
 /// definitions into a shared palette (entity_types / decoration_types).
 /// The result is reference-based (EditorLevel + placements); save flattens
 /// back to the existing inline format. Unused palette types are lost on
-/// editor close (accepted). See AGENTS → Architecture → Level Editor.
+/// editor close (accepted). See DESIGN → Architecture → Level Editor.
 pub fn buildEditorMission(
     mission: types.Mission,
     player_entity: types.Entity,
@@ -1456,7 +1456,7 @@ fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
     var anchor = footprint[0];
     for (footprint[1..]) |tile| {
         // Bottom-most = highest y (sprite-grid y increases downward). Tiebreak
-        // by left-most = lowest x. This is the convention from AGENTS →
+        // by left-most = lowest x. This is the convention from DESIGN →
         // Decorations & Footprint.
         if (tile.y > anchor.y or (tile.y == anchor.y and tile.x < anchor.x)) {
             anchor = tile;
@@ -1466,7 +1466,7 @@ fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
 }
 
 /// Validate a decoration's footprint against its sprite bbox and the level/hub
-/// tile set. Panics on violation (fail fast — see AGENTS → Error Handling):
+/// tile set. Panics on violation (fail fast — see DESIGN → Error Handling):
 ///   - empty footprint (no anchor, no reserved tiles)
 ///   - footprint tile outside the sprite bbox
 ///   - a world footprint tile overlapping a level/hub tile (placement invariant)
@@ -1639,7 +1639,7 @@ fn parseDecorationDefinitions(
 /// stem, not placed by layout char). Returns `[]DecorationTypeDef` (the
 /// editor palette type): `id` = sprite stem. Used ONLY by the editor; never
 /// read during gameplay/replay (custom decorations carry their footprint
-/// inline in the level file, sharing this parser path). See AGENTS →
+/// inline in the level file, sharing this parser path). See DESIGN →
 /// Decorations & Footprint.
 pub fn loadDecorationRegistry(
     sections: []const Section,
@@ -2030,7 +2030,7 @@ pub fn loadLevel(
     }
 
     // Validate decoration footprints: each world footprint tile must not
-    // overlap a level tile (placement invariant — see AGENTS → Decorations
+    // overlap a level tile (placement invariant — see DESIGN → Decorations
     // & Footprint). Build a tile-position set for O(1) lookup.
     var tile_set = std.AutoHashMap(types.Vector2, void).init(allocator);
     defer tile_set.deinit();
@@ -2163,7 +2163,7 @@ pub fn loadHub(
         }
     }
 
-    // Validate decoration footprints (same as levels — see AGENTS →
+    // Validate decoration footprints (same as levels — see DESIGN →
     // Decorations & Footprint).
     var tile_set = std.AutoHashMap(types.Vector2, void).init(allocator);
     defer tile_set.deinit();
@@ -2753,7 +2753,7 @@ fn writeInventoryItem(
 
 /// Serialize a `Settings` struct to the config-file format (same shape as
 /// `data/default_settings.txt`). Used to persist user preferences to
-/// `~/.ziglop/settings.txt` — see AGENTS → Input. The full settings are
+/// `~/.ziglop/settings.txt` — see DESIGN → Input. The full settings are
 /// written (audio + display + gameplay + InputBindings) so the user file is
 /// the same format as the defaults. The loader overlays this onto the shipped
 /// defaults at startup (per-field scalars, binding replace).

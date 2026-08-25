@@ -2,7 +2,7 @@
 //! data, gear, items, skills/effects (via generated enums), color themes,
 //! input/settings, and the view-state drawables. `Entity` carries the
 //! gameplay stat accessors (`getEffective*`, `skillInSlot`, `collectSkillSlots`).
-//! See AGENTS → Architecture (player always entity 0, derived-from-entity
+//! See DESIGN → Architecture (player always entity 0, derived-from-entity
 //! single source of truth) and Entity & UI Coloring.
 
 const std = @import("std");
@@ -17,7 +17,7 @@ pub const utility_skill_count = 5;
 /// Pushed onto `SessionState.pending_sounds` by event handlers (gated
 /// `!replaying`) and input handlers, then drained by `frame()` and played via
 /// the backend. Music is a single always-on stream, not a `SoundId`. See
-/// AGENTS → Audio.
+/// DESIGN → Audio.
 pub const SoundId = enum {
     move,
     weapon_swing,
@@ -80,14 +80,14 @@ pub const Action = enum {
     // it via a redirect in the modal input gate). Only consumed while a
     // pending error is shown. Bound to the same Up/Down keys as the tile-
     // cursor nudge — the modal gate routes them to scroll, not cursor, while
-    // the popup is up. See AGENTS → Error Handling.
+    // the popup is up. See DESIGN → Error Handling.
     error_scroll_up,
     error_scroll_down,
     // Camera zoom (keyboard shortcuts; the mouse wheel also zooms via
     // scroll_delta). ctrl+I = zoom in, ctrl+O = zoom out, ctrl+0 = reset to
     // 1.0. Letters/digits are layout-stable (physical key positions), unlike
     // the +/- symbol keys whose raylib tokens are layout-labeled and degrade
-    // on ISO layouts. See AGENTS → Input.
+    // on ISO layouts. See DESIGN → Input.
     zoom_in,
     zoom_out,
     zoom_reset,
@@ -103,7 +103,7 @@ pub const Action = enum {
 /// The context-specific sound an action plays on button release, if any.
 /// Actions without a specific sound use the generic `button_click_up`.
 /// Press-down is always `button_click_down` regardless of action. See
-/// AGENTS → Audio.
+/// DESIGN → Audio.
 pub fn releaseSoundForAction(action: Action) ?SoundId {
     return switch (action) {
         .skip => .skip,
@@ -111,7 +111,7 @@ pub fn releaseSoundForAction(action: Action) ?SoundId {
         .toggle_inventory, .toggle_gear, .toggle_skills, .toggle_world_map, .toggle_options_menu => .menu,
         // Skill slots: suppress the generic button-up (the use_skill event
         // plays weapon_swing/spell on auto-fire; the prepare path plays
-        // button_click_up explicitly). See AGENTS → Audio.
+        // button_click_up explicitly). See DESIGN → Audio.
         .skill_slot_1, .skill_slot_2, .skill_slot_3, .skill_slot_4,
         .skill_slot_5, .skill_slot_6, .skill_slot_7, .skill_slot_8 => .button_click_up,
         else => null,
@@ -153,7 +153,7 @@ pub const Settings = struct {
     /// Animation frame rate for ALL sprite animations (currently the flag
     /// banner). One global rate so pacing is uniform; frame
     /// duration = 1_000_000 / animation_fps microseconds. Read by `view()`
-    /// only (never by event handlers — see AGENTS → Animation). Default 8.
+    /// only (never by event handlers — see DESIGN → Animation). Default 8.
     animation_fps: u32 = 8,
     auto_skip_attack_step_out_of_combat: bool = true,
     auto_target_at_cursor: bool = true,
@@ -201,7 +201,7 @@ pub const ActiveColorTheme = struct {
 /// `activeThemeFor` derives from `color_wheel_index` as before (backward
 /// compatible). `lightest`/`darkest` stay from the global
 /// ColorThemeDefinitions (lightest = tile-cursor color; darkest is unused
-/// since the background now comes from world_gradient[2]). See AGENTS →
+/// since the background now comes from world_gradient[2]). See DESIGN →
 /// Architecture → Level Editor → Editor UI layout (right metadata panel).
 pub const CustomColorTheme = struct {
     world_gradient: ColorGradient,
@@ -365,7 +365,7 @@ pub const Effect = struct {
 
 /// One overlay layer of an entity: a sprite drawn over the base body at the
 /// same frame + pivot, colored independently. Shares the entity's fixed
-/// 512×640 frame (no per-layer pixel dims needed). See AGENTS → Decorations
+/// 512×640 frame (no per-layer pixel dims needed). See DESIGN → Decorations
 /// & Footprint for the layer model.
 pub const EntityLayer = struct {
     sprite: []const u8,
@@ -397,7 +397,7 @@ pub const Entity = struct {
     color_index: u32 = 0,
     /// Overlay sprite layers drawn over the base body, each colored
     /// independently. Same 512×640 frame + pivot as the base (no per-layer
-    /// dims). Drawn after base, before weapons. See AGENTS → Decorations &
+    /// dims). Drawn after base, before weapons. See DESIGN → Decorations &
     /// Footprint for the layer model (entities reuse it).
     layers: []const EntityLayer = &.{},
 
@@ -653,7 +653,7 @@ pub const DecorationTypeDef = struct {
 /// The `item` carries the full Item union (weapon/amulet/.../skill_tome)
 /// since the union's variety makes per-field granularity impractical — the
 /// inspector edits the whole item and pushes one `editor_set_item_def`
-/// event per commit. See AGENTS → Architecture → Level Editor → Editor UI
+/// event per commit. See DESIGN → Architecture → Level Editor → Editor UI
 /// layout (Ground Items palette group).
 pub const ItemTypeDef = struct {
     id: []const u8 = &.{}, // user-facing name, e.g. "Iron Sword"
@@ -664,7 +664,7 @@ pub const ItemTypeDef = struct {
 /// player loadout (`Editor.player_def`) is an EntityTypeDef too, just not
 /// in the `entity_types` array — this union lets the entity-edit events
 /// cover both without a parallel `editor_set_player_*` event set. See
-/// AGENTS → Architecture → Level Editor → Editor UI layout.
+/// DESIGN → Architecture → Level Editor → Editor UI layout.
 pub const EntityEditTarget = union(enum) {
     entity_type: u32, // index into Editor.entity_types
     player_def: void, // the editor-global player loadout
@@ -681,7 +681,7 @@ pub const EditorLevel = struct {
     /// Optional per-level theme override. When non-null, `activeThemeFor`
     /// builds the ActiveColorTheme from this instead of deriving from
     /// `color_wheel_index`. Backward compatible (null on older files). See
-    /// AGENTS → Architecture → Level Editor → Editor UI layout.
+    /// DESIGN → Architecture → Level Editor → Editor UI layout.
     custom_theme: ?CustomColorTheme = null,
     level_tiles: []const Vector2 = &.{},
     player_start: Vector2 = .{ .x = 0, .y = 0 }, // the '!' position
@@ -690,7 +690,7 @@ pub const EditorLevel = struct {
     decoration_placements: []const DecorationPlacement = &.{},
     /// Loose floor items placed via the Ground Items palette (loot not tied
     /// to an enemy). Mirrors Level.ground_items but reference-based: each
-    /// placement points into Editor.item_types. See AGENTS → Architecture →
+    /// placement points into Editor.item_types. See DESIGN → Architecture →
     /// Level Editor → Editor UI layout (Ground Items palette group).
     item_placements: []const ItemPlacement = &.{},
 };
@@ -721,12 +721,12 @@ pub const Editor = struct {
     levels: []const EditorLevel = &.{}, // all levels, reference-based
     // Palette (editor-global). Derived by dedup on open_editor from the
     // levels' inline definitions; not persisted to disk (unused types are
-    // lost on editor close — accepted as cleaner). See AGENTS → Architecture
+    // lost on editor close — accepted as cleaner). See DESIGN → Architecture
     // → Level Editor.
     entity_types: []const EntityTypeDef = &.{},
     decoration_types: []const DecorationTypeDef = &.{},
     /// Palette of loose ground-item types (loot not tied to an enemy). See
-    /// AGENTS → Architecture → Level Editor → Editor UI layout (Ground Items
+    /// DESIGN → Architecture → Level Editor → Editor UI layout (Ground Items
     /// palette group).
     item_types: []const ItemTypeDef = &.{},
     // The editor-global player start loadout. Persistent as player.txt in the
@@ -991,7 +991,7 @@ pub const EntityDrawable = struct {
     back_effect_sprites: []const SpriteDrawable,
     base_sprite: SpriteDrawable,
     /// Overlay body layers (armor/clothing), drawn after base, before weapons.
-    /// Each colored independently. See AGENTS → Decorations & Footprint.
+    /// Each colored independently. See DESIGN → Decorations & Footprint.
     layer_sprites: []const SpriteDrawable,
     weapon_sprites: [2]?SpriteDrawable,
     gear_sprites: []const SpriteDrawable,
@@ -1024,14 +1024,14 @@ pub const LevelEndDrawable = struct {
     color: Color,
     /// Tint for the animated banner overlay (drawn over the pole). The pole
     /// and banner are colored independently — pole = world gradient index 5,
-    /// banner = index 0 (see AGENTS → Decorations & Footprint / flag pole).
+    /// banner = index 0 (see DESIGN → Decorations & Footprint / flag pole).
     banner_color: Color = .{ .r = 255, .g = 255, .b = 255 },
     /// Source rectangle for the animated banner overlay (`world/flag`), or
     /// null when there is no banner (keeps the drawable backward-compatible).
     /// The banner is drawn over the pole at the same screen position + pivot;
     /// each frame is 256x512, advanced at `settings.animation_fps`. Computed
     /// in view() from `session.animation_clock` (looping anim — no per-instance
-    /// state). See AGENTS → Animation.
+    /// state). See DESIGN → Animation.
     banner_source_rectangle: ?Rectangle = null,
 };
 
@@ -1044,7 +1044,7 @@ pub const GroundDrawable = union(enum) {
 
 // -- Layer 3.5: World overlays (floating indicators above world sprites) --
 
-/// A one-shot sprite animation tied to a gameplay moment (see AGENTS →
+/// A one-shot sprite animation tied to a gameplay moment (see DESIGN →
 /// Animation). `event_index` is the index of the triggering event in
 /// `event_history` (stored as `current_event_index - 1` at push time, since
 /// `processEvent` increments before dispatch). `duration_us` is the display
@@ -1058,7 +1058,7 @@ pub const GroundDrawable = union(enum) {
 /// + cached in the backend, threaded through `RenderContext.sprite_bounds` so
 /// `view()` can place overlays against an entity's actual rendered art
 /// (skill icon above the top, hit flash at the vertical center, damage number
-/// at a corner). See AGENTS → Animation.
+/// at a corner). See DESIGN → Animation.
 pub const SpriteBounds = struct {
     top: ?i32,
     bottom: ?i32,
@@ -1071,7 +1071,7 @@ pub const AnimKind = union(enum) {
     skill_icon: struct { entity_index: u32, skill_id: SkillId },
     /// Flash the hit sprite centered on a damaged entity's rendered art
     /// for `duration_us`. Triggered by `attack`/`collision` only when the
-    /// defender takes nonzero damage. See AGENTS → Animation.
+    /// defender takes nonzero damage. See DESIGN → Animation.
     hit_flash: struct { entity_index: u32 },
     /// Float a damage number away from the defender's sprite, in the
     /// normalized attacker→defender direction (one of 8), starting from the
@@ -1081,7 +1081,7 @@ pub const AnimKind = union(enum) {
     /// observable; only the hit flash is gated on > 0). Triggered by
     /// `attack`/`collision`. Per-entity staggered (0.125s gap) so
     /// same-entity multi-hits (e.g. Bash's attack+collision) don't
-    /// overlap. See AGENTS → Animation.
+    /// overlap. See DESIGN → Animation.
     damage_number: struct {
         entity_index: u32,
         value: u32,
@@ -1091,19 +1091,19 @@ pub const AnimKind = union(enum) {
     /// Show the aggro indicator above an entity's head for `duration_us`
     /// when it gets aggroed (its `is_active` flips true in the `aggro_check`
     /// handler). Placed above the health bar like the skill icon, tinted with
-    /// the active theme's `lightest`. See AGENTS → Animation.
+    /// the active theme's `lightest`. See DESIGN → Animation.
     aggro_indicator: struct { entity_index: u32 },
     /// Float a heal number (`+value`) up-right from the entity's top-left
     /// bbox corner, traveling 1 tile with ease-out. Heals have no attacker,
     /// so the direction is fixed. Triggered by the `heal` event. Shares the
-    /// per-entity stagger queue with damage numbers. See AGENTS → Animation.
+    /// per-entity stagger queue with damage numbers. See DESIGN → Animation.
     heal_number: struct { entity_index: u32, value: u32 },
 };
 
 /// A pending one-shot anim pushed by an event handler (gated `!replaying`,
 /// same convention as `pending_sounds`). `frame()` drains the pending queue
 /// after the update drain, stamps `end_clock = animation_clock + duration_us`,
-/// and appends to `active_anims`. See AGENTS → Animation / Audio.
+/// and appends to `active_anims`. See DESIGN → Animation / Audio.
 pub const PendingAnim = struct {
     event_index: u32,
     kind: AnimKind,
@@ -1116,7 +1116,7 @@ pub const PendingAnim = struct {
 /// `animation_clock < end_clock` (not yet elapsed) AND `animation_clock >=
 /// start_clock` (a staggered number anim hasn't started yet → invisible).
 /// No explicit clearing: elapsed anims are gated out by time, undone anims
-/// by index; a screen/world transition clears the whole list (see AGENTS →
+/// by index; a screen/world transition clears the whole list (see DESIGN →
 /// Animation). `start_clock` is the session-relative microsecond the anim
 /// begins visibly advancing; for non-staggered anims it equals
 /// `end_clock - duration_us` (starts immediately).
@@ -1176,7 +1176,7 @@ pub const ViewState = struct {
     ground_drawables: []const GroundDrawable,
     /// Floating indicators (one-shot anims) drawn above world sprites, after
     /// ground drawables and before the UI. Built per-frame from
-    /// `session.active_anims`; see AGENTS → Animation.
+    /// `session.active_anims`; see DESIGN → Animation.
     world_overlays: []const WorldOverlayDrawable,
     ui_elements: []const @import("ui.zig").UiElement,
     /// Chronological combat-log projection of the current level's events up to

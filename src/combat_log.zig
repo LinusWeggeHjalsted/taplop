@@ -1,7 +1,7 @@
 //! Combat-log projection of `event_history`. Pure and on-demand — `view()`
 //! calls `projectCombatLog` per frame into the frame arena (no `SessionState`
 //! cache). The tier split (`combatLogTier`) drives both the top-bar recent-icon
-//! view and the full-screen detailed log from one whitelist. See AGENTS →
+//! view and the full-screen detailed log from one whitelist. See DESIGN →
 //! Logging & Replay (combat log = a filtered projection).
 
 const std = @import("std");

@@ -3,7 +3,7 @@
 //! handlers' side effects — `refreshMoveHighlights`/`cancelPreparedSkill` —
 //! early-return without a level, so the mechanics are tested in isolation
 //! here; the side-effect branches land with the Tier 2 combat tests). See
-//! TODO → Tech debt (handler coverage) and AGENTS → Architecture (gear
+//! TODO → Tech debt (handler coverage) and DESIGN → Architecture (gear
 //! operations use GearSlot; equip no-ops on type mismatch).
 
 const std = @import("std");

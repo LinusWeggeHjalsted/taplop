@@ -4,7 +4,7 @@
 //! snapshot/checkpoint rings, the reconstruction cache, and `SessionState`
 //! (transient view/input state off the undo timeline). All undo/redo/replay
 //! flows through `recordEvent`/`replayTo`/`restoreTo`/`reconstructFromEventLog`.
-//! See AGENTS → Replay & Side Effects, Architecture (Allocator model).
+//! See DESIGN → Replay & Side Effects, Architecture (Allocator model).
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -121,7 +121,7 @@ pub const SessionState = struct {
     /// one-shot anim gating later). NEVER read by event handlers — that would
     /// make a handler impure (its output would depend on wall-clock time),
     /// breaking the replay-verification invariant (handlers are deterministic
-    /// functions of (state, event)). See AGENTS → Animation. Off the
+    /// functions of (state, event)). See DESIGN → Animation. Off the
     /// undoable GameState → never in snapshots → replay-safe by construction
     /// (replay doesn't render anyway). A fresh session starts at 0 so looping
     /// anims start at frame 0 (raw wall-clock mod would start mid-loop).
@@ -132,14 +132,14 @@ pub const SessionState = struct {
     /// this advances every frame regardless — used for debounced write
     /// deadlines (currently settings persistence) so writes fire
     /// even while the options menu is open. Off the undoable GameState, so
-    /// replay-safe by construction. See AGENTS → Input.
+    /// replay-safe by construction. See DESIGN → Input.
     session_clock: u64 = 0,
 
     /// Pending debounced writes (currently settings persistence). A small fixed array keyed by `PendingWrite.Tag`; each tag
     /// coalesces (a new dirty-mark refreshes the deadline rather than
     /// enqueueing a second write). Fired by `frame()` when the deadline
     /// elapses (gated `!replaying` — but `frame()` is the live path, so the
-    /// gate is automatic). See AGENTS → Input.
+    /// gate is automatic). See DESIGN → Input.
     pending_writes: [max_pending_writes]?PendingWrite = .{null} ** max_pending_writes,
 
     /// Pending one-shot sound effects queued by event handlers (gated
@@ -148,13 +148,13 @@ pub const SessionState = struct {
     /// GameState → replay-safe by construction (replay queues nothing; the
     /// `!replaying` gate is at the push site). Backed by `backing_allocator`
     /// (not an arena — cleared each frame, so an arena would leak growth).
-    /// See AGENTS → Audio.
+    /// See DESIGN → Audio.
     pending_sounds: std.ArrayListUnmanaged(types.SoundId) = .empty,
 
     /// Pending one-shot anims queued by event handlers (gated `!replaying`)
     /// during a frame. `frame()` drains this after the update drain, stamps
     /// `end_clock = animation_clock + duration_us`, and appends to
-    /// `active_anims`. Mirrors `pending_sounds` (see AGENTS → Audio /
+    /// `active_anims`. Mirrors `pending_sounds` (see DESIGN → Audio /
     /// Animation). Backed by `backing_allocator` (cleared each frame).
     pending_anims: std.ArrayListUnmanaged(types.PendingAnim) = .empty,
 
@@ -164,7 +164,7 @@ pub const SessionState = struct {
     /// (an anim is out of scope once the world it belonged to is gone).
     /// Grows unbounded within a screen (accepted, same tradeoff as
     /// `event_history`); bounded in practice by short durations + the
-    /// transition clear. See AGENTS → Animation.
+    /// transition clear. See DESIGN → Animation.
     active_anims: std.ArrayListUnmanaged(types.ActiveAnim) = .empty,
     /// Per-entity last number-anim start clock (session-relative us), for the
     /// 0.125s per-entity stagger: a same-entity multi-hit in one drain (e.g.
@@ -172,14 +172,14 @@ pub const SessionState = struct {
     /// `frame()` reads + updates this when activating a `damage_number`/
     /// `heal_number`; cleared on screen/world transition alongside the anim
     /// lists. Off the undoable GameState → replay-safe. Backed by
-    /// `backing_allocator`. See AGENTS → Animation.
+    /// `backing_allocator`. See DESIGN → Animation.
     last_number_start_by_entity: std.AutoHashMapUnmanaged(u32, u64) = .empty,
 
     /// The button currently under a press (the `Action` it carries), for the
     /// press-then-release click model: the action fires on release over the
     /// SAME button, drag-off cancels. Null when no button is pressed. Off the
     /// undoable GameState → replay-safe by construction (UI interaction is
-    /// live-only, never replayed). See AGENTS → Audio / Input.
+    /// live-only, never replayed). See DESIGN → Audio / Input.
     pressed_button: ?types.Action = null,
 
     // A recoverable load failure (a corrupt/overridden config file, an
@@ -191,13 +191,13 @@ pub const SessionState = struct {
     // is duped into `history_arena` (durable across frames until process
     // exit); overwriting a prior error leaks the old bytes in the arena —
     // accepted, since errors are rare and small (same unbounded-arena
-    // tradeoff as `event_history`). See AGENTS → Error Handling.
+    // tradeoff as `event_history`). See DESIGN → Error Handling.
     pending_error: ?[]const u8 = null,
 
     /// Scroll offset (reference-space pixels) within the error popup's body.
     /// Reset to 0 by `setPendingError`. Clamped to `[0, max_scroll]` in
     /// `buildErrorPopup` (the view is the only place that knows `max_scroll`,
-    /// since it depends on the wrapped line count). See AGENTS → Error
+    /// since it depends on the wrapped line count). See DESIGN → Error
     /// Handling.
     error_scroll_offset: i32 = 0,
 
@@ -230,7 +230,7 @@ pub const SessionState = struct {
     /// Append a one-shot sound to the pending queue. Callers gate on
     /// `!history.replaying` so replaying pushes nothing (replay-safe by
     /// construction). `allocator` is `history.backing_allocator`. See
-    /// AGENTS → Audio.
+    /// DESIGN → Audio.
     pub fn queueSound(
         self: *SessionState,
         allocator: std.mem.Allocator,
@@ -246,7 +246,7 @@ pub const SessionState = struct {
     /// undefined)` which would clobber the slice the caller just received
     /// before they play it. We reset the length directly instead, leaving
     /// the backing bytes intact (they'll be overwritten on the next
-    /// `append`). See AGENTS → Audio.
+    /// `append`). See DESIGN → Audio.
     pub fn drainPendingSounds(
         self: *SessionState,
     ) []const types.SoundId {
@@ -257,7 +257,7 @@ pub const SessionState = struct {
 
     /// Append a pending one-shot anim. Callers gate on `!history.replaying`
     /// (same convention as `queueSound`). `allocator` is
-    /// `history.backing_allocator`. See AGENTS → Animation.
+    /// `history.backing_allocator`. See DESIGN → Animation.
     pub fn queueAnim(
         self: *SessionState,
         allocator: std.mem.Allocator,
@@ -271,7 +271,7 @@ pub const SessionState = struct {
     /// `end_clock` and moves entries into `active_anims`; the queue length is
     /// reset to 0 (capacity retained) without memset, like
     /// `drainPendingSounds` — the backing bytes stay valid until the next
-    /// `append` overwrites them. See AGENTS → Animation.
+    /// `append` overwrites them. See DESIGN → Animation.
     pub fn drainPendingAnims(
         self: *SessionState,
     ) []const types.PendingAnim {
@@ -282,7 +282,7 @@ pub const SessionState = struct {
 
     /// Clear all active + pending anims. Called on screen/world transition
     /// (an anim belongs to the world it was triggered in; a level-to-level
-    /// or hub-to-level change invalidates it). See AGENTS → Animation.
+    /// or hub-to-level change invalidates it). See DESIGN → Animation.
     pub fn clearAnims(
         self: *SessionState,
     ) void {
@@ -297,7 +297,7 @@ pub const SessionState = struct {
     /// guarantees a write fires within `write_max_wait_microseconds` of the
     /// first dirty mark even under continuous change (a steady stream that
     /// keeps refreshing the debounce would otherwise never fire). `now` is
-    /// `session_clock` at the call site. See AGENTS → Input.
+    /// `session_clock` at the call site. See DESIGN → Input.
     pub fn markWriteDirty(
         self: *SessionState,
         tag: PendingWrite.Tag,
@@ -341,7 +341,7 @@ pub const SessionState = struct {
     /// each tick after advancing `session_clock`. `history` is passed to each
     /// writer fn. Gated `!replaying` — but `frame()` is the live path (replay
     /// goes through `restoreTo`/`replayTo`, not `frame()`), so the gate is
-    /// automatic. See AGENTS → Input.
+    /// automatic. See DESIGN → Input.
     pub fn fireElapsedWrites(self: *SessionState, history: *GameStateHistory, now: u64) void {
         for (&self.pending_writes) |*slot| {
             if (slot.*) |entry| {
@@ -355,7 +355,7 @@ pub const SessionState = struct {
 
     /// Flush all pending writes immediately (shutdown safety net). Called by
     /// the native driver's `defer` and the web `beforeunload` handler so a
-    /// quick change-then-quit isn't lost. See AGENTS → Input.
+    /// quick change-then-quit isn't lost. See DESIGN → Input.
     pub fn flushPendingWrites(self: *SessionState, history: *GameStateHistory) void {
         for (&self.pending_writes) |*slot| {
             if (slot.*) |entry| {
@@ -415,7 +415,7 @@ pub const GameState = struct {
     /// world swap from the Screen enum alone; this field gives it a second,
     /// world-scoped change signal so transient view/input state (tile cursor,
     /// camera pan, pressed button, ui_state) is reset on every world change,
-    /// not just on screen changes. See AGENTS → Architecture.
+    /// not just on screen changes. See DESIGN → Architecture.
     world_generation: u64 = 0,
 
     /// Transition to a new screen, clearing any data that was in scope
@@ -542,7 +542,7 @@ pub const GameStateHistory = struct {
     // backing, plus deep-copied event payloads). Event payload slices are the
     // replay source of truth, so they must outlive current_arena resets — hence
     // a separate arena from current_state's. Grows unbounded with the session
-    // (accepted; see AGENTS → Memory & Budget); never reset.
+    // (accepted; see DESIGN → Memory & Budget); never reset.
     history_arena: std.heap.ArenaAllocator,
 
     // The live game state — what update() works on and view() renders.
@@ -566,7 +566,7 @@ pub const GameStateHistory = struct {
     // is the user-facing message and can be set advisorially by key
     // validation without triggering a revert). A handler failure during
     // replay panics instead (fail-fast — unexpected; in-session replay has
-    // cached bytes). See AGENTS → Error Handling → three contexts.
+    // cached bytes). See DESIGN → Error Handling → three contexts.
     load_error: bool = false,
 
     // True only during cross-session reconstruction (reconstructFromEventLog):
@@ -939,7 +939,7 @@ pub const GameStateHistory = struct {
     /// engine's (state, event) → (state', children) transform is not a pure
     /// function of its inputs (a nondeterminism bug), so we fail fast.
     /// Runs for ALL replay origins including cross-session
-    /// (`reconstructFromEventLog`); see AGENTS → Determinism & Tiebreaking →
+    /// (`reconstructFromEventLog`); see DESIGN → Determinism & Tiebreaking →
     /// Replay VERIFICATION.
     fn verifyReplayMatch(
         self: *GameStateHistory,
@@ -981,7 +981,7 @@ pub const GameStateHistory = struct {
     ///
     /// Fail-fast `@panic` for now (malicious replay = reject). A future
     /// viewer-facing load may soften this to a popup; server-side leaderboard
-    /// validation keeps it hard. See AGENTS → Determinism & Tiebreaking →
+    /// validation keeps it hard. See DESIGN → Determinism & Tiebreaking →
     /// Replay VERIFICATION.
     fn validatePlayerAction(self: *GameStateHistory, event: Event) void {
         const level = self.current_state.level orelse return;
@@ -1512,7 +1512,7 @@ test "SessionState sound queue: reuse after drain" {
 // The legality checks (bool-returning helpers) are tested directly; the
 // `validatePlayerAction` wrapper that formats + @panics is a thin policy
 // layer over them (Zig 0.16 has no expectPanics, so the panic path itself
-// isn't unit-tested — the logic it wraps is). See AGENTS → Determinism &
+// isn't unit-tested — the logic it wraps is). See DESIGN → Determinism &
 // Tiebreaking → Replay VERIFICATION.
 
 const test_harness = @import("test_harness.zig");

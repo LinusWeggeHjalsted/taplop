@@ -4,7 +4,7 @@
 //! config loading (settings, color themes, weapon types, salvage tables).
 //! Never imports raylib — the platform driver (`native.zig`/`web.zig`)
 //! calls `run` with a duck-typed backend and drives `frame` per platform.
-//! See AGENTS → Platform Seam for the frame/driver split and the
+//! See DESIGN → Platform Seam for the frame/driver split and the
 //! budget-driven drain.
 
 const std = @import("std");
@@ -32,7 +32,7 @@ const GameState = state.GameState;
 
 /// Per-entity stagger gap for number anims (damage/heal): a same-entity
 /// multi-hit in one drain spaces its numbers this far apart so they don't
-/// overlap (e.g. Bash's attack+collision). 0.125s. See AGENTS → Animation.
+/// overlap (e.g. Bash's attack+collision). 0.125s. See DESIGN → Animation.
 const number_stagger_gap_microseconds: u64 = 125_000;
 const GameStateHistory = state.GameStateHistory;
 const Event = events.Event;
@@ -86,7 +86,7 @@ fn update(
     // was pressed (drag-off cancels — no sound, no action). This is the
     // standard UI press/release model. A press on any blocking UI surface
     // (button or not) consumes the world click so it doesn't also act on the
-    // level/hub behind it (world/UI arbitration). See AGENTS → Input.
+    // level/hub behind it (world/UI arbitration). See DESIGN → Input.
     if (player_input.pointer.pressed) {
         const pointer_position = player_input.pointer.position;
         if (ui.buttonAt(ui_elements, pointer_position)) |button| {
@@ -113,7 +113,7 @@ fn update(
                     // specific sound. Actions WITH a specific sound (skip,
                     // swap_weapons, panel toggles) get their sound from the
                     // input/event handler that processes the action, so no
-                    // generic up here (would double-play). See AGENTS → Audio.
+                    // generic up here (would double-play). See DESIGN → Audio.
                     if (types.releaseSoundForAction(button.action) == null) {
                         history.session.queueSound(history.backing_allocator, .button_click_up);
                     }
@@ -217,7 +217,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const history = &frame_state.history;
 
     // Music streams require a per-frame update call (raylib decodes in
-    // chunks). No-op when audio isn't initialized. See AGENTS → Audio.
+    // chunks). No-op when audio isn't initialized. See DESIGN → Audio.
     backend.updateMusic();
 
     const platform_input = backend.pollInput();
@@ -233,7 +233,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // Real-clock delta since the last frame (NOT frame-rate based), so the
     // wait timer drains in real time regardless of how often frame() is called.
     // Computed before translateInput so synthetic key-repeat cadence (see
-    // AGENTS → Input) is framerate-independent too.
+    // DESIGN → Input) is framerate-independent too.
     const delta_microseconds = backend.deltaMicroseconds();
     const player_input = input.translateInput(
         platform_input,
@@ -254,7 +254,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // deadlines). Unlike animation_clock, this advances every frame regardless
     // of pause so writes fire even while the options menu is open. Done before
     // the drain so markWriteDirty (called during the drain via
-    // handleAnytimeInput) sees an up-to-date clock. See AGENTS → Input.
+    // handleAnytimeInput) sees an up-to-date clock. See DESIGN → Input.
     history.session.session_clock +%= delta_microseconds;
 
     // Drain: call update() repeatedly until the stack empties, a wait
@@ -284,7 +284,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // construction), trim the failed transaction's recorded events, and
         // exit the drain. The handler already set session.pending_error with
         // a descriptive message (it survives the revert — SessionState is
-        // off GameState). See AGENTS → Error Handling → three contexts.
+        // off GameState). See DESIGN → Error Handling → three contexts.
         if (history.load_error) {
             history.load_error = false;
             const last_idle_event_index = history.idle_points.items[history.current_idle_index];
@@ -370,7 +370,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // and input handlers push onto `session.pending_sounds` (gated
     // `!replaying`); play them here via the backend. The slice is valid
     // until the next drain (clearRetainingCapacity keeps the backing). See
-    // AGENTS → Audio.
+    // DESIGN → Audio.
     const pending_sounds = history.session.drainPendingSounds();
     if (pending_sounds.len > 0) {
         backend.playSounds(pending_sounds, history.settings);
@@ -380,14 +380,14 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // clock and move them into `active_anims`, where `view()` gates them by
     // event index + time. Handlers push gated `!replaying` (same as sounds);
     // the clock is read HERE, not in handlers, so the replay-purity invariant
-    // holds (handlers never touch wall-clock). See AGENTS → Animation.
+    // holds (handlers never touch wall-clock). See DESIGN → Animation.
     const pending_anims = history.session.drainPendingAnims();
     for (pending_anims) |anim| {
         // Number anims are per-entity staggered (0.125s gap) so same-entity
         // multi-hits in one drain don't overlap; other anims start immediately.
         // `start_clock` is when the anim begins visibly advancing; `end_clock`
         // is `start_clock + duration_us`. The clock is read HERE, not in
-        // handlers, so the replay-purity invariant holds. See AGENTS →
+        // handlers, so the replay-purity invariant holds. See DESIGN →
         // Animation.
         const start_clock: u64 = switch (anim.kind) {
             .damage_number => |info| blk: {
@@ -436,7 +436,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // gates as `update()`). The clock is session-relative (starts at 0) and
     // off the undoable GameState, so looping anims wave continuously across
     // undo/redo without phase jumps, and pausing freezes anims in place. Read
-    // by view() for sprite-animation frame selection. See AGENTS → Animation.
+    // by view() for sprite-animation frame selection. See DESIGN → Animation.
     if (!history.session.ui_state.options_menu_open and history.session.pending_error == null) {
         history.session.animation_clock +%= delta_microseconds;
     }
@@ -445,7 +445,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // settings persistence). Runs after all updates so dirty
     // marks from this frame's input are registered before the check.
     // `frame()` is the live path — replay goes through restoreTo/replayTo,
-    // not here — so the !replaying gate is automatic. See AGENTS → Input.
+    // not here — so the !replaying gate is automatic. See DESIGN → Input.
     history.session.fireElapsedWrites(history, history.session.session_clock);
 
     // Render gate: only build+render a frame when enough real time has elapsed
@@ -460,7 +460,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const since_last_render = now - frame_state.last_render_time;
     // A pending error pauses the drain (the modal popup blocks event
     // processing) — treat it like a wait for render-gate purposes so the
-    // popup is visible. See AGENTS → Error Handling.
+    // popup is visible. See DESIGN → Error Handling.
     const drain_in_progress = history.current_state.event_stack.len > 0 and
         history.current_state.waiting == null and
         history.session.pending_error == null;
@@ -481,7 +481,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // art top. Built here (not in `view()`) because `view()` is pure /
         // raylib-free — the backend owns the decode + cache (same shape as
         // the outline-mask cache). Keyed by bare sprite stem; `view()` looks
-        // up `entity.sprite`. Frame-arena-backed (no deinit). See AGENTS →
+        // up `entity.sprite`. Frame-arena-backed (no deinit). See DESIGN →
         // Animation.
         var sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds) = .{};
         const frame_alloc = frame_state.frame_arena.allocator();
@@ -552,7 +552,7 @@ fn gameLoop(backend: anytype, frame_state: *FrameState) void {
     // ~10% CPU on one core. During active event drains the loop spins freely
     // (useful work, no yield). Web doesn't sleep at all — the browser's rAF
     // scheduling IS the yield.
-    const idle_yield_seconds: f64 = 0.0001; // 0.1ms — see AGENTS → Platform Seam (idle yield)
+    const idle_yield_seconds: f64 = 0.0001; // 0.1ms — see DESIGN → Platform Seam (idle yield)
     while (!backend.shouldClose()) {
         frame(backend, frame_state);
         if (frame_state.history.current_state.event_stack.len == 0 or
@@ -579,7 +579,7 @@ pub fn run(
     defer crash_dump.uninstall();
     // Shutdown safety net: flush any pending debounced writes (e.g. settings
     // changed moments before quit) so a quick change-then-exit isn't lost.
-    // Runs before the arena deinit. See AGENTS → Input.
+    // Runs before the arena deinit. See DESIGN → Input.
     defer setup.frame_state.history.session.flushPendingWrites(&setup.frame_state.history);
     defer setup.frame_state.history.session.pending_sounds.deinit(setup.frame_state.history.backing_allocator);
     defer setup.frame_state.history.session.pending_anims.deinit(setup.frame_state.history.backing_allocator);
@@ -1042,7 +1042,7 @@ test "reconstruction read failure: handler sets load_error, drain loop reverts s
     // to fail. The handler sets load_error + pending_error and returns. The
     // drain loop (simulated here) reverts to the last idle-point snapshot,
     // trims the failed transaction's recorded events, and the popup message
-    // survives (it's on SessionState, off GameState). See AGENTS → Error
+    // survives (it's on SessionState, off GameState). See DESIGN → Error
     // Handling → three contexts.
     const allocator = std.testing.allocator;
 
@@ -1139,7 +1139,7 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
     // fails on ensureParentDirs (createDirPath can't make a dir where a
     // file exists). The handler surfaces pending_error and returns instead
     // of panicking. State is unchanged (the save just didn't happen — no
-    // revert needed for a failed write). See AGENTS → Error Handling.
+    // revert needed for a failed write). See DESIGN → Error Handling.
     const allocator = std.testing.allocator;
 
     var backing = std.heap.ArenaAllocator.init(allocator);
@@ -1425,7 +1425,7 @@ test "undo during a mid-drain reverts to the current idle point, not one further
     // landing one idle point further back than expected. The fix reverts TO
     // the current idle point (cancelling the partial drain) instead of
     // decrementing, and discards the partial drain's recorded events. See
-    // AGENTS → Replay & Side Effects.
+    // DESIGN → Replay & Side Effects.
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     var harness = test_harness.Harness.init(backing.allocator());

@@ -2,7 +2,7 @@
 //! embedded-asset map is parsed + loaded + key-validated. Catches shipped-
 //! content bugs (malformed syntax, unknown keys, bad file_format_version,
 //! semantic errors) that the permissive parser would otherwise silently
-//! drop. See AGENTS → Error Handling → key validation, TODO → Tech debt.
+//! drop. See DESIGN → Error Handling → key validation, TODO → Tech debt.
 //!
 //! This is a parse + load + key-validate pass over the REAL embedded content
 //! (not synthetic fixtures). If a shipped file has a typo'd key, this test

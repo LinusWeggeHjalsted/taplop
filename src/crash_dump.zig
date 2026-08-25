@@ -5,7 +5,7 @@
 //! verification mismatch, force-unwrap, safety check) dumps the live
 //! `event_history` to `crashes/crash_YYYYMMDD_HHMMSS.txt` in the persistent
 //! dir before trapping. `event_history` is always a complete real-time log
-//! (B-simple per-dispatch recording — see AGENTS → Error Handling), so a
+//! (B-simple per-dispatch recording — see DESIGN → Error Handling), so a
 //! crash dump carries every event up to the crash, enough to reconstruct the
 //! session via the existing replay machinery.
 //!

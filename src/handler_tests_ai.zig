@@ -2,7 +2,7 @@
 //! tiebreak, min-range hold, reachable-tile fallback tiebreak), `enemy_turn_
 //! attack` (non-turn-ending-first by priority, then turn-ending; cooldown
 //! skip), `aggro_check` (self-centric radius activation), `pickup_around` (pure check → pushes pickup_items per in-range stack).
-//! See TODO → Tech debt (handler coverage), AGENTS → Determinism & Tiebreaking.
+//! See TODO → Tech debt (handler coverage), DESIGN → Determinism & Tiebreaking.
 
 const std = @import("std");
 const testing = std.testing;

@@ -89,7 +89,7 @@ pub const InputState = struct {
     gamepad_buttons_held: [max_held_gamepad]?[]const u8 = .{null} ** max_held_gamepad,
     mouse_screen_position: PointerPosition = .{ .x = 0, .y = 0 },
     active_touches: [max_touch_points]?ActiveTouch = .{null} ** max_touch_points,
-    /// Per-key hold timer for synthetic key repeat (see AGENTS → Input).
+    /// Per-key hold timer for synthetic key repeat (see DESIGN → Input).
     /// Parallel to `keys_held`: an entry is created on a key_down edge and
     /// removed on key_up. Advanced by `advanceKeyRepeats` each tick; when a
     /// held key crosses its next-repeat threshold it fires a synthetic edge
@@ -270,7 +270,7 @@ pub const AnytimeInput = struct {
     /// this through and swallows everything else.
     dismiss_error: bool = false,
     /// Scroll the error popup body by a step (arrows). Only consumed while a
-    /// pending error is shown. See AGENTS → Error Handling.
+    /// pending error is shown. See DESIGN → Error Handling.
     error_scroll_up: bool = false,
     error_scroll_down: bool = false,
     scroll_delta: f32 = 0,

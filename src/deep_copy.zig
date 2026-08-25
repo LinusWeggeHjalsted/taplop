@@ -2,7 +2,7 @@
 //! optionals, tagged unions, structs, arrays, scalars). `deepCopy` clones
 //! into an arena (backing snapshots/checkpoints); `deepEqual` +
 //! `firstDiffField` drive replay verification (no floats in event payloads →
-//! exact `==`). Auto-tracks new fields via reflection. See AGENTS → Replay &
+//! exact `==`). Auto-tracks new fields via reflection. See DESIGN → Replay &
 //! Side Effects, Determinism & Tiebreaking → Replay VERIFICATION.
 
 const std = @import("std");

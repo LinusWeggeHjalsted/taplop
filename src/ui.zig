@@ -3,7 +3,7 @@
 //! `Row`/`Grid`, screen-space `i32` dims), and panel builders (bottom bar,
 //! main menu, tooltips). `UiState` (open panels/overlays/drag/scroll) lives on
 //! `SessionState`, off the undo timeline. Buttons carry an `Action` so clicks
-//! feed the one input path. See AGENTS → UI Framework.
+//! feed the one input path. See DESIGN → UI Framework.
 
 const std = @import("std");
 const types = @import("types.zig");

@@ -69,7 +69,7 @@ const aggro_indicator_duration_microseconds: u32 = 500_000;
 /// Activate an entity (flip `is_active = true`) and queue the one-shot
 /// aggro indicator above its head. Shared by `aggro_check` and
 /// `aggro_in_radius` (Howl) so both paths show the graphic. Gated
-/// `!replaying` (same as all anim/sound side effects). See AGENTS → Animation.
+/// `!replaying` (same as all anim/sound side effects). See DESIGN → Animation.
 fn activateEntity(
     history: *GameStateHistory,
     entity: *types.Entity,
@@ -178,7 +178,7 @@ pub fn pushEvents(
 /// During replay, panics instead (fail-fast — a reconstruction-read
 /// failure during replay is unexpected; in-session replay has cached bytes,
 /// cross-session replay of changed content is the known accepted fail-fast).
-/// See AGENTS → Error Handling → three contexts.
+/// See DESIGN → Error Handling → three contexts.
 fn failReconstructionRead(history: *GameStateHistory, message: []const u8) void {
     if (history.replaying) @panic("replay: reconstruction read failed (content changed?)");
     history.session.setPendingError(history.history_arena.allocator(), message);
@@ -547,7 +547,7 @@ pub fn processEvent(
                     if (history.replaying) return;
                     // A write failure is recoverable: the state is fine, just
                     // the file didn't write. Surface a popup + abort the write;
-                    // don't crash. See AGENTS → Error Handling → three contexts.
+                    // don't crash. See DESIGN → Error Handling → three contexts.
                     parser.writePlayerSaveToFile(
                         history.file_source,
                         write.save_path,
@@ -609,7 +609,7 @@ pub fn processEvent(
                     var balance_warnings: std.ArrayList([]const u8) = .empty;
                     // Load a mission into an Editor session. All reads go through
                     // history.readReconstructionFile so the reconstruction cache
-                    // makes undo replay deterministic (see AGENTS → File System
+                    // makes undo replay deterministic (see DESIGN → File System
                     // & IO → Reconstruction cache). buildEditorMission dedups
                     // the levels' inline definitions into a shared palette.
                     const mission_file_path = std.fmt.allocPrint(
@@ -771,7 +771,7 @@ pub fn processEvent(
                     // live mission working copy (current_arena), so it is
                     // captured by deepCopy and reproduced on replay
                     // (start_mission re-applies it from the recorded event).
-                    // See AGENTS → Custom Missions & Online Services → Dreams.
+                    // See DESIGN → Custom Missions & Online Services → Dreams.
                     if (start.end_hub_id) |hub_id| {
                         current.mission.?.end_hub = hub_id;
                     }
@@ -813,7 +813,7 @@ pub fn processEvent(
 
                     // Key validation: warn on unknown keys (advisory — the
                     // file still loads). Catches typo'd keys that the
-                    // permissive parser would silently drop. See AGENTS →
+                    // permissive parser would silently drop. See DESIGN →
                     // Error Handling.
                     validateConfigKeys(history, level_sections, parser.level_key_map, level_path, allocator);
 
@@ -843,7 +843,7 @@ pub fn processEvent(
                     // (next start_level / end_mission → start_hub) is
                     // suppressed/redirected. build_data_from_player is also
                     // skipped (playtest/validate are discard-semantics; the
-                    // player's real PlayerData is unchanged). See AGENTS →
+                    // player's real PlayerData is unchanged). See DESIGN →
                     // Architecture → Level Editor.
                     if (current.editor) |editor| {
                         switch (editor.mode) {
@@ -1203,7 +1203,7 @@ pub fn processEvent(
                         // (discard-semantics — the editor session must not
                         // inflate the player's real turn count). Both are
                         // direct GameState writes inside an event handler, so
-                        // they are reproduced on replay. See AGENTS → Custom
+                        // they are reproduced on replay. See DESIGN → Custom
                         // Missions & Online Services → Author time + medals.
                         if (current.mission) |*mission| {
                             mission.turns_spent += 1;
@@ -1681,7 +1681,7 @@ pub fn processEvent(
                         // Sound for the cast/swing, by skill type: weapon skills
                         // play the swing; spells/cantrips/enchantments/curses play
                         // the spell cast (cantrip/enchantment assets are TODO; spell
-                        // is the placeholder). See AGENTS → Audio.
+                        // is the placeholder). See DESIGN → Audio.
                         if (!history.replaying) {
                             const cast_sound: types.SoundId = switch (skill_definition.skill_type) {
                                 .weapon_skill => .weapon_swing,
@@ -1691,7 +1691,7 @@ pub fn processEvent(
                             // One-shot anim: show the skill's icon above the
                             // caster for 500ms. `current_event_index - 1` is
                             // this `use_skill` event's index (processEvent
-                            // increments before dispatch). See AGENTS →
+                            // increments before dispatch). See DESIGN →
                             // Animation.
                             history.session.queueAnim(history.backing_allocator, .{
                                 .event_index = history.current_event_index - 1,
@@ -1760,7 +1760,7 @@ pub fn processEvent(
                     // Scan every inactive entity; for each, if any opposing
                     // entity is within ITS OWN aggro_range, activate it.
                     // Self-centric — one event covers the whole level. See
-                    // AGENTS → Architecture.
+                    // DESIGN → Architecture.
                     const level = &current.level.?;
                     for (level.entities, 0..) |*entity, entity_index| {
                         if (entity.current_health == 0) continue;
@@ -1789,7 +1789,7 @@ pub fn processEvent(
                     // the last enemy while standing on the exit ends the
                     // level without an extra move). Pushed AFTER aggro_check
                     // on the stack (LIFO → runs after) so newly-aggroed
-                    // enemies are counted. See AGENTS → Architecture.
+                    // enemies are counted. See DESIGN → Architecture.
                     const level = &current.level.?;
                     const player = level.entities[0];
                     if (level.level_end) |level_end| {
@@ -2032,7 +2032,7 @@ pub fn processEvent(
                     // Damage number always shows (even 0) so a connecting
                     // collision is observable — a fully-absorbed hit no longer
                     // looks like a whiff. The hit flash stays gated on > 0
-                    // (a flash reads as "damage was dealt"). See AGENTS →
+                    // (a flash reads as "damage was dealt"). See DESIGN →
                     // Animation.
                     if (!history.replaying) {
                         history.session.queueAnim(history.backing_allocator, .{
@@ -2055,7 +2055,7 @@ pub fn processEvent(
 
                         // One-shot hit flash on the defender (gated
                         // `!replaying`, same shape as the skill-icon anim).
-                        // Only when damage is actually dealt. See AGENTS →
+                        // Only when damage is actually dealt. See DESIGN →
                         // Animation.
                         if (!history.replaying) {
                             history.session.queueAnim(history.backing_allocator, .{
@@ -2135,7 +2135,7 @@ pub fn processEvent(
                     // Damage number always shows (even 0) so a connecting
                     // hit is observable — a fully-absorbed attack no longer
                     // looks like a whiff. The hit flash stays gated on > 0
-                    // (a flash reads as "damage was dealt"). See AGENTS →
+                    // (a flash reads as "damage was dealt"). See DESIGN →
                     // Animation.
                     if (!history.replaying) {
                         history.session.queueAnim(history.backing_allocator, .{
@@ -2159,7 +2159,7 @@ pub fn processEvent(
 
                         // One-shot hit flash on the defender (gated
                         // `!replaying`, same shape as the skill-icon anim).
-                        // Only when damage is actually dealt. See AGENTS →
+                        // Only when damage is actually dealt. See DESIGN →
                         // Animation.
                         if (!history.replaying) {
                             history.session.queueAnim(history.backing_allocator, .{
@@ -2362,7 +2362,7 @@ pub fn processEvent(
                     // A death changes the alive-enemy count; if the player
                     // is standing on the exit, re-check the win condition so
                     // killing the last enemy ends the level without an extra
-                    // move. See AGENTS → Architecture.
+                    // move. See DESIGN → Architecture.
                     pushEvents(current, &.{
                         .{ .sub_level_event = .{ .check_level_end = .{} } },
                     }, allocator);
@@ -2487,7 +2487,7 @@ pub fn processEvent(
                     // (sound, momentum, pickup, aggro, level-end) fire
                     // uniformly. `is_forced`: a swap is a magical teleport,
                     // not a voluntary walk. LIFO: entity_b moves first (to
-                    // pos_a), then entity_a (to pos_b). See AGENTS →
+                    // pos_a), then entity_a (to pos_b). See DESIGN →
                     // Architecture.
                     const pos_a = entity_a.position;
                     const pos_b = entity_b.position;

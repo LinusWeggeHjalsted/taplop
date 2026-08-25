@@ -83,7 +83,7 @@ pub fn view(
     // Ground drawables (entities, decoration pieces, level-end / mission-start
     // markers) are collected into a sortable list and unified y-sorted so
     // decoration overhang pieces interleave correctly with entities (see
-    // AGENTS → Decorations & Footprint). Tiles + overlays are separate layers.
+    // DESIGN → Decorations & Footprint). Tiles + overlays are separate layers.
     var ground_entries: std.ArrayList(GroundEntry) = .empty;
     if (current_state.level) |*level| {
         buildTiles(&tiles, frame_allocator, level.level_tiles, active_theme, camera, camera_zoom);
@@ -151,7 +151,7 @@ pub fn view(
     }
 
     // World overlays: one-shot anims (skill icons, etc.) drawn above ground
-    // sprites. Built from `session.active_anims`; see AGENTS → Animation.
+    // sprites. Built from `session.active_anims`; see DESIGN → Animation.
     const world_overlays = buildWorldOverlays(
         frame_allocator,
         session,
@@ -247,7 +247,7 @@ pub fn view(
 
     // Recoverable error popup: modal, centered, drawn on top of all other
     // UI (including tooltips). Pure over SessionState.pending_error. See
-    // AGENTS → Error Handling.
+    // DESIGN → Error Handling.
     if (session.pendingError()) |message| {
         ui.buildErrorPopup(&ui_elements, frame_allocator, font_metrics, session, message) catch
             @panic("failed to build error popup");
@@ -359,17 +359,17 @@ const entity_pivot_y: f32 = 0.8;
 /// renderer multiplies by `world_scale`, matching tiles/entities), and the
 /// gap above the entity's actual art top (found at runtime from the sprite's
 /// topmost non-transparent pixel — see `RenderContext.sprite_bounds`). Tunable
-/// — eyeball in `zig build run`. See AGENTS → Animation.
+/// — eyeball in `zig build run`. See DESIGN → Animation.
 const skill_icon_size_native: i32 = 256;
 const skill_icon_gap_native: i32 = 16;
 /// Native (unscaled) pixel size of the aggro indicator icon drawn above an
 /// entity's health bar when it gets aggroed (one-shot, 500ms). 1:1 with the
 /// ported EnemyAggro.png art (128×128). Placed like the skill icon. See
-/// AGENTS → Animation.
+/// DESIGN → Animation.
 const aggro_indicator_size_native: i32 = 128;
 /// Native (unscaled) pixel size of the stun overlay icon drawn above the
 /// health bar of a stunned entity (while `stun_duration > 0`). 1:1 with the
-/// StunEffect.png art (128×128). Tunable. See AGENTS → Animation.
+/// StunEffect.png art (128×128). Tunable. See DESIGN → Animation.
 const stun_icon_size_native: i32 = 128;
 
 /// One-shot hit-flash anim: the `world/hit_flash` sprite (256x256, ported
@@ -378,7 +378,7 @@ const stun_icon_size_native: i32 = 128;
 /// `lightest` color (the artist's offwhite). Drawn centered on the entity's
 /// horizontal frame center and the real vertical center of its opaque art
 /// (via `sprite_bounds` top + bottom). Tunable -- eyeball in
-/// `zig build run`. See AGENTS → Animation.
+/// `zig build run`. See DESIGN → Animation.
 const hit_flash_size_native: i32 = 256;
 /// Native (unscaled) pixel size of an effect overlay sprite (drawn centered
 /// on the entity's art bbox, scaled by `zoom` at render time). Tunable.
@@ -389,7 +389,7 @@ const effect_overlay_size_native: i32 = 90;
 /// then slow). 500ms duration (queued by handlers; the constant lives here
 /// for the `view()`-side travel distance + font size). Font size is
 /// independent of the tooltip body — damage numbers read best large.
-/// Tunable — eyeball in `zig build run`. See AGENTS → Animation.
+/// Tunable — eyeball in `zig build run`. See DESIGN → Animation.
 const number_anim_duration_microseconds: u32 = 500_000;
 const number_travel_tiles: f32 = 0.5;
 const number_font_size: i32 = 112;
@@ -399,7 +399,7 @@ const number_font_size: i32 = 112;
 /// art). Drawn above the entity's actual art top (same `sprite_bounds` scan
 /// as the skill icon). The skill icon sits above the health bar, so it's
 /// offset by the bar's height + this gap. Tunable — eyeball in `zig build
-/// run`. See AGENTS → Entity & UI Coloring.
+/// run`. See DESIGN → Entity & UI Coloring.
 const health_bar_native_width: i32 = 155;
 const health_bar_native_height: i32 = 31;
 const health_bar_gap_native: i32 = 8;
@@ -424,7 +424,7 @@ const flag_pivot_y: f32 = 0.75;
 /// Animated banner sprite (`world/flag.png`): a horizontal strip of 8 frames,
 /// each 256x512 (same dims + pivot as the pole). Drawn over the pole at the
 /// same screen position. Looping at `settings.animation_fps` (default 8 →
-/// 125 ms/frame, 1.0 s loop). See AGENTS → Animation.
+/// 125 ms/frame, 1.0 s loop). See DESIGN → Animation.
 const flag_banner_sprite_id = "world/flag";
 const flag_banner_frame_count: u32 = 8;
 const flag_banner_frame_width: i32 = 256;
@@ -519,7 +519,7 @@ fn entityFrameTopLeft(entity: *const Entity, camera: types.Camera, zoom: f32) ty
 /// icons track the entity (resolved from the CURRENT level each frame) and
 /// skip dead entities; a screen/world transition clears the list, so an anim
 /// never outlives its level. Later-pushed anims append later → draw later →
-/// stack on top (the most recent skill use reads on top). See AGENTS →
+/// stack on top (the most recent skill use reads on top). See DESIGN →
 /// Animation.
 fn buildWorldOverlays(
     allocator: std.mem.Allocator,
@@ -560,7 +560,7 @@ fn buildWorldOverlays(
                     @as(f32, @floatFromInt(top_left.y));
                 // The health bar sits above the art top (always-on), so the
                 // icon is offset further by the bar's height + gap to avoid
-                // overlap. See AGENTS → Animation / Entity & UI Coloring.
+                // overlap. See DESIGN → Animation / Entity & UI Coloring.
                 const health_bar_total: f32 =
                     @as(f32, @floatFromInt(health_bar_native_height + health_bar_gap_native)) * zoom;
                 const icon_y = art_top_y - health_bar_total - drawn_size - gap;
@@ -568,7 +568,7 @@ fn buildWorldOverlays(
                     @panic("failed to build skill-icon sprite id");
                 // Tinted with the caster's team gradient index 1 (player →
                 // player gradient, enemy → enemy gradient — same convention
-                // as weapon colors). See AGENTS → Entity & UI Coloring.
+                // as weapon colors). See DESIGN → Entity & UI Coloring.
                 const icon_color = if (entity.team == 0)
                     playerColor(active_theme, 1)
                 else
@@ -588,7 +588,7 @@ fn buildWorldOverlays(
                 // but tinted with the active theme's `lightest`. The
                 // indicator is a one-shot cosmetic marker that the entity
                 // was aggroed this event; skip dead entities (a newly-dead
-                // aggroed entity shouldn't show it). See AGENTS → Animation.
+                // aggroed entity shouldn't show it). See DESIGN → Animation.
                 if (info.entity_index >= level.entities.len) continue;
                 const entity = &level.entities[info.entity_index];
                 if (entity.current_health == 0) continue;
@@ -720,7 +720,7 @@ fn buildWorldOverlays(
     // timeline). Shares the skill-icon's placement (above the health bar,
     // which sits above the art top). A stunned entity skips its turn (no
     // skill use) so the stun icon and a skill-icon pop never co-occur on
-    // the same entity — same position is safe. See AGENTS → Animation.
+    // the same entity — same position is safe. See DESIGN → Animation.
     for (level.entities) |*entity| {
         if (entity.stun_duration == 0) continue;
         if (entity.current_health == 0) continue;
@@ -851,7 +851,7 @@ fn numberAnimPosition(
 /// layers, and weapons; active-effect overlays populate front_effect_sprites
 /// from each effect's `effect_sprite`. Gear sprites are not wired. The health
 /// bar is populated (always-on for alive entities), placed above the entity's
-/// actual art top via the `sprite_bounds` lookup. See AGENTS → Entity & UI
+/// actual art top via the `sprite_bounds` lookup. See DESIGN → Entity & UI
 /// Coloring.
 fn entityDrawable(
     entity: *const Entity,
@@ -918,7 +918,7 @@ fn entityDrawable(
     // (horizontal = frame center; vertical = midpoint of the bbox top/bottom,
     // falling back to the frame's vertical center on a miss/transparent
     // sprite — same resolution as the hit-flash one-shot). Tinted with the
-    // active theme's lightest color. See AGENTS → Entity & UI Coloring.
+    // active theme's lightest color. See DESIGN → Entity & UI Coloring.
     var front_effect_sprites: std.ArrayList(types.SpriteDrawable) = .empty;
     if (entity.active_effects.len > 0) {
         const draw_width = entity_frame_width * zoom;
@@ -981,7 +981,7 @@ fn entityDrawable(
 /// Depleted = global theme darkest; fill = team gradient index 1. The bar
 /// canvas (155x31 native) is centered horizontally over the entity frame;
 /// the outline sprite is drawn on top by the renderer at the same rect.
-/// See AGENTS → Entity & UI Coloring.
+/// See DESIGN → Entity & UI Coloring.
 fn buildHealthBar(
     entity: *const Entity,
     active_theme: types.ActiveColorTheme,

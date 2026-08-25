@@ -1,9 +1,9 @@
 # Ziglop — TODO
 
-File roles + the open-question → AGENTS → DONE lifecycle are in
+File roles + the open-question → DESIGN → DONE lifecycle are in
 AGENTS.md → Documentation. This file holds **active + near-term + deferred
-tasks** and **open/undecided design questions** only. Settled decisions live
-in AGENTS.md; completed history lives in DONE.md.
+tasks** and **open/undecided design questions** only. Settled design lives
+in DESIGN.md; completed history lives in DONE.md.
 
 ## Goal
 
@@ -53,7 +53,7 @@ Test by running `zig build run` and clicking through.
 - **Error handling pass** — replace uniform fail-fast with the two-class
   policy (unrecoverable → panic; recoverable I/O failures → warn +
   degrade/revert via the popup). Settled design + B-simple recording in
-  AGENTS → Error Handling. Slices:
+  DESIGN → Error Handling. Slices:
   - [x] **Slice 1 — error surface:** `SessionState.pending_error` +
     `Action.dismiss_error` + `ui.buildErrorPopup` + `view()` wiring +
     modal input gate (`handleAnytimeInput` / `update()` pause). No real
@@ -76,7 +76,7 @@ Test by running `zig build run` and clicking through.
   - [x] **Crash dump:** `@panic` writes `crashes/crash_*.txt` (a replayable
     session log) to the persistent dir before trapping, via a custom panic
     namespace in both entry files. Zig panics only (not SIGSEGV); web
-    best-effort. See AGENTS → Error Handling → Crash dump. History in
+    best-effort. See DESIGN → Error Handling → Crash dump. History in
     DONE.md.
 - **Key validation (approach A)** — per-section key whitelists warn on
   unknown keys (the permissive parser silently drops them today; see AGENTS
@@ -140,7 +140,7 @@ Open / in-progress:
   Still TODO: gear sprites. Health bars DONE.
 - Sprite animation (view-side, cosmetic; NEVER gameplay state, so replay-safe
   — frame is purely a function of wall-clock time, like the pointer/tooltip).
-  Settled design + flag banner DONE — see AGENTS → Animation.
+  Settled design + flag banner DONE — see DESIGN → Animation.
   - [x] `SessionState.animation_clock` (session-relative microseconds, pause-
         gated, advanced by `frame()`).
   - [x] `settings.animation_fps` (default 8) — the one global rate all anims
@@ -153,7 +153,7 @@ Open / in-progress:
         same shape as `queueSound`); `frame()` stamps `end_clock` from the
         live clock; `view()` gates by `event_index < current_event_index` AND
         `animation_clock < end_clock`; screen/world transition clears via
-        `session.clearAnims()`. See AGENTS → Animation. Landed cases:
+        `session.clearAnims()`. See DESIGN → Animation. Landed cases:
         skill-icon pop above the caster on `use_skill` (500ms, single-frame),
         placed above the entity's actual art top (runtime topmost-opaque-
         pixel scan, same lazy-cache shape as the outline-mask cache); hit
@@ -252,7 +252,7 @@ Open:
 
 ## Decoration Footprint
 
-Settled — see AGENTS → Decorations & Footprint. WIRING progress:
+Settled — see DESIGN → Decorations & Footprint. WIRING progress:
 - [x] Build-time sprite metadata table (`generated_sprite_metadata.zig` —
       pixel dims from PNG IHDR for every shipped `assets/**/*.png`).
 - [x] `Decoration.pixel_dims` / `DecorationTypeDef.pixel_dims` field; parser
@@ -316,7 +316,7 @@ dragToEvent, drag ghost — history in DONE.md). Open:
 
 A custom-mission editor: mission + per-level tabs (quick swap to edit each
 level) + a mission-shared palette of enemies / decorations / ground items.
-Architecture is SETTLED — see AGENTS → Architecture → Level Editor for the
+Architecture is SETTLED — see DESIGN → Architecture → Level Editor for the
 `Editor` type, the event family, the Option-2 framing + minimal exit guard,
 the replay/cache story, AND the full UI layout + active-tool model +
 `Selectable`-union selection model (tabs + viewport + bottom-bar palette +
@@ -326,12 +326,12 @@ yet implemented. Remaining work:
 - Types + framing event handlers DONE (`open_editor` / `close_editor` /
   `start_playtest` / `end_playtest` / `start_validation` / `end_validation` +
   `editor_set_active_level`; exit guard in `end_level` / `end_mission`;
-  round-trip test). See AGENTS → Architecture → Level Editor.
+  round-trip test). See DESIGN → Architecture → Level Editor.
 - Edit-verb event structs DEFINED, handlers PENDING: every edit verb exists
   in events.zig but `handleEditorEvent` is a `@panic` stub (only
   `editor_set_active_level` is handled, inline in `processEvent`). Wiring
   the handlers is part of the UI slice.
-- Editor input/UI: the settled layout/interaction design (AGENTS →
+- Editor input/UI: the settled layout/interaction design (DESIGN →
   Architecture → Level Editor → Editor UI layout). Build as a vertical
   slice — static shell first (tabs + viewport + bottom bar + inspector
   rendering with real data, no interaction), then wire input per tool +
@@ -369,7 +369,7 @@ Logging follow-ups (open):
   want surfaced). The remaining gap is custom-mission cross-session replay
   where the mission files changed since the original session — that will
   panic until the reconstruction cache is serialized into the session log
-  (`file_format_version` 2, lands with custom-mission sharing). See AGENTS →
+  (`file_format_version` 2, lands with custom-mission sharing). See DESIGN →
   Determinism & Tiebreaking → Replay VERIFICATION.
 - Exhaustive comptime round-trip test for the session-log writer/reader:
   inline-for over every Event category/variant, synthesize a payload (0 /
@@ -402,13 +402,13 @@ Logging follow-ups (open):
 - mission_complete screen (triggered on mission end).
 - New Screen variants and transition events.
 - Quit-to-menu and death/mission-fail exits MUST route through end_level /
-  end_hub so entity changes persist into PlayerData (see AGENTS → Architecture
+  end_hub so entity changes persist into PlayerData (see DESIGN → Architecture
   — these exit paths don't exist yet; today only level-completion and hub
   mission-exit route through them).
 
 ## Platform Layer (raylib)
 
-Native + web builds DONE (history in DONE.md; seam in AGENTS → Platform Seam).
+Native + web builds DONE (history in DONE.md; seam in DESIGN → Platform Seam).
 Open:
 
 - 9-slice REFINEMENT: corners 1:1 but edges + center are STRETCHED, not
@@ -429,7 +429,7 @@ Open:
 
 ## Audio
 
-Architecture DONE — see AGENTS → Audio. Sound queue on `SessionState`,
+Architecture DONE — see DESIGN → Audio. Sound queue on `SessionState`,
 backend sfx cache + looping music stream, `frame()` drains + updates music.
 All shipped sfx wired except the two that wait for mission end-state screens.
 Open:
@@ -451,23 +451,23 @@ Open:
 
 ## Memory / Budget
 
-Settled decisions + reasoning in AGENTS.md → Memory & Budget. Open work:
+Settled decisions + reasoning in DESIGN.md → Memory & Budget. Open work:
 
 - Tune caps + wasm budget from real measurements: add peak-usage reporting
   via DebugAllocator (once a real level is drivable), then set the true caps +
   safety ceiling from actual numbers instead of the current estimates
   (max_entities=256, max_tiles~10k, ceiling ~256–512 MB).
 - Confirm whether source sprites are animation sheets before downscaling
-  (affects how far we can shrink — see AGENTS → Memory & Budget → Asset
+  (affects how far we can shrink — see DESIGN → Memory & Budget → Asset
   memory, lever 1).
 
 ## Content Loading / Custom Missions
 
-DESIGN SETTLED — see AGENTS → Custom Missions & Online Services (dreams,
+DESIGN SETTLED — see DESIGN → Custom Missions & Online Services (dreams,
 browser, content identity/hash, balance bounds, auth/server). This section
 kept for active task pointers; prose moved to AGENTS.
 
-File layer DONE (embedded map + persistent dir + FileSource; see AGENTS →
+File layer DONE (embedded map + persistent dir + FileSource; see DESIGN →
 File System & IO). The VFS layer (layer 1 of the read order) is the only
 piece still outstanding — it lands with custom-mission support. Forward-
 looking:
@@ -509,7 +509,7 @@ designed:
   game_version / future content-hash work). The client-side player-action
   legality gate is DONE — `validatePlayerAction` (state.zig) rejects
   impossible moves / unequipped or on-cooldown skills / invalid targets at
-  the replay-seam; see AGENTS → Determinism & Tiebreaking → Replay
+  the replay-seam; see DESIGN → Determinism & Tiebreaking → Replay
   PLAYER-ACTION LEGALITY validation. Server-side validation reuses this.
 - Custom content hosting: upload/download of missions (+ replays?),
   content-addressing (hash) for reproducibility, moderation, metadata.
@@ -562,7 +562,7 @@ or GitHub's redirect gets shadowed.
 
 ## Determinism & Tiebreaking
 
-Convention in AGENTS → Determinism & Tiebreaking. Replay is immune to
+Convention in DESIGN → Determinism & Tiebreaking. Replay is immune to
 decision nondeterminism (records events), but ordering is made DEFINED for
 live behavior + future input-based replay. All audit sites are now explicit
 (turn_end enemy ordering breaks distance ties by entity_index;
@@ -577,23 +577,7 @@ Already total (no action): A* comparePathNodes (f→x→y); entity draw sort
 
 Done items in DONE.md. Open:
 
-- **Split AGENTS.md → AGENTS.md + DESIGN.md.** AGENTS.md is ~122KB / ~1700
-  lines, mostly settled design prose (subsystem architecture, invariants,
-  the "why X is shaped this way"), not the "how to work here" rules the
-  "read AGENTS at the start of every session" contract assumes. Factor the
-  settled-design sections (Platform Seam, Audio, Animation, Replay, Input,
-  Error Handling, File System & IO, Custom Missions, Architecture,
-  Decorations, Coloring, Memory & Budget, UI Framework, Determinism) into a
-  new DESIGN.md (read on demand, like DONE.md); keep AGENTS.md thin
-  (Documentation, Build & Test, Commit policy, Code Style, Zig gotchas,
-  Config format, Key Files) + a new "Subsystem map" — one line per
-  subsystem pointing into DESIGN (`Replay & side effects — see DESIGN →
-  Replay & Side Effects`). Lifecycle adapts: open question → TODO; settles
-  → move prose to DESIGN.md (not AGENTS); task completes → DONE. Bright
-  line: a fact lives in ONE place; AGENTS never restates design — it
-  points. Do as a dedicated focused session (big move, no code change;
-  a half-split is worse than either clean state — matches the rename-to-
-  taplop philosophy).
+- [x] **Split AGENTS.md → AGENTS.md + DESIGN.md** — done; history in DONE.md.
 
 - **`floatWorldPoint` precision loss.** `floatWorldPoint` (input.zig)
   takes `types.ScreenPosition` (i32) but its doc claims sub-tile precision
@@ -654,7 +638,7 @@ Done items in DONE.md. Open:
   arms). `swap_positions` had NO test before it was rewritten to compose
   `move_entity` — the rewrite changed behavior and nothing caught it either
   way. The boring verbs are exactly where sibling-drift bugs live (see
-  AGENTS → Architecture → "Prefer composing"). A coverage matrix (event
+  DESIGN → Architecture → "Prefer composing"). A coverage matrix (event
   variant → has at least one test) would surface the gaps mechanically;
   `pushAndRunSub` makes adding them cheap. Prefer CONTRACT tests (player-
   visible behavior) over MECHANICS tests (implementation details) — the old
@@ -684,4 +668,4 @@ Done items in DONE.md. Open:
   event stack cleared on screen transition), so they act as fail-fast
   assertions. Leaving as-is for now; options if revisited: (A) keep, (B) one
   guard at dispatch that returns (risks hiding bugs), (C) a levelPtr() helper
-  with a descriptive @panic. See AGENTS → Architecture note.
+  with a descriptive @panic. See DESIGN → Architecture note.

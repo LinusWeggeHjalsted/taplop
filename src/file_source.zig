@@ -70,7 +70,7 @@ pub const FileSource = struct {
     }
 
     /// Read a file from the embedded map ONLY, skipping the persistent
-    /// dir. Used by the startup-config fallback (see AGENTS → Error
+    /// dir. Used by the startup-config fallback (see DESIGN → Error
     /// Handling): when a persistent-dir shadow of a shipped config file
     /// fails to parse, the loader retries against the embedded copy so a
     /// broken override can't crash the game. Returns `error.FileNotFound`
@@ -160,7 +160,7 @@ pub const FileSource = struct {
     /// Persistent-dir only (no VFS): the local collection is the source of
     /// truth for "your custom missions." Transient acquisitions (online
     /// fetch-to-local, zip preview) persist into this dir first, then appear
-    /// here. See AGENTS → Custom Missions & Online Services.
+    /// here. See DESIGN → Custom Missions & Online Services.
     pub fn listCustomMissions(
         self: *const FileSource,
         allocator: std.mem.Allocator,

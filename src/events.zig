@@ -3,7 +3,7 @@
 //! generic state-mutation verbs (a skill is a recipe composing them); each
 //! player action pushes one orchestrator that fans out into verbs. The event
 //! stack is LIFO and `event_history` is the linearized replay source of truth.
-//! See AGENTS → Architecture (Events are generic verbs, one orchestrator per
+//! See DESIGN → Architecture (Events are generic verbs, one orchestrator per
 //! action) and Replay & Side Effects.
 
 const types = @import("types.zig");
@@ -69,7 +69,7 @@ pub const MetaEvent = union(enum) {
         sets_checkpoint: bool = true,
     },
     end_hub: void,
-    // Editor framing (see AGENTS → Architecture → Level Editor). open_editor
+    // Editor framing (see DESIGN → Architecture → Level Editor). open_editor
     // reads a mission from disk into an Editor session; start_playtest /
     // end_playtest bracket a single-level playtest; start_validation /
     // end_validation bracket a forced full-mission playthrough. The gameplay
@@ -108,13 +108,13 @@ pub const SuperEvent = union(enum) {
 pub const EditorEvent = union(enum) {
     // scope: editor
     // One EditorEvent per player action (the orchestrator convention — see
-    // AGENTS → Architecture). Most editor edits are a single verb, so they
+    // DESIGN → Architecture). Most editor edits are a single verb, so they
     // live directly here as their own variant. The exception is
     // editor_delete_type, an orchestrator that pushes editor_delete_*_placement
     // sub-events (SubEditorEvent) for each referencing placement before
     // removing the type. All editor events mutate current.editor.?.levels[]
     // or the palette directly — pure state transforms captured by deepCopy,
-    // so undo/redo works by construction. See AGENTS → Architecture → Level
+    // so undo/redo works by construction. See DESIGN → Architecture → Level
     // Editor → Editor UI layout for the full design.
 
     // ── Level management ──
@@ -158,7 +158,7 @@ pub const EditorEvent = union(enum) {
     },
     // Set a fully custom per-level theme (or null to revert to the wheel).
     // The 18 colors (3 gradients) come from the right metadata panel's hex
-    // fields. See AGENTS → CustomColorTheme.
+    // fields. See DESIGN → CustomColorTheme.
     editor_set_level_custom_theme: struct {
         level_index: u32,
         custom_theme: ?CustomColorTheme,
@@ -532,14 +532,14 @@ pub const SubLevelEvent = union(enum) {
     /// Scan every inactive entity; for each, if any opposing entity is
     /// within ITS OWN `aggro_range`, activate it (+ aggro indicator anim).
     /// Self-centric — one event covers the whole level. Pushed at level
-    /// start and after every `move_entity`. See AGENTS → Architecture.
+    /// start and after every `move_entity`. See DESIGN → Architecture.
     aggro_check: struct {},
     /// Win-condition check: if the player is on `level_end` and no active
     /// enemies remain, push `end_level`. Decoupled from `aggro_check` so it
     /// can also fire after `death` (killing the last enemy while standing on
     /// the exit ends the level without an extra move). Pushed AFTER
     /// `aggro_check` on the stack (LIFO → runs after) so newly-aggroed
-    /// enemies are counted. See AGENTS → Architecture.
+    /// enemies are counted. See DESIGN → Architecture.
     check_level_end: struct {},
     attack: struct {
         attacker_index: u32,

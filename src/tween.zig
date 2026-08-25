@@ -4,7 +4,7 @@
 //! `progress = (animation_clock - start_clock) / duration`, clamps to [0, 1],
 //! and applies an easing fn before interpolating position. Replay-safe by
 //! construction: pure, rendering-side, reads the pause-gated clock. See
-//! AGENTS → Animation.
+//! DESIGN → Animation.
 
 const std = @import("std");
 

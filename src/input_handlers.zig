@@ -40,7 +40,7 @@ const default_camera_zoom: f32 = 0.5;
 /// Write the current settings to `~/.ziglop/settings.txt` (best-effort —
 /// errors are swallowed since a failed preferences write is not critical;
 /// the preference just doesn't persist). Called as a `PendingWrite` writer
-/// when the settings debounce fires. See AGENTS → Input.
+/// when the settings debounce fires. See DESIGN → Input.
 pub fn writeSettingsToFile(history: *GameStateHistory) void {
     const allocator = history.backing_allocator;
     const bytes = parser.writeSettings(history.settings, allocator) catch return;
@@ -49,7 +49,7 @@ pub fn writeSettingsToFile(history: *GameStateHistory) void {
 }
 
 /// Mark settings as dirty for debounced persistence. Called after a tunable
-/// setting changes (currently `camera_zoom`). See AGENTS → Input.
+/// setting changes (currently `camera_zoom`). See DESIGN → Input.
 fn markSettingsDirty(history: *GameStateHistory) void {
     history.session.markWriteDirty(.settings, writeSettingsToFile, history.session.session_clock);
 }
@@ -303,7 +303,7 @@ pub fn handleAnytimeInput(
     // nothing to undo. The wheel (`scroll_delta`) is redirected here to
     // scroll the popup body instead of zooming the camera. The scroll offset
     // is clamped in `buildErrorPopup` (the view is the only place that knows
-    // `max_scroll`, which depends on the wrapped line count). See AGENTS →
+    // `max_scroll`, which depends on the wrapped line count). See DESIGN →
     // Error Handling.
     if (history.session.pending_error != null) {
         if (anytime.dismiss_error) {

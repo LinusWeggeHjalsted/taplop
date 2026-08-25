@@ -4,7 +4,7 @@
 //! files (`native.zig`/`web.zig`) call `createSessionSetup` then hand the
 //! result to `main.run`/`main.frame`. `FrameState` lives here (not `main.zig`)
 //! so this module is a leaf: `main → session_setup`, never the reverse.
-//! See AGENTS → File System & IO, Platform Seam, Error Handling.
+//! See DESIGN → File System & IO, Platform Seam, Error Handling.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -45,7 +45,7 @@ pub const FrameState = struct {
 /// allocated in the session allocator (process-lifetime); `setPendingError`
 /// dupes the combined message into `history_arena`, so these are leaked in
 /// the GPA — accepted (small, rare; same lifetime contract as the config
-/// bytes themselves). See AGENTS → Error Handling → three contexts.
+/// bytes themselves). See DESIGN → Error Handling → three contexts.
 const Warnings = *std.ArrayList([]const u8);
 
 /// Read + parse a config file and load it via `load_fn`, falling back to the
@@ -54,7 +54,7 @@ const Warnings = *std.ArrayList([]const u8);
 /// returns the loaded value with no warning. On a failed first attempt +
 /// successful embedded retry, appends a warning to `warnings` and returns the
 /// value. If the embedded copy also fails, panics — shipped content is broken,
-/// a real bug. See AGENTS → Error Handling → three contexts.
+/// a real bug. See DESIGN → Error Handling → three contexts.
 ///
 /// `load_fn` has shape `fn ([]const parser.Section, std.mem.Allocator) anyerror!T`
 /// (the common loader shape; `loadWeaponTypeDefinition` is wrapped to match).
@@ -123,7 +123,7 @@ fn loadSettingsWrapped(
 }
 
 /// Load settings from data/default_settings.txt, falling back to the embedded
-/// copy on parse failure (see AGENTS → Error Handling). The embedded copy is a
+/// copy on parse failure (see DESIGN → Error Handling). The embedded copy is a
 /// better fallback than hardcoded defaults — it preserves keybindings and
 /// other authored values; hardcoded defaults are only the "embedded copy
 /// missing entirely" panic case (a real bug). User preferences live in a
@@ -142,7 +142,7 @@ pub fn loadSettingsFromDisk(
 /// `data/default_settings.txt` but carries only the fields the player has
 /// changed: scalars overlay per-field (user value wins, missing keeps default);
 /// InputBindings, if present, REPLACE the default binding set entirely (the
-/// user's bindings are authoritative — see AGENTS → Input). A missing or
+/// user's bindings are authoritative — see DESIGN → Input). A missing or
 /// unparseable user file leaves the defaults untouched (with a warning).
 /// Replay-safe: settings are loaded once at startup, never during replay.
 pub fn overlayUserSettings(
@@ -157,7 +157,7 @@ pub fn overlayUserSettings(
     // `loadSettings` dupes each input_name into the allocator, so the merged
     // Settings OWNS its strings — it does not borrow from user_bytes. We free
     // user_bytes + the parsed sections eagerly on every path below (success
-    // and error). See AGENTS → File System & IO → Settings ownership.
+    // and error). See DESIGN → File System & IO → Settings ownership.
 
     const user_sections = parser.parseConfigFile(user_bytes, allocator) catch {
         allocator.free(user_bytes);
@@ -174,7 +174,7 @@ pub fn overlayUserSettings(
     // fields and replaces bindings if the user file has an InputBindings
     // section (freeing the base's owned binding strings on replace). A
     // file_format_version mismatch or parse failure is recoverable (warn +
-    // keep defaults) per AGENTS → Error Handling.
+    // keep defaults) per DESIGN → Error Handling.
     const merged = parser.loadSettings(user_sections, allocator, defaults) catch {
         warnings.append(allocator, std.fmt.allocPrint(allocator,
             "Failed to load user settings.txt; using defaults.", .{}) catch
@@ -187,7 +187,7 @@ pub fn overlayUserSettings(
 }
 
 /// Load color theme definitions from data/color_themes.txt, falling back to
-/// the embedded copy on parse failure (see AGENTS → Error Handling).
+/// the embedded copy on parse failure (see DESIGN → Error Handling).
 pub fn loadColorThemeDefinitionsFromDisk(
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
@@ -197,7 +197,7 @@ pub fn loadColorThemeDefinitionsFromDisk(
 }
 
 /// Load all weapon type definitions from data/weapon_types/, each falling
-/// back to its embedded copy on parse failure (see AGENTS → Error Handling).
+/// back to its embedded copy on parse failure (see DESIGN → Error Handling).
 /// Each file is named after its WeaponType enum value (e.g. sword.txt).
 pub fn loadWeaponTypeDefinitions(
     file_source: *const FileSource,
@@ -224,7 +224,7 @@ pub fn loadWeaponTypeDefinitions(
 }
 
 /// Load salvage definitions from data/salvage.txt, falling back to the
-/// embedded copy on parse failure (see AGENTS → Error Handling).
+/// embedded copy on parse failure (see DESIGN → Error Handling).
 pub fn loadSalvageDefinitionsFromDisk(
     file_source: *const FileSource,
     allocator: std.mem.Allocator,
@@ -302,7 +302,7 @@ pub fn createSessionSetup(
         io,
     );
 
-    // Surface startup warnings as a single pending error popup (see AGENTS →
+    // Surface startup warnings as a single pending error popup (see DESIGN →
     // Error Handling). The popup is modal: the player dismisses it (Escape /
     // Enter / the Dismiss button) before interacting with the main menu.
     if (warnings.items.len > 0) {
@@ -404,7 +404,7 @@ test "loadConfigWithFallback: no shadow uses embedded directly, no warning" {
 // eagerly — so the overlay path is leak-clean and can be tested under
 // testing.allocator, whose leak detection catches a forgotten free (the
 // remaining risk after the ownership fix). The use-after-free class is gone
-// by construction (nothing borrows from user_bytes anymore). See AGENTS →
+// by construction (nothing borrows from user_bytes anymore). See DESIGN →
 // File System & IO → Settings ownership + Testing discipline.
 test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     const allocator = testing.allocator;

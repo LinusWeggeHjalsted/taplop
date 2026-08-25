@@ -41,7 +41,7 @@ pub const Effect = struct {
     /// the entity's rendered art while this effect is active (null = no
     /// overlay). Centered on the entity's opaque-art bbox, tinted with the
     /// active theme's lightest color. Drawn as a front_effect_sprite (above
-    /// weapons/gear, below the health bar). See AGENTS → Entity & UI Coloring.
+    /// weapons/gear, below the health bar). See DESIGN → Entity & UI Coloring.
     effect_sprite: ?[]const u8 = null,
 
     // --- damage pipeline: transform stage (see the doc above) ---
