@@ -3243,3 +3243,31 @@ construction, same shape as the cursor/tooltip/drag-ghost hover passes.
   radius (Slam, radius 1 → extent 3, .radius_outline), neither (Focus → no
   overlay), drag-suppressed (range skill + active drag → no overlay).
   Headless; asserts overlay_type, extent, color, and absence.
+
+### Prepared-skill radius outline follows the tile cursor (DONE)
+
+While a targeting skill WITH a radius is prepared (e.g. Flash Strike:
+teleport to a target within range, then attack within radius of the
+landing), a `.radius_outline` follows the tile cursor — previewing the AoE
+that will hit around the landing tile the player is aiming at. The
+valid-target highlights already mark where the player can land; this
+previews the sweep as the cursor moves.
+
+- `buildPreparedSkillRadiusOutline` (view.zig), called in the level branch
+  right after `buildCursorOverlay`. Levels only (`prepared_skill` is null
+  in a hub by construction). Pure over SessionState → replay-safe.
+- **Condition:** `level.prepared_skill` set → resolve definition →
+  `uses_targeting == true && radius != null` → `session.tile_cursor` set.
+  Non-targeting radius skills (Spinblade, Slam, Blitz, Howl) don't qualify —
+  their radius is their own reach, not a cursor-following preview. Today
+  only Flash Strike matches; the condition is general.
+- **Shape:** one `.radius_outline`, `extent = 2*radius + 1`, top-left tile =
+  `(cursor.x - radius, cursor.y - radius)`, color `active_theme.lightest`.
+  Drawn in full (may extend past level edges / over gaps), Chebyshev ≤ radius.
+- **No validity gating:** shows wherever the cursor is, not only over valid
+  target tiles. The valid-target highlights already mark valid landings;
+  the outline previews AoE scale as the cursor moves.
+- **Not drag-suppressed:** this is a prepared-skill state, not a hover pass.
+- **Test** (view.zig): Flash Strike prepared + cursor set → radius_outline
+  extent 3; no skill prepared → none; Spinblade (non-targeting radius)
+  prepared → none; cursor null → none.

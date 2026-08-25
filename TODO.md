@@ -127,7 +127,9 @@ Open / in-progress:
   derived in view() from the session pointer (screenToTile), replay-safe.
   range/radius outlines emitted on skill-slot hover (single bounding square,
   Chebyshev ≤ range else ≤ radius, extent = 2*N+1, theme lightest, unified
-  8px thickness — see DONE.md). aggro outline still not emitted.
+  8px thickness — see DONE.md). Radius outline also follows the tile cursor
+  while a targeting+radius skill is prepared (e.g. Flash Strike). aggro
+  outline still not emitted.
 - [x] GroundDrawable slice: entities + flag poles + decorations + ground
   items all rendered, unified ascending (y, x) y-sort across entities +
   decoration pieces + level-end/mission-start markers (DONE — see

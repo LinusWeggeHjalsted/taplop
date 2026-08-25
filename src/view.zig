@@ -89,6 +89,7 @@ pub fn view(
         buildTiles(&tiles, frame_allocator, level.level_tiles, active_theme, camera, camera_zoom);
         buildHighlightOverlays(&tile_overlays, frame_allocator, level.highlighted_tiles, active_theme, camera, camera_zoom);
         buildCursorOverlay(&tile_overlays, frame_allocator, level.level_tiles, session, active_theme, camera, camera_zoom);
+        buildPreparedSkillRadiusOutline(&tile_overlays, frame_allocator, level, session, active_theme, camera, camera_zoom);
         if (level.level_end) |end_position| {
             ground_entries.append(frame_allocator, .{
                 .sort_y = end_position.y,
@@ -1375,6 +1376,40 @@ fn buildSkillRangeOutline(
     }) catch @panic("failed to append skill range outline");
 }
 
+/// Radius outline around the tile cursor while a targeting skill with a
+/// radius is prepared (e.g. Flash Strike: teleport to a target tile within
+/// range, then attack within radius of the landing). The valid-target
+/// highlights show where the player can land; this previews the AoE that
+/// will hit around the cursor's current tile as the player aims. Drawn in
+/// full (may extend past level edges / over gaps) at Chebyshev ≤ radius —
+/// a geometric preview. Tinted with `active_theme.lightest`. Levels only
+/// (`prepared_skill` is null in a hub). Pure over SessionState (off the
+/// undoable GameState) → replay-safe by construction.
+fn buildPreparedSkillRadiusOutline(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    level: *const types.Level,
+    session: *const state.SessionState,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    const prepared = level.prepared_skill orelse return;
+    const definition = lookups.getSkillDefinition(prepared) orelse return;
+    if (!definition.uses_targeting) return;
+    const radius = definition.radius orelse return;
+    const cursor = session.tile_cursor orelse return;
+
+    const n: i32 = @intCast(radius);
+    const top_left = types.Vector2{ .x = cursor.x - n, .y = cursor.y - n };
+    list.append(allocator, .{
+        .screen_position = tileToScreen(top_left, camera, zoom),
+        .overlay_type = .radius_outline,
+        .color = active_theme.lightest,
+        .extent = 2 * radius + 1,
+    }) catch @panic("failed to append prepared-skill radius outline");
+}
+
 /// Append a checkerboard TileDrawable per tile. The two shades come from world
 /// gradient indices 1 and 3, chosen by (x + y) parity.
 fn buildTiles(
@@ -1540,6 +1575,75 @@ test "skill range outline: range/radius/none/drag" {
         } }};
         var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
         buildSkillRangeOutline(&overlays, arena, &ui_elements, &session, &state_, &harness.weapon_type_definitions, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
+    }
+}
+
+test "prepared skill radius outline: follows cursor while targeting" {
+    // While a targeting skill with a radius is prepared (e.g. Flash Strike),
+    // a radius outline follows the tile cursor — previewing the AoE around
+    // the landing tile the player is aiming at. Extent = 2*radius + 1,
+    // .radius_outline, theme lightest. Levels only (prepared_skill is null
+    // in a hub); no overlay when no skill is prepared, the skill has no
+    // radius, or the cursor is null.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    const dummy_theme = types.ActiveColorTheme{
+        .lightest = .{ .r = 255, .g = 255, .b = 255 },
+        .darkest = .{ .r = 0, .g = 0, .b = 0 },
+        .world_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .enemy_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .player_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+    };
+    const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
+
+    // Case 1: Flash Strike prepared (uses_targeting, radius 1), cursor at
+    // (5,5) -> radius_outline, extent 3, centered on cursor.
+    {
+        var state_ = test_harness.levelStateWithEntities(arena, &.{.{}}, &.{});
+        state_.level.?.prepared_skill = .flash_strike;
+        var session = state.SessionState{};
+        session.tile_cursor = .{ .x = 5, .y = 5 };
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildPreparedSkillRadiusOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 1), overlays.items.len);
+        const ov = overlays.items[0];
+        try std.testing.expectEqual(types.TileOverlayType.radius_outline, ov.overlay_type);
+        try std.testing.expectEqual(@as(u32, 3), ov.extent);
+        try std.testing.expectEqual(dummy_theme.lightest, ov.color);
+    }
+
+    // Case 2: no skill prepared -> no overlay.
+    {
+        const state_ = test_harness.levelStateWithEntities(arena, &.{.{}}, &.{});
+        var session = state.SessionState{};
+        session.tile_cursor = .{ .x = 5, .y = 5 };
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildPreparedSkillRadiusOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
+    }
+
+    // Case 3: a non-targeting radius skill (Spinblade) prepared -> no overlay
+    // (uses_targeting is false; its radius is already shown as the skill's own
+    // reach, not a cursor-following preview).
+    {
+        var state_ = test_harness.levelStateWithEntities(arena, &.{.{}}, &.{});
+        state_.level.?.prepared_skill = .spinblade;
+        var session = state.SessionState{};
+        session.tile_cursor = .{ .x = 5, .y = 5 };
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildPreparedSkillRadiusOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
+    }
+
+    // Case 4: Flash Strike prepared but cursor null -> no overlay.
+    {
+        var state_ = test_harness.levelStateWithEntities(arena, &.{.{}}, &.{});
+        state_.level.?.prepared_skill = .flash_strike;
+        var session = state.SessionState{};
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildPreparedSkillRadiusOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
         try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
     }
 }
