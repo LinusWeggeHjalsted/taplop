@@ -656,6 +656,33 @@ combat-log UI rendering + replay-viewer UI still TODO)
   the old virtual-depth bookkeeping (idle = stack empties). This is also the
   primitive the Online Services TODO wants for server-side replay validation
   (leaderboard anti-cheat).
+- **Replay PLAYER-ACTION LEGALITY validation.** `verifyReplayMatch` is a
+  STRUCTURAL check (does the handler-pushed event match the recording?);
+  for TOP-LEVEL player events it's trivially true because the replay loop
+  SEEDS them from the recording. So the recording is authoritative for
+  WHAT the player did, but nothing checked it was LEGAL — a hand-crafted
+  replay can inject `player_use_skill{skill_not_equipped}` or
+  `player_move_action{tile_20_squares_away}` and the handlers would execute
+  it (they trust their inputs; the live input path is the only gate, and
+  replay bypasses it). `GameStateHistory.validatePlayerAction` closes that
+  gap: called in `replayTo` / `replayToWithIdleTracking` right BEFORE seeding
+  a top-level event, it rejects actions the player couldn't have taken at
+  that point. Validated orchestrators: `player_move_action` (destination
+  must be in `reachableTiles(level, player.pos, getEffectiveSpeed())` —
+  full BFS, matches live legality); `player_use_skill` +
+  `player_skip_move_to_skill` + `player_prepare_skill` (skill must be in
+  `collectSkillSlots()` AND `skill_cooldowns.get == 0`; for use/skip-to-use
+  of a targeting skill, the target must be in `getValidTargets(0, state)`).
+  Handler-pushed children never reach here (they're never seeded — their
+  legality is enforced by the parent handler's own logic + `verifyReplayMatch`
+  structurally). Fail-fast `@panic` for now (malicious replay = reject); a
+  future viewer-facing load may soften this to the error popup, while
+  server-side leaderboard validation keeps it hard. The legality LOGIC lives
+  in bool-returning helpers (`isPlayerMoveLegal`, `skillOnBarAndOffCooldown`,
+  `skillTargetLegal`) so it's testable without panic-catching infrastructure
+  (Zig 0.16 has no `expectPanics`); the `validate*` wrappers are a thin
+  panic-policy layer over them. This is the other primitive the Online
+  Services TODO wants for server-side replay validation.
 - Tiebreaking convention — every ordering/selection over equal keys must break
   ties EXPLICITLY (in the comparator) or by a documented scan order:
   - Entities: ascending `entity_index`.

@@ -506,7 +506,11 @@ designed:
 - Leaderboards: what's scored (mission completion time? score? both?),
   scoring source (event_history-derived vs server-validated), anti-cheat
   considerations (server-side replay validation ties into the advisory
-  game_version / future content-hash work).
+  game_version / future content-hash work). The client-side player-action
+  legality gate is DONE — `validatePlayerAction` (state.zig) rejects
+  impossible moves / unequipped or on-cooldown skills / invalid targets at
+  the replay-seam; see AGENTS → Determinism & Tiebreaking → Replay
+  PLAYER-ACTION LEGALITY validation. Server-side validation reuses this.
 - Custom content hosting: upload/download of missions (+ replays?),
   content-addressing (hash) for reproducibility, moderation, metadata.
 - Auth/identity model (if any).

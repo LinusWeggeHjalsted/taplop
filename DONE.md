@@ -904,6 +904,53 @@ same shape: `Metadata` (with `file_format_version`) first, then type sections.
   so the tampered-history negative case is covered by the deepEqual unit
   tests + the obvious `@panic` call in verifyReplayMatch.)
 
+### Replay player-action legality validation (DONE)
+
+`verifyReplayMatch` (above) is a STRUCTURAL check — does the handler-pushed
+event match the recording? For TOP-LEVEL player events it's trivially true
+because the replay loop SEEDS them from the recording, so the recording is
+authoritative for WHAT the player did but nothing checked it was LEGAL. A
+hand-crafted replay can inject `player_use_skill{skill_not_equipped}` or
+`player_move_action{tile_20_squares_away}` and the handlers would execute
+it (they trust their inputs; the live input path is the only gate, and
+replay bypasses it). `GameStateHistory.validatePlayerAction` closes that gap.
+
+- **Seam:** called in `replayTo` / `replayToWithIdleTracking` right BEFORE
+  seeding a top-level event from the recording — the one site where the
+  recording becomes authoritative. Handler-pushed children are never seeded
+  (they're already on the stack from the handler push), so they never reach
+  this gate; their legality is enforced by the parent handler's own logic +
+  `verifyReplayMatch` structurally.
+- **Validated orchestrators:**
+  - `player_move_action{destination}` — destination must be in
+    `functions.reachableTiles(level, player.pos, getEffectiveSpeed())` (full
+    BFS over walkable tiles, entity-blocking respected; matches live legality
+    exactly, catches both "moved too far" and "moved through a wall").
+  - `player_use_skill{skill_id, target}` + `player_skip_move_to_skill`
+    (when `!prepare`) + `player_prepare_skill{skill_id}` — skill must be in
+    `player.collectSkillSlots()` AND `player.skill_cooldowns.get == 0`; for
+    use/skip-to-use of a `uses_targeting` skill, the target must be in the
+    skill's `getValidTargets(0, current_state)` (e.g. hostile within range,
+    empty tile for teleport skills).
+  - `player_skip_move` / `player_skip_attack` / `player_cancel_skill` — no
+    payload to validate. Non-level / non-player events — no-op.
+- **Testability split:** the legality LOGIC lives in bool-returning helpers
+  (`isPlayerMoveLegal`, `skillOnBarAndOffCooldown`, `skillTargetLegal`);
+  the `validate*` wrappers are a thin panic-policy layer that formats a
+  message + `@panic`s on false. Zig 0.16 has no `expectPanics`, so the bool
+  helpers are tested directly (state.zig): reachable vs. unreachable move,
+  on-bar vs. off-bar skill, off-cooldown vs. on-cooldown, valid vs. invalid
+  vs. null target, non-targeting skill accepts null. The panic path itself
+  isn't unit-tested (same stance as `verifyReplayMatch`).
+- **Failure mode:** fail-fast `@panic` for now (malicious replay = reject).
+  A future viewer-facing load may soften to the error popup (AGENTS → Error
+  Handling); server-side leaderboard validation keeps it hard. This is the
+  primitive Online Services wants for server-side replay validation.
+- **Cost:** one BFS + one `getValidTargets` per player move/skill event
+  during replay (current_arena-backed, reclaimed on arena reset). Negligible.
+- The existing legal round-trip test (main.zig) still passes — the validator
+  doesn't false-positive on legal play.
+
 ### Mission content hash (DONE — computation primitive, no wiring yet)
 
 - `src/content_hash.zig`: `computeMissionHash(file_source, allocator,

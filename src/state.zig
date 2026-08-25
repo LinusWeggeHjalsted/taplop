@@ -20,6 +20,12 @@ const deepCopy = deep_copy.deepCopy;
 const deepEqual = deep_copy.deepEqual;
 const firstDiffField = deep_copy.firstDiffField;
 
+// Validation of player-action legality during replay (see `validatePlayerAction`).
+// `lookups` is pulled in lazily through the event_handlers → skills chain at
+// call sites, but importing it here keeps the replay-seam dependency explicit.
+const functions = @import("functions.zig");
+const lookups = @import("generated_lookups.zig");
+
 const Event = events.Event;
 const UiState = ui.UiState;
 const Settings = types.Settings;
@@ -956,6 +962,145 @@ pub const GameStateHistory = struct {
         }
     }
 
+    /// Validate that a top-level player-action event was LEGAL at the point
+    /// it was recorded — i.e. the player could actually have done what the
+    /// replay claims. This is the replay anti-cheat seam: `verifyReplayMatch`
+    /// only checks structural equality (the handler would run the same
+    /// event the recording has), and for TOP-LEVEL events that check is
+    /// trivially true because the replay loop seeds them from the recording.
+    /// So a hand-crafted replay can inject `player_use_skill{skill_not_owned}`
+    /// or `player_move_action{tile_20_squares_away}` and the handlers would
+    /// execute it (they trust their inputs; the live input path is the only
+    /// gate, and replay bypasses it). This method closes that gap.
+    ///
+    /// Called in `replayTo` / `replayToWithIdleTracking` right BEFORE seeding
+    /// a top-level event from the recording (the one site where the recording
+    /// becomes authoritative). Handler-pushed children are never seeded, so
+    /// they never reach here (their legality is enforced by the parent
+    /// handler's own logic, and `verifyReplayMatch` checks their structure).
+    ///
+    /// Fail-fast `@panic` for now (malicious replay = reject). A future
+    /// viewer-facing load may soften this to a popup; server-side leaderboard
+    /// validation keeps it hard. See AGENTS → Determinism & Tiebreaking →
+    /// Replay VERIFICATION.
+    fn validatePlayerAction(self: *GameStateHistory, event: Event) void {
+        const level = self.current_state.level orelse return;
+        if (level.entities.len == 0) return;
+        const player = level.entities[0];
+
+        switch (event) {
+            .level_event => |le| switch (le) {
+                .player_move_action => |action| {
+                    if (!self.isPlayerMoveLegal(level, player, action.destination)) {
+                        var buf: [160]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf,
+                            "replay validation: player moved to ({d},{d}) which is not reachable from ({d},{d})",
+                            .{ action.destination.x, action.destination.y, player.position.x, player.position.y },
+                        ) catch "replay validation: player moved to an unreachable tile";
+                        @panic(msg);
+                    }
+                },
+                .player_use_skill => |use| {
+                    self.validateSkillOnBarAndOffCooldown(player, use.skill_id);
+                    self.validateSkillTarget(level, player, use.skill_id, use.target);
+                },
+                .player_skip_move_to_skill => |skip| {
+                    self.validateSkillOnBarAndOffCooldown(player, skip.skill_id);
+                    if (!skip.prepare) {
+                        self.validateSkillTarget(level, player, skip.skill_id, skip.target);
+                    }
+                },
+                .player_prepare_skill => |prepare| {
+                    self.validateSkillOnBarAndOffCooldown(player, prepare.skill_id);
+                },
+                // No payload to validate.
+                .player_skip_move, .player_skip_attack, .player_cancel_skill => {},
+                else => {},
+            },
+            else => {},
+        }
+    }
+
+    /// The skill must be currently equipped in one of the player's 8 skill
+    /// bar slots and off cooldown. Matches the live input gate in
+    /// `resolveSkillSlotAction`.
+    fn skillOnBarAndOffCooldown(self: *GameStateHistory, player: types.Entity, skill_id: types.SkillId) bool {
+        const slots = player.collectSkillSlots(self.weapon_type_definitions);
+        var on_bar = false;
+        for (slots) |maybe| {
+            if (maybe) |s| if (s == skill_id) {
+                on_bar = true;
+                break;
+            };
+        }
+        if (!on_bar) return false;
+        return player.skill_cooldowns.get(skill_id) == 0;
+    }
+
+    fn validateSkillOnBarAndOffCooldown(self: *GameStateHistory, player: types.Entity, skill_id: types.SkillId) void {
+        if (self.skillOnBarAndOffCooldown(player, skill_id)) return;
+        var buf: [128]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf,
+            "replay validation: skill {s} not on bar or on cooldown",
+            .{@tagName(skill_id)},
+        ) catch "replay validation: skill not on bar or on cooldown";
+        @panic(msg);
+    }
+
+    /// If the skill uses targeting, the target tile must be in the skill's
+    /// valid-target set at the current state (e.g. within range, empty for
+    /// teleport skills, hostile for attacks). Non-targeting skills skip the
+    /// check (target is null/ignored). Matches the live input gate
+    /// (`resolveSkillSlotAction` auto-targets at the cursor against
+    /// `getValidTargets`).
+    fn skillTargetLegal(self: *GameStateHistory, skill_id: types.SkillId, target: ?types.Vector2) bool {
+        const definition = lookups.getSkillDefinition(skill_id) orelse return true;
+        if (!definition.uses_targeting) return true;
+        const target_tile = target orelse return false;
+        const valid = definition.getValidTargets(0, self.current_state, self.current_arena.allocator()) orelse return false;
+        for (valid) |tile| {
+            if (tile.x == target_tile.x and tile.y == target_tile.y) return true;
+        }
+        return false;
+    }
+
+    fn validateSkillTarget(
+        self: *GameStateHistory,
+        level: Level,
+        player: types.Entity,
+        skill_id: types.SkillId,
+        target: ?types.Vector2,
+    ) void {
+        _ = level;
+        _ = player;
+        if (self.skillTargetLegal(skill_id, target)) return;
+        var buf: [128]u8 = undefined;
+        const target_tile = target orelse types.Vector2{ .x = 0, .y = 0 };
+        const msg = std.fmt.bufPrint(&buf,
+            "replay validation: skill {s} target ({d},{d}) is not a valid target",
+            .{ @tagName(skill_id), target_tile.x, target_tile.y },
+        ) catch "replay validation: skill target is not a valid target";
+        @panic(msg);
+    }
+
+    /// The destination must be reachable from the player's current position
+    /// within their effective speed (BFS over walkable tiles, entity-
+    /// blocking respected). Matches the live input gate (`is_reachable`
+    /// against `highlighted_tiles`, which are populated by `refreshMoveHighlights`
+    /// via `reachableTiles`).
+    fn isPlayerMoveLegal(self: *GameStateHistory, level: Level, player: types.Entity, destination: types.Vector2) bool {
+        const reachable = functions.reachableTiles(
+            level,
+            player.position,
+            player.getEffectiveSpeed(),
+            self.current_arena.allocator(),
+        );
+        for (reachable) |tile| {
+            if (tile.x == destination.x and tile.y == destination.y) return true;
+        }
+        return false;
+    }
+
     /// Replay events up to target_event_index, starting from the best available
     /// restore point (snapshot, checkpoint, or initial state). Uses the
     /// natural-stack model (see `replayToWithIdleTracking`): the stack top
@@ -988,8 +1133,9 @@ pub const GameStateHistory = struct {
         while (self.current_event_index < target_event_index) {
             // If the stack drained, seed the next top-level recorded event.
             if (self.current_state.event_stack.len == 0) {
-                self.current_state.event_stack =
-                    &.{self.event_history.items[self.current_event_index]};
+                const next = self.event_history.items[self.current_event_index];
+                self.validatePlayerAction(next);
+                self.current_state.event_stack = &.{next};
             }
 
             // Verify: the event about to run (stack top) matches the recording.
@@ -1049,8 +1195,9 @@ pub const GameStateHistory = struct {
             // the recording is authoritative for them; the verify below is
             // trivially true right after a seed.)
             if (self.current_state.event_stack.len == 0) {
-                self.current_state.event_stack =
-                    &.{self.event_history.items[self.current_event_index]};
+                const next = self.event_history.items[self.current_event_index];
+                self.validatePlayerAction(next);
+                self.current_state.event_stack = &.{next};
             }
 
             // Verify: the event about to run (stack top) matches the recording.
@@ -1358,5 +1505,78 @@ test "SessionState sound queue: reuse after drain" {
     const drained = session.drainPendingSounds();
     try std.testing.expectEqual(@as(usize, 1), drained.len);
     try std.testing.expectEqual(types.SoundId.equip, drained[0]);
+}
+
+// --- replay player-action validation tests ---
+//
+// The legality checks (bool-returning helpers) are tested directly; the
+// `validatePlayerAction` wrapper that formats + @panics is a thin policy
+// layer over them (Zig 0.16 has no expectPanics, so the panic path itself
+// isn't unit-tested — the logic it wraps is). See AGENTS → Determinism &
+// Tiebreaking → Replay VERIFICATION.
+
+const test_harness = @import("test_harness.zig");
+
+test "replay validation: movement legality (reachableTiles)" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    // Player at (0,0), speed 1. Tiles: (0,0),(1,0),(2,0). With speed 1 only
+    // (1,0) is reachable; (2,0) is two steps; (5,5) is off the map.
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } };
+    const player = types.Entity{ .position = .{ .x = 0, .y = 0 } };
+    var history = harness.newHistory(test_harness.levelStateWithEntities(arena, &.{player}, &tiles));
+
+    try std.testing.expect(history.isPlayerMoveLegal(history.current_state.level.?, player, .{ .x = 1, .y = 0 }));
+    try std.testing.expect(!history.isPlayerMoveLegal(history.current_state.level.?, player, .{ .x = 2, .y = 0 }));
+    try std.testing.expect(!history.isPlayerMoveLegal(history.current_state.level.?, player, .{ .x = 5, .y = 5 }));
+}
+
+test "replay validation: skill on bar and off cooldown" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    // Sword main hand: slot 1 = Slice, slot 2 = Spinblade. No off hand, no
+    // utility skills. Chop (axe skill 1) is not on the bar.
+    const player = types.Entity{
+        .position = .{ .x = 0, .y = 0 },
+        .main_hand_weapon = .{ .weapon_type = .sword },
+    };
+    var history = harness.newHistory(test_harness.levelStateWithEntities(arena, &.{player}, &.{}));
+
+    try std.testing.expect(history.skillOnBarAndOffCooldown(player, .slice));
+    try std.testing.expect(!history.skillOnBarAndOffCooldown(player, .chop));
+
+    // Slice on cooldown -> not legal.
+    var player_cd = player;
+    player_cd.skill_cooldowns.set(.slice, 1);
+    try std.testing.expect(!history.skillOnBarAndOffCooldown(player_cd, .slice));
+}
+
+test "replay validation: skill target legality (getValidTargets)" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    // Slice (range 1, targeting): valid targets are hostile entities within
+    // Chebyshev 1. Place an enemy at (1,0); (1,0) is valid, (5,5) is not.
+    const player = types.Entity{
+        .position = .{ .x = 0, .y = 0 },
+        .main_hand_weapon = .{ .weapon_type = .sword },
+    };
+    const enemy = types.Entity{ .position = .{ .x = 1, .y = 0 }, .team = 1, .current_health = 1 };
+    var history = harness.newHistory(test_harness.levelStateWithEntities(arena, &.{ player, enemy }, &.{}));
+
+    try std.testing.expect(history.skillTargetLegal(.slice, .{ .x = 1, .y = 0 }));
+    try std.testing.expect(!history.skillTargetLegal(.slice, .{ .x = 5, .y = 5 }));
+    // Null target on a targeting skill is illegal.
+    try std.testing.expect(!history.skillTargetLegal(.slice, null));
+    // Non-targeting skill (Spinblade) accepts any target (ignored).
+    try std.testing.expect(history.skillTargetLegal(.spinblade, null));
 }
 
