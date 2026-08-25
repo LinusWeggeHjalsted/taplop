@@ -125,7 +125,9 @@ Open / in-progress:
   (translucent fill over level.highlighted_tiles) + hover CURSOR (outline).
   Overlays have no art — renderer draws them as primitives. The cursor is
   derived in view() from the session pointer (screenToTile), replay-safe.
-  range/radius/aggro outline types aren't emitted yet (renderer handles them).
+  range/radius outlines emitted on skill-slot hover (single bounding square,
+  Chebyshev ≤ range else ≤ radius, extent = 2*N+1, theme lightest, unified
+  8px thickness — see DONE.md). aggro outline still not emitted.
 - [x] GroundDrawable slice: entities + flag poles + decorations + ground
   items all rendered, unified ascending (y, x) y-sort across entities +
   decoration pieces + level-end/mission-start markers (DONE — see

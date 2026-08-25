@@ -1302,7 +1302,7 @@ test "wrapRow breaks at spaces and drops the break space" {
 const UiElementList = std.ArrayList(UiElement);
 
 /// The player entity is index 0 in a level, or the dedicated hub player.
-fn playerEntity(game_state: *const GameState) ?Entity {
+pub fn playerEntity(game_state: *const GameState) ?Entity {
     if (game_state.level) |level| {
         if (level.entities.len > 0) return level.entities[0];
         return null;
@@ -1438,6 +1438,23 @@ fn skillSlotAction(slot: u8) Action {
         7 => .skill_slot_7,
         8 => .skill_slot_8,
         else => unreachable,
+    };
+}
+
+/// Inverse of `skillSlotAction`: map a skill-slot Action back to its slot
+/// number (1-8), or null for any other action. Used by `view()` to detect
+/// when the pointer hovers a skill button and resolve which skill it is.
+pub fn actionSkillSlot(action: Action) ?u8 {
+    return switch (action) {
+        .skill_slot_1 => 1,
+        .skill_slot_2 => 2,
+        .skill_slot_3 => 3,
+        .skill_slot_4 => 4,
+        .skill_slot_5 => 5,
+        .skill_slot_6 => 6,
+        .skill_slot_7 => 7,
+        .skill_slot_8 => 8,
+        else => null,
     };
 }
 

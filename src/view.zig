@@ -18,6 +18,7 @@ const parser = @import("parser.zig");
 const combat_log = @import("combat_log.zig");
 const event_handlers = @import("event_handlers.zig");
 const lookups = @import("generated_lookups.zig");
+const test_harness = @import("test_harness.zig");
 
 const GameState = state.GameState;
 const SessionState = state.SessionState;
@@ -175,6 +176,23 @@ pub fn view(
             active_theme,
             settings.player_color_index,
         ) catch @panic("failed to build bottom bar");
+
+        // Range/radius outline: when the pointer hovers a skill button,
+        // preview the skill's reach as a single square outline (Chebyshev
+        // ≤ range, else ≤ radius) centered on the player. Pure, off
+        // SessionState — replay-safe like the cursor/tooltip. See AGENTS
+        // → Input (hover-driven previews).
+        buildSkillRangeOutline(
+            &tile_overlays,
+            frame_allocator,
+            ui_elements.items,
+            session,
+            current_state,
+            weapon_type_definitions,
+            active_theme,
+            camera,
+            camera_zoom,
+        );
     } else if (current_state.screen == .main_menu) {
         // Continue is available when there is a game to resume (populated
         // PlayerData).
@@ -1310,6 +1328,53 @@ fn buildCursorOverlay(
     }
 }
 
+/// Range/radius outline: when the pointer hovers a skill button on the
+/// bottom bar, preview that skill's reach as a single square outline
+/// centered on the player. The square's half-side is the skill's `range`
+/// (preferred) or `radius` (fallback); a skill with neither draws nothing.
+/// Drawn in full (may extend past level edges / over gaps) at Chebyshev
+/// ≤ N — a geometric preview, not pathfinding reachability. Tinted with
+/// `active_theme.lightest`, same as the cursor. Suppressed while dragging
+/// (the pointer is dragging, not hovering). Works in levels and hubs
+/// (skill slots appear on the bottom bar in both). Pure over SessionState
+/// (off the undoable GameState) → replay-safe by construction.
+fn buildSkillRangeOutline(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    ui_elements: []const ui.UiElement,
+    session: *const state.SessionState,
+    current_state: *const GameState,
+    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    if (session.ui_state.drag != null) return;
+
+    const pointer = session.input_state.mouse_screen_position;
+    const point = types.ScreenPosition{
+        .x = @intFromFloat(pointer.x),
+        .y = @intFromFloat(pointer.y),
+    };
+    const button = ui.buttonAt(ui_elements, point) orelse return;
+    const slot = ui.actionSkillSlot(button.action) orelse return;
+
+    const player = ui.playerEntity(current_state) orelse return;
+    const skill_id = player.skillInSlot(slot, weapon_type_definitions) orelse return;
+    const definition = lookups.getSkillDefinition(skill_id) orelse return;
+
+    const n: u32 = if (definition.range) |r| r else if (definition.radius) |rad| rad else return;
+    const overlay_type: types.TileOverlayType = if (definition.range != null) .range_outline else .radius_outline;
+
+    const top_left = types.Vector2{ .x = player.position.x - @as(i32, @intCast(n)), .y = player.position.y - @as(i32, @intCast(n)) };
+    list.append(allocator, .{
+        .screen_position = tileToScreen(top_left, camera, zoom),
+        .overlay_type = overlay_type,
+        .color = active_theme.lightest,
+        .extent = 2 * n + 1,
+    }) catch @panic("failed to append skill range outline");
+}
+
 /// Append a checkerboard TileDrawable per tile. The two shades come from world
 /// gradient indices 1 and 3, chosen by (x + y) parity.
 fn buildTiles(
@@ -1374,4 +1439,107 @@ test "flag banner: frame advances with the animation clock and wraps" {
     // fps=0 is treated as 8 (no divide-by-zero).
     const d_zero = levelEndDrawable(.{ .x = 0, .y = 0 }, dummy_theme, camera, 1.0, 500_000, 0);
     try std.testing.expectEqual(@as(i32, 4 * 256), d_zero.banner_source_rectangle.?.x);
+}
+
+test "skill range outline: range/radius/none/drag" {
+    // Hovering a skill button previews the skill's reach as a single square
+    // outline centered on the player: Chebyshev ≤ range (else ≤ radius),
+    // extent = 2*N + 1. A skill with neither draws nothing; dragging
+    // suppresses the preview. Pure, off SessionState.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    const dummy_theme = types.ActiveColorTheme{
+        .lightest = .{ .r = 255, .g = 255, .b = 255 },
+        .darkest = .{ .r = 0, .g = 0, .b = 0 },
+        .world_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .enemy_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .player_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+    };
+    const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
+
+    // Player at (5, 5) with a sword (slot 1 -> Slice, range 1) and a utility
+    // skill in slot 4 we swap per case.
+    const player = types.Entity{
+        .position = .{ .x = 5, .y = 5 },
+        .main_hand_weapon = .{ .weapon_type = .sword },
+    };
+
+    // Case 1: slot 1 -> Slice (range 1) -> range_outline, extent 3.
+    {
+        const state_ = test_harness.levelStateWithEntities(arena, &.{player}, &.{});
+        var session = state.SessionState{};
+        session.input_state.mouse_screen_position = .{ .x = 200, .y = 200 };
+        const ui_elements = [_]ui.UiElement{.{ .button = .{
+            .action = .skill_slot_1,
+            .screen_position = .{ .x = 100, .y = 100 },
+            .width = 256,
+            .height = 256,
+        } }};
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildSkillRangeOutline(&overlays, arena, &ui_elements, &session, &state_, &harness.weapon_type_definitions, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 1), overlays.items.len);
+        const ov = overlays.items[0];
+        try std.testing.expectEqual(types.TileOverlayType.range_outline, ov.overlay_type);
+        try std.testing.expectEqual(@as(u32, 3), ov.extent);
+        try std.testing.expectEqual(dummy_theme.lightest, ov.color);
+    }
+
+    // Case 2: slot 4 -> Slam (radius 1) -> radius_outline, extent 3.
+    {
+        var p2 = player;
+        p2.equipped_utility_skills[0] = .slam;
+        const state_ = test_harness.levelStateWithEntities(arena, &.{p2}, &.{});
+        var session = state.SessionState{};
+        session.input_state.mouse_screen_position = .{ .x = 200, .y = 200 };
+        const ui_elements = [_]ui.UiElement{.{ .button = .{
+            .action = .skill_slot_4,
+            .screen_position = .{ .x = 100, .y = 100 },
+            .width = 256,
+            .height = 256,
+        } }};
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildSkillRangeOutline(&overlays, arena, &ui_elements, &session, &state_, &harness.weapon_type_definitions, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 1), overlays.items.len);
+        const ov = overlays.items[0];
+        try std.testing.expectEqual(types.TileOverlayType.radius_outline, ov.overlay_type);
+        try std.testing.expectEqual(@as(u32, 3), ov.extent);
+    }
+
+    // Case 3: slot 4 -> Focus (no range, no radius) -> no outline.
+    {
+        var p3 = player;
+        p3.equipped_utility_skills[0] = .focus;
+        const state_ = test_harness.levelStateWithEntities(arena, &.{p3}, &.{});
+        var session = state.SessionState{};
+        session.input_state.mouse_screen_position = .{ .x = 200, .y = 200 };
+        const ui_elements = [_]ui.UiElement{.{ .button = .{
+            .action = .skill_slot_4,
+            .screen_position = .{ .x = 100, .y = 100 },
+            .width = 256,
+            .height = 256,
+        } }};
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildSkillRangeOutline(&overlays, arena, &ui_elements, &session, &state_, &harness.weapon_type_definitions, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
+    }
+
+    // Case 4: drag suppresses the outline even for a range skill.
+    {
+        const state_ = test_harness.levelStateWithEntities(arena, &.{player}, &.{});
+        var session = state.SessionState{};
+        session.input_state.mouse_screen_position = .{ .x = 200, .y = 200 };
+        session.ui_state.drag = .{ .icon_sprite_id = "skills/slice", .source = .{ .skill_bar = 0 } };
+        const ui_elements = [_]ui.UiElement{.{ .button = .{
+            .action = .skill_slot_1,
+            .screen_position = .{ .x = 100, .y = 100 },
+            .width = 256,
+            .height = 256,
+        } }};
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildSkillRangeOutline(&overlays, arena, &ui_elements, &session, &state_, &harness.weapon_type_definitions, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
+    }
 }

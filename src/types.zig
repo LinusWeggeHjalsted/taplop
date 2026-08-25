@@ -952,6 +952,9 @@ pub const TileOverlayDrawable = struct {
     screen_position: ScreenPosition,
     overlay_type: TileOverlayType,
     color: Color,
+    /// Square side in tiles. 1 for per-tile overlays (highlight, cursor);
+    /// the range/radius outline spans `extent` tiles centered on the player.
+    extent: u32 = 1,
 };
 
 // -- Layer 3: Ground drawables --

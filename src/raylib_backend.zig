@@ -645,15 +645,19 @@ pub const RaylibBackend = struct {
 
     /// Draw a tile overlay as a primitive (no overlay art): a translucent fill
     /// for move-range highlights, an outline for the cursor / range outlines.
-    /// Sized to one tile at the current world scale.
+    /// The outline thickness is the shared `outline_thickness` (8 source px)
+    /// × `world_scale`; range/radius/aggro outlines may span multiple tiles
+    /// via `extent` (side in tiles, default 1).
     fn drawTileOverlay(self: *RaylibBackend, overlay: types.TileOverlayDrawable, world_scale: f32) void {
         const tile_size = input.tile_size_pixels * world_scale;
+        const side: f32 = @as(f32, @floatFromInt(overlay.extent)) * tile_size;
         const rectangle = rl.Rectangle{
             .x = @floatFromInt(overlay.screen_position.x),
             .y = @floatFromInt(overlay.screen_position.y),
-            .width = tile_size,
-            .height = tile_size,
+            .width = side,
+            .height = side,
         };
+        const line_width = @as(f32, @floatFromInt(outline_thickness)) * world_scale;
         switch (overlay.overlay_type) {
             .highlight => rl.drawRectangleRec(rectangle, toRaylibColor(overlay.color, 90)),
             .cursor => {
@@ -670,11 +674,11 @@ pub const RaylibBackend = struct {
                     };
                     rl.drawTexturePro(mask, source, rectangle, .{ .x = 0, .y = 0 }, 0, toRaylibColor(overlay.color, 255));
                 } else {
-                    rl.drawRectangleLinesEx(rectangle, 6 * world_scale, toRaylibColor(overlay.color, 255));
+                    rl.drawRectangleLinesEx(rectangle, line_width, toRaylibColor(overlay.color, 255));
                 }
             },
             .range_outline, .radius_outline, .aggro_outline => {
-                rl.drawRectangleLinesEx(rectangle, 6 * world_scale, toRaylibColor(overlay.color, 255));
+                rl.drawRectangleLinesEx(rectangle, line_width, toRaylibColor(overlay.color, 255));
             },
         }
     }

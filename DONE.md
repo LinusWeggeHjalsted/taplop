@@ -3207,3 +3207,39 @@ dropped); new `check_level_end {}`. Session-log format changes (renamed event +
 new variant) but pre-release with no real saved sessions — the comptime
 serializer/deserializer adapts automatically. 5 AI handler tests rewritten for
 the new self-centric semantics.
+
+### Skill range/radius outline on slot hover (DONE)
+
+Hovering a skill button on the bottom bar previews that skill's reach as a
+single square outline centered on the player — a geometric preview (Chebyshev
+≤ N), not pathfinding reachability. `buildSkillRangeOutline` (view.zig) is
+pure and off SessionState (off the undoable GameState) → replay-safe by
+construction, same shape as the cursor/tooltip/drag-ghost hover passes.
+
+- **Resolution:** hover point → `ui.buttonAt` → `button.action` →
+  `ui.actionSkillSlot` (new pub inverse of the file-private `skillSlotAction`)
+  → `player.skillInSlot` → `lookups.getSkillDefinition`. `ui.playerEntity`
+  made pub (view.zig needs the player entity to resolve the slot).
+- **Shape:** N = `definition.range` if non-null, else `definition.radius`;
+  if neither, no overlay. `overlay_type` = `.range_outline` when range drove,
+  `.radius_outline` when radius drove. One `TileOverlayDrawable` with
+  `extent = 2*N + 1`, screen position at the top-left tile
+  `(player.x - N, player.y - N)`. Drawn in full (may extend past level edges /
+  over gaps). Tinted `active_theme.lightest` (same as the cursor).
+- **Gating:** suppressed while dragging (same gate as the other hover passes).
+  Works in levels AND hubs — skill slots appear on the bottom bar in both,
+  and the preview is useful even when the skill isn't usable in a hub.
+- **`TileOverlayDrawable.extent`** (new field, default 1): square side in
+  tiles. Existing per-tile overlays (highlight, cursor) keep extent 1
+  (unchanged). The renderer sizes the rectangle by `extent * tile_size`.
+- **Unified outline thickness:** `drawTileOverlay` (raylib_backend.zig) now
+  uses the shared `outline_thickness` (8 source px) × `world_scale` for ALL
+  outline arms — the cursor's rectangle-lines fallback (was ad-hoc
+  6×world_scale) and the range/radius/aggro arms (also 6×world_scale). The
+  cursor's silhouette-mask fast path is unchanged. aggro_outline stays in the
+  same renderer arm (picks up `extent`, default 1) but no builder emits it
+  yet.
+- **Test** (view.zig): range (Slice, range 1 → extent 3, .range_outline),
+  radius (Slam, radius 1 → extent 3, .radius_outline), neither (Focus → no
+  overlay), drag-suppressed (range skill + active drag → no overlay).
+  Headless; asserts overlay_type, extent, color, and absence.
