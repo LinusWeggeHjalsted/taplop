@@ -15,6 +15,7 @@ const input = @import("input.zig");
 const tween = @import("tween.zig");
 const ui = @import("ui.zig");
 const parser = @import("parser.zig");
+const loaders = @import("loaders.zig");
 const combat_log = @import("combat_log.zig");
 const event_handlers = @import("event_handlers.zig");
 const lookups = @import("generated_lookups.zig");
@@ -299,7 +300,7 @@ fn activeThemeFor(
         hub.color_wheel_index
     else
         0;
-    return parser.deriveActiveColorTheme(color_theme_definitions, color_wheel_index);
+    return loaders.deriveActiveColorTheme(color_theme_definitions, color_wheel_index);
 }
 
 /// The player's tile position for the current screen (entity 0 in a level,
@@ -1264,7 +1265,7 @@ fn enemyColor(active_theme: types.ActiveColorTheme, color_index: u32) types.Colo
 }
 
 /// Derive the anchor (bottom-most-then-left-most) from a sprite-grid
-/// footprint. Mirrors `parser.decorationAnchor` — duplicated in view to keep
+/// footprint. Mirrors `loaders.decorationAnchor` — duplicated in view to keep
 /// view.zig dependency-free from parser.zig (the parser's version operates on
 /// the same coordinate convention). Returns null if the footprint is empty.
 fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {

@@ -25,6 +25,7 @@
 const std = @import("std");
 const embedded_assets = @import("generated_assets");
 const parser = @import("parser.zig");
+const loaders = @import("loaders.zig");
 
 /// A generous upper bound on a single file read, guarding against runaway
 /// reads while comfortably covering any shipped asset (largest current asset
@@ -225,7 +226,7 @@ pub const FileSource = struct {
                 allocator.free(mission_bytes);
                 continue;
             };
-            const mission = parser.loadMission(sections, pa) catch {
+            const mission = loaders.loadMission(sections, pa) catch {
                 allocator.free(mission_id);
                 allocator.free(mission_bytes);
                 continue;

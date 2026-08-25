@@ -5,6 +5,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const parser = @import("parser.zig");
+const loaders = @import("loaders.zig");
 const file_source_mod = @import("file_source.zig");
 
 const FileSource = file_source_mod.FileSource;
@@ -14,11 +15,11 @@ const Weapon = types.Weapon;
 const Item = types.Item;
 const player_save_file_format_version = parser.player_save_file_format_version;
 const settings_file_format_version = parser.settings_file_format_version;
-const loadPlayerSave = parser.loadPlayerSave;
+const loadPlayerSave = loaders.loadPlayerSave;
 const parseConfigFile = parser.parseConfigFile;
 const parseConfigFileFromPath = parser.parseConfigFileFromPath;
 const freeParsedSections = parser.freeParsedSections;
-const freeSettings = parser.freeSettings;
+const freeSettings = loaders.freeSettings;
 
 // ============================================================
 // Save file writer

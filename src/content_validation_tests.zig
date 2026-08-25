@@ -14,6 +14,7 @@
 const std = @import("std");
 const embedded_assets = @import("generated_assets");
 const parser = @import("parser.zig");
+const loaders = @import("loaders.zig");
 const file_source_mod = @import("file_source.zig");
 const types = @import("types.zig");
 
@@ -34,37 +35,37 @@ fn validateConfigFile(
 
     // Classify by path pattern + run the matching loader + key validation.
     if (std.mem.eql(u8, path, "data/default_settings.txt")) {
-        _ = try parser.loadSettings(sections, allocator, null);
+        _ = try loaders.loadSettings(sections, allocator, null);
         parser.validateKeys(sections, parser.settings_key_map, path, allocator, warnings);
     } else if (std.mem.eql(u8, path, "data/color_themes.txt")) {
-        _ = try parser.loadColorThemeDefinitions(sections, allocator);
+        _ = try loaders.loadColorThemeDefinitions(sections, allocator);
         parser.validateKeys(sections, parser.color_theme_key_map, path, allocator, warnings);
     } else if (std.mem.eql(u8, path, "data/salvage.txt")) {
-        _ = try parser.loadSalvageDefinitions(sections, allocator);
+        _ = try loaders.loadSalvageDefinitions(sections, allocator);
         parser.validateKeys(sections, parser.salvage_key_map, path, allocator, warnings);
     } else if (std.mem.eql(u8, path, "data/decorations.txt")) {
-        _ = try parser.loadDecorationRegistry(sections, file_source, allocator);
+        _ = try loaders.loadDecorationRegistry(sections, file_source, allocator);
         parser.validateKeys(sections, parser.decoration_registry_key_map, path, allocator, warnings);
     } else if (std.mem.startsWith(u8, path, "data/weapon_types/") and std.mem.endsWith(u8, path, ".txt")) {
-        _ = try parser.loadWeaponTypeDefinition(sections);
+        _ = try loaders.loadWeaponTypeDefinition(sections);
         parser.validateKeys(sections, parser.weapon_type_key_map, path, allocator, warnings);
     } else if (std.mem.eql(u8, path, "data/new_player.txt") or std.mem.eql(u8, path, "data/autosave.txt")) {
-        _ = try parser.loadPlayerSave(sections, allocator, path, warnings);
+        _ = try loaders.loadPlayerSave(sections, allocator, path, warnings);
         parser.validateKeys(sections, parser.player_save_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/campaign.txt")) {
-        _ = try parser.loadCampaign(sections, allocator);
+        _ = try loaders.loadCampaign(sections, allocator);
         parser.validateKeys(sections, parser.campaign_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/hub.txt")) {
-        _ = try parser.loadHub(sections, file_source, allocator);
+        _ = try loaders.loadHub(sections, file_source, allocator);
         parser.validateKeys(sections, parser.hub_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/mission.txt")) {
-        _ = try parser.loadMission(sections, allocator);
+        _ = try loaders.loadMission(sections, allocator);
         parser.validateKeys(sections, parser.mission_key_map, path, allocator, warnings);
     } else if (std.mem.endsWith(u8, path, "/player.txt")) {
-        _ = try parser.loadPlayerLoadout(sections, allocator, path, warnings);
+        _ = try loaders.loadPlayerLoadout(sections, allocator, path, warnings);
         parser.validateKeys(sections, parser.player_loadout_key_map, path, allocator, warnings);
     } else if (std.mem.indexOf(u8, path, "/level_") != null and std.mem.endsWith(u8, path, ".txt")) {
-        _ = try parser.loadLevel(sections, file_source, allocator, path, warnings);
+        _ = try loaders.loadLevel(sections, file_source, allocator, path, warnings);
         parser.validateKeys(sections, parser.level_key_map, path, allocator, warnings);
     } else {
         // Not a recognized config file pattern (e.g. a .txt that isn't a

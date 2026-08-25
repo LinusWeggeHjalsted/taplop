@@ -672,9 +672,10 @@ pub const EntityEditTarget = union(enum) {
 
 // A reference-based level: placements point into the editor's palette instead
 // of carrying full entity/decoration definitions. Serializes back to the
-// existing inline level format (see parser.buildLevelFileText). The player
-// spawn is the '!' in level_tiles (as in shipped levels); the player loadout
-// is editor-global (Editor.player_def), not per-level.
+// existing inline level format (the editor save flattens placements into
+// per-level Entries/Decorations groups). The player spawn is the '!' in
+// level_tiles (as in shipped levels); the player loadout is editor-global
+// (Editor.player_def), not per-level.
 pub const EditorLevel = struct {
     name: []const u8 = &.{},
     color_wheel_index: u32 = 0,

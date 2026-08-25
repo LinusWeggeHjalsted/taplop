@@ -605,15 +605,7 @@ Done items in DONE.md. Open:
   reading like a grab bag — consider a small "backend-provided context"
   sub-struct or a named bundle instead of another top-level field. No
   action now; flag for the next time one is added.
-- **Split `parser.zig`** (4400+ lines) along its natural seams:
-  `config_parser.zig` (the generic format layer: Section/EntryGroup/
-  KeyValuePair types, parseConfigFile, findSection/findValue, asBool/asU32/
-  asF32/parseEnum, validateSections/validateFileFormatVersion/validateKeys,
-  the key whitelists), `parser.zig` slimmed (the loaders + save writer +
-  free helpers), `session_log.zig` (the event-log serializer/deserializer).
-  Mechanical refactor — no behavior change, just moving code + updating
-  imports. Low risk (compiler catches import errors) but big diff. Not
-  urgent; do when parser.zig grows further or a load change lands.
+- [x] **Split `parser.zig`** into a generic format layer + loaders + writers + session log — done; history in DONE.md.
 - Test coverage for processEvent handlers: DONE across all four tiers.
   Harness: `src/test_harness.zig` (`Harness.init` + `newHistory` +
   `runToIdle` + `levelStateWithEntities`/`levelEntity` + smoke test).

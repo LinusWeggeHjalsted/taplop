@@ -3368,3 +3368,48 @@ No prose edits to the moved design content — pure relocation + ref-target
 rewriting. Content drift is a separate follow-up. `scripts/test.sh` confirmed
 no breakage (the build generates files from `src/`, not the `.md`s, so the
 split is a no-op build-wise; the code-comment sweep is comments-only).
+
+### Split parser.zig into parser + loaders + writers + session_log (DONE)
+
+parser.zig had grown to ~4784 lines, mixing five jobs. Split into four files
+along the natural seams (the TODO proposed three; the read/write split added a
+fourth at the user's request):
+
+- **`src/parser.zig`** (1073 lines) — the generic config-file format layer:
+  `Section`/`EntryGroup`/`KeyValuePair`/`ParsedConfigFile` types,
+  `parseConfigFile`/`parseConfigFileFromPath`, section/key whitelists +
+  `validateSections`/`validateFileFormatVersion`/`validateKeys`, value
+  coercion (`asU32`/`asI32`/`asF32`/`asBool`/`asColor`/`parseEnum`),
+  `findSection`/`findValue`, `freeParsedSections`, and the shared
+  `file_format_version` constants (shared by loaders + writers). `findSection`,
+  `findValue`, `parseEnum`, `validateSections`, `validateFileFormatVersion`,
+  and the 9 `*_sections` arrays became `pub` so the other three files can use
+  them.
+- **`src/loaders.zig`** (2700 lines) — game-content loaders (config sections
+  → typed `types.*`): `loadLevel`/`loadHub`/`loadMission`/`loadCampaign`/
+  `loadPlayerSave`/`loadSettings`/`loadWeaponTypeDefinition`/
+  `loadColorThemeDefinitions`/`loadSalvageDefinitions`/`loadDecorationRegistry`/
+  `loadPlayerLoadout`/`parseEntityDefinition`, decoration footprint/anchor
+  validation, editor dedup (`buildEditorMission`)/instantiation
+  (`instantiateEditorLevel`), the `free*`/`clone*`/equality helpers, balance
+  bounds (`boundedU32` + `max_*`), custom-sprite PNG dim resolution. Salvage
+  (which had been misplaced AFTER the tests in the old file) now lives with
+  the other loaders.
+- **`src/writers.zig`** (508 lines) — save/settings writers (typed objects →
+  config text): `writePlayerSave`/`writeWeapon`/`writeInventoryItem`/
+  `writeSettings`/`writePlayerSaveToFile`. The inverse of `loaders.zig`; the
+  round-trip tests import `loaders.zig` for read-back (one-way dependency,
+  no cycle).
+- **`src/session_log.zig`** (522 lines) — session-log serializer/deserializer
+  (`writeEventLog`/`loadEventLog`/`SessionLog`), comptime-generic over the
+  `Event` union.
+
+Dependency graph (no cycles): `loaders.zig` → `parser.zig`; `writers.zig` →
+`parser.zig` + `loaders.zig` (round-trip tests); `session_log.zig` →
+`parser.zig` + `events.zig`. Call sites across 9 files updated to import the
+right new file. AGENTS → Key Files updated to describe all four.
+
+Pure code movement + import wiring + a few `fn`→`pub fn` visibility widenings;
+no behavior change. Also fixed a stale comment in `types.zig` referencing a
+non-existent `parser.buildLevelFileText` (editor save-to-disk is still
+pending). Mechanical; tests pass throughout (each stage green before the next).

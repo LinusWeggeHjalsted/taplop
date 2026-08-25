@@ -18,6 +18,7 @@ const events = @import("events.zig");
 const state = @import("state.zig");
 const functions = @import("functions.zig");
 const parser = @import("parser.zig");
+const loaders = @import("loaders.zig");
 const writers = @import("writers.zig");
 const lookups = @import("generated_lookups.zig");
 const deep_copy = @import("deep_copy.zig");
@@ -414,7 +415,7 @@ fn loadCampaignAndPushHub(
         return;
     };
     validateConfigKeys(history, campaign_sections, parser.campaign_key_map, campaign_path, allocator);
-    current.campaign = parser.loadCampaign(
+    current.campaign = loaders.loadCampaign(
         campaign_sections,
         allocator,
     ) catch {
@@ -486,7 +487,7 @@ pub fn processEvent(
                     };
                     validateConfigKeys(history, parsed_sections, parser.player_save_key_map, "data/new_player.txt", allocator);
 
-                    current.player_data = parser.loadPlayerSave(
+                    current.player_data = loaders.loadPlayerSave(
                         parsed_sections,
                         allocator,
                         "data/new_player.txt",
@@ -511,7 +512,7 @@ pub fn processEvent(
                     };
                     validateConfigKeys(history, parsed_sections, parser.player_save_key_map, load.save_path, allocator);
 
-                    current.player_data = parser.loadPlayerSave(
+                    current.player_data = loaders.loadPlayerSave(
                         parsed_sections,
                         allocator,
                         load.save_path,
@@ -579,7 +580,7 @@ pub fn processEvent(
                     };
                     validateConfigKeys(history, hub_sections, parser.hub_key_map, hub_path, allocator);
 
-                    current.hub = parser.loadHub(
+                    current.hub = loaders.loadHub(
                         hub_sections,
                         history.file_source,
                         allocator,
@@ -626,7 +627,7 @@ pub fn processEvent(
                         return;
                     };
                     validateConfigKeys(history, mission_sections, parser.mission_key_map, mission_file_path, allocator);
-                    const mission = parser.loadMission(
+                    const mission = loaders.loadMission(
                         mission_sections,
                         allocator,
                     ) catch {
@@ -649,7 +650,7 @@ pub fn processEvent(
                         return;
                     };
                     validateConfigKeys(history, player_sections, parser.player_loadout_key_map, player_file_path, allocator);
-                    const player_entity = parser.loadPlayerLoadout(player_sections, allocator, player_file_path, &balance_warnings) catch {
+                    const player_entity = loaders.loadPlayerLoadout(player_sections, allocator, player_file_path, &balance_warnings) catch {
                         failReconstructionRead(history, "failed to parse player.txt");
                         return;
                     };
@@ -673,7 +674,7 @@ pub fn processEvent(
                         validateConfigKeys(history, sections, parser.level_key_map, level_path, allocator);
                         level_sections.append(allocator, sections) catch @panic("failed to append level sections");
                     }
-                    current.editor = parser.buildEditorMission(
+                    current.editor = loaders.buildEditorMission(
                         mission,
                         player_entity,
                         level_sections.items,
@@ -699,7 +700,7 @@ pub fn processEvent(
                     // player_def into a concrete gameplay Level. Discard
                     // semantics: the editor's levels/palette are untouched.
                     const editor = &current.editor.?;
-                    current.level = parser.instantiateEditorLevel(editor.*, start.level_index, allocator);
+                    current.level = loaders.instantiateEditorLevel(editor.*, start.level_index, allocator);
                     current.mission = deepCopy(types.Mission, editor.mission, allocator);
                     current.mission.?.current_level_index = start.level_index + 1; // 1-based for gameplay handlers
                     if (editor.mode == .edit) editor.mode = .playtest;
@@ -719,7 +720,7 @@ pub fn processEvent(
                     // playtest but mode=.validate and always level 0. end_level's
                     // guard pushes the next level or end_validation.
                     const editor = &current.editor.?;
-                    current.level = parser.instantiateEditorLevel(editor.*, 0, allocator);
+                    current.level = loaders.instantiateEditorLevel(editor.*, 0, allocator);
                     current.mission = deepCopy(types.Mission, editor.mission, allocator);
                     current.mission.?.current_level_index = 1;
                     editor.mode = .validate;
@@ -750,7 +751,7 @@ pub fn processEvent(
                     };
                     validateConfigKeys(history, mission_sections, parser.mission_key_map, mission_file_path, allocator);
 
-                    current.mission = parser.loadMission(
+                    current.mission = loaders.loadMission(
                         mission_sections,
                         allocator,
                     ) catch {
@@ -818,7 +819,7 @@ pub fn processEvent(
                     // Error Handling.
                     validateConfigKeys(history, level_sections, parser.level_key_map, level_path, allocator);
 
-                    current.level = parser.loadLevel(
+                    current.level = loaders.loadLevel(
                         level_sections,
                         history.file_source,
                         allocator,

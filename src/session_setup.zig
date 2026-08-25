@@ -10,6 +10,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const state = @import("state.zig");
 const parser = @import("parser.zig");
+const loaders = @import("loaders.zig");
 const writers = @import("writers.zig");
 const file_source_mod = @import("file_source.zig");
 
@@ -110,17 +111,17 @@ fn loadWeaponTypeDefinitionWrapped(
     sections: []const parser.Section,
     _: std.mem.Allocator,
 ) !WeaponTypeDefinition {
-    return parser.loadWeaponTypeDefinition(sections);
+    return loaders.loadWeaponTypeDefinition(sections);
 }
 
-/// Wrapper so `loadConfigWithFallback` can call `parser.loadSettings` through
+/// Wrapper so `loadConfigWithFallback` can call `loaders.loadSettings` through
 /// the common 2-param `(sections, allocator)` interface (loadSettings takes an
 /// extra `base` param for the user-overlay path).
 fn loadSettingsWrapped(
     sections: []const parser.Section,
     allocator: std.mem.Allocator,
 ) anyerror!Settings {
-    return parser.loadSettings(sections, allocator, null);
+    return loaders.loadSettings(sections, allocator, null);
 }
 
 /// Load settings from data/default_settings.txt, falling back to the embedded
@@ -176,7 +177,7 @@ pub fn overlayUserSettings(
     // section (freeing the base's owned binding strings on replace). A
     // file_format_version mismatch or parse failure is recoverable (warn +
     // keep defaults) per DESIGN → Error Handling.
-    const merged = parser.loadSettings(user_sections, allocator, defaults) catch {
+    const merged = loaders.loadSettings(user_sections, allocator, defaults) catch {
         warnings.append(allocator, std.fmt.allocPrint(allocator,
             "Failed to load user settings.txt; using defaults.", .{}) catch
             @panic("failed to allocate startup warning")) catch
@@ -194,7 +195,7 @@ pub fn loadColorThemeDefinitionsFromDisk(
     allocator: std.mem.Allocator,
     warnings: Warnings,
 ) ColorThemeDefinitions {
-    return loadConfigWithFallback(ColorThemeDefinitions, file_source, allocator, "data/color_themes.txt", parser.loadColorThemeDefinitions, parser.color_theme_key_map, warnings);
+    return loadConfigWithFallback(ColorThemeDefinitions, file_source, allocator, "data/color_themes.txt", loaders.loadColorThemeDefinitions, parser.color_theme_key_map, warnings);
 }
 
 /// Load all weapon type definitions from data/weapon_types/, each falling
@@ -231,7 +232,7 @@ pub fn loadSalvageDefinitionsFromDisk(
     allocator: std.mem.Allocator,
     warnings: Warnings,
 ) types.SalvageDefinitions {
-    return loadConfigWithFallback(types.SalvageDefinitions, file_source, allocator, "data/salvage.txt", parser.loadSalvageDefinitions, parser.salvage_key_map, warnings);
+    return loadConfigWithFallback(types.SalvageDefinitions, file_source, allocator, "data/salvage.txt", loaders.loadSalvageDefinitions, parser.salvage_key_map, warnings);
 }
 
 /// Owns the session-long setup state (config definitions + FrameState) that
@@ -429,7 +430,7 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
         @panic("embedded default settings missing");
     const defaults_sections = parser.parseConfigFile(defaults_bytes, allocator) catch
         @panic("failed to parse embedded default settings");
-    const defaults = parser.loadSettings(defaults_sections, allocator, null) catch
+    const defaults = loaders.loadSettings(defaults_sections, allocator, null) catch
         @panic("failed to load embedded default settings");
     parser.freeParsedSections(defaults_sections, allocator);
     allocator.free(defaults_bytes);
@@ -475,5 +476,5 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     // leak detection at test-end catches if overlayUserSettings or
     // loadSettings forgot to free user_bytes / the old base strings / the
     // parsed sections — the arena-wrapped tests can't see those.
-    parser.freeSettings(merged, allocator);
+    loaders.freeSettings(merged, allocator);
 }

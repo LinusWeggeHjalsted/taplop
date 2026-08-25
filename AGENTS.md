@@ -261,7 +261,26 @@ back at the comment to update it.
   replay timeline: recordEvent/discardFutureTimeline), Screen
 - `src/types.zig` — all game data types, Entity with getEffective* methods
 - `src/events.zig` — event hierarchy (Meta, Super, Level, SubLevel, Editor)
-- `src/parser.zig` — config file parser, all loaders, save writer
+- `src/parser.zig` — generic config-file format layer: `Section`/
+  `EntryGroup`/`KeyValuePair` types, `parseConfigFile`, section/key
+  whitelists + `validateSections`/`validateFileFormatVersion`/
+  `validateKeys`, value coercion (`asU32`/`asBool`/`asColor`/`parseEnum`),
+  `findSection`/`findValue`, and the shared `file_format_version`
+  constants. The format layer the other three build on.
+- `src/loaders.zig` — game-content loaders (config sections → typed
+  `types.*`): `loadLevel`/`loadHub`/`loadMission`/`loadCampaign`/
+  `loadPlayerSave`/`loadSettings`/`loadWeaponTypeDefinition`/
+  `loadColorThemeDefinitions`/`loadSalvageDefinitions`/`loadDecorationRegistry`/
+  `loadPlayerLoadout`, decoration footprint/anchor validation, editor dedup
+  (`buildEditorMission`)/instantiation (`instantiateEditorLevel`), the
+  `free*`/`clone*`/equality helpers, balance bounds (`boundedU32`/`max_*`),
+  custom-sprite PNG dim resolution.
+- `src/writers.zig` — save/settings writers (typed objects → config text):
+  `writePlayerSave`/`writeSettings`/`writePlayerSaveToFile`. The inverse of
+  `loaders.zig`.
+- `src/session_log.zig` — session-log serializer/deserializer
+  (`writeEventLog`/`loadEventLog`/`SessionLog`), comptime-generic over the
+  `Event` union. See DESIGN → Logging & Replay.
 - `src/functions.zig` — pathfinding (A*), chebyshevDistance, helpers
 - `src/ui.zig` — UiState, UiElement types, layout helpers (Rect algebra, Row/Grid), panel builders
 - `src/input.zig` — input pipeline, translateInput, bindings
