@@ -43,7 +43,7 @@ Test by running `zig build run` and clicking through.
 - **Decoration occlusion readability** — inset outline of entities / ground
   items / flag poles occluded by decoration overhang. Settled design — see
   DESIGN → Decorations & Footprint → Occlusion inset. Slices:
-  - [ ] Generalize `generateOutlineMask` to a `{outer,inner}` side (dual
+  - [x] Generalize `generateOutlineMask` to a `{outer,inner}` side (dual
         morphology; same separable structure, opacity test flipped by side);
         fix the stale `raylib_backend.zig:38-39` comment ("inner band" →
         outer). Add `inset_outline_cache` + `getInsetOutlineTexture` +

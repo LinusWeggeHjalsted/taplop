@@ -3413,3 +3413,35 @@ Pure code movement + import wiring + a few `fn`→`pub fn` visibility widenings;
 no behavior change. Also fixed a stale comment in `types.zig` referencing a
 non-existent `parser.buildLevelFileText` (editor save-to-disk is still
 pending). Mechanical; tests pass throughout (each stage green before the next).
+
+### Decoration occlusion — slice 1: inner outline mask infrastructure
+
+Settled design: DESIGN → Decorations & Footprint → Occlusion inset. The
+occlusion inset draws a thin INNER outline of an occluded entity/item/marker
+over the decoration that draws in front of it, so the silhouette reads
+through without the decoration receding. Slice 1 is the backend mask +
+draw infrastructure (dormant — nothing calls it yet; slices 2+3 wire it).
+
+- `generateOutlineMask` generalized with an `OutlineSide` enum (`outer`/
+  `inner`). The INNER band is the morphological dual of the OUTER: instead
+  of dilating the opaque silhouette and marking transparent pixels in the
+  band, it dilates the transparent mask and marks opaque pixels. Same
+  separable structure (horizontal then vertical), one `dilate_val`/
+  `band_val` pair flips the opacity test by side. The outer call site
+  (`ensureOutlineLoaded`) passes `.outer`; behavior unchanged for existing
+  highlight outlines.
+- New `inset_outline_cache` (same lazy/dupe-key shape as `outline_cache`) +
+  `ensureInsetOutlineLoaded` + `getInsetOutlineTexture` + `drawOcclusionInset`
+  (draws the inner mask tinted pure black at a caller-chosen alpha, over the
+  full sprite rect — no scissor; the unoccluded overlap is self-subtle
+  because it merges into the art's own black outline). `deinit` frees the
+  new cache.
+- Fixed a stale comment: `outline_thickness` was documented as "inner band
+  hugging the silhouette" but the code produced an OUTER band; corrected to
+  say outer, and noted it's reused by the inset.
+- Reuses `outline_thickness` (8 source px) and pure-black tint per the
+  settled design (matches the art's own drawn outline so the inset's
+  unoccluded portion merges into the existing rim).
+
+All view-side by construction in later slices → off GameState → replay-safe.
+Tests pass.
