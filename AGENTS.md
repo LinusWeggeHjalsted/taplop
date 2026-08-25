@@ -120,8 +120,10 @@ dump doesn't pollute the tree.
   them with a `test:` prefix.
 - Web build: a `wasm32-emscripten` exe reusing the SAME raylib backend +
   gameLoop as native (route B). `zig build web` produces zig-out/web/ziglop.html;
-  `zig build emrun` serves + opens it. The old `wasm32-freestanding` +
-  JS-renderer target was removed — do not reintroduce it.
+  `zig build emrun` serves + opens it. `scripts/web.sh` wraps both with
+  emsdk-noise filtering (like `scripts/test.sh` does for tests) — prefer it
+  over the raw commands. The old `wasm32-freestanding` + JS-renderer target
+  was removed — do not reintroduce it.
 - WEB BUILD NEEDS A PATCHED STDLIB: Zig 0.16.0's std/os/emscripten.zig has a
   bug (W.STOPSIG declared to return u32 but body returns the SIG enum) that
   breaks emscripten compilation. The fix is upstream on the 0.16.x branch

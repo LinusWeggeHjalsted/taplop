@@ -38,8 +38,9 @@ emscripten compilation, so the web build needs a one-line-patched stdlib copy:
 # once: copy your Zig install and apply the fix (STOPSIG -> SIG in std/os/emscripten.zig)
 cp -r <your-zig-install> ~/.local/zig-patched-lib
 # then:
-ZIG_LIB_DIR=~/.local/zig-patched-lib zig build web    # -> zig-out/web/ziglop.html
-zig build emrun                                        # serve + open it
+scripts/web.sh            # zig build web  -> zig-out/web/ziglop.html (clean output)
+scripts/web.sh emrun      # serve + open it in a browser
+# (raw: scripts/web.sh --raw passes through unfiltered)
 ```
 
 this workaround goes away once Zig 0.16.1 ships and your distro packages it.
