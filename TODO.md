@@ -40,6 +40,23 @@ Test by running `zig build run` and clicking through.
 - **Input/camera leftovers** — tab-targeting (cycle highlighted tiles
   with Tab; reuse cursor resolution). (Right-click-drag camera pan DONE
   — see DONE.md.)
+- **Decoration occlusion readability** — inset outline of entities / ground
+  items / flag poles occluded by decoration overhang. Settled design — see
+  DESIGN → Decorations & Footprint → Occlusion inset. Slices:
+  - [ ] Generalize `generateOutlineMask` to a `{outer,inner}` side (dual
+        morphology; same separable structure, opacity test flipped by side);
+        fix the stale `raylib_backend.zig:38-39` comment ("inner band" →
+        outer). Add `inset_outline_cache` + `getInsetOutlineTexture` +
+        `drawOcclusionInset` in raylib_backend.zig.
+  - [ ] `OcclusionInsetDrawable` on ViewState + occlusion test in `view()`
+        (non-decoration entry vs decoration pieces with greater
+        `groundEntryBefore` sort order + screen-rect overlap) →
+        `occlusion_insets` slice.
+  - [ ] Backend: draw insets after the ground pass, before floating world
+        overlays. Black, alpha 128, `outline_thickness` (8).
+  - [ ] Follow-up (separate slice): disk-SE outline for both outer + inner
+        (smoother 45° corners; cached so the O((2t+1)²) cost is one-time per
+        sprite).
 - **Cross-cutting polish** — 9-slice TILING
   (currently stretched), `highlighted` edge outlines, missing art
   (ui/icon_swap, ui/momentum, ui/cooldown_overlay draw magenta). (Real TTF

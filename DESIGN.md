@@ -1564,6 +1564,71 @@ parser path; the registry is never read during gameplay/replay, only when the
 editor adds a new prefab to the palette. Loaded by
 `parser.loadDecorationRegistry` (returns `[]DecorationTypeDef`).
 
+### Occlusion inset (readability for overhang)
+
+A decoration with large overhang can fully occlude an entity / ground items /
+flag pole drawn behind it (the overhang bbox tile sorts at the footprint's y,
+so it draws after — and on top of — anything on the tiles it covers). The
+fix is a thin INNER outline of the occluded thing, drawn over the
+decoration, so the occluded silhouette reads through without the decoration
+receding (it stays fully opaque and visually in front — "something continues
+behind here," not "the tree faded").
+
+**Inner-outline mask = morphological dual of the outer outline.**
+`generateOutlineMask` is a separable dilation producing the OUTER band
+(transparent pixels within Chebyshev(t) of an opaque pixel; opaque stays
+transparent). The INNER band is the dual: opaque pixels within Chebyshev(t)
+of a transparent pixel; transparent stays transparent. Same separable
+structure (dilate the transparent mask horizontally, then vertical band test
+on opaque pixels), one shared `generateOutlineMask(image, thickness, side)`
+with the opacity test flipped by `side`. A separate `inset_outline_cache`
+mirrors `outline_cache` (same lazy/dupe-key shape); one mask per sprite,
+built once. Reuses `outline_thickness` (8 source px) and pure-black tint
+(matching the art's own drawn outline, so the inset's unoccluded portion
+merges into the existing rim rather than adding a second).
+
+**Draw model (no scissor).** The inset mask is drawn over the occluded
+thing's FULL sprite rect, tinted black at alpha 128 (50%), in a post-ground
+pass after `drawGroundDrawable`:
+- over the decoration (occluded region): 50% black on the decoration's color
+  → a dark trace of the entity's inner silhouette edge. The cue.
+- over the visible art (unoccluded region): 50% black just inside the
+  silhouette → a subtle extra darkening that merges into the art's own black
+  outline. Continuous ring: faint on the visible part, clear on the
+  decoration.
+No clipping is needed because the unoccluded overlap is self-subtle (it
+reinforces the existing outline rather than competing with it), and the
+decoration stays fully opaque — the inset never makes the tree translucent.
+
+**Occlusion gate.** The inset draws ONLY when actually occluded (otherwise
+every entity gets a permanent rim). For each non-decoration ground entry E
+(entity / ground items / level-end / mission-start marker), find any
+decoration piece D drawn AFTER E (greater in the `groundEntryBefore`
+`(sort_y, sort_x)` order) whose screen rect overlaps E's screen rect. If
+yes, emit one inset draw for E. O(entries × decoration_pieces) per frame,
+small constants — fine at current caps.
+
+**Scope.** Occluded things: entities, ground items, level-end + mission-
+start markers. Occluders: decoration pieces only (not tall entities over
+short entities — deferred; the test is generalizable). The inset mask is
+built from the entity's BASE sprite only; weapons/gear/effects extending
+beyond the base aren't traced (acceptable — the body-mass occlusion case is
+the target). Ground items and flagpoles are single-sprite, so exact.
+
+**All view-side** → off GameState → replay-safe by construction (same as
+the tile cursor / animation clock). `view()` emits an `occlusion_insets:
+[]const OcclusionInsetDrawable` list (sprite_id, screen_position, color,
+alpha) on ViewState; the backend draws it after the ground pass, before
+floating world overlays.
+
+**Known approximation: adjacent-entity overlap.** Insets draw in a single
+post-ground pass, so one entity's inset could faintly overpaint a neighbor
+whose art overlaps the first entity's silhouette rect. Entities occupy
+unique tiles but their 512×640 art overhangs neighbors; rare and subtle. If
+it shows, the lever is per-thing "draw inset right after its last occluder"
+(track max occluding sort index) instead of one post-pass. Not a first-slice
+concern.
+
 ## Entity & UI Coloring
 
 Entities and UI are tinted by the active theme's gradients via the raylib
