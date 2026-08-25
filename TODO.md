@@ -54,7 +54,7 @@ Test by running `zig build run` and clicking through.
         `occlusion_insets` slice.
   - [x] Backend: draw insets after the ground pass, before floating world
         overlays. Black, alpha 128, `outline_thickness` (8).
-  - [ ] Follow-up (separate slice): disk-SE outline for both outer + inner
+  - [x] Follow-up (separate slice): disk-SE outline for both outer + inner
         (smoother 45° corners; cached so the O((2t+1)²) cost is one-time per
         sprite).
 - **Cross-cutting polish** — 9-slice TILING

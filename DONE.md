@@ -3497,3 +3497,30 @@ ground items and flag poles are single-sprite, so exact).
 
 All view-side → off GameState → replay-safe by construction. Native build +
 tests green; game runs without crashing.
+
+### Decoration occlusion — follow-up: disk-SE outline
+
+Replaced the square (Chebyshev) structuring element in `generateOutlineMask`
+with a DISK (Euclidean) SE for both the OUTER (highlight halo) and INNER
+(occlusion inset) bands. The square SE was separable (horizontal then
+vertical, O(w·h·2t)) but its band was uniformly thick in Chebyshev distance
+→ ~√2 thicker along diagonals in Euclidean terms, giving slightly blocky
+45° corners. The disk SE (offsets with dx²+dy² ≤ t²) is not separable — a
+single 2D pass, O(|band pixels| × |disk|) (~217 offsets at t=8) — but the
+mask is cached per sprite (built once), so the higher cost is amortized and
+the payoff is smoother corners.
+
+- `DiskOffset = struct { dx, dy }` + a one-per-call `std.ArrayList(DiskOffset)`
+  built from the dx²+dy² ≤ t² test (the (0,0) offset is skipped — a
+  band-eligible pixel matches `band_val`, so it can never itself be a
+  `dilate_val` source hit). The band-output loop scans the disk per
+  band-eligible pixel, breaks on the first source hit.
+- Updated the function doc + DESIGN → Decorations & Footprint → Occlusion
+  inset prose (was "Chebyshev/separable"; now "Euclidean disk, single 2D
+  pass, cached").
+- Changes the appearance of the EXISTING outer highlight outlines (UI
+  buttons, tile cursor) too — intentionally; the smoother corners apply to
+  both outline uses. Revert the commit if the disk look reads worse than the
+  square.
+
+Native build + tests green.

@@ -49,6 +49,10 @@ const outline_thickness: i32 = 8;
 /// `generateOutlineMask` and DESIGN → Decorations & Footprint → Occlusion inset.
 const OutlineSide = enum { outer, inner };
 
+/// One (dx, dy) offset in a disk structuring element (see
+/// `generateOutlineMask`). Small enough that a slice of these is the disk.
+const DiskOffset = struct { dx: i32, dy: i32 };
+
 /// Outline thickness for floating TEXT overlays (damage/heal numbers): the
 /// offset radius (in source pixels) of the 8-direction black drop-shadow
 /// ring drawn under the fill text. Distinct from `outline_thickness` (the
@@ -1314,14 +1318,18 @@ pub const RaylibBackend = struct {
     }
 
     /// Build a white-opaque edge-outline mask. OUTER: transparent pixels
-    /// within `thickness` (Chebyshev) of an opaque pixel become white; opaque
+    /// within `thickness` (Euclidean) of an opaque pixel become white; opaque
     /// pixels stay transparent — a halo just OUTSIDE the silhouette, so the
     /// sprite's own art is never overpainted. INNER: the morphological dual —
     /// opaque pixels within `thickness` of a transparent pixel become white;
     /// transparent pixels stay transparent — a rim just INSIDE the silhouette,
     /// used by the occlusion inset to trace an occluded entity's edge over a
-    /// decoration. Dilation by a square is separable: dilate horizontally,
-    /// then vertically — O(w·h·(2t+1)) instead of O(w·h·(2t+1)²). The band is
+    /// decoration. Dilation uses a DISK structuring element (offsets with
+    /// dx²+dy² ≤ t²), which is not separable — a single 2D pass,
+    /// O(|band pixels| × |disk|), instead of the square (Chebyshev) SE's
+    /// O(w·h·2t) separable path. The mask is cached per sprite (built once),
+    /// so the higher cost is amortized; the payoff is smoother 45° corners
+    /// (the square SE's band was ~√2 thicker along diagonals). The band is
     /// clipped at the canvas border (a sprite filling its canvas edge-to-edge
     /// gets no band on that side); current art ships with enough margin that
     /// this never shows. See DESIGN → Decorations & Footprint → Occlusion inset.
@@ -1344,58 +1352,51 @@ pub const RaylibBackend = struct {
         const dilate_val: u8 = if (side == .outer) 1 else 0;
         const band_val: u8 = if (side == .outer) 0 else 1;
 
-        // Horizontal dilation: dilate_h_mask[i] = 1 if any pixel within `t`
-        // columns (same row) matches `dilate_val`, else 0.
-        const dilate_h_mask = try self.allocator.alloc(u8, pixel_count);
-        defer self.allocator.free(dilate_h_mask);
+        // Disk structuring element: the set of (dx, dy) offsets within
+        // Euclidean radius `thickness` (dx²+dy² ≤ t²). Built once per call;
+        // |disk| ≈ π·t² (~217 offsets at t=8). The (0,0) offset is skipped —
+        // a band-eligible pixel matches `band_val`, so it can never itself be
+        // a `dilate_val` source hit.
         const t = thickness;
-        var y: i32 = 0;
-        while (y < height) : (y += 1) {
-            const row_start: usize = @intCast(y * width);
-            var x: i32 = 0;
-            while (x < width) : (x += 1) {
-                var hit: u8 = 0;
-                var dx: i32 = -t;
-                while (dx <= t) : (dx += 1) {
-                    const nx = x + dx;
-                    if (nx < 0 or nx >= width) continue;
-                    if (opaque_mask[row_start + @as(usize, @intCast(nx))] == dilate_val) {
-                        hit = 1;
-                        break;
-                    }
+        var disk: std.ArrayList(DiskOffset) = .empty;
+        defer disk.deinit(self.allocator);
+        var dy: i32 = -t;
+        while (dy <= t) : (dy += 1) {
+            var dx: i32 = -t;
+            while (dx <= t) : (dx += 1) {
+                if (dx == 0 and dy == 0) continue;
+                if (dx * dx + dy * dy <= t * t) {
+                    disk.append(self.allocator, .{ .dx = dx, .dy = dy }) catch
+                        @panic("failed to build disk offset");
                 }
-                dilate_h_mask[row_start + @as(usize, @intCast(x))] = hit;
             }
         }
 
-        // Vertical dilation + band output: a pixel joins the band iff it
-        // matches `band_val` AND some horizontally-dilated pixel is within
-        // `t` rows (same column). Written straight into the RGBA upload buffer.
+        // Band output: a pixel joins the band iff it matches `band_val` AND
+        // some pixel within the disk neighborhood matches `dilate_val`.
+        // Written straight into the RGBA upload buffer.
         const buf = try self.allocator.alloc(u8, pixel_count * 4);
         defer self.allocator.free(buf);
         @memset(buf, 0);
-        y = 0;
+        var y: i32 = 0;
         while (y < height) : (y += 1) {
             const row_start: usize = @intCast(y * width);
             var x: i32 = 0;
             while (x < width) : (x += 1) {
                 const i: usize = row_start + @as(usize, @intCast(x));
                 if (opaque_mask[i] != band_val) continue; // not eligible -> transparent
-                var hit = false;
-                var dy: i32 = -t;
-                while (dy <= t) : (dy += 1) {
-                    const ny = y + dy;
-                    if (ny < 0 or ny >= height) continue;
-                    if (dilate_h_mask[@as(usize, @intCast(ny)) * @as(usize, @intCast(width)) + @as(usize, @intCast(x))] == 1) {
-                        hit = true;
+                for (disk.items) |off| {
+                    const nx = x + off.dx;
+                    const ny = y + off.dy;
+                    if (nx < 0 or nx >= width or ny < 0 or ny >= height) continue;
+                    const ni: usize = @intCast(ny * width + nx);
+                    if (opaque_mask[ni] == dilate_val) {
+                        buf[i * 4 + 0] = 255;
+                        buf[i * 4 + 1] = 255;
+                        buf[i * 4 + 2] = 255;
+                        buf[i * 4 + 3] = 255;
                         break;
                     }
-                }
-                if (hit) {
-                    buf[i * 4 + 0] = 255;
-                    buf[i * 4 + 1] = 255;
-                    buf[i * 4 + 2] = 255;
-                    buf[i * 4 + 3] = 255;
                 }
             }
         }

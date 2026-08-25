@@ -1575,15 +1575,19 @@ receding (it stays fully opaque and visually in front — "something continues
 behind here," not "the tree faded").
 
 **Inner-outline mask = morphological dual of the outer outline.**
-`generateOutlineMask` is a separable dilation producing the OUTER band
-(transparent pixels within Chebyshev(t) of an opaque pixel; opaque stays
-transparent). The INNER band is the dual: opaque pixels within Chebyshev(t)
-of a transparent pixel; transparent stays transparent. Same separable
-structure (dilate the transparent mask horizontally, then vertical band test
-on opaque pixels), one shared `generateOutlineMask(image, thickness, side)`
-with the opacity test flipped by `side`. A separate `inset_outline_cache`
-mirrors `outline_cache` (same lazy/dupe-key shape); one mask per sprite,
-built once. Reuses `outline_thickness` (8 source px) and pure-black tint
+`generateOutlineMask` dilates with a DISK structuring element (offsets with
+dx²+dy² ≤ t²), producing the OUTER band (transparent pixels within
+Euclidean t of an opaque pixel; opaque stays transparent). The INNER band is
+the dual: opaque pixels within t of a transparent pixel; transparent stays
+transparent. The disk SE is not separable — a single 2D pass,
+O(|band pixels| × |disk|), instead of the square (Chebyshev) SE's O(w·h·2t)
+separable path — but the mask is cached per sprite (built once), so the cost
+is amortized; the payoff is smoother 45° corners (the square SE's band was
+~√2 thicker along diagonals). One shared `generateOutlineMask(image,
+thickness, side)` with the opacity test flipped by `side`. A separate
+`inset_outline_cache` mirrors `outline_cache` (same lazy/dupe-key shape);
+one mask per sprite, built once. Reuses `outline_thickness` (8 source px)
+and pure-black tint
 (matching the art's own drawn outline, so the inset's unoccluded portion
 merges into the existing rim rather than adding a second).
 
