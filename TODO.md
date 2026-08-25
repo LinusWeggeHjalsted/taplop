@@ -577,6 +577,37 @@ Already total (no action): A* comparePathNodes (f→x→y); entity draw sort
 
 Done items in DONE.md. Open:
 
+- **Split AGENTS.md → AGENTS.md + DESIGN.md.** AGENTS.md is ~122KB / ~1700
+  lines, mostly settled design prose (subsystem architecture, invariants,
+  the "why X is shaped this way"), not the "how to work here" rules the
+  "read AGENTS at the start of every session" contract assumes. Factor the
+  settled-design sections (Platform Seam, Audio, Animation, Replay, Input,
+  Error Handling, File System & IO, Custom Missions, Architecture,
+  Decorations, Coloring, Memory & Budget, UI Framework, Determinism) into a
+  new DESIGN.md (read on demand, like DONE.md); keep AGENTS.md thin
+  (Documentation, Build & Test, Commit policy, Code Style, Zig gotchas,
+  Config format, Key Files) + a new "Subsystem map" — one line per
+  subsystem pointing into DESIGN (`Replay & side effects — see DESIGN →
+  Replay & Side Effects`). Lifecycle adapts: open question → TODO; settles
+  → move prose to DESIGN.md (not AGENTS); task completes → DONE. Bright
+  line: a fact lives in ONE place; AGENTS never restates design — it
+  points. Do as a dedicated focused session (big move, no code change;
+  a half-split is worse than either clean state — matches the rename-to-
+  taplop philosophy).
+
+- **`floatWorldPoint` precision loss.** `floatWorldPoint` (input.zig)
+  takes `types.ScreenPosition` (i32) but its doc claims sub-tile precision
+  for the camera-pan anchor. The precision is lost upstream: `translateInput`
+  truncates `mouse_screen_position` (`PointerPosition`, f32) to
+  `PointerInput.position` (`types.ScreenPosition`, i32) before
+  `floatWorldPoint` ever sees it. So the pan anchor is at integer-pixel
+  precision — may jitter at low zoom. Fix: make `PointerInput.position` a
+  `PointerPosition` (f32) so the raw pointer precision flows through to
+  `floatWorldPoint`; UI hit-testing sites that read `pointer.position`
+  (`handleDrag`, `handleIdleInput`, `handleCameraPan`'s `blockingElementAt`
+  check) call `.toScreenPosition()` at the UI seam. The rename made this
+  visible (the type name now clearly says i32 where f32 was intended).
+
 - **`WorldOverlayDrawable` variant consistency.** `floating_icon` uses a
   named `FloatingIconDrawable` type; `floating_text` is an inline anonymous
   struct. Pure consistency nit — extract a `FloatingTextDrawable` named

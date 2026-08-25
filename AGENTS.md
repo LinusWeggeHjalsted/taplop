@@ -61,6 +61,17 @@ freed at once on deinit). Arena-wrapping MASKS two classes of bug:
   silently). `testing.allocator` reclaims freed memory and may reuse it, but
   doesn't deterministically detect reads of freed memory.
 
+**No `expectPanics` in Zig 0.16.** A fail-fast validation site (e.g.
+`verifyReplayMatch`, `validatePlayerAction`) can't be unit-tested at the
+panic path — `std.testing` has no `expectPanics`/`expectError` for panics
+(only for `error` unions). The convention: split the legality **logic**
+into a bool-returning helper (`isPlayerMoveLegal`, `skillOnBarAndOffCooldown`,
+`skillTargetLegal`) and test THAT directly; the `validate*` wrapper that
+formats a message + `@panic`s is a thin policy layer over it, not unit-tested
+(the panic call is obvious + the bool helper is covered). This also separates
+"is this legal" from "what do we do about it" — useful design discipline
+independent of the test limitation.
+
 So: once a loader is made self-owned (see AGENTS → File System & IO →
 Settings ownership), its tests should run under `testing.allocator` (no
 arena) so leak detection fires — this is the path that caught nothing for the

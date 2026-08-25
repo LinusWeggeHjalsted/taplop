@@ -2,8 +2,10 @@
 //! into `PlayerInput` (anytime actions, idle game actions, pointer/drag
 //! state) against the keybindings in `data/default_settings.txt`. Owns the camera
 //! transforms: `screenToTile` (reference-space inverse) and `floatWorldPoint`
-//! (sub-tile float inverse, for camera pan). `tile_size_pixels` (256) is the
-//! shared gameplay↔screen scale.
+//! (float inverse, for camera pan). `tile_size_pixels` (256) is the
+//! shared gameplay↔screen scale. The pointer lives in `PointerPosition`
+//! (f32, reference space); the UI layout grid is `types.ScreenPosition`
+//! (i32) — cross via `PointerPosition.toScreenPosition`.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -20,11 +22,21 @@ const Camera = types.Camera;
 // Platform layer types — raw input from JS/native
 // ============================================================
 
-/// Screen-space position in CSS/logical pixels. Floats because browser
-/// coordinates can be fractional (device pixel ratio, touch precision).
-pub const ScreenPosition = struct {
+/// Pointer position in reference space (window pixels mapped through the
+/// render letterbox inverse). Floats because the letterbox scale maps window
+/// pixels to reference space non-1:1, so the pointer legitimately lands
+/// between reference pixels — `screenToTile` needs that sub-pixel precision
+/// at tile boundaries. Distinct from `types.ScreenPosition` (the integer
+/// layout grid UI/drawables live on); cross the seam via `toScreenPosition`.
+pub const PointerPosition = struct {
     x: f32,
     y: f32,
+
+    /// Truncate to the integer reference-pixel grid (`types.ScreenPosition`).
+    /// Used by hover passes that feed UI hit-testing (the layout grid is i32).
+    pub fn toScreenPosition(self: PointerPosition) types.ScreenPosition {
+        return .{ .x = @intFromFloat(self.x), .y = @intFromFloat(self.y) };
+    }
 };
 
 /// Viewport dimensions in logical pixels.
@@ -45,7 +57,7 @@ pub const PlatformInputEvent = union(enum) {
     key_up: []const u8,
     mouse_button_down: []const u8,
     mouse_button_up: []const u8,
-    mouse_move: ScreenPosition,
+    mouse_move: PointerPosition,
     mouse_scroll: f32, // positive = scroll up, negative = scroll down
     gamepad_button_down: []const u8,
     gamepad_button_up: []const u8,
@@ -56,7 +68,7 @@ pub const PlatformInputEvent = union(enum) {
 
 pub const TouchEvent = struct {
     id: TouchId,
-    position: ScreenPosition,
+    position: PointerPosition,
 };
 
 /// Everything the platform layer hands to the game each update tick.
@@ -75,7 +87,7 @@ pub const InputState = struct {
     keys_held: [max_held_keys]?[]const u8 = .{null} ** max_held_keys,
     mouse_buttons_held: [max_held_mouse]?[]const u8 = .{null} ** max_held_mouse,
     gamepad_buttons_held: [max_held_gamepad]?[]const u8 = .{null} ** max_held_gamepad,
-    mouse_screen_position: ScreenPosition = .{ .x = 0, .y = 0 },
+    mouse_screen_position: PointerPosition = .{ .x = 0, .y = 0 },
     active_touches: [max_touch_points]?ActiveTouch = .{null} ** max_touch_points,
     /// Per-key hold timer for synthetic key repeat (see AGENTS → Input).
     /// Parallel to `keys_held`: an entry is created on a key_down edge and
@@ -104,7 +116,7 @@ pub const InputState = struct {
 
     pub const ActiveTouch = struct {
         id: TouchId,
-        position: ScreenPosition,
+        position: PointerPosition,
     };
 
     /// Check if a string-identified input is in a held-inputs array.
@@ -378,7 +390,7 @@ pub const tile_size_pixels: f32 = 256.0;
 /// Convert a screen-space position to tile coordinates.
 /// Takes into account camera position and zoom level.
 pub fn screenToTile(
-    screen_position: ScreenPosition,
+    screen_position: PointerPosition,
     camera: Camera,
     zoom: f32,
     viewport: ViewportSize,
@@ -398,10 +410,12 @@ pub fn screenToTile(
 
 /// The float world position (tile units) under a screen position — the
 /// inverse of the camera transform, before `@floor`. Used by the camera-pan
-/// anchor so the grabbed point tracks the cursor at sub-tile precision (an
-/// integer-tile anchor would jump up to half a tile at drag start). Kept
-/// beside screenToTile so the two halves of the camera<->screen mapping stay
-/// in sync.
+/// anchor so the grabbed point tracks the cursor. Kept beside screenToTile so
+/// the two halves of the camera<->screen mapping stay in sync.
+/// NOTE: takes `types.ScreenPosition` (i32), so the input is already
+/// truncated at the `PointerInput.position` seam — sub-pixel precision is
+/// lost before this fn sees it. See TODO → Tech Debt (`floatWorldPoint`
+/// precision loss).
 pub fn floatWorldPoint(
     screen_position: types.ScreenPosition,
     camera: Camera,
@@ -685,10 +699,7 @@ pub fn translateInput(
     result.pointer = .{
         .pressed = InputState.isHeld(&mouse_pressed, "left"),
         .released = InputState.isHeld(&mouse_released, "left"),
-        .position = .{
-            .x = @intFromFloat(state.mouse_screen_position.x),
-            .y = @intFromFloat(state.mouse_screen_position.y),
-        },
+        .position = state.mouse_screen_position.toScreenPosition(),
         .right_pressed = InputState.isHeld(&mouse_pressed, "right"),
         .right_released = InputState.isHeld(&mouse_released, "right"),
         .right_held = InputState.isHeld(&state.mouse_buttons_held, "right"),

@@ -211,11 +211,12 @@ pub fn view(
     // Pointer position is in reference-resolution space (see translateInput).
     if (session.ui_state.drag) |drag| {
         const pointer = session.input_state.mouse_screen_position;
+        const ghost_pos = pointer.toScreenPosition();
         ui_elements.append(frame_allocator, .{ .image = .{
             .sprite_id = drag.icon_sprite_id,
             .screen_position = .{
-                .x = @as(i32, @intFromFloat(pointer.x)) - @divTrunc(ui.slot_size, 2),
-                .y = @as(i32, @intFromFloat(pointer.y)) - @divTrunc(ui.slot_size, 2),
+                .x = ghost_pos.x - @divTrunc(ui.slot_size, 2),
+                .y = ghost_pos.y - @divTrunc(ui.slot_size, 2),
             },
             .width = ui.slot_size,
             .height = ui.slot_size,
@@ -229,10 +230,7 @@ pub fn view(
     // Suppressed while dragging.
     if (session.ui_state.drag == null) {
         const pointer = session.input_state.mouse_screen_position;
-        const point = types.ScreenPosition{
-            .x = @intFromFloat(pointer.x),
-            .y = @intFromFloat(pointer.y),
-        };
+        const point = pointer.toScreenPosition();
         if (ui.tooltipAt(ui_elements.items, point)) |hovered| {
             const bounds = ui.boundsOf(hovered);
             ui.buildTooltip(
@@ -262,10 +260,7 @@ pub fn view(
     // Occlusion-aware: a modal popup on top shields buttons behind it.
     if (session.ui_state.drag == null) {
         const hover_pointer = session.input_state.mouse_screen_position;
-        const hover_point = types.ScreenPosition{
-            .x = @intFromFloat(hover_pointer.x),
-            .y = @intFromFloat(hover_pointer.y),
-        };
+        const hover_point = hover_pointer.toScreenPosition();
         if (ui.buttonIndexAt(ui_elements.items, hover_point)) |i| {
             ui_elements.items[i].button.highlighted = true;
         }
@@ -1353,10 +1348,7 @@ fn buildSkillRangeOutline(
     if (session.ui_state.drag != null) return;
 
     const pointer = session.input_state.mouse_screen_position;
-    const point = types.ScreenPosition{
-        .x = @intFromFloat(pointer.x),
-        .y = @intFromFloat(pointer.y),
-    };
+    const point = pointer.toScreenPosition();
     const button = ui.buttonAt(ui_elements, point) orelse return;
     const slot = ui.actionSkillSlot(button.action) orelse return;
 
