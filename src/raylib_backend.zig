@@ -201,7 +201,7 @@ pub const RaylibBackend = struct {
     event_buffer: [max_events_per_frame]input.PlatformInputEvent = undefined,
     /// Unified file source for asset bytes (embedded map / persistent dir).
     /// The texture cache loads via loadImageFromMemory from this instead of
-    /// touching the filesystem directly — see AGENTS.md "File System & IO".
+    /// touching the filesystem directly — see DESIGN → File System & IO.
     file_source: *const @import("file_source.zig").FileSource,
 
     /// One-shot sound effects, one per `SoundId`, loaded via

@@ -1,5 +1,5 @@
 //! Shared building blocks for skill implementations. Skills compose generic
-//! events (see AGENTS.md); these helpers factor the targeting/lookup/return
+//! events (see DESIGN → Architecture); these helpers factor the targeting/lookup/return
 //! boilerplate that is identical across most skills, so each skill file is
 //! mostly its distinctive `useSkill` recipe.
 //!
@@ -57,7 +57,7 @@ pub fn nearestTarget(
 
     // Strict < keeps the first target at the minimum distance, so ties resolve
     // by the order of `targets` (its builder's scan order) — deterministic (see
-    // AGENTS.md Determinism & Tiebreaking).
+    // DESIGN → Determinism & Tiebreaking).
     var best: ?Vector2 = null;
     var best_distance: i32 = std.math.maxInt(i32);
     for (targets) |position| {

@@ -141,7 +141,7 @@ pub fn handleDrag(
 /// it so it stays under the cursor. Runs anytime (not gated on the event
 /// stack) so the player can look around mid-wait / mid-turn. Levels/hubs
 /// only. The pan offset lives on SessionState (transient view state, replay-
-/// safe by construction — see AGENTS.md). `camera` must already include the
+/// safe by construction — see DESIGN → Replay & Side Effects). `camera` must already include the
 /// current pan offset (so screenToTile / floatWorldPoint map the cursor
 /// against the camera the player is actually seeing).
 ///

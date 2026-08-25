@@ -8,7 +8,7 @@
 //!     per-frame core from main.zig) via emscripten_set_main_loop_arg. The
 //!     browser calls it once per requestAnimationFrame; yielding is the
 //!     browser's job, so no waitTime/sleep (and no asyncify).
-//! See AGENTS.md "Platform Seam (raylib)" + "File System & IO" + the web
+//! See DESIGN → Platform Seam (raylib) + "File System & IO" + the web
 //! build roadmap.
 //!
 //! The emscripten externs are declared directly here rather than importing

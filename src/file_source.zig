@@ -1,4 +1,4 @@
-//! Unified file I/O for the game. See AGENTS.md "File System & IO".
+//! Unified file I/O for the game. See DESIGN → File System & IO.
 //!
 //! The game ships as a single-file executable: all `data/` + `assets/` content
 //! is embedded at build time (see `generated_assets.zig`, emitted by build.zig).
@@ -15,7 +15,7 @@
 //!
 //! Because the persistent dir is checked before the embedded map, a player can
 //! drop a file at `~/.ziglop/<shipped-path>` to shadow shipped content — a
-//! modding seam by side effect (accepted as-is; see AGENTS.md). Writes
+//! modding seam by side effect (accepted as-is; see DESIGN → File System & IO). Writes
 //! target the persistent dir only and reject `data/`/`assets/` prefixes so the
 //! game itself can never shadow its own shipped content.
 //!

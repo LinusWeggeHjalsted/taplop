@@ -100,7 +100,7 @@ pub const WaitState = struct {
 // input state: auto_target_at_cursor reads it in the input path
 // (handleIdleInput), and the resulting player_use_skill event is what replay
 // reproduces — the cursor value at prepare-time is never needed for
-// reconstruction. See AGENTS.md "Replay & Side Effects" (SessionState rule).
+// reconstruction. See DESIGN → Replay & Side Effects (SessionState rule).
 pub const SessionState = struct {
     input_state: input.InputState = .{},
     ui_state: UiState = .{},
@@ -480,7 +480,7 @@ pub const GameStateHistory = struct {
     // Unified file I/O (read-only content via the embedded map + player
     // overrides; writable artifacts via the persistent dir). Session-resident,
     // like settings — never deep-copied into snapshots, never touched by
-    // replay. See AGENTS.md "File System & IO" and file_source.zig.
+    // replay. See DESIGN → File System & IO and file_source.zig.
     file_source: *const FileSource,
 
     // The general I/O handle (clocks, etc.) — a sibling to `file_source`,
@@ -507,7 +507,7 @@ pub const GameStateHistory = struct {
     // in history — fully deterministic regardless of later file changes
     // (e.g. editor saves overwrite a mission's files mid-session). Entries
     // are appended in monotonic event-index order; trimmed on branch
-    // (discardFutureTimeline). See AGENTS.md "Reconstruction cache" and the
+    // (discardFutureTimeline). See DESIGN → File System & IO → Reconstruction cache and the
     // readReconstructionFile helper below. Not serialized (within-session
     // only).
     reconstruction_cache: std.ArrayList(ReconstructionCacheEntry) = .empty,

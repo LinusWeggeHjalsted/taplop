@@ -2,7 +2,7 @@
 //! bytes, canonicalized so identical content hashes identically regardless
 //! of file read order.
 //!
-//! See AGENTS.md → Custom Missions & Online Services → Content identity.
+//! See DESIGN → Custom Missions & Online Services → Content identity.
 //! The hash is a DERIVED property (computed on demand from the file set),
 //! not a stored field on Mission. It is load-bearing for replay pinning: a
 //! session log records the mission content hash, and on cross-session replay

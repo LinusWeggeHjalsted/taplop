@@ -3,7 +3,7 @@
 //! shared game logic in main.zig stays raylib-free. It sets up the allocator,
 //! IO, the persistent data directory (~/.ziglop by default, overridable via
 //! --data-dir or $ZIGLOP_DATA), and the FileSource, then hands control to
-//! main.run with a RaylibBackend. See AGENTS.md "File System & IO".
+//! main.run with a RaylibBackend. See DESIGN → File System & IO.
 
 const std = @import("std");
 const game = @import("main.zig");

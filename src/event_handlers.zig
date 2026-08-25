@@ -1235,7 +1235,7 @@ pub fn processEvent(
                         // Sort by distance ascending (closest first). std.mem.sort
                         // is unstable, so break ties explicitly by entity_index —
                         // otherwise equal-distance enemies would take turns in an
-                        // arbitrary order (see AGENTS.md tiebreaking convention).
+                        // arbitrary order (see DESIGN → Determinism & Tiebreaking).
                         std.mem.sort(EntityDistance, enemy_distances.items, {}, struct {
                             fn lessThan(_: void, a: EntityDistance, b: EntityDistance) bool {
                                 if (a.distance != b.distance) return a.distance < b.distance;

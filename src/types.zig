@@ -211,7 +211,7 @@ pub const CustomColorTheme = struct {
 
 /// One overlay layer of a decoration: a sprite drawn over the base at the same
 /// position, colored independently. Must be the same pixel dimensions as the
-/// base (validated at load). See AGENTS.md "Decorations & Footprint".
+/// base (validated at load). See DESIGN → Decorations & Footprint.
 pub const DecorationLayer = struct {
     sprite: []const u8,
     color_index: u32,
@@ -224,7 +224,7 @@ pub const Decoration = struct {
     name: []const u8,
     /// World position of the anchor tile (bottom-most-then-left-most footprint
     /// tile). The layout char sits here; non-anchor footprint tiles are
-    /// implicit. See AGENTS.md "Decorations & Footprint".
+    /// implicit. See DESIGN → Decorations & Footprint.
     position: Vector2,
     /// Footprint tile coordinates in the SPRITE's own tile-grid (top-left of
     /// the sprite bbox = (0,0)). Not anchor-relative — the list is authored

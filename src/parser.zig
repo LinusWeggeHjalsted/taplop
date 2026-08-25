@@ -347,7 +347,7 @@ pub const ParsedConfigFile = struct {
 };
 
 /// Read a file via the FileSource (persistent dir / embedded map) and parse
-/// it into sections. See AGENTS.md "File System & IO".
+/// it into sections. See DESIGN → File System & IO.
 pub fn parseConfigFileFromPath(
     file_source: *const FileSource,
     file_path: []const u8,
@@ -1439,7 +1439,7 @@ fn resetRuntimeFields(entity: *types.Entity) void {
 /// keyed by character code (like enemy/item definitions). Carries the
 /// sprite-grid footprint list, resolved pixel dims, color index, and overlay
 /// layers so the layout walk can build `Decoration` values without re-reading
-/// the section. See AGENTS.md "Decorations & Footprint".
+/// the section. See DESIGN → Decorations & Footprint.
 const DecorationDefinition = struct {
     sprite: []const u8,
     footprint: []const types.Vector2, // sprite-grid coords
@@ -2829,7 +2829,7 @@ pub fn writePlayerSaveToFile(
 //
 // Serializes an event history to the config format so a whole session can be
 // dumped (ctrl+L) and later re-read to reconstruct/step through it (see
-// AGENTS.md "Logging & Replay"). The event stream alone reproduces a session;
+// DESIGN → Logging & Replay). The event stream alone reproduces a session;
 // no player input is logged. The writer is comptime-generic over the `Event`
 // union, so new events serialize with no changes here.
 //
