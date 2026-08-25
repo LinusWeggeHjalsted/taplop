@@ -1145,12 +1145,36 @@ pub const FloatingIconDrawable = struct {
 /// flag pole), drawn over a decoration that renders in front of it so the
 /// silhouette reads through. Drawn over the FULL sprite rect (no scissor):
 /// the unoccluded portion merges into the art's own black outline; the
-/// occluded portion darkens the decoration. `screen_position` is the
-/// top-left of the sprite frame in reference world space. See DESIGN →
-/// Decorations & Footprint → Occlusion inset.
-pub const OcclusionInsetDrawable = struct {
+/// One sprite layer in a composited silhouette stack (see
+/// `OcclusionInsetDrawable`). The renderer ORs each layer's alpha into a
+/// frame-sized opaque mask, then dilates the union — so a weapon overlapping
+/// the body doesn't produce a spurious internal outline edge. `sprite_id` is
+/// the full asset-relative path (`entities/skeleton_1`, `weapons/sword`,
+/// `world/flag`). `source_rectangle` selects a sub-region (null = whole
+/// sprite); `flip_horizontal` mirrors the alpha within the frame (off-hand
+/// weapons).
+pub const StackSprite = struct {
     sprite_id: []const u8,
+    source_rectangle: ?Rectangle = null,
+    flip_horizontal: bool = false,
+};
+
+/// An INNER outline of an occluded ground thing (entity / ground items /
+/// flag pole), drawn over a decoration that renders in front of it so the
+/// silhouette reads through. The silhouette is composited from a STACK of
+/// sprites (entity: base + layers + weapons; flag: pole + current banner
+/// frame; ground items: single sprite) before dilation, so overlapping
+/// layers don't produce spurious internal edges. Drawn over the FULL frame
+/// rect (no scissor): the unoccluded portion merges into the art's own black
+/// outline; the occluded portion darkens the decoration. `screen_position` is
+/// the top-left of the frame in reference world space; `frame_width`/
+/// `frame_height` are the compositing canvas (512×640 entity, 256×512 flag,
+/// 256×256 ground items). See DESIGN → Decorations & Footprint → Occlusion inset.
+pub const OcclusionInsetDrawable = struct {
+    sprite_stack: []const StackSprite,
     screen_position: ScreenPosition,
+    frame_width: i32,
+    frame_height: i32,
     /// Draw alpha for the black tint (128 = 50%).
     alpha: u8,
 };

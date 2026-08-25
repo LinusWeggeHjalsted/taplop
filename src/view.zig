@@ -366,6 +366,9 @@ fn tileToScreen(tile: types.Vector2, camera: types.Camera, zoom: f32) types.Scre
 /// (horizontal center, at the feet with 0.5 tile of foot/shadow overflow).
 const entity_frame_width: f32 = 512.0;
 const entity_frame_height: f32 = 640.0;
+/// Integer frame dims for the compositing canvas (occlusion inset stack).
+const entity_frame_width_int: i32 = 512;
+const entity_frame_height_int: i32 = 640;
 const entity_pivot_x: f32 = 0.5;
 const entity_pivot_y: f32 = 0.8;
 
@@ -424,6 +427,8 @@ const health_bar_gap_native: i32 = 8;
 /// `item_count` is unused at draw time (the renderer draws just the sprite).
 const ground_items_sprite_id = "world/ground_items";
 const ground_items_size: f32 = 256.0;
+/// Integer frame dim for the ground-items compositing canvas (occlusion inset).
+const ground_items_size_int: i32 = 256;
 const ground_items_pivot_x: f32 = 0.5;
 const ground_items_pivot_y: f32 = 0.5;
 
@@ -432,6 +437,9 @@ const ground_items_pivot_y: f32 = 0.5;
 /// ends and hub mission-start markers; only the static pole is drawn here.
 const flag_pole_width: f32 = 256.0;
 const flag_pole_height: f32 = 512.0;
+/// Integer frame dims for the flag compositing canvas (occlusion inset).
+const flag_pole_width_int: i32 = 256;
+const flag_pole_height_int: i32 = 512;
 const flag_pivot_x: f32 = 0.5;
 const flag_pivot_y: f32 = 0.75;
 
@@ -1176,16 +1184,88 @@ fn entityScreenRect(
     return rectFromTopLeft(top_left, entity_frame_width, entity_frame_height, zoom);
 }
 
-/// The inset draw target (sprite_id + frame top-left) for a ground entry, or
-/// null for decoration pieces (which are occluders, never occluded).
-const InsetTarget = struct { sprite_id: []const u8, screen_position: types.ScreenPosition };
+/// The inset draw target (sprite stack + frame dims + frame top-left) for a
+/// ground entry, or null for decoration pieces (which are occluders, never
+/// occluded). The stack is built into `allocator`: entity = base + layers +
+/// weapons; flag = pole + current banner frame; ground items = single sprite.
+const InsetTarget = struct {
+    sprite_stack: []const types.StackSprite,
+    screen_position: types.ScreenPosition,
+    frame_width: i32,
+    frame_height: i32,
+};
 
-fn occlusionInsetTarget(entry: GroundEntry) ?InsetTarget {
+fn occlusionInsetTarget(entry: GroundEntry, allocator: std.mem.Allocator) ?InsetTarget {
     return switch (entry.drawable) {
         .decoration_piece => null,
-        .entity => |e| .{ .sprite_id = e.base_sprite.sprite_id, .screen_position = e.base_sprite.screen_position },
-        .ground_items => |g| .{ .sprite_id = g.sprite_id, .screen_position = g.screen_position },
-        .level_end => |l| .{ .sprite_id = l.sprite_id, .screen_position = l.screen_position },
+        .entity => |e| entityInsetTarget(e, allocator),
+        .ground_items => |g| .{
+            .sprite_stack = singleStack(allocator, g.sprite_id),
+            .screen_position = g.screen_position,
+            .frame_width = ground_items_size_int,
+            .frame_height = ground_items_size_int,
+        },
+        .level_end => |l| flagInsetTarget(l, allocator),
+    };
+}
+
+fn singleStack(allocator: std.mem.Allocator, sprite_id: []const u8) []const types.StackSprite {
+    const stack = allocator.alloc(types.StackSprite, 1) catch
+        @panic("failed to alloc single-stack");
+    stack[0] = .{ .sprite_id = sprite_id };
+    return stack;
+}
+
+fn entityInsetTarget(entity: types.EntityDrawable, allocator: std.mem.Allocator) InsetTarget {
+    // base + layers + weapons (non-null). Gear and effect sprites are
+    // excluded — gear is a separate concern and effects are transient
+    // (including them would make the outline flicker and balloon the cache).
+    var stack: std.ArrayList(types.StackSprite) = .empty;
+    stack.append(allocator, .{ .sprite_id = entity.base_sprite.sprite_id }) catch
+        @panic("failed to append base to entity stack");
+    for (entity.layer_sprites) |layer| {
+        stack.append(allocator, .{
+            .sprite_id = layer.sprite_id,
+            .source_rectangle = layer.source_rectangle,
+            .flip_horizontal = layer.flip_horizontal,
+        }) catch @panic("failed to append layer to entity stack");
+    }
+    for (entity.weapon_sprites) |maybe_weapon| {
+        if (maybe_weapon) |weapon| {
+            stack.append(allocator, .{
+                .sprite_id = weapon.sprite_id,
+                .source_rectangle = weapon.source_rectangle,
+                .flip_horizontal = weapon.flip_horizontal,
+            }) catch @panic("failed to append weapon to entity stack");
+        }
+    }
+    return .{
+        .sprite_stack = stack.toOwnedSlice(allocator) catch @panic("failed to own entity stack"),
+        .screen_position = entity.base_sprite.screen_position,
+        .frame_width = entity_frame_width_int,
+        .frame_height = entity_frame_height_int,
+    };
+}
+
+fn flagInsetTarget(marker: types.LevelEndDrawable, allocator: std.mem.Allocator) InsetTarget {
+    // pole + current banner frame. The banner's source rectangle selects the
+    // animation frame from the 2048×512 sheet; compositing it with the pole
+    // means the occluded flag shows the animated banner's silhouette, not just
+    // the static pole.
+    var stack: std.ArrayList(types.StackSprite) = .empty;
+    stack.append(allocator, .{ .sprite_id = marker.sprite_id }) catch
+        @panic("failed to append pole to flag stack");
+    if (marker.banner_source_rectangle) |banner_rect| {
+        stack.append(allocator, .{
+            .sprite_id = flag_banner_sprite_id,
+            .source_rectangle = banner_rect,
+        }) catch @panic("failed to append banner to flag stack");
+    }
+    return .{
+        .sprite_stack = stack.toOwnedSlice(allocator) catch @panic("failed to own flag stack"),
+        .screen_position = marker.screen_position,
+        .frame_width = flag_pole_width_int,
+        .frame_height = flag_pole_height_int,
     };
 }
 
@@ -1219,13 +1299,15 @@ fn buildOcclusionInsets(
 
     var insets: std.ArrayList(types.OcclusionInsetDrawable) = .empty;
     for (entries, 0..) |entry, i| {
-        const target = occlusionInsetTarget(entry) orelse continue;
+        const target = occlusionInsetTarget(entry, allocator) orelse continue;
         for (deco_indices.items) |j| {
             if (j <= i) continue; // only decorations drawn AFTER this entry occlude it
             if (rectsOverlap(entry_rects[i], entry_rects[j])) {
                 insets.append(allocator, .{
-                    .sprite_id = target.sprite_id,
+                    .sprite_stack = target.sprite_stack,
                     .screen_position = target.screen_position,
+                    .frame_width = target.frame_width,
+                    .frame_height = target.frame_height,
                     .alpha = 128,
                 }) catch @panic("failed to append occlusion inset");
                 break;

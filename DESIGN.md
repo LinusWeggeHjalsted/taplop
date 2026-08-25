@@ -1584,12 +1584,35 @@ O(|band pixels| × |disk|), instead of the square (Chebyshev) SE's O(w·h·2t)
 separable path — but the mask is cached per sprite (built once), so the cost
 is amortized; the payoff is smoother 45° corners (the square SE's band was
 ~√2 thicker along diagonals). One shared `generateOutlineMask(image,
-thickness, side)` with the opacity test flipped by `side`. A separate
-`inset_outline_cache` mirrors `outline_cache` (same lazy/dupe-key shape);
-one mask per sprite, built once. Reuses `outline_thickness` (8 source px)
-and pure-black tint
+thickness, side)` with the opacity test flipped by `side`; the dilation core
+(`dilateToMask`) is shared with the composite path. A separate
+`composite_inset_cache` (keyed by a stack-composition string) holds the
+occlusion-inset masks; one mask per distinct stack, built once. Reuses
+`outline_thickness` (8 source px) and pure-black tint
 (matching the art's own drawn outline, so the inset's unoccluded portion
 merges into the existing rim rather than adding a second).
+
+**Composited silhouette (entity weapons + flag banner).** The occluded
+thing's silhouette is a UNION of a stack of sprites, composited BEFORE
+dilating — required for the INNER band, because dilation doesn't distribute
+over the intersection in the inner dual (a weapon overlapping the body
+would otherwise leave a spurious internal edge). Stacks:
+- **Entity:** base + body layers + weapons (main + off-hand, the off-hand
+  flipped). Gear and effect sprites are EXCLUDED (gear is a separate
+  concern; effects are transient, and including them would make the outline
+  flicker and balloon the cache). Frame canvas = 512×640 (all entity/weapon
+  art shares the frame, `source_rectangle` null, so compositing is a trivial
+  OR of alpha into the canvas).
+- **Flag:** pole + current banner frame. The banner's `source_rectangle`
+  selects the animation frame from the 2048×512 sheet, so the occluded flag
+  shows the ANIMATED banner's silhouette, not just the static pole. One
+  cached mask per banner frame index (8 frames → 8 entries, ~4 MB).
+- **Ground items:** single sprite (1-element stack — the degenerate case).
+`generateCompositeOutlineMask` decodes each sprite, ORs its alpha (alpha > 16)
+into a frame-sized opaque mask (honoring `flip_horizontal` +
+`source_rectangle`), then dilates. `OcclusionInsetDrawable` carries the
+`[]const StackSprite` + frame dims; the backend's `getCompositeInsetTexture`
+builds the stack key and looks up / fills the cache.
 
 **Draw model (no scissor).** The inset mask is drawn over the occluded
 thing's FULL sprite rect, tinted black at alpha 128 (50%), in a post-ground
@@ -1614,10 +1637,11 @@ small constants — fine at current caps.
 
 **Scope.** Occluded things: entities, ground items, level-end + mission-
 start markers. Occluders: decoration pieces only (not tall entities over
-short entities — deferred; the test is generalizable). The inset mask is
-built from the entity's BASE sprite only; weapons/gear/effects extending
-beyond the base aren't traced (acceptable — the body-mass occlusion case is
-the target). Ground items and flagpoles are single-sprite, so exact.
+short entities — deferred; the test is generalizable). The entity silhouette
+includes base + body layers + weapons (composited — see above); gear and
+effect sprites are excluded. Ground items are single-sprite, so exact. The
+flag silhouette composites the pole + the current animated banner frame, so
+the occluded flag shows the animated banner.
 
 **All view-side** → off GameState → replay-safe by construction (same as
 the tile cursor / animation clock). `view()` emits an `occlusion_insets:

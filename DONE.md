@@ -3524,3 +3524,56 @@ the payoff is smoother corners.
   square.
 
 Native build + tests green.
+
+### Decoration occlusion — composited silhouette (weapons + flag banner)
+
+The occlusion inset now traces the FULL rendered silhouette of the occluded
+thing, not just the base sprite. For an entity: base + body layers + weapons
+(main + off-hand, off-hand flipped) composited into one 512×640 opaque mask
+before dilating. For a flag: pole + the current animated banner frame
+composited into one 256×512 mask, so an occluded flag shows the ANIMATED
+banner's silhouette, not just the static pole. Ground items stay a single-
+sprite stack (the degenerate case).
+
+**Why composite-then-dilate (not composite individual masks).** Dilation
+distributes over union: `dilate(A ∪ B) = dilate(A) ∪ dilate(B)`. So for an
+OUTER band you could composite dilated silhouettes. But the INNER band is
+`sil ∩ dilate(¬sil)`, and `¬(A ∪ B) = ¬A ∩ ¬B`, and dilation does NOT
+distribute over intersection. So inner requires the union silhouette FIRST.
+Since we want inner (occlusion inset), we composite-then-dilate. (This also
+keeps one code path for both inner and outer if outer-composite is ever
+needed.)
+
+**Backend refactor.** Extracted the dilation core from `generateOutlineMask`
+into `dilateToMask(opaque_mask, w, h, thickness, side) -> []u8` (RGBA buffer),
+shared by the single-sprite path (Image → opaque_mask → dilate) and the new
+composite path (sprite stack → opaque_mask → dilate). `rgbaBufToTexture` wraps
+the buffer into a texture (shared). Replaced `inset_outline_cache` (keyed by
+single sprite_id) with `composite_inset_cache` (keyed by a stack-composition
+string: frame size + per-sprite `id|flip|source-rect`). `getCompositeInsetTexture`
+builds the key, looks up / fills the cache. `generateCompositeOutlineMask`
+decodes each sprite, ORs its alpha (alpha > 16) into a frame-sized opaque
+mask via `blitSpriteAlpha` (honoring `flip_horizontal` — mirrors source columns
+within the region — and `source_rectangle` for the banner frame slice), then
+dilates. A missing sprite contributes nothing; the rest of the stack still
+composites.
+
+**View side.** `OcclusionInsetDrawable` changed from `{ sprite_id }` to
+`{ sprite_stack: []const StackSprite, frame_width, frame_height, ... }`.
+`InsetTarget`/`occlusionInsetTarget` now builds the stack: `entityInsetTarget`
+(base + layers + weapons), `flagInsetTarget` (pole + banner_source_rectangle),
+`singleStack` (ground items). Gear and effect sprites are excluded (gear is a
+separate concern; effects are transient — including them would make the
+outline flicker and balloon the cache). `StackSprite = { sprite_id,
+source_rectangle, flip_horizontal }` added to types.zig.
+
+**Cache growth.** Composite masks are keyed by loadout (not bounded by shipped
+sprite count like the asset caches), but the number of *occluded* distinct
+stacks is small (you don't hide every entity type behind a tree every frame),
+so it fills slowly. The flag animates → 8 cached masks per flag (one per
+banner frame), ~4 MB. Started unbounded (matching the existing caches'
+philosophy); eviction is a deferred lever if a real session shows growth. The
+first occlusion of a given stack has a one-time ~50-100ms hitch (decode N PNGs
++ 512×640×217 dilation); amortized after. Optimization is deferred until felt.
+
+Native build + tests green; game runs without crashing.
