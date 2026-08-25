@@ -15,6 +15,7 @@ const state = @import("state.zig");
 const functions = @import("functions.zig");
 const input = @import("input.zig");
 const parser = @import("parser.zig");
+const session_log = @import("session_log.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const event_handlers = @import("event_handlers.zig");
@@ -647,9 +648,9 @@ test "session log round-trips through reconstruction (forward play == replay)" {
     try std.testing.expectEqual(state.Screen.hub, history1.current_state.screen);
 
     // Serialize -> parse -> load the recorded history.
-    const body = try parser.writeEventLog(history1.event_history.items, "20260101_000000", arena);
+    const body = try session_log.writeEventLog(history1.event_history.items, "20260101_000000", arena);
     const sections = try parser.parseConfigFile(body, arena);
-    const log = try parser.loadEventLog(sections, arena);
+    const log = try session_log.loadEventLog(sections, arena);
     input_handlers.warnIfSessionLogFromDifferentBuild(log.game_version); // same build -> silent
 
     // Reconstruct into a fresh history2 from the loaded log and compare the

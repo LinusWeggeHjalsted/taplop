@@ -69,7 +69,7 @@ pub const Action = enum {
     move_cursor_left,
     move_cursor_right,
     // Dump the full session event history to a config-format log file (dev
-    // tooling; see parser.writeEventLog). Anytime, side-effecting.
+    // tooling; see session_log.writeEventLog). Anytime, side-effecting.
     dump_event_log,
     // Dismiss a recoverable error popup (see SessionState.pending_error).
     // Modal — when a pending error is shown, this is the only action that

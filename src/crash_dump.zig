@@ -25,6 +25,7 @@
 const std = @import("std");
 const state = @import("state.zig");
 const parser = @import("parser.zig");
+const session_log = @import("session_log.zig");
 
 const GameStateHistory = state.GameStateHistory;
 
@@ -48,7 +49,7 @@ pub fn uninstall() void {
 
 /// Best-effort dump of `event_history` to `crashes/crash_<timestamp>.txt` in
 /// the persistent dir. Every failure is swallowed (returns silently). The
-/// output is the standard session-log format, loadable by `parser.loadEventLog`
+/// output is the standard session-log format, loadable by `session_log.loadEventLog`
 /// and reconstructable via the existing replay path — so a crash file is a
 /// replayable session log, just named differently. `pub` for testing.
 pub fn dump(history: *GameStateHistory) void {
@@ -64,7 +65,7 @@ pub fn dump(history: *GameStateHistory) void {
         .{created},
     ) catch return;
 
-    const body = parser.writeEventLog(
+    const body = session_log.writeEventLog(
         history.event_history.items,
         created,
         allocator,
@@ -280,7 +281,7 @@ test "dump writes a parseable crash session log to crashes/" {
     try testing.expectEqual(@as(usize, 1), entries.items.len);
     const file_bytes = crashes_dir.readFileAlloc(io, entries.items[0], arena, std.Io.Limit.limited(1 << 20)) catch @panic("read crash file");
     const sections = @import("parser.zig").parseConfigFile(file_bytes, arena) catch @panic("parse crash file");
-    const log = @import("parser.zig").loadEventLog(sections, arena) catch @panic("loadEventLog");
+    const log = @import("session_log.zig").loadEventLog(sections, arena) catch @panic("loadEventLog");
     try testing.expectEqual(history.event_history.items.len, log.events.len);
 }
 

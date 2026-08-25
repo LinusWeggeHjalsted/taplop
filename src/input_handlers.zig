@@ -16,6 +16,7 @@ const events = @import("events.zig");
 const state = @import("state.zig");
 const input = @import("input.zig");
 const parser = @import("parser.zig");
+const session_log = @import("session_log.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const event_handlers = @import("event_handlers.zig");
@@ -226,7 +227,7 @@ pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
 }
 
 /// Write the full session event history to `logs/session_log_YYYYMMDD_HHMMSS.txt`
-/// in the persistent data dir (config format; see parser.writeEventLog). A dev
+/// in the persistent data dir (config format; see session_log.writeEventLog). A dev
 /// tool bound to ctrl+L. Runs only from the input path, so it never fires during
 /// replay. The timestamp is UTC (no timezone handling) — fine for a filename.
 pub fn dumpEventLog(history: *GameStateHistory) void {
@@ -240,7 +241,7 @@ pub fn dumpEventLog(history: *GameStateHistory) void {
         "logs/session_log_{s}.txt",
         .{created},
     ) catch @panic("failed to format session-log file name");
-    const body = parser.writeEventLog(
+    const body = session_log.writeEventLog(
         history.event_history.items,
         created,
         allocator,
