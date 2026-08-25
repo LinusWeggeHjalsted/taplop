@@ -3445,3 +3445,55 @@ draw infrastructure (dormant — nothing calls it yet; slices 2+3 wire it).
 
 All view-side by construction in later slices → off GameState → replay-safe.
 Tests pass.
+
+### Decoration occlusion — slices 2+3: occlusion test + inset draw pass
+
+Wires the slice-1 inner-outline mask into a live render pass. When a
+decoration piece (overhang) draws in front of an entity / ground items /
+flag pole, a thin black inner outline of the occluded thing is drawn over
+the decoration so the silhouette reads through. The decoration stays fully
+opaque and visually in front — "something continues behind here," not "the
+tree faded." Settled design: DESIGN → Decorations & Footprint → Occlusion inset.
+
+**`view()` — the occlusion test (`buildOcclusionInsets`).** After the unified
+ground-entry y-sort, for each non-decoration entry E, emit one
+`OcclusionInsetDrawable` if any decoration piece D at a higher sort index
+(drawn after E — greater in the `groundEntryBefore` (sort_y, sort_x) order)
+has a screen rect overlapping E's screen rect. O(entries × decoration_pieces)
+per frame; fine at current caps. Only decorations are occluders (entities
+over entities is deferred; the test generalizes). The inset draws ONLY when
+occluded — an entity fully in the open gets nothing; a partially-hidden
+entity gets the ring; a fully-hidden entity gets a full silhouette ring on
+the decoration.
+
+**Screen rects.** `groundEntryScreenRect` computes a float bounding rect per
+entry. Entities use the opaque-art bbox (tight, via `sprite_bounds` keyed by
+the bare stem — `GroundEntry.entity_sprite` carries it from
+`collectEntityEntries`) so an entity standing NEXT TO a decoration doesn't
+falsely trigger an inset; falls back to the full 512×640 frame when bounds
+are unavailable. Decoration pieces (256×256 chunks), ground items (256×256),
+and flag poles (256×512) use their full sprite frame — single-sprite
+drawables whose frame is tight enough.
+
+**Draw model (no scissor).** The inset mask is drawn over the occluded thing's
+FULL sprite rect, tinted pure black at alpha 128 (50%), in a post-ground pass
+after `drawGroundDrawable` and before floating world overlays:
+- over the decoration (occluded region): 50% black on the decoration's color
+  → a dark trace of the entity's inner silhouette edge. The cue.
+- over the visible art (unoccluded region): 50% black just inside the
+  silhouette → a subtle extra darkening that merges into the art's own black
+  outline (the art ships with a drawn black outline, so the unoccluded
+  overlap reinforces it rather than adding a competing rim).
+No clipping is needed because the unoccluded overlap is self-subtle and the
+decoration stays fully opaque.
+
+**`OcclusionInsetDrawable`** on ViewState: `{ sprite_id, screen_position,
+alpha }`. The backend's `drawOcclusionInset` resolves the mask texture dims
+(= the sprite's own dims) and computes the destination rect from
+`screen_position` × `world_scale` — same shape as `drawHighlightOutline`.
+Built from the entity's BASE sprite only (weapons/gear/effects extending
+beyond the base aren't traced — acceptable for the body-mass occlusion case;
+ground items and flag poles are single-sprite, so exact).
+
+All view-side → off GameState → replay-safe by construction. Native build +
+tests green; game runs without crashing.

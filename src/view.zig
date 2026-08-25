@@ -2,10 +2,11 @@
 //!
 //! `view()` is pure over `GameState` + `SessionState` + the per-frame arena;
 //! everything the ViewState points at lives until the next frame. The world
-//! layers (tiles, overlays, ground drawables) and the flat `ui_elements` slice
-//! are assembled here. Camera math (`computeCamera`, `tileToScreen`) lives here
-//! too — `gameLoop` computes the camera once per frame and feeds it to both
-//! `view()` and input translation so input/render never drift.
+//! layers (tiles, overlays, ground drawables, occlusion insets) and the flat
+//! `ui_elements` slice are assembled here. Camera math (`computeCamera`,
+//! `tileToScreen`) lives here too — `gameLoop` computes the camera once per
+//! frame and feeds it to both `view()` and input translation so input/render
+//! never drift.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -151,6 +152,17 @@ pub fn view(
             @panic("failed to append ground drawable");
     }
 
+    // Occlusion insets: for each non-decoration ground entry, emit an inner
+    // outline if a decoration piece drawn AFTER it (greater sort order)
+    // overlaps the entry's screen rect. Pure view-side → replay-safe. See
+    // DESIGN → Decorations & Footprint → Occlusion inset.
+    const occlusion_insets = buildOcclusionInsets(
+        frame_allocator,
+        ground_entries.items,
+        camera_zoom,
+        render.sprite_bounds,
+    );
+
     // World overlays: one-shot anims (skill icons, etc.) drawn above ground
     // sprites. Built from `session.active_anims`; see DESIGN → Animation.
     const world_overlays = buildWorldOverlays(
@@ -282,6 +294,7 @@ pub fn view(
         .tiles = tiles.items,
         .tile_overlays = tile_overlays.items,
         .ground_drawables = ground_drawables.items,
+        .occlusion_insets = occlusion_insets,
         .world_overlays = world_overlays,
         .ui_elements = ui_elements.items,
         .combat_log = projected_log,
@@ -1055,10 +1068,14 @@ fn weaponSprite(
 /// One entry in the unified ground-drawable sort. `sort_y` is the tile y
 /// the drawable sorts at (entity tile y, decoration piece's assigned
 /// footprint y, marker tile y); `sort_x` is the horizontal tiebreak.
+/// `entity_sprite` carries the entity's bare sprite stem for entries built
+/// from an entity (used by the occlusion test's tight-bbox lookup); null for
+/// non-entity entries.
 const GroundEntry = struct {
     sort_y: i32,
     sort_x: i32,
     drawable: types.GroundDrawable,
+    entity_sprite: ?[]const u8 = null,
 };
 
 /// Unified back-to-front order: ascending sort_y, then ascending sort_x.
@@ -1092,6 +1109,7 @@ fn collectEntityEntries(
             .sort_y = entity.position.y,
             .sort_x = entity.position.x,
             .drawable = .{ .entity = entityDrawable(entity, active_theme, player_color_index, camera, zoom, allocator, sprite_bounds, show_health_bar) },
+            .entity_sprite = entity.sprite,
         }) catch @panic("failed to append entity entry");
     }
 }
@@ -1100,6 +1118,122 @@ fn collectEntityEntries(
 /// input.tile_size_pixels — duplicated here to avoid a cross-module constant
 /// for a value that's part of the rendering contract.
 const tile_size_pixels: i32 = 256;
+
+/// Float rect in reference screen space, used by the occlusion overlap test.
+const ScreenRect = struct { x: f32, y: f32, w: f32, h: f32 };
+
+fn rectsOverlap(a: ScreenRect, b: ScreenRect) bool {
+    return a.x < b.x + b.w and a.x + a.w > b.x and a.y < b.y + b.h and a.y + a.h > b.y;
+}
+
+/// The screen-space bounding rect of a ground entry. Entities use the opaque-
+/// art bbox (tight, via `sprite_bounds`) so an entity standing NEXT TO a
+/// decoration doesn't falsely trigger an inset; falls back to the full
+/// 512×640 frame when bounds are unavailable. Decoration pieces, ground
+/// items, and flag poles use their full sprite frame (single-sprite drawables
+/// whose frame is tight enough).
+fn groundEntryScreenRect(
+    entry: GroundEntry,
+    zoom: f32,
+    sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
+) ScreenRect {
+    return switch (entry.drawable) {
+        .entity => |e| entityScreenRect(e, entry.entity_sprite, zoom, sprite_bounds),
+        .decoration_piece => |d| rectFromTopLeft(d.screen_position, tile_size_pixels, tile_size_pixels, zoom),
+        .ground_items => |g| rectFromTopLeft(g.screen_position, ground_items_size, ground_items_size, zoom),
+        .level_end => |l| rectFromTopLeft(l.screen_position, flag_pole_width, flag_pole_height, zoom),
+    };
+}
+
+fn rectFromTopLeft(top_left: types.ScreenPosition, width: f32, height: f32, zoom: f32) ScreenRect {
+    return .{
+        .x = @floatFromInt(top_left.x),
+        .y = @floatFromInt(top_left.y),
+        .w = width * zoom,
+        .h = height * zoom,
+    };
+}
+
+fn entityScreenRect(
+    entity: types.EntityDrawable,
+    sprite_bare_stem: ?[]const u8,
+    zoom: f32,
+    sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
+) ScreenRect {
+    const top_left = entity.base_sprite.screen_position;
+    if (sprite_bare_stem) |stem| {
+        if (sprite_bounds.get(stem)) |maybe_bounds| {
+            if (maybe_bounds) |b| {
+                return .{
+                    .x = @as(f32, @floatFromInt(top_left.x)) + @as(f32, @floatFromInt(b.left.?)) * zoom,
+                    .y = @as(f32, @floatFromInt(top_left.y)) + @as(f32, @floatFromInt(b.top.?)) * zoom,
+                    .w = @as(f32, @floatFromInt(b.right.? - b.left.?)) * zoom,
+                    .h = @as(f32, @floatFromInt(b.bottom.? - b.top.?)) * zoom,
+                };
+            }
+        }
+    }
+    return rectFromTopLeft(top_left, entity_frame_width, entity_frame_height, zoom);
+}
+
+/// The inset draw target (sprite_id + frame top-left) for a ground entry, or
+/// null for decoration pieces (which are occluders, never occluded).
+const InsetTarget = struct { sprite_id: []const u8, screen_position: types.ScreenPosition };
+
+fn occlusionInsetTarget(entry: GroundEntry) ?InsetTarget {
+    return switch (entry.drawable) {
+        .decoration_piece => null,
+        .entity => |e| .{ .sprite_id = e.base_sprite.sprite_id, .screen_position = e.base_sprite.screen_position },
+        .ground_items => |g| .{ .sprite_id = g.sprite_id, .screen_position = g.screen_position },
+        .level_end => |l| .{ .sprite_id = l.sprite_id, .screen_position = l.screen_position },
+    };
+}
+
+/// Run the occlusion test over the sorted ground entries. For each non-
+/// decoration entry, emit one `OcclusionInsetDrawable` if any decoration
+/// piece at a higher sort index (drawn after it) has an overlapping screen
+/// rect. O(entries × decoration_pieces) per frame — fine at current caps.
+/// Pure, view-side → off GameState → replay-safe. See DESIGN → Decorations &
+/// Footprint → Occlusion inset.
+fn buildOcclusionInsets(
+    allocator: std.mem.Allocator,
+    entries: []const GroundEntry,
+    zoom: f32,
+    sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
+) []const types.OcclusionInsetDrawable {
+    if (entries.len == 0) return &.{};
+
+    // Screen rects parallel to `entries`.
+    const entry_rects = allocator.alloc(ScreenRect, entries.len) catch
+        @panic("failed to alloc entry rects");
+    for (entries, 0..) |entry, i| {
+        entry_rects[i] = groundEntryScreenRect(entry, zoom, sprite_bounds);
+    }
+
+    // Decoration piece indices (the occluders).
+    var deco_indices: std.ArrayList(usize) = .empty;
+    for (entries, 0..) |entry, i| {
+        if (entry.drawable == .decoration_piece) deco_indices.append(allocator, i) catch
+            @panic("failed to append decoration index");
+    }
+
+    var insets: std.ArrayList(types.OcclusionInsetDrawable) = .empty;
+    for (entries, 0..) |entry, i| {
+        const target = occlusionInsetTarget(entry) orelse continue;
+        for (deco_indices.items) |j| {
+            if (j <= i) continue; // only decorations drawn AFTER this entry occlude it
+            if (rectsOverlap(entry_rects[i], entry_rects[j])) {
+                insets.append(allocator, .{
+                    .sprite_id = target.sprite_id,
+                    .screen_position = target.screen_position,
+                    .alpha = 128,
+                }) catch @panic("failed to append occlusion inset");
+                break;
+            }
+        }
+    }
+    return insets.toOwnedSlice(allocator) catch @panic("failed to own occlusion insets");
+}
 
 /// Build per-bbox-tile ground entries for one decoration, each carrying its
 /// sort key (assigned footprint y for overhang tiles, own y for footprint

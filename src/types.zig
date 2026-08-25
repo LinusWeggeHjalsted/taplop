@@ -1141,6 +1141,20 @@ pub const FloatingIconDrawable = struct {
     color: Color,
 };
 
+/// An INNER outline of an occluded ground thing (entity / ground items /
+/// flag pole), drawn over a decoration that renders in front of it so the
+/// silhouette reads through. Drawn over the FULL sprite rect (no scissor):
+/// the unoccluded portion merges into the art's own black outline; the
+/// occluded portion darkens the decoration. `screen_position` is the
+/// top-left of the sprite frame in reference world space. See DESIGN →
+/// Decorations & Footprint → Occlusion inset.
+pub const OcclusionInsetDrawable = struct {
+    sprite_id: []const u8,
+    screen_position: ScreenPosition,
+    /// Draw alpha for the black tint (128 = 50%).
+    alpha: u8,
+};
+
 pub const WorldOverlayDrawable = union(enum) {
     floating_icon: FloatingIconDrawable,
     /// Floating text (damage/heal numbers). The `screen_position` is the
@@ -1175,6 +1189,10 @@ pub const ViewState = struct {
     tiles: []const TileDrawable,
     tile_overlays: []const TileOverlayDrawable,
     ground_drawables: []const GroundDrawable,
+    /// INNER outlines of ground things occluded by decoration overhang, drawn
+    /// after the ground pass and before floating world overlays. See DESIGN
+    /// → Decorations & Footprint → Occlusion inset.
+    occlusion_insets: []const OcclusionInsetDrawable,
     /// Floating indicators (one-shot anims) drawn above world sprites, after
     /// ground drawables and before the UI. Built per-frame from
     /// `session.active_anims`; see DESIGN → Animation.

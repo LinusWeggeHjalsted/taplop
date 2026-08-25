@@ -48,11 +48,11 @@ Test by running `zig build run` and clicking through.
         fix the stale `raylib_backend.zig:38-39` comment ("inner band" →
         outer). Add `inset_outline_cache` + `getInsetOutlineTexture` +
         `drawOcclusionInset` in raylib_backend.zig.
-  - [ ] `OcclusionInsetDrawable` on ViewState + occlusion test in `view()`
+  - [x] `OcclusionInsetDrawable` on ViewState + occlusion test in `view()`
         (non-decoration entry vs decoration pieces with greater
         `groundEntryBefore` sort order + screen-rect overlap) →
         `occlusion_insets` slice.
-  - [ ] Backend: draw insets after the ground pass, before floating world
+  - [x] Backend: draw insets after the ground pass, before floating world
         overlays. Black, alpha 128, `outline_thickness` (8).
   - [ ] Follow-up (separate slice): disk-SE outline for both outer + inner
         (smoother 45° corners; cached so the O((2t+1)²) cost is one-time per

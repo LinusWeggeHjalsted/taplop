@@ -631,6 +631,7 @@ pub const RaylibBackend = struct {
         );
         for (view_state.tile_overlays) |overlay| self.drawTileOverlay(overlay, view_state.world_scale);
         for (view_state.ground_drawables) |ground| self.drawGroundDrawable(ground, view_state.world_scale);
+        for (view_state.occlusion_insets) |inset| self.drawOcclusionInset(inset.sprite_id, inset.screen_position, view_state.world_scale, inset.alpha);
         for (view_state.world_overlays) |overlay| self.drawWorldOverlay(overlay, view_state.world_scale);
         for (view_state.ui_elements) |element| self.drawUiElement(element, view_state.active_color_theme.lightest);
         rl.endTextureMode();
@@ -947,21 +948,28 @@ pub const RaylibBackend = struct {
         rl.drawTexturePro(mask, source, destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(highlight_color, 255));
     }
 
-    /// Draw a precomputed INNER edge-outline mask over `destination`, tinted
-    /// pure black at `alpha`. Used by the occlusion inset pass to trace an
-    /// occluded entity/item/marker's silhouette edge over a decoration that
-    /// draws in front of it. Drawn over the FULL sprite rect (no scissor): the
-    /// unoccluded portion merges into the art's own black outline (self-subtle),
-    /// the occluded portion darkens the decoration — see DESIGN → Decorations &
-    /// Footprint → Occlusion inset. No-op if the sprite or its mask is
-    /// unavailable.
-    fn drawOcclusionInset(self: *RaylibBackend, sprite_id: []const u8, destination: rl.Rectangle, alpha: u8) void {
+    /// Draw a precomputed INNER edge-outline mask for `sprite_id` over its
+    /// full sprite frame at `screen_position` (the top-left), scaled by
+    /// `world_scale`, tinted pure black at `alpha`. Used by the occlusion
+    /// inset pass to trace an occluded entity/item/marker's silhouette edge
+    /// over a decoration that draws in front of it. Drawn over the FULL
+    /// sprite rect (no scissor): the unoccluded portion merges into the art's
+    /// own black outline (self-subtle), the occluded portion darkens the
+    /// decoration — see DESIGN → Decorations & Footprint → Occlusion inset.
+    /// No-op if the sprite or its mask is unavailable.
+    fn drawOcclusionInset(self: *RaylibBackend, sprite_id: []const u8, screen_position: types.ScreenPosition, world_scale: f32, alpha: u8) void {
         const mask = self.getInsetOutlineTexture(sprite_id) orelse return;
         const source = rl.Rectangle{
             .x = 0,
             .y = 0,
             .width = @floatFromInt(mask.width),
             .height = @floatFromInt(mask.height),
+        };
+        const destination = rl.Rectangle{
+            .x = @floatFromInt(screen_position.x),
+            .y = @floatFromInt(screen_position.y),
+            .width = @as(f32, @floatFromInt(mask.width)) * world_scale,
+            .height = @as(f32, @floatFromInt(mask.height)) * world_scale,
         };
         rl.drawTexturePro(mask, source, destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(.{ .r = 0, .g = 0, .b = 0 }, alpha));
     }
