@@ -4230,3 +4230,81 @@ player's inventory slots on top of the slot frames.
   no materials field). `buildInventoryPanel` now takes an `inventory` param;
   `buildMiddlePanels` resolves it from the player entity (defaulting to an
   empty `Inventory` if there's no player, e.g. a degenerate hub).
+
+### Inventory click + drag UX slice (DONE)
+
+Modal click UX on inventory items + movement-threshold drag/click
+disambiguation + full drag refactor onto orchestrators (player input never
+pushes machinery events anymore).
+
+**Click UX (the spec):** modifier + double-click intents on a content
+inventory slot, anytime (not gated on the event stack — salvaging/equipping/
+learning during enemy turns is allowed; the pushed orchestrator drains
+mid-wait like `swap_hands`):
+
+| trigger | intent |
+|---|---|
+| double left / ctrl+left / alt+right | equip-main (weapon→main hand; gear→its slot; tome→learn or salvage if learned) |
+| double right / ctrl+right / alt+left | equip-off (weapon→off hand; gear/tome→same as equip-main) |
+| shift+left | salvage |
+| shift+right / modifier combos (2+) | no-op |
+| plain single left/right | none (seeds a pending double) |
+
+Precedence: shift > ctrl > alt > plain-double; combos (≥2 modifiers) = no-op.
+
+- **`PointerInput.modifiers`** (input.zig): surfaced the held modifiers on
+  the pointer so slot-click handlers resolve modifier-keyed intents without
+  reaching into `InputState`. Filled by `translateInput` from `getModifiers`.
+- **Movement-threshold drag/click** (ui.zig + input_handlers.zig):
+  `PendingSlotPress` on `UiState` records a press (source, icon, press
+  position, button). Move ≥ `drag_threshold_pixels` (8 ref px) promotes it to
+  `DragState` (ghost appears); release within threshold over the SAME slot =
+  click, elsewhere = cancel. Right-button presses never drag (right-drag is
+  camera pan on the world; panels block it, so right-press on a slot is a
+  click only). Replaces the old press=starts-drag-immediately model.
+- **Double-click detection:** `LastItemClick` on `UiState` (off the undo
+  timeline → replay-safe) records the last plain single click (slot + button
+  + `session_clock` time). A second plain click on the same slot+button
+  within `double_click_threshold_us` (400ms) fires the double-click intent.
+  Only plain (no-modifier) single clicks that didn't fire seed a pending
+  double; modifier-clicks fire immediately and clear it (so a ctrl+click
+  can't pair with a later plain click into a spurious double).
+- **`resolveItemClick(button, modifiers, is_double) ItemIntent`** — pure
+  intent resolver (tested). `resolveInventoryClick` does the double-click
+  bookkeeping + pushes the orchestrator.
+- **Inventory slots now carry `ref = .{ .inventory = index }`** so
+  `slotAt`/`slotRefAt` resolve them.
+
+**Drag refactor (principle: player input only pushes PlayerInputEvents):**
+the old `dragToEvent` returned machinery `PlayerEvent`s (`equip_item`,
+`unequip_item`, `equip_utility_skill`, `swap_utility_skills`,
+`unequip_utility_skill`) directly from the input path — a latent replay-
+whitelist violation (dead code today, but a violation regardless). Replaced
+with `dragToOrchestrator` returning `PlayerInputEvent`s, and new orchestrator
+handlers in `handlePlayerInputEvent` that push the machinery as children:
+
+- `player_use_inventory_item { slot, off_hand }` — the "activate" intent.
+  Handler resolves item type: weapon → `equip_item` (main/off per flag);
+  other gear → `equip_item` (its own slot); skill tome → `learn_skill` if
+  not yet learned, else `salvage_item`. The learn-vs-salvage decision reads
+  live `player_data.learned_skills` → deterministic across live/replay.
+- `player_salvage_inventory_item { slot }` → `salvage_item`.
+- `player_equip_to_gear { slot, gear_slot }` → `equip_item` (drag inventory→gear).
+- `player_unequip_from_gear { gear_slot, slot }` → `unequip_item` (drag gear→inventory).
+- `player_assign_utility_skill { skill_id, slot_index }` → `equip_utility_skill`.
+- `player_swap_utility_skills { a, b }` → `swap_utility_skills`.
+- `player_clear_utility_skill { slot_index }` → `unequip_utility_skill`.
+
+`isPlayerAction` (replay whitelist) accepts these automatically (they're
+`PlayerInputEvent`s). `validatePlayerAction` gained arms
+(`validateInventoryScreenAndSlot` / `validateUtilitySlot`) for the replay
+anti-cheat seam: screen must be level/hub, slot indices in range. The
+item-type→machinery resolution is in the handler (deterministic from state),
+so no deeper check there.
+
+**Helpers:** `isSkillLearned` (pub, event_handlers.zig) — extracted from the
+tome branch so the learn-vs-salvage decision is testable. `slotRefsEqual`
+(input_handlers.zig) — slot identity for click vs drag-off-cancel.
+
+**Tests:** `dragToOrchestrator` mapping (replaces the old `dragToEvent`
+test), `resolveItemClick` modifier precedence + double-click, `isSkillLearned`.

@@ -257,6 +257,10 @@ pub const PointerInput = struct {
     right_pressed: bool = false,
     right_released: bool = false,
     right_held: bool = false,
+    /// Held keyboard modifiers at this tick. Surfaced here (off `InputState`)
+    /// so slot-click handlers can resolve modifier-keyed intents (ctrl/alt/
+    /// shift click) without reaching into input state.
+    modifiers: types.Modifiers = .{},
 };
 
 /// Actions that can be handled regardless of event stack state.
@@ -778,6 +782,7 @@ pub fn translateInput(
         .right_pressed = InputState.isHeld(&mouse_pressed, "right"),
         .right_released = InputState.isHeld(&mouse_released, "right"),
         .right_held = InputState.isHeld(&state.mouse_buttons_held, "right"),
+        .modifiers = modifiers,
     };
 
     result.modifiers = modifiers;

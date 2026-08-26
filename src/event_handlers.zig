@@ -790,7 +790,101 @@ fn handlePlayerInputEvent(
                 }
             }
         },
+
+        // --- Inventory/gear/skill: click + drag orchestrators ---
+        // Each pushes the machinery event(s) as a child. The orchestrator
+        // carries only the player's intent; all mutation is in the verbs.
+        // See DESIGN → Architecture (orchestrator convention) + DESIGN →
+        // Determinism & Tiebreaking (replay whitelist).
+        .player_use_inventory_item => |use| {
+            const player = getPlayerEntity(current, 0);
+            const slot = &player.inventory.slots[use.inventory_slot_index];
+            const item = slot.* orelse return;
+            switch (item) {
+                .weapon => pushEvents(current, &.{.{ .player_event = .{ .equip_item = .{
+                    .inventory_slot_index = use.inventory_slot_index,
+                    .gear_slot = if (use.off_hand) .off_hand else .main_hand,
+                } } }}, allocator),
+                .amulet => pushEvents(current, &.{.{ .player_event = .{ .equip_item = .{
+                    .inventory_slot_index = use.inventory_slot_index,
+                    .gear_slot = .amulet,
+                } } }}, allocator),
+                .coat => pushEvents(current, &.{.{ .player_event = .{ .equip_item = .{
+                    .inventory_slot_index = use.inventory_slot_index,
+                    .gear_slot = .coat,
+                } } }}, allocator),
+                .gloves => pushEvents(current, &.{.{ .player_event = .{ .equip_item = .{
+                    .inventory_slot_index = use.inventory_slot_index,
+                    .gear_slot = .gloves,
+                } } }}, allocator),
+                .pants => pushEvents(current, &.{.{ .player_event = .{ .equip_item = .{
+                    .inventory_slot_index = use.inventory_slot_index,
+                    .gear_slot = .pants,
+                } } }}, allocator),
+                .boots => pushEvents(current, &.{.{ .player_event = .{ .equip_item = .{
+                    .inventory_slot_index = use.inventory_slot_index,
+                    .gear_slot = .boots,
+                } } }}, allocator),
+                .skill_tome => |tome| {
+                    if (isSkillLearned(current.player_data.learned_skills, tome.skill)) {
+                        pushEvents(current, &.{.{ .player_event = .{ .salvage_item = .{
+                            .inventory_slot_index = use.inventory_slot_index,
+                        } } }}, allocator);
+                    } else {
+                        pushEvents(current, &.{.{ .player_event = .{ .learn_skill = .{
+                            .inventory_slot_index = use.inventory_slot_index,
+                        } } }}, allocator);
+                    }
+                },
+            }
+        },
+        .player_salvage_inventory_item => |salvage| {
+            pushEvents(current, &.{.{ .player_event = .{ .salvage_item = .{
+                .inventory_slot_index = salvage.inventory_slot_index,
+            } } }}, allocator);
+        },
+        .player_equip_to_gear => |equip| {
+            pushEvents(current, &.{.{ .player_event = .{ .equip_item = .{
+                .inventory_slot_index = equip.inventory_slot_index,
+                .gear_slot = equip.gear_slot,
+            } } }}, allocator);
+        },
+        .player_unequip_from_gear => |unequip| {
+            pushEvents(current, &.{.{ .player_event = .{ .unequip_item = .{
+                .gear_slot = unequip.gear_slot,
+                .inventory_slot_index = unequip.inventory_slot_index,
+            } } }}, allocator);
+        },
+        .player_assign_utility_skill => |assign| {
+            pushEvents(current, &.{.{ .player_event = .{ .equip_utility_skill = .{
+                .skill_id = assign.skill_id,
+                .slot_index = assign.slot_index,
+            } } }}, allocator);
+        },
+        .player_swap_utility_skills => |swap| {
+            pushEvents(current, &.{.{ .player_event = .{ .swap_utility_skills = .{
+                .slot_a_index = swap.slot_a_index,
+                .slot_b_index = swap.slot_b_index,
+            } } }}, allocator);
+        },
+        .player_clear_utility_skill => |clear| {
+            pushEvents(current, &.{.{ .player_event = .{ .unequip_utility_skill = .{
+                .slot_index = clear.slot_index,
+            } } }}, allocator);
+        },
     }
+}
+
+/// Whether `skill_id` is in the player's `learned_skills` list. Pure —
+/// extracted from the `player_use_inventory_item` handler so the
+/// learn-vs-salvage decision for a skill tome is testable without the
+/// orchestrator wrapper (no `expectPanics` in Zig 0.16; see AGENTS →
+/// Testing discipline).
+pub fn isSkillLearned(learned_skills: []const types.SkillId, skill_id: types.SkillId) bool {
+    for (learned_skills) |learned| {
+        if (learned == skill_id) return true;
+    }
+    return false;
 }
 
 /// Process a single event from the stack. Applies the event to the current

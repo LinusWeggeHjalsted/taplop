@@ -26,7 +26,6 @@ const build_info = @import("build_info");
 
 const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
-const Event = events.Event;
 
 /// Mouse-wheel zoom cadence + bounds. Additive in fixed steps (one zoom-in
 /// then one zoom-out returns to the exact same value — no float drift).
@@ -66,46 +65,63 @@ const utility_skill_count = types.utility_skill_count;
 const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
 const WeaponType = types.WeaponType;
 
-pub fn dragToEvent(from: ui.SlotRef, to: ui.SlotRef) ?Event {
+/// Map a drag (source slot ref → target slot ref) to the orchestrator
+/// `PlayerInputEvent` that the handler will resolve, or null for a
+/// nonsensical / unsupported drop. Replaces the old `dragToEvent` which
+/// returned machinery events directly — input now only pushes
+/// PlayerInputEvents (orchestrator convention; see DESIGN → Determinism &
+/// Tiebreaking → Replay PLAYER-ACTION LEGALITY). The handler pushes the
+/// machinery event as a child.
+pub fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputEvent {
     return switch (from) {
         .inventory => |inventory_index| switch (to) {
-            .gear => |gear_slot| .{ .player_event = .{ .equip_item = .{
+            .gear => |gear_slot| .{ .player_equip_to_gear = .{
                 .inventory_slot_index = inventory_index,
                 .gear_slot = gear_slot,
-            } } },
+            } },
             else => null, // inventory→inventory move + skill targets: no handler
         },
         .gear => |gear_slot| switch (to) {
-            .inventory => |inventory_index| .{ .player_event = .{ .unequip_item = .{
+            .inventory => |inventory_index| .{ .player_unequip_from_gear = .{
                 .gear_slot = gear_slot,
                 .inventory_slot_index = inventory_index,
-            } } },
+            } },
             else => null,
         },
         .learned_skill => |skill_id| switch (to) {
-            .skill_bar => |slot_index| .{ .player_event = .{ .equip_utility_skill = .{
+            .skill_bar => |slot_index| .{ .player_assign_utility_skill = .{
                 .skill_id = skill_id,
                 .slot_index = slot_index,
-            } } },
+            } },
             else => null,
         },
         .skill_bar => |from_index| switch (to) {
-            .skill_bar => |to_index| .{ .player_event = .{ .swap_utility_skills = .{
+            .skill_bar => |to_index| .{ .player_swap_utility_skills = .{
                 .slot_a_index = from_index,
                 .slot_b_index = to_index,
-            } } },
+            } },
             // Dropping a bar skill back onto the skills menu clears the slot.
-            .learned_skill => .{ .player_event = .{ .unequip_utility_skill = .{
+            .learned_skill => .{ .player_clear_utility_skill = .{
                 .slot_index = from_index,
-            } } },
+            } },
             else => null,
         },
     };
 }
 
-/// Pointer-driven drag lifecycle. Runs every tick (anytime): press over a
-/// slot with content begins a drag; release hit-tests the target slot and
-/// pushes the resolved event. Hit-tests against the previous frame's UI.
+/// Pointer-driven slot-press lifecycle. Runs every tick (anytime): a press
+/// on a content slot records a pending press (no ghost yet); movement beyond
+/// `drag_threshold_pixels` promotes it to a drag (ghost appears, drop on
+/// release); a release within threshold over the same slot is a click
+/// resolved into an inventory-item intent (equip / salvage, with modifier +
+/// double-click disambiguation). Right-button presses never drag (right-drag
+/// is camera pan on the world; panels block it, so a right-press on a slot is
+/// a click). Hit-tests against the previous frame's UI.
+///
+/// Item clicks are ANYTIME (not gated on the event stack) — salvaging /
+/// equipping / learning during enemy turns is allowed. The pushed
+/// orchestrator is processed mid-drain like `swap_hands` (see the wait/drain
+/// loop in `update`). See DESIGN → UI Framework.
 pub fn handleDrag(
     history: *GameStateHistory,
     pointer: input.PointerInput,
@@ -115,27 +131,187 @@ pub fn handleDrag(
     const allocator = history.current_arena.allocator();
     const ui_state = &history.session.ui_state;
 
+    // --- Left button: press → pending or drag ---
     if (pointer.pressed) {
-        // Begin a drag only when the pointer goes down on a slot that both has
-        // an identity and holds something (icon present).
         if (ui.slotAt(ui_elements, pointer.position)) |slot| {
             if (slot.ref) |ref| {
                 if (slot.icon_sprite_id) |icon| {
-                    ui_state.drag = .{ .source = ref, .icon_sprite_id = icon };
+                    ui_state.pending_slot_press = .{
+                        .source = ref,
+                        .icon_sprite_id = icon,
+                        .press_position = pointer.position,
+                        .button = .left,
+                    };
                 }
             }
         }
     }
 
+    // Promote a pending left-press to a drag once the pointer moves beyond
+    // the threshold. The ghost then follows the pointer until release.
+    if (ui_state.pending_slot_press) |press| {
+        if (press.button == .left) {
+            const dx = pointer.position.x - press.press_position.x;
+            const dy = pointer.position.y - press.press_position.y;
+            if (dx * dx + dy * dy >= ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
+                ui_state.drag = .{ .source = press.source, .icon_sprite_id = press.icon_sprite_id };
+                ui_state.pending_slot_press = null;
+            }
+        }
+    }
+
+    // --- Left button: release → drop or click ---
     if (pointer.released) {
         if (ui_state.drag) |drag| {
             if (ui.slotRefAt(ui_elements, pointer.position)) |target| {
-                if (dragToEvent(drag.source, target)) |event| {
-                    event_handlers.pushEvents(current, &.{event}, allocator);
+                if (dragToOrchestrator(drag.source, target)) |orchestrator| {
+                    event_handlers.pushPlayerAction(current, orchestrator, allocator);
                 }
             }
             ui_state.drag = null;
+            ui_state.pending_slot_press = null;
+        } else if (ui_state.pending_slot_press) |press| {
+            if (press.button == .left) {
+                // Release over the same slot = click; elsewhere = cancel.
+                if (ui.slotRefAt(ui_elements, pointer.position)) |target| {
+                    if (slotRefsEqual(target, press.source)) {
+                        resolveInventoryClick(history, press.source, .left, pointer.modifiers);
+                    }
+                }
+                ui_state.pending_slot_press = null;
+            }
         }
+    }
+
+    // --- Right button: press → pending (click only, no drag) ---
+    if (pointer.right_pressed) {
+        if (ui.slotAt(ui_elements, pointer.position)) |slot| {
+            if (slot.ref) |ref| {
+                if (slot.icon_sprite_id) |icon| {
+                    ui_state.pending_slot_press = .{
+                        .source = ref,
+                        .icon_sprite_id = icon,
+                        .press_position = pointer.position,
+                        .button = .right,
+                    };
+                }
+            }
+        }
+    }
+
+    // --- Right button: release → click ---
+    if (pointer.right_released) {
+        if (ui_state.pending_slot_press) |press| {
+            if (press.button == .right and ui_state.drag == null) {
+                if (ui.slotRefAt(ui_elements, pointer.position)) |target| {
+                    if (slotRefsEqual(target, press.source)) {
+                        resolveInventoryClick(history, press.source, .right, pointer.modifiers);
+                    }
+                }
+                ui_state.pending_slot_press = null;
+            }
+        }
+    }
+}
+
+/// Whether two SlotRefs refer to the same slot.
+fn slotRefsEqual(a: ui.SlotRef, b: ui.SlotRef) bool {
+    return switch (a) {
+        .inventory => |ai| switch (b) {
+            .inventory => |bi| ai == bi,
+            else => false,
+        },
+        .gear => |ag| switch (b) {
+            .gear => |bg| ag == bg,
+            else => false,
+        },
+        .skill_bar => |ai| switch (b) {
+            .skill_bar => |bi| ai == bi,
+            else => false,
+        },
+        .learned_skill => |as| switch (b) {
+            .learned_skill => |bs| as == bs,
+            else => false,
+        },
+    };
+}
+
+/// The click intents an inventory-slot click can resolve to. `none` carries
+/// no action (plain single click awaiting a double, or a no-op combo).
+const ItemIntent = enum { equip_main, equip_off, salvage, none };
+
+/// Resolve a click (button + modifiers + double-click state) to an intent.
+/// Precedence: shift > ctrl > alt > plain-double; combos (2+ modifiers) are
+/// a no-op. Pure — testable without input/state.
+///   shift+left → salvage; shift+right → none
+///   ctrl+left → equip_main; ctrl+right → equip_off
+///   alt+left → equip_off; alt+right → equip_main
+///   plain double-left → equip_main; plain double-right → equip_off
+///   plain single → none (seeds a pending double)
+fn resolveItemClick(button: ui.ClickButton, modifiers: types.Modifiers, is_double: bool) ItemIntent {
+    const combo: u8 = @as(u8, @intFromBool(modifiers.shift)) + @as(u8, @intFromBool(modifiers.ctrl)) + @as(u8, @intFromBool(modifiers.alt));
+    if (combo >= 2) return .none;
+    if (modifiers.shift) return if (button == .left) .salvage else .none;
+    if (modifiers.ctrl) return if (button == .left) .equip_main else .equip_off;
+    if (modifiers.alt) return if (button == .left) .equip_off else .equip_main;
+    return if (is_double) (if (button == .left) .equip_main else .equip_off) else .none;
+}
+
+/// Resolve an inventory-slot click into an orchestrator action, with double-
+/// click detection. Only inventory slots are clickable this slice (gear /
+/// skills panels have no builders yet); non-inventory sources are ignored.
+/// Anytime — not gated on the event stack (salvaging/equipping/learning
+/// during enemy turns is allowed). See `handleDrag`.
+fn resolveInventoryClick(
+    history: *GameStateHistory,
+    source: ui.SlotRef,
+    button: ui.ClickButton,
+    modifiers: types.Modifiers,
+) void {
+    const slot_index = switch (source) {
+        .inventory => |i| i,
+        else => return, // gear/skill slots: no click behavior yet
+    };
+    const ui_state = &history.session.ui_state;
+    const now = history.session.session_clock;
+
+    // Double-click = a prior plain single click on the same slot + same
+    // button within the threshold window.
+    const is_double = if (ui_state.last_item_click) |last| blk: {
+        if (last.slot_index == slot_index and last.button == button and
+            now - last.time <= ui.double_click_threshold_us)
+            break :blk true;
+        break :blk false;
+    } else false;
+
+    const intent = resolveItemClick(button, modifiers, is_double);
+    const current = &history.current_state;
+    const allocator = history.current_arena.allocator();
+    switch (intent) {
+        .equip_main, .equip_off => {
+            event_handlers.pushPlayerAction(current, .{ .player_use_inventory_item = .{
+                .inventory_slot_index = slot_index,
+                .off_hand = intent == .equip_off,
+            } }, allocator);
+            ui_state.last_item_click = null; // consumed
+        },
+        .salvage => {
+            event_handlers.pushPlayerAction(current, .{ .player_salvage_inventory_item = .{
+                .inventory_slot_index = slot_index,
+            } }, allocator);
+            ui_state.last_item_click = null;
+        },
+        .none => {
+            // Seed a pending double ONLY for plain (no-modifier) single
+            // clicks that didn't fire. Modifier-clicks that no-op (combos,
+            // shift+right) clear it so they don't pair with a later plain click.
+            const combo: u8 = @as(u8, @intFromBool(modifiers.shift)) + @as(u8, @intFromBool(modifiers.ctrl)) + @as(u8, @intFromBool(modifiers.alt));
+            if (combo == 0 and !is_double) {
+                ui_state.last_item_click = .{ .slot_index = slot_index, .button = button, .time = now };
+            } else {
+                ui_state.last_item_click = null;
+            }
+        },
     }
 }
 
@@ -865,41 +1041,70 @@ pub fn resolveTileCursor(
         }
     }
 }
-test "dragToEvent maps valid drags and blocks cross-domain drops" {
-    // inventory → gear = equip
+test "dragToOrchestrator maps valid drags and blocks cross-domain drops" {
+    // inventory → gear = player_equip_to_gear
     {
-        const event = dragToEvent(.{ .inventory = 2 }, .{ .gear = .boots }).?;
-        try std.testing.expectEqual(@as(u32, 2), event.player_event.equip_item.inventory_slot_index);
-        try std.testing.expectEqual(types.GearSlot.boots, event.player_event.equip_item.gear_slot);
+        const orchestrator = dragToOrchestrator(.{ .inventory = 2 }, .{ .gear = .boots }).?;
+        try std.testing.expectEqual(@as(u32, 2), orchestrator.player_equip_to_gear.inventory_slot_index);
+        try std.testing.expectEqual(types.GearSlot.boots, orchestrator.player_equip_to_gear.gear_slot);
     }
-    // gear → inventory = unequip
+    // gear → inventory = player_unequip_from_gear
     {
-        const event = dragToEvent(.{ .gear = .amulet }, .{ .inventory = 5 }).?;
-        try std.testing.expectEqual(types.GearSlot.amulet, event.player_event.unequip_item.gear_slot);
-        try std.testing.expectEqual(@as(u32, 5), event.player_event.unequip_item.inventory_slot_index);
+        const orchestrator = dragToOrchestrator(.{ .gear = .amulet }, .{ .inventory = 5 }).?;
+        try std.testing.expectEqual(types.GearSlot.amulet, orchestrator.player_unequip_from_gear.gear_slot);
+        try std.testing.expectEqual(@as(u32, 5), orchestrator.player_unequip_from_gear.inventory_slot_index);
     }
-    // learned skill → skill bar = equip utility skill
+    // learned skill → skill bar = player_assign_utility_skill
     {
-        const event = dragToEvent(.{ .learned_skill = .replenish }, .{ .skill_bar = 1 }).?;
-        try std.testing.expectEqual(types.SkillId.replenish, event.player_event.equip_utility_skill.skill_id);
-        try std.testing.expectEqual(@as(u32, 1), event.player_event.equip_utility_skill.slot_index);
+        const orchestrator = dragToOrchestrator(.{ .learned_skill = .replenish }, .{ .skill_bar = 1 }).?;
+        try std.testing.expectEqual(types.SkillId.replenish, orchestrator.player_assign_utility_skill.skill_id);
+        try std.testing.expectEqual(@as(u32, 1), orchestrator.player_assign_utility_skill.slot_index);
     }
-    // skill bar → skill bar = swap
+    // skill bar → skill bar = player_swap_utility_skills
     {
-        const event = dragToEvent(.{ .skill_bar = 0 }, .{ .skill_bar = 3 }).?;
-        try std.testing.expectEqual(@as(u32, 0), event.player_event.swap_utility_skills.slot_a_index);
-        try std.testing.expectEqual(@as(u32, 3), event.player_event.swap_utility_skills.slot_b_index);
+        const orchestrator = dragToOrchestrator(.{ .skill_bar = 0 }, .{ .skill_bar = 3 }).?;
+        try std.testing.expectEqual(@as(u32, 0), orchestrator.player_swap_utility_skills.slot_a_index);
+        try std.testing.expectEqual(@as(u32, 3), orchestrator.player_swap_utility_skills.slot_b_index);
     }
-    // skill bar → learned skill (skills menu) = unequip utility skill
+    // skill bar → learned skill (skills menu) = player_clear_utility_skill
     {
-        const event = dragToEvent(.{ .skill_bar = 2 }, .{ .learned_skill = .slice }).?;
-        try std.testing.expectEqual(@as(u32, 2), event.player_event.unequip_utility_skill.slot_index);
+        const orchestrator = dragToOrchestrator(.{ .skill_bar = 2 }, .{ .learned_skill = .slice }).?;
+        try std.testing.expectEqual(@as(u32, 2), orchestrator.player_clear_utility_skill.slot_index);
     }
     // Cross-domain and nonsensical drops are no-ops.
-    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .inventory = 0 }, .{ .skill_bar = 0 }));
-    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .learned_skill = .slice }, .{ .gear = .coat }));
-    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .gear = .coat }, .{ .gear = .boots }));
+    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .inventory = 0 }, .{ .skill_bar = 0 }));
+    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .learned_skill = .slice }, .{ .gear = .coat }));
+    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .gear = .coat }, .{ .gear = .boots }));
     // inventory → inventory move is unsupported (returns null).
-    try std.testing.expectEqual(@as(?Event, null), dragToEvent(.{ .inventory = 0 }, .{ .inventory = 1 }));
+    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .inventory = 0 }, .{ .inventory = 1 }));
+}
+
+test "resolveItemClick: modifier precedence and double-click" {
+    const none_mods: types.Modifiers = .{};
+    // Plain single clicks seed no intent (awaiting a double).
+    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.left, none_mods, false));
+    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.right, none_mods, false));
+    // Plain double-clicks fire the equip intent (left → main, right → off).
+    try std.testing.expectEqual(ItemIntent.equip_main, resolveItemClick(.left, none_mods, true));
+    try std.testing.expectEqual(ItemIntent.equip_off, resolveItemClick(.right, none_mods, true));
+    // ctrl+click mirrors double-click (left → main, right → off), single fires.
+    try std.testing.expectEqual(ItemIntent.equip_main, resolveItemClick(.left, .{ .ctrl = true }, false));
+    try std.testing.expectEqual(ItemIntent.equip_off, resolveItemClick(.right, .{ .ctrl = true }, false));
+    // alt swaps the button's handedness (left → off, right → main).
+    try std.testing.expectEqual(ItemIntent.equip_off, resolveItemClick(.left, .{ .alt = true }, false));
+    try std.testing.expectEqual(ItemIntent.equip_main, resolveItemClick(.right, .{ .alt = true }, false));
+    // shift+left → salvage; shift+right → none.
+    try std.testing.expectEqual(ItemIntent.salvage, resolveItemClick(.left, .{ .shift = true }, false));
+    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.right, .{ .shift = true }, false));
+    // Combos (2+ modifiers) are no-ops regardless of button.
+    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.left, .{ .shift = true, .ctrl = true }, false));
+    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.right, .{ .ctrl = true, .alt = true }, true));
+    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.left, .{ .shift = true, .alt = true }, true));
+}
+
+test "isSkillLearned: found / not found" {
+    const learned = [_]types.SkillId{ .slice, .bash };
+    try std.testing.expect(event_handlers.isSkillLearned(&learned, .slice));
+    try std.testing.expect(!event_handlers.isSkillLearned(&learned, .blink));
 }
 

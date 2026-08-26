@@ -244,7 +244,8 @@ Open:
 - buildTopBar: options button (top-left), combat log summary.
 - buildGearPanel: equipped gear slots (weapons, amulet, coat, gloves, pants,
   boots).
-- buildInventoryPanel: 8×12 grid, material counts on right side.
+- buildInventoryPanel: 8×12 grid, material counts on right side. DONE
+  (grid + material sidebar + item icons + click/drag UX — see DONE.md).
 - buildSkillsPanel: learned skills grid (draggable for swapping utility
   slots).
 - buildEnemyInspectPanel: entity stats, skill bar with cooldowns, active
@@ -334,19 +335,20 @@ Settled — see DESIGN → Decorations & Footprint. WIRING progress:
 
 ## Drag & Drop
 
-Core lifecycle DONE (SlotRef/DragState, pointer, slotAt/slotRefAt, handleDrag,
-dragToEvent, drag ghost — history in DONE.md). Open:
+Core lifecycle DONE (SlotRef/DragState, pointer, slotAt/slotRefAt,
+handleDrag, drag ghost — history in DONE.md). The movement-threshold
+click/drag disambiguation + inventory click intents (equip / salvage /
+learn, with modifier + double-click UX) + drag refactor to orchestrators
+are DONE — see DONE.md (inventory click+drag slice). Open:
 
 - Cancel drag / snap item back when the pointer release is lost outside the
   game (focus loss, pointer leaves window) — currently a lost mouse-up leaves
   the drag latched to the cursor.
-- Click vs drag disambiguation: movement threshold 0 (any move = drag), pure
-  press-release = click; items get double-click (L/R) and modifier+click for
-  different behaviors (needs a time source for double-click).
-- inventory → inventory move/swap event + handler (dragToEvent returns null
-  for now).
-- Panel builders must emit ref-bearing Slots before drag is usable in-game
-  (buildInventoryPanel/buildGearPanel/buildSkillsPanel — see UI section).
+- inventory → inventory move/swap event + handler (dragToOrchestrator
+  returns null for now).
+- Gear/skills panel builders must emit ref-bearing Slots before drag is
+  usable in-game for those domains (buildInventoryPanel emits inventory
+  refs already; buildGearPanel/buildSkillsPanel — see UI section).
 - Coordinate-space reconciliation with renderer: pointer→reference-space
   conversion and screenToTile share an unverified assumption (see rendering).
 

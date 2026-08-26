@@ -552,6 +552,58 @@ pub const PlayerInputEvent = union(enum) {
         caster_index: u32,
         skill_id: SkillId,
     },
+
+    // --- Inventory/gear/skill: click + drag orchestrators ---
+    // Player input ONLY pushes PlayerInputEvents; the machinery events
+    // (equip_item, unequip_item, learn_skill, salvage_item,
+    // equip_utility_skill, swap_utility_skills, unequip_utility_skill) are
+    // always handler-pushed children of these. So the replay whitelist
+    // (isPlayerAction = "is a PlayerInputEvent") can't be bypassed by the
+    // input path. See DESIGN → Determinism & Tiebreaking → Replay
+    // PLAYER-ACTION LEGALITY (orchestrator convention).
+    //
+    // Click "activate" an inventory item (double-click / ctrl / alt). The
+    // handler resolves the item type: weapon → equip_item (main or off per
+    // off_hand); other gear → equip_item (its own slot); skill tome →
+    // learn_skill if not yet learned, else salvage_item. The learn-vs-
+    // salvage decision is made from live player_data.learned_skills, so it
+    // is deterministic across live/replay.
+    player_use_inventory_item: struct {
+        inventory_slot_index: u32,
+        off_hand: bool = false,
+    },
+    // Click "salvage" an inventory item (shift+left). Handler pushes
+    // salvage_item.
+    player_salvage_inventory_item: struct {
+        inventory_slot_index: u32,
+    },
+    // Drag inventory → gear slot. Handler pushes equip_item.
+    player_equip_to_gear: struct {
+        inventory_slot_index: u32,
+        gear_slot: GearSlot,
+    },
+    // Drag gear → inventory slot. Handler pushes unequip_item.
+    player_unequip_from_gear: struct {
+        gear_slot: GearSlot,
+        inventory_slot_index: u32,
+    },
+    // Drag learned skill → utility bar slot. Handler pushes
+    // equip_utility_skill.
+    player_assign_utility_skill: struct {
+        skill_id: SkillId,
+        slot_index: u32,
+    },
+    // Drag utility bar slot → utility bar slot. Handler pushes
+    // swap_utility_skills.
+    player_swap_utility_skills: struct {
+        slot_a_index: u32,
+        slot_b_index: u32,
+    },
+    // Drag utility bar slot → skills menu. Handler pushes
+    // unequip_utility_skill.
+    player_clear_utility_skill: struct {
+        slot_index: u32,
+    },
 };
 
 pub const LevelEvent = union(enum) {

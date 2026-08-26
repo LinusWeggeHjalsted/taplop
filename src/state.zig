@@ -1107,6 +1107,32 @@ pub const GameStateHistory = struct {
                 .dismiss_mission_complete, .swap_hands,
                 .move_player, .interact_with_npc,
                 => {},
+                // Inventory/gear/skill click + drag orchestrators: screen
+                // must be level/hub (panels only show there) and slot indices
+                // in range. The item-type → machinery resolution lives in the
+                // handler (deterministic from state), so no deeper check here.
+                .player_use_inventory_item => |use| {
+                    self.validateInventoryScreenAndSlot(use.inventory_slot_index);
+                },
+                .player_salvage_inventory_item => |salvage| {
+                    self.validateInventoryScreenAndSlot(salvage.inventory_slot_index);
+                },
+                .player_equip_to_gear => |equip| {
+                    self.validateInventoryScreenAndSlot(equip.inventory_slot_index);
+                },
+                .player_unequip_from_gear => |unequip| {
+                    self.validateInventoryScreenAndSlot(unequip.inventory_slot_index);
+                },
+                .player_assign_utility_skill => |assign| {
+                    self.validateUtilitySlot(assign.slot_index);
+                },
+                .player_swap_utility_skills => |swap| {
+                    self.validateUtilitySlot(swap.slot_a_index);
+                    self.validateUtilitySlot(swap.slot_b_index);
+                },
+                .player_clear_utility_skill => |clear| {
+                    self.validateUtilitySlot(clear.slot_index);
+                },
             },
             else => {},
         }
@@ -1136,6 +1162,25 @@ pub const GameStateHistory = struct {
             .{@tagName(skill_id)},
         ) catch "replay validation: skill not on bar or on cooldown";
         @panic(msg);
+    }
+
+    /// Inventory/gear orchestrators only run from a level or hub (panels are
+    /// shown nowhere else) and the inventory slot index must be in range.
+    fn validateInventoryScreenAndSlot(self: *GameStateHistory, inventory_slot_index: u32) void {
+        if (self.current_state.screen != .level and self.current_state.screen != .hub) {
+            @panic("replay validation: inventory action outside level/hub screen");
+        }
+        if (inventory_slot_index >= types.inventory_slot_count) {
+            @panic("replay validation: inventory slot index out of range");
+        }
+    }
+
+    /// Utility-skill orchestrators: the bar slot index must be in range.
+    fn validateUtilitySlot(self: *GameStateHistory, slot_index: u32) void {
+        _ = self;
+        if (slot_index >= types.utility_skill_count) {
+            @panic("replay validation: utility skill slot index out of range");
+        }
     }
 
     /// If the skill uses targeting, the target tile must be in the skill's

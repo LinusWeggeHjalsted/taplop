@@ -64,6 +64,16 @@ pub const UiState = struct {
     /// In-progress pointer drag of an inventory item / gear piece / skill.
     drag: ?DragState = null,
 
+    /// A pointer press on a content slot awaiting promotion-to-drag or
+    /// click-on-release (movement-threshold lifecycle). One per pointer at
+    /// a time.
+    pending_slot_press: ?PendingSlotPress = null,
+
+    /// Most recent plain single click on a content inventory slot, for
+    /// double-click detection. Cleared on modifier-clicks and on a fired
+    /// double. See `LastItemClick`.
+    last_item_click: ?LastItemClick = null,
+
     pub fn toggleMiddlePanel(self: *UiState, panel_id: MiddlePanelId) void {
         // If already open, close it
         for (&self.open_middle_panels) |*slot| {
@@ -120,6 +130,34 @@ pub const SlotRef = union(enum) {
 pub const DragState = struct {
     source: SlotRef,
     icon_sprite_id: []const u8,
+};
+
+/// Which mouse button a slot press used. Right-click is a distinct intent
+/// (equip-to-off-hand / alt-swapped equip) and never starts a drag (drags
+/// are left-button only; right-drag is camera pan on the world).
+pub const ClickButton = enum { left, right };
+
+/// A pointer press on a content slot that has not yet been promoted to a
+/// drag (movement below `drag_threshold_pixels`) or resolved as a click
+/// (release). The movement-threshold drag lifecycle: press records a
+/// pending press; move beyond threshold promotes it to `DragState`; release
+/// within threshold over the same slot is a click. Lives on UiState so it
+/// survives across frames until release and is cleared on screen transition.
+pub const PendingSlotPress = struct {
+    source: SlotRef,
+    icon_sprite_id: []const u8,
+    press_position: ScreenPosition,
+    button: ClickButton,
+};
+
+/// The most recent plain (no-modifier) single click on a content inventory
+/// slot, for double-click detection. Only plain single clicks that did NOT
+/// fire an intent seed a pending double (modifier-clicks fire immediately
+/// and clear this). Lives on UiState (off the undo timeline → replay-safe).
+pub const LastItemClick = struct {
+    slot_index: u32,
+    button: ClickButton,
+    time: u64,
 };
 
 // ============================================================
@@ -322,6 +360,16 @@ pub const health_globe_border_height: i32 = slot_size; // 256 tall by design
 /// Gap between top-level UI items (e.g. bottom-bar segments).
 pub const ui_gap: i32 = 16;
 pub const slot_padding: i32 = 8;
+/// Movement threshold (reference-space pixels) separating a click from a
+/// drag: a press that moves less than this before release is a click; at or
+/// beyond it the press promotes to a drag (ghost appears). Standard UI
+/// disambiguation — see DESIGN → UI Framework.
+pub const drag_threshold_pixels: i32 = 8;
+/// Double-click window (microseconds, session-clock). Two plain single
+/// clicks on the same inventory slot + same button within this window fire
+/// the double-click intent. Modifier-clicks (ctrl/alt/shift) fire
+/// immediately and don't seed a pending double.
+pub const double_click_threshold_us: u64 = 400_000;
 /// One inventory grid cell (half `slot_size` — ported from the Unity
 /// 256×256 ItemSlot.png at 0.5x). See DESIGN → UI Framework.
 pub const inventory_slot_size: i32 = 128;
@@ -1883,12 +1931,14 @@ pub fn buildInventoryPanel(
     var index: i32 = 0;
     while (index < types.inventory_slot_count) : (index += 1) {
         const cell = grid.cell(index);
-        // Slot frame (the hit-test surface once drag lands; no `ref` yet).
+        // Slot frame. Carries the slot identity so press/click handlers
+        // can resolve which slot was acted on (drag/drop + click intents).
         try elements.append(allocator, .{ .slot = .{
             .screen_position = cell.position(),
             .size = inventory_slot_size,
             .icon_sprite_id = "ui/item_slot",
             .icon_color = slot_color,
+            .ref = .{ .inventory = @intCast(index) },
         } });
         // Item icon on top of the frame. Passes hover/click through to the
         // slot beneath so the slot stays the single interaction target.
