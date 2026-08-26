@@ -473,6 +473,10 @@ pub const TextLabel = struct {
     font_size: i32,
     bold: bool = false,
     italic: bool = false,
+    /// Draw a pure-black edge-outline (the 8-direction drop-shadow ring,
+    /// same machinery as floating damage numbers) under the fill for
+    /// readability over varied backgrounds. See DESIGN → Animation.
+    outlined: bool = false,
     tooltip: ?Tooltip = null,
     blocks_input: bool = true,
 };
@@ -1799,10 +1803,33 @@ pub fn buildBottomBar(
 /// `inventory_panel_width` × `inventory_panel_height`); the grid sits
 /// `ui_gap` inside the top-left, the sidebar sits `ui_gap` right of the grid.
 /// Slots carry no `ref` yet — drag/drop + item icons are later slices.
+/// Font size for the material-count labels in the inventory sidebar (fits
+/// in the bottom-right corner of a 128px material icon).
+pub const material_count_font_size: i32 = 48;
+/// Inset from a material icon's bottom-right corner to its count label.
+pub const material_count_inset: i32 = 8;
+
+/// One entry in the inventory sidebar's material stack.
+const MaterialEntry = struct {
+    sprite_id: []const u8,
+    count: u32,
+    color_index: u32,
+};
+
+/// Build the inventory panel into `bounds`: a 9-slice background, an 8×12
+/// flush grid of `ui/item_slot` cells tinted with player-gradient index 5,
+/// and a 128-wide sidebar on the right showing the player's material counts
+/// as a stack of icons (bottom-aligned) each with an outlined count label in
+/// its bottom-right corner. `bounds` is the panel's outer rectangle (sized to
+/// `inventory_panel_width` × `inventory_panel_height`); the grid sits
+/// `ui_gap` inside the top-left, the sidebar sits `ui_gap` right of the grid.
+/// Slots carry no `ref` yet — drag/drop + item icons are later slices.
 pub fn buildInventoryPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     bounds: Rectangle,
+    materials: types.Materials,
     active_theme: types.ActiveColorTheme,
 ) !void {
     // Solid panel background — blocks input through the panel area.
@@ -1833,6 +1860,52 @@ pub fn buildInventoryPanel(
             .icon_sprite_id = "ui/item_slot",
             .icon_color = slot_color,
         } });
+    }
+
+    // Material sidebar: a 128-wide column to the right of the grid
+    // (`ui_gap` between them). The five material icons stack bottom-aligned
+    // — the stack's bottom edge aligns with the grid's bottom edge. Order
+    // top-to-bottom: wood, metal, leather, cloth, knowledge, each tinted
+    // with its fixed player-gradient index. Each icon carries an outlined
+    // count label in its bottom-right corner.
+    const sidebar_x = origin.x + ui_gap + types.inventory_columns * inventory_slot_size + ui_gap;
+    const grid_top = origin.y + ui_gap;
+    const grid_bottom = grid_top + types.inventory_rows * inventory_slot_size;
+    const material_entries = [_]MaterialEntry{
+        .{ .sprite_id = "ui/material_wood", .count = materials.wood, .color_index = 5 },
+        .{ .sprite_id = "ui/material_metal", .count = materials.metal, .color_index = 2 },
+        .{ .sprite_id = "ui/material_leather", .count = materials.leather, .color_index = 5 },
+        .{ .sprite_id = "ui/material_cloth", .count = materials.cloth, .color_index = 2 },
+        .{ .sprite_id = "ui/material_knowledge", .count = materials.knowledge, .color_index = 0 },
+    };
+    const stack_height = @as(i32, material_entries.len) * inventory_slot_size;
+    var icon_top = grid_bottom - stack_height;
+    for (material_entries) |entry| {
+        const icon_pos = ScreenPosition{ .x = sidebar_x, .y = icon_top };
+        const icon_color = p[@min(entry.color_index, types.gradient_color_count - 1)];
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = entry.sprite_id,
+            .screen_position = icon_pos,
+            .width = inventory_slot_size,
+            .height = inventory_slot_size,
+            .color = icon_color,
+            .blocks_input = false,
+        } });
+        // Count label: bottom-right corner of the icon, outlined for
+        // readability over the icon art.
+        const count_text = try std.fmt.allocPrint(allocator, "{d}", .{entry.count});
+        const label_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = count_text,
+            .screen_position = .{
+                .x = sidebar_x + inventory_slot_size - label_width - material_count_inset,
+                .y = icon_top + inventory_slot_size - material_count_font_size - material_count_inset,
+            },
+            .font_size = material_count_font_size,
+            .outlined = true,
+            .blocks_input = false,
+        } });
+        icon_top += inventory_slot_size;
     }
 }
 

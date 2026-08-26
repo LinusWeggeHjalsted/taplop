@@ -1072,14 +1072,26 @@ pub const RaylibBackend = struct {
         const font_size: f32 = @floatFromInt(label.font_size);
         const spacing: f32 = font_size / @as(f32, @floatFromInt(ui.glyph_spacing_font_divisor));
         const color = if (std.meta.eql(label.color, ui.default_tint)) theme_lightest else label.color;
-        rl.drawTextEx(
-            self.font,
-            text,
-            .{ .x = @floatFromInt(label.screen_position.x), .y = @floatFromInt(label.screen_position.y) },
-            font_size,
-            spacing, // per-glyph spacing shared with FontMetrics measure
-            toRaylibColor(color, 255),
-        );
+        const pos = rl.Vector2{ .x = @floatFromInt(label.screen_position.x), .y = @floatFromInt(label.screen_position.y) };
+        // Outlined text: a pure-black 8-direction drop-shadow ring under the
+        // fill, reusing the same machinery as floating damage numbers (see
+        // DESIGN → Animation). UI is drawn 1:1 at reference resolution into
+        // the render target, so no world_scale — `text_outline_thickness` is
+        // used directly. 9 draws per label; cheap for the rare outlined UI
+        // text (material counts today).
+        if (label.outlined) {
+            const black = toRaylibColor(.{ .r = 0, .g = 0, .b = 0 }, 255);
+            const o: f32 = @floatFromInt(text_outline_thickness);
+            const dirs = [_]struct { dx: f32, dy: f32 }{
+                .{ .dx = -o, .dy = -o }, .{ .dx = 0, .dy = -o }, .{ .dx = o, .dy = -o },
+                .{ .dx = -o, .dy = 0 }, .{ .dx = o, .dy = 0 },
+                .{ .dx = -o, .dy = o }, .{ .dx = 0, .dy = o }, .{ .dx = o, .dy = o },
+            };
+            for (dirs) |d| {
+                rl.drawTextEx(self.font, text, .{ .x = pos.x + d.dx, .y = pos.y + d.dy }, font_size, spacing, black);
+            }
+        }
+        rl.drawTextEx(self.font, text, pos, font_size, spacing, toRaylibColor(color, 255));
     }
 
     fn drawFillSprite(self: *RaylibBackend, fill: ui.FillSprite) void {

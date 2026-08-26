@@ -4161,3 +4161,40 @@ follow-up slice).
   without disturbing the layout when their builders land. Called from the
   level/hub branch of `view()` after the bottom bar. Horizontal scroll
   (`ui_state.middle_section_scroll_offset`) is a later slice.
+
+### Inventory panel — material sidebar slice (DONE)
+
+Second slice of `buildInventoryPanel`: the right-hand 128-wide sidebar
+showing the player's five material counts as a bottom-aligned stack of
+tinted icons, each with an outlined count label in its bottom-right corner.
+
+- **Assets:** ported the five Unity `{Material}Salvage.png` sprites (already
+  128×128 RGBA, no rescale needed) to `assets/ui/material_{wood,metal,
+  leather,cloth,knowledge}.png`. Sprite ids: `ui/material_*`. Auto-embedded.
+- **Outlined UI text:** added `outlined: bool` to `ui.TextLabel`. When set,
+  `RaylibBackend.drawTextLabel` draws a pure-black 8-direction drop-shadow
+  ring (offset radius `text_outline_thickness` = 8 source px) under the fill
+  — the same machinery as floating damage numbers (see DESIGN → Animation),
+  reused in the UI draw path. UI is drawn 1:1 at reference resolution into
+  the render target, so no `world_scale`; the thickness constant is used
+  directly. 9 draws per outlined label; cheap for the rare outlined UI text
+  (material counts today). This is the first UI text to use the outline; the
+  `floating_text` world-overlay path remains the other consumer.
+- **Sidebar layout** (`buildInventoryPanel`): the 128-wide sidebar sits
+  `ui_gap` right of the grid (x = origin + ui_gap + 1024 + ui_gap). Five
+  material icons stack **bottom-aligned** — the stack's bottom edge meets
+  the grid's bottom edge (top of stack = grid_bottom − 5×128). Order
+  top-to-bottom with fixed player-gradient color indices:
+  wood (5), metal (2), leather (5), cloth (2), knowledge (0) — the spec'd
+  alternation. Each icon is an `Image` (128×128, `blocks_input = false` so
+  the panel behind it keeps the hit-test). Each carries a `TextLabel` count
+  (`material_count_font_size` = 48) in its bottom-right corner, inset
+  `material_count_inset` = 8px, `outlined = true`. The count is measured via
+  the font-metrics seam so it's truly right-aligned (label_x = icon_right −
+  measured_width − inset).
+- **Data source:** `current_state.player_data.materials` (the `Materials`
+  struct: wood/metal/leather/cloth/knowledge, all `u32`). Materials live on
+  `PlayerData`, not on the in-level `Entity` (entities carry `inventory`
+  items only), so the sidebar reads the same field in level and hub.
+- `buildInventoryPanel` now takes `font_metrics` + `materials` params;
+  `buildMiddlePanels` (view.zig) threads both through from `view()`.

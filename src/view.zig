@@ -207,7 +207,9 @@ pub fn view(
         buildMiddlePanels(
             &ui_elements,
             frame_allocator,
+            font_metrics,
             session,
+            current_state,
             active_theme,
         ) catch @panic("failed to build middle panels");
 
@@ -405,7 +407,9 @@ fn middleSectionRect() Rectangle {
 fn buildMiddlePanels(
     elements: *std.ArrayList(ui.UiElement),
     allocator: std.mem.Allocator,
+    font_metrics: ui.FontMetrics,
     session: *state.SessionState,
+    current_state: *const GameState,
     active_theme: types.ActiveColorTheme,
 ) !void {
     const section = middleSectionRect();
@@ -420,7 +424,14 @@ fn buildMiddlePanels(
                     .width = ui.inventory_panel_width,
                     .height = ui.inventory_panel_height,
                 };
-                try ui.buildInventoryPanel(elements, allocator, bounds, active_theme);
+                try ui.buildInventoryPanel(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    bounds,
+                    current_state.player_data.materials,
+                    active_theme,
+                );
                 break :blk ui.inventory_panel_width;
             },
             // Builders pending — gear / skills / enemy inspect reserve no space.
