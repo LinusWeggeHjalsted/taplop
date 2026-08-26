@@ -1824,11 +1824,37 @@ const MaterialEntry = struct {
 /// `inventory_panel_width` × `inventory_panel_height`); the grid sits
 /// `ui_gap` inside the top-left, the sidebar sits `ui_gap` right of the grid.
 /// Slots carry no `ref` yet — drag/drop + item icons are later slices.
+/// Sprite id for an item's inventory/gear icon. Weapons resolve per
+/// `WeaponType` (Unity's `WandItem` maps to our `staff`); gear types have
+/// one icon each; `skill_tome` uses a single generic tome icon (the taught
+/// skill is separate info — a per-skill tome icon is a later slice). All
+/// item icons live under `assets/items/` at 128×128 (ported from the Unity
+/// `Resources/Items/` sprites at native size). See DESIGN → UI Framework.
+pub fn itemIconSpriteId(item: types.Item) []const u8 {
+    return switch (item) {
+        .weapon => |weapon| switch (weapon.weapon_type) {
+            .sword => "items/sword",
+            .shield => "items/shield",
+            .spear => "items/spear",
+            .dagger => "items/dagger",
+            .axe => "items/axe",
+            .staff => "items/staff",
+        },
+        .amulet => "items/amulet",
+        .coat => "items/coat",
+        .gloves => "items/gloves",
+        .pants => "items/pants",
+        .boots => "items/boots",
+        .skill_tome => "items/skill_tome",
+    };
+}
+
 pub fn buildInventoryPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     bounds: Rectangle,
+    inventory: types.Inventory,
     materials: types.Materials,
     active_theme: types.ActiveColorTheme,
 ) !void {
@@ -1842,6 +1868,9 @@ pub fn buildInventoryPanel(
 
     const p = active_theme.player_gradient.colors;
     const slot_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    // Item icons render at player-gradient index 1 for now (per the current
+    // spec; per-item coloring is a later slice).
+    const item_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
 
     const origin = bounds.position();
     const grid = Grid{
@@ -1854,12 +1883,25 @@ pub fn buildInventoryPanel(
     var index: i32 = 0;
     while (index < types.inventory_slot_count) : (index += 1) {
         const cell = grid.cell(index);
+        // Slot frame (the hit-test surface once drag lands; no `ref` yet).
         try elements.append(allocator, .{ .slot = .{
             .screen_position = cell.position(),
             .size = inventory_slot_size,
             .icon_sprite_id = "ui/item_slot",
             .icon_color = slot_color,
         } });
+        // Item icon on top of the frame. Passes hover/click through to the
+        // slot beneath so the slot stays the single interaction target.
+        if (inventory.slots[@intCast(index)]) |item| {
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = itemIconSpriteId(item),
+                .screen_position = cell.position(),
+                .width = inventory_slot_size,
+                .height = inventory_slot_size,
+                .color = item_color,
+                .blocks_input = false,
+            } });
+        }
     }
 
     // Material sidebar: a 128-wide column to the right of the grid

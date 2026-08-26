@@ -4198,3 +4198,35 @@ tinted icons, each with an outlined count label in its bottom-right corner.
   items only), so the sidebar reads the same field in level and hub.
 - `buildInventoryPanel` now takes `font_metrics` + `materials` params;
   `buildMiddlePanels` (view.zig) threads both through from `view()`.
+
+### Inventory panel — item icons slice (DONE)
+
+Third slice of `buildInventoryPanel`: render the items actually in the
+player's inventory slots on top of the slot frames.
+
+- **Assets:** ported the 12 Unity `Resources/Items/*.png` sprites (already
+  128×128 RGBA, no rescale) to a new `assets/items/` folder:
+  `sword, shield, spear, dagger, axe, staff, amulet, coat, gloves, pants,
+  boots, skill_tome`. Unity's `WandItem` maps to our `WeaponType.staff`
+  (the enum name differs; the art is the wand). Auto-embedded by
+  `generated_assets.zig` + `generated_sprite_metadata.zig` (no build
+  wiring — new folder picked up automatically).
+- **`itemIconSpriteId(item: Item) []const u8`** (`ui.zig`, `pub` so the gear
+  panel reuses it): maps an `Item` to its `items/<id>` sprite. Weapons
+  resolve per `WeaponType`; gear types one each; `skill_tome` uses the
+  single generic tome icon (the taught skill is separate info — a per-skill
+  tome icon is a later slice).
+- **Slot rendering:** each non-null inventory slot now emits the `Slot`
+  frame (`ui/item_slot`, color index 5, the hit-test surface) followed by an
+  `Image` of the item icon on top (128×128, `blocks_input = false` so the
+  slot beneath stays the single interaction target). Item icons render at
+  **player-gradient color index 1** per the current spec (per-item coloring
+  is a later slice). Empty slots render just the frame, unchanged.
+- **Data source:** the live inventory rides on the player entity
+  (`ui.playerEntity(current_state).inventory`) — in-level pickups land on
+  `entity.inventory`; `player_data.inventory` is the persistent copy synced
+  only on `build_data_from_player` at exit, so reading it mid-level would be
+  stale. Materials still read from `player_data.materials` (entities carry
+  no materials field). `buildInventoryPanel` now takes an `inventory` param;
+  `buildMiddlePanels` resolves it from the player entity (defaulting to an
+  empty `Inventory` if there's no player, e.g. a degenerate hub).

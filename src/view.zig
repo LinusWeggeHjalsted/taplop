@@ -424,11 +424,18 @@ fn buildMiddlePanels(
                     .width = ui.inventory_panel_width,
                     .height = ui.inventory_panel_height,
                 };
+                // The live inventory rides on the player entity (in-level
+                // pickups land on `entity.inventory`; `player_data.inventory`
+                // is the persistent copy synced only on exit). Materials live
+                // on PlayerData (no entity field), so the sidebar reads
+                // `player_data.materials`.
+                const inventory = if (ui.playerEntity(current_state)) |player| player.inventory else types.Inventory{};
                 try ui.buildInventoryPanel(
                     elements,
                     allocator,
                     font_metrics,
                     bounds,
+                    inventory,
                     current_state.player_data.materials,
                     active_theme,
                 );
