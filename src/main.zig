@@ -142,7 +142,7 @@ fn update(
 
     // Always handle anytime input first (toggle_options_menu always works,
     // but other inputs are blocked when the options menu is open)
-    input_handlers.handleAnytimeInput(history, player_input.anytime);
+    input_handlers.handleAnytimeInput(history, player_input.anytime, player_input.pointer.position, ui_elements);
 
     // Options menu pauses the game
     if (history.session.ui_state.options_menu_open) return;

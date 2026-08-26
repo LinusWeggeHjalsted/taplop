@@ -38,6 +38,22 @@ const min_camera_zoom: f32 = camera_zoom_step;
 const max_camera_zoom: f32 = 1.0;
 const default_camera_zoom: f32 = 0.5;
 
+/// True when the pointer is over a skills-browser slot (a ref-bearing
+/// element whose ref is `.learned_skill`). Used to route the mouse wheel to
+/// skills-browser scroll instead of camera zoom. The skills panel's slots
+/// are only emitted when the panel is open, so a hit here implies the panel
+/// is open — no separate open-state check needed. See `handleAnytimeInput`.
+fn skillsSlotUnderPointer(
+    ui_elements: []const ui.UiElement,
+    position: types.ScreenPosition,
+) bool {
+    const ref = ui.refAt(ui_elements, position) orelse return false;
+    return switch (ref) {
+        .learned_skill => true,
+        else => false,
+    };
+}
+
 /// Write the current settings to `~/.ziglop/settings.txt` (best-effort —
 /// errors are swallowed since a failed preferences write is not critical;
 /// the preference just doesn't persist). Called as a `PendingWrite` writer
@@ -469,6 +485,12 @@ pub fn formatSessionTimestamp(
 pub fn handleAnytimeInput(
     history: *GameStateHistory,
     anytime: input.AnytimeInput,
+    /// Pointer position this frame, for scroll-delta routing (skills browser
+    /// scroll vs camera zoom). The skills panel is scrolled when the pointer
+    /// is over one of its slots — see `skillsSlotUnderPointer`.
+    pointer_position: types.ScreenPosition,
+    /// Last frame's UI elements — the pointer is over what was just drawn.
+    ui_elements: []const ui.UiElement,
 ) void {
     // Recoverable error popup is modal: when a pending error is set, only
     // `dismiss_error` and the scroll actions get through; everything else
@@ -611,17 +633,32 @@ pub fn handleAnytimeInput(
     if (history.session.ui_state.options_menu_open) return;
 
     if (anytime.scroll_delta != 0) {
-        // Additive zoom in fixed steps, clamped to [min, max]. Additive (not
-        // multiplicative) so one zoom-in followed by one zoom-out always
-        // returns to the exact same value (no float drift). scroll_delta is
-        // accumulated wheel notches (positive = scroll up = zoom in); a single
-        // notch is ±1.0, scaled by the step. Tune the step/bounds from feel.
-        const zoom_step: f32 = camera_zoom_step;
-        const delta: f32 = anytime.scroll_delta * zoom_step;
-        const clamped = @max(min_camera_zoom, @min(max_camera_zoom, history.settings.camera_zoom + delta));
-        if (clamped != history.settings.camera_zoom) {
-            history.settings.camera_zoom = clamped;
-            markSettingsDirty(history);
+        // If the pointer is over a skills-browser slot, scroll the browser
+        // instead of zooming the camera. One row per wheel notch (positive
+        // delta = scroll up = move toward the top). The offset is clamped to
+        // `[0, max_scroll_row]` in `buildSkillsPanel` (the view is the only
+        // place that knows `max_scroll_row`, which depends on the learned-
+        // skill count); the lower bound is clamped here so a downward scroll
+        // past 0 doesn't accumulate negative drift between frames.
+        if (skillsSlotUnderPointer(ui_elements, pointer_position)) {
+            const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+            history.session.ui_state.skills_scroll_offset -= delta_rows;
+            if (history.session.ui_state.skills_scroll_offset < 0) {
+                history.session.ui_state.skills_scroll_offset = 0;
+            }
+        } else {
+            // Additive zoom in fixed steps, clamped to [min, max]. Additive (not
+            // multiplicative) so one zoom-in followed by one zoom-out always
+            // returns to the exact same value (no float drift). scroll_delta is
+            // accumulated wheel notches (positive = scroll up = zoom in); a single
+            // notch is ±1.0, scaled by the step. Tune the step/bounds from feel.
+            const zoom_step: f32 = camera_zoom_step;
+            const delta: f32 = anytime.scroll_delta * zoom_step;
+            const clamped = @max(min_camera_zoom, @min(max_camera_zoom, history.settings.camera_zoom + delta));
+            if (clamped != history.settings.camera_zoom) {
+                history.settings.camera_zoom = clamped;
+                markSettingsDirty(history);
+            }
         }
     }
 
@@ -1113,3 +1150,26 @@ test "isSkillLearned: found / not found" {
     try std.testing.expect(!event_handlers.isSkillLearned(&learned, .blink));
 }
 
+
+test "skillsSlotUnderPointer: true over a learned_skill slot, false elsewhere" {
+    const elements = [_]ui.UiElement{
+        .{ .slot = .{
+            .screen_position = .{ .x = 0, .y = 0 },
+            .size = 256,
+            .icon_sprite_id = "ui/skill_button",
+            .ref = .{ .learned_skill = .slice },
+        } },
+        .{ .slot = .{
+            .screen_position = .{ .x = 300, .y = 0 },
+            .size = 128,
+            .icon_sprite_id = "ui/item_slot",
+            .ref = .{ .inventory = 0 },
+        } },
+    };
+    // Over the learned-skill slot.
+    try std.testing.expect(skillsSlotUnderPointer(&elements, .{ .x = 10, .y = 10 }));
+    // Over the inventory slot.
+    try std.testing.expect(!skillsSlotUnderPointer(&elements, .{ .x = 310, .y = 10 }));
+    // Over empty space.
+    try std.testing.expect(!skillsSlotUnderPointer(&elements, .{ .x = 500, .y = 500 }));
+}

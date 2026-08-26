@@ -502,8 +502,28 @@ fn buildMiddlePanels(
                 );
                 break :blk panel_width;
             },
-            // Builders pending — skills / enemy inspect reserve no space.
-            .skills, .enemy_inspect => continue,
+            .skills => blk: {
+                const bounds = Rectangle{
+                    .x = cursor_x,
+                    .y = section.y + @divTrunc(section.height - ui.inventory_panel_height, 2),
+                    .width = ui.skills_panel_width,
+                    .height = ui.inventory_panel_height,
+                };
+                const drag_source: ?ui.SlotRef = if (session.ui_state.drag) |d| d.source else null;
+                try ui.buildSkillsPanel(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    bounds,
+                    current_state.player_data.learned_skills,
+                    active_theme,
+                    &session.ui_state.skills_scroll_offset,
+                    drag_source,
+                );
+                break :blk ui.skills_panel_width;
+            },
+            // Builder pending — enemy inspect reserves no space.
+            .enemy_inspect => continue,
         };
         cursor_x += width + ui.ui_gap;
     }

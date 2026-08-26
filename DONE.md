@@ -4598,3 +4598,53 @@ column under the main-hand; weapon row (main+off) spans the top.
 `gearPanelWidth` updated to match the new layout: 2 slots + 2 gaps to the
 stats column + stats text + 2 side margins. Panel is wider but shorter,
 and the "what you're wearing / what it gives you" split reads cleanly.
+
+### Skills browser panel — display slice (done)
+
+`buildSkillsPanel` (ui.zig): a 9-slice `ui/panel` background at the same
+height as inventory/gear (`inventory_panel_height`), width = 4 × `slot_size`
+(256) + `ui_gap` (16) on each side = 1056 (`skills_panel_width`, replacing
+the stale 800 placeholder). Inside: a 4-wide flush grid of skill slots
+filling downward, one per learned skill in `learned_skills` order (parsed
+order — no sorting/grouping/search yet). Each slot is a `ui/skill_button`
+frame (player-gradient index 3) carrying `ref = .{ .learned_skill = ... }`
++ a non-blocking `skills/<tag>` icon overlay (index 1), mirroring the skill
+bar. No `action` — clicking a browser entry doesn't fire a skill (it's not
+on the bar); interaction is drag-to-bar, a later slice. The drag source's
+icon is suppressed ("in flight"), matching inventory/gear; the frame keeps
+its ref so the slot stays a drop target.
+
+Vertical overflow cuts at a full skill's bottom (no half-skills): only
+whole rows within the visible grid height (`bounds.height - 2*ui_gap`,
+`visible_rows = floor(grid_height / slot_size)`) are emitted, drawn at the
+TOP of the grid region (view-relative positions — the scrollbar thumb
+conveys position, same pattern as `buildErrorPopup`'s body window). A
+scrollbar (`solid_rect` track + proportional thumb) sits in the right
+`ui_gap` margin (12px centered in 16px) when the skill count overflows.
+
+`skills_scroll_offset` (rows, not pixels) lives on `UiState` (off the undo
+timeline, like the other scrolls). The builder clamps it to
+`[0, max_scroll_row]` authoritatively (only the view knows `max_scroll_row`,
+which depends on the learned-skill count); the lower bound is also clamped
+in the handler so downward-scroll-past-0 doesn't accumulate negative drift.
+
+Wired into `buildMiddlePanels` (view.zig): the `.skills` arm (previously
+`continue` — reserved no space) now lays out + builds the panel, vertically
+centered like inventory/gear. `skills_panel_width` is the arm's width.
+
+Wheel routing: `handleAnytimeInput` gained `pointer_position` +
+`ui_elements` params (the call site in `main.zig` already had both —
+`previous_view_state.ui_elements` + `player_input.pointer.position`).
+When the pointer is over a skills-browser slot (`skillsSlotUnderPointer` —
+a `refAt` hit whose ref is `.learned_skill`; the panel's slots are only
+emitted when open, so a hit implies the panel is open), the wheel scrolls
+the browser one row per notch instead of zooming the camera. Keyboard
+arrows + scrollbar drag are deferred (wheel-only this slice). The redirect
+is domain-scoped (only over a `.learned_skill` slot), so it never steals
+zoom over inventory/gear panels that are open simultaneously.
+
+Tests (ui.zig): few-skills (no scrollbar, offset clamped to 0), overflow
+(scrollbar present, only fully-visible rows emitted, no slot bottom exceeds
+the grid bottom, offset clamped to `max_scroll_row`), drag-source icon
+suppression with slot ref retained. `skillsSlotUnderPointer` test lives in
+input_handlers.zig (avoids a circular import ui.zig → input_handlers.zig).

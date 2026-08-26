@@ -247,7 +247,10 @@ Open:
 - buildInventoryPanel: 8×12 grid, material counts on right side. DONE
   (grid + material sidebar + item icons + click/drag UX — see DONE.md).
 - buildSkillsPanel: learned skills grid (draggable for swapping utility
-  slots).
+  slots). Display slice DONE — 4-wide grid of learned skills in parsed
+  order, scrollbar when overflow (wheel scrolls when the pointer is over a
+  skills slot); drag refs emitted (drag-to-bar is a later slice). Sorting /
+  grouping / search deferred. See DONE.md.
 - buildEnemyInspectPanel: entity stats, skill bar with cooldowns, active
   effects.
 - buildWorldMap: campaign graph visualization, clickable hubs/missions.
@@ -348,7 +351,8 @@ are DONE — see DONE.md (inventory click+drag slice). Open:
   returns null for now).
 - Gear/skills panel builders must emit ref-bearing Slots before drag is
   usable in-game for those domains (buildInventoryPanel emits inventory
-  refs already; buildGearPanel/buildSkillsPanel — see UI section).
+  refs already; buildGearPanel emits gear refs; buildSkillsPanel emits
+  learned-skill refs — see UI section).
 - Coordinate-space reconciliation with renderer: pointer→reference-space
   conversion and screenToTile share an unverified assumption (see rendering).
 

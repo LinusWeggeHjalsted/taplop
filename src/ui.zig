@@ -58,6 +58,12 @@ pub const UiState = struct {
     /// Middle section horizontal scroll offset (for when panels exceed width).
     middle_section_scroll_offset: i32 = 0,
 
+    /// Skills browser vertical scroll offset, in grid ROWS (not pixels).
+    /// Clamped to `[0, max_scroll_row]` in `buildSkillsPanel` (the view is
+    /// the only place that knows `max_scroll_row`, which depends on the
+    /// learned-skill count). Off the undo timeline like the other scrolls.
+    skills_scroll_offset: i32 = 0,
+
     /// Combat log scroll offset (for full combat log view).
     combat_log_scroll_offset: i32 = 0,
 
@@ -406,7 +412,14 @@ pub const inventory_slot_size: i32 = 128;
 /// Height = 16 + 1536 + 16            = 1568.
 pub const inventory_panel_width: i32 = 1200;
 pub const inventory_panel_height: i32 = 1568;
-pub const skills_panel_width: i32 = 800;
+/// Skills panel: `ui_gap` clearance + a 4-wide grid of `slot_size` (256)
+/// cells (1024 wide) + `ui_gap` clearance. Width = 16 + 1024 + 16 = 1056.
+/// Height shares `inventory_panel_height` with the other middle panels.
+pub const skills_panel_width: i32 = 1056;
+pub const skills_panel_columns: i32 = 4;
+/// Scrollbar lives in the panel's right `ui_gap` margin (16px), so the
+/// track is 12px centered within it. See `buildSkillsPanel`.
+pub const skills_scrollbar_width: i32 = 12;
 pub const enemy_inspect_panel_width: i32 = 600;
 
 /// Default tint for UI elements. For sprites (Button/Slot/Image) this means
@@ -2543,6 +2556,297 @@ pub fn buildGearPanel(
         stat_y += stat_line_height;
     }
     _ = font_metrics;
+}
+
+/// Skills browser panel: a 9-slice background, then a 4-wide grid of
+/// `slot_size` (256) skill slots filling downward from the top-left, one
+/// per learned skill in `learned_skills` order (parsed order — no
+/// sorting/grouping/search yet). Each slot is a `ui/skill_button` frame
+/// tinted with player-gradient index 3 carrying `ref = .{ .learned_skill =
+/// ... }` (future drag source/drop target) + a non-blocking `skills/<tag>`
+/// icon overlay tinted with index 1, mirroring the skill bar. No `action` —
+/// clicking a browser entry doesn't fire a skill (it's not on the bar);
+/// interaction is drag-to-bar, a later slice. The drag source's icon is
+/// suppressed ("in flight"), matching inventory/gear.
+///
+/// Vertical overflow is cut at a full skill's bottom (no half-skills): only
+/// whole rows within the visible height are emitted. A scrollbar (track +
+/// proportional thumb) sits in the right `ui_gap` margin when the skill
+/// count exceeds the visible rows. `scroll_offset` (in rows) is clamped to
+/// `[0, max_scroll_row]` here — the authoritative clamp, since only the
+/// view knows `max_scroll_row`.
+pub fn buildSkillsPanel(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    bounds: Rectangle,
+    learned_skills: []const SkillId,
+    active_theme: types.ActiveColorTheme,
+    /// In/out: current scroll offset in rows; clamped here to `[0, max_scroll_row]`.
+    scroll_offset: *i32,
+    /// The slot currently being dragged from, if any. The skill icon is
+    /// suppressed on the source slot so it reads as "in flight" (shown only
+    /// as the drag ghost). The frame + ref still emit so the slot stays a
+    /// drop target.
+    drag_source: ?SlotRef,
+) !void {
+    // Solid panel background — blocks input through the panel area.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = bounds.position(),
+        .width = bounds.width,
+        .height = bounds.height,
+    } });
+
+    const p = active_theme.player_gradient.colors;
+    const frame_color = p[@min(@as(u32, 3), types.gradient_color_count - 1)];
+    const icon_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
+
+    const origin = bounds.position();
+    const grid_origin: ScreenPosition = .{
+        .x = origin.x + ui_gap,
+        .y = origin.y + ui_gap,
+    };
+    const grid_height = bounds.height - 2 * ui_gap;
+    const visible_rows = @divFloor(grid_height, slot_size);
+    const total_rows = @divTrunc(@as(i32, @intCast(learned_skills.len)) + skills_panel_columns - 1, skills_panel_columns);
+    const max_scroll_row = @max(@as(i32, 0), total_rows - visible_rows);
+    // Authoritative clamp (the input handler can't know max_scroll_row).
+    if (scroll_offset.* < 0) scroll_offset.* = 0;
+    if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
+    const first_row = scroll_offset.*;
+
+    const grid = Grid{
+        .origin = grid_origin,
+        .cell_width = slot_size,
+        .cell_height = slot_size,
+        .gap = 0,
+        .columns = skills_panel_columns,
+    };
+
+    // Emit only the fully-visible rows, drawn at the TOP of the grid region
+    // (view-relative positions — the scrollbar thumb conveys the scroll
+    // position, same pattern as `buildErrorPopup`'s body window). A row that
+    // wouldn't fully fit is not emitted (no half-skills).
+    const visible_row_count = @min(visible_rows, @max(@as(i32, 0), total_rows - first_row));
+    var view_row: i32 = 0;
+    while (view_row < visible_row_count) : (view_row += 1) {
+        var column: i32 = 0;
+        while (column < skills_panel_columns) : (column += 1) {
+            const index: usize = @intCast((first_row + view_row) * skills_panel_columns + column);
+            if (index >= learned_skills.len) break;
+            const skill_id = learned_skills[index];
+            const cell = grid.cell(view_row * skills_panel_columns + column);
+            const ref: SlotRef = .{ .learned_skill = skill_id };
+            const is_drag_source = if (drag_source) |src| src.eql(ref) else false;
+            const definition = lookups.getSkillDefinition(skill_id);
+            const slot_tooltip: ?Tooltip = if (definition) |def|
+                try buildSkillTooltip(allocator, def)
+            else
+                null;
+            // Frame carries the slot identity (drag source + drop target).
+            try elements.append(allocator, .{ .slot = .{
+                .screen_position = cell.position(),
+                .size = slot_size,
+                .icon_sprite_id = "ui/skill_button",
+                .icon_color = frame_color,
+                .ref = ref,
+                .tooltip = slot_tooltip,
+            } });
+            // Skill icon on top, suppressed on the drag source ("in flight").
+            if (!is_drag_source) {
+                try elements.append(allocator, .{ .image = .{
+                    .sprite_id = skillIconSpriteId(skill_id),
+                    .screen_position = cell.position(),
+                    .width = slot_size,
+                    .height = slot_size,
+                    .color = icon_color,
+                    .blocks_input = false,
+                } });
+            }
+        }
+    }
+
+    // Scrollbar (only when the skill count overflows the visible rows). Track
+    // + proportional thumb in the right `ui_gap` margin, spanning the grid's
+    // height. Mirrors `buildErrorPopup`'s scrollbar geometry.
+    if (total_rows > visible_rows) {
+        const track_x = origin.x + bounds.width - ui_gap +
+            @divFloor(ui_gap - skills_scrollbar_width, 2);
+        const track_y = grid_origin.y;
+        const track_height = visible_rows * slot_size;
+        const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = track_x, .y = track_y },
+            .width = skills_scrollbar_width,
+            .height = track_height,
+            .color = track_color,
+        } });
+        const thumb_height = @max(
+            @as(i32, 40),
+            @divTrunc(track_height * visible_rows, total_rows),
+        );
+        const thumb_y = track_y +
+            @divTrunc(scroll_offset.* * (track_height - thumb_height), max_scroll_row);
+        const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = track_x, .y = thumb_y },
+            .width = skills_scrollbar_width,
+            .height = thumb_height,
+            .color = thumb_color,
+        } });
+    }
+
+    _ = font_metrics;
+}
+
+test "buildSkillsPanel: few skills — one row, slots + icons, no scrollbar" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const learned = [_]SkillId{ .slice, .stab, .chop };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = black,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    var elements: UiElementList = .empty;
+    var scroll_offset: i32 = 5; // clamped to 0 (no overflow)
+
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = skills_panel_width,
+        .height = inventory_panel_height,
+    };
+    try buildSkillsPanel(&elements, arena.allocator(), metrics, bounds, &learned, theme, &scroll_offset, null);
+
+    // 1 panel + 3 slots + 3 icons, no scrollbar.
+    try std.testing.expectEqual(@as(usize, 7), elements.items.len);
+    try std.testing.expectEqual(@as(i32, 0), scroll_offset); // clamped
+    for (elements.items) |element| switch (element) {
+        .solid_rect => @panic("unexpected scrollbar for few skills"),
+        else => {},
+    };
+}
+
+test "buildSkillsPanel: overflow — scrollbar present, only visible rows emitted, no half-skills" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // 25 skills → 7 rows (ceil(25/4)); visible_rows = 6 (1536/256). Overflow
+    // by 1 row → max_scroll_row = 1.
+    const learned = [_]SkillId{
+        .slice, .stab, .chop, .cleave,
+        .slam, .skewer, .impale, .bash,
+        .blink, .blitz, .daze, .focus,
+        .howl, .reflect, .replenish, .retreating_swipe,
+        .spark, .spinblade, .stone_form, .swap,
+        .that_which_lingers, .throw, .toss, .vampiric_strike,
+        .flash_strike,
+    };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = black,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    var elements: UiElementList = .empty;
+    var scroll_offset: i32 = 100; // clamped to max_scroll_row = 1
+
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = skills_panel_width,
+        .height = inventory_panel_height,
+    };
+    try buildSkillsPanel(&elements, arena.allocator(), metrics, bounds, &learned, theme, &scroll_offset, null);
+
+    // scroll clamped to the last row.
+    try std.testing.expectEqual(@as(i32, 1), scroll_offset);
+
+    // Count slots: only the fully-visible rows emit. At scroll_offset = 1,
+    // visible rows are [1, 7) = 6 rows = 24 cells, but row 6 has only 1 skill
+    // (25 - 24 = 1), so 24 - 3 = 21 slots. Each slot has an icon → 21 icons.
+    var slot_count: usize = 0;
+    var icon_count: usize = 0;
+    var solid_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .slot => slot_count += 1,
+        .image => icon_count += 1,
+        .solid_rect => solid_count += 1,
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 21), slot_count);
+    try std.testing.expectEqual(@as(usize, 21), icon_count);
+    // Scrollbar: track + thumb.
+    try std.testing.expectEqual(@as(usize, 2), solid_count);
+
+    // No slot's bottom edge exceeds the visible grid bottom (no half-skills).
+    const grid_top = ui_gap;
+    const grid_bottom = grid_top + 6 * slot_size; // visible_rows * slot_size
+    for (elements.items) |element| switch (element) {
+        .slot => |slot| {
+            const bottom = slot.screen_position.y + slot.size;
+            try std.testing.expect(bottom <= grid_bottom);
+        },
+        else => {},
+    };
+}
+
+test "buildSkillsPanel: drag source suppresses the icon, keeps the slot ref" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const learned = [_]SkillId{ .slice, .stab };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = black,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    var elements: UiElementList = .empty;
+    var scroll_offset: i32 = 0;
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = skills_panel_width,
+        .height = inventory_panel_height,
+    };
+    try buildSkillsPanel(
+        &elements,
+        arena.allocator(),
+        metrics,
+        bounds,
+        &learned,
+        theme,
+        &scroll_offset,
+        SlotRef{ .learned_skill = .slice }, // dragging the first skill
+    );
+
+    // The first slot keeps its ref (drop target); its icon is suppressed.
+    var found_source_slot = false;
+    var image_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .slot => |slot| if (slot.ref != null and slot.ref.?.eql(.{ .learned_skill = .slice })) {
+            found_source_slot = true;
+        },
+        .image => image_count += 1,
+        else => {},
+    };
+    try std.testing.expect(found_source_slot);
+    // Only the second skill's icon emits; the drag source's is suppressed.
+    try std.testing.expectEqual(@as(usize, 1), image_count);
 }
 
 /// Top bar: options button flush in the top-left corner, then `ui_gap`,
