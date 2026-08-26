@@ -4056,6 +4056,11 @@ Two halves:
   the real PlayerData is unchanged). Reuses the existing `write_save` handler
   (`!replaying`-gated, recorded in the session log as a no-op on replay,
   recoverable popup on write failure) — no new side-effect machinery.
+- **Write on manual save:** the `save_game` handler (Save Player File button)
+  pushes a second `write_save{autosave_path}` alongside the timestamped
+  write, so a mid-mission save then quit then Continue doesn't lose loot
+  picked up since the last hub/level transition. Same LIFO: sync first, then
+  timestamped write, then autosave write.
 - **Main-menu Continue:** new `PlayerInputEvent.player_continue` (whitelisted
   by `isPlayerAction` auto; `validatePlayerAction` arm: screen == .main_menu).
   Two branches by PlayerData state: populated (mid-session exit-to-menu) →
@@ -4070,9 +4075,9 @@ Two halves:
   `view()` is pure, no file access). `continue_available = player_data
   .current_campaign.len > 0 or session.autosave_available`.
 
-Tests: `handler_tests_autosave.zig` (4) — populated-continue resumes to hub,
+Tests: `handler_tests_autosave.zig` (5) — populated-continue resumes to hub,
 empty-continue pushes `load_save` on the autosave path, `end_level`/`end_hub`
-push sync-then-autosave (stack inspected, no disk write). `isPlayerAction`
-test covers `player_continue`. Session-log serializer auto-handles the new
-variant (comptime-generic). TODO → buildMainMenu Continue availability
-checked off.
+push sync-then-autosave, `save_game` pushes timestamped + autosave writes
+(stack inspected, no disk write). `isPlayerAction` test covers
+`player_continue`. Session-log serializer auto-handles the new variant
+(comptime-generic). TODO → buildMainMenu Continue availability checked off.

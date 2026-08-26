@@ -504,14 +504,22 @@ fn handlePlayerInputEvent(
         },
 
         // --- Meta: save ---
+        // Writes a timestamped save AND updates the autosave. Both write_save
+        // events read the synced PlayerData (build_data_from_player runs first
+        // via LIFO). The autosave is the recovery path for a player who saves
+        // mid-mission then quits: without it, Continue would resume at the
+        // last hub transition and lose any loot picked up since. See DESIGN →
+        // File System & IO (autosave).
         .save_game => |save| {
             if (current.level != null or current.hub != null) {
                 pushEvents(current, &.{
+                    .{ .meta_event = .{ .write_save = .{ .save_path = writers.autosave_path } } },
                     .{ .meta_event = .{ .write_save = .{ .save_path = save.save_path } } },
                     .{ .super_event = .{ .build_data_from_player = .{ .entity_index = 0 } } },
                 }, allocator);
             } else {
                 pushEvents(current, &.{
+                    .{ .meta_event = .{ .write_save = .{ .save_path = writers.autosave_path } } },
                     .{ .meta_event = .{ .write_save = .{ .save_path = save.save_path } } },
                 }, allocator);
             }

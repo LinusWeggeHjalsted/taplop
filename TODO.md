@@ -670,6 +670,15 @@ Done items in DONE.md. Open:
   sub-struct or a named bundle instead of another top-level field. No
   action now; flag for the next time one is added.
 - [x] **Split `parser.zig`** into a generic format layer + loaders + writers + session log — done; history in DONE.md.
+- **Test harness writes `saves/autosave.txt` into cwd.** The harness
+  `FileSource` uses `std.Io.Dir.cwd()` as the persistent dir, and `end_level`/
+  `end_hub`/`save_game` now push a real `write_save{autosave_path}` (not
+  replay-gated — live writes fire). No current test runs those handlers to
+  idle (the round-trip tests stay in-hub), so nothing leaks today. A future
+  full-session test that drives a level→hub transition to idle would drop a
+  real `saves/autosave.txt` in the project root. Fix when that test lands:
+  either point the harness `FileSource` at a temp dir, or filter the autosave
+  write in tests via a `replaying`-style gate. Latent, not biting.
 - Test coverage for processEvent handlers: DONE across all four tiers.
   Harness: `src/test_harness.zig` (`Harness.init` + `newHistory` +
   `runToIdle` + `levelStateWithEntities`/`levelEntity` + smoke test).

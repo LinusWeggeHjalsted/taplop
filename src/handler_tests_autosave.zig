@@ -136,3 +136,41 @@ test "end_hub: pushes build_data_from_player then write_save on the autosave" {
     try testing.expectEqual(@as(std.meta.Tag(events.MetaEvent), .write_save), std.meta.activeTag(below.meta_event));
     try testing.expectEqualStrings(writers.autosave_path, below.meta_event.write_save.save_path);
 }
+
+// `save_game` (the Save Player File button) writes BOTH the timestamped save
+// AND the autosave, so a mid-mission save then quit then Continue doesn't
+// lose loot picked up since the last hub/level transition. In a level/hub
+// the stack is: build_data_from_player (runs first, LIFO), write_save
+// {timestamped}, write_save {autosave}. We inspect the stack after one
+// processEvent.
+test "save_game: pushes timestamped write + autosave write after sync" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    runToIdle(&history);
+
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .save_game = .{ .save_path = "saves/save_TEST.txt" } },
+        history.current_arena.allocator(),
+    );
+    event_handlers.processEvent(&history);
+
+    // Stack after the player action was popped: [autosave, timestamped, sync]
+    // (pushEvents appends in order; pop is from the end). LIFO pops sync
+    // first → run order is sync, timestamped write, autosave write.
+    try testing.expectEqual(@as(usize, 3), history.current_state.event_stack.len);
+    const sync = history.current_state.event_stack[2];
+    const timestamped = history.current_state.event_stack[1];
+    const autosave = history.current_state.event_stack[0];
+    try testing.expectEqual(@as(std.meta.Tag(events.SuperEvent), .build_data_from_player), std.meta.activeTag(sync.super_event));
+    try testing.expectEqual(@as(std.meta.Tag(events.MetaEvent), .write_save), std.meta.activeTag(timestamped.meta_event));
+    try testing.expectEqualStrings("saves/save_TEST.txt", timestamped.meta_event.write_save.save_path);
+    try testing.expectEqual(@as(std.meta.Tag(events.MetaEvent), .write_save), std.meta.activeTag(autosave.meta_event));
+    try testing.expectEqualStrings(writers.autosave_path, autosave.meta_event.write_save.save_path);
+}
