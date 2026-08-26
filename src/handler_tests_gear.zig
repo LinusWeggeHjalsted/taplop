@@ -360,3 +360,92 @@ test "unequip_utility_skill: valid slot clears to null" {
     pushAndRun(&history, .{ .unequip_utility_skill = .{ .slot_index = 2 } });
     try testing.expectEqual(@as(?SkillId, null), player(&history).equipped_utility_skills[2]);
 }
+
+// ───────────────── player_assign_utility_skill (no-duplicate rule) ─────────────────
+
+/// Push a single player-input orchestrator event and run to idle.
+fn pushInputAndRun(history: *state.GameStateHistory, event: events.PlayerInputEvent) void {
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = event }}, history.current_arena.allocator());
+    runToIdle(history);
+}
+
+test "player_assign_utility_skill: fresh skill assigns to the slot" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    pushInputAndRun(&history, .{ .player_assign_utility_skill = .{
+        .skill_id = .replenish,
+        .slot_index = 2,
+    } });
+    try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[2]);
+}
+
+test "player_assign_utility_skill: skill already in another slot swaps instead of duplicating" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).equipped_utility_skills[0] = .replenish; // existing copy
+    player(&history).equipped_utility_skills[3] = .howl; // target occupied
+    // Drag the learned replenish onto slot index 3.
+    pushInputAndRun(&history, .{ .player_assign_utility_skill = .{
+        .skill_id = .replenish,
+        .slot_index = 3,
+    } });
+    // The skill moved to the target slot; no duplicate. The displaced howl
+    // lands where replenish was (swap, not overwrite).
+    try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[3]);
+    try testing.expectEqual(@as(?SkillId, .howl), player(&history).equipped_utility_skills[0]);
+    // No slot holds a second copy.
+    var replenish_count: usize = 0;
+    for (player(&history).equipped_utility_skills) |slot| {
+        if (slot == .replenish) replenish_count += 1;
+    }
+    try testing.expectEqual(@as(usize, 1), replenish_count);
+}
+
+test "player_assign_utility_skill: drop onto the slot that already holds the skill is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).equipped_utility_skills[2] = .replenish;
+    player(&history).equipped_utility_skills[0] = .howl;
+    pushInputAndRun(&history, .{ .player_assign_utility_skill = .{
+        .skill_id = .replenish,
+        .slot_index = 2,
+    } });
+    // Unchanged — no self-swap, no duplicate.
+    try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[2]);
+    try testing.expectEqual(@as(?SkillId, .howl), player(&history).equipped_utility_skills[0]);
+}
+
+test "player_assign_utility_skill: swap moves the skill to an empty target slot" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).equipped_utility_skills[1] = .replenish; // existing copy
+    // slot 4 empty
+    pushInputAndRun(&history, .{ .player_assign_utility_skill = .{
+        .skill_id = .replenish,
+        .slot_index = 4,
+    } });
+    try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[4]);
+    try testing.expectEqual(@as(?SkillId, null), player(&history).equipped_utility_skills[1]);
+}
+
+test "player_assign_utility_skill: out-of-range slot is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    pushInputAndRun(&history, .{ .player_assign_utility_skill = .{
+        .skill_id = .replenish,
+        .slot_index = 99,
+    } });
+    for (player(&history).equipped_utility_skills) |slot| {
+        try testing.expectEqual(@as(?SkillId, null), slot);
+    }
+}

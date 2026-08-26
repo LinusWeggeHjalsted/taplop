@@ -869,6 +869,31 @@ fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         .player_assign_utility_skill => |assign| {
+            // Enforce no duplicate utility skills on the bar: if the dragged
+            // skill already occupies a utility slot, swap the target slot with
+            // that slot (the skill moves, the displaced target contents land
+            // where the skill was) instead of assigning a second copy. A drop
+            // onto the slot that already holds this skill is a no-op. The bar's
+            // weapon skills (slots 1-3, derived from the equipped weapon) are
+            // a separate, non-overlapping set in shipped content, so the
+            // search is over the utility slots only. See DESIGN → Architecture.
+            if (assign.slot_index >= utility_skill_count) return;
+            const player = getPlayerEntity(current, 0);
+            var existing_slot: ?u32 = null;
+            for (player.equipped_utility_skills, 0..) |slot_skill, index| {
+                if (slot_skill) |skill| if (skill == assign.skill_id) {
+                    existing_slot = @intCast(index);
+                    break;
+                };
+            }
+            if (existing_slot) |source_index| {
+                if (source_index == assign.slot_index) return; // already there
+                pushEvents(current, &.{.{ .player_event = .{ .swap_utility_skills = .{
+                    .slot_a_index = assign.slot_index,
+                    .slot_b_index = source_index,
+                } } }}, allocator);
+                return;
+            }
             pushEvents(current, &.{.{ .player_event = .{ .equip_utility_skill = .{
                 .skill_id = assign.skill_id,
                 .slot_index = assign.slot_index,

@@ -4648,3 +4648,38 @@ Tests (ui.zig): few-skills (no scrollbar, offset clamped to 0), overflow
 the grid bottom, offset clamped to `max_scroll_row`), drag-source icon
 suppression with slot ref retained. `skillsSlotUnderPointer` test lives in
 input_handlers.zig (avoids a circular import ui.zig → input_handlers.zig).
+
+### Skill bar no-duplicate rule — drag learned skill onto bar (done)
+
+The skill bar never holds duplicate utility skills. Enforced at the
+`player_assign_utility_skill` orchestrator handler (event_handlers.zig): when
+a learned skill is dragged onto a utility slot, the handler searches
+`equipped_utility_skills` for that skill. If found in another slot, it pushes
+`swap_utility_skills` (target ↔ existing) instead of `equip_utility_skill`
+(the latter would create a second copy). The swap moves the skill to the
+target slot and lands the displaced target contents where the skill was —
+so "I want this skill in slot 6 instead of slot 4" works as a drag. A drop
+onto the slot that already holds the skill is a no-op (no self-swap pushed).
+Out-of-range slot_index is a guarded no-op (defensive — added the
+`utility_skill_count` guard that the orchestrator previously lacked).
+
+Placement: the check lives in the handler, not `dragToOrchestrator`, because
+`dragToOrchestrator` is a pure function of two SlotRefs with no state access;
+the handler has the live `equipped_utility_skills`. This keeps the
+"no duplicates" policy in the state-aware handler layer and the input mapping
+pure. Replay-safe by construction: the check reads GameState, which
+reconstructs identically on replay, so the same swap-vs-assign decision is
+reproduced (the recorded orchestrator event is unchanged; the pushed
+machinery child is verified by `verifyReplayStep`).
+
+Scope: utility slots (indices 0-4 / bar slots 4-8) only. The drag target is
+always a utility slot, `swap_utility_skills` only works utility-to-utility,
+and shipped content separates weapon skills from learnable skills (the 7
+non-weapon skills are the learnable ones), so a learned skill can't duplicate
+a weapon skill in practice. Save loading does NOT deduplicate — a
+hand-edited / pre-rule save with duplicates is preserved as-is (the rule is
+enforced at the drag path, the only way duplicates enter live play).
+
+Tests (handler_tests_gear.zig): fresh assign, duplicate-in-another-slot
+swaps (asserts the move + displaced contents + no second copy), drop onto
+own slot no-op, swap-to-empty-target, out-of-range no-op.

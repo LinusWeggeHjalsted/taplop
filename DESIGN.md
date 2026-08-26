@@ -1243,7 +1243,18 @@ the campaign.
   matching filled slot, and no-ops on mismatch
 - `equipped_utility_skills` is `[utility_skill_count]?SkillId` (nullable slots).
   Save format keys each filled slot by number (`slot_4`..`slot_8`); empty slots
-  are omitted and reload to null — never compact/reindex on load
+  are omitted and reload to null — never compact/reindex on load. The skill
+  bar never holds duplicate utility skills: the `player_assign_utility_skill`
+  handler searches `equipped_utility_skills` for the dragged skill and, if
+  found in another slot, pushes `swap_utility_skills` (target ↔ existing)
+  instead of `equip_utility_skill` (which would create a second copy); a drop
+  onto the slot that already holds the skill is a no-op. Weapon skills
+  (slots 1-3, derived from the equipped weapon) are a separate,
+  non-overlapping set in shipped content, so the search is over utility slots
+  only. Replay-safe by construction (the check reads GameState, which
+  reconstructs identically on replay). Save loading does NOT deduplicate — a
+  hand-edited / pre-rule save with duplicates is preserved as-is (the rule is
+  enforced at the drag path, the only way duplicates enter live).
 - Derived-from-entity data has a single source of truth: skill-bar slot
   resolution lives in `Entity.skillInSlot` / `Entity.collectSkillSlots`, not
   duplicated per caller
