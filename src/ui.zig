@@ -513,6 +513,10 @@ pub const Button = struct {
     /// opaque pixels when set (e.g. selected panel button).
     highlighted: bool = false,
     tooltip: ?Tooltip = null,
+    /// Semantic identity, if this button is also a drag source/drop target
+    /// (e.g. a skill-bar slot: click = activate the skill, drag = reorder/
+    /// clear). Null for action-only buttons. See `refAt`.
+    ref: ?SlotRef = null,
     blocks_input: bool = true,
 };
 
@@ -726,6 +730,30 @@ pub fn slotRefAt(
     position: ScreenPosition,
 ) ?SlotRef {
     return if (slotAt(ui_elements, position)) |slot| slot.ref else null;
+}
+
+/// The SlotRef of the topmost ref-bearing element under `position`, or null.
+/// Covers both `.slot` and `.button` elements (skill-bar slots are buttons
+/// that also carry a ref — click = activate, drag = reorder/clear). Used by
+/// the drag lifecycle for press + drop-target resolution. Respects occlusion
+/// via the shared `hitTest` primitive.
+pub fn refAt(
+    ui_elements: []const UiElement,
+    position: ScreenPosition,
+) ?SlotRef {
+    return if (hitTest(ui_elements, position, isRefElement)) |i| refOf(ui_elements[i]) else null;
+}
+
+fn isRefElement(element: UiElement) bool {
+    return refOf(element) != null;
+}
+
+fn refOf(element: UiElement) ?SlotRef {
+    return switch (element) {
+        .slot => |slot| slot.ref,
+        .button => |button| button.ref,
+        else => null,
+    };
 }
 
 test "slotRefAt returns the topmost slot under the point" {
@@ -1609,6 +1637,8 @@ fn emitIconButton(
     background_color: Color,
     icon_color: Color,
     highlighted: bool,
+    /// Drag ref, if this button is also a drag source/drop target.
+    ref: ?SlotRef,
 ) !void {
     try elements.append(allocator, .{ .button = .{
         .sprite_id = background_sprite_id,
@@ -1619,6 +1649,7 @@ fn emitIconButton(
         .color = background_color,
         .tooltip = tooltip,
         .highlighted = highlighted,
+        .ref = ref,
     } });
     try elements.append(allocator, .{ .image = .{
         .sprite_id = icon_sprite_id,
@@ -1720,6 +1751,10 @@ fn emitSkillButton(
     background_color: Color,
     icon_color: Color,
     prepared_skill: ?SkillId,
+    /// Drag ref for this slot, if it's a reorderable utility slot. Null for
+    /// weapon-skill slots (1-3, derived from the equipped weapon — not
+    /// draggable). Set by the caller for utility slots 4-8.
+    drag_ref: ?SlotRef,
 ) !void {
     const skill_id = player.skillInSlot(slot, weapon_type_definitions);
     const definition = if (skill_id) |id| lookups.getSkillDefinition(id) else null;
@@ -1752,6 +1787,7 @@ fn emitSkillButton(
         background_color,
         icon_color,
         is_prepared,
+        drag_ref,
     );
 
     const cooldown = player.skill_cooldowns.get(skill_id.?);
@@ -1884,7 +1920,9 @@ pub fn buildBottomBar(
         var inner = Row.init(weapon_sub_bar.position(), bottom_bar_height, 0);
         var slot: u8 = 1;
         while (slot <= 3) : (slot += 1) {
-            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill);
+            // Weapon-skill slots are derived from the equipped weapon — not
+            // reorderable, so no drag ref.
+            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill, null);
         }
     }
 
@@ -1908,7 +1946,9 @@ pub fn buildBottomBar(
         var inner = Row.init(utility_sub_bar.position(), bottom_bar_height, 0);
         var slot: u8 = 4;
         while (slot <= 8) : (slot += 1) {
-            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill);
+            // Utility-skill slots are reorderable by drag: ref = skill_bar
+            // index 0-4 (slot 4 → index 0, ..., slot 8 → index 4).
+            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill, .{ .skill_bar = @as(u32, slot - 4) });
         }
     }
 
@@ -1928,6 +1968,7 @@ pub fn buildBottomBar(
             c_skip_bg,
             c_icon,
             false,
+            null,
         );
     }
 

@@ -4410,3 +4410,46 @@ inventory→inventory).
 - Test: `dragToOrchestrator` inventory→inventory now asserts
   `player_swap_inventory_items` (was asserting null); added same-slot
   no-op assertions for inventory + skill_bar.
+
+### Skill-bar drag (utility slots 4-8) (DONE)
+
+Dragging a utility-skill slot on the bottom bar now reorders it (was a
+no-op — skill slots emitted `.button` elements with no ref, invisible to
+the drag lifecycle). The drag logic for `skill_bar → skill_bar` (swap) +
+`skill_bar → learned_skill` (clear) was already wired end-to-end
+(`dragToOrchestrator` + orchestrators + handlers + validation); the gap
+was purely view/hit-test.
+
+**Dual-role elements — `Button` gained `ref: ?SlotRef`:** skill-bar slots
+are buttons (click = activate the skill via the rich `resolveSkillSlotAction`
+prepare/confirm/target flow) AND drag sources/drop targets (drag =
+reorder/clear). The ref is null for action-only buttons. Only utility slots
+4-8 get a ref (`.{ .skill_bar = slot - 4 }`); weapon-skill slots 1-3 are
+derived from the equipped weapon, not reorderable, ref null. `emitIconButton`
++ `emitSkillButton` thread the ref through.
+
+**Unified ref lookup — `refAt`:** the drag lifecycle needs to see refs on
+both `.slot` (inventory) and `.button` (skill bar) elements. `refAt` walks
+all ref-bearing elements via the shared `hitTest` primitive (occlusion-
+respecting), backed by `isRefElement`/`refOf` helpers. `handleDrag` uses
+`refAt` for press + drop-target + click-resolution (replacing `slotAt`/
+`slotRefAt` there). `slotAt`/`slotRefAt` stay for their existing callers.
+
+**Button-click model yields to an in-flight drag:** `main.zig`'s release
+block (button-press/release model) now skips `applyAction` when
+`ui_state.drag != null`, so `handleDrag` owns the release. Separation:
+plain click (not promoted) → `drag` null → button-click fires → skill
+activates; drag drop (promoted) → `drag` set → button-click yields →
+`handleDrag` resolves the drop (or no-op for drag-back-to-source via the
+same-slot guard). The press-side click-down sound still plays on press
+(can't know at press time if it'll promote to a drag) — a minor audio
+artifact if it does; flagged for the audio pass.
+
+**Sound:** `swap_utility_skills` machinery handler queues `.swap_skill`
+(gated `!replaying`) — reuses the existing weapon-swap sfx for skill-slot
+reordering. `unequip_utility_skill` (drag-clear) stays silent for now (no
+fitting asset; deferred to the audio pass).
+
+`skill_bar → learned_skill` (clear) is wired in `dragToOrchestrator` but
+unreachable until `buildSkillsPanel` emits learned-skill refs — lands with
+that panel.

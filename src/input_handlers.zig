@@ -140,20 +140,18 @@ pub fn handleDrag(
 
     // --- Left button: press → pending or drag ---
     if (pointer.pressed) {
-        if (ui.slotAt(ui_elements, pointer.position)) |slot| {
-            if (slot.ref) |ref| {
-                // Resolve the slot's CONTENT icon (the item/skill being
-                // dragged), not the slot element's frame sprite — an empty
-                // slot has a frame but no content, so this also gates drags
-                // to occupied slots only.
-                if (ui.slotContentIcon(current, ref)) |icon| {
-                    ui_state.pending_slot_press = .{
-                        .source = ref,
-                        .icon_sprite_id = icon,
-                        .press_position = pointer.position,
-                        .button = .left,
-                    };
-                }
+        if (ui.refAt(ui_elements, pointer.position)) |ref| {
+            // Resolve the slot's CONTENT icon (the item/skill being
+            // dragged), not the element's frame sprite — an empty slot
+            // has a frame but no content, so this also gates drags
+            // to occupied slots only.
+            if (ui.slotContentIcon(current, ref)) |icon| {
+                ui_state.pending_slot_press = .{
+                    .source = ref,
+                    .icon_sprite_id = icon,
+                    .press_position = pointer.position,
+                    .button = .left,
+                };
             }
         }
     }
@@ -178,7 +176,7 @@ pub fn handleDrag(
     // --- Left button: release → drop or click ---
     if (pointer.released) {
         if (ui_state.drag) |drag| {
-            if (ui.slotRefAt(ui_elements, pointer.position)) |target| {
+            if (ui.refAt(ui_elements, pointer.position)) |target| {
                 if (dragToOrchestrator(drag.source, target)) |orchestrator| {
                     event_handlers.pushPlayerAction(current, orchestrator, allocator);
                 }
@@ -188,7 +186,7 @@ pub fn handleDrag(
         } else if (ui_state.pending_slot_press) |press| {
             if (press.button == .left) {
                 // Release over the same slot = click; elsewhere = cancel.
-                if (ui.slotRefAt(ui_elements, pointer.position)) |target| {
+                if (ui.refAt(ui_elements, pointer.position)) |target| {
                     if (slotRefsEqual(target, press.source)) {
                         resolveInventoryClick(history, press.source, .left, pointer.modifiers);
                     }
@@ -200,18 +198,16 @@ pub fn handleDrag(
 
     // --- Right button: press → pending (click only, no drag) ---
     if (pointer.right_pressed) {
-        if (ui.slotAt(ui_elements, pointer.position)) |slot| {
-            if (slot.ref) |ref| {
-                // Same content gate as left-press: only occupied slots are
-                // clickable (an empty slot has nothing to equip/salvage).
-                if (ui.slotContentIcon(current, ref)) |icon| {
-                    ui_state.pending_slot_press = .{
-                        .source = ref,
-                        .icon_sprite_id = icon,
-                        .press_position = pointer.position,
-                        .button = .right,
-                    };
-                }
+        if (ui.refAt(ui_elements, pointer.position)) |ref| {
+            // Same content gate as left-press: only occupied slots are
+            // clickable (an empty slot has nothing to equip/salvage).
+            if (ui.slotContentIcon(current, ref)) |icon| {
+                ui_state.pending_slot_press = .{
+                    .source = ref,
+                    .icon_sprite_id = icon,
+                    .press_position = pointer.position,
+                    .button = .right,
+                };
             }
         }
     }
@@ -220,7 +216,7 @@ pub fn handleDrag(
     if (pointer.right_released) {
         if (ui_state.pending_slot_press) |press| {
             if (press.button == .right and ui_state.drag == null) {
-                if (ui.slotRefAt(ui_elements, pointer.position)) |target| {
+                if (ui.refAt(ui_elements, pointer.position)) |target| {
                     if (slotRefsEqual(target, press.source)) {
                         resolveInventoryClick(history, press.source, .right, pointer.modifiers);
                     }

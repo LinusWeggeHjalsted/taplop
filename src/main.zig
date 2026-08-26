@@ -105,25 +105,31 @@ fn update(
     }
     if (player_input.pointer.released) {
         const pointer_position = player_input.pointer.position;
-        if (history.session.pressed_button) |pressed_action| {
-            // Fire only if the release is over the same button that was pressed.
-            if (ui.buttonAt(ui_elements, pointer_position)) |button| {
-                if (button.action == pressed_action) {
-                    input.applyAction(&player_input, button.action);
-                    // Release sound: generic button-up for actions without a
-                    // specific sound. Actions WITH a specific sound (skip,
-                    // swap_weapons, panel toggles) get their sound from the
-                    // input/event handler that processes the action, so no
-                    // generic up here (would double-play). See DESIGN → Audio.
-                    if (types.releaseSoundForAction(button.action) == null) {
-                        history.session.queueSound(history.backing_allocator, .button_click_up);
+        // An in-flight drag owns the release: the button-click model yields so
+        // `handleDrag` can resolve the drop (or no-op for a drag-back-to-
+        // source). `drag` still reflects the promoted state from the prior
+        // move frame — `handleDrag` hasn't run yet this frame.
+        if (history.session.ui_state.drag == null) {
+            if (history.session.pressed_button) |pressed_action| {
+                // Fire only if the release is over the same button that was pressed.
+                if (ui.buttonAt(ui_elements, pointer_position)) |button| {
+                    if (button.action == pressed_action) {
+                        input.applyAction(&player_input, button.action);
+                        // Release sound: generic button-up for actions without a
+                        // specific sound. Actions WITH a specific sound (skip,
+                        // swap_weapons, panel toggles) get their sound from the
+                        // input/event handler that processes the action, so no
+                        // generic up here (would double-play). See DESIGN → Audio.
+                        if (types.releaseSoundForAction(button.action) == null) {
+                            history.session.queueSound(history.backing_allocator, .button_click_up);
+                        }
+                        player_input.idle.tile_clicked = null;
+                        player_input.idle.confirm = false;
                     }
-                    player_input.idle.tile_clicked = null;
-                    player_input.idle.confirm = false;
                 }
             }
-            history.session.pressed_button = null;
         }
+        history.session.pressed_button = null;
     }
 
     // Tile-cursor resolution: decide what tile (if any) the logical cursor is

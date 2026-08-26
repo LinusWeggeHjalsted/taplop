@@ -1477,6 +1477,7 @@ pub fn processEvent(
                     player.equipped_utility_skills[swap.slot_b_index] = held;
 
                     cancelPreparedSkill(current);
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .swap_skill);
                 },
                 .unequip_utility_skill => |unequip| {
                     if (unequip.slot_index >= utility_skill_count) return;
