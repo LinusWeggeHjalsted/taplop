@@ -629,6 +629,15 @@ combat-log UI rendering + replay-viewer UI still TODO)
   for an EXISTING action doesn't reach players who have a user file (their
   binding is authoritative, even if it was an old default they never
   deliberately chose — we don't interrupt their flow).
+  **KNOWN GAP (settled fix, deferred — see TODO → InputBindings per-action
+  migration):** the implementation today REPLACES the entire InputBindings
+  set on any user file with an InputBindings section, NOT per-action. So a
+  NEW default binding (e.g. skip_level) is invisible to any existing install
+  with a settings.txt — the user file is authoritative for the whole section,
+  shadowing the new default. The settled fix is full-set + migrate: keep the
+  user file as the authoritative full set, but on load INJECT default
+  bindings for actions the file doesn't mention (idempotent via the next
+  debounced settings write). Actions the file mentions stay authoritative.
 - **Debounced writes (`PendingWrite`).** A general debounce primitive on
   `SessionState` (settings, future editor autosave). `markWriteDirty(tag,
   write_fn, now)` coalesces by tag (a burst of changes → one write). Debounce

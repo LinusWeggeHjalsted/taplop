@@ -19,6 +19,19 @@ Test by running `zig build run` and clicking through.
 - **Dev tools: skip level** — DONE. ctrl+Enter skips the current level in a
   dev build (`-Ddev-mode`, defaulted to debug). Lands with the hybrid input
   precedence fix (closest chord wins, ties co-fire). History in DONE.md.
+- **InputBindings per-action migration** — a user `settings.txt` today
+  REPLACES the default binding set ENTIRELY, so any new default binding
+  (skip_level, future editor keys, any new feature) is invisible to existing
+  installs — the root cause of skip_level not working until the user file
+  was deleted. Settled fix (full-set + migrate): keep the user file as the
+  full authoritative set, but on load INJECT default bindings for actions
+  the file doesn't mention at all (idempotent — the next debounced settings
+  write persists the injected bindings, so later loads see them as present).
+  Actions the file DOES mention stay authoritative (user wins for touched
+  actions). Multiple combos → one action already works (append groups);
+  the merge preserves it. Localized to the InputBindings section in
+  `loaders.loadSettings` + tests; self-heal on next debounced write (no
+  write-on-load). See DESIGN → Input (Binding overlay semantics).
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
