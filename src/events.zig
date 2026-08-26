@@ -25,6 +25,15 @@ const DecorationLayer = types.DecorationLayer;
 const CustomColorTheme = types.CustomColorTheme;
 const EntityEditTarget = types.EntityEditTarget;
 
+/// How `end_level` continues after syncing the player entity back into
+/// PlayerData. The options-menu exit paths use the non-default values.
+pub const LevelExitContinuation = enum {
+    default,
+    restart_mission,
+    exit_mission,
+    exit_to_menu,
+};
+
 pub const MetaEvent = union(enum) {
     // scope: all
     // transitions between game scopes and file io
@@ -63,7 +72,13 @@ pub const MetaEvent = union(enum) {
         level_index: u32,
         sets_checkpoint: bool = true,
     },
-    end_level: void,
+    // The continuation to take after ending the level. `.default` is the
+    // normal next-level / end-mission flow; the others are the options-menu
+    // exit paths (restart mission, abandon to hub, quit to main menu). See
+    // DESIGN → Architecture.
+    end_level: struct {
+        continuation: LevelExitContinuation = .default,
+    },
     start_hub: struct {
         hub_id: []const u8,
         sets_checkpoint: bool = true,

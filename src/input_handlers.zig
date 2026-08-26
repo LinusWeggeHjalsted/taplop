@@ -371,6 +371,57 @@ pub fn handleAnytimeInput(
                     event_handlers.processEvent(history);
                 }
             },
+            // Exit-path buttons: push end_level with the matching continuation,
+            // then drain. build_data_from_player (pushed by end_level) syncs
+            // the player entity into PlayerData before the screen transition.
+            // The screen/world_generation change is detected by gameLoop,
+            // which resets ui_state (closing the menu). If a reconstruction
+            // read fails, load_error breaks the drain and the error popup
+            // surfaces over the still-open menu.
+            .restart_mission => {
+                if (current.screen != .level) return;
+                const baseline = history.current_state.event_stack.len;
+                event_handlers.pushEvents(current, &.{.{
+                    .meta_event = .{ .end_level = .{ .continuation = .restart_mission } },
+                }}, allocator);
+                while (history.current_state.event_stack.len > baseline) {
+                    if (history.load_error) break;
+                    event_handlers.processEvent(history);
+                }
+            },
+            .exit_mission => {
+                if (current.screen != .level) return;
+                const baseline = history.current_state.event_stack.len;
+                event_handlers.pushEvents(current, &.{.{
+                    .meta_event = .{ .end_level = .{ .continuation = .exit_mission } },
+                }}, allocator);
+                while (history.current_state.event_stack.len > baseline) {
+                    if (history.load_error) break;
+                    event_handlers.processEvent(history);
+                }
+            },
+            .exit_to_menu => {
+                const baseline = history.current_state.event_stack.len;
+                if (current.screen == .level) {
+                    event_handlers.pushEvents(current, &.{.{
+                        .meta_event = .{ .end_level = .{ .continuation = .exit_to_menu } },
+                    }}, allocator);
+                } else if (current.screen == .hub) {
+                    // Hub exit: end_hub syncs the hub player entity into
+                    // PlayerData (runs first, LIFO), then open_main_menu
+                    // transitions the screen and clears the hub scope.
+                    event_handlers.pushEvents(current, &.{
+                        .{ .meta_event = .open_main_menu },
+                        .{ .meta_event = .end_hub },
+                    }, allocator);
+                } else {
+                    return;
+                }
+                while (history.current_state.event_stack.len > baseline) {
+                    if (history.load_error) break;
+                    event_handlers.processEvent(history);
+                }
+            },
             else => {},
         }
     }

@@ -1852,15 +1852,20 @@ pub fn buildOptionsMenu(
     buttons[button_count] = .{ .label = "Continue", .action = .toggle_options_menu };
     button_count += 1;
 
-    // Level-only buttons (restart / exit mission land in slice 2).
+    // Level-only exit paths (restart / exit mission). Hub has no mission in
+    // progress to restart or abandon.
     if (current_screen == .level) {
-        // Tier-2 buttons (exit paths) go here when wired.
+        buttons[button_count] = .{ .label = "Restart Mission", .action = .restart_mission };
+        button_count += 1;
+        buttons[button_count] = .{ .label = "Exit Mission", .action = .exit_mission };
+        button_count += 1;
     }
 
     buttons[button_count] = .{ .label = "Save Game", .action = .save_game };
     button_count += 1;
 
-    // Exit to main menu lands in slice 2 (needs end_level continuation override).
+    buttons[button_count] = .{ .label = "Exit to Main Menu", .action = .exit_to_menu };
+    button_count += 1;
 
     const total_height = rowWidth(@intCast(button_count), menu_button_height, ui_gap);
     const origin = screen

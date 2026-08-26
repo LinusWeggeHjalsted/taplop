@@ -419,9 +419,11 @@ Logging follow-ups (open):
 - mission_complete screen (triggered on mission end).
 - New Screen variants and transition events.
 - Quit-to-menu and death/mission-fail exits MUST route through end_level /
-  end_hub so entity changes persist into PlayerData (see DESIGN → Architecture
-  — these exit paths don't exist yet; today only level-completion and hub
-  mission-exit route through them).
+  end_hub so entity changes persist into PlayerData (see DESIGN →
+  Architecture). The options-menu exit paths (exit to main menu, exit
+  mission, restart mission) are DONE — they route through end_level with a
+  `LevelExitContinuation` override + build_data_from_player sync. Remaining:
+  death/mission-fail exits (need the mission end-state screens).
 
 ## Platform Layer (raylib)
 

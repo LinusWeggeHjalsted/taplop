@@ -839,7 +839,7 @@ pub fn processEvent(
                     current.transitionScreen(.level);
                     pushGameplayStartEvents(current, allocator, true);
                 },
-                .end_level => {
+                .end_level => |end| {
                     // Editor exit guard: when an editor session is active, it
                     // owns the exit continuation — the gameplay default
                     // (next start_level / end_mission → start_hub) is
@@ -869,20 +869,54 @@ pub fn processEvent(
                         }
                         return;
                     }
-                    if (current.mission) |mission| {
-                        if (mission.current_level_index < mission.level_count) {
-                            // More levels — push the next one
-                            const next_index = mission.current_level_index + 1;
-                            pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
-                                .mission_path = mission.path,
-                                .level_index = next_index,
-                            } } }}, allocator);
-                        } else {
-                            // Last level done — end the mission
-                            pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
-                                .hub_id = mission.end_hub,
-                            } } }}, allocator);
-                        }
+                    switch (end.continuation) {
+                        .default => {
+                            if (current.mission) |mission| {
+                                if (mission.current_level_index < mission.level_count) {
+                                    // More levels — push the next one
+                                    const next_index = mission.current_level_index + 1;
+                                    pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
+                                        .mission_path = mission.path,
+                                        .level_index = next_index,
+                                    } } }}, allocator);
+                                } else {
+                                    // Last level done — end the mission
+                                    pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
+                                        .hub_id = mission.end_hub,
+                                    } } }}, allocator);
+                                }
+                            }
+                        },
+                        // Restart: replay the mission from level 1 with the
+                        // current PlayerData (synced below before start_mission
+                        // runs). The player keeps their gear; only level
+                        // progress resets.
+                        .restart_mission => {
+                            if (current.mission) |mission| {
+                                pushEvents(current, &.{.{ .meta_event = .{ .start_mission = .{
+                                    .mission_path = mission.path,
+                                    .start_hub_id = null,
+                                    .end_hub_id = null,
+                                } } }}, allocator);
+                            }
+                        },
+                        // Abandon the mission: return to the hub the player
+                        // was at before entering it (the mission's start_hub).
+                        // end_mission's handler pushes start_hub with the
+                        // given hub_id.
+                        .exit_mission => {
+                            if (current.mission) |mission| {
+                                const hub_id = mission.start_hub orelse current.player_data.current_hub;
+                                pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
+                                    .hub_id = hub_id,
+                                } } }}, allocator);
+                            }
+                        },
+                        // Quit to main menu: PlayerData is synced below
+                        // before open_main_menu clears the level scope.
+                        .exit_to_menu => {
+                            pushEvents(current, &.{.{ .meta_event = .open_main_menu }}, allocator);
+                        },
                     }
                     // Preserve the player entity's changes back into PlayerData
                     // before the level is discarded/replaced. Pushed last so it
@@ -1808,7 +1842,7 @@ pub fn processEvent(
                             }
                             if (!has_active_enemies) {
                                 pushEvents(current, &.{
-                                    .{ .meta_event = .end_level },
+                                    .{ .meta_event = .{ .end_level = .{ .continuation = .default } } },
                                 }, allocator);
                             }
                         }

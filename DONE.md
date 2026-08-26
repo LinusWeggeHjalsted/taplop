@@ -3646,3 +3646,59 @@ it — no hover leaks through.
 `Action.save_game` added to the enum; `releaseSoundForAction` got
 `.save_game => .menu` (placeholder). Native build + tests green; game runs
 without crashing.
+
+### Options menu — slice 2 (exit paths)
+
+The three level exit-path buttons (restart mission, exit mission, exit to main
+menu) plus exit-to-main-menu in hubs. The core change: `end_level` went from
+`void` to `struct { continuation: LevelExitContinuation = .default }`,
+mirroring the editor exit-guard pattern. The new `LevelExitContinuation` enum
+(`.default`, `.restart_mission`, `.exit_mission`, `.exit_to_menu`) selects the
+continuation; `.default` preserves the existing next-level / end-mission flow.
+
+**Handler.** `end_level` now branches on `end.continuation` after the editor
+guard: `.restart_mission` pushes `start_mission` on the same path (player
+keeps their gear — `build_data_from_player` syncs before `start_mission`
+runs, LIFO); `.exit_mission` pushes `end_mission` with `mission.start_hub`
+(fallback `player_data.current_hub`) — abandoning the mission returns to the
+hub the player entered from, not the completion hub; `.exit_to_menu` pushes
+`open_main_menu`. `build_data_from_player` is still pushed last (runs first,
+LIFO) for all paths, syncing the player entity into PlayerData before the
+screen transition clears the level scope. The no-enemies level-completion
+push site updated to `.{ .continuation = .default }`.
+
+**Hub exit-to-menu.** In a hub, there's no `end_level` to route through — the
+dispatch pushes `end_hub` + `open_main_menu` (LIFO: `end_hub` syncs the hub
+player entity first, then `open_main_menu` transitions the screen and clears
+the hub scope). The dispatch branches on `current.screen`.
+
+**Input plumbing.** New Actions `.restart_mission`, `.exit_mission`,
+`.exit_to_menu` routed to `anytime.options_action` (same field as save). The
+`handleAnytimeInput` dispatch pushes `end_level` (or `end_hub`+`open_main_menu`
+for hub exit-to-menu) and drains to baseline, same shape as save. Level-only
+actions (`restart_mission`, `exit_mission`) guard on `current.screen == .level`
+— the buttons are only emitted in the level options menu, but the guard is
+defensive against an action reaching the handler in the wrong context.
+
+**Menu closes automatically.** The screen transition (`.exit_to_menu` →
+`.main_menu`, `.exit_mission` → `.hub`) or world_generation bump
+(`.restart_mission` → new `start_level`) is detected by `gameLoop`, which
+resets `ui_state = .{}` (clearing `options_menu_open`). If a reconstruction
+read fails (load_error), the drain breaks, `gameLoop` reverts to the last idle
+point, and the error popup surfaces over the still-open menu.
+
+**Event shape change.** `end_level: void` → `end_level: struct { continuation
+}` changes the session-log format for that event. The comptime-generic
+serializer/deserializer handles it automatically (void → struct with fields).
+Cross-session log reload isn't wired yet (replay viewer is the TODO), so no
+existing logs break. The comptime round-trip test in session_log.zig covers
+the new shape automatically.
+
+**buildOptionsMenu.** Level: Continue + Restart Mission + Exit Mission + Save
+Game + Exit to Main Menu. Hub: Continue + Save Game + Exit to Main Menu. Same
+`emitPanelButton` / `menu_button_*` design as the main menu.
+
+`releaseSoundForAction` got `.restart_mission, .exit_mission, .exit_to_menu =>
+.menu` (placeholder). Native build + tests green; game runs without crashing.
+TODO → Mission Flow updated: the options-menu exit paths are DONE; remaining
+is death/mission-fail exits (need the end-state screens).
