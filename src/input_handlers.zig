@@ -338,10 +338,13 @@ pub fn handleAnytimeInput(
     }
 
     if (anytime.toggle_options_menu) {
-        // Don't open the options menu when the player is dead — the
-        // mission_fail overlay is the only modal that should show. Undo/redo
-        // still work (processed above) as an escape from the fail state.
-        if (!view_mod.playerDead(&history.current_state)) {
+        // Don't open the options menu when a modal overlay is already up
+        // (mission_fail or mission_complete) — one modal at a time.
+        // Undo/redo still works (processed above) as an escape from the fail
+        // state.
+        if (!view_mod.playerDead(&history.current_state) and
+            history.session.pending_mission_complete == null)
+        {
             if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
             history.session.ui_state.options_menu_open = !history.session.ui_state.options_menu_open;
         }
@@ -422,6 +425,30 @@ pub fn handleAnytimeInput(
                 } else {
                     return;
                 }
+                while (history.current_state.event_stack.len > baseline) {
+                    if (history.load_error) break;
+                    event_handlers.processEvent(history);
+                }
+            },
+            // Mission-complete overlay: Continue just dismisses (the player
+            // is already in the hub). Replay re-enters the mission: end_hub
+            // syncs the hub player entity first (LIFO), then start_mission
+            // reloads the mission from the stashed path.
+            .continue_after_mission => {
+                history.session.clearPendingMissionComplete();
+            },
+            .replay_mission => {
+                const info = history.session.pending_mission_complete orelse return;
+                history.session.clearPendingMissionComplete();
+                const baseline = history.current_state.event_stack.len;
+                event_handlers.pushEvents(current, &.{
+                    .{ .meta_event = .{ .start_mission = .{
+                        .mission_path = info.path,
+                        .start_hub_id = current.player_data.current_hub,
+                        .end_hub_id = null,
+                    } } },
+                    .{ .meta_event = .end_hub },
+                }, allocator);
                 while (history.current_state.event_stack.len > baseline) {
                     if (history.load_error) break;
                     event_handlers.processEvent(history);

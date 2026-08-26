@@ -96,6 +96,9 @@ pub const Action = enum {
     restart_mission,
     exit_mission,
     exit_to_menu,
+    // Mission-complete overlay commands.
+    continue_after_mission,
+    replay_mission,
     // Main menu commands.
     continue_game,
     new_game,
@@ -118,6 +121,7 @@ pub fn releaseSoundForAction(action: Action) ?SoundId {
         .undo, .redo => .menu,
         .save_game => .menu,
         .restart_mission, .exit_mission, .exit_to_menu => .menu,
+        .continue_after_mission, .replay_mission => .menu,
         // Skill slots: suppress the generic button-up (the use_skill event
         // plays weapon_swing/spell on auto-fire; the prepare path plays
         // button_click_up explicitly). See DESIGN → Audio.

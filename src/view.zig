@@ -292,6 +292,22 @@ pub fn view(
         ) catch @panic("failed to build mission fail overlay");
     }
 
+    // Mission-complete overlay: full-screen modal shown in the hub after
+    // the player completes the last level of a mission. The level→hub
+    // cascade has already run; this flag survives the transition (it's on
+    // SessionState, not ui_state). Drawn on top of the mission_fail overlay
+    // (mutually exclusive — dead vs completed) but under the error popup.
+    // See DESIGN → Architecture.
+    if (session.pending_mission_complete) |info| {
+        ui.buildMissionComplete(
+            &ui_elements,
+            frame_allocator,
+            font_metrics,
+            ui.screenRect(),
+            info.name,
+        ) catch @panic("failed to build mission complete overlay");
+    }
+
     // Recoverable error popup: modal, centered, drawn on top of all other
     // UI (including tooltips). Pure over SessionState.pending_error. See
     // DESIGN → Error Handling.

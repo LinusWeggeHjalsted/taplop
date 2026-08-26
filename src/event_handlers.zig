@@ -880,7 +880,22 @@ pub fn processEvent(
                                         .level_index = next_index,
                                     } } }}, allocator);
                                 } else {
-                                    // Last level done — end the mission
+                                    // Last level done — end the mission.
+                                    // Play the completion sound + stash the
+                                    // mission info for the mission-complete
+                                    // overlay (live play only; replay must
+                                    // not pause or show the overlay). The
+                                    // flag survives the level→hub transition
+                                    // (SessionState, not ui_state). See
+                                    // DESIGN → Architecture.
+                                    if (!history.replaying) {
+                                        history.session.queueSound(history.backing_allocator, .mission_completion);
+                                        history.session.setPendingMissionComplete(
+                                            history.history_arena.allocator(),
+                                            mission.name,
+                                            mission.path,
+                                        );
+                                    }
                                     pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
                                         .hub_id = mission.end_hub,
                                     } } }}, allocator);

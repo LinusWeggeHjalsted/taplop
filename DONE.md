@@ -3819,3 +3819,48 @@ the `death` event, which plays the sound + clears the stack; the drain exits;
 the render gate fires; the overlay renders. The freeze-frame (death handler
 clears event_stack) + existing idle-input self-gating + the overlay's own
 `blocks_input` panel cover everything the gate was trying to.
+
+### Mission-complete overlay
+
+Full-screen modal shown in the hub after the player completes the last level
+of a mission. Header "{mission_name} completed" + Continue + Replay Mission
+buttons. Stats / leaderboard position / clone rewards are deferred — the
+header + buttons are the MVP surface.
+
+**Trigger: SessionState flag, not view-derived.** Unlike mission_fail (derived
+from player health), mission_complete happens at a screen transition (end_level
+→ end_mission → start_hub), and the mission is discarded when start_hub runs.
+So `end_level`'s `.default` last-level branch stashes the mission name + path
+onto `SessionState.pending_mission_complete` (a `MissionCompleteInfo` struct,
+duped into `history_arena` like `pending_error`) before pushing `end_mission`.
+The flag survives the level→hub screen transition (it's on SessionState
+directly, not `ui_state` — the gameLoop's `ui_state = .{}` reset on screen
+change doesn't touch it). The cascade runs normally (end_mission → start_hub →
+hub); the overlay renders in the hub post-transition. Gated `!replaying` so
+undo/redo scrubbing doesn't pause or show the overlay.
+
+**Why not pause mid-drain (Option C)?** Pausing the drain before the cascade
+(keeping the level loaded) was considered, but it needs drain-pausing +
+undo-flag-clearing machinery. Stashing + showing post-transition is simpler:
+no drain-pausing, no gate in the drain loop, the cascade completes normally,
+and the overlay shows in the hub the player returns to — arguably better
+(back at base, ready to choose the next mission).
+
+**Buttons.** Continue (`.continue_after_mission`) just clears the flag — the
+player is already in the hub. Replay Mission (`.replay_mission`) clears the
+flag + pushes `end_hub` + `start_mission` on the stashed path (LIFO: end_hub
+syncs the hub player entity into PlayerData first, then start_mission reloads
+the mission). Same `options_action` dispatch path as the options menu /
+mission_fail buttons — pushed + drained before the `update()` gate.
+
+**Gate.** `update()` returns early when `pending_mission_complete != null`
+(same position as the options-menu gate), blocking idle input / drag /
+camera-pan in the hub while the overlay is up. `handleAnytimeInput` runs
+before the gate, so the Continue / Replay buttons work. The options-menu
+toggle is blocked while the overlay is up (one modal at a time).
+
+**Audio.** `.mission_completion` sound wired in `end_level`'s last-level
+branch (gated `!replaying`), alongside the flag stash. The last audio TODO
+item is done.
+
+Native build + tests green; game runs without crashing.

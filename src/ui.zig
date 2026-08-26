@@ -1823,6 +1823,72 @@ pub fn buildTopBar(
     } });
 }
 
+/// Build the mission-complete overlay: a full-screen 9-slice panel with a
+/// "{mission_name} completed" header centered above a two-button stack
+/// (Continue, Replay Mission). Rendered when `SessionState.pending_mission_complete`
+/// is set (the player completed the last level of a mission; the cascade has
+/// already transitioned to the hub). See DESIGN → Architecture.
+pub fn buildMissionComplete(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    mission_name: []const u8,
+) !void {
+    // Full-screen panel background.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = screen.position(),
+        .width = screen.width,
+        .height = screen.height,
+    } });
+
+    const header_font_size: i32 = 128;
+    const header_text = try std.fmt.allocPrint(allocator, "{s} completed", .{mission_name});
+    const header_width = font_metrics.measureSpanWidth(text(header_text), header_font_size);
+    const header_label = screen.placeCenter(header_width, header_font_size);
+    // Place the header above the button stack.
+    const buttons_height: i32 = 2 * menu_button_height + ui_gap;
+    try elements.append(allocator, .{ .text_label = .{
+        .text = header_text,
+        .screen_position = .{
+            .x = header_label.x,
+            .y = header_label.y - buttons_height - ui_gap - header_font_size,
+        },
+        .font_size = header_font_size,
+        .blocks_input = false,
+    } });
+
+    const MenuButton = struct { label: []const u8, action: Action };
+    const buttons = [_]MenuButton{
+        .{ .label = "Continue", .action = .continue_after_mission },
+        .{ .label = "Replay Mission", .action = .replay_mission },
+    };
+
+    const total_height = rowWidth(@intCast(buttons.len), menu_button_height, ui_gap);
+    const origin = screen
+        .placeCenter(menu_button_width, total_height)
+        .position();
+
+    for (buttons, 0..) |menu_button, index| {
+        const cell: Rectangle = .{
+            .x = origin.x,
+            .y = origin.y + @as(i32, @intCast(index)) * (menu_button_height + ui_gap),
+            .width = menu_button_width,
+            .height = menu_button_height,
+        };
+        try emitPanelButton(
+            elements,
+            allocator,
+            font_metrics,
+            cell,
+            menu_button.label,
+            menu_button_font_size,
+            menu_button.action,
+        );
+    }
+}
+
 /// Build the mission-fail overlay: a full-screen 9-slice panel with a
 /// large "Defeat" label centered above a two-button stack (Restart Mission,
 /// Exit Mission). Rendered when the player is dead (derived from
