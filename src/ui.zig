@@ -2394,11 +2394,12 @@ const gear_stat_labels = [_][]const u8{
 };
 
 /// Gear panel width, derived from the longest stat line so the stats
-/// column (right of the gear) fits without truncation. Mirrors the
-/// tooltip/error-popup approach (`measureSpanWidth` → content width +
-/// padding). Layout: weapon row (2 slots) on top, gear stack (1 slot) under
-/// main-hand, stats column under off-hand. Width = 2 slots + 2 gaps to the
-/// stats column + stats text + 2 side margins (`ui_gap` each).
+/// column (starting at the off-hand's left edge) fits without truncation.
+/// Mirrors the tooltip/error-popup approach (`measureSpanWidth` → content
+/// width + padding). Layout: weapon row (2 slots + gap) on top; gear stack
+/// (1 slot) under main-hand; stats start at the off-hand's bottom-left
+/// corner and extend right. Width = max(weapon row, stats from col1) +
+/// 2 side margins.
 pub fn gearPanelWidth(font_metrics: FontMetrics) i32 {
     // Value gutter: space + up to 4 digits (stats are bounded; see balance
     // bounds in loaders.zig). Keeps the width stable as values change.
@@ -2408,7 +2409,11 @@ pub fn gearPanelWidth(font_metrics: FontMetrics) i32 {
         const line_width = font_metrics.measureSpanWidth(text(label), gear_stat_font_size) + value_gutter;
         if (line_width > stats_width) stats_width = line_width;
     }
-    return 2 * inventory_slot_size + 2 * ui_gap + stats_width + 2 * ui_gap;
+    // Weapon row content (from left margin): 2 slots + 1 gap.
+    const weapon_row_width = 2 * inventory_slot_size + ui_gap;
+    // Stats content (from left margin): col1 offset + stats text.
+    const stats_column_width = inventory_slot_size + ui_gap + stats_width;
+    return @max(weapon_row_width, stats_column_width) + 2 * ui_gap;
 }
 
 /// Gear panel: equipped weapons (main/off hand) top-left, then amulet →
@@ -2506,12 +2511,12 @@ pub fn buildGearPanel(
         row_y += cell_size + ui_gap;
     }
 
-    // Combat stats in a column to the RIGHT of the gear stack, starting flush
-    // under the off-hand weapon (same row as the amulet). Effective values
-    // (gear + effect modifiers + momentum where applicable). See
-    // `getEffective*` on Entity.
-    const stats_x = col1_x + cell_size + ui_gap;
-    const stats_top = top_y + cell_size + ui_gap;
+    // Combat stats in a column starting at the off-hand slot's BOTTOM-LEFT
+    // corner (flush — no gap), flowing down the right side of the gear stack.
+    // Effective values (gear + effect modifiers + momentum where applicable).
+    // See `getEffective*` on Entity.
+    const stats_x = col1_x;
+    const stats_top = top_y + cell_size;
     const stat_line_height: i32 = gear_stat_font_size + 16;
 
     const main_damage = if (player.main_hand_weapon) |w| player.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
