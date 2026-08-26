@@ -3920,3 +3920,15 @@ SessionState flag. No `update()` gate (same reasoning as mission_fail: the
 overlay's `blocks_input` panel shields input; idle input is self-gating).
 
 Native build + tests green; game runs without crashing.
+
+### Mission-complete overlay — clear on replay
+
+The overlay persisted after clicking Replay Mission because
+`last_completed_mission` was never cleared in the replay path. The overlay
+renders whenever the field is non-null (not gated on `screen == .hub`), so
+it showed over the level too.
+
+Fix: `start_mission` now clears `current.last_completed_mission = null` when
+entering a mission (new game or replay). A mission attempt retires any prior
+completion info. On the undo timeline via GameState, so undo from the level
+back to the hub re-shows the overlay (the snapshot has the field set).

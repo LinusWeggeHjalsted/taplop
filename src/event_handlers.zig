@@ -774,6 +774,12 @@ pub fn processEvent(
                     current.mission.?.path = start.mission_path;
                     current.mission.?.current_level_index = 1;
 
+                    // Clear the mission-complete overlay info — entering a
+                    // mission (new game or replay) retires any prior
+                    // completion. On the undo timeline via GameState. See
+                    // DESIGN → Architecture.
+                    current.last_completed_mission = null;
+
                     // Return-hub override: when the caller passes a non-null
                     // end_hub_id, the mission returns THERE on end_mission
                     // instead of its authored end_hub. Used by dreams
