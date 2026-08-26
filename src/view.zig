@@ -254,11 +254,11 @@ pub fn view(
         ui_elements.append(frame_allocator, .{ .image = .{
             .sprite_id = drag.icon_sprite_id,
             .screen_position = .{
-                .x = ghost_pos.x - @divTrunc(ui.slot_size, 2),
-                .y = ghost_pos.y - @divTrunc(ui.slot_size, 2),
+                .x = ghost_pos.x - @divTrunc(drag.size, 2),
+                .y = ghost_pos.y - @divTrunc(drag.size, 2),
             },
-            .width = ui.slot_size,
-            .height = ui.slot_size,
+            .width = drag.size,
+            .height = drag.size,
             // Follows the pointer; must not occlude drop-target hit-testing.
             .blocks_input = false,
         } }) catch @panic("failed to append drag ghost");
@@ -1920,7 +1920,7 @@ test "skill range outline: range/radius/none/drag" {
         const state_ = test_harness.levelStateWithEntities(arena, &.{player}, &.{});
         var session = state.SessionState{};
         session.input_state.mouse_screen_position = .{ .x = 200, .y = 200 };
-        session.ui_state.drag = .{ .icon_sprite_id = "skills/slice", .source = .{ .skill_bar = 0 } };
+        session.ui_state.drag = .{ .icon_sprite_id = "skills/slice", .source = .{ .skill_bar = 0 }, .size = ui.slot_size };
         const ui_elements = [_]ui.UiElement{.{ .button = .{
             .action = .skill_slot_1,
             .screen_position = .{ .x = 100, .y = 100 },

@@ -135,7 +135,11 @@ pub fn handleDrag(
     if (pointer.pressed) {
         if (ui.slotAt(ui_elements, pointer.position)) |slot| {
             if (slot.ref) |ref| {
-                if (slot.icon_sprite_id) |icon| {
+                // Resolve the slot's CONTENT icon (the item/skill being
+                // dragged), not the slot element's frame sprite — an empty
+                // slot has a frame but no content, so this also gates drags
+                // to occupied slots only.
+                if (ui.slotContentIcon(current, ref)) |icon| {
                     ui_state.pending_slot_press = .{
                         .source = ref,
                         .icon_sprite_id = icon,
@@ -154,7 +158,11 @@ pub fn handleDrag(
             const dx = pointer.position.x - press.press_position.x;
             const dy = pointer.position.y - press.press_position.y;
             if (dx * dx + dy * dy >= ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
-                ui_state.drag = .{ .source = press.source, .icon_sprite_id = press.icon_sprite_id };
+                ui_state.drag = .{
+                    .source = press.source,
+                    .icon_sprite_id = press.icon_sprite_id,
+                    .size = ui.slotContentSize(press.source),
+                };
                 ui_state.pending_slot_press = null;
             }
         }
@@ -187,7 +195,9 @@ pub fn handleDrag(
     if (pointer.right_pressed) {
         if (ui.slotAt(ui_elements, pointer.position)) |slot| {
             if (slot.ref) |ref| {
-                if (slot.icon_sprite_id) |icon| {
+                // Same content gate as left-press: only occupied slots are
+                // clickable (an empty slot has nothing to equip/salvage).
+                if (ui.slotContentIcon(current, ref)) |icon| {
                     ui_state.pending_slot_press = .{
                         .source = ref,
                         .icon_sprite_id = icon,

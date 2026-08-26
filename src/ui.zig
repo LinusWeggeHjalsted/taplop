@@ -130,6 +130,9 @@ pub const SlotRef = union(enum) {
 pub const DragState = struct {
     source: SlotRef,
     icon_sprite_id: []const u8,
+    /// Render size of the ghost, by domain (see `slotContentSize`). Captured
+    /// at press time so the view needs no state lookup to draw the ghost.
+    size: i32,
 };
 
 /// Which mouse button a slot press used. Right-click is a distinct intent
@@ -1737,7 +1740,7 @@ fn emitSkillButton(
     // id mirrors the SkillId tag name (assets/skills/<tag>.png). Highlighted
     // when this slot holds the prepared skill awaiting target confirmation.
     const is_prepared = prepared_skill != null and prepared_skill.? == skill_id.?;
-    const icon_sprite_id = try std.fmt.allocPrint(allocator, "skills/{s}", .{@tagName(skill_id.?)});
+    const icon_sprite_id = skillIconSpriteId(skill_id.?);
     try emitIconButton(
         elements,
         allocator,
@@ -2077,6 +2080,64 @@ pub fn itemIconSpriteId(item: types.Item) []const u8 {
         .pants => "items/pants",
         .boots => "items/boots",
         .skill_tome => "items/skill_tome",
+    };
+}
+
+/// The sprite id for a skill icon: `skills/<tag>` mirroring the SkillId tag
+/// name (assets/skills/<tag>.png). Comptime-built per-variant table so the
+/// returned slice is stable for the process lifetime (no allocation) —
+/// drag ghosts borrow it across frames.
+fn skillIconSpriteId(skill_id: SkillId) []const u8 {
+    const table = comptime blk: {
+        const fields = @typeInfo(SkillId).@"enum".fields;
+        var t: [fields.len][]const u8 = undefined;
+        for (fields, 0..) |field, i| {
+            t[i] = "skills/" ++ field.name;
+        }
+        break :blk t;
+    };
+    return table[@intFromEnum(skill_id)];
+}
+
+/// Render size for a slot's content, by domain. Inventory + gear slots are
+/// 128×128 (`inventory_slot_size`); skill-bar + learned-skill slots are
+/// 256×256 (`slot_size`). Pure function of the ref's domain.
+pub fn slotContentSize(ref: SlotRef) i32 {
+    return switch (ref) {
+        .inventory, .gear => inventory_slot_size,
+        .skill_bar, .learned_skill => slot_size,
+    };
+}
+
+/// The content icon for a slot ref, resolved against the live player entity
+/// (inventory/gear/skill-bar contents) or the skill-id tag (learned-skill
+/// pool). Returns null for an empty slot — the caller must not start a drag
+/// from an empty slot. This is the "what is actually being dragged" lookup,
+/// distinct from a slot element's `icon_sprite_id` (which is the frame
+/// background, always present).
+pub fn slotContentIcon(game_state: *const GameState, ref: SlotRef) ?[]const u8 {
+    const player = playerEntity(game_state) orelse return null;
+    return switch (ref) {
+        .inventory => |i| blk: {
+            if (i >= player.inventory.slots.len) break :blk null;
+            if (player.inventory.slots[i]) |item| break :blk itemIconSpriteId(item);
+            break :blk null;
+        },
+        .gear => |g| switch (g) {
+            .main_hand => if (player.main_hand_weapon) |w| itemIconSpriteId(.{ .weapon = w }) else null,
+            .off_hand => if (player.off_hand_weapon) |w| itemIconSpriteId(.{ .weapon = w }) else null,
+            .amulet => if (player.amulet) |a| itemIconSpriteId(.{ .amulet = a }) else null,
+            .coat => if (player.coat) |c| itemIconSpriteId(.{ .coat = c }) else null,
+            .gloves => if (player.gloves) |gv| itemIconSpriteId(.{ .gloves = gv }) else null,
+            .pants => if (player.pants) |p| itemIconSpriteId(.{ .pants = p }) else null,
+            .boots => if (player.boots) |b| itemIconSpriteId(.{ .boots = b }) else null,
+        },
+        .skill_bar => |i| blk: {
+            if (i >= player.equipped_utility_skills.len) break :blk null;
+            if (player.equipped_utility_skills[i]) |skill_id| break :blk skillIconSpriteId(skill_id);
+            break :blk null;
+        },
+        .learned_skill => |skill_id| skillIconSpriteId(skill_id),
     };
 }
 

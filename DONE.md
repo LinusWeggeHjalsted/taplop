@@ -4331,3 +4331,40 @@ framework (`Tooltip`/`spanRow`/`buildTooltip`).
   (view.zig) threads it from `current_state.player_data.learned_skills`.
 - **Tests:** weapon (name/type/damage), coat (name/type/health/defense),
   tome not-learned (learn prompt), tome already-learned (learned line).
+
+### Drag ghost: content icon + size, not the slot frame (DONE)
+
+The drag ghost showed a 256×256 slot-frame sprite (`ui/item_slot`) under the
+cursor instead of the item being dragged, and empty slots were draggable.
+
+**Root cause:** `handleDrag` copied the `Slot` element's `icon_sprite_id`
+(the always-present frame background, rendered at `slot_size` = 256) into
+`DragState`. The item `Image` on top of the frame is non-blocking (so the
+slot stays the single hit-test/tooltip target), so the drag never consulted
+it. The `if (slot.icon_sprite_id) |icon|` press guard was always true (the
+frame sprite is always present), so empty slots started drags too.
+
+**Fix — resolve content from the ref, not the frame from the element:**
+- `slotContentIcon(state, ref) ?[]const u8` (ui.zig) — resolves a `SlotRef`
+  to its content icon against the live player entity: inventory/gear/skill-
+  bar contents, or the `SkillId` tag for the learned-skill pool. Returns
+  null for an empty slot. This is the "what is actually being dragged"
+  lookup, distinct from a slot element's frame sprite.
+- `slotContentSize(ref) i32` (ui.zig) — render size by domain: inventory +
+  gear → `inventory_slot_size` (128); skill-bar + learned-skill →
+  `slot_size` (256).
+- `skillIconSpriteId(skill_id)` (ui.zig) — comptime-built per-`SkillId`
+  table → `"skills/<tag>"`, no allocation. Replaced the `allocPrint` in
+  `emitSkillButton` (the only other skill-icon-id site).
+- `DragState` gained `size: i32`; `handleDrag` captures the content icon +
+  size at press time (left + right press both gated on non-null content, so
+  empty slots are no longer draggable/clickable). `view()` renders the ghost
+  at `drag.size` instead of hardcoded `slot_size`.
+
+The settled slot-as-hit-test-target design (item Image = decoration on top,
+tooltip falls through to the Slot) is preserved — the drag just reads the
+right source now. The view stays stateless about content resolution (icon +
+size captured at press, same `DragState` shape the view test constructs
+directly). Gear/skill-bar panel builders don't emit refs yet, so those arms
+of the resolver are reachable but currently unused; covered for when they
+land.
