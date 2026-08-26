@@ -4368,3 +4368,17 @@ size captured at press, same `DragState` shape the view test constructs
 directly). Gear/skill-bar panel builders don't emit refs yet, so those arms
 of the resolver are reachable but currently unused; covered for when they
 land.
+
+**Follow-up — ghost tint + hide dragged item in its slot (DONE):** the drag
+ghost now tints with the same player-gradient index 1 the inventory panel
+uses for item icons (DESIGN → Entity & UI Coloring — `view()` resolves
+`active_theme.player_gradient.colors[1]` and passes it as the ghost's
+`.color`); previously the ghost drew with `default_tint` (white / no tint),
+off the convention entirely. And the item `Image` is now suppressed on the
+drag-source slot (`buildInventoryPanel` takes a `drag_source: ?SlotRef`;
+when a slot's index matches an inventory-source drag, the frame + tooltip
+still emit but the item icon doesn't, so the item reads as "in flight" —
+shown only as the ghost following the pointer). Ref-general: non-inventory
+refs return false from the source-match check, so a gear/skill-source drag
+won't blank an inventory slot (and gear/skill builders reuse the pattern
+when they land).

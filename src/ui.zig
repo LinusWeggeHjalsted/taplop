@@ -2150,6 +2150,13 @@ pub fn buildInventoryPanel(
     materials: types.Materials,
     learned_skills: []const types.SkillId,
     active_theme: types.ActiveColorTheme,
+    /// The slot currently being dragged from, if any. The item `Image` is
+    /// suppressed on the source slot so the item reads as "in flight"
+    /// (shown only as the drag ghost following the pointer). The frame +
+    /// tooltip still emit (the tooltip is globally suppressed while a drag
+    /// is active — see view.zig — so it's moot here, but the frame keeps
+    /// the slot's hit-test identity intact).
+    drag_source: ?SlotRef,
 ) !void {
     // Solid panel background — blocks input through the panel area.
     try elements.append(allocator, .{ .nine_slice_panel = .{
@@ -2197,15 +2204,23 @@ pub fn buildInventoryPanel(
         } });
         // Item icon on top of the frame. Passes hover/click through to the
         // slot beneath so the slot stays the single interaction target.
-        if (inventory.slots[@intCast(index)]) |item| {
-            try elements.append(allocator, .{ .image = .{
-                .sprite_id = itemIconSpriteId(item),
-                .screen_position = cell.position(),
-                .width = inventory_slot_size,
-                .height = inventory_slot_size,
-                .color = item_color,
-                .blocks_input = false,
-            } });
+        // Suppressed on the drag source: the item reads as "in flight"
+        // (the drag ghost follows the pointer instead).
+        const is_drag_source = if (drag_source) |src| switch (src) {
+            .inventory => |si| si == @as(u32, @intCast(index)),
+            else => false,
+        } else false;
+        if (!is_drag_source) {
+            if (inventory.slots[@intCast(index)]) |item| {
+                try elements.append(allocator, .{ .image = .{
+                    .sprite_id = itemIconSpriteId(item),
+                    .screen_position = cell.position(),
+                    .width = inventory_slot_size,
+                    .height = inventory_slot_size,
+                    .color = item_color,
+                    .blocks_input = false,
+                } });
+            }
         }
     }
 

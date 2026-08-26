@@ -251,6 +251,9 @@ pub fn view(
     if (session.ui_state.drag) |drag| {
         const pointer = session.input_state.mouse_screen_position;
         const ghost_pos = pointer.toScreenPosition();
+        // Tinted with the same player-gradient index 1 the inventory panel
+        // uses for item icons (DESIGN → Entity & UI Coloring).
+        const ghost_color = active_theme.player_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)];
         ui_elements.append(frame_allocator, .{ .image = .{
             .sprite_id = drag.icon_sprite_id,
             .screen_position = .{
@@ -259,6 +262,7 @@ pub fn view(
             },
             .width = drag.size,
             .height = drag.size,
+            .color = ghost_color,
             // Follows the pointer; must not occlude drop-target hit-testing.
             .blocks_input = false,
         } }) catch @panic("failed to append drag ghost");
@@ -430,6 +434,7 @@ fn buildMiddlePanels(
                 // on PlayerData (no entity field), so the sidebar reads
                 // `player_data.materials`.
                 const inventory = if (ui.playerEntity(current_state)) |player| player.inventory else types.Inventory{};
+                const drag_source: ?ui.SlotRef = if (session.ui_state.drag) |d| d.source else null;
                 try ui.buildInventoryPanel(
                     elements,
                     allocator,
@@ -439,6 +444,7 @@ fn buildMiddlePanels(
                     current_state.player_data.materials,
                     current_state.player_data.learned_skills,
                     active_theme,
+                    drag_source,
                 );
                 break :blk ui.inventory_panel_width;
             },
