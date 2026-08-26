@@ -4538,3 +4538,36 @@ bottom-bar health globe fill + tooltip "X / Y" (ui.zig); heal capacity
 **Kept on base `.max_health`:** `entityDefinitionsEqual` (loaders.zig —
 compares *definitions*, not runtime; base stats are the definition). Test
 harness entity literals (no gear, so base == effective).
+
+### Gear panel + getEffectiveSpellDamage (DONE)
+
+The gear middle panel (`buildGearPanel`): equipped weapons (main/off hand)
+top-left, then amulet → coat → gloves → pants → boots stacked below, then
+combat stats. Shares `inventory_panel_height` with the other middle panels;
+width = 3×128 + 4×ui_gap = 448. All slots + item icons 128×128.
+
+**Slots carry `ref = .{ .gear = ... }`** so drag to/from inventory works
+out of the box — the orchestrator mapping (`dragToOrchestrator`:
+inventory→gear = equip, gear→inventory = unequip) + `slotContentIcon` +
+`slotContentSize` were already wired from the earlier drag slice. The item
+icon is suppressed on the drag source ("in flight"), same pattern as
+inventory/skill-bar. Tooltips ride the slot frame (`buildItemTooltip`),
+same fall-through as inventory.
+
+**Stats section:** effective values from the `getEffective*` accessors:
+main/off hand damage (`getEffectiveOutgoingDamage(weapon_damage)` — gloves
++ momentum + outgoing_damage modifier), spell damage (`getEffectiveSpellDamage`
+— new), max health (`getEffectiveMaxHealth`), defense, pickup radius
+(`getEffectivePickupRadius(0)` — base 0 for now, gear-only), speed. Outlined
+text labels (font 56), `default_tint` → renderer substitutes theme `lightest`.
+
+**`getEffectiveSpellDamage()`** (types.zig): mirrors
+`getEffectiveOutgoingDamage` — amulet `spell_damage` base + gloves
+`damage_bonus` + converted momentum + `outgoing_damage` effect modifier.
+No amulet = base 0.
+
+**`gearSlotItem(player, gear_slot)`** (ui.zig, pub): the Item in a gear slot
+or null — mirrors the handler-side `gearSlotItem`. Used by the panel builder
+for item icons + tooltips.
+
+**`gear_panel_width`** raised from placeholder 200 to 448 (3 slots + margins).

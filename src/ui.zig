@@ -406,7 +406,9 @@ pub const inventory_slot_size: i32 = 128;
 /// Height = 16 + 1536 + 16            = 1568.
 pub const inventory_panel_width: i32 = 1200;
 pub const inventory_panel_height: i32 = 1568;
-pub const gear_panel_width: i32 = 200;
+/// Gear panel: 3×128 slots + 4×ui_gap (2 internal + 2 side margins) = 448.
+/// Shares `inventory_panel_height` with all middle panels.
+pub const gear_panel_width: i32 = 448;
 pub const skills_panel_width: i32 = 800;
 pub const enemy_inspect_panel_width: i32 = 600;
 
@@ -2233,6 +2235,20 @@ pub fn slotContentIcon(game_state: *const GameState, ref: SlotRef) ?[]const u8 {
     };
 }
 
+/// The Item in a gear slot, or null if empty. Used by panel builders for
+/// item icons + tooltips. Mirrors the handler-side `gearSlotItem`.
+pub fn gearSlotItem(player: Entity, gear_slot: GearSlot) ?types.Item {
+    return switch (gear_slot) {
+        .main_hand => if (player.main_hand_weapon) |weapon| .{ .weapon = weapon } else null,
+        .off_hand => if (player.off_hand_weapon) |weapon| .{ .weapon = weapon } else null,
+        .amulet => if (player.amulet) |amulet| .{ .amulet = amulet } else null,
+        .coat => if (player.coat) |coat| .{ .coat = coat } else null,
+        .gloves => if (player.gloves) |gloves| .{ .gloves = gloves } else null,
+        .pants => if (player.pants) |pants| .{ .pants = pants } else null,
+        .boots => if (player.boots) |boots| .{ .boots = boots } else null,
+    };
+}
+
 pub fn buildInventoryPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -2360,6 +2376,133 @@ pub fn buildInventoryPanel(
             .blocks_input = false,
         } });
         icon_top += inventory_slot_size;
+    }
+}
+
+/// Gear panel: equipped weapons (main/off hand) top-left, then amulet →
+/// coat → gloves → pants → boots stacked below, then combat stats. All
+/// slots + item icons 128×128 (`inventory_slot_size`). Panel is 3 slots
+/// wide (448px) and shares `inventory_panel_height` with the other middle
+/// panels. Slots carry `ref = .{ .gear = ... }` so drag to/from inventory
+/// works (equip/unequip via the existing orchestrator mapping). The item
+/// icon is suppressed on the drag source (shown only as the ghost).
+pub fn buildGearPanel(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    bounds: Rectangle,
+    player: Entity,
+    learned_skills: []const types.SkillId,
+    active_theme: types.ActiveColorTheme,
+    drag_source: ?SlotRef,
+) !void {
+    // Solid panel background — blocks input through the panel area.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = bounds.position(),
+        .width = bounds.width,
+        .height = bounds.height,
+    } });
+
+    const p = active_theme.player_gradient.colors;
+    const slot_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const item_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
+
+    const origin = bounds.position();
+    const cell_size = inventory_slot_size;
+
+    // Emit one gear slot: frame + item icon (suppressed on drag source) +
+    // tooltip. The frame carries the ref (drag source + drop target).
+    const emitGearSlot = struct {
+        fn run(
+            elems: *UiElementList,
+            alloc: std.mem.Allocator,
+            cell_pos: ScreenPosition,
+            gear_slot: GearSlot,
+            pl: Entity,
+            skills: []const types.SkillId,
+            s_color: Color,
+            i_color: Color,
+            src: ?SlotRef,
+        ) !void {
+            const ref: SlotRef = .{ .gear = gear_slot };
+            const is_drag_source = if (src) |s| s.eql(ref) else false;
+            const item = gearSlotItem(pl, gear_slot);
+            const slot_tooltip: ?Tooltip = if (item) |it|
+                try buildItemTooltip(alloc, it, skills)
+            else
+                null;
+            try elems.append(alloc, .{ .slot = .{
+                .screen_position = cell_pos,
+                .size = cell_size,
+                .icon_sprite_id = "ui/item_slot",
+                .icon_color = s_color,
+                .ref = ref,
+                .tooltip = slot_tooltip,
+            } });
+            // Item icon on top, suppressed on the drag source ("in flight").
+            if (!is_drag_source) {
+                if (item) |it| {
+                    try elems.append(alloc, .{ .image = .{
+                        .sprite_id = itemIconSpriteId(it),
+                        .screen_position = cell_pos,
+                        .width = cell_size,
+                        .height = cell_size,
+                        .color = i_color,
+                        .blocks_input = false,
+                    } });
+                }
+            }
+        }
+    }.run;
+
+    // Weapons: main_hand + off_hand side by side on the top row.
+    const top_y = origin.y + ui_gap;
+    const col0_x = origin.x + ui_gap;
+    const col1_x = col0_x + cell_size + ui_gap;
+    try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = top_y }, .main_hand, player, learned_skills, slot_color, item_color, drag_source);
+    try emitGearSlot(elements, allocator, .{ .x = col1_x, .y = top_y }, .off_hand, player, learned_skills, slot_color, item_color, drag_source);
+
+    // Gear stack: amulet → coat → gloves → pants → boots, each one row below.
+    const gear_slots = [_]GearSlot{ .amulet, .coat, .gloves, .pants, .boots };
+    var row_y = top_y + cell_size + ui_gap;
+    for (gear_slots) |gs| {
+        try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = row_y }, gs, player, learned_skills, slot_color, item_color, drag_source);
+        row_y += cell_size + ui_gap;
+    }
+
+    // Combat stats below the gear stack. Effective values (gear + effect
+    // modifiers + momentum where applicable). See `getEffective*` on Entity.
+    const stats_top = row_y + ui_gap;
+    const stat_font_size: i32 = 56;
+    const stat_line_height: i32 = stat_font_size + 16;
+    const stat_x = col0_x;
+
+    const main_damage = if (player.main_hand_weapon) |w| player.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
+    const off_damage = if (player.off_hand_weapon) |w| player.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
+
+    const stats = [_]struct { label: []const u8, value: u32 }{
+        .{ .label = "Main Hand Damage", .value = main_damage },
+        .{ .label = "Off Hand Damage", .value = off_damage },
+        .{ .label = "Spell Damage", .value = player.getEffectiveSpellDamage() },
+        .{ .label = "Max Health", .value = player.getEffectiveMaxHealth() },
+        .{ .label = "Defense", .value = player.getEffectiveDefense() },
+        .{ .label = "Pickup Radius", .value = player.getEffectivePickupRadius(0) },
+        .{ .label = "Speed", .value = player.getEffectiveSpeed() },
+    };
+
+    var stat_y = stats_top;
+    for (stats) |stat| {
+        const line = try std.fmt.allocPrint(allocator, "{s} {d}", .{ stat.label, stat.value });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = line,
+            .screen_position = .{ .x = stat_x, .y = stat_y },
+            .font_size = stat_font_size,
+            .outlined = true,
+            .blocks_input = false,
+        } });
+        stat_y += stat_line_height;
+        _ = font_metrics;
     }
 }
 

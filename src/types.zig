@@ -465,6 +465,18 @@ pub const Entity = struct {
         return applyModifier(base_damage, modifier);
     }
 
+    /// Effective spell damage from the amulet, mirroring `getEffectiveOutgoingDamage`:
+    /// amulet's `spell_damage` as the base + gloves `damage_bonus` + converted
+    /// momentum + the `outgoing_damage` effect modifier. No amulet = base 0.
+    pub fn getEffectiveSpellDamage(self: Entity) u32 {
+        const base: u32 = if (self.amulet) |amulet| amulet.spell_damage else 0;
+        const gloves_bonus: u32 = if (self.gloves) |gloves| gloves.damage_bonus else 0;
+        const modifier = self.sumEffectModifier(.outgoing_damage) +
+            @as(i32, @intCast(gloves_bonus)) +
+            @as(i32, @intCast(self.getConvertedMomentum()));
+        return applyModifier(base, modifier);
+    }
+
     pub fn getEffectiveIncomingDamage(self: Entity, base_damage: u32) u32 {
         const modifier = self.sumEffectModifier(.incoming_damage) -
             @as(i32, @intCast(self.getEffectiveDefense()));

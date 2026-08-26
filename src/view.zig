@@ -480,8 +480,29 @@ fn buildMiddlePanels(
                 );
                 break :blk ui.inventory_panel_width;
             },
-            // Builders pending — gear / skills / enemy inspect reserve no space.
-            .gear, .skills, .enemy_inspect => continue,
+            .gear => blk: {
+                const bounds = Rectangle{
+                    .x = cursor_x,
+                    .y = section.y + @divTrunc(section.height - ui.inventory_panel_height, 2),
+                    .width = ui.gear_panel_width,
+                    .height = ui.inventory_panel_height,
+                };
+                const player = if (ui.playerEntity(current_state)) |pl| pl else types.Entity{};
+                const drag_source: ?ui.SlotRef = if (session.ui_state.drag) |d| d.source else null;
+                try ui.buildGearPanel(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    bounds,
+                    player,
+                    current_state.player_data.learned_skills,
+                    active_theme,
+                    drag_source,
+                );
+                break :blk ui.gear_panel_width;
+            },
+            // Builders pending — skills / enemy inspect reserve no space.
+            .skills, .enemy_inspect => continue,
         };
         cursor_x += width + ui.ui_gap;
     }
