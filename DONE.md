@@ -4589,3 +4589,12 @@ for item icons + tooltips.
 - Extracted `gear_stat_labels` (shared const array) + `gear_stat_font_size`
   (pub const) so the width function and the builder reference one set of
   labels — no drift.
+
+**Gear panel layout — stats beside gear (DONE):** moved the combat stats
+from below the gear stack to a column on the RIGHT, starting flush under
+the off-hand weapon (same row as the amulet). Eliminates the empty space
+to the right of the gear slots. Gear stack (amulet→boots) stays a single
+column under the main-hand; weapon row (main+off) spans the top.
+`gearPanelWidth` updated to match the new layout: 2 slots + 2 gaps to the
+stats column + stats text + 2 side margins. Panel is wider but shorter,
+and the "what you're wearing / what it gives you" split reads cleanly.

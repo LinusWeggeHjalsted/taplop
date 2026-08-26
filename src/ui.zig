@@ -2393,34 +2393,33 @@ const gear_stat_labels = [_][]const u8{
     "Speed",
 };
 
-/// Gear panel width, derived from the longest stat line so the panel fits
-/// the stats without truncation. Mirrors the tooltip/error-popup approach
-/// (`measureRowWidth` → content width + padding): measures each label + a
-/// 4-digit value gutter (" 9999") at `gear_stat_font_size`, takes the max,
-/// and never shrinks below the 3-slot column width. Side margins (`ui_gap`
-/// each side) are added.
+/// Gear panel width, derived from the longest stat line so the stats
+/// column (right of the gear) fits without truncation. Mirrors the
+/// tooltip/error-popup approach (`measureSpanWidth` → content width +
+/// padding). Layout: weapon row (2 slots) on top, gear stack (1 slot) under
+/// main-hand, stats column under off-hand. Width = 2 slots + 2 gaps to the
+/// stats column + stats text + 2 side margins (`ui_gap` each).
 pub fn gearPanelWidth(font_metrics: FontMetrics) i32 {
-    // 3 slots + 2 internal gaps (the weapon row + the gear stack share this
-    // column width; the gear stack is 1 slot wide but the top row needs 2).
-    const slot_columns_width = 2 * inventory_slot_size + ui_gap;
-    var content_width: i32 = slot_columns_width;
     // Value gutter: space + up to 4 digits (stats are bounded; see balance
     // bounds in loaders.zig). Keeps the width stable as values change.
     const value_gutter = font_metrics.measureSpanWidth(text(" 9999"), gear_stat_font_size);
+    var stats_width: i32 = 0;
     for (gear_stat_labels) |label| {
         const line_width = font_metrics.measureSpanWidth(text(label), gear_stat_font_size) + value_gutter;
-        if (line_width > content_width) content_width = line_width;
+        if (line_width > stats_width) stats_width = line_width;
     }
-    return content_width + 2 * ui_gap;
+    return 2 * inventory_slot_size + 2 * ui_gap + stats_width + 2 * ui_gap;
 }
 
 /// Gear panel: equipped weapons (main/off hand) top-left, then amulet →
-/// coat → gloves → pants → boots stacked below, then combat stats. All
-/// slots + item icons 128×128 (`inventory_slot_size`). Panel is 3 slots
-/// wide (448px) and shares `inventory_panel_height` with the other middle
-/// panels. Slots carry `ref = .{ .gear = ... }` so drag to/from inventory
-/// works (equip/unequip via the existing orchestrator mapping). The item
-/// icon is suppressed on the drag source (shown only as the ghost).
+/// coat → gloves → pants → boots stacked below the main-hand, and combat
+/// stats in a column to the right of the gear stack (starting flush under
+/// the off-hand). All slots + item icons 128×128 (`inventory_slot_size`).
+/// Panel width is derived from the longest stat line (`gearPanelWidth`);
+/// height shares `inventory_panel_height` with the other middle panels.
+/// Slots carry `ref = .{ .gear = ... }` so drag to/from inventory works
+/// (equip/unequip via the existing orchestrator mapping). The item icon is
+/// suppressed on the drag source (shown only as the ghost).
 pub fn buildGearPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -2498,7 +2497,8 @@ pub fn buildGearPanel(
     try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = top_y }, .main_hand, player, learned_skills, slot_color, item_color, drag_source);
     try emitGearSlot(elements, allocator, .{ .x = col1_x, .y = top_y }, .off_hand, player, learned_skills, slot_color, item_color, drag_source);
 
-    // Gear stack: amulet → coat → gloves → pants → boots, each one row below.
+    // Gear stack: amulet → coat → gloves → pants → boots, each one row below
+    // the weapons, under the main-hand column.
     const gear_slots = [_]GearSlot{ .amulet, .coat, .gloves, .pants, .boots };
     var row_y = top_y + cell_size + ui_gap;
     for (gear_slots) |gs| {
@@ -2506,11 +2506,13 @@ pub fn buildGearPanel(
         row_y += cell_size + ui_gap;
     }
 
-    // Combat stats below the gear stack. Effective values (gear + effect
-    // modifiers + momentum where applicable). See `getEffective*` on Entity.
-    const stats_top = row_y + ui_gap;
+    // Combat stats in a column to the RIGHT of the gear stack, starting flush
+    // under the off-hand weapon (same row as the amulet). Effective values
+    // (gear + effect modifiers + momentum where applicable). See
+    // `getEffective*` on Entity.
+    const stats_x = col1_x + cell_size + ui_gap;
+    const stats_top = top_y + cell_size + ui_gap;
     const stat_line_height: i32 = gear_stat_font_size + 16;
-    const stat_x = col0_x;
 
     const main_damage = if (player.main_hand_weapon) |w| player.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
     const off_damage = if (player.off_hand_weapon) |w| player.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
@@ -2529,7 +2531,7 @@ pub fn buildGearPanel(
         const line = try std.fmt.allocPrint(allocator, "{s} {d}", .{ label, value });
         try elements.append(allocator, .{ .text_label = .{
             .text = line,
-            .screen_position = .{ .x = stat_x, .y = stat_y },
+            .screen_position = .{ .x = stats_x, .y = stat_y },
             .font_size = gear_stat_font_size,
             .blocks_input = false,
         } });
