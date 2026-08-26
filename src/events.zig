@@ -115,6 +115,33 @@ pub const MetaEvent = union(enum) {
     // GameState.last_completed_mission. On the undo timeline so undo re-shows
     // the overlay, redo dismisses it. See DESIGN → Architecture.
     dismiss_mission_complete: void,
+
+    // --- Player-initiated exit/skip orchestrators ---
+    //
+    // These are the ONLY events the replay whitelist (`isPlayerAction`) allows
+    // to be seeded at an idle point for exit/skip paths. Each handler pushes
+    // the machinery events (`end_level`/`end_hub`/`open_main_menu`/
+    // `start_mission`) as children — those are machinery-only, never
+    // whitelisted, never seeded at an idle point. This 1:1 mapping of user
+    // action → orchestrator event is what makes the replay whitelist a pure
+    // tag-check instead of continuation inspection. See DESIGN → Determinism
+    // & Tiebreaking → Replay PLAYER-ACTION LEGALITY.
+    // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;
+    // the handler pushes end_level with the default continuation.
+    player_skip_level: void,
+    // Options-menu "restart mission" button. Handler pushes
+    // end_level{.restart_mission}.
+    player_restart_mission: void,
+    // Options-menu "exit mission" button. Handler pushes
+    // end_level{.exit_mission}.
+    player_exit_mission: void,
+    // Options-menu "exit to menu" button. Handler branches on screen:
+    // level → end_level{.exit_to_menu}; hub → end_hub + open_main_menu.
+    player_exit_to_menu: void,
+    // Mission-complete overlay "Replay Mission" button. Handler reads
+    // current_state.last_completed_mission for the path, pushes start_mission
+    // + end_hub (LIFO: end_hub syncs the hub player first).
+    player_replay_mission: void,
 };
 
 pub const SuperEvent = union(enum) {

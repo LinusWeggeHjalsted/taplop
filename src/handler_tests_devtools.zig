@@ -40,11 +40,12 @@ test "skip_level idle input pushes end_level in a level (dev build)" {
 
     input_handlers.handleIdleInput(&history, .{ .skip_level = true }, .{});
 
-    // end_level (default continuation) is on top of the event stack.
+    // player_skip_level (the orchestrator) is on top of the event stack.
+    // Its handler will push end_level as a child when processed.
     try testing.expect(history.current_state.event_stack.len > 0);
     const top = history.current_state.event_stack[history.current_state.event_stack.len - 1];
     try testing.expectEqual(@as(std.meta.Tag(events.Event), .meta_event), std.meta.activeTag(top));
-    try testing.expectEqual(@as(std.meta.Tag(events.MetaEvent), .end_level), std.meta.activeTag(top.meta_event));
+    try testing.expectEqual(@as(std.meta.Tag(events.MetaEvent), .player_skip_level), std.meta.activeTag(top.meta_event));
 }
 
 test "skip_level does not fire on the main menu (level-only gate)" {

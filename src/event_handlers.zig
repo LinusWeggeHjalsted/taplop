@@ -972,6 +972,46 @@ pub fn processEvent(
                         .baseline_stack_depth = current.event_stack.len,
                     };
                 },
+                // Player-initiated exit/skip orchestrators — each pushes the
+                // machinery events as children. See events.zig.
+                .player_skip_level => {
+                    pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{} } }}, allocator);
+                },
+                .player_restart_mission => {
+                    pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{
+                        .continuation = .restart_mission,
+                    } } }}, allocator);
+                },
+                .player_exit_mission => {
+                    pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{
+                        .continuation = .exit_mission,
+                    } } }}, allocator);
+                },
+                .player_exit_to_menu => {
+                    if (current.screen == .level) {
+                        pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{
+                            .continuation = .exit_to_menu,
+                        } } }}, allocator);
+                    } else if (current.screen == .hub) {
+                        pushEvents(current, &.{
+                            .{ .meta_event = .open_main_menu },
+                            .{ .meta_event = .end_hub },
+                        }, allocator);
+                    }
+                },
+                .player_replay_mission => {
+                    const info = current.last_completed_mission orelse return;
+                    const mission_path = allocator.dupe(u8, info.path) catch
+                        @panic("failed to allocate replay mission path");
+                    pushEvents(current, &.{
+                        .{ .meta_event = .{ .start_mission = .{
+                            .mission_path = mission_path,
+                            .start_hub_id = current.player_data.current_hub,
+                            .end_hub_id = null,
+                        } } },
+                        .{ .meta_event = .end_hub },
+                    }, allocator);
+                },
                 else => {},
             }
 

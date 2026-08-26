@@ -397,6 +397,12 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
 
 Logging follow-ups (open):
 
+- Replay structural whitelist + exit/skip orchestrators — DONE. A
+  hand-crafted log could seed any machinery event at an idle point; now a
+  two-layer gate (`isPlayerAction` structural whitelist + `validatePlayerAction`
+  context legality) rejects non-player events. 5 new orchestrator events wrap
+  the ambiguous exit/skip paths so the whitelist is a pure tag-check. See
+  DONE.md + DESIGN → Determinism & Tiebreaking → Replay PLAYER-ACTION LEGALITY.
 - Replay verification cross-session: `verifyReplayStep` now runs for
   cross-session `reconstructFromEventLog` too (a divergence is a real bug we
   want surfaced). The remaining gap is custom-mission cross-session replay

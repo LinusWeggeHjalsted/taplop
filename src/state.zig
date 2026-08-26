@@ -13,6 +13,7 @@ const deep_copy = @import("deep_copy.zig");
 const input = @import("input.zig");
 const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
+const build_info = @import("build_info");
 
 const FileSource = file_source_mod.FileSource;
 
@@ -970,6 +971,58 @@ pub const GameStateHistory = struct {
         }
     }
 
+    /// The structural replay whitelist: is `event` a kind of event a player
+    /// can push at an idle point at all? This is the OUTER replay-anti-cheat
+    /// gate — `verifyReplayMatch` only checks structural equality (trivially
+    /// true for top-level seeded events), so without this a hand-crafted log
+    /// could seed any handler-internal machinery event (`attack`, `turn_end`,
+    /// `end_level`, `start_mission`, ...) at an idle point and the handlers
+    /// would execute it. Fail-closed: only explicitly whitelisted events
+    /// return true; every other variant hits `else => false`. New player-
+    /// pushable events must be added here AND have a corresponding input-
+    /// handler push site. `player_skip_level` is additionally gated on
+    /// `build_info.dev_mode` (dev-only build). See DESIGN → Determinism &
+    /// Tiebreaking → Replay PLAYER-ACTION LEGALITY.
+    fn isPlayerAction(self: *GameStateHistory, event: Event) bool {
+        _ = self;
+        switch (event) {
+            .meta_event => |me| switch (me) {
+                .start_new_game,
+                .open_editor,
+                .save_game,
+                .dismiss_mission_complete,
+                .player_restart_mission,
+                .player_exit_mission,
+                .player_exit_to_menu,
+                .player_replay_mission,
+                => return true,
+                .player_skip_level => return build_info.dev_mode,
+                else => return false,
+            },
+            .player_event => |pe| switch (pe) {
+                .swap_hands => return true,
+                else => return false,
+            },
+            .level_event => |le| switch (le) {
+                .player_move_action,
+                .player_use_skill,
+                .player_skip_move_to_skill,
+                .player_prepare_skill,
+                .player_skip_move,
+                .player_skip_attack,
+                .player_cancel_skill,
+                => return true,
+                else => return false,
+            },
+            .hub_event => |he| switch (he) {
+                .interact_with_npc,
+                .move_player,
+                => return true,
+            },
+            else => return false,
+        }
+    }
+
     /// Validate that a top-level player-action event was LEGAL at the point
     /// it was recorded — i.e. the player could actually have done what the
     /// replay claims. This is the replay anti-cheat seam: `verifyReplayMatch`
@@ -992,38 +1045,65 @@ pub const GameStateHistory = struct {
     /// validation keeps it hard. See DESIGN → Determinism & Tiebreaking →
     /// Replay VERIFICATION.
     fn validatePlayerAction(self: *GameStateHistory, event: Event) void {
-        const level = self.current_state.level orelse return;
-        if (level.entities.len == 0) return;
-        const player = level.entities[0];
-
         switch (event) {
-            .level_event => |le| switch (le) {
-                .player_move_action => |action| {
-                    if (!self.isPlayerMoveLegal(level, player, action.destination)) {
-                        var buf: [160]u8 = undefined;
-                        const msg = std.fmt.bufPrint(&buf,
-                            "replay validation: player moved to ({d},{d}) which is not reachable from ({d},{d})",
-                            .{ action.destination.x, action.destination.y, player.position.x, player.position.y },
-                        ) catch "replay validation: player moved to an unreachable tile";
-                        @panic(msg);
+            // Exit/skip orchestrators: screen-context legality. The outer
+            // `isPlayerAction` gate already confirmed these are player-
+            // pushable event types; here we confirm the current screen
+            // matches what the live input handler would have checked before
+            // pushing. A mismatch means a malformed/malicious log.
+            .meta_event => |me| switch (me) {
+                .player_skip_level,
+                .player_restart_mission,
+                .player_exit_mission,
+                => {
+                    if (self.current_state.screen != .level) {
+                        @panic("replay validation: player exit/skip action outside level screen");
                     }
                 },
-                .player_use_skill => |use| {
-                    self.validateSkillOnBarAndOffCooldown(player, use.skill_id);
-                    self.validateSkillTarget(level, player, use.skill_id, use.target);
-                },
-                .player_skip_move_to_skill => |skip| {
-                    self.validateSkillOnBarAndOffCooldown(player, skip.skill_id);
-                    if (!skip.prepare) {
-                        self.validateSkillTarget(level, player, skip.skill_id, skip.target);
+                .player_exit_to_menu => {
+                    if (self.current_state.screen != .level and self.current_state.screen != .hub) {
+                        @panic("replay validation: player_exit_to_menu outside level/hub screen");
                     }
                 },
-                .player_prepare_skill => |prepare| {
-                    self.validateSkillOnBarAndOffCooldown(player, prepare.skill_id);
+                .player_replay_mission => {
+                    if (self.current_state.last_completed_mission == null) {
+                        @panic("replay validation: player_replay_mission with no completed mission");
+                    }
                 },
-                // No payload to validate.
-                .player_skip_move, .player_skip_attack, .player_cancel_skill => {},
                 else => {},
+            },
+            .level_event => |le| {
+                const level = self.current_state.level orelse return;
+                if (level.entities.len == 0) return;
+                const player = level.entities[0];
+                switch (le) {
+                    .player_move_action => |action| {
+                        if (!self.isPlayerMoveLegal(level, player, action.destination)) {
+                            var buf: [160]u8 = undefined;
+                            const msg = std.fmt.bufPrint(&buf,
+                                "replay validation: player moved to ({d},{d}) which is not reachable from ({d},{d})",
+                                .{ action.destination.x, action.destination.y, player.position.x, player.position.y },
+                            ) catch "replay validation: player moved to an unreachable tile";
+                            @panic(msg);
+                        }
+                    },
+                    .player_use_skill => |use| {
+                        self.validateSkillOnBarAndOffCooldown(player, use.skill_id);
+                        self.validateSkillTarget(level, player, use.skill_id, use.target);
+                    },
+                    .player_skip_move_to_skill => |skip| {
+                        self.validateSkillOnBarAndOffCooldown(player, skip.skill_id);
+                        if (!skip.prepare) {
+                            self.validateSkillTarget(level, player, skip.skill_id, skip.target);
+                        }
+                    },
+                    .player_prepare_skill => |prepare| {
+                        self.validateSkillOnBarAndOffCooldown(player, prepare.skill_id);
+                    },
+                    // No payload to validate.
+                    .player_skip_move, .player_skip_attack, .player_cancel_skill => {},
+                    else => {},
+                }
             },
             else => {},
         }
@@ -1142,6 +1222,16 @@ pub const GameStateHistory = struct {
             // If the stack drained, seed the next top-level recorded event.
             if (self.current_state.event_stack.len == 0) {
                 const next = self.event_history.items[self.current_event_index];
+                if (!self.isPlayerAction(next)) {
+                    var buf: [128]u8 = undefined;
+                    const name = eventName(&buf, next);
+                    var msg_buf: [256]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&msg_buf,
+                        "replay: non-player event {s} seeded at idle point (event {d})",
+                        .{ name, self.current_event_index },
+                    ) catch "replay: non-player event seeded at idle point";
+                    @panic(msg);
+                }
                 self.validatePlayerAction(next);
                 self.current_state.event_stack = &.{next};
             }
@@ -1204,6 +1294,16 @@ pub const GameStateHistory = struct {
             // trivially true right after a seed.)
             if (self.current_state.event_stack.len == 0) {
                 const next = self.event_history.items[self.current_event_index];
+                if (!self.isPlayerAction(next)) {
+                    var buf: [128]u8 = undefined;
+                    const name = eventName(&buf, next);
+                    var msg_buf: [256]u8 = undefined;
+                    const msg = std.fmt.bufPrint(&msg_buf,
+                        "replay: non-player event {s} seeded at idle point (event {d})",
+                        .{ name, self.current_event_index },
+                    ) catch "replay: non-player event seeded at idle point";
+                    @panic(msg);
+                }
                 self.validatePlayerAction(next);
                 self.current_state.event_stack = &.{next};
             }
@@ -1588,3 +1688,57 @@ test "replay validation: skill target legality (getValidTargets)" {
     try std.testing.expect(history.skillTargetLegal(.spinblade, null));
 }
 
+
+test "isPlayerAction: whitelist accepts player-pushable events" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+
+    // meta orchestrators
+    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .start_new_game }));
+    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .{ .open_editor = .{ .mission_path = "m" } } }));
+    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .{ .save_game = .{ .save_path = "s" } } }));
+    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .dismiss_mission_complete }));
+    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .player_restart_mission }));
+    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .player_exit_mission }));
+    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .player_exit_to_menu }));
+    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .player_replay_mission }));
+    // player_skip_level: dev-gated (test build is Debug → dev_mode = true)
+    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .player_skip_level }));
+
+    // player/level/hub events
+    try std.testing.expect(history.isPlayerAction(.{ .player_event = .swap_hands }));
+    try std.testing.expect(history.isPlayerAction(.{ .level_event = .{ .player_skip_move = .{} } }));
+    try std.testing.expect(history.isPlayerAction(.{ .level_event = .player_skip_attack }));
+    try std.testing.expect(history.isPlayerAction(.{ .level_event = .player_cancel_skill }));
+    try std.testing.expect(history.isPlayerAction(.{ .hub_event = .{ .move_player = .{ .destination = .{ .x = 0, .y = 0 } } } }));
+    try std.testing.expect(history.isPlayerAction(.{ .hub_event = .{ .interact_with_npc = .{ .npc_index = 0 } } }));
+}
+
+test "isPlayerAction: whitelist rejects machinery events" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = test_harness.Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+
+    // meta machinery (handler-pushed, never player-pushed at idle)
+    try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .open_main_menu }));
+    try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .{ .end_level = .{} } }));
+    try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .end_hub }));
+    try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .{ .start_mission = .{ .mission_path = "m", .start_hub_id = null, .end_hub_id = null } } }));
+    try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .{ .start_level = .{ .mission_path = "m", .level_index = 0 } } }));
+    try std.testing.expect(!history.isPlayerAction(.{ .meta_event = .{ .wait = .{ .duration_milliseconds = 100 } } }));
+
+    // level machinery (handler-pushed combat/turn-flow)
+    try std.testing.expect(!history.isPlayerAction(.{ .level_event = .{ .turn_start = .{ .entity_index = 0 } } }));
+    try std.testing.expect(!history.isPlayerAction(.{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } }));
+    try std.testing.expect(!history.isPlayerAction(.{ .level_event = .{ .move_entity = .{ .entity_index = 0, .destination = .{ .x = 0, .y = 0 } } } }));
+    try std.testing.expect(!history.isPlayerAction(.{ .sub_level_event = .{ .attack = .{ .attacker_index = 0, .defender_index = 1, .outgoing_damage = 5 } } }));
+
+    // player machinery (inventory/gear — handler-pushed via drag, not idle input)
+    try std.testing.expect(!history.isPlayerAction(.{ .player_event = .{ .equip_item = .{ .inventory_slot_index = 0, .gear_slot = .amulet } } }));
+
+    // super/editor/sub_level/replay_viewer — all machinery
+    try std.testing.expect(!history.isPlayerAction(.{ .super_event = .{ .build_data_from_player = .{ .entity_index = 0 } } }));
+}

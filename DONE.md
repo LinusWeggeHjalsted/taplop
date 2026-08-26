@@ -3991,3 +3991,54 @@ skip_level is a no-op on the main menu (level-only gate). The dev-mode gate is
 comptime, so the test build (Debug) exercises the live path; the
 no-op-in-release path is the same branch with the condition inverted, not
 separately tested.
+
+### Replay structural whitelist + exit/skip orchestrators (DONE)
+
+**The problem.** During replay, when the event stack drains, the replay loop
+seeds the next recorded event as a fresh top-level event — assuming it's a
+player-pushed event from an idle point. But nothing checked that assumption:
+`validatePlayerAction` only ran inner legality checks (move reachable, skill
+off cooldown) on 4 level events, with `else => {}` allowing everything else.
+So a hand-crafted log could seed any handler-internal machinery event
+(`attack`, `turn_end`, `end_level`, `start_mission`, ...) at an idle point
+and the handlers would execute it — a replay spoof.
+
+**The fix — two-layer validation at the seed site.**
+1. **Structural whitelist (`isPlayerAction`)** — a fail-closed `switch` in
+   state.zig that returns true only for event variants a player can push at
+   an idle point, `else => false` for everything else. Runs before
+   `validatePlayerAction` at both seed sites (`replayTo` +
+   `replayToWithIdleTracking`). Rejects non-player machinery events by name.
+2. **Context legality (`validatePlayerAction`)** — extended from level-only
+   to also cover meta exit/skip orchestrators (screen must match: e.g.
+   `player_restart_mission` only legal at `.level`, `player_exit_to_menu` at
+   `.level`/`.hub`, `player_replay_mission` requires
+   `last_completed_mission != null`).
+
+**The orchestrator refactor.** The whitelist is a pure tag-check (no
+continuation inspection) because every user action now maps 1:1 to a single
+orchestrator event, and machinery events are never whitelisted. The exit/skip
+paths used to push machinery directly (`end_level{continuation}`,
+`end_hub` + `open_main_menu`, `start_mission` + `end_hub`) — those were
+ambiguous (player-pushed AND handler-pushed), which would have forced
+continuation inspection to disambiguate. Instead, 5 new meta orchestrator
+events wrap them: `player_skip_level` (dev-only), `player_restart_mission`,
+`player_exit_mission`, `player_exit_to_menu`, `player_replay_mission`. Each
+orchestrator handler pushes the machinery events as children;
+`end_level`/`end_hub`/`open_mission`/`start_mission` are now machinery-only
+(never whitelisted, never seeded at an idle point). The input-handler push
+sites were updated to push orchestrators instead of machinery.
+
+`player_skip_level` is gated on `build_info.dev_mode` in `isPlayerAction` —
+a non-dev replay that seeds it is rejected by name (not by a fragile
+continuation rule). `end_level` spoofed at an idle point is rejected (it's
+machinery, not whitelisted) — but `player_skip_level` (dev) and
+`player_exit_mission` (any build) ARE whitelisted and produce the same
+end-level effect, which is fine: exiting a level is a legitimate player
+action in any build.
+
+Tests: `isPlayerAction` whitelisted + rejected coverage in state.zig (bool
+helper, directly testable — no panic-catching needed); `handler_tests_devtools`
+updated to expect `player_skip_level` (the orchestrator) instead of
+`end_level`. DESIGN → Determinism & Tiebreaking → Replay PLAYER-ACTION
+LEGALITY updated with the two-layer model + orchestrator convention.

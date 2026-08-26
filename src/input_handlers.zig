@@ -379,19 +379,13 @@ pub fn handleAnytimeInput(
                     event_handlers.processEvent(history);
                 }
             },
-            // Exit-path buttons: push end_level with the matching continuation,
-            // then drain. build_data_from_player (pushed by end_level) syncs
-            // the player entity into PlayerData before the screen transition.
-            // The screen/world_generation change is detected by gameLoop,
-            // which resets ui_state (closing the menu). If a reconstruction
-            // read fails, load_error breaks the drain and the error popup
-            // surfaces over the still-open menu.
+            // Exit-path buttons: push the player orchestrator event, then
+            // drain. The orchestrator handler pushes the machinery (end_level
+            // or end_hub + open_main_menu) as children. See events.zig.
             .restart_mission => {
                 if (current.screen != .level) return;
                 const baseline = history.current_state.event_stack.len;
-                event_handlers.pushEvents(current, &.{.{
-                    .meta_event = .{ .end_level = .{ .continuation = .restart_mission } },
-                }}, allocator);
+                event_handlers.pushEvents(current, &.{.{ .meta_event = .player_restart_mission }}, allocator);
                 while (history.current_state.event_stack.len > baseline) {
                     if (history.load_error) break;
                     event_handlers.processEvent(history);
@@ -400,9 +394,7 @@ pub fn handleAnytimeInput(
             .exit_mission => {
                 if (current.screen != .level) return;
                 const baseline = history.current_state.event_stack.len;
-                event_handlers.pushEvents(current, &.{.{
-                    .meta_event = .{ .end_level = .{ .continuation = .exit_mission } },
-                }}, allocator);
+                event_handlers.pushEvents(current, &.{.{ .meta_event = .player_exit_mission }}, allocator);
                 while (history.current_state.event_stack.len > baseline) {
                     if (history.load_error) break;
                     event_handlers.processEvent(history);
@@ -410,21 +402,7 @@ pub fn handleAnytimeInput(
             },
             .exit_to_menu => {
                 const baseline = history.current_state.event_stack.len;
-                if (current.screen == .level) {
-                    event_handlers.pushEvents(current, &.{.{
-                        .meta_event = .{ .end_level = .{ .continuation = .exit_to_menu } },
-                    }}, allocator);
-                } else if (current.screen == .hub) {
-                    // Hub exit: end_hub syncs the hub player entity into
-                    // PlayerData (runs first, LIFO), then open_main_menu
-                    // transitions the screen and clears the hub scope.
-                    event_handlers.pushEvents(current, &.{
-                        .{ .meta_event = .open_main_menu },
-                        .{ .meta_event = .end_hub },
-                    }, allocator);
-                } else {
-                    return;
-                }
+                event_handlers.pushEvents(current, &.{.{ .meta_event = .player_exit_to_menu }}, allocator);
                 while (history.current_state.event_stack.len > baseline) {
                     if (history.load_error) break;
                     event_handlers.processEvent(history);
@@ -448,16 +426,9 @@ pub fn handleAnytimeInput(
                 }
             },
             .replay_mission => {
-                const info = current.last_completed_mission orelse return;
+                if (current.last_completed_mission == null) return;
                 const baseline = history.current_state.event_stack.len;
-                event_handlers.pushEvents(current, &.{
-                    .{ .meta_event = .{ .start_mission = .{
-                        .mission_path = info.path,
-                        .start_hub_id = current.player_data.current_hub,
-                        .end_hub_id = null,
-                    } } },
-                    .{ .meta_event = .end_hub },
-                }, allocator);
+                event_handlers.pushEvents(current, &.{.{ .meta_event = .player_replay_mission }}, allocator);
                 while (history.current_state.event_stack.len > baseline) {
                     if (history.load_error) break;
                     event_handlers.processEvent(history);
@@ -664,7 +635,7 @@ pub fn handleIdleInput(
     // with an empty stack + no active wait, so this never interleaves with a
     // draining enemy turn. See DESIGN → Input + AGENTS → Dev Tools.
     if (idle.skip_level and build_info.dev_mode and current.screen == .level) {
-        event_handlers.pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{} } }}, allocator);
+        event_handlers.pushEvents(current, &.{.{ .meta_event = .player_skip_level }}, allocator);
         return;
     }
 

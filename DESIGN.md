@@ -525,33 +525,53 @@ combat-log UI rendering + replay-viewer UI still TODO)
   the old virtual-depth bookkeeping (idle = stack empties). This is also the
   primitive the Online Services TODO wants for server-side replay validation
   (leaderboard anti-cheat).
-- **Replay PLAYER-ACTION LEGALITY validation.** `verifyReplayMatch` is a
-  STRUCTURAL check (does the handler-pushed event match the recording?);
-  for TOP-LEVEL player events it's trivially true because the replay loop
-  SEEDS them from the recording. So the recording is authoritative for
-  WHAT the player did, but nothing checked it was LEGAL — a hand-crafted
-  replay can inject `player_use_skill{skill_not_equipped}` or
-  `player_move_action{tile_20_squares_away}` and the handlers would execute
-  it (they trust their inputs; the live input path is the only gate, and
-  replay bypasses it). `GameStateHistory.validatePlayerAction` closes that
-  gap: called in `replayTo` / `replayToWithIdleTracking` right BEFORE seeding
-  a top-level event, it rejects actions the player couldn't have taken at
-  that point. Validated orchestrators: `player_move_action` (destination
-  must be in `reachableTiles(level, player.pos, getEffectiveSpeed())` —
-  full BFS, matches live legality); `player_use_skill` +
-  `player_skip_move_to_skill` + `player_prepare_skill` (skill must be in
-  `collectSkillSlots()` AND `skill_cooldowns.get == 0`; for use/skip-to-use
-  of a targeting skill, the target must be in `getValidTargets(0, state)`).
-  Handler-pushed children never reach here (they're never seeded — their
-  legality is enforced by the parent handler's own logic + `verifyReplayMatch`
-  structurally). Fail-fast `@panic` for now (malicious replay = reject); a
-  future viewer-facing load may soften this to the error popup, while
-  server-side leaderboard validation keeps it hard. The legality LOGIC lives
-  in bool-returning helpers (`isPlayerMoveLegal`, `skillOnBarAndOffCooldown`,
-  `skillTargetLegal`) so it's testable without panic-catching infrastructure
-  (Zig 0.16 has no `expectPanics`); the `validate*` wrappers are a thin
-  panic-policy layer over them. This is the other primitive the Online
-  Services TODO wants for server-side replay validation.
+- **Replay PLAYER-ACTION LEGALITY validation.** Two layers gate what a
+  replay log can seed at an idle point (when the stack drains and the next
+  recorded event is pushed as a fresh top-level event):
+
+  1. **Structural whitelist (`isPlayerAction`)** — the OUTER gate. A fail-
+  closed `switch` that returns true only for event variants a player can
+  push at an idle point, `else => false` for everything else. This closes the
+  spoof gap where a hand-crafted log seeds handler-internal machinery
+  (`attack`, `turn_end`, `end_level`, `start_mission`, ...) at an idle point.
+  The whitelist is a pure tag-check (no continuation inspection) thanks to the
+  orchestrator convention (below): every user action maps to a single
+  orchestrator event, and machinery events are never whitelisted.
+  `player_skip_level` is additionally gated on `build_info.dev_mode`
+  (dev-only build).
+
+  2. **Context legality (`validatePlayerAction`)** — the INNER gate. Rejects
+  player actions that were illegal at the recorded point: `player_move_action`
+  (destination must be in `reachableTiles(...)` — full BFS, matches live);
+  `player_use_skill` / `player_skip_move_to_skill` / `player_prepare_skill`
+  (skill on bar + off cooldown + valid target); and the meta exit/skip
+  orchestrators (screen must match — e.g. `player_restart_mission` only legal
+  at `.level`, `player_exit_to_menu` at `.level`/`.hub`, `player_replay_mission`
+  requires `last_completed_mission != null`).
+
+  **Orchestrator convention.** Input handlers push orchestrator events;
+  orchestrator handlers push machinery events as children. The whitelist =
+  orchestrator events. This 1:1 mapping of user action → orchestrator event
+  is what makes the whitelist a pure tag-check. The exit/skip paths used to
+  push machinery directly (`end_level{continuation}`, `end_hub`,
+  `open_main_menu`, `start_mission`) — those are now machinery-only (handler-
+  pushed, never whitelisted, never seeded at an idle point), wrapped by
+  `player_skip_level` / `player_restart_mission` / `player_exit_mission` /
+  `player_exit_to_menu` / `player_replay_mission` orchestrators. New player-
+  pushable events → new orchestrator → add to `isPlayerAction`.
+
+  Both gates run in `replayTo` / `replayToWithIdleTracking` right BEFORE
+  seeding a top-level event. Handler-pushed children never reach here (they're
+  never seeded — their legality is enforced by the parent handler's own logic
+  + `verifyReplayMatch` structurally). Fail-fast `@panic` for now (malicious
+  replay = reject); a future viewer-facing load may soften this to the error
+  popup, while server-side leaderboard validation keeps it hard. The legality
+  LOGIC lives in bool-returning helpers (`isPlayerAction`, `isPlayerMoveLegal`,
+  `skillOnBarAndOffCooldown`, `skillTargetLegal`) so it's testable without
+  panic-catching infrastructure (Zig 0.16 has no `expectPanics`); the
+  `validate*` wrappers are a thin panic-policy layer over them. This is the
+  other primitive the Online Services TODO wants for server-side replay
+  validation.
 - Tiebreaking convention — every ordering/selection over equal keys must break
   ties EXPLICITLY (in the comparator) or by a documented scan order:
   - Entities: ascending `entity_index`.
