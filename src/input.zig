@@ -329,6 +329,10 @@ pub const IdleInput = struct {
     confirm: bool = false,
     cancel: bool = false,
     skip: bool = false,
+    // Dev tool: skip the current level. Press-only. Gated to dev builds +
+    // level screen at the handler site; the binding ships in
+    // default_settings.txt and no-ops elsewhere. See DESIGN → Input.
+    skip_level: bool = false,
     /// A main-menu command (New Game / Load Save / ...), set only when a menu
     /// button is clicked (no keybind path). Handled by the main_menu branch of
     /// handleIdleInput.
@@ -367,6 +371,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .confirm => player_input.idle.confirm = true,
         .cancel => player_input.idle.cancel = true,
         .skip => player_input.idle.skip = true,
+        .skip_level => player_input.idle.skip_level = true,
         .skill_slot_1 => player_input.idle.skill_slot_selected = 1,
         .skill_slot_2 => player_input.idle.skill_slot_selected = 2,
         .skill_slot_3 => player_input.idle.skill_slot_selected = 3,
@@ -451,11 +456,63 @@ fn getModifiers(state: *const InputState) Modifiers {
     };
 }
 
+/// Count a binding's required modifiers — its specificity for precedence
+/// (see DESIGN → Input). A plain binding has specificity 0; ctrl+shift has 2.
+fn modifierSpecificity(modifiers: Modifiers) u8 {
+    var count: u8 = 0;
+    if (modifiers.ctrl) count += 1;
+    if (modifiers.shift) count += 1;
+    if (modifiers.alt) count += 1;
+    return count;
+}
+
+/// True if two `RawInput` refer to the same physical input (same variant +
+/// id string). Used to find competing bindings on the same key/button.
+fn sameInput(a: types.RawInput, b: types.RawInput) bool {
+    return switch (a) {
+        .key => |ak| switch (b) {
+            .key => |bk| std.mem.eql(u8, ak, bk),
+            else => false,
+        },
+        .mouse_button => |am| switch (b) {
+            .mouse_button => |bm| std.mem.eql(u8, am, bm),
+            else => false,
+        },
+        .gamepad_button => |ag| switch (b) {
+            .gamepad_button => |bg| std.mem.eql(u8, ag, bg),
+            else => false,
+        },
+    };
+}
+
+/// Hybrid precedence: `binding` (already matching the held modifiers + a
+/// pressed input) is suppressed if another binding on the SAME input matches
+/// the held modifiers with strictly MORE required modifiers — a more-specific
+/// chord wins, a plain binding gives way to it. Equal-specificity bindings
+/// co-fire (disambiguated by handler context downstream, e.g. ArrowUp →
+/// move_cursor_up + error_scroll_up). See DESIGN → Input.
+fn isSuppressed(
+    binding: InputBinding,
+    bindings: []const InputBinding,
+    modifiers: Modifiers,
+) bool {
+    const my_specificity = modifierSpecificity(binding.modifiers);
+    for (bindings) |other| {
+        if (!sameInput(other.input, binding.input)) continue;
+        // The competitor must also match the held modifiers to win.
+        if (other.modifiers.ctrl and !modifiers.ctrl) continue;
+        if (other.modifiers.shift and !modifiers.shift) continue;
+        if (other.modifiers.alt and !modifiers.alt) continue;
+        if (modifierSpecificity(other.modifiers) > my_specificity) return true;
+    }
+    return false;
+}
+
 /// Check if an action is currently HELD (any bound input is down), ignoring
 /// edges. Used to derive cursor direction from held cursor keys so a diagonal
 /// nudge fires when ANY one of the two held keys edges/repeats (see
 /// `InGameInput.cursor_direction`). Modifier matching is the same subset
-/// semantics as `checkAction`.
+/// semantics as `checkAction`, with the same hybrid precedence.
 fn isActionHeld(
     action: types.Action,
     bindings: []const InputBinding,
@@ -474,7 +531,10 @@ fn isActionHeld(
             .mouse_button => |button| InputState.isHeld(mouse_buttons_held, button),
             .gamepad_button => |gamepad| InputState.isHeld(gamepad_buttons_held, gamepad),
         };
-        if (held) return true;
+        if (held) {
+            if (isSuppressed(binding, bindings, modifiers)) continue;
+            return true;
+        }
     }
     return false;
 }
@@ -513,7 +573,13 @@ fn checkAction(
             .gamepad_button => |gamepad| InputState.isHeld(gamepad_pressed, gamepad),
         };
 
-        if (pressed) return true;
+        if (pressed) {
+            // Hybrid precedence — see DESIGN → Input. A more-specific chord
+            // on the same input suppresses this binding; equal-specificity
+            // ties co-fire (gated by handler context downstream).
+            if (isSuppressed(binding, bindings, modifiers)) continue;
+            return true;
+        }
     }
     return false;
 }
@@ -683,6 +749,7 @@ pub fn translateInput(
     result.idle.confirm = checkAction(.confirm, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.idle.cancel = checkAction(.cancel, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.idle.skip = checkAction(.skip, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.idle.skip_level = checkAction(.skip_level, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
 
     // Skill slots 1-8 (press-only — repeating would queue uses by accident).
     const skill_slot_actions = [_]types.Action{
@@ -715,4 +782,93 @@ pub fn translateInput(
 
     result.modifiers = modifiers;
     return result;
+}
+
+// ============================================================
+// Tests — hybrid input precedence (see DESIGN → Input)
+// ============================================================
+//
+// `checkAction` resolves a pressed input by SPECIFICITY: a more-specific
+// chord (more required modifiers, all held) on the same key suppresses a
+// less-specific binding; equal-specificity ties co-fire (disambiguated by
+// handler context, e.g. ArrowUp → move_cursor_up + error_scroll_up).
+
+const empty_mouse: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
+const empty_gamepad: [InputState.max_held_gamepad]?[]const u8 = .{null} ** InputState.max_held_gamepad;
+const no_repeat_keys: [0]?[]const u8 = .{};
+
+fn keysPressedOne(comptime id: []const u8) [InputState.max_held_keys]?[]const u8 {
+    var arr: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;
+    arr[0] = id;
+    return arr;
+}
+
+test "checkAction: more-specific chord suppresses plain binding on same key" {
+    // Enter → confirm (plain); Enter+ctrl → dump_event_log (ctrl).
+    // Pressing ctrl+Enter fires dump_event_log only.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .dump_event_log },
+    };
+    const pressed = keysPressedOne("Enter");
+    const mods = Modifiers{ .ctrl = true };
+    try std.testing.expect(checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+    try std.testing.expect(!checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+}
+
+test "checkAction: plain press (no chord modifiers) fires plain binding only" {
+    // Same bindings, but ctrl NOT held. The ctrl binding's requirement isn't
+    // met, so only the plain confirm fires.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .dump_event_log },
+    };
+    const pressed = keysPressedOne("Enter");
+    const mods = Modifiers{};
+    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+    try std.testing.expect(!checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+}
+
+test "checkAction: equal-specificity ties co-fire (no suppression)" {
+    // ArrowUp → move_cursor_up + error_scroll_up (both plain). Both win —
+    // disambiguation is by handler context, not here. This is the shipped
+    // ArrowUp/ArrowDown pattern; the hybrid model must not collapse it.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "ArrowUp" }, .action = .move_cursor_up },
+        .{ .input = .{ .key = "ArrowUp" }, .action = .error_scroll_up },
+    };
+    const pressed = keysPressedOne("ArrowUp");
+    const mods = Modifiers{};
+    try std.testing.expect(checkAction(.move_cursor_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+    try std.testing.expect(checkAction(.error_scroll_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+}
+
+test "checkAction: a chord requiring an un-held modifier does not suppress" {
+    // Enter → confirm (plain); Enter+shift → dump_event_log (shift). Pressing
+    // Enter with ctrl held (not shift): the shift binding doesn't match the
+    // held modifiers, so it is NOT a competitor — confirm still fires.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .shift = true }, .action = .dump_event_log },
+    };
+    const pressed = keysPressedOne("Enter");
+    const mods = Modifiers{ .ctrl = true };
+    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+    try std.testing.expect(!checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+}
+
+test "checkAction: most specific among three wins" {
+    // Enter → confirm (plain, spec0), Enter+ctrl → skip (ctrl, spec1),
+    // Enter+ctrl+shift → dump_event_log (ctrl+shift, spec2).
+    // ctrl+shift+Enter fires dump_event_log only.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .skip },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true, .shift = true }, .action = .dump_event_log },
+    };
+    const pressed = keysPressedOne("Enter");
+    const mods = Modifiers{ .ctrl = true, .shift = true };
+    try std.testing.expect(checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+    try std.testing.expect(!checkAction(.skip, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+    try std.testing.expect(!checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
 }

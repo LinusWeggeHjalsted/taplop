@@ -656,6 +656,18 @@ pub fn handleIdleInput(
         return;
     }
 
+    // Dev tool: skip the current level (ctrl+Enter). Gated to dev builds
+    // (`-Ddev-mode`, defaulted to debug) — the binding ships in
+    // default_settings.txt and no-ops in release/web builds. Pushes end_level
+    // with the default continuation (next level or mission-end cascade —
+    // the same path the options-menu exit uses). handleIdleInput only runs
+    // with an empty stack + no active wait, so this never interleaves with a
+    // draining enemy turn. See DESIGN → Input + AGENTS → Dev Tools.
+    if (idle.skip_level and build_info.dev_mode and current.screen == .level) {
+        event_handlers.pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{} } }}, allocator);
+        return;
+    }
+
     // Level turn phase input handling
     if (current.level) |*level| {
         if (level.turn_phase) |turn_phase| {

@@ -16,6 +16,9 @@ Test by running `zig build run` and clicking through.
 
 ## NEXT UP (not ordered — pick what progresses)
 
+- **Dev tools: skip level** — DONE. ctrl+Enter skips the current level in a
+  dev build (`-Ddev-mode`, defaulted to debug). Lands with the hybrid input
+  precedence fix (closest chord wins, ties co-fire). History in DONE.md.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.

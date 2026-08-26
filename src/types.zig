@@ -99,6 +99,12 @@ pub const Action = enum {
     // Mission-complete overlay commands.
     continue_after_mission,
     replay_mission,
+    // Dev tool: skip the current level (pushes end_level with the default
+    // continuation — next level or mission-end). Bound to ctrl+Enter; gated
+    // to dev builds via `@import("build_info").dev_mode` at the handler site,
+    // so the binding in default_settings.txt is a no-op in release/web builds.
+    // See DESIGN → Input + AGENTS → Dev Tools.
+    skip_level,
     // Main menu commands.
     continue_game,
     new_game,

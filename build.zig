@@ -42,6 +42,14 @@ pub fn build(b: *std.Build) void {
     // number). See computeGameVersion.
     const build_info = b.addOptions();
     build_info.addOption([]const u8, "game_version", computeGameVersion(b));
+    // Dev mode gates dev-only keybinds (e.g. skip_level on ctrl+Enter). A
+    // `-Ddev-mode` build option, defaulted to `optimize == .Debug` so
+    // `zig build run` (debug) gets dev tools for free while release/web
+    // builds stay clean. The gate is read at the handler site via
+    // `@import("build_info").dev_mode` (comptime-constant per build).
+    const dev_mode = b.option(bool, "dev-mode", "Enable dev-only tools (skip level, etc.)") orelse
+        (optimize == .Debug);
+    build_info.addOption(bool, "dev_mode", dev_mode);
     const build_info_module = build_info.createModule();
 
     // === Web target (deferred) ===

@@ -227,6 +227,33 @@ back at the comment to update it.
   there is "expected statement, found a document comment".
 - `opaque` is a reserved keyword (opaque types) — don't name a variable it.
 
+## Dev Tools
+
+Dev-only keybinds (skip level, future debug tools) are gated by a build
+option, not a runtime flag:
+
+- `-Ddev-mode` build option (in `build.zig`), defaulted to
+  `optimize == .Debug`. So `zig build run` (debug) gets dev tools for free;
+  `-Ddev-mode=true -Doptimize=ReleaseFast` opts in for a near-release build;
+  release/web builds default to clean (no dev tools compiled in). Exposed to
+code via `@import("build_info").dev_mode` (comptime-constant per build,
+  threaded through the shared `build_info_module` used by exe + wasm +
+  tests).
+- The BINDING ships in `data/default_settings.txt` regardless (so the
+  settings file stays the source of truth and a future binding-UI sees one
+  set). The gate is at the HANDLER site (`if (build_info.dev_mode and ...)`),
+  so in a non-dev build the binding parses + maps to a `PlayerInput` flag but
+  the flag is never consumed — a no-op. `translateInput` stays build-agnostic
+  (pure binding→action); policy lives in the consumption layer.
+- `skip_level` (ctrl+Enter): an idle input (`IdleInput.skip_level`) handled
+  in `handleIdleInput`. Pushes `end_level` with the default continuation —
+  the normal next-level / mission-end cascade (same path the options-menu
+  exit uses). Level-only (`current.screen == .level`); `handleIdleInput`
+  only runs with an empty stack + no active wait, so it never interleaves
+  with a draining enemy turn. Replay-safe by construction (a normal recorded
+  event). See DESIGN → Input (hybrid precedence) for why ctrl+Enter doesn't
+  also fire the plain-Enter `confirm`/`dismiss_error` bindings.
+
 ## Key Files
 
 - `src/main.zig` — platform-agnostic composition root: the uncapped game

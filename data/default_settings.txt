@@ -34,6 +34,11 @@ ctrl true
 action dump_event_log
 
 input_type key
+input_name Enter
+ctrl true
+action skip_level
+
+input_type key
 input_name KeyI
 ctrl true
 action zoom_in

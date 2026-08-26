@@ -3932,3 +3932,62 @@ Fix: `start_mission` now clears `current.last_completed_mission = null` when
 entering a mission (new game or replay). A mission attempt retires any prior
 completion info. On the undo timeline via GameState, so undo from the level
 back to the hub re-shows the overlay (the snapshot has the field set).
+
+## Dev Tools
+
+### Skip level (ctrl+Enter) + hybrid input precedence (DONE)
+
+Two slices landed together because the keybind depended on the precedence fix.
+
+**Slice 1 — hybrid input precedence.** `checkAction`/`isActionHeld` previously
+used pure subset modifier matching: every binding whose required modifiers
+were a subset of the held set fired, so a plain binding fired even when a
+more-specific chord on the same key was the intent. This made ctrl+Enter
+(before skip_level even existed) fire every plain-Enter binding (`confirm`,
+`dismiss_error`) alongside any ctrl+Enter binding — three actions on one edge.
+
+The fix is a hybrid model (not pure "one action per key", which would regress
+shipped behavior): for a pressed input, among all matching bindings (subset
+match), a binding is SUPPRESSED only if another binding on the SAME input
+matches the held modifiers with strictly MORE required modifiers
+(`modifierSpecificity` = count of ctrl+shift+alt). Equal-specificity ties
+CO-FIRE — disambiguation stays with handler context downstream. This preserves
+the shipped ArrowUp → `move_cursor_up` + `error_scroll_up` pair (both plain,
+both fire; the pending-error popup branch consumes the scroll action and
+returns) and the plain-Enter → `confirm` + `dismiss_error` pair, while making
+ctrl+Enter beat plain Enter. `isSuppressed`/`sameInput`/`modifierSpecificity`
+helpers in input.zig; 5 `checkAction` unit tests cover chord-suppression,
+plain-fires-when-chord-modifier-not-held, equal-specificity co-fire, and a
+3-level specificity ladder.
+
+The "one combo → one action (uniqueness validated at load, collisions
+warn-and-drop)" claim in DESIGN → Input was inaccurate — the loader appends
+every binding with no uniqueness check. Corrected the prose to match reality
+(equal-specificity ties co-fire by design; collision detection deferred — a
+same-combo different-action pair is a tie, not an error, until a warning is
+worth building).
+
+**Slice 2 — skip_level.** New `Action.skip_level` + `IdleInput.skip_level`
+field, bound to ctrl+Enter in `data/default_settings.txt` (press-only). The
+handler arm in `handleIdleInput` pushes `end_level` with the default
+continuation (`.{}`) — the normal next-level / mission-end cascade, the same
+path the options-menu exit reuses. Gated to dev builds via
+`@import("build_info").dev_mode` AND `current.screen == .level`. Idle placement
+(handleIdleInput only runs with an empty stack + no active wait) means it never
+interleaves with a draining enemy turn — no mid-drain multi-fire, no
+cascade-interleaving with leftover enemy-turn events, no wait-branch
+special-casing. Replay-safe by construction (a normal recorded event).
+
+The dev-mode gate is a build option, not a runtime flag: `-Ddev-mode` in
+build.zig, defaulted to `optimize == .Debug` (`zig build run` gets it for
+free; release/web default clean). Threaded through the shared `build_info`
+module already used by `game_version`. The binding ships in the settings file
+regardless (one source of truth); the gate is at the handler site, so
+`translateInput` stays build-agnostic and a non-dev build's flag is never
+consumed (no-op). See AGENTS → Dev Tools.
+
+Tests: `handler_tests_devtools.zig` — skip_level pushes end_level in a level;
+skip_level is a no-op on the main menu (level-only gate). The dev-mode gate is
+comptime, so the test build (Debug) exercises the live path; the
+no-op-in-release path is the same branch with the condition inverted, not
+separately tested.

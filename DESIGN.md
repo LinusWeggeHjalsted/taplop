@@ -573,6 +573,20 @@ combat-log UI rendering + replay-viewer UI still TODO)
   `checkAction` skips only when a REQUIRED modifier is NOT held. This matches
   the button-click path (`applyAction` sets the action directly with no
   modifier filtering) so keyboard chords and clicks behave the same.
+- **Hybrid precedence — most-specific chord wins, ties co-fire.** When two
+  bindings share the same physical input (same key/button id), the one whose
+  required modifiers are a SUPERSET (in count, all held) wins and suppresses
+  the less-specific one: ctrl+Enter beats plain Enter. Equal-specificity
+  bindings (same required-modifier count) CO-FIRE — disambiguation is by
+  handler context downstream, not here. This is how the shipped ArrowUp /
+  ArrowDown pairs work: `move_cursor_up` and `error_scroll_up` both fire on a
+  plain ArrowUp; the pending-error popup branch consumes the scroll action
+  and `return`s, so when no popup is up only the cursor action takes effect.
+  `checkAction` / `isActionHeld` suppress a matching binding when another
+  binding on the same input matches the held modifiers with strictly more
+  required modifiers (`isSuppressed`, `modifierSpecificity`). No load-time
+  collision validation today (the loader appends every binding; a same-combo
+  different-action pair is a tie, which co-fires by design, not an error).
 - **Synthetic key repeat is owned by the engine, not the OS.** A held key
   fires its first repeat after `key_repeat_initial_delay_microseconds` (300ms)
   then repeats at `key_repeat_interval_microseconds` (40ms), tracked in
@@ -607,8 +621,10 @@ combat-log UI rendering + replay-viewer UI still TODO)
   persisted preference; other tunable fields mark dirty as their UI lands.
 - **Binding overlay semantics.** Per-action, not per-key-combo: a user file's
   binding for an action replaces the default's binding for that action
-  (rebind = replace, not duplicate). One combo → one action (uniqueness
-  validated at load, collisions warn-and-drop); one action → multiple combos
+  (rebind = replace, not duplicate). One combo → one action is the INTENT
+  (a same-combo different-action pair is a config error), but the loader does
+  not validate it today — it appends every binding, and equal-specificity ties
+  co-fire per the hybrid precedence rule above; one action → multiple combos
   (additive — skip can live on Space AND Enter). Changing an official default
   for an EXISTING action doesn't reach players who have a user file (their
   binding is authoritative, even if it was an old default they never
