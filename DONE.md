@@ -4382,3 +4382,31 @@ shown only as the ghost following the pointer). Ref-general: non-inventory
 refs return false from the source-match check, so a gear/skill-source drag
 won't blank an inventory slot (and gear/skill builders reuse the pattern
 when they land).
+
+### Inventory drag: move/swap items (DONE)
+
+Dragging an inventory item onto another inventory slot now reorders the
+grid (was a no-op — `dragToOrchestrator` returned null for
+inventory→inventory).
+
+- **`swap_inventory_items`** machinery event (PlayerEvent): swaps two
+  inventory slots. A swap with an empty target IS a move (item → empty,
+  null → source), so one event covers move-to-empty + swap-with-occupied.
+  Bounds-checks both indices; no gear side-effects (unlike equip/unequip).
+- **`player_swap_inventory_items`** orchestrator (PlayerInputEvent):
+  `{ slot_a_index, slot_b_index }`. `dragToOrchestrator` now maps
+  inventory→inventory to it; `handlePlayerInputEvent` pushes the machinery
+  child; `validatePlayerAction` checks both indices via the existing
+  `validateInventoryScreenAndSlot`.
+- **Same-slot no-op guard:** `dragToOrchestrator` returns null when
+  `from == to` (via `slotRefsEqual`), uniformly for ALL domains — a drop
+  back on the source pushes nothing. Also fixes a latent skill_bar→skill_bar
+  same-slot case that pushed a no-op `player_swap_utility_skills` with
+  `a == b`.
+- No sound (no asset for a reorder; deferred to the audio pass).
+- `deepCopy`/`deepEqual` + the session-log serializer are comptime-generic
+  over the Event union, so the two new simple-struct variants are covered
+  automatically — no per-variant wiring.
+- Test: `dragToOrchestrator` inventory→inventory now asserts
+  `player_swap_inventory_items` (was asserting null); added same-slot
+  no-op assertions for inventory + skill_bar.

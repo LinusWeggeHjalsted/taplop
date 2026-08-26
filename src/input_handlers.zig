@@ -73,13 +73,20 @@ const WeaponType = types.WeaponType;
 /// Tiebreaking → Replay PLAYER-ACTION LEGALITY). The handler pushes the
 /// machinery event as a child.
 pub fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputEvent {
+    // A drop back on the source slot is a no-op for every domain — don't
+    // push a no-op swap/equip into the event log.
+    if (slotRefsEqual(from, to)) return null;
     return switch (from) {
         .inventory => |inventory_index| switch (to) {
             .gear => |gear_slot| .{ .player_equip_to_gear = .{
                 .inventory_slot_index = inventory_index,
                 .gear_slot = gear_slot,
             } },
-            else => null, // inventory→inventory move + skill targets: no handler
+            .inventory => |target_index| .{ .player_swap_inventory_items = .{
+                .slot_a_index = inventory_index,
+                .slot_b_index = target_index,
+            } },
+            else => null, // inventory → skill targets: no handler
         },
         .gear => |gear_slot| switch (to) {
             .inventory => |inventory_index| .{ .player_unequip_from_gear = .{
@@ -1081,12 +1088,20 @@ test "dragToOrchestrator maps valid drags and blocks cross-domain drops" {
         const orchestrator = dragToOrchestrator(.{ .skill_bar = 2 }, .{ .learned_skill = .slice }).?;
         try std.testing.expectEqual(@as(u32, 2), orchestrator.player_clear_utility_skill.slot_index);
     }
+    // inventory → inventory = player_swap_inventory_items
+    {
+        const orchestrator = dragToOrchestrator(.{ .inventory = 0 }, .{ .inventory = 1 }).?;
+        try std.testing.expectEqual(@as(u32, 0), orchestrator.player_swap_inventory_items.slot_a_index);
+        try std.testing.expectEqual(@as(u32, 1), orchestrator.player_swap_inventory_items.slot_b_index);
+    }
+    // Dropping back on the source slot is a no-op for every domain.
+    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .inventory = 3 }, .{ .inventory = 3 }));
+    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .skill_bar = 1 }, .{ .skill_bar = 1 }));
+
     // Cross-domain and nonsensical drops are no-ops.
     try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .inventory = 0 }, .{ .skill_bar = 0 }));
     try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .learned_skill = .slice }, .{ .gear = .coat }));
     try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .gear = .coat }, .{ .gear = .boots }));
-    // inventory → inventory move is unsupported (returns null).
-    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .inventory = 0 }, .{ .inventory = 1 }));
 }
 
 test "resolveItemClick: modifier precedence and double-click" {

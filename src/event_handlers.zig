@@ -855,6 +855,12 @@ fn handlePlayerInputEvent(
                 .inventory_slot_index = unequip.inventory_slot_index,
             } } }}, allocator);
         },
+        .player_swap_inventory_items => |swap| {
+            pushEvents(current, &.{.{ .player_event = .{ .swap_inventory_items = .{
+                .slot_a_index = swap.slot_a_index,
+                .slot_b_index = swap.slot_b_index,
+            } } }}, allocator);
+        },
         .player_assign_utility_skill => |assign| {
             pushEvents(current, &.{.{ .player_event = .{ .equip_utility_skill = .{
                 .skill_id = assign.skill_id,
@@ -1478,6 +1484,15 @@ pub fn processEvent(
                     player.equipped_utility_skills[unequip.slot_index] = null;
 
                     cancelPreparedSkill(current);
+                },
+                .swap_inventory_items => |swap| {
+                    if (swap.slot_a_index >= types.inventory_slot_count) return;
+                    if (swap.slot_b_index >= types.inventory_slot_count) return;
+                    const player = getPlayerEntity(current, 0);
+                    const held = player.inventory.slots[swap.slot_a_index];
+                    player.inventory.slots[swap.slot_a_index] =
+                        player.inventory.slots[swap.slot_b_index];
+                    player.inventory.slots[swap.slot_b_index] = held;
                 },
             }
         },

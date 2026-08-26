@@ -1133,6 +1133,10 @@ pub const GameStateHistory = struct {
                 .player_clear_utility_skill => |clear| {
                     self.validateUtilitySlot(clear.slot_index);
                 },
+                .player_swap_inventory_items => |swap| {
+                    self.validateInventoryScreenAndSlot(swap.slot_a_index);
+                    self.validateInventoryScreenAndSlot(swap.slot_b_index);
+                },
             },
             else => {},
         }

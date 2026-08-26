@@ -445,6 +445,13 @@ pub const PlayerEvent = union(enum) {
     unequip_utility_skill: struct {
         slot_index: u32,
     },
+    // Swap two inventory slots. Also covers move-to-empty: a swap with an
+    // empty target is a move (item → empty, null → source). No gear
+    // side-effects (unlike equip/unequip).
+    swap_inventory_items: struct {
+        slot_a_index: u32,
+        slot_b_index: u32,
+    },
 };
 
 /// Player-input events — the ONLY events input handlers can push (via
@@ -603,6 +610,12 @@ pub const PlayerInputEvent = union(enum) {
     // unequip_utility_skill.
     player_clear_utility_skill: struct {
         slot_index: u32,
+    },
+    // Drag inventory → inventory slot. Handler pushes swap_inventory_items
+    // (covers move-to-empty + swap-with-occupied).
+    player_swap_inventory_items: struct {
+        slot_a_index: u32,
+        slot_b_index: u32,
     },
 };
 
