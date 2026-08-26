@@ -2639,6 +2639,22 @@ pub fn buildSkillsPanel(
             const cell = grid.cell(view_row * skills_panel_columns + column);
             const ref: SlotRef = .{ .learned_skill = skill_id };
             const is_drag_source = if (drag_source) |src| src.eql(ref) else false;
+            // Drag source: render the empty-slot diamond so the skill reads
+            // as "in flight" (shown only as the drag ghost following the
+            // pointer). The frame keeps its ref so the slot stays a drop
+            // target for a same-slot drop (a no-op). Mirrors `emitSkillButton`'s
+            // drag-source / empty handling. No tooltip — globally suppressed
+            // while a drag is active anyway (see view.zig).
+            if (is_drag_source) {
+                try elements.append(allocator, .{ .slot = .{
+                    .screen_position = cell.position(),
+                    .size = slot_size,
+                    .icon_sprite_id = "ui/skill_slot_empty",
+                    .icon_color = frame_color,
+                    .ref = ref,
+                } });
+                continue;
+            }
             const definition = lookups.getSkillDefinition(skill_id);
             const slot_tooltip: ?Tooltip = if (definition) |def|
                 try buildSkillTooltip(allocator, def)
@@ -2653,8 +2669,8 @@ pub fn buildSkillsPanel(
                 .ref = ref,
                 .tooltip = slot_tooltip,
             } });
-            // Skill icon on top, suppressed on the drag source ("in flight").
-            if (!is_drag_source) {
+            // Skill icon on top.
+            {
                 try elements.append(allocator, .{ .image = .{
                     .sprite_id = skillIconSpriteId(skill_id),
                     .screen_position = cell.position(),
@@ -2834,17 +2850,21 @@ test "buildSkillsPanel: drag source suppresses the icon, keeps the slot ref" {
         SlotRef{ .learned_skill = .slice }, // dragging the first skill
     );
 
-    // The first slot keeps its ref (drop target); its icon is suppressed.
+    // The first slot keeps its ref (drop target) and renders the empty-slot
+    // diamond ("in flight"); the second emits the skill_button frame + icon.
     var found_source_slot = false;
+    var found_source_diamond = false;
     var image_count: usize = 0;
     for (elements.items) |element| switch (element) {
         .slot => |slot| if (slot.ref != null and slot.ref.?.eql(.{ .learned_skill = .slice })) {
             found_source_slot = true;
+            found_source_diamond = std.mem.eql(u8, slot.icon_sprite_id orelse "", "ui/skill_slot_empty");
         },
         .image => image_count += 1,
         else => {},
     };
     try std.testing.expect(found_source_slot);
+    try std.testing.expect(found_source_diamond);
     // Only the second skill's icon emits; the drag source's is suppressed.
     try std.testing.expectEqual(@as(usize, 1), image_count);
 }
