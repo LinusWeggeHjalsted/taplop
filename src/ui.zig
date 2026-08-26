@@ -2286,8 +2286,7 @@ pub fn buildInventoryPanel(
 
     const p = active_theme.player_gradient.colors;
     const slot_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
-    // Item icons render at player-gradient index 1 for now (per the current
-    // spec; per-item coloring is a later slice).
+    // Item icons render at player-gradient index 1.
     const item_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
 
     const origin = bounds.position();

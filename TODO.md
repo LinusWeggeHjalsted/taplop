@@ -243,7 +243,8 @@ Open:
 
 - buildTopBar: options button (top-left), combat log summary.
 - buildGearPanel: equipped gear slots (weapons, amulet, coat, gloves, pants,
-  boots).
+  boots). DONE (slots + item icons + combat-stat sidebar + drag refs —
+  see DONE.md).
 - buildInventoryPanel: 8×12 grid, material counts on right side. DONE
   (grid + material sidebar + item icons + click/drag UX — see DONE.md).
 - buildSkillsPanel: learned skills grid (draggable for swapping utility

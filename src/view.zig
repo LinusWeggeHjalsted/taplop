@@ -436,10 +436,10 @@ fn middleSectionRect() Rectangle {
 
 /// Dispatch each open middle panel to its builder, stacking them left-to-
 /// right flush against the left edge of the screen. Each panel is vertically
-/// centered within the middle section. Panels without a builder yet (gear /
-/// skills / enemy inspect) reserve no space — they'll slot in when their
-/// builders land. The x cursor advances by `ui_gap` between consecutive
-/// built panels. See DESIGN → UI Framework.
+/// centered within the middle section. Panels without a builder yet (enemy
+/// inspect) reserve no space — it'll slot in when its builder lands. The x
+/// cursor advances by `ui_gap` between consecutive built panels. See DESIGN
+/// → UI Framework.
 fn buildMiddlePanels(
     elements: *std.ArrayList(ui.UiElement),
     allocator: std.mem.Allocator,
