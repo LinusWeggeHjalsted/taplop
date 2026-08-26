@@ -55,8 +55,8 @@ pub fn combatLogTier(event: Event) CombatLogTier {
         .meta_event,
         .super_event,
         .editor_event,
+        .player_input_event,
         .player_event,
-        .hub_event,
         .replay_viewer_event,
         => .none,
     };
@@ -151,7 +151,7 @@ test "combatLogTier classifies the whitelist" {
         .sub_level_event = .{ .pickup_around = .{ .entity_index = 0 } },
     }));
     try std.testing.expectEqual(CombatLogTier.none, combatLogTier(.{
-        .player_event = .swap_hands,
+        .player_input_event = .swap_hands,
     }));
     try std.testing.expectEqual(CombatLogTier.none, combatLogTier(.{
         .meta_event = .open_main_menu,

@@ -39,6 +39,13 @@ fn pushOne(history: *state.GameStateHistory, event: LevelEvent) void {
     event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = event }}, history.current_arena.allocator());
 }
 
+/// Push one player-input event onto the stack (no drain). Same as `pushOne`
+/// but for `PlayerInputEvent` (the player orchestrator variants that moved
+/// out of LevelEvent).
+fn pushPlayerInput(history: *state.GameStateHistory, event: events.PlayerInputEvent) void {
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = event }}, history.current_arena.allocator());
+}
+
 /// Run exactly one processEvent step (pops the top, runs its handler, leaves
 /// any pushed events on the stack). For orchestrator/ordering tests that need
 /// to inspect the stack without draining.
@@ -370,7 +377,7 @@ test "player_move_action: fans out move_entity + clear_highlights + player_turn_
         &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 }, .speed = 2 }},
         &five_by_five,
     ));
-    pushOne(&history, .{ .player_move_action = .{ .destination = .{ .x = 2, .y = 0 } } });
+    pushPlayerInput(&history, .{ .player_move_action = .{ .destination = .{ .x = 2, .y = 0 } } });
     stepOnce(&history);
     // LIFO: array = [player_turn_attack, clear_highlights, move_entity]
     // stack top (last) = move_entity (runs first).
@@ -391,7 +398,7 @@ test "player_skip_move: fans out clear_highlights + player_turn_attack" {
         &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
         &five_by_five,
     ));
-    pushOne(&history, .{ .player_skip_move = .{} });
+    pushPlayerInput(&history, .{ .player_skip_move = .{} });
     stepOnce(&history);
     const stack = history.current_state.event_stack;
     try testing.expectEqual(@as(usize, 2), stack.len);
@@ -408,7 +415,7 @@ test "player_skip_attack: fans out turn_end + clear_highlights + clear_prepared_
         &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
         &five_by_five,
     ));
-    pushOne(&history, .player_skip_attack);
+    pushPlayerInput(&history, .player_skip_attack);
     stepOnce(&history);
     const stack = history.current_state.event_stack;
     try testing.expectEqual(@as(usize, 3), stack.len);
@@ -426,7 +433,7 @@ test "player_cancel_skill: fans out clear_highlights + clear_prepared_skill" {
         &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
         &five_by_five,
     ));
-    pushOne(&history, .player_cancel_skill);
+    pushPlayerInput(&history, .player_cancel_skill);
     stepOnce(&history);
     const stack = history.current_state.event_stack;
     try testing.expectEqual(@as(usize, 2), stack.len);
@@ -447,7 +454,7 @@ test "player_use_skill: turn-ending skill fans out turn_end + use_skill + clear 
         &five_by_five,
     ));
     // stab is a weapon_skill (turn-ending).
-    pushOne(&history, .{ .player_use_skill = .{ .skill_id = .stab, .target = .{ .x = 1, .y = 0 } } });
+    pushPlayerInput(&history, .{ .player_use_skill = .{ .skill_id = .stab, .target = .{ .x = 1, .y = 0 } } });
     stepOnce(&history);
     const stack = history.current_state.event_stack;
     try testing.expectEqual(@as(usize, 4), stack.len);
@@ -474,7 +481,7 @@ test "player_use_skill: non-turn-ending skill omits turn_end" {
         &five_by_five,
     ));
     // blink is a cantrip (non-turn-ending).
-    pushOne(&history, .{ .player_use_skill = .{ .skill_id = .blink, .target = .{ .x = 2, .y = 0 } } });
+    pushPlayerInput(&history, .{ .player_use_skill = .{ .skill_id = .blink, .target = .{ .x = 2, .y = 0 } } });
     stepOnce(&history);
     const stack = history.current_state.event_stack;
     try testing.expectEqual(@as(usize, 3), stack.len);
@@ -494,7 +501,7 @@ test "player_skip_move_to_skill: prepare branch fans out prepare + player_turn_a
         &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
         &five_by_five,
     ));
-    pushOne(&history, .{ .player_skip_move_to_skill = .{
+    pushPlayerInput(&history, .{ .player_skip_move_to_skill = .{
         .skill_id = .stab,
         .prepare = true,
     } });
@@ -503,7 +510,7 @@ test "player_skip_move_to_skill: prepare branch fans out prepare + player_turn_a
     // stack top (last) = clear_highlights (runs first).
     const stack = history.current_state.event_stack;
     try testing.expectEqual(@as(usize, 3), stack.len);
-    try testing.expect(stack[0].level_event == .player_prepare_skill); // bottom
+    try testing.expect(stack[0].player_input_event == .player_prepare_skill); // bottom
     try testing.expect(stack[1].level_event == .player_turn_attack);
     try testing.expect(stack[2].level_event == .clear_highlights); // top, runs first
     // The attack step is always forced so auto_skip_attack_step_out_of_combat
@@ -520,7 +527,7 @@ test "player_skip_move_to_skill: use branch fans out use + player_turn_attack(fo
         &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
         &five_by_five,
     ));
-    pushOne(&history, .{ .player_skip_move_to_skill = .{
+    pushPlayerInput(&history, .{ .player_skip_move_to_skill = .{
         .skill_id = .stab,
         .target = .{ .x = 1, .y = 0 },
         .prepare = false,
@@ -528,7 +535,7 @@ test "player_skip_move_to_skill: use branch fans out use + player_turn_attack(fo
     stepOnce(&history);
     const stack = history.current_state.event_stack;
     try testing.expectEqual(@as(usize, 3), stack.len);
-    try testing.expect(stack[0].level_event == .player_use_skill); // bottom
+    try testing.expect(stack[0].player_input_event == .player_use_skill); // bottom
     try testing.expect(stack[1].level_event == .player_turn_attack);
     try testing.expect(stack[2].level_event == .clear_highlights); // top, runs first
     try testing.expect(stack[1].level_event.player_turn_attack.force_attack_step);

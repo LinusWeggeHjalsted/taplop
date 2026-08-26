@@ -246,7 +246,7 @@ test "dump writes a parseable crash session log to crashes/" {
     // Record at least one real event so event_history is non-empty.
     @import("event_handlers.zig").pushEvents(
         &history.current_state,
-        &.{.{ .meta_event = .start_new_game }},
+        &.{.{ .player_input_event = .start_new_game }},
         history.current_arena.allocator(),
     );
     @import("test_harness.zig").runToIdle(&history);

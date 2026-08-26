@@ -46,13 +46,7 @@ pub const MetaEvent = union(enum) {
     },
     open_main_menu: void,
     close_main_menu: void,
-    start_new_game: void,
     load_save: struct {
-        save_path: []const u8,
-    },
-    // Orchestrates a save: syncs PlayerData from the working entity (in a
-    // hub/level) via build_data_from_player, then writes via write_save.
-    save_game: struct {
         save_path: []const u8,
     },
     // The pure file write. Persists current.player_data as-is; expects any
@@ -99,9 +93,6 @@ pub const MetaEvent = union(enum) {
     // end_playtest bracket a single-level playtest; start_validation /
     // end_validation bracket a forced full-mission playthrough. The gameplay
     // events stay pristine — end_level's guard defers to these.
-    open_editor: struct {
-        mission_path: []const u8,
-    },
     close_editor: void,
     start_playtest: struct {
         level_index: u32, // 0-based into editor.levels
@@ -111,37 +102,13 @@ pub const MetaEvent = union(enum) {
     end_validation: struct {
         success: bool,
     },
-    // Dismiss the mission-complete overlay (the Continue button). Clears
-    // GameState.last_completed_mission. On the undo timeline so undo re-shows
-    // the overlay, redo dismisses it. See DESIGN → Architecture.
-    dismiss_mission_complete: void,
-
-    // --- Player-initiated exit/skip orchestrators ---
-    //
-    // These are the ONLY events the replay whitelist (`isPlayerAction`) allows
-    // to be seeded at an idle point for exit/skip paths. Each handler pushes
-    // the machinery events (`end_level`/`end_hub`/`open_main_menu`/
-    // `start_mission`) as children — those are machinery-only, never
-    // whitelisted, never seeded at an idle point. This 1:1 mapping of user
-    // action → orchestrator event is what makes the replay whitelist a pure
-    // tag-check instead of continuation inspection. See DESIGN → Determinism
-    // & Tiebreaking → Replay PLAYER-ACTION LEGALITY.
-    // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;
-    // the handler pushes end_level with the default continuation.
-    player_skip_level: void,
-    // Options-menu "restart mission" button. Handler pushes
-    // end_level{.restart_mission}.
-    player_restart_mission: void,
-    // Options-menu "exit mission" button. Handler pushes
-    // end_level{.exit_mission}.
-    player_exit_mission: void,
-    // Options-menu "exit to menu" button. Handler branches on screen:
-    // level → end_level{.exit_to_menu}; hub → end_hub + open_main_menu.
-    player_exit_to_menu: void,
-    // Mission-complete overlay "Replay Mission" button. Handler reads
-    // current_state.last_completed_mission for the path, pushes start_mission
-    // + end_hub (LIFO: end_hub syncs the hub player first).
-    player_replay_mission: void,
+    // The remaining MetaEvent variants are machinery-only (handler-pushed,
+    // never seeded at an idle point). Player-pushable events that used to
+    // live here (start_new_game, save_game, open_editor,
+    // dismiss_mission_complete, player_skip_level, player_restart_mission,
+    // player_exit_mission, player_exit_to_menu, player_replay_mission) moved
+    // to `PlayerInputEvent`. See DESIGN → Determinism & Tiebreaking → Replay
+    // PLAYER-ACTION LEGALITY.
 };
 
 pub const SuperEvent = union(enum) {
@@ -440,7 +407,9 @@ pub const EditorTypeKind = enum {
 
 pub const PlayerEvent = union(enum) {
     // scope: hub or level
-    swap_hands: void,
+    // Player-inventory/gear/skill mutations pushed by the drag handler
+    // (machinery — not player-input events). `swap_hands` moved to
+    // `PlayerInputEvent` (it's a keybind/click, not a drag).
     learn_skill: struct {
         inventory_slot_index: u32,
     },
@@ -478,13 +447,104 @@ pub const PlayerEvent = union(enum) {
     },
 };
 
-pub const HubEvent = union(enum) {
-    // scope: hub
+/// Player-input events — the ONLY events input handlers can push (via
+/// `pushPlayerAction`). Each maps 1:1 to a user action (keybind/click).
+/// The replay whitelist (`isPlayerAction`) is just `activeTag ==
+/// .player_input_event` — the type IS the whitelist, so it can't drift from
+/// the push side. `player_skip_level` is additionally dev-gated in
+/// `isPlayerAction`. Handlers for these orchestrators push machinery events
+/// (`end_level`, `start_mission`, `move_entity`, `use_skill`, `turn_end`,
+/// ...) as children via `pushEvents` — those live in the machinery unions
+/// (MetaEvent/LevelEvent/etc.) and are never seeded at an idle point.
+/// See DESIGN → Determinism & Tiebreaking → Replay PLAYER-ACTION LEGALITY.
+pub const PlayerInputEvent = union(enum) {
+    // --- Meta: scope transitions + save + overlay dismiss ---
+    start_new_game: void,
+    open_editor: struct {
+        mission_path: []const u8,
+    },
+    // Orchestrates a save: syncs PlayerData from the working entity (in a
+    // hub/level) via build_data_from_player, then writes via write_save.
+    save_game: struct {
+        save_path: []const u8,
+    },
+    // Dismiss the mission-complete overlay (the Continue button). Clears
+    // GameState.last_completed_mission. On the undo timeline so undo re-shows
+    // the overlay, redo dismisses it. See DESIGN → Architecture.
+    dismiss_mission_complete: void,
+
+    // --- Meta: exit/skip orchestrators ---
+    // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;
+    // the handler pushes end_level with the default continuation.
+    player_skip_level: void,
+    // Options-menu "restart mission" button. Handler pushes
+    // end_level{.restart_mission}.
+    player_restart_mission: void,
+    // Options-menu "exit mission" button. Handler pushes
+    // end_level{.exit_mission}.
+    player_exit_mission: void,
+    // Options-menu "exit to menu" button. Handler branches on screen:
+    // level → end_level{.exit_to_menu}; hub → end_hub + open_main_menu.
+    player_exit_to_menu: void,
+    // Mission-complete overlay "Replay Mission" button. Handler reads
+    // current_state.last_completed_mission for the path, pushes start_mission
+    // + end_hub (LIFO: end_hub syncs the hub player first).
+    player_replay_mission: void,
+
+    // --- Player: swap weapons ---
+    swap_hands: void,
+
+    // --- Hub: movement + NPC interaction ---
     move_player: struct {
         destination: Vector2,
     },
     interact_with_npc: struct {
         npc_index: u32,
+    },
+
+    // --- Level: player-action orchestrators ---
+    // Each player input pushes exactly ONE of these as the top-level event;
+    // the handler composes the verb events (player_turn_attack,
+    // clear_highlights, move_entity, use_skill, turn_end, ...). One recorded
+    // event per player action so undo granularity matches a single click/key.
+    player_move_action: struct {
+        destination: Vector2,
+        // Carries the player's click-time intent (ctrl held) through to the
+        // handler so it can forward it to player_turn_attack's
+        // force_attack_step (ctrl overrides auto_skip_attack_step_out_of_combat).
+        force_attack_step: bool = false,
+    },
+    player_skip_move: struct {
+        force_attack_step: bool = false,
+    },
+    // Pressing a skill slot during the player_move phase: skip the move step
+    // and act in the attack step instead. The payload is the RESOLVED intent
+    // (prepare vs. use-with-target) — targeting resolution depends on the
+    // transient tile_cursor (SessionState, off GameState), so it must happen
+    // in the input path, not the handler (replay doesn't re-resolve input).
+    // `prepare = true` → begin targeting; `prepare = false` → use now (target
+    // is non-null only for auto-targeted / no-targeting skills). The handler
+    // forces the attack step on so auto_skip_attack_step_out_of_combat can't
+    // end the turn before the skill fires.
+    player_skip_move_to_skill: struct {
+        skill_id: SkillId,
+        target: ?Vector2 = null,
+        prepare: bool,
+    },
+    player_cancel_skill: void,
+    player_skip_attack: void,
+    player_use_skill: struct {
+        skill_id: SkillId,
+        target: ?Vector2,
+    },
+    // Prepare a skill for targeting (from the attack phase). Also handler-
+    // pushed as a child of player_skip_move_to_skill — dual-nature, but that's
+    // fine: the type marks it as player-pushable (passes the whitelist);
+    // the handler-pushed form runs mid-drain and is verified by
+    // verifyReplayMatch, never seeded at an idle point.
+    player_prepare_skill: struct {
+        caster_index: u32,
+        skill_id: SkillId,
     },
 };
 
@@ -527,10 +587,6 @@ pub const LevelEvent = union(enum) {
         is_forced: bool = false,
     },
 
-    player_prepare_skill: struct {
-        caster_index: u32,
-        skill_id: SkillId,
-    },
     use_skill: struct {
         caster_index: u32,
         skill_id: SkillId,
@@ -538,45 +594,12 @@ pub const LevelEvent = union(enum) {
     },
 
     // --- player-action orchestrators ---
-    // Each player input pushes exactly ONE of these as the top-level event;
-    // the handler then composes the existing verb events (player_turn_attack,
-    // clear_highlights, move_entity, use_skill, turn_end, ...). This keeps one
-    // recorded event per player action so a reconstructed session derives idle
-    // points purely from virtual stack depth (see reconstructFromEventLog) and
-    // undo granularity matches a single click/key. These carry no state of
-    // their own beyond the player's intent — all mutation is in the verbs they
-    // push.
-    player_move_action: struct {
-        destination: Vector2,
-        // Carries the player's click-time intent (ctrl held) through to the
-        // handler so it can forward it to player_turn_attack's
-        // force_attack_step (ctrl overrides auto_skip_attack_step_out_of_combat).
-        force_attack_step: bool = false,
-    },
-    player_skip_move: struct {
-        force_attack_step: bool = false,
-    },
-    // Pressing a skill slot during the player_move phase: skip the move step
-    // and act in the attack step instead. The payload is the RESOLVED intent
-    // (prepare vs. use-with-target) — targeting resolution depends on the
-    // transient tile_cursor (SessionState, off GameState), so it must happen
-    // in the input path, not the handler (replay doesn't re-resolve input).
-    // `prepare = true` → begin targeting; `prepare = false` → use now (target
-    // is non-null only for auto-targeted / no-targeting skills). The handler
-    // forces the attack step on so auto_skip_attack_step_out_of_combat can't
-    // end the turn before the skill fires.
-    player_skip_move_to_skill: struct {
-        skill_id: SkillId,
-        target: ?Vector2 = null,
-        prepare: bool,
-    },
-    player_cancel_skill: void,
-    player_skip_attack: void,
-    player_use_skill: struct {
-        skill_id: SkillId,
-        target: ?Vector2,
-    },
-
+    // These moved to `PlayerInputEvent` (player_move_action, player_skip_move,
+    // player_skip_move_to_skill, player_cancel_skill, player_skip_attack,
+    // player_use_skill, player_prepare_skill). The remaining LevelEvent
+    // variants are machinery (turn_start, turn_end, player_turn_move,
+    // player_turn_attack, enemy_turn_*, move_entity, use_skill,
+    // highlight_tiles, clear_highlights, clear_prepared_skill).
 };
 
 pub const SubLevelEvent = union(enum) {
@@ -711,8 +734,8 @@ pub const Event = union(enum) {
     meta_event: MetaEvent,
     super_event: SuperEvent,
     editor_event: EditorEvent,
+    player_input_event: PlayerInputEvent,
     player_event: PlayerEvent,
-    hub_event: HubEvent,
     level_event: LevelEvent,
     sub_level_event: SubLevelEvent,
     replay_viewer_event: ReplayViewerEvent,

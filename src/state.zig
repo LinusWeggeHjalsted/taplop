@@ -930,7 +930,7 @@ pub const GameStateHistory = struct {
             .super_event => |m| std.fmt.bufPrint(buf, "super_event.{s}", .{@tagName(m)}) catch "super_event.?",
             .editor_event => |m| std.fmt.bufPrint(buf, "editor_event.{s}", .{@tagName(m)}) catch "editor_event.?",
             .player_event => |m| std.fmt.bufPrint(buf, "player_event.{s}", .{@tagName(m)}) catch "player_event.?",
-            .hub_event => |m| std.fmt.bufPrint(buf, "hub_event.{s}", .{@tagName(m)}) catch "hub_event.?",
+            .player_input_event => |m| std.fmt.bufPrint(buf, "player_input_event.{s}", .{@tagName(m)}) catch "player_input_event.?",
             .level_event => |m| std.fmt.bufPrint(buf, "level_event.{s}", .{@tagName(m)}) catch "level_event.?",
             .sub_level_event => |m| std.fmt.bufPrint(buf, "sub_level_event.{s}", .{@tagName(m)}) catch "sub_level_event.?",
         .replay_viewer_event => |m| std.fmt.bufPrint(buf, "replay_viewer_event.{s}", .{@tagName(m)}) catch "replay_viewer_event.?",
@@ -985,42 +985,16 @@ pub const GameStateHistory = struct {
     /// Tiebreaking → Replay PLAYER-ACTION LEGALITY.
     fn isPlayerAction(self: *GameStateHistory, event: Event) bool {
         _ = self;
-        switch (event) {
-            .meta_event => |me| switch (me) {
-                .start_new_game,
-                .open_editor,
-                .save_game,
-                .dismiss_mission_complete,
-                .player_restart_mission,
-                .player_exit_mission,
-                .player_exit_to_menu,
-                .player_replay_mission,
-                => return true,
-                .player_skip_level => return build_info.dev_mode,
-                else => return false,
-            },
-            .player_event => |pe| switch (pe) {
-                .swap_hands => return true,
-                else => return false,
-            },
-            .level_event => |le| switch (le) {
-                .player_move_action,
-                .player_use_skill,
-                .player_skip_move_to_skill,
-                .player_prepare_skill,
-                .player_skip_move,
-                .player_skip_attack,
-                .player_cancel_skill,
-                => return true,
-                else => return false,
-            },
-            .hub_event => |he| switch (he) {
-                .interact_with_npc,
-                .move_player,
-                => return true,
-            },
-            else => return false,
+        // The type IS the whitelist: only `PlayerInputEvent` variants are
+        // player-pushable. `player_skip_level` is additionally dev-gated.
+        // See DESIGN → Determinism & Tiebreaking → Replay PLAYER-ACTION LEGALITY.
+        if (event == .player_input_event) {
+            if (event.player_input_event == .player_skip_level) {
+                return build_info.dev_mode;
+            }
+            return true;
         }
+        return false;
     }
 
     /// Validate that a top-level player-action event was LEGAL at the point
@@ -1046,12 +1020,8 @@ pub const GameStateHistory = struct {
     /// Replay VERIFICATION.
     fn validatePlayerAction(self: *GameStateHistory, event: Event) void {
         switch (event) {
-            // Exit/skip orchestrators: screen-context legality. The outer
-            // `isPlayerAction` gate already confirmed these are player-
-            // pushable event types; here we confirm the current screen
-            // matches what the live input handler would have checked before
-            // pushing. A mismatch means a malformed/malicious log.
-            .meta_event => |me| switch (me) {
+            .player_input_event => |pi| switch (pi) {
+                // Exit/skip orchestrators: screen-context legality.
                 .player_skip_level,
                 .player_restart_mission,
                 .player_exit_mission,
@@ -1070,40 +1040,48 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_replay_mission with no completed mission");
                     }
                 },
-                else => {},
-            },
-            .level_event => |le| {
-                const level = self.current_state.level orelse return;
-                if (level.entities.len == 0) return;
-                const player = level.entities[0];
-                switch (le) {
-                    .player_move_action => |action| {
-                        if (!self.isPlayerMoveLegal(level, player, action.destination)) {
-                            var buf: [160]u8 = undefined;
-                            const msg = std.fmt.bufPrint(&buf,
-                                "replay validation: player moved to ({d},{d}) which is not reachable from ({d},{d})",
-                                .{ action.destination.x, action.destination.y, player.position.x, player.position.y },
-                            ) catch "replay validation: player moved to an unreachable tile";
-                            @panic(msg);
-                        }
-                    },
-                    .player_use_skill => |use| {
-                        self.validateSkillOnBarAndOffCooldown(player, use.skill_id);
-                        self.validateSkillTarget(level, player, use.skill_id, use.target);
-                    },
-                    .player_skip_move_to_skill => |skip| {
-                        self.validateSkillOnBarAndOffCooldown(player, skip.skill_id);
-                        if (!skip.prepare) {
-                            self.validateSkillTarget(level, player, skip.skill_id, skip.target);
-                        }
-                    },
-                    .player_prepare_skill => |prepare| {
-                        self.validateSkillOnBarAndOffCooldown(player, prepare.skill_id);
-                    },
-                    // No payload to validate.
-                    .player_skip_move, .player_skip_attack, .player_cancel_skill => {},
-                    else => {},
-                }
+                // Level combat actions: inner legality checks.
+                .player_move_action => |action| {
+                    const level = self.current_state.level orelse return;
+                    if (level.entities.len == 0) return;
+                    const player = level.entities[0];
+                    if (!self.isPlayerMoveLegal(level, player, action.destination)) {
+                        var buf: [160]u8 = undefined;
+                        const msg = std.fmt.bufPrint(&buf,
+                            "replay validation: player moved to ({d},{d}) which is not reachable from ({d},{d})",
+                            .{ action.destination.x, action.destination.y, player.position.x, player.position.y },
+                        ) catch "replay validation: player moved to an unreachable tile";
+                        @panic(msg);
+                    }
+                },
+                .player_use_skill => |use| {
+                    const level = self.current_state.level orelse return;
+                    if (level.entities.len == 0) return;
+                    const player = level.entities[0];
+                    self.validateSkillOnBarAndOffCooldown(player, use.skill_id);
+                    self.validateSkillTarget(level, player, use.skill_id, use.target);
+                },
+                .player_skip_move_to_skill => |skip| {
+                    const level = self.current_state.level orelse return;
+                    if (level.entities.len == 0) return;
+                    const player = level.entities[0];
+                    self.validateSkillOnBarAndOffCooldown(player, skip.skill_id);
+                    if (!skip.prepare) {
+                        self.validateSkillTarget(level, player, skip.skill_id, skip.target);
+                    }
+                },
+                .player_prepare_skill => |prepare| {
+                    const level = self.current_state.level orelse return;
+                    if (level.entities.len == 0) return;
+                    const player = level.entities[0];
+                    self.validateSkillOnBarAndOffCooldown(player, prepare.skill_id);
+                },
+                // No payload to validate.
+                .player_skip_move, .player_skip_attack, .player_cancel_skill,
+                .start_new_game, .open_editor, .save_game,
+                .dismiss_mission_complete, .swap_hands,
+                .move_player, .interact_with_npc,
+                => {},
             },
             else => {},
         }
@@ -1696,24 +1674,24 @@ test "isPlayerAction: whitelist accepts player-pushable events" {
     var history = harness.newHistory(null);
 
     // meta orchestrators
-    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .start_new_game }));
-    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .{ .open_editor = .{ .mission_path = "m" } } }));
-    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .{ .save_game = .{ .save_path = "s" } } }));
-    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .dismiss_mission_complete }));
-    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .player_restart_mission }));
-    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .player_exit_mission }));
-    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .player_exit_to_menu }));
-    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .player_replay_mission }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .start_new_game }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .{ .open_editor = .{ .mission_path = "m" } } }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .{ .save_game = .{ .save_path = "s" } } }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .dismiss_mission_complete }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_restart_mission }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_exit_mission }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_exit_to_menu }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_replay_mission }));
     // player_skip_level: dev-gated (test build is Debug → dev_mode = true)
-    try std.testing.expect(history.isPlayerAction(.{ .meta_event = .player_skip_level }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_skip_level }));
 
     // player/level/hub events
-    try std.testing.expect(history.isPlayerAction(.{ .player_event = .swap_hands }));
-    try std.testing.expect(history.isPlayerAction(.{ .level_event = .{ .player_skip_move = .{} } }));
-    try std.testing.expect(history.isPlayerAction(.{ .level_event = .player_skip_attack }));
-    try std.testing.expect(history.isPlayerAction(.{ .level_event = .player_cancel_skill }));
-    try std.testing.expect(history.isPlayerAction(.{ .hub_event = .{ .move_player = .{ .destination = .{ .x = 0, .y = 0 } } } }));
-    try std.testing.expect(history.isPlayerAction(.{ .hub_event = .{ .interact_with_npc = .{ .npc_index = 0 } } }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .swap_hands }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .{ .player_skip_move = .{} } }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_skip_attack }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_cancel_skill }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 0, .y = 0 } } } }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .{ .interact_with_npc = .{ .npc_index = 0 } } }));
 }
 
 test "isPlayerAction: whitelist rejects machinery events" {

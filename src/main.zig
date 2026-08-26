@@ -641,9 +641,9 @@ test "session log round-trips through reconstruction (forward play == replay)" {
     // one hub move) into history1, recording events as it goes.
     var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
     runToIdle(&history1);
-    event_handlers.pushEvents(&history1.current_state, &.{.{ .meta_event = .start_new_game }}, history1.current_arena.allocator());
+    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
     runToIdle(&history1);
-    event_handlers.pushEvents(&history1.current_state, &.{.{ .hub_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history1.current_arena.allocator());
+    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history1.current_arena.allocator());
     runToIdle(&history1);
     try std.testing.expectEqual(state.Screen.hub, history1.current_state.screen);
 
@@ -723,9 +723,9 @@ test "replay verification: clean replay through the slow path passes" {
 
     var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
     runToIdle(&history);
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .start_new_game }}, history.current_arena.allocator());
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .start_new_game }}, history.current_arena.allocator());
     runToIdle(&history);
-    event_handlers.pushEvents(&history.current_state, &.{.{ .hub_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history.current_arena.allocator());
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history.current_arena.allocator());
     runToIdle(&history);
     try std.testing.expectEqual(state.Screen.hub, history.current_state.screen);
 
@@ -899,7 +899,7 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     runToIdle(&history);
 
     // Open the editor on the shipped beginnings mission.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .open_editor = .{
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
         .mission_path = "data/campaigns/main_campaign/missions/beginnings",
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
@@ -1000,7 +1000,7 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     runToIdle(&history);
 
     // Open editor + start playtest on beginnings level 0.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .open_editor = .{
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
         .mission_path = "data/campaigns/main_campaign/missions/beginnings",
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
@@ -1017,14 +1017,14 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     // attack phase; if not, auto_skip_attack_step_out_of_combat completes
     // the whole turn (turn_end fires during the drain). The per-mission
     // counter increments; the cumulative counter does NOT (editor mode).
-    event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = .{ .player_skip_move = .{} } }}, history.current_arena.allocator());
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .player_skip_move = .{} } }}, history.current_arena.allocator());
     runToIdle(&history);
 
     // If auto-skip didn't fire (we're in the attack phase), skip it to
     // complete the turn. If it did fire, we're back in player_move for the
     // next turn — don't push another skip (it would start a second turn).
     if (history.current_state.level.?.turn_phase == .player_attack) {
-        event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = .player_skip_attack }}, history.current_arena.allocator());
+        event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .player_skip_attack }}, history.current_arena.allocator());
         runToIdle(&history);
     }
 
@@ -1495,7 +1495,7 @@ test "maybeRecordIdlePoint: first idle point from empty idle_points (no out-of-b
 
     // Process one event (swap_hands) directly, then call maybeRecordIdlePoint
     // with empty idle_points — must record the first idle point, not crash.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_event = .swap_hands }}, history.current_arena.allocator());
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .swap_hands }}, history.current_arena.allocator());
     event_handlers.processEvent(&history);
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try std.testing.expect(history.current_event_index > 0);

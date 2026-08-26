@@ -135,12 +135,10 @@ pub fn pushPlayerSkillUse(
     target: ?Vector2,
     allocator: std.mem.Allocator,
 ) void {
-    pushEvents(current, &.{
-        .{ .level_event = .{ .player_use_skill = .{
-            .skill_id = skill_id,
-            .target = target,
-        } } },
-    }, allocator);
+    pushPlayerAction(current, .{ .player_use_skill = .{
+        .skill_id = skill_id,
+        .target = target,
+    } }, allocator);
 }
 
 /// Push events onto the event stack. Events are processed from the back
@@ -168,6 +166,19 @@ pub fn pushEvents(
     @memcpy(combined[0..current.event_stack.len], current.event_stack);
     @memcpy(combined[current.event_stack.len..], new_events);
     current.event_stack = combined;
+}
+
+/// Push a player-input event (the ONLY kind input handlers may push — see
+/// `PlayerInputEvent` in events.zig). This wrapper is the compile-time gate:
+/// input handlers call this instead of `pushEvents`, so they can't push
+/// machinery events. The handler for a `PlayerInputEvent` may push machinery
+/// events as children via `pushEvents` (that's the orchestrator convention).
+pub fn pushPlayerAction(
+    current: *GameState,
+    action: events.PlayerInputEvent,
+    allocator: std.mem.Allocator,
+) void {
+    pushEvents(current, &.{.{ .player_input_event = action }}, allocator);
 }
 
 /// Push the gameplay start batch for a freshly-loaded level: player sync
@@ -432,6 +443,316 @@ fn loadCampaignAndPushHub(
 
 /// Process a single event from the stack. Applies the event to the current
 
+/// Handle a `PlayerInputEvent` — the handler for the `.player_input_event`
+/// arm in `processEvent`. Each variant is a player-initiated action (keybind
+/// or click). Simple variants do inline work; orchestrator variants push
+/// machinery events as children via `pushEvents`. See `PlayerInputEvent` in
+/// events.zig + DESIGN → Determinism & Tiebreaking → Replay PLAYER-ACTION
+/// LEGALITY.
+fn handlePlayerInputEvent(
+    history: *GameStateHistory,
+    current: *GameState,
+    pi: events.PlayerInputEvent,
+    allocator: std.mem.Allocator,
+) void {
+    switch (pi) {
+        // --- Meta: overlay dismiss ---
+        .dismiss_mission_complete => {
+            current.last_completed_mission = null;
+        },
+
+        // --- Meta: new game ---
+        .start_new_game => {
+            var balance_warnings: std.ArrayList([]const u8) = .empty;
+            const parsed_sections = parser.parseConfigFile(
+                history.readReconstructionFile("data/new_player.txt"),
+                allocator,
+            ) catch {
+                failReconstructionRead(history, "failed to parse new_player.txt");
+                return;
+            };
+            validateConfigKeys(history, parsed_sections, parser.player_save_key_map, "data/new_player.txt", allocator);
+            current.player_data = loaders.loadPlayerSave(
+                parsed_sections,
+                allocator,
+                "data/new_player.txt",
+                &balance_warnings,
+            ) catch {
+                failReconstructionRead(history, "failed to parse new_player.txt");
+                return;
+            };
+            surfaceWarnings(history, &balance_warnings, allocator);
+            loadCampaignAndPushHub(current, history, allocator);
+            if (history.load_error) return;
+        },
+
+        // --- Meta: save ---
+        .save_game => |save| {
+            if (current.level != null or current.hub != null) {
+                pushEvents(current, &.{
+                    .{ .meta_event = .{ .write_save = .{ .save_path = save.save_path } } },
+                    .{ .super_event = .{ .build_data_from_player = .{ .entity_index = 0 } } },
+                }, allocator);
+            } else {
+                pushEvents(current, &.{
+                    .{ .meta_event = .{ .write_save = .{ .save_path = save.save_path } } },
+                }, allocator);
+            }
+        },
+
+        // --- Meta: open editor ---
+        .open_editor => |start| {
+            var balance_warnings: std.ArrayList([]const u8) = .empty;
+            const mission_file_path = std.fmt.allocPrint(
+                allocator,
+                "{s}/mission.txt",
+                .{start.mission_path},
+            ) catch @panic("failed to allocate mission path");
+            const mission_sections = parser.parseConfigFile(
+                history.readReconstructionFile(mission_file_path),
+                allocator,
+            ) catch {
+                failReconstructionRead(history, "failed to parse mission file");
+                return;
+            };
+            validateConfigKeys(history, mission_sections, parser.mission_key_map, mission_file_path, allocator);
+            const mission = loaders.loadMission(
+                mission_sections,
+                allocator,
+            ) catch {
+                failReconstructionRead(history, "failed to parse mission file");
+                return;
+            };
+            const player_file_path = std.fmt.allocPrint(
+                allocator,
+                "{s}/player.txt",
+                .{start.mission_path},
+            ) catch @panic("failed to allocate player path");
+            const player_sections = parser.parseConfigFile(
+                history.readReconstructionFile(player_file_path),
+                allocator,
+            ) catch {
+                failReconstructionRead(history, "failed to parse player.txt");
+                return;
+            };
+            validateConfigKeys(history, player_sections, parser.player_loadout_key_map, player_file_path, allocator);
+            const player_entity = loaders.loadPlayerLoadout(player_sections, allocator, player_file_path, &balance_warnings) catch {
+                failReconstructionRead(history, "failed to parse player.txt");
+                return;
+            };
+            var level_sections: std.ArrayList([]const parser.Section) = .empty;
+            var level_index: u32 = 1;
+            while (level_index <= mission.level_count) : (level_index += 1) {
+                const level_path = std.fmt.allocPrint(
+                    allocator,
+                    "{s}/level_{d}.txt",
+                    .{ start.mission_path, level_index },
+                ) catch @panic("failed to allocate level path");
+                const sections = parser.parseConfigFile(
+                    history.readReconstructionFile(level_path),
+                    allocator,
+                ) catch {
+                    failReconstructionRead(history, "failed to parse level file");
+                    return;
+                };
+                validateConfigKeys(history, sections, parser.level_key_map, level_path, allocator);
+                level_sections.append(allocator, sections) catch @panic("failed to append level sections");
+            }
+            current.editor = loaders.buildEditorMission(
+                mission,
+                player_entity,
+                level_sections.items,
+                history.file_source,
+                allocator,
+                start.mission_path,
+                &balance_warnings,
+            ) catch {
+                failReconstructionRead(history, "failed to build editor mission");
+                return;
+            };
+            surfaceWarnings(history, &balance_warnings, allocator);
+            current.transitionScreen(.editor);
+        },
+
+        // --- Meta: exit/skip orchestrators ---
+        .player_skip_level => {
+            pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{} } }}, allocator);
+        },
+        .player_restart_mission => {
+            pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{
+                .continuation = .restart_mission,
+            } } }}, allocator);
+        },
+        .player_exit_mission => {
+            pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{
+                .continuation = .exit_mission,
+            } } }}, allocator);
+        },
+        .player_exit_to_menu => {
+            if (current.screen == .level) {
+                pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{
+                    .continuation = .exit_to_menu,
+                } } }}, allocator);
+            } else if (current.screen == .hub) {
+                pushEvents(current, &.{
+                    .{ .meta_event = .open_main_menu },
+                    .{ .meta_event = .end_hub },
+                }, allocator);
+            }
+        },
+        .player_replay_mission => {
+            const info = current.last_completed_mission orelse return;
+            const mission_path = allocator.dupe(u8, info.path) catch
+                @panic("failed to allocate replay mission path");
+            pushEvents(current, &.{
+                .{ .meta_event = .{ .start_mission = .{
+                    .mission_path = mission_path,
+                    .start_hub_id = current.player_data.current_hub,
+                    .end_hub_id = null,
+                } } },
+                .{ .meta_event = .end_hub },
+            }, allocator);
+        },
+
+        // --- Player: swap weapons ---
+        .swap_hands => {
+            const player = getPlayerEntity(current, 0);
+            const held_weapon = player.main_hand_weapon;
+            player.main_hand_weapon = player.off_hand_weapon;
+            player.off_hand_weapon = held_weapon;
+            cancelPreparedSkill(current);
+        },
+
+        // --- Hub: movement + NPC interaction ---
+        .move_player => |move| {
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .move);
+            if (current.hub) |*hub| {
+                hub.player.position = move.destination;
+                for (hub.mission_exits) |exit| {
+                    if (exit.position.x == move.destination.x and
+                        exit.position.y == move.destination.y)
+                    {
+                        const mission_path = std.fmt.allocPrint(
+                            allocator,
+                            "data/campaigns/{s}/missions/{s}",
+                            .{ current.player_data.current_campaign, exit.mission_id },
+                        ) catch @panic("failed to allocate mission path");
+                        pushEvents(current, &.{
+                            .{ .meta_event = .{ .start_mission = .{
+                                .mission_path = mission_path,
+                                .start_hub_id = current.player_data.current_hub,
+                                .end_hub_id = null,
+                            } } },
+                            .{ .meta_event = .end_hub },
+                        }, allocator);
+                        break;
+                    }
+                }
+            }
+        },
+        .interact_with_npc => {},
+
+        // --- Level: player-action orchestrators ---
+        .player_move_action => |action| {
+            pushEvents(current, &.{
+                .{ .level_event = .{ .player_turn_attack = .{
+                    .force_attack_step = action.force_attack_step,
+                } } },
+                .{ .level_event = .clear_highlights },
+                .{ .level_event = .{ .move_entity = .{
+                    .entity_index = 0,
+                    .destination = action.destination,
+                } } },
+            }, allocator);
+        },
+        .player_skip_move => |skip| {
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .skip);
+            pushEvents(current, &.{
+                .{ .level_event = .{ .player_turn_attack = .{
+                    .force_attack_step = skip.force_attack_step,
+                } } },
+                .{ .level_event = .clear_highlights },
+            }, allocator);
+        },
+        .player_skip_move_to_skill => |skip| {
+            if (skip.prepare) {
+                pushEvents(current, &.{
+                    .{ .player_input_event = .{ .player_prepare_skill = .{
+                        .caster_index = 0,
+                        .skill_id = skip.skill_id,
+                    } } },
+                    .{ .level_event = .{ .player_turn_attack = .{
+                        .force_attack_step = true,
+                    } } },
+                    .{ .level_event = .clear_highlights },
+                }, allocator);
+            } else {
+                pushEvents(current, &.{
+                    .{ .player_input_event = .{ .player_use_skill = .{
+                        .skill_id = skip.skill_id,
+                        .target = skip.target,
+                    } } },
+                    .{ .level_event = .{ .player_turn_attack = .{
+                        .force_attack_step = true,
+                    } } },
+                    .{ .level_event = .clear_highlights },
+                }, allocator);
+            }
+        },
+        .player_cancel_skill => {
+            pushEvents(current, &.{
+                .{ .level_event = .clear_highlights },
+                .{ .level_event = .clear_prepared_skill },
+            }, allocator);
+        },
+        .player_skip_attack => {
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .skip);
+            pushEvents(current, &.{
+                .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
+                .{ .level_event = .clear_highlights },
+                .{ .level_event = .clear_prepared_skill },
+            }, allocator);
+        },
+        .player_use_skill => |use| {
+            const ends_turn = if (lookups.getSkillDefinition(use.skill_id)) |def|
+                (def.skill_type == .weapon_skill or def.skill_type == .spell)
+            else
+                false;
+            if (ends_turn) {
+                pushEvents(current, &.{
+                    .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
+                    .{ .level_event = .{ .use_skill = .{
+                        .caster_index = 0,
+                        .skill_id = use.skill_id,
+                        .target = use.target,
+                    } } },
+                    .{ .level_event = .clear_highlights },
+                    .{ .level_event = .clear_prepared_skill },
+                }, allocator);
+            } else {
+                pushEvents(current, &.{
+                    .{ .level_event = .{ .use_skill = .{
+                        .caster_index = 0,
+                        .skill_id = use.skill_id,
+                        .target = use.target,
+                    } } },
+                    .{ .level_event = .clear_highlights },
+                    .{ .level_event = .clear_prepared_skill },
+                }, allocator);
+            }
+        },
+        .player_prepare_skill => |prepare| {
+            const level = &current.level.?;
+            level.prepared_skill = prepare.skill_id;
+            if (lookups.getSkillDefinition(prepare.skill_id)) |skill_definition| {
+                if (skill_definition.playerPrepareSkill(prepare.caster_index, current.*, allocator)) |event| {
+                    pushEvents(current, &.{event}, allocator);
+                }
+            }
+        },
+    }
+}
+
 /// Process a single event from the stack. Applies the event to the current
 /// state and records it in event history. Also used by undo/redo replay.
 pub fn processEvent(
@@ -476,36 +797,6 @@ pub fn processEvent(
                 .open_main_menu => {
                     current.transitionScreen(.main_menu);
                 },
-                .dismiss_mission_complete => {
-                    // Clear the mission-complete overlay (Continue button).
-                    // On the undo timeline so undo re-shows, redo dismisses.
-                    current.last_completed_mission = null;
-                },
-                .start_new_game => {
-                    var balance_warnings: std.ArrayList([]const u8) = .empty;
-                    const parsed_sections = parser.parseConfigFile(
-                        history.readReconstructionFile("data/new_player.txt"),
-                        allocator,
-                    ) catch {
-                        failReconstructionRead(history, "failed to parse new_player.txt");
-                        return;
-                    };
-                    validateConfigKeys(history, parsed_sections, parser.player_save_key_map, "data/new_player.txt", allocator);
-
-                    current.player_data = loaders.loadPlayerSave(
-                        parsed_sections,
-                        allocator,
-                        "data/new_player.txt",
-                        &balance_warnings,
-                    ) catch {
-                        failReconstructionRead(history, "failed to parse new_player.txt");
-                        return;
-                    };
-                    surfaceWarnings(history, &balance_warnings, allocator);
-
-                    loadCampaignAndPushHub(current, history, allocator);
-                    if (history.load_error) return;
-                },
                 .load_save => |load| {
                     var balance_warnings: std.ArrayList([]const u8) = .empty;
                     const parsed_sections = parser.parseConfigFile(
@@ -530,23 +821,6 @@ pub fn processEvent(
 
                     loadCampaignAndPushHub(current, history, allocator);
                     if (history.load_error) return;
-                },
-                .save_game => |save| {
-                    // Orchestrate: make PlayerData current, then write. LIFO means
-                    // the last-pushed event runs first, so build_data_from_player
-                    // (on top) syncs before write_save persists. Only sync when a
-                    // working entity exists (hub/level); outside those, player 0
-                    // isn't present and we write PlayerData as-is.
-                    if (current.level != null or current.hub != null) {
-                        pushEvents(current, &.{
-                            .{ .meta_event = .{ .write_save = .{ .save_path = save.save_path } } },
-                            .{ .super_event = .{ .build_data_from_player = .{ .entity_index = 0 } } },
-                        }, allocator);
-                    } else {
-                        pushEvents(current, &.{
-                            .{ .meta_event = .{ .write_save = .{ .save_path = save.save_path } } },
-                        }, allocator);
-                    }
                 },
                 .write_save => |write| {
                     // Side effect: skip during replay so undo/redo scrubbing
@@ -618,88 +892,6 @@ pub fn processEvent(
                     pushEvents(current, &.{.{ .super_event = .{ .build_data_from_player = .{
                         .entity_index = 0,
                     } } }}, allocator);
-                },
-                .open_editor => |start| {
-                    var balance_warnings: std.ArrayList([]const u8) = .empty;
-                    // Load a mission into an Editor session. All reads go through
-                    // history.readReconstructionFile so the reconstruction cache
-                    // makes undo replay deterministic (see DESIGN → File System
-                    // & IO → Reconstruction cache). buildEditorMission dedups
-                    // the levels' inline definitions into a shared palette.
-                    const mission_file_path = std.fmt.allocPrint(
-                        allocator,
-                        "{s}/mission.txt",
-                        .{start.mission_path},
-                    ) catch @panic("failed to allocate mission path");
-                    const mission_sections = parser.parseConfigFile(
-                        history.readReconstructionFile(mission_file_path),
-                        allocator,
-                    ) catch {
-                        failReconstructionRead(history, "failed to parse mission file");
-                        return;
-                    };
-                    validateConfigKeys(history, mission_sections, parser.mission_key_map, mission_file_path, allocator);
-                    const mission = loaders.loadMission(
-                        mission_sections,
-                        allocator,
-                    ) catch {
-                        failReconstructionRead(history, "failed to parse mission file");
-                        return;
-                    };
-
-                    // Player loadout (player.txt) — required for editor
-                    // playtest/validation. Official missions ship one too.
-                    const player_file_path = std.fmt.allocPrint(
-                        allocator,
-                        "{s}/player.txt",
-                        .{start.mission_path},
-                    ) catch @panic("failed to allocate player path");
-                    const player_sections = parser.parseConfigFile(
-                        history.readReconstructionFile(player_file_path),
-                        allocator,
-                    ) catch {
-                        failReconstructionRead(history, "failed to parse player.txt");
-                        return;
-                    };
-                    validateConfigKeys(history, player_sections, parser.player_loadout_key_map, player_file_path, allocator);
-                    const player_entity = loaders.loadPlayerLoadout(player_sections, allocator, player_file_path, &balance_warnings) catch {
-                        failReconstructionRead(history, "failed to parse player.txt");
-                        return;
-                    };
-
-                    // Read + parse every level, then build the reference-based editor.
-                    var level_sections: std.ArrayList([]const parser.Section) = .empty;
-                    var level_index: u32 = 1;
-                    while (level_index <= mission.level_count) : (level_index += 1) {
-                        const level_path = std.fmt.allocPrint(
-                            allocator,
-                            "{s}/level_{d}.txt",
-                            .{ start.mission_path, level_index },
-                        ) catch @panic("failed to allocate level path");
-                        const sections = parser.parseConfigFile(
-                            history.readReconstructionFile(level_path),
-                            allocator,
-                        ) catch {
-                            failReconstructionRead(history, "failed to parse level file");
-                            return;
-                        };
-                        validateConfigKeys(history, sections, parser.level_key_map, level_path, allocator);
-                        level_sections.append(allocator, sections) catch @panic("failed to append level sections");
-                    }
-                    current.editor = loaders.buildEditorMission(
-                        mission,
-                        player_entity,
-                        level_sections.items,
-                        history.file_source,
-                        allocator,
-                        start.mission_path,
-                        &balance_warnings,
-                    ) catch {
-                        failReconstructionRead(history, "failed to build editor mission");
-                        return;
-                    };
-                    surfaceWarnings(history, &balance_warnings, allocator);
-                    current.transitionScreen(.editor);
                 },
                 .close_editor => {
                     // Tear down the editor session and return to the main menu.
@@ -972,46 +1164,6 @@ pub fn processEvent(
                         .baseline_stack_depth = current.event_stack.len,
                     };
                 },
-                // Player-initiated exit/skip orchestrators — each pushes the
-                // machinery events as children. See events.zig.
-                .player_skip_level => {
-                    pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{} } }}, allocator);
-                },
-                .player_restart_mission => {
-                    pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{
-                        .continuation = .restart_mission,
-                    } } }}, allocator);
-                },
-                .player_exit_mission => {
-                    pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{
-                        .continuation = .exit_mission,
-                    } } }}, allocator);
-                },
-                .player_exit_to_menu => {
-                    if (current.screen == .level) {
-                        pushEvents(current, &.{.{ .meta_event = .{ .end_level = .{
-                            .continuation = .exit_to_menu,
-                        } } }}, allocator);
-                    } else if (current.screen == .hub) {
-                        pushEvents(current, &.{
-                            .{ .meta_event = .open_main_menu },
-                            .{ .meta_event = .end_hub },
-                        }, allocator);
-                    }
-                },
-                .player_replay_mission => {
-                    const info = current.last_completed_mission orelse return;
-                    const mission_path = allocator.dupe(u8, info.path) catch
-                        @panic("failed to allocate replay mission path");
-                    pushEvents(current, &.{
-                        .{ .meta_event = .{ .start_mission = .{
-                            .mission_path = mission_path,
-                            .start_hub_id = current.player_data.current_hub,
-                            .end_hub_id = null,
-                        } } },
-                        .{ .meta_event = .end_hub },
-                    }, allocator);
-                },
                 else => {},
             }
 
@@ -1057,16 +1209,6 @@ pub fn processEvent(
         },
         .player_event => |player_event| {
             switch (player_event) {
-                .swap_hands => {
-                    const player = getPlayerEntity(current, 0);
-                    const held_weapon = player.main_hand_weapon;
-                    player.main_hand_weapon = player.off_hand_weapon;
-                    player.off_hand_weapon = held_weapon;
-
-                    // Swapping hands changes the first three skills, so cancel
-                    // any skill prepared from the previous configuration.
-                    cancelPreparedSkill(current);
-                },
                 .learn_skill => |learn| {
                     if (!history.replaying) history.session.queueSound(history.backing_allocator, .learn_skill);
                     const player = getPlayerEntity(current, 0);
@@ -1170,42 +1312,8 @@ pub fn processEvent(
                 },
             }
         },
-        .hub_event => |hub_event| {
-            switch (hub_event) {
-                .move_player => |move| {
-                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .move);
-                    if (current.hub) |*hub| {
-                        hub.player.position = move.destination;
-
-                        // Check if the player landed on a mission exit
-                        for (hub.mission_exits) |exit| {
-                            if (exit.position.x == move.destination.x and
-                                exit.position.y == move.destination.y)
-                            {
-                                const mission_path = std.fmt.allocPrint(
-                                    allocator,
-                                    "data/campaigns/{s}/missions/{s}",
-                                    .{ current.player_data.current_campaign, exit.mission_id },
-                                ) catch @panic("failed to allocate mission path");
-
-                                // end_hub on top runs first (syncs the hub
-                                // player entity into PlayerData), then the
-                                // mission starts.
-                                pushEvents(current, &.{
-                                    .{ .meta_event = .{ .start_mission = .{
-                                        .mission_path = mission_path,
-                                        .start_hub_id = current.player_data.current_hub,
-                                        .end_hub_id = null,
-                                    } } },
-                                    .{ .meta_event = .end_hub },
-                                }, allocator);
-                                break;
-                            }
-                        }
-                    }
-                },
-                .interact_with_npc => {},
-            }
+        .player_input_event => |pi| {
+            handlePlayerInputEvent(history, current, pi, allocator);
         },
         .editor_event => |editor_event| {
             switch (editor_event) {
@@ -1670,116 +1778,6 @@ pub fn processEvent(
                         pushEvents(current, &.{.{ .level_event = .{ .turn_end = .{
                             .entity_index = enemy_attack.entity_index,
                         } } }}, allocator);
-                    }
-                },
-                // --- player-action orchestrators ---
-                // Each pushes the same batch the input path used to push
-                // directly, so behavior is unchanged; the only difference is
-                // that one recorded event represents the whole action.
-                .player_move_action => |action| {
-                    pushEvents(current, &.{
-                        .{ .level_event = .{ .player_turn_attack = .{
-                            .force_attack_step = action.force_attack_step,
-                        } } },
-                        .{ .level_event = .clear_highlights },
-                        .{ .level_event = .{ .move_entity = .{
-                            .entity_index = 0,
-                            .destination = action.destination,
-                        } } },
-                    }, allocator);
-                },
-                .player_skip_move => |skip| {
-                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .skip);
-                    pushEvents(current, &.{
-                        .{ .level_event = .{ .player_turn_attack = .{
-                            .force_attack_step = skip.force_attack_step,
-                        } } },
-                        .{ .level_event = .clear_highlights },
-                    }, allocator);
-                },
-                .player_skip_move_to_skill => |skip| {
-                    // Force the attack step: the player explicitly asked to act,
-                    // so auto_skip_attack_step_out_of_combat must not end the
-                    // turn before the skill fires. clear_highlights removes the
-                    // move-step highlights before entering the attack phase;
-                    // the nested prepare/use orchestrator owns the rest.
-                    if (skip.prepare) {
-                        pushEvents(current, &.{
-                            .{ .level_event = .{ .player_prepare_skill = .{
-                                .caster_index = 0,
-                                .skill_id = skip.skill_id,
-                            } } },
-                            .{ .level_event = .{ .player_turn_attack = .{
-                                .force_attack_step = true,
-                            } } },
-                            .{ .level_event = .clear_highlights },
-                        }, allocator);
-                    } else {
-                        pushEvents(current, &.{
-                            .{ .level_event = .{ .player_use_skill = .{
-                                .skill_id = skip.skill_id,
-                                .target = skip.target,
-                            } } },
-                            .{ .level_event = .{ .player_turn_attack = .{
-                                .force_attack_step = true,
-                            } } },
-                            .{ .level_event = .clear_highlights },
-                        }, allocator);
-                    }
-                },
-                .player_cancel_skill => {
-                    pushEvents(current, &.{
-                        .{ .level_event = .clear_highlights },
-                        .{ .level_event = .clear_prepared_skill },
-                    }, allocator);
-                },
-                .player_skip_attack => {
-                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .skip);
-                    pushEvents(current, &.{
-                        .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
-                        .{ .level_event = .clear_highlights },
-                        .{ .level_event = .clear_prepared_skill },
-                    }, allocator);
-                },
-                .player_use_skill => |use| {
-                    // Whether the skill ends the turn is a property of the skill
-                    // type; resolve it here so the recorded orchestrator stays
-                    // a single event and the turn_end verb is replayed in order
-                    // alongside the rest.
-                    const ends_turn = if (lookups.getSkillDefinition(use.skill_id)) |def|
-                        (def.skill_type == .weapon_skill or def.skill_type == .spell)
-                    else
-                        false;
-                    if (ends_turn) {
-                        pushEvents(current, &.{
-                            .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
-                            .{ .level_event = .{ .use_skill = .{
-                                .caster_index = 0,
-                                .skill_id = use.skill_id,
-                                .target = use.target,
-                            } } },
-                            .{ .level_event = .clear_highlights },
-                            .{ .level_event = .clear_prepared_skill },
-                        }, allocator);
-                    } else {
-                        pushEvents(current, &.{
-                            .{ .level_event = .{ .use_skill = .{
-                                .caster_index = 0,
-                                .skill_id = use.skill_id,
-                                .target = use.target,
-                            } } },
-                            .{ .level_event = .clear_highlights },
-                            .{ .level_event = .clear_prepared_skill },
-                        }, allocator);
-                    }
-                },
-                .player_prepare_skill => |prepare| {
-                    const level = &current.level.?;
-                    level.prepared_skill = prepare.skill_id;
-                    if (lookups.getSkillDefinition(prepare.skill_id)) |skill_definition| {
-                        if (skill_definition.playerPrepareSkill(prepare.caster_index, current.*, allocator)) |event| {
-                            pushEvents(current, &.{event}, allocator);
-                        }
                     }
                 },
                 .use_skill => |use| {

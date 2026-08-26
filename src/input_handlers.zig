@@ -371,9 +371,7 @@ pub fn handleAnytimeInput(
                     .{timestamp},
                 ) catch @panic("failed to format save path");
                 const baseline = history.current_state.event_stack.len;
-                event_handlers.pushEvents(current, &.{.{
-                    .meta_event = .{ .save_game = .{ .save_path = save_path } },
-                }}, allocator);
+                event_handlers.pushPlayerAction(current, .{ .save_game = .{ .save_path = save_path } }, allocator);
                 while (history.current_state.event_stack.len > baseline) {
                     if (history.load_error) break;
                     event_handlers.processEvent(history);
@@ -385,7 +383,7 @@ pub fn handleAnytimeInput(
             .restart_mission => {
                 if (current.screen != .level) return;
                 const baseline = history.current_state.event_stack.len;
-                event_handlers.pushEvents(current, &.{.{ .meta_event = .player_restart_mission }}, allocator);
+                event_handlers.pushPlayerAction(current, .player_restart_mission, allocator);
                 while (history.current_state.event_stack.len > baseline) {
                     if (history.load_error) break;
                     event_handlers.processEvent(history);
@@ -394,7 +392,7 @@ pub fn handleAnytimeInput(
             .exit_mission => {
                 if (current.screen != .level) return;
                 const baseline = history.current_state.event_stack.len;
-                event_handlers.pushEvents(current, &.{.{ .meta_event = .player_exit_mission }}, allocator);
+                event_handlers.pushPlayerAction(current, .player_exit_mission, allocator);
                 while (history.current_state.event_stack.len > baseline) {
                     if (history.load_error) break;
                     event_handlers.processEvent(history);
@@ -402,7 +400,7 @@ pub fn handleAnytimeInput(
             },
             .exit_to_menu => {
                 const baseline = history.current_state.event_stack.len;
-                event_handlers.pushEvents(current, &.{.{ .meta_event = .player_exit_to_menu }}, allocator);
+                event_handlers.pushPlayerAction(current, .player_exit_to_menu, allocator);
                 while (history.current_state.event_stack.len > baseline) {
                     if (history.load_error) break;
                     event_handlers.processEvent(history);
@@ -417,9 +415,7 @@ pub fn handleAnytimeInput(
             // it (last_completed_mission is in the snapshot).
             .continue_after_mission => {
                 const baseline = history.current_state.event_stack.len;
-                event_handlers.pushEvents(current, &.{.{
-                    .meta_event = .dismiss_mission_complete,
-                }}, allocator);
+                event_handlers.pushPlayerAction(current, .dismiss_mission_complete, allocator);
                 while (history.current_state.event_stack.len > baseline) {
                     if (history.load_error) break;
                     event_handlers.processEvent(history);
@@ -428,7 +424,7 @@ pub fn handleAnytimeInput(
             .replay_mission => {
                 if (current.last_completed_mission == null) return;
                 const baseline = history.current_state.event_stack.len;
-                event_handlers.pushEvents(current, &.{.{ .meta_event = .player_replay_mission }}, allocator);
+                event_handlers.pushPlayerAction(current, .player_replay_mission, allocator);
                 while (history.current_state.event_stack.len > baseline) {
                     if (history.load_error) break;
                     event_handlers.processEvent(history);
@@ -528,9 +524,7 @@ pub fn handleAnytimeInput(
 
         if (in_game.swap_weapons) {
             if (!history.replaying) history.session.queueSound(history.backing_allocator, .swap_skill);
-            event_handlers.pushEvents(current, &.{
-                .{ .player_event = .swap_hands },
-            }, allocator);
+            event_handlers.pushPlayerAction(current, .swap_hands, allocator);
         }
     }
 }
@@ -606,17 +600,13 @@ pub fn handleIdleInput(
     if (current.screen == .main_menu) {
         if (idle.menu_action) |action| {
             switch (action) {
-                .new_game => event_handlers.pushEvents(current, &.{
-                    .{ .meta_event = .start_new_game },
-                }, allocator),
+                .new_game => event_handlers.pushPlayerAction(current, .start_new_game, allocator),
                 // Dev entry point: open the editor on the shipped beginnings
                 // mission (hardcoded path so the editor building blocks are
                 // reachable).
-                .open_editor => event_handlers.pushEvents(current, &.{
-                    .{ .meta_event = .{ .open_editor = .{
-                        .mission_path = "data/campaigns/main_campaign/missions/beginnings",
-                    } } },
-                }, allocator),
+                .open_editor => event_handlers.pushPlayerAction(current, .{ .open_editor = .{
+                    .mission_path = "data/campaigns/main_campaign/missions/beginnings",
+                } }, allocator),
                 // continue_game / load_save need an autosave path + file picker,
                 // and open_settings / open_credits need their screens. Wired
                 // when those land (Continue isn't even shown on a fresh start).
@@ -635,7 +625,7 @@ pub fn handleIdleInput(
     // with an empty stack + no active wait, so this never interleaves with a
     // draining enemy turn. See DESIGN → Input + AGENTS → Dev Tools.
     if (idle.skip_level and build_info.dev_mode and current.screen == .level) {
-        event_handlers.pushEvents(current, &.{.{ .meta_event = .player_skip_level }}, allocator);
+        event_handlers.pushPlayerAction(current, .player_skip_level, allocator);
         return;
     }
 
@@ -650,22 +640,18 @@ pub fn handleIdleInput(
                     if (idle.skill_slot_selected) |slot| {
                         if (resolveSkillSlotAction(history, current, level, slot, allocator)) |action| {
                             switch (action) {
-                                .use => |use| event_handlers.pushEvents(current, &.{
-                                    .{ .level_event = .{ .player_skip_move_to_skill = .{
-                                        .skill_id = use.skill_id,
-                                        .target = use.target,
-                                        .prepare = false,
-                                    } } },
-                                }, allocator),
+                                .use => |use| event_handlers.pushPlayerAction(current, .{ .player_skip_move_to_skill = .{
+                                    .skill_id = use.skill_id,
+                                    .target = use.target,
+                                    .prepare = false,
+                                } }, allocator),
                                 .prepare => |skill_id| {
                                     if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
-                                    event_handlers.pushEvents(current, &.{
-                                        .{ .level_event = .{ .player_skip_move_to_skill = .{
-                                            .skill_id = skill_id,
-                                            .target = null,
-                                            .prepare = true,
-                                        } } },
-                                    }, allocator);
+                                    event_handlers.pushPlayerAction(current, .{ .player_skip_move_to_skill = .{
+                                        .skill_id = skill_id,
+                                        .target = null,
+                                        .prepare = true,
+                                    } }, allocator);
                                 },
                             }
                             return;
@@ -682,21 +668,18 @@ pub fn handleIdleInput(
                             }
                         }
                         if (is_reachable) {
-                            event_handlers.pushEvents(current, &.{
-                                .{ .level_event = .{ .player_move_action = .{
-                                    .destination = clicked_position,
-                                    .force_attack_step = modifiers.ctrl,
-                                } } },
-                            }, allocator);
+                            event_handlers.pushPlayerAction(current, .{ .player_move_action = .{
+                                .destination = clicked_position,
+                                .force_attack_step = modifiers.ctrl,
+                            } }, allocator);
                         }
                     }
 
                     if (idle.skip) {
                         // Skip movement, go straight to attack phase
-                        event_handlers.pushEvents(current, &.{
-                            .{ .level_event = .{ .player_skip_move = .{
-                                .force_attack_step = modifiers.ctrl,
-                            } } }}, allocator);
+                        event_handlers.pushPlayerAction(current, .{ .player_skip_move = .{
+                            .force_attack_step = modifiers.ctrl,
+                        } }, allocator);
                     }
                 },
                 .player_attack => {
@@ -711,12 +694,10 @@ pub fn handleIdleInput(
                                 ),
                                 .prepare => |skill_id| {
                                     if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
-                                    event_handlers.pushEvents(current, &.{
-                                        .{ .level_event = .{ .player_prepare_skill = .{
-                                            .caster_index = 0,
-                                            .skill_id = skill_id,
-                                        } } },
-                                    }, allocator);
+                                    event_handlers.pushPlayerAction(current, .{ .player_prepare_skill = .{
+                                        .caster_index = 0,
+                                        .skill_id = skill_id,
+                                    } }, allocator);
                                 },
                             }
                             return;
@@ -752,15 +733,13 @@ pub fn handleIdleInput(
                         // Cancel skill targeting
                         if (level.prepared_skill != null) {
                             // Stay in player_attack phase
-                            event_handlers.pushEvents(current, &.{
-                                .{ .level_event = .player_cancel_skill }}, allocator);
+                            event_handlers.pushPlayerAction(current, .player_cancel_skill, allocator);
                         }
                     }
 
                     if (idle.skip) {
                         // Skip attack, end turn
-                        event_handlers.pushEvents(current, &.{
-                            .{ .level_event = .player_skip_attack }}, allocator);
+                        event_handlers.pushPlayerAction(current, .player_skip_attack, allocator);
                     }
                 },
             }
@@ -782,11 +761,9 @@ pub fn handleIdleInput(
             }
 
             if (clicked_npc) |npc_index| {
-                event_handlers.pushEvents(current, &.{
-                    .{ .hub_event = .{ .interact_with_npc = .{
-                        .npc_index = npc_index,
-                    } } },
-                }, allocator);
+                event_handlers.pushPlayerAction(current, .{ .interact_with_npc = .{
+                    .npc_index = npc_index,
+                } }, allocator);
             } else {
                 // Move to clicked tile if walkable
                 var is_walkable = false;
@@ -797,11 +774,9 @@ pub fn handleIdleInput(
                     }
                 }
                 if (is_walkable) {
-                    event_handlers.pushEvents(current, &.{
-                        .{ .hub_event = .{ .move_player = .{
-                            .destination = clicked_position,
-                        } } },
-                    }, allocator);
+                    event_handlers.pushPlayerAction(current, .{ .move_player = .{
+                        .destination = clicked_position,
+                    } }, allocator);
                 }
             }
         }

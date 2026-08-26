@@ -446,7 +446,7 @@ test "writeEventLog serializes representative event shapes" {
         // void payload
         .{ .meta_event = .open_main_menu },
         // struct with a Vector2
-        .{ .hub_event = .{ .move_player = .{ .destination = .{ .x = 3, .y = 4 } } } },
+        .{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 3, .y = 4 } } } },
         // optional present (target) + enum
         .{ .level_event = .{ .use_skill = .{
             .caster_index = 0,
@@ -491,7 +491,7 @@ test "writeEventLog serializes representative event shapes" {
 
     // Discriminators + field shapes
     try std.testing.expect(std.mem.indexOf(u8, output, "event meta_event open_main_menu\n") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output, "event hub_event move_player\ndestination 3 4\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event move_player\ndestination 3 4\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event level_event use_skill\ncaster_index 0\nskill_id slice\ntarget 2 5\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "outgoing_damage 12\ntriggers_effects true\nheals_attacker false\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "delta -1\n") != null);
