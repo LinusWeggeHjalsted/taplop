@@ -192,10 +192,34 @@ pub fn handleDrag(
     // --- Left button: release → drop or click ---
     if (pointer.released) {
         if (ui_state.drag) |drag| {
-            if (ui.refAt(ui_elements, pointer.position)) |target| {
-                if (dragToOrchestrator(drag.source, target)) |orchestrator| {
-                    event_handlers.pushPlayerAction(current, orchestrator, allocator);
+            // Resolve the drop. `target` is null when the release is over empty
+            // space (or non-ref UI like a panel background). A resolved
+            // orchestrator (swap / assign / equip / clear) is pushed as-is.
+            const target: ?ui.SlotRef = ui.refAt(ui_elements, pointer.position);
+            var resolved: ?events.PlayerInputEvent = null;
+            if (target) |target_ref| {
+                if (dragToOrchestrator(drag.source, target_ref)) |orchestrator| {
+                    resolved = orchestrator;
                 }
+            }
+            // Drag a skill off the bar: if nothing resolved and the release
+            // isn't back on the source slot, the drag went "off the bar" (empty
+            // space, a non-ref surface, or a cross-domain ref like an inventory
+            // slot) → clear the source utility slot. A self-drop (release back
+            // on the source slot) stays a no-op. Item/gear drags off to empty
+            // space just cancel (no destroy-on-missdrop). See DESIGN →
+            // Architecture (no-duplicate utility-skill rule + off-bar clear).
+            if (resolved == null) {
+                const is_self_drop = if (target) |target_ref| ui.SlotRef.eql(drag.source, target_ref) else false;
+                if (!is_self_drop) switch (drag.source) {
+                    .skill_bar => |from_index| resolved = .{ .player_clear_utility_skill = .{
+                        .slot_index = from_index,
+                    } },
+                    else => {},
+                };
+            }
+            if (resolved) |orchestrator| {
+                event_handlers.pushPlayerAction(current, orchestrator, allocator);
             }
             ui_state.drag = null;
             ui_state.pending_slot_press = null;

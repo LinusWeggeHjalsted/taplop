@@ -4683,3 +4683,33 @@ enforced at the drag path, the only way duplicates enter live play).
 Tests (handler_tests_gear.zig): fresh assign, duplicate-in-another-slot
 swaps (asserts the move + displaced contents + no second copy), drop onto
 own slot no-op, swap-to-empty-target, out-of-range no-op.
+
+### Drag a skill off the bar → clear slot (done)
+
+Dragging a utility skill off the bar now nulls its slot. Implemented in
+`handleDrag`'s release branch (input_handlers.zig): when a `.skill_bar` drag
+ends and no orchestrator resolved (the drop missed any valid target), the
+handler pushes `player_clear_utility_skill{slot_index = from_index}` —
+unless the release is back on the source slot (self-drop), which stays a
+no-op. "Off the bar" covers every non-resolving drop: empty space, a non-ref
+surface (panel background), and cross-domain refs (an inventory or gear
+slot, where `dragToOrchestrator` returns null). A drop onto the skills menu
+or another bar slot still routes through `dragToOrchestrator` (clear / swap
+respectively) — the fallback only fires when nothing else resolves.
+
+The carve-out is self-drop: `dragToOrchestrator` already returns null for a
+same-slot drop, so the fallback must distinguish "missed everything" from
+"released back on the source." The release branch computes `is_self_drop`
+(target ref equals source ref) and suppresses the clear in that case —
+dropping a skill back on its own slot does nothing, matching the
+inventory/gear drag-back-cancel convention.
+
+Item/gear drags off to empty space are unchanged (just cancel — no
+destroy-on-missdrop for items; the off-bar clear is skill-bar-specific since
+a cleared utility slot is genuinely empty, not a destroyed item).
+
+Tests (handler_tests_gear.zig, drive `handleDrag` with synthetic pointer
+ticks against a harness history): drag to empty space clears the slot; drag
+onto a cross-domain inventory ref clears the slot; release back on the
+source slot is a no-op; drag onto another bar slot swaps (regression — the
+fallback doesn't fire when `dragToOrchestrator` resolves).

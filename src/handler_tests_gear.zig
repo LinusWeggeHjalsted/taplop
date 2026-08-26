@@ -14,6 +14,9 @@ const events = @import("events.zig");
 const event_handlers = @import("event_handlers.zig");
 const functions = @import("functions.zig");
 const test_harness = @import("test_harness.zig");
+const input_handlers = @import("input_handlers.zig");
+const input = @import("input.zig");
+const ui = @import("ui.zig");
 
 const Harness = test_harness.Harness;
 const runToIdle = test_harness.runToIdle;
@@ -448,4 +451,110 @@ test "player_assign_utility_skill: out-of-range slot is a no-op" {
     for (player(&history).equipped_utility_skills) |slot| {
         try testing.expectEqual(@as(?SkillId, null), slot);
     }
+}
+
+// ───────────────── handleDrag: drag a skill off the bar (clear on drop-off) ─────────────────
+
+/// A minimal skill-bar button element at `pos` size 256 carrying
+/// `ref = .{ .skill_bar = slot }`, mirroring `emitSkillButton`'s filled-slot
+/// emit (background button + ref). Enough for `handleDrag`'s `refAt` +
+/// `slotContentIcon` to resolve the slot.
+fn skillBarElement(slot: u32, pos: types.ScreenPosition) ui.UiElement {
+    return .{ .button = .{
+        .sprite_id = "ui/skill_button",
+        .screen_position = pos,
+        .width = 256,
+        .height = 256,
+        .action = .skill_slot_4,
+        .ref = .{ .skill_bar = slot },
+    } };
+}
+
+test "handleDrag: drag a bar skill to empty space clears the slot" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).equipped_utility_skills[0] = .replenish;
+
+    const elements = [_]ui.UiElement{skillBarElement(0, .{ .x = 0, .y = 0 })};
+
+    // Press on the slot → records a pending press.
+    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    // Move past the drag threshold → promotes to a drag.
+    input_handlers.handleDrag(&history, .{ .position = .{ .x = 500, .y = 500 } }, &elements);
+    // Release over empty space (no ref under the pointer) → off-bar → clear.
+    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 500, .y = 500 } }, &elements);
+
+    runToIdle(&history);
+    try testing.expectEqual(@as(?SkillId, null), player(&history).equipped_utility_skills[0]);
+}
+
+test "handleDrag: drag a bar skill onto an inventory ref (cross-domain) clears the slot" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).equipped_utility_skills[0] = .replenish;
+
+    // A skill-bar slot at (0,0) and an inventory slot at (400,0).
+    const elements = [_]ui.UiElement{
+        skillBarElement(0, .{ .x = 0, .y = 0 }),
+        .{ .slot = .{
+            .screen_position = .{ .x = 400, .y = 0 },
+            .size = 128,
+            .icon_sprite_id = "ui/item_slot",
+            .ref = .{ .inventory = 0 },
+        } },
+    };
+
+    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_handlers.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
+    // Release over the inventory slot — cross-domain, dragToOrchestrator
+    // returns null, not a self-drop → off-bar → clear.
+    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
+
+    runToIdle(&history);
+    try testing.expectEqual(@as(?SkillId, null), player(&history).equipped_utility_skills[0]);
+}
+
+test "handleDrag: release back on the source slot is a no-op (no clear)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).equipped_utility_skills[0] = .replenish;
+
+    const elements = [_]ui.UiElement{skillBarElement(0, .{ .x = 0, .y = 0 })};
+
+    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_handlers.handleDrag(&history, .{ .position = .{ .x = 500, .y = 500 } }, &elements);
+    // Release back over the source slot → self-drop → no-op.
+    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+
+    runToIdle(&history);
+    try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[0]);
+}
+
+test "handleDrag: drag a bar skill onto another bar slot swaps (not clear)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).equipped_utility_skills[0] = .replenish;
+    player(&history).equipped_utility_skills[3] = .howl;
+
+    const elements = [_]ui.UiElement{
+        skillBarElement(0, .{ .x = 0, .y = 0 }),
+        skillBarElement(3, .{ .x = 400, .y = 0 }),
+    };
+
+    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_handlers.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
+    // Release over slot 3 → swap (not clear).
+    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
+
+    runToIdle(&history);
+    try testing.expectEqual(@as(?SkillId, .howl), player(&history).equipped_utility_skills[0]);
+    try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[3]);
 }

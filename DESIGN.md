@@ -1254,7 +1254,10 @@ the campaign.
   only. Replay-safe by construction (the check reads GameState, which
   reconstructs identically on replay). Save loading does NOT deduplicate — a
   hand-edited / pre-rule save with duplicates is preserved as-is (the rule is
-  enforced at the drag path, the only way duplicates enter live).
+  enforced at the drag path, the only way duplicates enter live). Dragging a
+  skill OFF the bar (drop on empty space, a non-ref surface, or a cross-domain
+  ref like an inventory slot) clears the source utility slot — see DESIGN →
+  Architecture. A release back on the source slot is a no-op (no self-clear).
 - Derived-from-entity data has a single source of truth: skill-bar slot
   resolution lives in `Entity.skillInSlot` / `Entity.collectSkillSlots`, not
   duplicated per caller
