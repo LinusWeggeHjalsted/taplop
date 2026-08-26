@@ -75,7 +75,7 @@ const WeaponType = types.WeaponType;
 pub fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputEvent {
     // A drop back on the source slot is a no-op for every domain — don't
     // push a no-op swap/equip into the event log.
-    if (slotRefsEqual(from, to)) return null;
+    if (ui.SlotRef.eql(from, to)) return null;
     return switch (from) {
         .inventory => |inventory_index| switch (to) {
             .gear => |gear_slot| .{ .player_equip_to_gear = .{
@@ -227,26 +227,10 @@ pub fn handleDrag(
     }
 }
 
-/// Whether two SlotRefs refer to the same slot.
+/// Whether two SlotRefs refer to the same slot. Thin wrapper over
+/// `SlotRef.eql` (kept for the call sites that read better with a free fn).
 fn slotRefsEqual(a: ui.SlotRef, b: ui.SlotRef) bool {
-    return switch (a) {
-        .inventory => |ai| switch (b) {
-            .inventory => |bi| ai == bi,
-            else => false,
-        },
-        .gear => |ag| switch (b) {
-            .gear => |bg| ag == bg,
-            else => false,
-        },
-        .skill_bar => |ai| switch (b) {
-            .skill_bar => |bi| ai == bi,
-            else => false,
-        },
-        .learned_skill => |as| switch (b) {
-            .learned_skill => |bs| as == bs,
-            else => false,
-        },
-    };
+    return ui.SlotRef.eql(a, b);
 }
 
 /// The click intents an inventory-slot click can resolve to. `none` carries

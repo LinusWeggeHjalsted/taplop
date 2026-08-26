@@ -121,6 +121,30 @@ pub const SlotRef = union(enum) {
     gear: GearSlot, // equipped gear slot
     skill_bar: u32, // utility bar slot index (0-4)
     learned_skill: SkillId, // an entry in the skills-menu pool
+
+    /// Whether two refs identify the same slot (same variant + same index/
+    /// gear slot / skill id). Tagged-union equality with a same-variant
+    /// short-circuit.
+    pub fn eql(a: SlotRef, b: SlotRef) bool {
+        return switch (a) {
+            .inventory => |ai| switch (b) {
+                .inventory => |bi| ai == bi,
+                else => false,
+            },
+            .gear => |ag| switch (b) {
+                .gear => |bg| ag == bg,
+                else => false,
+            },
+            .skill_bar => |ai| switch (b) {
+                .skill_bar => |bi| ai == bi,
+                else => false,
+            },
+            .learned_skill => |as| switch (b) {
+                .learned_skill => |bs| as == bs,
+                else => false,
+            },
+        };
+    }
 };
 
 /// An in-progress drag. Lives on UiState so it is auto-cancelled on screen
@@ -1755,19 +1779,38 @@ fn emitSkillButton(
     /// weapon-skill slots (1-3, derived from the equipped weapon — not
     /// draggable). Set by the caller for utility slots 4-8.
     drag_ref: ?SlotRef,
+    /// The slot currently being dragged from, if any. The source slot renders
+    /// empty (diamond) so the skill reads as "in flight" (shown only as the
+    /// ghost following the pointer).
+    drag_source: ?SlotRef,
 ) !void {
     const skill_id = player.skillInSlot(slot, weapon_type_definitions);
     const definition = if (skill_id) |id| lookups.getSkillDefinition(id) else null;
+    const is_drag_source = if (drag_source) |src| src.eql(drag_ref orelse return) else false;
 
-    if (skill_id == null or definition == null) {
-        // Empty slot: the standalone diamond marker, no background frame.
-        try elements.append(allocator, .{ .image = .{
-            .sprite_id = "ui/skill_slot_empty",
-            .screen_position = cell.position(),
-            .width = cell.width,
-            .height = cell.height,
-            .color = background_color,
-        } });
+    // Empty, or the drag source (skill is "in flight"): render the diamond
+    // marker. For a reorderable utility slot this is a `.slot` carrying the
+    // ref so it stays a DROP TARGET (an empty slot can receive a drop). For
+    // a weapon slot or the drag source it's a plain `.image` (inert — no
+    // ref, no action; a same-slot drop is already a no-op via the guard).
+    if (skill_id == null or definition == null or is_drag_source) {
+        if (drag_ref) |ref| {
+            try elements.append(allocator, .{ .slot = .{
+                .screen_position = cell.position(),
+                .size = cell.width,
+                .icon_sprite_id = "ui/skill_slot_empty",
+                .icon_color = background_color,
+                .ref = ref,
+            } });
+        } else {
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = "ui/skill_slot_empty",
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .color = background_color,
+            } });
+        }
         return;
     }
 
@@ -1819,6 +1862,9 @@ pub fn buildBottomBar(
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
     active_theme: types.ActiveColorTheme,
     player_color_index: u32,
+    /// The slot currently being dragged from, if any. Suppresses the source
+    /// skill's render so it reads as "in flight". Passed to `emitSkillButton`.
+    drag_source: ?SlotRef,
 ) !void {
     const player = playerEntity(game_state) orelse return;
     const in_level = game_state.screen == .level;
@@ -1922,7 +1968,7 @@ pub fn buildBottomBar(
         while (slot <= 3) : (slot += 1) {
             // Weapon-skill slots are derived from the equipped weapon — not
             // reorderable, so no drag ref.
-            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill, null);
+            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill, null, drag_source);
         }
     }
 
@@ -1948,7 +1994,7 @@ pub fn buildBottomBar(
         while (slot <= 8) : (slot += 1) {
             // Utility-skill slots are reorderable by drag: ref = skill_bar
             // index 0-4 (slot 4 → index 0, ..., slot 8 → index 4).
-            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill, .{ .skill_bar = @as(u32, slot - 4) });
+            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill, .{ .skill_bar = @as(u32, slot - 4) }, drag_source);
         }
     }
 

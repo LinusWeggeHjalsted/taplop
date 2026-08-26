@@ -187,6 +187,7 @@ pub fn view(
             ui.screenRect(),
             active_theme,
         ) catch @panic("failed to build top bar");
+        const drag_source: ?ui.SlotRef = if (session.ui_state.drag) |d| d.source else null;
         ui.buildBottomBar(
             &ui_elements,
             frame_allocator,
@@ -196,6 +197,7 @@ pub fn view(
             weapon_type_definitions,
             active_theme,
             settings.player_color_index,
+            drag_source,
         ) catch @panic("failed to build bottom bar");
 
         // Middle panels (inventory / gear / skills / enemy inspect): stacked
@@ -246,26 +248,56 @@ pub fn view(
         ) catch @panic("failed to build main menu");
     }
 
-    // Drag ghost: the dragged icon follows the pointer, drawn last (on top).
-    // Pointer position is in reference-resolution space (see translateInput).
+    // Drag ghost: the dragged content follows the pointer, drawn last (on
+    // top). Pointer position is in reference-resolution space (see
+    // translateInput). Skill-bar/learned-skill drags render the button
+    // background (player-gradient index 3, matching the bar's `c_border`)
+    // under the icon (index 1); inventory/gear drags are icon-only (index 1,
+    // matching `buildInventoryPanel`'s item_color). See DESIGN → Entity & UI
+    // Coloring.
     if (session.ui_state.drag) |drag| {
         const pointer = session.input_state.mouse_screen_position;
         const ghost_pos = pointer.toScreenPosition();
-        // Tinted with the same player-gradient index 1 the inventory panel
-        // uses for item icons (DESIGN → Entity & UI Coloring).
-        const ghost_color = active_theme.player_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)];
-        ui_elements.append(frame_allocator, .{ .image = .{
-            .sprite_id = drag.icon_sprite_id,
-            .screen_position = .{
-                .x = ghost_pos.x - @divTrunc(drag.size, 2),
-                .y = ghost_pos.y - @divTrunc(drag.size, 2),
-            },
+        const p = active_theme.player_gradient.colors;
+        const icon_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
+        const ghost_rect = types.Rectangle{
+            .x = ghost_pos.x - @divTrunc(drag.size, 2),
+            .y = ghost_pos.y - @divTrunc(drag.size, 2),
             .width = drag.size,
             .height = drag.size,
-            .color = ghost_color,
-            // Follows the pointer; must not occlude drop-target hit-testing.
-            .blocks_input = false,
-        } }) catch @panic("failed to append drag ghost");
+        };
+        switch (drag.source) {
+            .skill_bar, .learned_skill => {
+                const bg_color = p[@min(@as(u32, 3), types.gradient_color_count - 1)];
+                ui_elements.append(frame_allocator, .{ .image = .{
+                    .sprite_id = "ui/skill_button",
+                    .screen_position = ghost_rect.position(),
+                    .width = drag.size,
+                    .height = drag.size,
+                    .color = bg_color,
+                    .blocks_input = false,
+                } }) catch @panic("failed to append drag ghost background");
+                ui_elements.append(frame_allocator, .{ .image = .{
+                    .sprite_id = drag.icon_sprite_id,
+                    .screen_position = ghost_rect.position(),
+                    .width = drag.size,
+                    .height = drag.size,
+                    .color = icon_color,
+                    .blocks_input = false,
+                } }) catch @panic("failed to append drag ghost icon");
+            },
+            .inventory, .gear => {
+                ui_elements.append(frame_allocator, .{ .image = .{
+                    .sprite_id = drag.icon_sprite_id,
+                    .screen_position = ghost_rect.position(),
+                    .width = drag.size,
+                    .height = drag.size,
+                    .color = icon_color,
+                    // Follows the pointer; must not occlude drop-target hit-testing.
+                    .blocks_input = false,
+                } }) catch @panic("failed to append drag ghost");
+            },
+        }
     }
 
     // Hover tooltip: the topmost element under the pointer that carries

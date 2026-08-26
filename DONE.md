@@ -4453,3 +4453,40 @@ fitting asset; deferred to the audio pass).
 `skill_bar → learned_skill` (clear) is wired in `dragToOrchestrator` but
 unreachable until `buildSkillsPanel` emits learned-skill refs — lands with
 that panel.
+
+### Skill-bar drag polish: empty-slot drop target + button ghost + hide source (DONE)
+
+Three issues with the utility-skill drag (landed last commit):
+
+1. **Empty utility slots weren't drop targets.** The empty-slot branch in
+   `emitSkillButton` emitted a plain `.image` (the diamond) with no ref, so
+   `refAt` returned null over it → a drop on an empty slot cancelled
+   instead of landing. Fixed: empty UTILITY slots now emit a `.slot`
+   carrying the ref (icon = `ui/skill_slot_empty`, same diamond render) so
+   they're drop targets. A `.slot` isn't a `.button`, so the button-click
+   model ignores them (no spurious skill activation on an empty slot), and
+   `slotContentIcon` returns null for an empty skill_bar → no drag STARTS
+   from an empty slot. Weapon slots (ref null) and the drag source stay
+   plain `.image` (inert).
+
+2. **Ghost showed only the icon, not the button background.** The
+   skill-bar slot is a composite (`ui/skill_button` bg + skill icon);
+   `DragState` stores only the icon. Fixed in `view()`: skill-bar /
+   learned-skill drags render the button background (player-gradient
+   index 3, matching the bar's `c_border`) under the icon (index 1);
+   inventory/gear drags stay icon-only (index 1). No `DragState` change —
+   the view picks the domain from `drag.source` and resolves colors from
+   `active_theme` (rendering decisions stay in the view, per convention).
+
+3. **Dragged skill was left behind in the source slot.** Same fix as the
+   inventory hide: `buildBottomBar` + `emitSkillButton` take a
+   `drag_source: ?SlotRef`; when a slot's ref matches the drag source it
+   renders empty (diamond) so the skill reads as "in flight" (ghost only).
+   The source becomes inert (plain image) — a same-slot drop is already a
+   no-op via the guard.
+
+**Refactor — `SlotRef.eql`:** equality moved from the file-private
+`slotRefsEqual` (input_handlers.zig) to a `pub fn eql` on `SlotRef` (ui.zig),
+so view + builder code can compare refs without a duplicate. `slotRefsEqual`
+is now a thin wrapper (kept for the input-handler call sites);
+`dragToOrchestrator`'s same-slot guard calls `SlotRef.eql` directly.
