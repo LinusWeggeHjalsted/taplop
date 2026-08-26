@@ -8,6 +8,16 @@ AGENTS.md → Documentation for the four-file lifecycle (open question → TODO;
 settles → DESIGN; task completes → DONE). A fact lives in ONE place; AGENTS
 never restates design — it points.
 
+**Track the cost, not just the decision.** A settled decision's non-obvious
+LIMITATION or downside belongs inline with the decision (a "Known limitation"
+line or footnote). A decision that reads as clean in DESIGN can hide a real
+cost (e.g. the InputBindings full-replace overlay silently shadowing new
+default bindings for existing installs) until someone hits it. If a choice
+trades a desirable property for another, say so at the decision site — don't
+make the reader re-derive the tradeoff. A limitation that later becomes
+unacceptable is the seed of the next slice; leaving it unrecorded means the
+next session meets it as a surprise instead of a known.
+
 ## Platform Seam (raylib)
 
 - raylib is linked ONLY into the native exe. Keep it out of the test build (and

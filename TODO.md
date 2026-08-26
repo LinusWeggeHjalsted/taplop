@@ -35,6 +35,19 @@ Test by running `zig build run` and clicking through.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
+- **Make co-fire-by-context disambiguation explicit** — the shipped ArrowUp /
+  ArrowDown bindings intentionally map one key to two actions
+  (`move_cursor_*` + `error_scroll_*`); both fire on every press and the
+  pending-error popup branch consumes the scroll action + `return`s first, so
+  context picks which takes effect. This is handler-ordering-dependent and
+  undocumented at the binding sites. Prefer making it explicit: either a
+  comment at each dual-binding explaining the context gate, or restructure so
+  `error_scroll_*` isn't a separate binding (the popup branch reads
+  `move_cursor_*` directly and the Action enum drops `error_scroll_up/down`).
+  The hybrid precedence rule (DESIGN → Input) handles chord-vs-plain
+  collisions but NOT same-specificity intentional dual-binds like this —
+  those still rely on the implicit context-gate. Small slice; lands with the
+  binding-UI work or standalone.
 - **Replay viewer** — wire the .replay_viewer screen to STEP through a loaded
   log. See "Logging & Replay" below.
 - **Mission end states** — mission_complete / mission_fail screens + player
