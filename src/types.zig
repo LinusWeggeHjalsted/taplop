@@ -760,6 +760,15 @@ pub const Campaign = struct {
     start_hub: []const u8 = &.{},
 };
 
+/// Info carried through the end_level → end_mission → start_hub cascade for
+/// the mission-complete overlay (mission name + path). Lives on GameState
+/// (on the undo timeline) so undo/redo handles the overlay naturally — undo
+/// to before completion clears it, redo re-shows it. See DESIGN → Architecture.
+pub const MissionCompleteInfo = struct {
+    name: []const u8,
+    path: []const u8,
+};
+
 pub const Mission = struct {
     name: []const u8 = &.{},
     path: []const u8 = &.{},

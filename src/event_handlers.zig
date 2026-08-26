@@ -476,6 +476,11 @@ pub fn processEvent(
                 .open_main_menu => {
                     current.transitionScreen(.main_menu);
                 },
+                .dismiss_mission_complete => {
+                    // Clear the mission-complete overlay (Continue button).
+                    // On the undo timeline so undo re-shows, redo dismisses.
+                    current.last_completed_mission = null;
+                },
                 .start_new_game => {
                     var balance_warnings: std.ArrayList([]const u8) = .empty;
                     const parsed_sections = parser.parseConfigFile(
@@ -592,6 +597,13 @@ pub fn processEvent(
                     current.player_data.current_hub = start.hub_id;
                     current.world_generation +%= 1;
                     current.transitionScreen(.hub);
+
+                    // Set/clear the mission-complete overlay info. Non-null
+                    // when this hub entry follows a mission completion (the
+                    // overlay renders); null on a normal entry (clears any
+                    // stale value). On the undo timeline via GameState. See
+                    // DESIGN → Architecture.
+                    current.last_completed_mission = start.completed_mission;
 
                     // Sync player entity from PlayerData
                     pushEvents(current, &.{.{ .super_event = .{ .build_player_from_data = .{
@@ -790,10 +802,13 @@ pub fn processEvent(
                     // end_validation / end_playtest), but suppress the
                     // start_hub continuation defensively if it ever is.
                     if (current.editor != null) return;
-                    // Return to the destination hub
+                    // Return to the destination hub. Pass completed_mission
+                    // through so start_hub sets last_completed_mission (the
+                    // mission-complete overlay). Null for abandon/exits.
                     if (end.hub_id) |hub_id| {
                         pushEvents(current, &.{.{ .meta_event = .{ .start_hub = .{
                             .hub_id = hub_id,
+                            .completed_mission = end.completed_mission,
                         } } }}, allocator);
                     }
                 },
@@ -881,23 +896,20 @@ pub fn processEvent(
                                     } } }}, allocator);
                                 } else {
                                     // Last level done — end the mission.
-                                    // Play the completion sound + stash the
-                                    // mission info for the mission-complete
-                                    // overlay (live play only; replay must
-                                    // not pause or show the overlay). The
-                                    // flag survives the level→hub transition
-                                    // (SessionState, not ui_state). See
-                                    // DESIGN → Architecture.
+                                    // Play the completion sound (live play
+                                    // only) + carry the mission info through
+                                    // the cascade for the mission-complete
+                                    // overlay (end_mission → start_hub sets
+                                    // GameState.last_completed_mission).
                                     if (!history.replaying) {
                                         history.session.queueSound(history.backing_allocator, .mission_completion);
-                                        history.session.setPendingMissionComplete(
-                                            history.history_arena.allocator(),
-                                            mission.name,
-                                            mission.path,
-                                        );
                                     }
                                     pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
                                         .hub_id = mission.end_hub,
+                                        .completed_mission = .{
+                                            .name = mission.name,
+                                            .path = mission.path,
+                                        },
                                     } } }}, allocator);
                                 }
                             }

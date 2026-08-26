@@ -194,15 +194,6 @@ pub const SessionState = struct {
     // tradeoff as `event_history`). See DESIGN → Error Handling.
     pending_error: ?[]const u8 = null,
 
-    /// Mission-complete overlay: set by `end_level` when the last level of
-    /// a mission completes (live play only, gated `!replaying`). Carries the
-    /// mission name + path so the overlay can show "{name} completed" and the
-    /// Replay button can re-enter the mission. Lives on SessionState (off the
-    /// undo timeline) like `pending_error`; duped into `history_arena` so it
-    /// survives the level→hub screen transition + current_arena compaction.
-    /// Cleared by the Continue / Replay buttons. See DESIGN → Architecture.
-    pending_mission_complete: ?MissionCompleteInfo = null,
-
     /// Scroll offset (reference-space pixels) within the error popup's body.
     /// Reset to 0 by `setPendingError`. Clamped to `[0, max_scroll]` in
     /// `buildErrorPopup` (the view is the only place that knows `max_scroll`,
@@ -229,32 +220,6 @@ pub const SessionState = struct {
     /// individually freed), so this just drops the pointer.
     pub fn clearPendingError(self: *SessionState) void {
         self.pending_error = null;
-    }
-
-    /// Info stashed for the mission-complete overlay (name + path).
-    pub const MissionCompleteInfo = struct {
-        name: []const u8,
-        path: []const u8,
-    };
-
-    /// Copy the mission name + path into the durable history arena and set
-    /// the pending-mission-complete flag. Called from `end_level` (live play
-    /// only). Same arena + leak tradeoff as `setPendingError`.
-    pub fn setPendingMissionComplete(
-        self: *SessionState,
-        allocator: std.mem.Allocator,
-        name: []const u8,
-        path: []const u8,
-    ) void {
-        self.pending_mission_complete = .{
-            .name = allocator.dupe(u8, name) catch @panic("failed to allocate mission-complete name"),
-            .path = allocator.dupe(u8, path) catch @panic("failed to allocate mission-complete path"),
-        };
-    }
-
-    /// Clear the pending-mission-complete flag (Continue / Replay button).
-    pub fn clearPendingMissionComplete(self: *SessionState) void {
-        self.pending_mission_complete = null;
     }
 
     /// The pending error message, or null when no popup is shown.
@@ -452,6 +417,14 @@ pub const GameState = struct {
     /// camera pan, pressed button, ui_state) is reset on every world change,
     /// not just on screen changes. See DESIGN → Architecture.
     world_generation: u64 = 0,
+
+    /// Info for the mission-complete overlay, set by `start_hub` when the
+    /// hub entry follows a mission completion (carried through end_mission →
+    /// start_hub). Null on a normal hub entry (new game, load save, abandon
+    /// mission, editor exit). On the undo timeline (GameState) so undo/redo
+    /// handles the overlay naturally. Cleared by `dismiss_mission_complete`
+    /// (the Continue button). See DESIGN → Architecture.
+    last_completed_mission: ?types.MissionCompleteInfo = null,
 
     /// Transition to a new screen, clearing any data that was in scope
     /// for the old screen but is not in scope for the new one.

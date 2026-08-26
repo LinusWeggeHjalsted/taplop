@@ -343,7 +343,7 @@ pub fn handleAnytimeInput(
         // Undo/redo still works (processed above) as an escape from the fail
         // state.
         if (!view_mod.playerDead(&history.current_state) and
-            history.session.pending_mission_complete == null)
+            history.current_state.last_completed_mission == null)
         {
             if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
             history.session.ui_state.options_menu_open = !history.session.ui_state.options_menu_open;
@@ -430,16 +430,25 @@ pub fn handleAnytimeInput(
                     event_handlers.processEvent(history);
                 }
             },
-            // Mission-complete overlay: Continue just dismisses (the player
-            // is already in the hub). Replay re-enters the mission: end_hub
-            // syncs the hub player entity first (LIFO), then start_mission
-            // reloads the mission from the stashed path.
+            // Mission-complete overlay: Continue pushes dismiss_mission_complete
+            // (on the undo timeline — undo re-shows, redo dismisses). Replay
+            // re-enters the mission: end_hub syncs the hub player entity first
+            // (LIFO), then start_mission reloads from the completed-mission
+            // path. The overlay disappears on the screen transition (renders
+            // only in the hub); undo from the level back to the hub re-shows
+            // it (last_completed_mission is in the snapshot).
             .continue_after_mission => {
-                history.session.clearPendingMissionComplete();
+                const baseline = history.current_state.event_stack.len;
+                event_handlers.pushEvents(current, &.{.{
+                    .meta_event = .dismiss_mission_complete,
+                }}, allocator);
+                while (history.current_state.event_stack.len > baseline) {
+                    if (history.load_error) break;
+                    event_handlers.processEvent(history);
+                }
             },
             .replay_mission => {
-                const info = history.session.pending_mission_complete orelse return;
-                history.session.clearPendingMissionComplete();
+                const info = current.last_completed_mission orelse return;
                 const baseline = history.current_state.event_stack.len;
                 event_handlers.pushEvents(current, &.{
                     .{ .meta_event = .{ .start_mission = .{

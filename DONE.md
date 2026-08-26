@@ -3880,3 +3880,43 @@ on SessionState; the overlay renders in the hub. The overlay's full-screen
 `blocks_input` panel shields drag/camera-pan/idle-input behind it; idle input
 is self-gating (stack empty after the cascade; hub clicks are harmless behind
 the panel anyway). No gate needed.
+
+### Mission-complete overlay — undo-safe via GameState field
+
+Replaced the `SessionState.pending_mission_complete` flag (off the undo
+timeline, survived undo — the overlay stayed open on undo, needing manual
+cleanup) with `GameState.last_completed_mission: ?MissionCompleteInfo` (on
+the undo timeline, captured by snapshots). The overlay now renders when the
+field is non-null, derenders when null — undo/redo handles both directions
+naturally.
+
+**Info flow through events.** The info rides the end_level → end_mission →
+start_hub cascade:
+- `end_mission` gained `completed_mission: ?MissionCompleteInfo = null`
+- `start_hub` gained the same field
+- `end_level`'s completion branch sets it on the `end_mission` it pushes
+- `end_mission` passes it through to `start_hub`
+- `start_hub` sets `current.last_completed_mission = start.completed_mission`
+  (info or null — a normal hub entry clears any stale value)
+
+`exit_mission` pushes `end_mission` with `completed_mission = null`, so
+abandoning doesn't show the overlay. A normal hub entry (new game, load save)
+also passes null, clearing stale values.
+
+**Dismiss via event.** Continue pushes a new `dismiss_mission_complete: void`
+meta event (handler sets `current.last_completed_mission = null`). On the
+undo timeline: undo re-shows the overlay, redo dismisses it — falls out
+naturally. Replay re-enters the mission (end_hub + start_mission); the overlay
+disappears on the screen transition (renders only in the hub), and undo from
+the level back to the hub re-shows it (the snapshot has the field set).
+
+**`MissionCompleteInfo`** moved to types.zig (from SessionState) since
+GameState + events reference it.
+
+**Removed:** `SessionState.pending_mission_complete`,
+`setPendingMissionComplete`/`clearPendingMissionComplete`. The options-toggle
+guard now checks `current.last_completed_mission == null` instead of the
+SessionState flag. No `update()` gate (same reasoning as mission_fail: the
+overlay's `blocks_input` panel shields input; idle input is self-gating).
+
+Native build + tests green; game runs without crashing.

@@ -24,6 +24,7 @@ const EntityLayer = types.EntityLayer;
 const DecorationLayer = types.DecorationLayer;
 const CustomColorTheme = types.CustomColorTheme;
 const EntityEditTarget = types.EntityEditTarget;
+const MissionCompleteInfo = types.MissionCompleteInfo;
 
 /// How `end_level` continues after syncing the player entity back into
 /// PlayerData. The options-menu exit paths use the non-default values.
@@ -66,6 +67,10 @@ pub const MetaEvent = union(enum) {
     },
     end_mission: struct {
         hub_id: ?[]const u8,
+        // Non-null when the mission was completed (last level done) — carries
+        // the info for the mission-complete overlay through to start_hub.
+        // Null when abandoning (exit_mission). See DESIGN → Architecture.
+        completed_mission: ?MissionCompleteInfo = null,
     },
     start_level: struct {
         mission_path: []const u8,
@@ -82,6 +87,11 @@ pub const MetaEvent = union(enum) {
     start_hub: struct {
         hub_id: []const u8,
         sets_checkpoint: bool = true,
+        // Non-null when this hub entry follows a mission completion — sets
+        // GameState.last_completed_mission so the overlay renders. Null on
+        // a normal hub entry (clears any stale value). See DESIGN →
+        // Architecture.
+        completed_mission: ?MissionCompleteInfo = null,
     },
     end_hub: void,
     // Editor framing (see DESIGN → Architecture → Level Editor). open_editor
@@ -101,6 +111,10 @@ pub const MetaEvent = union(enum) {
     end_validation: struct {
         success: bool,
     },
+    // Dismiss the mission-complete overlay (the Continue button). Clears
+    // GameState.last_completed_mission. On the undo timeline so undo re-shows
+    // the overlay, redo dismisses it. See DESIGN → Architecture.
+    dismiss_mission_complete: void,
 };
 
 pub const SuperEvent = union(enum) {
