@@ -3753,3 +3753,45 @@ everything. The full-screen panel is `blocks_input: true`, shielding the
 top/bottom bar buttons behind it.
 
 Native build + tests green; game runs without crashing.
+
+### Mission-fail overlay — freeze-frame fix
+
+Initial implementation had two bugs (no sound, no overlay rendered) with one
+root cause: when the player died mid-enemy-turn, the `death` event (pushed by
+the `attack` handler) sat on the stack unprocessed. The drain loop exited
+early on `!playerDead(...)` before reaching it, and the `playerDead` gate in
+`update()` blocked the idle-frame `update()` from processing it. Worse, the
+unprocessed event kept `event_stack.len > 0`, so the render gate's
+`drain_in_progress` check skipped `view()`/`render()` entirely — the overlay
+was never built.
+
+**Fix: freeze-frame policy in the death handler.** When `entity_index == 0`,
+the death handler plays `.defeat` and clears `event_stack = &.{}`. The death
+event is already on top of the stack (LIFO) and already popped by
+`processEvent` before the handler runs, so `event_stack` at that point holds
+the remaining enemy-turn events. Clearing them → drain exits (stack empty) →
+idle pause kicks in → overlay renders. The moment of death is the last thing
+the player sees; remaining enemies don't act (Into the Breach style).
+
+**Why skipping the rest is safe for player death:** item drops are guarded
+`if (entity_index != 0)` (no-op for the player — they keep their gear);
+`onOpponentDeath` callbacks fire on enemies when the player dies (irrelevant,
+mission over); `check_level_end` early-returns for a dead player. The only
+meaningful effect of the death event for player death is the sound, which we
+keep.
+
+**Drain-loop + gate adjustment.** Removed `!playerDead(...)` from the drain-
+loop condition (let the drain reach the `death` event — the handler clears
+the stack itself). Kept the `playerDead` gate in `update()`: after the
+freeze-frame the stack is empty, so the gate blocks idle input/drag/camera-
+pan (modal overlay) without blocking events (there are none). Undo/redo and
+the restart/exit buttons still work (handleAnytimeInput, before the gate).
+
+**Replay consistency.** The `death` event is recorded in the session log
+(processEvent records before dispatching). During replay the death handler
+runs, clears the stack (harmless — replay processes events one at a time
+from the log, no cascades to clear for player death). The log reads:
+`...attack (kill), death`. Undo reconstructs to the pre-enemy-turn idle
+point; the death state is derivable from health == 0. No cosmetic-wait
+skipping needed — the stack clear removes remaining enemy events AND their
+intervening 500ms waits; the drain exits in <1ms after the death.

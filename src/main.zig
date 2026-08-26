@@ -278,7 +278,6 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const drain_start = backend.realClockMicroseconds();
     while (history.current_state.waiting == null and
         history.session.pending_error == null and
-        !view_mod.playerDead(&history.current_state) and
         history.current_state.event_stack.len > 0 and
         backend.realClockMicroseconds() - drain_start < drain_budget_microseconds)
     {

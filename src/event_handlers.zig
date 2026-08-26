@@ -2312,12 +2312,17 @@ pub fn processEvent(
                     const entity = level.entities[death.entity_index];
 
                     // Player death: play the defeat sound (side effect,
-                    // gated !replaying). The mission_fail overlay is derived
+                    // gated !replaying) and freeze-frame — clear the
+                    // remaining event stack so the rest of the enemy turn
+                    // doesn't play out. The mission_fail overlay is derived
                     // from player health in view(), so no flag or event is
-                    // needed — the overlay appears when the player is dead
-                    // and disappears on undo (health restored).
+                    // needed. Undo reconstructs to the pre-enemy-turn idle
+                    // point; the death state is derivable from health == 0.
+                    // See DESIGN → Architecture.
                     if (death.entity_index == 0) {
                         if (!history.replaying) history.session.queueSound(history.backing_allocator, .defeat);
+                        current.event_stack = &.{};
+                        return;
                     }
 
                     // Trigger on_opponent_death on all alive, active entities from opposing teams
