@@ -25,6 +25,7 @@ const test_harness = @import("test_harness.zig");
 const GameState = state.GameState;
 const SessionState = state.SessionState;
 const Vector2 = types.Vector2;
+const Rectangle = types.Rectangle;
 const Entity = types.Entity;
 const Level = types.Level;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
@@ -196,6 +197,19 @@ pub fn view(
             active_theme,
             settings.player_color_index,
         ) catch @panic("failed to build bottom bar");
+
+        // Middle panels (inventory / gear / skills / enemy inspect): stacked
+        // left-to-right, flush against the left edge of the screen, within the
+        // band between the top and bottom bars. Each open panel with a builder
+        // is placed at the current x cursor; `ui_gap` separates consecutive
+        // panels. Horizontal scrolling when panels exceed the screen width is
+        // a later slice (`ui_state.middle_section_scroll_offset` exists).
+        buildMiddlePanels(
+            &ui_elements,
+            frame_allocator,
+            session,
+            active_theme,
+        ) catch @panic("failed to build middle panels");
 
         // Range/radius outline: when the pointer hovers a skill button,
         // preview the skill's reach as a single square outline (Chebyshev
@@ -369,6 +383,51 @@ fn activeThemeFor(
     else
         0;
     return loaders.deriveActiveColorTheme(color_theme_definitions, color_wheel_index);
+}
+
+/// Layout region for the middle panels: the horizontal band between the top
+/// and bottom bars, full screen width. Panels stack left-to-right from x=0.
+fn middleSectionRect() Rectangle {
+    return .{
+        .x = 0,
+        .y = ui.top_bar_height,
+        .width = types.reference_width,
+        .height = types.reference_height - ui.top_bar_height - ui.bottom_bar_height,
+    };
+}
+
+/// Dispatch each open middle panel to its builder, stacking them left-to-
+/// right flush against the left edge of the screen. Each panel is vertically
+/// centered within the middle section. Panels without a builder yet (gear /
+/// skills / enemy inspect) reserve no space — they'll slot in when their
+/// builders land. The x cursor advances by `ui_gap` between consecutive
+/// built panels. See DESIGN → UI Framework.
+fn buildMiddlePanels(
+    elements: *std.ArrayList(ui.UiElement),
+    allocator: std.mem.Allocator,
+    session: *state.SessionState,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const section = middleSectionRect();
+    var cursor_x: i32 = 0;
+    for (session.ui_state.open_middle_panels) |maybe_panel| {
+        const panel_id = maybe_panel orelse continue;
+        const width: i32 = switch (panel_id) {
+            .inventory => blk: {
+                const bounds = Rectangle{
+                    .x = cursor_x,
+                    .y = section.y + @divTrunc(section.height - ui.inventory_panel_height, 2),
+                    .width = ui.inventory_panel_width,
+                    .height = ui.inventory_panel_height,
+                };
+                try ui.buildInventoryPanel(elements, allocator, bounds, active_theme);
+                break :blk ui.inventory_panel_width;
+            },
+            // Builders pending — gear / skills / enemy inspect reserve no space.
+            .gear, .skills, .enemy_inspect => continue,
+        };
+        cursor_x += width + ui.ui_gap;
+    }
 }
 
 /// Whether the player is dead in the current level (entity 0 health == 0).

@@ -322,8 +322,16 @@ pub const health_globe_border_height: i32 = slot_size; // 256 tall by design
 /// Gap between top-level UI items (e.g. bottom-bar segments).
 pub const ui_gap: i32 = 16;
 pub const slot_padding: i32 = 8;
+/// One inventory grid cell (half `slot_size` — ported from the Unity
+/// 256×256 ItemSlot.png at 0.5x). See DESIGN → UI Framework.
+pub const inventory_slot_size: i32 = 128;
+/// Inventory panel: `ui_gap` clearance + 8×12 flush grid (1024×1536) +
+/// `ui_gap` + 128-wide material sidebar + `ui_gap` clearance.
+/// Width  = 16 + 1024 + 16 + 128 + 16 = 1200.
+/// Height = 16 + 1536 + 16            = 1568.
+pub const inventory_panel_width: i32 = 1200;
+pub const inventory_panel_height: i32 = 1568;
 pub const gear_panel_width: i32 = 200;
-pub const inventory_panel_width: i32 = 1100;
 pub const skills_panel_width: i32 = 800;
 pub const enemy_inspect_panel_width: i32 = 600;
 
@@ -1780,6 +1788,50 @@ pub fn buildBottomBar(
             .color = c_border,
             .highlighted = turn_phase == .player_attack,
             .tooltip = .{ .header = try spanRow(allocator, text("Attack step")) },
+        } });
+    }
+}
+
+/// Build the inventory panel into `bounds`: a 9-slice background, an 8×12
+/// flush grid of `ui/item_slot` cells tinted with player-gradient index 5,
+/// and a reserved 128-wide sidebar region on the right (material counts land
+/// in a follow-up slice). `bounds` is the panel's outer rectangle (sized to
+/// `inventory_panel_width` × `inventory_panel_height`); the grid sits
+/// `ui_gap` inside the top-left, the sidebar sits `ui_gap` right of the grid.
+/// Slots carry no `ref` yet — drag/drop + item icons are later slices.
+pub fn buildInventoryPanel(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    bounds: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    // Solid panel background — blocks input through the panel area.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = bounds.position(),
+        .width = bounds.width,
+        .height = bounds.height,
+    } });
+
+    const p = active_theme.player_gradient.colors;
+    const slot_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+
+    const origin = bounds.position();
+    const grid = Grid{
+        .origin = .{ .x = origin.x + ui_gap, .y = origin.y + ui_gap },
+        .cell_width = inventory_slot_size,
+        .cell_height = inventory_slot_size,
+        .gap = 0,
+        .columns = types.inventory_columns,
+    };
+    var index: i32 = 0;
+    while (index < types.inventory_slot_count) : (index += 1) {
+        const cell = grid.cell(index);
+        try elements.append(allocator, .{ .slot = .{
+            .screen_position = cell.position(),
+            .size = inventory_slot_size,
+            .icon_sprite_id = "ui/item_slot",
+            .icon_color = slot_color,
         } });
     }
 }

@@ -4122,3 +4122,42 @@ recoverable (popup + hide Continue)" — the harness FileSource uses cwd, no
 asserts `load_error` + `pending_error` + `autosave_available` cleared + screen
 still main_menu, no panic. DESIGN → Error Handling → context 2 + the
 `readReconstructionFile` prose updated.
+
+## UI (additional)
+
+### Inventory panel — grid display slice (DONE)
+
+First slice of `buildInventoryPanel` (TODO → UI Framework → Panel Builders):
+display the 8×12 inventory grid as colored slot backgrounds inside a 9-slice
+panel, with the material-sidebar region reserved but empty (counts land in a
+follow-up slice).
+
+- **Asset:** ported the Unity `ItemSlot.png` (256×256) to
+  `assets/ui/item_slot.png` at 0.5x → 128×128. Auto-embedded by
+  `generated_assets.zig` (no build wiring). Slot sprite id: `ui/item_slot`.
+- **Layout constants** (`ui.zig`): `inventory_slot_size = 128` (half
+  `slot_size`), `inventory_panel_width = 1200`, `inventory_panel_height =
+  1568`. Panel = `ui_gap` clearance (16) + flush 8×12 grid (1024×1536) +
+  `ui_gap` + 128-wide sidebar + `ui_gap`. Slots are flush (no inter-slot
+  gap) per the agreed spec; only the panel-edge clearance uses `ui_gap`.
+  The old placeholder `inventory_panel_width = 1100` was replaced.
+- **`buildInventoryPanel`** (`ui.zig`): emits one `nine_slice_panel`
+  (`ui/panel`, `blocks_input = true`) + 96 `Slot` elements via the `Grid`
+  helper (gap 0, columns = `types.inventory_columns`). Each slot renders
+  `ui/item_slot` tinted with **player-gradient color index 5**
+  (`active_theme.player_gradient.colors[5]`, clamped to
+  `gradient_color_count - 1` like the bottom bar does). No `ref` / no item
+  icons yet — drag/drop + item rendering are later slices. The 128-wide
+  sidebar region is reserved by the panel width but nothing is drawn there
+  this slice.
+- **Multi-panel wiring** (`view.zig`): `buildMiddlePanels` dispatches each
+  open `MiddlePanelId` to its builder, stacking built panels left-to-right
+  flush against the left edge of the screen (x=0), vertically centered in
+  the middle section (the band between the top and bottom bars, height =
+  `reference_height - top_bar_height - bottom_bar_height` = 1648; the
+  1568-tall inventory panel centers with 80px to spare). `ui_gap` separates
+  consecutive built panels. Panels without a builder yet (gear / skills /
+  enemy_inspect) reserve no space — they `continue`, so they slot in
+  without disturbing the layout when their builders land. Called from the
+  level/hub branch of `view()` after the bottom bar. Horizontal scroll
+  (`ui_state.middle_section_scroll_offset`) is a later slice.
