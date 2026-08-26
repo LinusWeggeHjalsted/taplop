@@ -42,7 +42,7 @@ fn priority(caster_index: u32, game_state: GameState) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.stone_form) > 0) return 0;
-    if (caster.current_health >= caster.max_health) return 0;
+    if (caster.current_health >= caster.getEffectiveMaxHealth()) return 0;
     return 2;
 }
 

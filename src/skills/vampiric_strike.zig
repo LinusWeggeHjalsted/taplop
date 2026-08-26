@@ -48,7 +48,7 @@ fn priority(caster_index: u32, game_state: GameState) u32 {
     const caster = level.entities[caster_index];
 
     if (caster.skill_cooldowns.get(.vampiric_strike) > 0) return 0;
-    if (caster.current_health >= caster.max_health) return 0;
+    if (caster.current_health >= caster.getEffectiveMaxHealth()) return 0;
 
     const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
     for (level.entities, 0..) |entity, entity_index| {

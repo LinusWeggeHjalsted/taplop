@@ -66,7 +66,7 @@ fn priority(caster_index: u32, game_state: GameState) u32 {
     }
 
     if (!found_target) return 0;
-    if (caster.current_health * 2 > caster.max_health) return 3;
+    if (caster.current_health * 2 > caster.getEffectiveMaxHealth()) return 3;
     return 2;
 }
 
@@ -104,7 +104,7 @@ fn useSkill(
     // Damage: 1.5x if the caster is above half health (integer math).
     const base_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
     var damage: u32 = caster.getEffectiveOutgoingDamage(base_damage);
-    if (caster.current_health * 2 > caster.max_health) {
+    if (caster.current_health * 2 > caster.getEffectiveMaxHealth()) {
         damage = damage + damage / 2;
     }
 

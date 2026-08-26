@@ -387,6 +387,13 @@ fn applyGearChangeSideEffects(
     gear_slot: types.GearSlot,
     allocator: std.mem.Allocator,
 ) void {
+    const player = getPlayerEntity(current, 0);
+    // Gear may change effective max health (coat/gloves/pants/boots carry
+    // health_bonus). Clamp current_health to the new cap so the invariant
+    // current_health ≤ getEffectiveMaxHealth() holds. Equipping a +health
+    // piece raises the cap without healing (current stays, more headroom);
+    // unequipping drops current to the new cap if it was above.
+    player.current_health = @min(player.current_health, player.getEffectiveMaxHealth());
     switch (gear_slot) {
         .main_hand, .off_hand => cancelPreparedSkill(current),
         .boots => refreshMoveHighlights(current, allocator),
@@ -1363,6 +1370,8 @@ pub fn processEvent(
                     player_entity.boots = player_data.boots;
                     player_entity.equipped_utility_skills = player_data.equipped_utility_skills;
                     player_entity.inventory = player_data.inventory;
+                    // Enter at full effective health (base + gear health_bonus).
+                    player_entity.current_health = player_entity.getEffectiveMaxHealth();
                 },
                 .build_data_from_player => |sync| {
                     const player_data = &current.player_data;
@@ -2762,7 +2771,7 @@ pub fn processEvent(
                 .heal => |heal_event| {
                     const entity = getLevelEntity(current, heal_event.entity_index);
                     if (entity.current_health == 0) return; // no reviving via heal
-                    const capacity = entity.max_health - entity.current_health;
+                    const capacity = entity.getEffectiveMaxHealth() - entity.current_health;
                     const applied = @min(heal_event.amount, capacity);
                     entity.current_health += applied;
                     // Heal number (`+value`) floating up-right from the

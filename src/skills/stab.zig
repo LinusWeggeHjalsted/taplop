@@ -62,7 +62,7 @@ fn priority(caster_index: u32, game_state: GameState) u32 {
         if (entity.team == caster.team) continue;
         if (functions.chebyshevDistance(caster.position, entity.position) <= range) {
             found_target = true;
-            if (entity.current_health * 2 > entity.max_health) {
+            if (entity.current_health * 2 > entity.getEffectiveMaxHealth()) {
                 found_healthy_target = true;
             }
         }
@@ -108,7 +108,7 @@ fn useSkill(
     // Damage: 1.5x if the target is above half health (integer math).
     const base_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
     var damage: u32 = caster.getEffectiveOutgoingDamage(base_damage);
-    if (defender.current_health * 2 > defender.max_health) {
+    if (defender.current_health * 2 > defender.getEffectiveMaxHealth()) {
         damage = damage + damage / 2;
     }
 

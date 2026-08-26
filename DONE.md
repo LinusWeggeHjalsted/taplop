@@ -4498,3 +4498,43 @@ was active (`drag_source` set) and a weapon slot was emitted (`drag_ref`
 null), the function bailed early and slots 1-3 disappeared. A ref-less slot
 can never be the drag source, so the check now resolves to `false` when
 either side is null (a two-line `blk:` instead of the `orelse return` trap).
+
+### Effective max health from gear (DONE)
+
+`max_health` is now derived from equipped gear, not mutated on every gear
+swap. Gear `health_bonus` (coat/gloves/pants/boots) was previously never
+applied to max health at all — the health bar, heals, and skill thresholds
+all read raw `entity.max_health` (base). Now they read
+`getEffectiveMaxHealth()`.
+
+**`Entity.getEffectiveMaxHealth()`** (types.zig): base `max_health` + sum of
+equipped `health_bonus` (coat/gloves/pants/boots). No effect modifier field
+exists for max health, so gear-only — same shape as the other
+`getEffective*` accessors. Derived on every read.
+
+**Invariant — `current_health ≤ getEffectiveMaxHealth()`:** maintained at
+the mutation point, not at every read site. `applyGearChangeSideEffects`
+(event_handlers.zig) clamps `current_health = @min(current, effectiveMax)`
+on every equip/unequip. Equipping a +health piece raises the cap without
+healing (current stays, more headroom); unequipping drops current to the
+new cap if it was above. Replays deterministically re-clamp (same state →
+same clamp), so no separate clamp event is needed.
+
+**Enter at full effective:** entity creation (`parseEntityDefinition`,
+`instantiateEditorLevel`) and player level-entry (`build_player_from_data`)
+now set `current_health = getEffectiveMaxHealth()` after gear is applied —
+covers both player and enemies. Previously `current_health = max_health`
+(base), which would have left a player with +health gear entering below
+full. `current_health` never persists across levels (no PlayerData field),
+so this is the only entry point.
+
+**Read sites swapped to effective:** health bar fill (view.zig) + zero-check;
+bottom-bar health globe fill + tooltip "X / Y" (ui.zig); heal capacity
+(event_handlers.zig `heal` handler); `stone_form` effect heal amount
+(max/5); skill thresholds — `replenish` (50% gate + full-heal amount),
+`chop`/`stab` (>50% branches), `slice` (<50% branches), `vampiric_strike`
+(full-health gate), `stone_form` (full-health gate).
+
+**Kept on base `.max_health`:** `entityDefinitionsEqual` (loaders.zig —
+compares *definitions*, not runtime; base stats are the definition). Test
+harness entity literals (no gear, so base == effective).

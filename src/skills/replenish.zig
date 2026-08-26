@@ -41,7 +41,7 @@ fn priority(caster_index: u32, game_state: GameState) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.replenish) > 0) return 0;
-    if (caster.current_health * 2 >= caster.max_health) return 0;
+    if (caster.current_health * 2 >= caster.getEffectiveMaxHealth()) return 0;
     return 3;
 }
 
@@ -68,7 +68,7 @@ fn useSkill(
     return helpers.ownedEvents(allocator, &.{
         .{ .sub_level_event = .{ .heal = .{
             .entity_index = caster_index,
-            .amount = caster.max_health,
+            .amount = caster.getEffectiveMaxHealth(),
         } } },
     });
 }

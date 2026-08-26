@@ -1940,16 +1940,16 @@ pub fn buildBottomBar(
         .screen_position = ball.position(),
         .width = health_globe_ball_size,
         .height = health_globe_ball_size,
-        .fill_fraction = if (player.max_health == 0)
+        .fill_fraction = if (player.getEffectiveMaxHealth() == 0)
             0
         else
             @as(f32, @floatFromInt(player.current_health)) /
-                @as(f32, @floatFromInt(player.max_health)),
+                @as(f32, @floatFromInt(player.getEffectiveMaxHealth())),
         .fill_direction = .up,
         .background_color = c_globe_bg,
         .fill_color = c_globe_fill,
         .tooltip = .{ .header = try spanRow(allocator, text(
-            try std.fmt.allocPrint(allocator, "{d} / {d}", .{ player.current_health, player.max_health }),
+            try std.fmt.allocPrint(allocator, "{d} / {d}", .{ player.current_health, player.getEffectiveMaxHealth() }),
         )) },
     } });
     // Stylized border drawn over the globe at its native size, centered on the

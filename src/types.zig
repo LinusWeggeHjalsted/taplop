@@ -524,6 +524,20 @@ pub const Entity = struct {
         return applyModifier(self.defense, modifier);
     }
 
+    /// Effective max health = base `max_health` + the `health_bonus` from
+    /// every equipped gear piece that carries one (coat/gloves/pants/boots).
+    /// No effect modifier field exists for max health, so gear-only. Derived
+    /// on every read — gear changes clamp `current_health` to this (see
+    /// `applyGearChangeSideEffects`), so the invariant
+    /// `current_health ≤ getEffectiveMaxHealth()` holds.
+    pub fn getEffectiveMaxHealth(self: Entity) u32 {
+        const coat_bonus: u32 = if (self.coat) |coat| coat.health_bonus else 0;
+        const gloves_bonus: u32 = if (self.gloves) |gloves| gloves.health_bonus else 0;
+        const pants_bonus: u32 = if (self.pants) |pants| pants.health_bonus else 0;
+        const boots_bonus: u32 = if (self.boots) |boots| boots.health_bonus else 0;
+        return self.max_health + coat_bonus + gloves_bonus + pants_bonus + boots_bonus;
+    }
+
     /// Resolve a skill bar slot (1-8) to a SkillId for this entity.
     /// Slots 1-2 are main-hand weapon skills, slot 3 the off-hand weapon
     /// skill, slots 4-8 the equipped utility skills (indices 0-4).

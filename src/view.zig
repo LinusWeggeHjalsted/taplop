@@ -1194,7 +1194,7 @@ fn buildHealthBar(
     zoom: f32,
     sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
 ) ?types.HealthBarDrawable {
-    if (entity.max_health == 0) return null;
+    if (entity.getEffectiveMaxHealth() == 0) return null;
     const draw_width = entity_frame_width * zoom;
     const art_top_y: f32 = if (sprite_bounds.get(entity.sprite)) |maybe_bounds|
         if (maybe_bounds) |bounds|
@@ -1222,7 +1222,7 @@ fn buildHealthBar(
         },
         .width = health_bar_native_width,
         .height = health_bar_native_height,
-        .fill_fraction = @as(f32, @floatFromInt(entity.current_health)) / @as(f32, @floatFromInt(entity.max_health)),
+        .fill_fraction = @as(f32, @floatFromInt(entity.current_health)) / @as(f32, @floatFromInt(entity.getEffectiveMaxHealth())),
         .depleted_color = active_theme.darkest,
         .fill_color = fill_color,
     };

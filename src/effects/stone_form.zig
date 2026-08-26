@@ -45,7 +45,7 @@ fn onEndTurn(
 ) ?[]const Event {
     const level = game_state.level orelse return null;
     const entity = level.entities[entity_index];
-    const heal_amount = entity.max_health / 5;
+    const heal_amount = entity.getEffectiveMaxHealth() / 5;
     if (heal_amount == 0) return null;
 
     return allocator.dupe(Event, &.{

@@ -342,7 +342,6 @@ pub fn parseEntityDefinition(
     }
     if (findValue(pairs, "max_health")) |value| {
         entity.max_health = asU32(value) orelse 20;
-        entity.current_health = entity.max_health;
     }
     if (findValue(pairs, "defense")) |value| entity.defense = asU32(value) orelse 0;
     if (findValue(pairs, "speed")) |value| entity.speed = asU32(value) orelse 1;
@@ -449,6 +448,11 @@ pub fn parseEntityDefinition(
         }
     }
     entity.layers = layers.toOwnedSlice(allocator) catch @panic("failed to own entity layers");
+
+    // Enter at full EFFECTIVE health (base + gear health_bonus). Gear is
+    // applied above; current_health is derived from the now-complete loadout.
+    // See `getEffectiveMaxHealth`.
+    entity.current_health = entity.getEffectiveMaxHealth();
 
     return entity;
 }
@@ -730,7 +734,7 @@ pub fn instantiateEditorLevel(
 /// instantiateEditorLevel). Definition fields (stats, weapons, gear, skills)
 /// are kept; only per-playthrough state is zeroed.
 fn resetRuntimeFields(entity: *types.Entity) void {
-    entity.current_health = entity.max_health;
+    entity.current_health = entity.getEffectiveMaxHealth();
     entity.momentum = 0;
     entity.is_active = false;
     entity.stun_duration = 0;
