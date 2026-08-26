@@ -2516,7 +2516,7 @@ pub fn buildGearPanel(
     // Effective values (gear + effect modifiers + momentum where applicable).
     // See `getEffective*` on Entity.
     const stats_x = col1_x;
-    const stats_top = top_y + cell_size;
+    const stats_top = top_y + cell_size + ui_gap;
     const stat_line_height: i32 = gear_stat_font_size + 16;
 
     const main_damage = if (player.main_hand_weapon) |w| player.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
