@@ -418,12 +418,15 @@ fn loadCampaignAndPushHub(
         .{current.player_data.current_campaign},
     ) catch @panic("failed to allocate campaign path");
 
-    const campaign_sections = parser.parseConfigFile(
-        history.readReconstructionFile(campaign_path),
-        allocator,
-    ) catch {
-        failReconstructionRead(history, "failed to parse campaign file");
-        return;
+    const campaign_sections = blk: {
+        const bytes = history.readReconstructionFile(campaign_path) catch {
+            failReconstructionRead(history, "failed to read campaign file");
+            return;
+        };
+        break :blk parser.parseConfigFile(bytes, allocator) catch {
+            failReconstructionRead(history, "failed to parse campaign file");
+            return;
+        };
     };
     validateConfigKeys(history, campaign_sections, parser.campaign_key_map, campaign_path, allocator);
     current.campaign = loaders.loadCampaign(
@@ -481,12 +484,15 @@ fn handlePlayerInputEvent(
         // --- Meta: new game ---
         .start_new_game => {
             var balance_warnings: std.ArrayList([]const u8) = .empty;
-            const parsed_sections = parser.parseConfigFile(
-                history.readReconstructionFile("data/new_player.txt"),
-                allocator,
-            ) catch {
-                failReconstructionRead(history, "failed to parse new_player.txt");
-                return;
+            const parsed_sections = blk: {
+                const bytes = history.readReconstructionFile("data/new_player.txt") catch {
+                    failReconstructionRead(history, "failed to read new_player.txt");
+                    return;
+                };
+                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                    failReconstructionRead(history, "failed to parse new_player.txt");
+                    return;
+                };
             };
             validateConfigKeys(history, parsed_sections, parser.player_save_key_map, "data/new_player.txt", allocator);
             current.player_data = loaders.loadPlayerSave(
@@ -533,12 +539,15 @@ fn handlePlayerInputEvent(
                 "{s}/mission.txt",
                 .{start.mission_path},
             ) catch @panic("failed to allocate mission path");
-            const mission_sections = parser.parseConfigFile(
-                history.readReconstructionFile(mission_file_path),
-                allocator,
-            ) catch {
-                failReconstructionRead(history, "failed to parse mission file");
-                return;
+            const mission_sections = blk: {
+                const bytes = history.readReconstructionFile(mission_file_path) catch {
+                    failReconstructionRead(history, "failed to read mission file");
+                    return;
+                };
+                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                    failReconstructionRead(history, "failed to parse mission file");
+                    return;
+                };
             };
             validateConfigKeys(history, mission_sections, parser.mission_key_map, mission_file_path, allocator);
             const mission = loaders.loadMission(
@@ -553,12 +562,15 @@ fn handlePlayerInputEvent(
                 "{s}/player.txt",
                 .{start.mission_path},
             ) catch @panic("failed to allocate player path");
-            const player_sections = parser.parseConfigFile(
-                history.readReconstructionFile(player_file_path),
-                allocator,
-            ) catch {
-                failReconstructionRead(history, "failed to parse player.txt");
-                return;
+            const player_sections = blk: {
+                const bytes = history.readReconstructionFile(player_file_path) catch {
+                    failReconstructionRead(history, "failed to read player.txt");
+                    return;
+                };
+                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                    failReconstructionRead(history, "failed to parse player.txt");
+                    return;
+                };
             };
             validateConfigKeys(history, player_sections, parser.player_loadout_key_map, player_file_path, allocator);
             const player_entity = loaders.loadPlayerLoadout(player_sections, allocator, player_file_path, &balance_warnings) catch {
@@ -573,12 +585,15 @@ fn handlePlayerInputEvent(
                     "{s}/level_{d}.txt",
                     .{ start.mission_path, level_index },
                 ) catch @panic("failed to allocate level path");
-                const sections = parser.parseConfigFile(
-                    history.readReconstructionFile(level_path),
-                    allocator,
-                ) catch {
-                    failReconstructionRead(history, "failed to parse level file");
-                    return;
+                const sections = blk: {
+                    const bytes = history.readReconstructionFile(level_path) catch {
+                        failReconstructionRead(history, "failed to read level file");
+                        return;
+                    };
+                    break :blk parser.parseConfigFile(bytes, allocator) catch {
+                        failReconstructionRead(history, "failed to parse level file");
+                        return;
+                    };
                 };
                 validateConfigKeys(history, sections, parser.level_key_map, level_path, allocator);
                 level_sections.append(allocator, sections) catch @panic("failed to append level sections");
@@ -824,12 +839,24 @@ pub fn processEvent(
                 },
                 .load_save => |load| {
                     var balance_warnings: std.ArrayList([]const u8) = .empty;
-                    const parsed_sections = parser.parseConfigFile(
-                        history.readReconstructionFile(load.save_path),
-                        allocator,
-                    ) catch {
-                        failReconstructionRead(history, "failed to parse save file");
-                        return;
+                    const parsed_sections = blk: {
+                        const bytes = history.readReconstructionFile(load.save_path) catch {
+                            // Missing/unreadable save (e.g. a deleted
+                            // autosave after the menu offered Continue) is
+                            // recoverable per DESIGN → Error Handling →
+                            // context 2 — popup + revert, not a crash. If it
+                            // was the autosave, hide Continue so the user
+                            // doesn't retry into the same error.
+                            if (std.mem.eql(u8, load.save_path, writers.autosave_path)) {
+                                history.session.autosave_available = false;
+                            }
+                            failReconstructionRead(history, "failed to read save file");
+                            return;
+                        };
+                        break :blk parser.parseConfigFile(bytes, allocator) catch {
+                            failReconstructionRead(history, "failed to parse save file");
+                            return;
+                        };
                     };
                     validateConfigKeys(history, parsed_sections, parser.player_save_key_map, load.save_path, allocator);
 
@@ -875,12 +902,15 @@ pub fn processEvent(
                         .{ current.player_data.current_campaign, start.hub_id },
                     ) catch @panic("failed to allocate hub path");
 
-                    const hub_sections = parser.parseConfigFile(
-                        history.readReconstructionFile(hub_path),
-                        allocator,
-                    ) catch {
-                        failReconstructionRead(history, "failed to parse hub file");
-                        return;
+                    const hub_sections = blk: {
+                        const bytes = history.readReconstructionFile(hub_path) catch {
+                            failReconstructionRead(history, "failed to read hub file");
+                            return;
+                        };
+                        break :blk parser.parseConfigFile(bytes, allocator) catch {
+                            failReconstructionRead(history, "failed to parse hub file");
+                            return;
+                        };
                     };
                     validateConfigKeys(history, hub_sections, parser.hub_key_map, hub_path, allocator);
 
@@ -977,12 +1007,15 @@ pub fn processEvent(
                         .{start.mission_path},
                     ) catch @panic("failed to allocate mission path");
 
-                    const mission_sections = parser.parseConfigFile(
-                        history.readReconstructionFile(mission_file_path),
-                        allocator,
-                    ) catch {
-                        failReconstructionRead(history, "failed to parse mission file");
-                        return;
+                    const mission_sections = blk: {
+                        const bytes = history.readReconstructionFile(mission_file_path) catch {
+                            failReconstructionRead(history, "failed to read mission file");
+                            return;
+                        };
+                        break :blk parser.parseConfigFile(bytes, allocator) catch {
+                            failReconstructionRead(history, "failed to parse mission file");
+                            return;
+                        };
                     };
                     validateConfigKeys(history, mission_sections, parser.mission_key_map, mission_file_path, allocator);
 
@@ -1049,12 +1082,15 @@ pub fn processEvent(
                         .{ start.mission_path, start.level_index },
                     ) catch @panic("failed to allocate level path");
 
-                    const level_sections = parser.parseConfigFile(
-                        history.readReconstructionFile(level_path),
-                        allocator,
-                    ) catch {
-                        failReconstructionRead(history, "failed to parse level file");
-                        return;
+                    const level_sections = blk: {
+                        const bytes = history.readReconstructionFile(level_path) catch {
+                            failReconstructionRead(history, "failed to read level file");
+                            return;
+                        };
+                        break :blk parser.parseConfigFile(bytes, allocator) catch {
+                            failReconstructionRead(history, "failed to parse level file");
+                            return;
+                        };
                     };
 
                     // Key validation: warn on unknown keys (advisory — the

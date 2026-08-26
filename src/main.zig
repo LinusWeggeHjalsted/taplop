@@ -850,7 +850,8 @@ test "reconstruction cache: undo replay reads original bytes after the file is o
     // increments current_event_index to 1 before dispatching the handler, so
     // the event under handling is at index 0 = current_event_index - 1.
     history.current_event_index = 1;
-    const live_bytes = history.readReconstructionFile("custom_mission.txt");
+    const live_bytes = history.readReconstructionFile("custom_mission.txt") catch
+        @panic("failed to read reconstruction file in test");
     try std.testing.expectEqualStrings("version1", live_bytes);
 
     // Overwrite the file on disk (e.g. an editor save) with different bytes.
@@ -860,7 +861,8 @@ test "reconstruction cache: undo replay reads original bytes after the file is o
     // CACHED version1 bytes, not the new version2 on disk.
     history.replaying = true;
     history.current_event_index = 1;
-    const replayed_bytes = history.readReconstructionFile("custom_mission.txt");
+    const replayed_bytes = history.readReconstructionFile("custom_mission.txt") catch
+        @panic("failed to read reconstruction file in test");
     try std.testing.expectEqualStrings("version1", replayed_bytes);
 }
 

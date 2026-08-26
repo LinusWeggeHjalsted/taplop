@@ -4081,3 +4081,44 @@ push sync-then-autosave, `save_game` pushes timestamped + autosave writes
 (stack inspected, no disk write). `isPlayerAction` test covers
 `player_continue`. Session-log serializer auto-handles the new variant
 (comptime-generic). TODO → buildMainMenu Continue availability checked off.
+
+### Reconstruction live-read miss is recoverable (not a crash) (DONE)
+
+`readReconstructionFile` previously did `file_source.readFile(...) catch
+@panic("failed to read reconstruction file")` on the LIVE path — so a
+missing/unreadable file crashed before the handler's `catch` could turn it
+into `failReconstructionRead` (popup + revert). This was an accidental
+asymmetry: a CORRUPT file (read succeeds, parse fails) already went through
+the recoverable path, but a MISSING one (read fails) hit the hard panic.
+DESIGN → Error Handling → context 2 already lists `load_save` etc. as
+recoverable, so the implementation had drifted from the design.
+
+Fix: `readReconstructionFile` now returns `![]const u8` and PROPAGATES live
+read errors. The ~6 reconstruction-read handlers (`load_save`, `start_level`,
+`start_hub`, `start_mission` x2, `open_editor` x3, `start_new_game` via
+`loadCampaignAndPushHub`) each catch the read error with
+`failReconstructionRead(history, "failed to read <file>")` + return, the same
+shape they already used for parse errors. The drain loop reverts to the last
+idle-point snapshot + surfaces the popup (existing machinery, unchanged).
+
+Replay path unchanged: in-session cache miss still `@panic` (a bug — live
+always caches first); cross-session replay cache-miss + file-read-fail still
+`@panic` (genuinely unrecoverable — the log references files that no longer
+exist). The cache-miss `@panic` policy and the live-read-miss-recoverable
+policy are SEPARATE; DESIGN prose now says so explicitly so the two don't get
+re-conflated.
+
+Autosave-specific: when `load_save` fails reading the autosave path,
+`session.autosave_available` is cleared so the main-menu Continue button
+disappears after the user dismisses the popup (no dead retry into the same
+error). Generalizes the same latent bug for shipped-content reads (a broken
+persistent-dir shadow of a level/hub/campaign file now popups instead of
+crashing — "shipped content can't fail at runtime is false by construction"
+per the recoverable class definition).
+
+Tests: `handler_tests_autosave` gained "player_continue: missing autosave is
+recoverable (popup + hide Continue)" — the harness FileSource uses cwd, no
+`saves/autosave.txt` in the project root, so the read fails and the test
+asserts `load_error` + `pending_error` + `autosave_available` cleared + screen
+still main_menu, no panic. DESIGN → Error Handling → context 2 + the
+`readReconstructionFile` prose updated.

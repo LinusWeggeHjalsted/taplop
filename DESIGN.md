@@ -729,12 +729,24 @@ accepted, same unbounded-arena tradeoff as `event_history`).
    is created.
 2. **In-event reconstruction reads** (`start_mission` / `start_level` /
    `start_hub` / `load_save` / `open_editor`): these handlers return `!void`;
-   `processEvent` catches, the drain loop reverts to the last idle-point
-   snapshot (guaranteed empty stack — `recordIdlePoint` only fires when
-   `event_stack.len == 0`, so `restoreTo(last_idle)` replaces `current_state`
-   wholesale with a stack-empty state, no clearing needed) and sets
-   `pending_error`. OOM still panics. The other ~90 handlers stay `void` —
-   invariant unwraps + gameplay logic failures are bugs → panic.
+   a read OR parse failure is recoverable — `readReconstructionFile`
+   propagates live read errors (a missing/unreadable file — e.g. a deleted
+   autosave after the menu offered Continue, or a broken persistent-dir
+   shadow of shipped content) instead of panicking, and the handler's
+   `catch` turns it into `failReconstructionRead`. `processEvent` catches,
+   the drain loop reverts to the last idle-point snapshot (guaranteed empty
+   stack — `recordIdlePoint` only fires when `event_stack.len == 0`, so
+   `restoreTo(last_idle)` replaces `current_state` wholesale with a
+   stack-empty state, no clearing needed) and sets `pending_error`. OOM
+   still panics. The other ~90 handlers stay `void` — invariant unwraps +
+   gameplay logic failures are bugs → panic. (The cache-miss `@panic` in
+   `readReconstructionFile` is a SEPARATE policy — it covers REPLAY cache
+   misses, which are a bug or genuinely unrecoverable cross-session log
+   reload, not live reads. Don't conflate the two.)
+   - **Autosave-specific touch:** when `load_save` fails reading the
+     autosave path, `session.autosave_available` is cleared so the
+     Continue button disappears after the user dismisses the popup (no
+     dead retry into the same error).
 3. **Writes + reloads** (`save_game`, `dump_event_log`, session-log reload):
    on failure, warn + popup + abort the operation. The session-log
    `file_format_version` hard-gate can soften to warn-and-abort here.
@@ -924,9 +936,10 @@ history**, so replay is deterministic regardless of later file changes.
 - `GameStateHistory.reconstruction_cache`: an append-only list of
   `(event_index, path, bytes)` entries in `history_arena` (durable, same
   lifetime as `event_history`; never in snapshots; never touched by replay).
-- `GameStateHistory.readReconstructionFile(path) -> []const u8` is what
+- `GameStateHistory.readReconstructionFile(path) -> ![]const u8` is what
   reconstruction-read handlers call INSTEAD of `file_source.readFile`. **Live**
-  (`!replaying`): reads via `file_source` into `history_arena`, caches, returns.
+  (`!replaying`): reads via `file_source` into `history_arena`, caches, returns;
+  a read error is PROPAGATED (recoverable — see Error Handling → context 2).
   **Replay** (`replaying`): binary-searches by event index, linear-scans within
   the event for the path, returns the cached bytes.
 - The key is `(current_event_index - 1, path)` — `processEvent` increments

@@ -657,9 +657,12 @@ pub const GameStateHistory = struct {
     /// Read a file for a reconstruction-read event handler (start_level /
     /// start_hub / start_mission / load_save). Live: reads via file_source
     /// and caches the bytes in history_arena, keyed by the event index
-    /// under handling. Replay: returns the cached bytes. This makes replay
-    /// fully deterministic regardless of later file changes (e.g. editor
-    /// saves overwrite a mission's files mid-session) — the bytes a
+    /// under handling, and PROPAGATES a read error (a missing/unreadable
+    /// file is recoverable per DESIGN → Error Handling → context 2 — the
+    /// caller turns it into `failReconstructionRead` + revert, not a crash).
+    /// Replay: returns the cached bytes. This makes replay fully
+    /// deterministic regardless of later file changes (e.g. editor saves
+    /// overwrite a mission's files mid-session) — the bytes a
     /// reconstruction-read event reads are a pure function of its position
     /// in history. Call this INSTEAD of file_source.readFile from any event
     /// handler whose read result becomes part of the reconstructed state.
@@ -670,11 +673,12 @@ pub const GameStateHistory = struct {
     /// reintroduce divergence, just quieter). The only legitimate miss is
     /// cross-session log reload, which starts with an empty cache — that
     /// path (reconstructFromEventLog) falls back to file_source and caches
-    /// retroactively.
+    /// retroactively; a read failure THERE is genuinely unrecoverable (the
+    /// log references files that no longer exist) and panics.
     pub fn readReconstructionFile(
         self: *GameStateHistory,
         path: []const u8,
-    ) []const u8 {
+    ) ![]const u8 {
         // processEvent increments current_event_index BEFORE dispatching the
         // handler, so the event under handling is at current_event_index - 1.
         // This is identical in live and replay (same increment, same dispatch).
@@ -719,8 +723,15 @@ pub const GameStateHistory = struct {
         }
         const arena = self.history_arena.allocator();
         const durable_path = arena.dupe(u8, path) catch @panic("failed to dupe reconstruction cache path");
-        const bytes = self.file_source.readFile(arena, path) catch
-            @panic("failed to read reconstruction file");
+        const bytes = self.file_source.readFile(arena, path) catch |err| {
+            // Recoverable on the live path (DESIGN → Error Handling →
+            // context 2): propagate so the caller's catch turns a
+            // missing/unreadable file into a popup + revert, not a crash.
+            // The dupe above leaked a few bytes into history_arena on a
+            // failed read — accepted (history_arena is unbounded, same
+            // tradeoff as event_history; not worth a two-phase alloc).
+            return err;
+        };
         self.reconstruction_cache.append(arena, .{
             .event_index = event_index,
             .path = durable_path,

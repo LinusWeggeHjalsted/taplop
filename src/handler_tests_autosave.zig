@@ -77,6 +77,46 @@ test "player_continue: empty PlayerData pushes load_save on the autosave" {
     try testing.expectEqualStrings(writers.autosave_path, top.meta_event.load_save.save_path);
 }
 
+// `player_continue` (empty branch) when the autosave is MISSING must be
+// recoverable — popup + revert, not a crash. The harness FileSource uses cwd
+// as the persistent dir, and there is no `saves/autosave.txt` in the project
+// root, so readReconstructionFile returns FileNotFound (now propagated as an
+// error instead of panicking). load_save catches it → failReconstructionRead
+// (load_error + pending_error) + clears session.autosave_available so Continue
+// disappears after the user dismisses the popup. See DESIGN → Error Handling
+// → context 2.
+test "player_continue: missing autosave is recoverable (popup + hide Continue)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    history.session.autosave_available = true; // simulate a fresh launch that detected an autosave
+    runToIdle(&history);
+
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .player_continue,
+        history.current_arena.allocator(),
+    );
+    // Drain the orchestrator + the pushed load_save. load_save's read fails →
+    // failReconstructionRead sets load_error and returns. Stop on load_error
+    // (runToIdle would panic — it asserts no load_error for valid test content).
+    while (history.current_state.event_stack.len > 0) {
+        event_handlers.processEvent(&history);
+        if (history.load_error) break;
+    }
+
+    try testing.expect(history.load_error);
+    try testing.expect(history.session.pending_error != null);
+    // autosave_available cleared so the user doesn't retry into the same error.
+    try testing.expect(!history.session.autosave_available);
+    // Screen never left the main menu (load_save returned before
+    // loadCampaignAndPushHub). The revert in the live drain loop would restore
+    // the snapshot; here we just confirm no hub was loaded.
+    try testing.expectEqual(state_mod.Screen.main_menu, history.current_state.screen);
+    try testing.expect(history.current_state.hub == null);
+}
+
 // `end_level` pushes the autosave write after the sync. Inspect the stack
 // after one processEvent: build_data_from_player on top (runs first, LIFO),
 // write_save{autosave} below it (runs second, reads synced data). No mission
