@@ -141,13 +141,6 @@ fn update(
     // Options menu pauses the game
     if (history.session.ui_state.options_menu_open) return;
 
-    // Player death pauses the game (mission_fail overlay). Button clicks
-    // and options_action dispatch (restart/exit) still run — they're handled
-    // in handleAnytimeInput above, before this gate. Undo/redo also still
-    // work (also above); undoing past the death restores health, clearing
-    // the overlay. See DESIGN → Architecture.
-    if (view_mod.playerDead(&history.current_state)) return;
-
     // Recoverable error popup pauses the game (modal — same as options).
     // handleAnytimeInput already cleared it if `dismiss_error` fired this
     // frame, so a dismiss releases the modal within the same frame.
@@ -341,8 +334,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // Mirrors the old loop's single update() on idle iterations.
     if (history.current_state.waiting != null or
         history.session.pending_error != null or
-        history.current_state.event_stack.len == 0 or
-        view_mod.playerDead(&history.current_state))
+        history.current_state.event_stack.len == 0)
     {
         const event_index_before_update = history.current_event_index;
         const screen_before_update = history.current_state.screen;

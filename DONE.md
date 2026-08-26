@@ -3795,3 +3795,27 @@ from the log, no cascades to clear for player death). The log reads:
 point; the death state is derivable from health == 0. No cosmetic-wait
 skipping needed — the stack clear removes remaining enemy events AND their
 intervening 500ms waits; the drain exits in <1ms after the death.
+
+### Mission-fail overlay — remove the playerDead gate
+
+The freeze-frame fix alone wasn't enough: the `playerDead` gate in `update()`
+(return early before `processEvent`) blocked the `death` event from ever
+processing. The death handler's stack-clear never ran; the `death` event sat
+on the stack; the render gate's `drain_in_progress` (event_stack.len > 0)
+skipped `view()`/`render()` entirely — so no overlay, no sound.
+
+Analysis: the gate protected drag, camera-pan, and idle input for a dead
+player. But all three are already self-gating: idle input only runs in
+`player_move`/`player_attack` turn phases (the death happened mid-enemy-turn,
+so no player phase is active; and even if one were, handlers check
+`current_health == 0` and return early); drag/camera-pan behind the overlay
+are a minor cosmetic leak (the overlay's full-screen `blocks_input` panel
+shields them next frame via `previous_view_state`). Not worth a gate that
+breaks the death handler.
+
+Fix: removed the `playerDead` gate from `update()` and the
+`playerDead` term from the idle-frame condition. `processEvent` now reaches
+the `death` event, which plays the sound + clears the stack; the drain exits;
+the render gate fires; the overlay renders. The freeze-frame (death handler
+clears event_stack) + existing idle-input self-gating + the overlay's own
+`blocks_input` panel cover everything the gate was trying to.
