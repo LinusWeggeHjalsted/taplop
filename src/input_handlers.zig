@@ -338,8 +338,13 @@ pub fn handleAnytimeInput(
     }
 
     if (anytime.toggle_options_menu) {
-        if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
-        history.session.ui_state.options_menu_open = !history.session.ui_state.options_menu_open;
+        // Don't open the options menu when the player is dead — the
+        // mission_fail overlay is the only modal that should show. Undo/redo
+        // still work (processed above) as an escape from the fail state.
+        if (!view_mod.playerDead(&history.current_state)) {
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
+            history.session.ui_state.options_menu_open = !history.session.ui_state.options_menu_open;
+        }
     }
 
     // Options menu actions dispatch before the modal gate so they take effect

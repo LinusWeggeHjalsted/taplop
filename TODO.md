@@ -415,15 +415,17 @@ Logging follow-ups (open):
 
 ## Mission Flow
 
-- mission_fail screen (triggered on player death).
+- mission_fail screen DONE — view-derived overlay (player health == 0),
+  not a flag or Screen variant. See DONE.md.
 - mission_complete screen (triggered on mission end).
 - New Screen variants and transition events.
 - Quit-to-menu and death/mission-fail exits MUST route through end_level /
   end_hub so entity changes persist into PlayerData (see DESIGN →
   Architecture). The options-menu exit paths (exit to main menu, exit
   mission, restart mission) are DONE — they route through end_level with a
-  `LevelExitContinuation` override + build_data_from_player sync. Remaining:
-  death/mission-fail exits (need the mission end-state screens).
+  `LevelExitContinuation` override + build_data_from_player sync. The
+  mission_fail buttons reuse the same restart/exit actions. Remaining:
+  death/mission-fail exits via the mission_complete screen (mission end).
 
 ## Platform Layer (raylib)
 
@@ -458,9 +460,10 @@ backend sfx cache + looping music stream, `frame()` drains + updates music.
 All shipped sfx wired except the two that wait for mission end-state screens.
 Open:
 
-- `defeat` + `mission_completion` land with the mission end-state screens.
-  Cantrip/enchantment/curse currently reuse the `spell` sound (placeholder
-  until dedicated assets ship).
+- `defeat` DONE — wired in the `death` handler when the player dies
+  (entity_index == 0), gated `!replaying`. `mission_completion` lands with
+  the mission_complete screen. Cantrip/enchantment/curse currently reuse
+  the `spell` sound (placeholder until dedicated assets ship).
 - Options menu volume controls (settings fields exist; UI is the TODO
   `buildOptionsMenu`). `applyVolumes` is called at init; re-call it when the
   settings change in the options menu so volume adjusts live.

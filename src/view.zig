@@ -278,6 +278,20 @@ pub fn view(
         ) catch @panic("failed to build options menu");
     }
 
+    // Mission-fail overlay: full-screen modal shown when the player is dead
+    // (derived from level.entities[0].current_health == 0). Drawn on top of
+    // the options menu (death takes precedence over a manually opened menu)
+    // but under the error popup. The buttons reuse the options_action dispatch.
+    // See DESIGN → Architecture.
+    if (playerDead(current_state)) {
+        ui.buildMissionFail(
+            &ui_elements,
+            frame_allocator,
+            font_metrics,
+            ui.screenRect(),
+        ) catch @panic("failed to build mission fail overlay");
+    }
+
     // Recoverable error popup: modal, centered, drawn on top of all other
     // UI (including tooltips). Pure over SessionState.pending_error. See
     // DESIGN → Error Handling.
@@ -334,6 +348,18 @@ fn activeThemeFor(
     else
         0;
     return loaders.deriveActiveColorTheme(color_theme_definitions, color_wheel_index);
+}
+
+/// Whether the player is dead in the current level (entity 0 health == 0).
+/// Used by view() to render the mission_fail overlay and by update()/gameLoop
+/// to pause event processing. Derived from GameState (not a flag) so it's
+/// automatically undo-safe: undoing past the death restores health, clearing
+/// the overlay. Returns false outside a level or when the level has no entities.
+pub fn playerDead(current_state: *const GameState) bool {
+    if (current_state.level) |level| {
+        if (level.entities.len > 0) return level.entities[0].current_health == 0;
+    }
+    return false;
 }
 
 /// The player's tile position for the current screen (entity 0 in a level,

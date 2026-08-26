@@ -1819,6 +1819,14 @@ pub fn processEvent(
                     }
                 },
                 .check_level_end => {
+                    // Lose condition: if the player is dead, the mission is
+                    // failed — don't check the win condition (a dead player
+                    // on the exit with no enemies would falsely trigger
+                    // level completion). The mission_fail overlay is derived
+                    // from player health in view(); see DESIGN → Architecture.
+                    const level = &current.level.?;
+                    if (level.entities[0].current_health == 0) return;
+
                     // Win condition: if the player is on level_end and no
                     // active enemies remain, end the level. Decoupled from
                     // aggro_check so it can also fire after `death` (killing
@@ -1826,7 +1834,6 @@ pub fn processEvent(
                     // level without an extra move). Pushed AFTER aggro_check
                     // on the stack (LIFO → runs after) so newly-aggroed
                     // enemies are counted. See DESIGN → Architecture.
-                    const level = &current.level.?;
                     const player = level.entities[0];
                     if (level.level_end) |level_end| {
                         if (player.position.x == level_end.x and player.position.y == level_end.y) {
@@ -2303,6 +2310,15 @@ pub fn processEvent(
                 .death => |death| {
                     const level = &current.level.?;
                     const entity = level.entities[death.entity_index];
+
+                    // Player death: play the defeat sound (side effect,
+                    // gated !replaying). The mission_fail overlay is derived
+                    // from player health in view(), so no flag or event is
+                    // needed — the overlay appears when the player is dead
+                    // and disappears on undo (health restored).
+                    if (death.entity_index == 0) {
+                        if (!history.replaying) history.session.queueSound(history.backing_allocator, .defeat);
+                    }
 
                     // Trigger on_opponent_death on all alive, active entities from opposing teams
                     for (level.entities, 0..) |other_entity, other_index| {

@@ -3702,3 +3702,54 @@ Game + Exit to Main Menu. Hub: Continue + Save Game + Exit to Main Menu. Same
 .menu` (placeholder). Native build + tests green; game runs without crashing.
 TODO → Mission Flow updated: the options-menu exit paths are DONE; remaining
 is death/mission-fail exits (need the end-state screens).
+
+### Mission-fail overlay
+
+Full-screen modal shown when the player dies in a level. Large "Defeat" text
+centered above a two-button stack: Restart Mission + Exit Mission (reusing
+the existing `.restart_mission` / `.exit_mission` actions from the options
+menu — same `options_action` dispatch path, same `end_level` continuation
+override).
+
+**View-derived, not a flag or Screen variant.** `view_mod.playerDead` checks
+`level.entities[0].current_health == 0`. This is the key design decision: the
+overlay is a pure function of undoable GameState, so it's automatically
+undo-safe. If the player undoes past their death, health is restored in the
+reconstructed state and the overlay disappears — no flag to clear, no
+`SessionState` side effect, no replay concern. This is different from the
+options menu (user-toggled flag) and the error popup (handler-set flag), both
+of which have explicit clear semantics. Player death is already in the
+undoable GameState, so deriving from it is cleaner.
+
+**Pause machinery.** Three sites cooperate:
+- `update()`: a player-dead gate after the options-menu gate returns early,
+  blocking event processing + idle input. Button clicks and `options_action`
+  dispatch still run (they're in `handleAnytimeInput`, before the gate).
+- `gameLoop` drain loop: `!playerDead(...)` in the condition so it doesn't
+  spin on unprocessable enemy-turn events (which would burn the drain budget).
+- `gameLoop` idle frame: `playerDead(...)` in the condition so `update()`
+  still runs once per frame (for button clicks + the options_action drain).
+
+**`check_level_end` fix.** Added a player-dead early return before the win
+check. Without it, a dead player on the exit tile with no remaining enemies
+would falsely trigger level completion (the win check only tests position +
+enemy count, not player health). Now: player dead → skip win check → the
+mission_fail overlay shows instead.
+
+**`death` handler.** When `entity_index == 0`, plays the `.defeat` sound
+(gated `!replaying`). This is the audio trigger the TODO was waiting for.
+
+**Options menu blocked during death.** `handleAnytimeInput` skips the
+`toggle_options_menu` flip when the player is dead — the mission_fail overlay
+is the only modal that should show. Undo/redo still works (processed before
+the gate) as an escape from the fail state — the player can undo past the
+death instead of clicking restart.
+
+**Render order.** `buildMissionFail` is called from `view()` after the
+options menu but before the error popup, so: death takes precedence over a
+manually opened options menu (the fail overlay draws on top), but a
+reconstruction-read failure still surfaces its error popup on top of
+everything. The full-screen panel is `blocks_input: true`, shielding the
+top/bottom bar buttons behind it.
+
+Native build + tests green; game runs without crashing.
