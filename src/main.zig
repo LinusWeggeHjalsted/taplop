@@ -141,11 +141,6 @@ fn update(
     // Options menu pauses the game
     if (history.session.ui_state.options_menu_open) return;
 
-    // Mission-complete overlay pauses the game (modal in the hub). Button
-    // clicks + options_action dispatch (Continue/Replay) still run — they're
-    // in handleAnytimeInput above, before this gate.
-    if (history.session.pending_mission_complete != null) return;
-
     // Recoverable error popup pauses the game (modal — same as options).
     // handleAnytimeInput already cleared it if `dismiss_error` fired this
     // frame, so a dismiss releases the modal within the same frame.

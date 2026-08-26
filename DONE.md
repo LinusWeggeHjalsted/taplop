@@ -3864,3 +3864,19 @@ branch (gated `!replaying`), alongside the flag stash. The last audio TODO
 item is done.
 
 Native build + tests green; game runs without crashing.
+
+### Mission-complete overlay — remove the gate (same bug as mission_fail)
+
+The `pending_mission_complete` gate in `update()` (return early before
+`processEvent`) blocked the end_mission → start_hub cascade from completing.
+The flag is set inside `end_level`'s handler (before pushing `end_mission`);
+on the next `update()` call the gate fired, `end_mission` never processed,
+`start_hub` never ran — the player was stuck in the level with the flag set
+but no overlay (screen still `.level`, not `.hub`).
+
+Same class of bug as the `playerDead` gate, same fix: remove the gate. The
+cascade completes normally (end_mission → start_hub → hub); the flag survives
+on SessionState; the overlay renders in the hub. The overlay's full-screen
+`blocks_input` panel shields drag/camera-pan/idle-input behind it; idle input
+is self-gating (stack empty after the cascade; hub clicks are harmless behind
+the panel anyway). No gate needed.
