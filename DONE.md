@@ -3577,3 +3577,72 @@ first occlusion of a given stack has a one-time ~50-100ms hitch (decode N PNGs
 + 512×640×217 dilation); amortized after. Optimization is deferred until felt.
 
 Native build + tests green; game runs without crashing.
+
+## UI
+
+### Top bar — options + undo buttons
+
+Two buttons in a top-anchored row mirroring the bottom bar's conventions
+(`Row`, `ui_gap`, `slot_size`): the options button (`ui/icon_options`,
+`.toggle_options_menu`) flush in the top-left corner, then `ui_gap`, then the
+undo button (`ui/icon_undo`, `.undo`). The rest of the row width is reserved
+for the combat-log region (not yet rendered). `top_bar_height` bumped 100 →
+256 to fit full `slot_size` buttons. `buildTopBar` is called from `view()` for
+`.level` and `.hub` (same branch as `buildBottomBar`), before the bottom bar
+so the bottom bar's hover-highlight pass wins ties.
+
+No new input plumbing: `Action.undo` already existed and `applyAction` already
+routed it to `anytime.undo` → `history.undo` (the same path as Ctrl+Z). The
+button is just an alternate trigger. `history.undo` no-ops at the earliest
+idle point, so no disabled state is needed — the only context with nothing to
+undo is a fresh main menu, where the top bar isn't shown. `releaseSoundForAction`
+got `.undo, .redo => .menu` (placeholder until a dedicated sfx ships). Buttons
+draw magenta placeholders until real `ui/icon_options.png` / `ui/icon_undo.png`
+art lands (project missing-art convention).
+
+### Options menu — slice 1 (surface + Continue + Save)
+
+Full-screen modal 9-slice panel (`ui/panel`) with a centered button stack
+reusing `emitPanelButton` / `menu_button_*` constants (same design as the
+main menu). Context-specific button list; today both hub and level emit
+Continue (`.toggle_options_menu` — the toggle closes the menu) + Save
+(`.save_game`). Level-only tier-2 buttons (restart mission, exit mission,
+exit to main menu) are deferred to slice 2 — they need the `end_level`
+continuation override (TODO → Mission Flow).
+
+**Input plumbing.** New `AnytimeInput.options_action: ?Action` (one field
+scaling to slice 2's exit buttons). `applyAction` routes `.save_game` there.
+`handleAnytimeInput` dispatches `options_action` **before** the modal gate
+(the `if (options_menu_open) return;` that pauses the game), so the action
+takes effect immediately despite the menu freezing the world. For `.save_game`:
+compute a timestamped path `saves/save_YYYYMMDD_HHMMSS.txt` (reuses
+`formatSessionTimestamp`, distinguishable from a future `autosave.txt`),
+capture `event_stack.len` as baseline, push the existing `save_game` meta
+event (orchestrates `build_data_from_player` sync + `write_save` file write),
+then drain back to baseline. The baseline is the stack depth when the menu
+opened — nothing drains while the menu is open (`update()` returns at the
+gate), so it's unchanged.
+
+**Idle-point recording: no special case.** The normal `maybeRecordIdlePoint`
+in `gameLoop` handles both cases: if the menu opened from idle (stack empty),
+the save's events drain empty and an undo stop is recorded; if mid-enemy-turn,
+the save bundles into that drain's existing idle point. Mirrors the
+wait-interjection drain's "no idle point" stance for the mid-drain case, but
+without hardcoding it — the general mechanism does the right thing.
+
+**Save path + web.** `saves/` at the persistent root is not prefix-rejected
+(only `data/`/`assets/` are), so no `FileSource` change needed. The existing
+`writePlayerSaveToFile` writes to IDBFS on web (persists across refreshes).
+Browser-download save is a future slice (TODO → Platform Layer → Web save via
+browser download prompt). The `save_game` event's `!replaying` guard prevents
+undo/redo scrubbing from rewriting the file or spamming download prompts.
+
+**Render order.** `buildOptionsMenu` is called from `view()` after tooltips
+but before the error popup, so the error popup stays the most-modal surface
+(a save failure surfaces over the options menu). The full-screen panel is
+`blocks_input: true`, so `hitTest` shields the bottom/top bar buttons behind
+it — no hover leaks through.
+
+`Action.save_game` added to the enum; `releaseSoundForAction` got
+`.save_game => .menu` (placeholder). Native build + tests green; game runs
+without crashing.

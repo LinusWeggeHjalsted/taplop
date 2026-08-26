@@ -443,6 +443,11 @@ Open:
 - Web Phase 4: asset downscaling for web download budget (the Memory & Budget
   → Asset memory levers matter more for web than native); WebGL1/WebGL2 build
   option; emrun polish.
+- Web save via browser download prompt: alternative to IDBFS for save
+  portability (a player can download a save file to disk instead of digging
+  through browser storage). The `save_game` path writes to IDBFS today; this
+  adds a JS seam to read the file from the FS + trigger an anchor download.
+  Pairs with a future upload/load-via-file-picker path.
 
 ## Audio
 

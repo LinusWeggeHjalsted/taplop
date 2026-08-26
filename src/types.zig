@@ -91,6 +91,8 @@ pub const Action = enum {
     zoom_in,
     zoom_out,
     zoom_reset,
+    // Options menu commands (context-specific: hub vs level).
+    save_game,
     // Main menu commands.
     continue_game,
     new_game,
@@ -109,6 +111,9 @@ pub fn releaseSoundForAction(action: Action) ?SoundId {
         .skip => .skip,
         .swap_weapons => .swap_skill,
         .toggle_inventory, .toggle_gear, .toggle_skills, .toggle_world_map, .toggle_options_menu => .menu,
+        // Undo/redo: placeholder menu sound until a dedicated sfx ships.
+        .undo, .redo => .menu,
+        .save_game => .menu,
         // Skill slots: suppress the generic button-up (the use_skill event
         // plays weapon_swing/spell on auto-fire; the prepare path plays
         // button_click_up explicitly). See DESIGN → Audio.

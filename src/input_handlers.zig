@@ -342,6 +342,39 @@ pub fn handleAnytimeInput(
         history.session.ui_state.options_menu_open = !history.session.ui_state.options_menu_open;
     }
 
+    // Options menu actions dispatch before the modal gate so they take effect
+    // immediately despite the menu pausing the game. The menu opens in a
+    // previous frame; nothing drains while it's open (update() returns at the
+    // gate below), so event_stack.len here equals the depth when the menu
+    // opened — that's the drain baseline. Push the action's events on top,
+    // then drain back down to it. Idle-point recording is left to the normal
+    // maybeRecordIdlePoint in gameLoop (no special case): if the stack
+    // empties (menu opened from idle) an undo stop is recorded; if mid-
+    // enemy-turn the save bundles into that drain's idle point.
+    if (anytime.options_action) |action| {
+        const current = &history.current_state;
+        const allocator = history.current_arena.allocator();
+        switch (action) {
+            .save_game => {
+                const timestamp = formatSessionTimestamp(allocator, history.io);
+                const save_path = std.fmt.allocPrint(
+                    allocator,
+                    "saves/save_{s}.txt",
+                    .{timestamp},
+                ) catch @panic("failed to format save path");
+                const baseline = history.current_state.event_stack.len;
+                event_handlers.pushEvents(current, &.{.{
+                    .meta_event = .{ .save_game = .{ .save_path = save_path } },
+                }}, allocator);
+                while (history.current_state.event_stack.len > baseline) {
+                    if (history.load_error) break;
+                    event_handlers.processEvent(history);
+                }
+            },
+            else => {},
+        }
+    }
+
     // When options menu is open, block all other input
     if (history.session.ui_state.options_menu_open) return;
 

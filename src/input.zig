@@ -279,6 +279,11 @@ pub const AnytimeInput = struct {
     zoom_in: bool = false,
     zoom_out: bool = false,
     zoom_reset: bool = false,
+    /// A button action from the options menu (context-specific: save, exit,
+    /// etc.). Dispatched in handleAnytimeInput before the options-menu gate,
+    /// so the action takes effect immediately even though the menu pauses
+    /// the game. Null when no options button was clicked this tick.
+    options_action: ?types.Action = null,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -347,6 +352,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .zoom_in => player_input.anytime.zoom_in = true,
         .zoom_out => player_input.anytime.zoom_out = true,
         .zoom_reset => player_input.anytime.zoom_reset = true,
+        .save_game => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,

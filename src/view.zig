@@ -180,6 +180,12 @@ pub fn view(
     var ui_elements: std.ArrayList(ui.UiElement) = .empty;
 
     if (current_state.screen == .level or current_state.screen == .hub) {
+        ui.buildTopBar(
+            &ui_elements,
+            frame_allocator,
+            ui.screenRect(),
+            active_theme,
+        ) catch @panic("failed to build top bar");
         ui.buildBottomBar(
             &ui_elements,
             frame_allocator,
@@ -256,6 +262,20 @@ pub fn view(
                 ui.tooltipOf(hovered).?,
             ) catch @panic("failed to build tooltip");
         }
+    }
+
+    // Options menu: full-screen modal panel with a context-specific button
+    // stack. Drawn on top of normal UI (bottom/top bars, tooltips) but under
+    // the error popup (which is the most-modal surface). Pure over
+    // SessionState.ui_state.options_menu_open. See DESIGN → UI Framework.
+    if (session.ui_state.options_menu_open) {
+        ui.buildOptionsMenu(
+            &ui_elements,
+            frame_allocator,
+            font_metrics,
+            ui.screenRect(),
+            current_state.screen,
+        ) catch @panic("failed to build options menu");
     }
 
     // Recoverable error popup: modal, centered, drawn on top of all other

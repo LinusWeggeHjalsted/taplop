@@ -1,9 +1,9 @@
 //! UI framework: the flat `UiElement` tagged union (nine_slice_panel, slot,
 //! button, text_label, fill_sprite, image, bar), layout helpers (Rect algebra,
-//! `Row`/`Grid`, screen-space `i32` dims), and panel builders (bottom bar,
-//! main menu, tooltips). `UiState` (open panels/overlays/drag/scroll) lives on
-//! `SessionState`, off the undo timeline. Buttons carry an `Action` so clicks
-//! feed the one input path. See DESIGN → UI Framework.
+//! `Row`/`Grid`, screen-space `i32` dims), and panel builders (top bar,
+//! bottom bar, main menu, tooltips). `UiState` (open panels/overlays/drag/
+//! scroll) lives on `SessionState`, off the undo timeline. Buttons carry an
+//! `Action` so clicks feed the one input path. See DESIGN → UI Framework.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -300,7 +300,7 @@ test "measurement seam: row width sums spans, bold equals plain" {
 // Layout constants — fixed sizes in reference resolution
 // ============================================================
 
-pub const top_bar_height: i32 = 100;
+pub const top_bar_height: i32 = 256;
 pub const bottom_bar_height: i32 = 256;
 /// Standard gameplay button/slot size (128×128 at 1080p → 256×256 at the
 /// 2160p reference resolution).
@@ -1781,6 +1781,108 @@ pub fn buildBottomBar(
             .highlighted = turn_phase == .player_attack,
             .tooltip = .{ .header = try spanRow(allocator, text("Attack step")) },
         } });
+    }
+}
+
+/// Top bar: options button flush in the top-left corner, then `ui_gap`,
+/// then the undo button, then the remaining width reserved for the combat
+/// log (not yet rendered). Left-anchored row mirroring the bottom bar's
+/// conventions (`Row`, `ui_gap`, `slot_size`). No background of its own —
+/// purely a layout region, like the bottom bar. Undo is never disabled: the
+/// only state with nothing to undo is a fresh main menu, where this bar is
+/// not shown; `history.undo` no-ops at the earliest idle point regardless.
+pub fn buildTopBar(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    screen: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const p = active_theme.player_gradient.colors;
+    const c_btn = p[@min(@as(u32, 4), types.gradient_color_count - 1)];
+
+    var row = Row.init(screen.position(), top_bar_height, ui_gap);
+
+    // Options button — flush in the top-left corner (no margin).
+    const options_cell = row.next(slot_size);
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = "ui/icon_options",
+        .screen_position = options_cell.position(),
+        .action = .toggle_options_menu,
+        .color = c_btn,
+        .tooltip = .{ .header = try spanRow(allocator, text("Options")) },
+    } });
+
+    // Undo button — same size, one `ui_gap` to the right of options.
+    const undo_cell = row.next(slot_size);
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = "ui/icon_undo",
+        .screen_position = undo_cell.position(),
+        .action = .undo,
+        .color = c_btn,
+        .tooltip = .{ .header = try spanRow(allocator, text("Undo")) },
+    } });
+}
+
+/// Build the options menu: a full-screen 9-slice panel background with a
+/// centered stack of `menu_button_width` buttons (same design as the main
+/// menu). Context-specific: the button list depends on the current screen.
+/// Continue carries `.toggle_options_menu` (the toggle closes the menu);
+/// Save carries `.save_game`. Rendered on top of the bottom bar when
+/// `options_menu_open` is set, like the error popup. See DESIGN → UI
+/// Framework.
+pub fn buildOptionsMenu(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    current_screen: state.Screen,
+) !void {
+    // Full-screen panel background.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = screen.position(),
+        .width = screen.width,
+        .height = screen.height,
+    } });
+
+    const MenuButton = struct { label: []const u8, action: Action };
+    var buttons: [8]MenuButton = undefined;
+    var button_count: usize = 0;
+
+    buttons[button_count] = .{ .label = "Continue", .action = .toggle_options_menu };
+    button_count += 1;
+
+    // Level-only buttons (restart / exit mission land in slice 2).
+    if (current_screen == .level) {
+        // Tier-2 buttons (exit paths) go here when wired.
+    }
+
+    buttons[button_count] = .{ .label = "Save Game", .action = .save_game };
+    button_count += 1;
+
+    // Exit to main menu lands in slice 2 (needs end_level continuation override).
+
+    const total_height = rowWidth(@intCast(button_count), menu_button_height, ui_gap);
+    const origin = screen
+        .placeCenter(menu_button_width, total_height)
+        .position();
+
+    for (buttons[0..button_count], 0..) |menu_button, index| {
+        const cell: Rectangle = .{
+            .x = origin.x,
+            .y = origin.y + @as(i32, @intCast(index)) * (menu_button_height + ui_gap),
+            .width = menu_button_width,
+            .height = menu_button_height,
+        };
+        try emitPanelButton(
+            elements,
+            allocator,
+            font_metrics,
+            cell,
+            menu_button.label,
+            menu_button_font_size,
+            menu_button.action,
+        );
     }
 }
 
