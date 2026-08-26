@@ -4571,3 +4571,21 @@ or null — mirrors the handler-side `gearSlotItem`. Used by the panel builder
 for item icons + tooltips.
 
 **`gear_panel_width`** raised from placeholder 200 to 448 (3 slots + margins).
+
+**Gear panel width follow-up — measured from stats, no outline (DONE):**
+- Removed the black text outline on the gear-panel stat lines (`.outlined =
+  true` dropped — the panel background is solid, so the outline isn't
+  needed for readability).
+- Panel width is now derived from the longest stat line via
+  `gearPanelWidth(font_metrics)`, mirroring the tooltip/error-popup
+  approach (`measureSpanWidth` → content width + padding). Measures each
+  label in `gear_stat_labels` + a 4-digit value gutter (" 9999") at
+  `gear_stat_font_size` (56), takes the max, never shrinks below the
+  2-slot column width (weapon row), adds `ui_gap` side margins. Width is
+  stable as stat values change (measured against the template, not live
+  values). Replaced the hardcoded `gear_panel_width = 448` const (deleted).
+  `buildMiddlePanels` computes the width before laying out the gear panel
+  and passes it as the bounds width.
+- Extracted `gear_stat_labels` (shared const array) + `gear_stat_font_size`
+  (pub const) so the width function and the builder reference one set of
+  labels — no drift.

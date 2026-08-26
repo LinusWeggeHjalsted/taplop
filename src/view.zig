@@ -481,10 +481,11 @@ fn buildMiddlePanels(
                 break :blk ui.inventory_panel_width;
             },
             .gear => blk: {
+                const panel_width = ui.gearPanelWidth(font_metrics);
                 const bounds = Rectangle{
                     .x = cursor_x,
                     .y = section.y + @divTrunc(section.height - ui.inventory_panel_height, 2),
-                    .width = ui.gear_panel_width,
+                    .width = panel_width,
                     .height = ui.inventory_panel_height,
                 };
                 const player = if (ui.playerEntity(current_state)) |pl| pl else types.Entity{};
@@ -499,7 +500,7 @@ fn buildMiddlePanels(
                     active_theme,
                     drag_source,
                 );
-                break :blk ui.gear_panel_width;
+                break :blk panel_width;
             },
             // Builders pending — skills / enemy inspect reserve no space.
             .skills, .enemy_inspect => continue,

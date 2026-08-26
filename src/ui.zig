@@ -406,9 +406,6 @@ pub const inventory_slot_size: i32 = 128;
 /// Height = 16 + 1536 + 16            = 1568.
 pub const inventory_panel_width: i32 = 1200;
 pub const inventory_panel_height: i32 = 1568;
-/// Gear panel: 3×128 slots + 4×ui_gap (2 internal + 2 side margins) = 448.
-/// Shares `inventory_panel_height` with all middle panels.
-pub const gear_panel_width: i32 = 448;
 pub const skills_panel_width: i32 = 800;
 pub const enemy_inspect_panel_width: i32 = 600;
 
@@ -2379,6 +2376,44 @@ pub fn buildInventoryPanel(
     }
 }
 
+/// Font size for the gear-panel combat-stat lines.
+pub const gear_stat_font_size: i32 = 56;
+
+/// The combat-stat labels shown in the gear panel, in display order. Shared
+/// between `gearPanelWidth` (measures the longest line for the panel width)
+/// and `buildGearPanel` (renders them). Values are runtime, so width is
+/// measured against a max-digit template, not the live value.
+const gear_stat_labels = [_][]const u8{
+    "Main Hand Damage",
+    "Off Hand Damage",
+    "Spell Damage",
+    "Max Health",
+    "Defense",
+    "Pickup Radius",
+    "Speed",
+};
+
+/// Gear panel width, derived from the longest stat line so the panel fits
+/// the stats without truncation. Mirrors the tooltip/error-popup approach
+/// (`measureRowWidth` → content width + padding): measures each label + a
+/// 4-digit value gutter (" 9999") at `gear_stat_font_size`, takes the max,
+/// and never shrinks below the 3-slot column width. Side margins (`ui_gap`
+/// each side) are added.
+pub fn gearPanelWidth(font_metrics: FontMetrics) i32 {
+    // 3 slots + 2 internal gaps (the weapon row + the gear stack share this
+    // column width; the gear stack is 1 slot wide but the top row needs 2).
+    const slot_columns_width = 2 * inventory_slot_size + ui_gap;
+    var content_width: i32 = slot_columns_width;
+    // Value gutter: space + up to 4 digits (stats are bounded; see balance
+    // bounds in loaders.zig). Keeps the width stable as values change.
+    const value_gutter = font_metrics.measureSpanWidth(text(" 9999"), gear_stat_font_size);
+    for (gear_stat_labels) |label| {
+        const line_width = font_metrics.measureSpanWidth(text(label), gear_stat_font_size) + value_gutter;
+        if (line_width > content_width) content_width = line_width;
+    }
+    return content_width + 2 * ui_gap;
+}
+
 /// Gear panel: equipped weapons (main/off hand) top-left, then amulet →
 /// coat → gloves → pants → boots stacked below, then combat stats. All
 /// slots + item icons 128×128 (`inventory_slot_size`). Panel is 3 slots
@@ -2474,36 +2509,33 @@ pub fn buildGearPanel(
     // Combat stats below the gear stack. Effective values (gear + effect
     // modifiers + momentum where applicable). See `getEffective*` on Entity.
     const stats_top = row_y + ui_gap;
-    const stat_font_size: i32 = 56;
-    const stat_line_height: i32 = stat_font_size + 16;
+    const stat_line_height: i32 = gear_stat_font_size + 16;
     const stat_x = col0_x;
 
     const main_damage = if (player.main_hand_weapon) |w| player.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
     const off_damage = if (player.off_hand_weapon) |w| player.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
-
-    const stats = [_]struct { label: []const u8, value: u32 }{
-        .{ .label = "Main Hand Damage", .value = main_damage },
-        .{ .label = "Off Hand Damage", .value = off_damage },
-        .{ .label = "Spell Damage", .value = player.getEffectiveSpellDamage() },
-        .{ .label = "Max Health", .value = player.getEffectiveMaxHealth() },
-        .{ .label = "Defense", .value = player.getEffectiveDefense() },
-        .{ .label = "Pickup Radius", .value = player.getEffectivePickupRadius(0) },
-        .{ .label = "Speed", .value = player.getEffectiveSpeed() },
+    const stat_values = [_]u32{
+        main_damage,
+        off_damage,
+        player.getEffectiveSpellDamage(),
+        player.getEffectiveMaxHealth(),
+        player.getEffectiveDefense(),
+        player.getEffectivePickupRadius(0),
+        player.getEffectiveSpeed(),
     };
 
     var stat_y = stats_top;
-    for (stats) |stat| {
-        const line = try std.fmt.allocPrint(allocator, "{s} {d}", .{ stat.label, stat.value });
+    for (gear_stat_labels, stat_values) |label, value| {
+        const line = try std.fmt.allocPrint(allocator, "{s} {d}", .{ label, value });
         try elements.append(allocator, .{ .text_label = .{
             .text = line,
             .screen_position = .{ .x = stat_x, .y = stat_y },
-            .font_size = stat_font_size,
-            .outlined = true,
+            .font_size = gear_stat_font_size,
             .blocks_input = false,
         } });
         stat_y += stat_line_height;
-        _ = font_metrics;
     }
+    _ = font_metrics;
 }
 
 /// Top bar: options button flush in the top-left corner, then `ui_gap`,
