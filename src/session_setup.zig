@@ -293,6 +293,12 @@ pub fn createSessionSetup(
     // SessionSetup is in its final location. The temporary pointer is fine
     // because createSessionSetup hasn't returned yet — both the local and the
     // returned struct's field hold the same array value at this point.
+    // Detect an existing autosave ONCE at startup so the main-menu Continue
+    // button can show on a fresh launch (before PlayerData is populated). Not
+    // per-frame — view() is pure and does no file access. See DESIGN → File
+    // System & IO (autosave).
+    const autosave_available = file_source.fileExists(writers.autosave_path);
+
     var history = GameStateHistory.init(
         allocator,
         starting_game_state,
@@ -303,6 +309,7 @@ pub fn createSessionSetup(
         file_source,
         io,
     );
+    history.session.autosave_available = autosave_available;
 
     // Surface startup warnings as a single pending error popup (see DESIGN →
     // Error Handling). The popup is modal: the player dismisses it (Escape /

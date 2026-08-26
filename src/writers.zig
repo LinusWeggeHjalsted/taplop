@@ -10,6 +10,12 @@ const file_source_mod = @import("file_source.zig");
 
 const FileSource = file_source_mod.FileSource;
 const PlayerData = types.PlayerData;
+
+/// Persistent path of the autosave. Written on every hub/level transition
+/// (after the player-entity → PlayerData sync) so the main-menu Continue
+/// button can resume from the last visited hub on a fresh launch. See
+/// DESIGN → File System & IO (autosave).
+pub const autosave_path = "saves/autosave.txt";
 const Settings = types.Settings;
 const Weapon = types.Weapon;
 const Item = types.Item;

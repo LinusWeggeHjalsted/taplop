@@ -461,6 +461,23 @@ fn handlePlayerInputEvent(
             current.last_completed_mission = null;
         },
 
+        // --- Meta: continue (main-menu Continue button) ---
+        // Two branches by PlayerData state. Populated (the mid-session
+        // exit-to-menu case) → resume directly from in-memory data, no file
+        // read. Empty (the fresh-launch case) → load the autosave first, then
+        // loadCampaignAndPushHub resumes at player_data.current_hub. See
+        // DESIGN → File System & IO (autosave).
+        .player_continue => {
+            if (current.player_data.current_campaign.len > 0) {
+                loadCampaignAndPushHub(current, history, allocator);
+                if (history.load_error) return;
+            } else {
+                pushEvents(current, &.{.{ .meta_event = .{ .load_save = .{
+                    .save_path = writers.autosave_path,
+                } } }}, allocator);
+            }
+        },
+
         // --- Meta: new game ---
         .start_new_game => {
             var balance_warnings: std.ArrayList([]const u8) = .empty;
@@ -886,12 +903,18 @@ pub fn processEvent(
                 },
                 .end_hub => {
                     // Preserve the player entity's changes back into PlayerData
-                    // before the hub is discarded/replaced. Pushed on top so it
-                    // runs before whatever continuation the exit path stacked
-                    // below (LIFO). All hub-exit paths must route through here.
-                    pushEvents(current, &.{.{ .super_event = .{ .build_data_from_player = .{
-                        .entity_index = 0,
-                    } } }}, allocator);
+                    // before the hub is discarded/replaced, then autosave the
+                    // synced data. Pushed on top so both run before whatever
+                    // continuation the exit path stacked below (LIFO): sync
+                    // first, then the write reads the synced PlayerData. All
+                    // hub-exit paths must route through here. See DESIGN →
+                    // File System & IO (autosave).
+                    pushEvents(current, &.{
+                        .{ .meta_event = .{ .write_save = .{ .save_path = writers.autosave_path } } },
+                        .{ .super_event = .{ .build_data_from_player = .{
+                            .entity_index = 0,
+                        } } },
+                    }, allocator);
                 },
                 .close_editor => {
                     // Tear down the editor session and return to the main menu.
@@ -1144,12 +1167,20 @@ pub fn processEvent(
                         },
                     }
                     // Preserve the player entity's changes back into PlayerData
-                    // before the level is discarded/replaced. Pushed last so it
-                    // runs on top of the continuation above (LIFO). All
-                    // level-exit paths must route through here.
-                    pushEvents(current, &.{.{ .super_event = .{ .build_data_from_player = .{
-                        .entity_index = 0,
-                    } } }}, allocator);
+                    // before the level is discarded/replaced, then autosave the
+                    // synced data. Pushed last so both run on top of the
+                    // continuation above (LIFO): sync first, then the write
+                    // reads the synced PlayerData. All level-exit paths must
+                    // route through here. The editor early-returns above before
+                    // this push, so playtest/validate never autosave (discard
+                    // semantics — the real PlayerData is unchanged). See DESIGN
+                    // → File System & IO (autosave).
+                    pushEvents(current, &.{
+                        .{ .meta_event = .{ .write_save = .{ .save_path = writers.autosave_path } } },
+                        .{ .super_event = .{ .build_data_from_player = .{
+                            .entity_index = 0,
+                        } } },
+                    }, allocator);
                 },
                 .wait => |wait_event| {
                     // Begin a real-time pause; update() drains it as frames

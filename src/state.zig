@@ -106,6 +106,15 @@ pub const SessionState = struct {
     input_state: input.InputState = .{},
     ui_state: UiState = .{},
     tile_cursor: ?types.Vector2 = null,
+    /// Whether an autosave exists in the persistent dir at session start.
+    /// Detected once in `createSessionSetup` (a file-stat, not per-frame I/O
+    /// — `view()` is pure over GameState + SessionState + frame arena, no
+    /// file access). Drives the main-menu Continue button on a fresh launch
+    /// before PlayerData is populated; once PlayerData is populated (any
+    /// path), the populated branch drives Continue instead. Off the undoable
+    /// GameState → replay-safe by construction. See DESIGN → File System &
+    /// IO (autosave).
+    autosave_available: bool = false,
     // Camera pan (right-drag): offset in world pixels added to the player-
     // centered camera, plus the drag anchor. Transient view state — off the
     // undoable GameState, replay-safe by construction (like tile_cursor / the
@@ -1040,6 +1049,11 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_replay_mission with no completed mission");
                     }
                 },
+                .player_continue => {
+                    if (self.current_state.screen != .main_menu) {
+                        @panic("replay validation: player_continue outside main menu");
+                    }
+                },
                 // Level combat actions: inner legality checks.
                 .player_move_action => |action| {
                     const level = self.current_state.level orelse return;
@@ -1682,6 +1696,7 @@ test "isPlayerAction: whitelist accepts player-pushable events" {
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_exit_mission }));
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_exit_to_menu }));
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_replay_mission }));
+    try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_continue }));
     // player_skip_level: dev-gated (test build is Debug → dev_mode = true)
     try std.testing.expect(history.isPlayerAction(.{ .player_input_event = .player_skip_level }));
 

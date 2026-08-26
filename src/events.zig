@@ -472,6 +472,12 @@ pub const PlayerInputEvent = union(enum) {
     // GameState.last_completed_mission. On the undo timeline so undo re-shows
     // the overlay, redo dismisses it. See DESIGN → Architecture.
     dismiss_mission_complete: void,
+    // Main-menu Continue button. Two branches by PlayerData state (handler):
+    // populated → resume directly from in-memory data via
+    // loadCampaignAndPushHub (the mid-session exit-to-menu case); empty →
+    // load_save the autosave then resume (the fresh-launch case). See DESIGN
+    // → File System & IO (autosave).
+    player_continue: void,
 
     // --- Meta: exit/skip orchestrators ---
     // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;

@@ -89,6 +89,17 @@ pub const FileSource = struct {
         return error.FileNotFound;
     }
 
+    /// Whether a file exists in the persistent dir at the given project-root-
+    /// relative path. Does NOT consult the embedded map (shipped content is
+    /// always present; this is for detecting player-written artifacts like an
+    /// autosave). No allocation. Returns false on any non-FileNotFound stat
+    /// error too (treated as "not available" — the caller degrades to
+    /// "no autosave" rather than crashing at startup over a permission quirk).
+    pub fn fileExists(self: *const FileSource, path: []const u8) bool {
+        _ = self.persistent_dir.statFile(self.io, path, .{}) catch return false;
+        return true;
+    }
+
     /// Write a file to the persistent dir only. Rejects `data/`/`assets/`
     /// prefixes — shipped content is immutable from the game's perspective
     /// (players may still drop override files into the persistent dir by hand;

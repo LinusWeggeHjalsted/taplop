@@ -253,12 +253,10 @@ Open:
 - buildFullCombatLog: scrollable detailed combat log (renders
   ViewState.combat_log; see Combat Log).
 - buildOptionsMenu: settings controls (volume, gameplay toggles).
-- buildMainMenu Continue availability: today Continue shows only when
-  PlayerData is populated (current_campaign.len > 0). Standalone builds
-  should ALSO offer Continue when an autosave.txt exists at the persistent
-  path. The file layer has landed (FileSource) — detect it ONCE when
-  entering the menu (not per frame; view() is pure over GameState + frame
-  arena, no file access) and feed the flag in.
+- buildMainMenu Continue availability: DONE — Continue now shows when
+  PlayerData is populated OR an autosave exists; clicking it resumes (loads
+  the autosave on a fresh launch, resumes from memory mid-session). See
+  DONE.md (Autosave).
 - buildMissionComplete: statistics, clone rewards, continue/retry.
 - buildMissionFail: header text, exit/retry buttons.
 - Middle section horizontal scroll when panels exceed width.

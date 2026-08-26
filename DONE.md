@@ -4042,3 +4042,37 @@ helper, directly testable — no panic-catching needed); `handler_tests_devtools
 updated to expect `player_skip_level` (the orchestrator) instead of
 `end_level`. DESIGN → Determinism & Tiebreaking → Replay PLAYER-ACTION
 LEGALITY updated with the two-layer model + orchestrator convention.
+
+### Autosave — write on transitions + main-menu Continue (DONE)
+
+Persistent autosave at `saves/autosave.txt` (path constant `writers.autosave_path`).
+Two halves:
+
+- **Write on transitions:** `end_level` and `end_hub` each push
+  `write_save{autosave_path}` alongside their existing `build_data_from_player`
+  sync, ordered so LIFO runs sync first, then the write (reads synced
+  PlayerData), then the continuation. The editor `end_level` early-returns
+  before this push, so playtest/validate never autosave (discard semantics —
+  the real PlayerData is unchanged). Reuses the existing `write_save` handler
+  (`!replaying`-gated, recorded in the session log as a no-op on replay,
+  recoverable popup on write failure) — no new side-effect machinery.
+- **Main-menu Continue:** new `PlayerInputEvent.player_continue` (whitelisted
+  by `isPlayerAction` auto; `validatePlayerAction` arm: screen == .main_menu).
+  Two branches by PlayerData state: populated (mid-session exit-to-menu) →
+  `loadCampaignAndPushHub` resumes from in-memory data, no file read (also
+  fixes the previously-broken no-op Continue in that case); empty (fresh
+  launch) → `load_save{autosave_path}` loads the file then resumes at
+  `player_data.current_hub`. Mid-mission resume is out of scope — Continue
+  always resumes at the last visited hub.
+- **Showing the button when PlayerData is empty:** `session.autosave_available`
+  (SessionState, off the undoable GameState) detected ONCE at startup in
+  `createSessionSetup` via `FileSource.fileExists` (a stat, no alloc —
+  `view()` is pure, no file access). `continue_available = player_data
+  .current_campaign.len > 0 or session.autosave_available`.
+
+Tests: `handler_tests_autosave.zig` (4) — populated-continue resumes to hub,
+empty-continue pushes `load_save` on the autosave path, `end_level`/`end_hub`
+push sync-then-autosave (stack inspected, no disk write). `isPlayerAction`
+test covers `player_continue`. Session-log serializer auto-handles the new
+variant (comptime-generic). TODO → buildMainMenu Continue availability
+checked off.

@@ -607,10 +607,12 @@ pub fn handleIdleInput(
                 .open_editor => event_handlers.pushPlayerAction(current, .{ .open_editor = .{
                     .mission_path = "data/campaigns/main_campaign/missions/beginnings",
                 } }, allocator),
-                // continue_game / load_save need an autosave path + file picker,
-                // and open_settings / open_credits need their screens. Wired
-                // when those land (Continue isn't even shown on a fresh start).
-                .continue_game, .load_save, .open_settings, .open_credits => {},
+                // Continue: resume the last game. Two branches in the handler
+                // (populated PlayerData → resume from memory; empty → load the
+                // autosave first). load_save needs a file picker; open_settings /
+                // open_credits need their screens — wired when those land.
+                .continue_game => event_handlers.pushPlayerAction(current, .player_continue, allocator),
+                .load_save, .open_settings, .open_credits => {},
                 else => {},
             }
         }
