@@ -1184,6 +1184,51 @@ the campaign.
   level; the event stack is cleared on screen transition). Prefer fail-fast
   over silently returning, which would hide the logic bug the unwrap catches
 
+### Modal overlays (pause + shield pattern)
+
+Full-screen modal overlays — the options menu, the error popup, the
+mission-fail overlay, the mission-complete overlay — share a structure:
+`view()` builds them when a condition is true (a SessionState flag, a
+GameState field, or `pending_error`), the full-screen 9-slice panel is
+`blocks_input: true` so `hitTest` shields the UI behind it, and the overlay
+buttons carry `Action`s that dispatch via `handleAnytimeInput` (before any
+`update()` gate) so they work while the world is paused.
+
+**Two rules, learned the hard way:**
+
+1. **Don't gate `update()` before `processEvent` when the trigger is set
+   inside an event handler.** The options menu and error popup gate
+   `update()` at the top (return early before `processEvent`) — that's safe
+   because their triggers are set OUTSIDE the event drain: the options toggle
+   is in `handleAnytimeInput` (before the gate), and `pending_error` exits
+   the drain via the `load_error` break (not via the gate). The mission
+   overlays are different: their triggers are set INSIDE a handler
+   (`end_level` sets `last_completed_mission`; the `attack` handler sets
+   `player.health == 0` and pushes `death`). A top-of-`update()` gate would
+   block the remaining cascade events from draining — the player gets stuck
+   mid-transition, and the unprocessed event keeps `event_stack.len > 0` so
+   the render gate's `drain_in_progress` skips `view()` entirely (no overlay,
+   no sound). The mission overlays DON'T gate `update()`; they rely on the
+   `blocks_input` panel + idle-input self-gating (idle input only runs in
+   player turn phases; a dead player or a just-completed mission isn't in
+   one). If a future modal's trigger is set inside a handler, don't gate —
+   or gate only the idle-input/drag branch, not `processEvent`.
+
+2. **Derive modal overlays from undoable state when possible, so undo/redo
+   handles them naturally.** mission_fail derives from
+   `level.entities[0].current_health == 0` (GameState) — undo restores
+   health, the overlay vanishes. mission_complete derives from
+   `last_completed_mission: ?MissionCompleteInfo` (GameState field, on the
+   undo timeline) — the info rides the `end_level → end_mission → start_hub`
+   cascade as an optional field on those events; `start_hub` sets the
+   GameState field; Continue pushes a `dismiss_mission_complete` event that
+   clears it (on the timeline — undo re-shows, redo dismisses). Both fall
+   out of undo/redo without special-case cleanup. Contrast: a SessionState
+   flag (off the timeline) survives undo and needs manual clearing — that
+   was the first mission_complete implementation, and the overlay stayed
+   open on undo. Prefer the GameState-derived approach when the trigger is
+   already in undoable state.
+
 ### Level Editor (building blocks implemented; UI pending)
 
 A custom-mission editor. A mission is multiple sequential levels, so the
