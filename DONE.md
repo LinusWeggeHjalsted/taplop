@@ -4490,3 +4490,11 @@ Three issues with the utility-skill drag (landed last commit):
 so view + builder code can compare refs without a duplicate. `slotRefsEqual`
 is now a thin wrapper (kept for the input-handler call sites);
 `dragToOrchestrator`'s same-slot guard calls `SlotRef.eql` directly.
+
+**Bugfix — weapon skills vanished during a utility drag:** the
+`is_drag_source` check used `src.eql(drag_ref orelse return)`, and the
+`orelse return` escaped `emitSkillButton` entirely — so when a utility drag
+was active (`drag_source` set) and a weapon slot was emitted (`drag_ref`
+null), the function bailed early and slots 1-3 disappeared. A ref-less slot
+can never be the drag source, so the check now resolves to `false` when
+either side is null (a two-line `blk:` instead of the `orelse return` trap).

@@ -1786,7 +1786,12 @@ fn emitSkillButton(
 ) !void {
     const skill_id = player.skillInSlot(slot, weapon_type_definitions);
     const definition = if (skill_id) |id| lookups.getSkillDefinition(id) else null;
-    const is_drag_source = if (drag_source) |src| src.eql(drag_ref orelse return) else false;
+    const is_drag_source = blk: {
+        // A ref-less slot (weapon skill) can never be the drag source.
+        const ref = drag_ref orelse break :blk false;
+        const src = drag_source orelse break :blk false;
+        break :blk src.eql(ref);
+    };
 
     // Empty, or the drag source (skill is "in flight"): render the diamond
     // marker. For a reorderable utility slot this is a `.slot` carrying the
