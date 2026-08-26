@@ -4308,3 +4308,26 @@ tome branch so the learn-vs-salvage decision is testable. `slotRefsEqual`
 
 **Tests:** `dragToOrchestrator` mapping (replaces the old `dragToEvent`
 test), `resolveItemClick` modifier precedence + double-click, `isSkillLearned`.
+
+### Inventory item tooltips slice (DONE)
+
+Item-specific tooltips on inventory slots, reusing the existing tooltip
+framework (`Tooltip`/`spanRow`/`buildTooltip`).
+
+- **`buildItemTooltip(item, learned_skills)`** (`ui.zig`, `pub`):
+  - **weapon:** header = name; body = weapon type name + "Damage {n}".
+  - **other gear:** header = name; body = item type name + one row per
+    stat ("Health {n}", "Defense {n}", "Spell Damage {n}", "Damage {n}",
+    "Pickup Radius {n}", "Speed {n}" — only the stats the gear type carries).
+  - **skill tome:** header = "{Skill Name} Tome"; body = "Activate to learn
+    {Skill Name}" if not learned, "Already learned" if learned. The learned
+    check reads `player_data.learned_skills` (passed through from `view()`).
+- **Helpers:** `weaponTypeName` / `itemTypeName` for display names. The
+  skill name comes from `lookups.getSkillDefinition(tome.skill).name`.
+- **Wiring:** the tooltip rides on the `Slot` frame (the blocking surface
+  that wins `tooltipAt` — the item `Image` on top is non-blocking, so
+  `tooltipAt` falls through to the Slot). Empty slots get no tooltip.
+  `buildInventoryPanel` now takes `learned_skills`; `buildMiddlePanels`
+  (view.zig) threads it from `current_state.player_data.learned_skills`.
+- **Tests:** weapon (name/type/damage), coat (name/type/health/defense),
+  tome not-learned (learn prompt), tome already-learned (learned line).

@@ -1285,6 +1285,143 @@ fn skillTypeName(skill_type: types.SkillType) []const u8 {
     };
 }
 
+/// Display name for a weapon type (e.g. .sword -> "Sword").
+fn weaponTypeName(weapon_type: types.WeaponType) []const u8 {
+    return switch (weapon_type) {
+        .sword => "Sword",
+        .shield => "Shield",
+        .spear => "Spear",
+        .dagger => "Dagger",
+        .axe => "Axe",
+        .staff => "Staff",
+    };
+}
+
+/// Display name for an item type (e.g. .amulet -> "Amulet"). Weapons are
+/// handled by `weaponTypeName` (they carry a sub-type).
+fn itemTypeName(item: types.Item) []const u8 {
+    return switch (item) {
+        .weapon => |w| weaponTypeName(w.weapon_type),
+        .amulet => "Amulet",
+        .coat => "Coat",
+        .gloves => "Gloves",
+        .pants => "Pants",
+        .boots => "Boots",
+        .skill_tome => "Skill Tome",
+    };
+}
+
+/// Build an inventory item tooltip. Weapons show name + weapon type +
+/// damage; other gear shows name + item type + each stat; skill tomes show
+/// the skill name + learned/learn-prompt. `learned_skills` is the player's
+/// current learned-skill set (for the tome line).
+pub fn buildItemTooltip(
+    allocator: std.mem.Allocator,
+    item: types.Item,
+    learned_skills: []const types.SkillId,
+) !Tooltip {
+    switch (item) {
+        .weapon => |weapon| {
+            var body: std.ArrayList(TooltipRow) = .empty;
+            try body.append(allocator, try spanRow(allocator, text(weaponTypeName(weapon.weapon_type))));
+            const damage_line = try std.fmt.allocPrint(allocator, "Damage {d}", .{weapon.weapon_damage});
+            try body.append(allocator, try spanRow(allocator, text(damage_line)));
+            return .{
+                .header = try spanRow(allocator, text(weapon.name)),
+                .body = try body.toOwnedSlice(allocator),
+            };
+        },
+        .amulet => |amulet| {
+            var body: std.ArrayList(TooltipRow) = .empty;
+            try body.append(allocator, try spanRow(allocator, text("Amulet")));
+            const line = try std.fmt.allocPrint(allocator, "Spell Damage {d}", .{amulet.spell_damage});
+            try body.append(allocator, try spanRow(allocator, text(line)));
+            return .{
+                .header = try spanRow(allocator, text(amulet.name)),
+                .body = try body.toOwnedSlice(allocator),
+            };
+        },
+        .coat => |coat| {
+            var body: std.ArrayList(TooltipRow) = .empty;
+            try body.append(allocator, try spanRow(allocator, text("Coat")));
+            const health = try std.fmt.allocPrint(allocator, "Health {d}", .{coat.health_bonus});
+            try body.append(allocator, try spanRow(allocator, text(health)));
+            const defense = try std.fmt.allocPrint(allocator, "Defense {d}", .{coat.defense_bonus});
+            try body.append(allocator, try spanRow(allocator, text(defense)));
+            return .{
+                .header = try spanRow(allocator, text(coat.name)),
+                .body = try body.toOwnedSlice(allocator),
+            };
+        },
+        .gloves => |gloves| {
+            var body: std.ArrayList(TooltipRow) = .empty;
+            try body.append(allocator, try spanRow(allocator, text("Gloves")));
+            const health = try std.fmt.allocPrint(allocator, "Health {d}", .{gloves.health_bonus});
+            try body.append(allocator, try spanRow(allocator, text(health)));
+            const damage = try std.fmt.allocPrint(allocator, "Damage {d}", .{gloves.damage_bonus});
+            try body.append(allocator, try spanRow(allocator, text(damage)));
+            return .{
+                .header = try spanRow(allocator, text(gloves.name)),
+                .body = try body.toOwnedSlice(allocator),
+            };
+        },
+        .pants => |pants| {
+            var body: std.ArrayList(TooltipRow) = .empty;
+            try body.append(allocator, try spanRow(allocator, text("Pants")));
+            const health = try std.fmt.allocPrint(allocator, "Health {d}", .{pants.health_bonus});
+            try body.append(allocator, try spanRow(allocator, text(health)));
+            const pickup = try std.fmt.allocPrint(allocator, "Pickup Radius {d}", .{pants.pickup_radius_bonus});
+            try body.append(allocator, try spanRow(allocator, text(pickup)));
+            return .{
+                .header = try spanRow(allocator, text(pants.name)),
+                .body = try body.toOwnedSlice(allocator),
+            };
+        },
+        .boots => |boots| {
+            var body: std.ArrayList(TooltipRow) = .empty;
+            try body.append(allocator, try spanRow(allocator, text("Boots")));
+            const health = try std.fmt.allocPrint(allocator, "Health {d}", .{boots.health_bonus});
+            try body.append(allocator, try spanRow(allocator, text(health)));
+            const speed = try std.fmt.allocPrint(allocator, "Speed {d}", .{boots.speed_bonus});
+            try body.append(allocator, try spanRow(allocator, text(speed)));
+            return .{
+                .header = try spanRow(allocator, text(boots.name)),
+                .body = try body.toOwnedSlice(allocator),
+            };
+        },
+        .skill_tome => |tome| {
+            const definition = lookups.getSkillDefinition(tome.skill) orelse {
+                // Unknown skill id (shouldn't happen for shipped content);
+                // show a minimal fallback so the slot isn't tooltip-less.
+                return .{
+                    .header = try spanRow(allocator, text("Skill Tome")),
+                    .body = &.{},
+                };
+            };
+            const header_text = try std.fmt.allocPrint(allocator, "{s} Tome", .{definition.name});
+            const already_learned = isSkillLearnedIn(learned_skills, tome.skill);
+            const body_text = if (already_learned)
+                "Already learned"
+            else
+                try std.fmt.allocPrint(allocator, "Activate to learn {s}", .{definition.name});
+            return .{
+                .header = try spanRow(allocator, text(header_text)),
+                .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(body_text))}),
+            };
+        },
+    }
+}
+
+/// Whether `skill_id` is in `learned_skills`. The event_handlers version
+/// (`isSkillLearned`) takes the same args; this local copy keeps the tooltip
+/// builder self-contained (ui.zig doesn't import event_handlers).
+fn isSkillLearnedIn(learned_skills: []const types.SkillId, skill_id: types.SkillId) bool {
+    for (learned_skills) |learned| {
+        if (learned == skill_id) return true;
+    }
+    return false;
+}
+
 /// Build the standard skill tooltip:
 ///   name (header)
 ///   description
@@ -1329,6 +1466,52 @@ test "buildSkillTooltip lays out name, description, type, then non-null vars" {
     try std.testing.expectEqualStrings("Weapon Skill", tooltip.body[1][0].text);
     try std.testing.expectEqualStrings("Range 1", tooltip.body[2][0].text);
 }
+
+test "buildItemTooltip: weapon shows name, type, damage" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const weapon = types.Item{ .weapon = .{ .name = "Iron Sword", .weapon_type = .sword, .weapon_damage = 5 } };
+    const tooltip = try buildItemTooltip(arena.allocator(), weapon, &.{});
+    try std.testing.expectEqualStrings("Iron Sword", tooltip.header.?[0].text);
+    try std.testing.expectEqual(@as(usize, 2), tooltip.body.len);
+    try std.testing.expectEqualStrings("Sword", tooltip.body[0][0].text);
+    try std.testing.expectEqualStrings("Damage 5", tooltip.body[1][0].text);
+}
+
+test "buildItemTooltip: coat shows name, type, health, defense" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const coat = types.Item{ .coat = .{ .name = "Leather Coat", .health_bonus = 3, .defense_bonus = 2 } };
+    const tooltip = try buildItemTooltip(arena.allocator(), coat, &.{});
+    try std.testing.expectEqualStrings("Leather Coat", tooltip.header.?[0].text);
+    try std.testing.expectEqual(@as(usize, 3), tooltip.body.len);
+    try std.testing.expectEqualStrings("Coat", tooltip.body[0][0].text);
+    try std.testing.expectEqualStrings("Health 3", tooltip.body[1][0].text);
+    try std.testing.expectEqualStrings("Defense 2", tooltip.body[2][0].text);
+}
+
+test "buildItemTooltip: skill tome not learned shows learn prompt" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const tome = types.Item{ .skill_tome = .{ .skill = .slice, .value = 5 } };
+    const learned = [_]types.SkillId{};
+    const tooltip = try buildItemTooltip(arena.allocator(), tome, &learned);
+    try std.testing.expectEqualStrings("Slice Tome", tooltip.header.?[0].text);
+    try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
+    try std.testing.expectEqualStrings("Activate to learn Slice", tooltip.body[0][0].text);
+}
+
+test "buildItemTooltip: skill tome already learned shows learned line" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const tome = types.Item{ .skill_tome = .{ .skill = .slice, .value = 5 } };
+    const learned = [_]types.SkillId{.slice};
+    const tooltip = try buildItemTooltip(arena.allocator(), tome, &learned);
+    try std.testing.expectEqualStrings("Slice Tome", tooltip.header.?[0].text);
+    try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
+    try std.testing.expectEqualStrings("Already learned", tooltip.body[0][0].text);
+}
+
 
 test "wrapRow breaks at spaces and drops the break space" {
     const font_size: i32 = 100; // 1 char = 55px (50 advance + 5 spacing)
@@ -1904,6 +2087,7 @@ pub fn buildInventoryPanel(
     bounds: Rectangle,
     inventory: types.Inventory,
     materials: types.Materials,
+    learned_skills: []const types.SkillId,
     active_theme: types.ActiveColorTheme,
 ) !void {
     // Solid panel background — blocks input through the panel area.
@@ -1933,12 +2117,22 @@ pub fn buildInventoryPanel(
         const cell = grid.cell(index);
         // Slot frame. Carries the slot identity so press/click handlers
         // can resolve which slot was acted on (drag/drop + click intents).
+        // When the slot holds an item, the tooltip rides on the frame: the
+        // item Image on top is non-blocking, so `tooltipAt` falls through to
+        // the Slot beneath (the blocking surface) — one tooltip target per
+        // slot.
+        const occupied_slot = inventory.slots[@intCast(index)];
+        const slot_tooltip: ?Tooltip = if (occupied_slot) |item|
+            try buildItemTooltip(allocator, item, learned_skills)
+        else
+            null;
         try elements.append(allocator, .{ .slot = .{
             .screen_position = cell.position(),
             .size = inventory_slot_size,
             .icon_sprite_id = "ui/item_slot",
             .icon_color = slot_color,
             .ref = .{ .inventory = @intCast(index) },
+            .tooltip = slot_tooltip,
         } });
         // Item icon on top of the frame. Passes hover/click through to the
         // slot beneath so the slot stays the single interaction target.

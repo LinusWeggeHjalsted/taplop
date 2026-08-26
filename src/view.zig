@@ -437,6 +437,7 @@ fn buildMiddlePanels(
                     bounds,
                     inventory,
                     current_state.player_data.materials,
+                    current_state.player_data.learned_skills,
                     active_theme,
                 );
                 break :blk ui.inventory_panel_width;
