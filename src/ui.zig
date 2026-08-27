@@ -2193,6 +2193,8 @@ const MaterialEntry = struct {
     sprite_id: []const u8,
     count: u32,
     color_index: u32,
+    /// Display name for the tooltip (e.g. "Wood").
+    name: []const u8,
 };
 
 /// Build the inventory panel into `bounds`: a 9-slice background, an 8×12
@@ -2398,27 +2400,29 @@ pub fn buildInventoryPanel(
     const grid_top = origin.y + ui_gap;
     const grid_bottom = grid_top + types.inventory_rows * inventory_slot_size;
     const material_entries = [_]MaterialEntry{
-        .{ .sprite_id = "ui/material_wood", .count = materials.wood, .color_index = 5 },
-        .{ .sprite_id = "ui/material_metal", .count = materials.metal, .color_index = 2 },
-        .{ .sprite_id = "ui/material_leather", .count = materials.leather, .color_index = 5 },
-        .{ .sprite_id = "ui/material_cloth", .count = materials.cloth, .color_index = 2 },
-        .{ .sprite_id = "ui/material_knowledge", .count = materials.knowledge, .color_index = 0 },
+        .{ .sprite_id = "ui/material_wood", .count = materials.wood, .color_index = 5, .name = "Wood" },
+        .{ .sprite_id = "ui/material_metal", .count = materials.metal, .color_index = 2, .name = "Metal" },
+        .{ .sprite_id = "ui/material_leather", .count = materials.leather, .color_index = 5, .name = "Leather" },
+        .{ .sprite_id = "ui/material_cloth", .count = materials.cloth, .color_index = 2, .name = "Cloth" },
+        .{ .sprite_id = "ui/material_knowledge", .count = materials.knowledge, .color_index = 0, .name = "Knowledge" },
     };
     const stack_height = @as(i32, material_entries.len) * inventory_slot_size;
     var icon_top = grid_bottom - stack_height;
     for (material_entries) |entry| {
         const icon_pos = ScreenPosition{ .x = sidebar_x, .y = icon_top };
         const icon_color = p[@min(entry.color_index, types.gradient_color_count - 1)];
+        const tooltip_text = try std.fmt.allocPrint(allocator, "{d} {s}", .{ entry.count, entry.name });
         try elements.append(allocator, .{ .image = .{
             .sprite_id = entry.sprite_id,
             .screen_position = icon_pos,
             .width = inventory_slot_size,
             .height = inventory_slot_size,
             .color = icon_color,
-            .blocks_input = false,
+            .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
         } });
         // Count label: bottom-right corner of the icon, outlined for
-        // readability over the icon art.
+        // readability over the icon art. Passes hover through to the icon
+        // so the icon's tooltip is the single target.
         const count_text = try std.fmt.allocPrint(allocator, "{d}", .{entry.count});
         const label_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
         try elements.append(allocator, .{ .text_label = .{
@@ -3125,23 +3129,24 @@ pub fn buildMissionComplete(
         .blocks_input = false,
     } });
     const material_entries = [_]MaterialEntry{
-        .{ .sprite_id = "ui/material_wood", .count = info.harvested_materials.wood, .color_index = 5 },
-        .{ .sprite_id = "ui/material_metal", .count = info.harvested_materials.metal, .color_index = 2 },
-        .{ .sprite_id = "ui/material_leather", .count = info.harvested_materials.leather, .color_index = 5 },
-        .{ .sprite_id = "ui/material_cloth", .count = info.harvested_materials.cloth, .color_index = 2 },
-        .{ .sprite_id = "ui/material_knowledge", .count = info.harvested_materials.knowledge, .color_index = 0 },
+        .{ .sprite_id = "ui/material_wood", .count = info.harvested_materials.wood, .color_index = 5, .name = "Wood" },
+        .{ .sprite_id = "ui/material_metal", .count = info.harvested_materials.metal, .color_index = 2, .name = "Metal" },
+        .{ .sprite_id = "ui/material_leather", .count = info.harvested_materials.leather, .color_index = 5, .name = "Leather" },
+        .{ .sprite_id = "ui/material_cloth", .count = info.harvested_materials.cloth, .color_index = 2, .name = "Cloth" },
+        .{ .sprite_id = "ui/material_knowledge", .count = info.harvested_materials.knowledge, .color_index = 0, .name = "Knowledge" },
     };
     var icon_top = content_y + harvest_header_font_size + ui_gap * 2;
     for (material_entries) |entry| {
         const icon_x = material_right - inventory_slot_size;
         const icon_color = p[@min(entry.color_index, types.gradient_color_count - 1)];
+        const tooltip_text = try std.fmt.allocPrint(allocator, "{d} {s}", .{ entry.count, entry.name });
         try elements.append(allocator, .{ .image = .{
             .sprite_id = entry.sprite_id,
             .screen_position = .{ .x = icon_x, .y = icon_top },
             .width = inventory_slot_size,
             .height = inventory_slot_size,
             .color = icon_color,
-            .blocks_input = false,
+            .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
         } });
         const count_text = try std.fmt.allocPrint(allocator, "{d}", .{entry.count});
         const label_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
