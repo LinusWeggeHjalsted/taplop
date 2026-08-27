@@ -262,7 +262,12 @@ Open:
   PlayerData is populated OR an autosave exists; clicking it resumes (loads
   the autosave on a fresh launch, resumes from memory mid-session). See
   DONE.md (Autosave).
-- buildMissionComplete: statistics, clone rewards, continue/retry.
+- buildMissionComplete: statistics, clone rewards, continue/retry. Clone
+  system core DONE (uuid keying, pickup accumulator, save_clone_info,
+  harvest_clones, end_level wiring) — see DESIGN → Clones (clone system).
+  Remaining: panel stats display + conditional "Overwrite Clone" button +
+  `player_overwrite_clone` orchestrator (Slice 3, waiting on user's panel
+  design).
 - buildMissionFail: header text, exit/retry buttons.
 - Middle section horizontal scroll when panels exceed width.
 - Add icon_sprite_id to Skill, Item, and Effect definitions (bottom bar
@@ -459,8 +464,8 @@ Logging follow-ups (open):
   not a flag or Screen variant. See DONE.md.
 - mission_complete screen DONE — SessionState flag set by end_level on last-
   level completion; overlay renders in the hub post-transition. Header +
-  Continue + Replay Mission. Stats / leaderboard / clone rewards deferred.
-  See DONE.md.
+  Continue + Replay Mission. Clone system core DONE (see DESIGN → Clones);
+  stats display + Overwrite Clone button deferred (Slice 3). See DONE.md.
 - New Screen variants and transition events.
 - Quit-to-menu and death/mission-fail exits MUST route through end_level /
   end_hub so entity changes persist into PlayerData (see DESIGN →

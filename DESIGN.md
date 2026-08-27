@@ -1184,6 +1184,84 @@ the campaign.
   backend. The client only needs a thin HTTP fetch/submit seam + an auth
   token stored in the persistent dir.
 
+## Clones (clone system)
+
+A **clone** is a per-mission record saved to `PlayerData.clones` on mission
+completion. It captures how efficiently the run converted pickups into
+materials: `materials_collected` (the summed salvage value of every item the
+PLAYER picked up during the mission — counted at pickup time, regardless of
+whether the item was later salvaged, equipped, or kept) over `turns_to_complete`
+(`Mission.turns_spent`). Future completions of ANY mission **harvest** from all
+saved clones, paying out `rate * turns_spent` per material where
+`rate = clone.materials_collected / clone.turns_to_complete` (integer division).
+So a clone is a permanent, compounding material factory keyed by mission.
+
+- **Keying.** Clones are keyed by `mission_uuid` (see Custom Missions & Online
+  Services → Content identity) — NOT by mission name (names can be duplicated
+  across custom missions or renamed). `Clone.mission_uuid` is the identity;
+  `Clone.name` is a denormalized display label carried for a future clones-list
+  UI that renders without re-reading mission files.
+
+- **Pickup accumulator.** `pickup_items` adds `computeSalvageValue(item,` 
+  `salvage_definitions)` to `Mission.converted_materials_collected` for each item
+  the player (entity_index 0) actually places into inventory. Leftovers that
+  don't fit stay on the ground and don't count. Non-player pickups don't
+  accumulate. The salvage value is measured at pickup, independent of what the
+  player later does with the item — keeping it still counts toward the clone's
+  rate (the rate is "how efficiently did this run convert pickups into
+  materials," not "how much did the player salvage"). The actual
+  `salvage_item` event still adds materials to `player_data.materials`
+  separately (unchanged).
+
+- **Completion flow** (in `end_level`'s last-level `.default` branch, after
+  the completion sound, before the trailing `end_mission` push):
+  1. Read `mission.{uuid, name, turns_spent, converted_materials_collected}`.
+  2. Find an existing clone by uuid. Compute `cloneIsStrictlyBetter` (Pareto:
+     `new_rate >= old_rate` for all 5 materials AND `>` for at least one).
+     Tied-zero materials (a mission that gives no cloth in either run) don't
+     block — `0 >= 0` passes, and `0 > 0` is false so it isn't the strict gain,
+     but a gain on any nonzero material makes the run strictly better.
+  3. Gate the whole block on `turns_spent > 0` (div-by-zero guard for dev
+     skip-through via `player_skip_level`).
+  4. **Harvest** (`harvest_clones` SuperEvent): sum over ALL existing clones,
+     per material `rate * turns_spent`, add to `player_data.materials`. The
+     just-completed mission's new/updated clone does NOT contribute to THIS
+     run's harvest (it pays out on future completions) — harvest runs before
+     `save_clone_info` (LIFO).
+  5. **Auto-save clone** (`save_clone_info` SuperEvent): if no existing clone
+     OR strictly better, replace/append. Otherwise set
+     `MissionCompleteInfo.overwrite_offered = true` and DON'T auto-save — the
+     overlay offers a manual "Overwrite Clone" button (Slice 3, UI).
+  6. `MissionCompleteInfo` carries `{uuid, name, path, turns_spent,
+     converted_materials, overwrite_offered}` so the hub-side overlay + the
+     manual-overwrite orchestrator can reconstruct `save_clone_info` from the
+     timeline info alone — the `Mission` is gone by the time the overlay
+     renders in the hub.
+
+- **LIFO push order.** The trailing push block (shared across all level-exit
+  continuations) builds the exit-event array as `[write_save, save_clone_info?,
+  harvest_clones?, build_data_from_player]` so execution order is
+  `build_data_from_player -> harvest_clones -> save_clone_info -> write_save`,
+  then `end_mission` (pushed earlier in the `.default` branch) runs last.
+  Harvest reads the OLD clones (before save_clone_info replaces/append);
+  write_save persists the post-harvest, post-clone-save PlayerData. The
+  harvest/save events are only pushed on `.default` last-level completion
+  (not restart/exit/abandon).
+
+- **Replay safety.** `save_clone_info` + `harvest_clones` are SuperEvents
+  (machinery, handler-pushed), never whitelisted in `isPlayerAction` (a replay
+  log can't seed them at an idle point). They're pure state transforms
+  (`PlayerData` mutation) reproduced on replay — no side-effect gating needed
+  (no file writes / sound / anim at the handler site; the `write_save` that
+  persists the result is separately gated `!replaying`).
+
+- **Known limitation: integer division rounding.** `rate = materials / turns`
+  truncates, so a clone with 10 wood / 3 turns has rate 3 (not 3.33). A
+  4-turn completion harvests `3 * 4 = 12` wood, not 13.33. Accepted: all
+  gameplay logic uses integers (AGENTS → Code Style); the loss is bounded
+  (≤ turns-1 per material per clone) and the alternative (fixed-point rates)
+  adds complexity for negligible gain.
+
 ## Architecture
 
 - Elm-like: main (init), update (state transform), view (render)

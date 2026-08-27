@@ -153,6 +153,7 @@ pub fn writePlayerSave(
     // CloneData
     try buffer.appendSlice(allocator, "\nCloneData\n");
     for (player_data.clones, 0..) |clone, index| {
+        try buffer.print(allocator, "mission_uuid {s}\n", .{clone.mission_uuid});
         try buffer.print(allocator, "clone_name {s}\n", .{clone.name});
         try buffer.print(allocator, "wood {d}\n", .{clone.materials_collected.wood});
         try buffer.print(allocator, "metal {d}\n", .{clone.materials_collected.metal});
@@ -359,6 +360,7 @@ test "writePlayerSave round-trips through loadPlayerSave" {
         // and loader preserve slot positions instead of compacting.
         .equipped_utility_skills = .{ .replenish, null, .slice, null, null },
         .clones = &.{.{
+            .mission_uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             .name = "Test Clone",
             .turns_to_complete = 25,
             .materials_collected = .{
@@ -453,6 +455,7 @@ test "writePlayerSave round-trips through loadPlayerSave" {
 
     // Clones
     try std.testing.expectEqual(1, loaded.clones.len);
+    try std.testing.expectEqualStrings("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", loaded.clones[0].mission_uuid);
     try std.testing.expectEqualStrings("Test Clone", loaded.clones[0].name);
     try std.testing.expectEqual(25, loaded.clones[0].turns_to_complete);
     try std.testing.expectEqual(5, loaded.clones[0].materials_collected.wood);

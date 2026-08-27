@@ -449,6 +449,36 @@ fn getLevelEntity(
     @panic("getLevelEntity called with no level");
 }
 
+/// Compare a just-completed run against an existing clone, per-material, on
+/// the per-turn rate (materials / turns). Pareto-strict: the new run is
+/// "strictly better" when its rate is `>=` the old rate for ALL materials
+/// AND `>` for at least one nonzero material. Tied-zero materials (a
+/// mission that gives no cloth in either run) don't block the comparison.
+/// Both turns values must be > 0 (the caller gates on that — see end_level).
+/// See DESIGN → Clones (clone system).
+pub fn cloneIsStrictlyBetter(
+    new_turns: u32,
+    new_materials: types.Materials,
+    old_turns: u32,
+    old_materials: types.Materials,
+) bool {
+    const fields = .{
+        .{ new_materials.wood, old_materials.wood },
+        .{ new_materials.metal, old_materials.metal },
+        .{ new_materials.leather, old_materials.leather },
+        .{ new_materials.cloth, old_materials.cloth },
+        .{ new_materials.knowledge, old_materials.knowledge },
+    };
+    var has_strict_gain = false;
+    inline for (fields) |pair| {
+        const new_rate = pair[0] / new_turns;
+        const old_rate = pair[1] / old_turns;
+        if (new_rate < old_rate) return false;
+        if (new_rate > old_rate) has_strict_gain = true;
+    }
+    return has_strict_gain;
+}
+
 /// event for player_data.current_hub.
 fn loadCampaignAndPushHub(
     current: *GameState,
@@ -1379,6 +1409,18 @@ pub fn processEvent(
                         }
                         return;
                     }
+                    // Clone-system scratch locals, populated by the .default
+                    // last-level branch below and consumed by the trailing
+                    // push block (LIFO: harvest → save → write_save run before
+                    // the end_mission/start_mission already pushed). See DESIGN
+                    // → Clones (clone system).
+                    var clone_harvest_turns: ?u32 = null;
+                    var clone_save_info: ?struct {
+                        mission_uuid: []const u8,
+                        mission_name: []const u8,
+                        total_turns: u32,
+                        total_materials: types.Materials,
+                    } = null;
                     switch (end.continuation) {
                         .default => {
                             if (current.mission) |mission| {
@@ -1399,12 +1441,54 @@ pub fn processEvent(
                                     if (!history.replaying) {
                                         history.session.queueSound(history.backing_allocator, .mission_completion);
                                     }
+                                    // Clone decision: harvest from all old
+                                    // clones, then auto-save a clone for this
+                                    // mission on first completion or a
+                                    // strictly-better run (Pareto per-material
+                                    // rate). Otherwise flag the overlay to
+                                    // offer a manual overwrite button. See
+                                    // DESIGN → Clones (clone system).
+                                    const turns = mission.turns_spent;
+                                    const converted = mission.converted_materials_collected;
+                                    var existing_clone: ?types.Clone = null;
+                                    for (current.player_data.clones) |clone| {
+                                        if (std.mem.eql(u8, clone.mission_uuid, mission.uuid)) {
+                                            existing_clone = clone;
+                                            break;
+                                        }
+                                    }
+                                    var overwrite_offered = false;
+                                    if (turns > 0) {
+                                        clone_harvest_turns = turns;
+                                        if (existing_clone) |old| {
+                                            if (cloneIsStrictlyBetter(turns, converted, old.turns_to_complete, old.materials_collected)) {
+                                                clone_save_info = .{
+                                                    .mission_uuid = mission.uuid,
+                                                    .mission_name = mission.name,
+                                                    .total_turns = turns,
+                                                    .total_materials = converted,
+                                                };
+                                            } else {
+                                                overwrite_offered = true;
+                                            }
+                                        } else {
+                                            clone_save_info = .{
+                                                .mission_uuid = mission.uuid,
+                                                .mission_name = mission.name,
+                                                .total_turns = turns,
+                                                .total_materials = converted,
+                                            };
+                                        }
+                                    }
                                     pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
                                         .hub_id = mission.end_hub,
                                         .completed_mission = .{
                                             .uuid = mission.uuid,
                                             .name = mission.name,
                                             .path = mission.path,
+                                            .turns_spent = turns,
+                                            .converted_materials = converted,
+                                            .overwrite_offered = overwrite_offered,
                                         },
                                     } } }}, allocator);
                                 }
@@ -1450,12 +1534,36 @@ pub fn processEvent(
                     // this push, so playtest/validate never autosave (discard
                     // semantics — the real PlayerData is unchanged). See DESIGN
                     // → File System & IO (autosave).
-                    pushEvents(current, &.{
-                        .{ .meta_event = .{ .write_save = .{ .save_path = writers.autosave_path } } },
-                        .{ .super_event = .{ .build_data_from_player = .{
-                            .entity_index = 0,
-                        } } },
-                    }, allocator);
+                    //
+                    // On a last-level completion (.default branch above), the
+                    // clone system also injects `harvest_clones` (payout from
+                    // all old clones) and `save_clone_info` (auto-save /
+                    // auto-overwrite the clone for this mission) between the
+                    // sync and the write — LIFO array order is [write_save,
+                    // save_clone_info?, harvest_clones?, build_data_from_player]
+                    // so execution is sync → harvest → save → write. See
+                    // DESIGN → Clones (clone system).
+                    var exit_events: std.ArrayList(Event) = .empty;
+                    exit_events.append(allocator, .{ .meta_event = .{ .write_save = .{
+                        .save_path = writers.autosave_path,
+                    } } }) catch @panic("failed to append exit event");
+                    if (clone_save_info) |info| {
+                        exit_events.append(allocator, .{ .super_event = .{ .save_clone_info = .{
+                            .mission_uuid = info.mission_uuid,
+                            .mission_name = info.mission_name,
+                            .total_turns = info.total_turns,
+                            .total_materials = info.total_materials,
+                        } } }) catch @panic("failed to append save_clone_info");
+                    }
+                    if (clone_harvest_turns) |turns| {
+                        exit_events.append(allocator, .{ .super_event = .{ .harvest_clones = .{
+                            .turns_spent = turns,
+                        } } }) catch @panic("failed to append harvest_clones");
+                    }
+                    exit_events.append(allocator, .{ .super_event = .{ .build_data_from_player = .{
+                        .entity_index = 0,
+                    } } }) catch @panic("failed to append build_data_from_player");
+                    pushEvents(current, exit_events.items, allocator);
                 },
                 .wait => |wait_event| {
                     // Begin a real-time pause; update() drains it as frames
@@ -1512,7 +1620,61 @@ pub fn processEvent(
                     player_data.equipped_utility_skills = player_entity.equipped_utility_skills;
                     player_data.inventory = player_entity.inventory;
                 },
-                .save_clone_info => {},
+                .save_clone_info => |info| {
+                    // Replace the existing clone for this mission (matched by
+                    // uuid), else append. The clone records the run's
+                    // per-turn material conversion rate (materials_collected
+                    // / turns_to_complete) so future completions can harvest
+                    // from it. See DESIGN → Clones (clone system).
+                    var rebuilt: std.ArrayList(types.Clone) = .empty;
+                    var replaced = false;
+                    for (current.player_data.clones) |clone| {
+                        if (std.mem.eql(u8, clone.mission_uuid, info.mission_uuid)) {
+                            rebuilt.append(allocator, .{
+                                .mission_uuid = info.mission_uuid,
+                                .name = info.mission_name,
+                                .turns_to_complete = info.total_turns,
+                                .materials_collected = info.total_materials,
+                            }) catch @panic("failed to append clone");
+                            replaced = true;
+                        } else {
+                            rebuilt.append(allocator, clone) catch @panic("failed to copy clone");
+                        }
+                    }
+                    if (!replaced) {
+                        rebuilt.append(allocator, .{
+                            .mission_uuid = info.mission_uuid,
+                            .name = info.mission_name,
+                            .turns_to_complete = info.total_turns,
+                            .materials_collected = info.total_materials,
+                        }) catch @panic("failed to append clone");
+                    }
+                    current.player_data.clones =
+                        rebuilt.toOwnedSlice(allocator) catch @panic("failed to allocate clones");
+                },
+                .harvest_clones => |harvest| {
+                    // Payout from all saved clones: per material,
+                    // `rate * turns_spent` where `rate = materials / turns`.
+                    // Gated on turns_spent > 0 at the push site, but guard
+                    // here too in case a hand-crafted replay seeds it at 0.
+                    // See DESIGN → Clones (clone system).
+                    if (harvest.turns_spent == 0) return;
+                    var payout: types.Materials = .{};
+                    for (current.player_data.clones) |clone| {
+                        if (clone.turns_to_complete == 0) continue;
+                        const new_rate = clone.materials_collected.wood / clone.turns_to_complete;
+                        payout.wood += new_rate * harvest.turns_spent;
+                        const metal_rate = clone.materials_collected.metal / clone.turns_to_complete;
+                        payout.metal += metal_rate * harvest.turns_spent;
+                        const leather_rate = clone.materials_collected.leather / clone.turns_to_complete;
+                        payout.leather += leather_rate * harvest.turns_spent;
+                        const cloth_rate = clone.materials_collected.cloth / clone.turns_to_complete;
+                        payout.cloth += cloth_rate * harvest.turns_spent;
+                        const knowledge_rate = clone.materials_collected.knowledge / clone.turns_to_complete;
+                        payout.knowledge += knowledge_rate * harvest.turns_spent;
+                    }
+                    current.player_data.materials.add(payout);
+                },
             }
         },
         .player_event => |player_event| {

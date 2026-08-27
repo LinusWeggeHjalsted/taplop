@@ -4819,3 +4819,46 @@ idle against a temp-dir FileSource seeded with a fake autosave, then scans
 for a backup file. Verified by reverting the fix (test fails — no backup
 found) and re-applying (test passes). DESIGN note updated to record the
 push-ordering constraint.
+
+## Clones (clone system)
+
+### Mission UUIDs + clone scaffolding wiring (DONE)
+
+- Added a required `uuid` field to `types.Mission`; the mission Metadata
+  whitelist + `loadMission` enforce it (`error.MissingMissionUuid`). All 4
+  shipped missions get a v4 uuid; `mission_file_format_version` bumped to 2.
+  `MissionCompleteInfo` carries `uuid` through the end_mission → start_hub
+  cascade. This is the clone key (DESIGN → Clones) and the foundation for
+  custom-mission identity (DESIGN → Custom Missions & Online Services →
+  Content identity already called for `mission_uuid` in mission.txt).
+- `pickup_items` now adds `computeSalvageValue(item, salvage_definitions)` to
+  `Mission.converted_materials_collected` for each item the player
+  (entity_index 0) actually places into inventory. Leftovers that don't fit
+  don't count; non-player pickups don't accumulate. 3 handler tests.
+- `Clone` gained `mission_uuid` (the key); `Clone.name` kept as a display
+  label. Save writer/loader emit+parse `mission_uuid` per clone group;
+  `player_save_file_format_version` bumped to 2; `data/new_player.txt` +
+  `data/autosave.txt` updated. Writer/loader tests updated.
+- `save_clone_info` SuperEvent implemented: replace-by-uuid if a clone for
+  that mission exists, else append. Payload extended with `mission_uuid`.
+- `harvest_clones` SuperEvent added + implemented: per material
+  `rate * turns_spent` summed over all existing clones, added to
+  `player_data.materials`. Gated on `turns_spent > 0` (div-by-zero guard for
+  dev skip-through). Skips clones with `turns_to_complete == 0`.
+- `cloneIsStrictlyBetter` pure helper: Pareto-strict per-material rate
+  comparison (>= for all, > for at least one). 4 table tests.
+- `end_level` last-level `.default` branch wired: computes the clone
+  decision, conditionally pushes `harvest_clones` + `save_clone_info` in the
+  trailing exit-event block (LIFO: harvest → save run before write_save, and
+  before the end_mission pushed earlier). `MissionCompleteInfo` extended with
+  `turns_spent`, `converted_materials`, `overwrite_offered` so the hub-side
+  overlay + future manual-overwrite orchestrator can reconstruct the save
+  payload from the timeline alone (the Mission is gone in the hub).
+- DESIGN → Clones (clone system) section added with the full settled design.
+- 7 new turnflow tests (cloneIsStrictlyBetter table, save_clone_info
+  append/replace/preserve-others, harvest_clones payout/zero-turns-guard/
+  zero-turns_to_complete-skip). Session-log round-trip test fixture updated
+  for the new save_clone_info payload. Total: 259 tests pass.
+
+Slice 3 (UI: conditional Overwrite Clone button + `player_overwrite_clone`
+orchestrator + stats display) deferred — waiting on the user's panel design.

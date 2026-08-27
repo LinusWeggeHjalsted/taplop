@@ -1733,6 +1733,7 @@ pub fn loadPlayerSave(
         for (section.entry_groups) |group| {
             const pairs = group.pairs;
             try clones.append(allocator, .{
+                .mission_uuid = findValue(pairs, "mission_uuid") orelse &.{},
                 .name = findValue(pairs, "clone_name") orelse &.{},
                 .turns_to_complete = asU32(findValue(pairs, "turns_to_complete") orelse "0") orelse 0,
                 .materials_collected = .{
@@ -2369,7 +2370,7 @@ test "loadPlayerSave parses a save file" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 1
+        \\file_format_version 2
         \\
         \\Info
         \\player_name Test Player
@@ -2437,6 +2438,7 @@ test "loadPlayerSave parses a save file" {
         \\slot_4 replenish
         \\
         \\CloneData
+        \\mission_uuid bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
         \\clone_name First Clone
         \\wood 10
         \\metal 20
@@ -2486,6 +2488,7 @@ test "loadPlayerSave parses a save file" {
 
     // Clone data
     try std.testing.expectEqual(1, player_data.clones.len);
+    try std.testing.expectEqualStrings("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", player_data.clones[0].mission_uuid);
     try std.testing.expectEqualStrings("First Clone", player_data.clones[0].name);
     try std.testing.expectEqual(15, player_data.clones[0].turns_to_complete);
     try std.testing.expectEqual(10, player_data.clones[0].materials_collected.wood);

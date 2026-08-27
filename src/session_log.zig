@@ -475,6 +475,7 @@ test "writeEventLog serializes representative event shapes" {
         .{ .level_event = .{ .highlight_tiles = .{ .tile_positions = &.{} } } },
         // string + Materials struct
         .{ .super_event = .{ .save_clone_info = .{
+            .mission_uuid = "uuid-1",
             .mission_name = "first_mission",
             .total_turns = 7,
             .total_materials = .{ .wood = 1, .metal = 2, .leather = 3, .cloth = 4, .knowledge = 5 },

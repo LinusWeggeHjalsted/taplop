@@ -1,5 +1,5 @@
 Metadata
-file_format_version 1
+file_format_version 2
 
 Info
 player_name New Player

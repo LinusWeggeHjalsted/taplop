@@ -643,6 +643,11 @@ pub const Inventory = struct {
 };
 
 pub const Clone = struct {
+    /// The mission this clone records (the key — see DESIGN → Custom Missions
+    /// & Online Services → Content identity). Replaces the old name-keying.
+    mission_uuid: []const u8 = &.{},
+    /// Display label (denormalized from the mission at save time so a
+    /// clones-list UI can render without re-reading mission files).
     name: []const u8 = &.{},
     turns_to_complete: u32 = 0,
     materials_collected: Materials = .{},

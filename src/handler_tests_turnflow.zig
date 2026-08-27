@@ -540,3 +540,169 @@ test "player_skip_move_to_skill: use branch fans out use + player_turn_attack(fo
     try testing.expect(stack[2].level_event == .clear_highlights); // top, runs first
     try testing.expect(stack[1].level_event.player_turn_attack.force_attack_step);
 }
+
+// ───────────────────────── clone system ─────────────────────────
+// See DESIGN → Clones (clone system). cloneIsStrictlyBetter is a pure
+// helper; save_clone_info / harvest_clones are SuperEvents pushed by the
+// end_level last-level branch (tested via direct push here).
+
+const Materials = types.Materials;
+const Clone = types.Clone;
+const SuperEvent = events.SuperEvent;
+
+fn pushSuper(history: *state.GameStateHistory, event: SuperEvent) void {
+    event_handlers.pushEvents(&history.current_state, &.{.{ .super_event = event }}, history.current_arena.allocator());
+}
+
+test "cloneIsStrictlyBetter: all rates strictly higher -> true" {
+    const new_m: Materials = .{ .wood = 20, .metal = 30, .leather = 0, .cloth = 0, .knowledge = 0 };
+    const old_m: Materials = .{ .wood = 10, .metal = 10, .leather = 0, .cloth = 0, .knowledge = 0 };
+    // 4 turns each: rates 5,7 vs 2,2 -> strict gain; zeros tie.
+    try testing.expect(event_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
+}
+
+test "cloneIsStrictlyBetter: one rate worse -> false" {
+    const new_m: Materials = .{ .wood = 20, .metal = 5, .leather = 0, .cloth = 0, .knowledge = 0 };
+    const old_m: Materials = .{ .wood = 10, .metal = 20, .leather = 0, .cloth = 0, .knowledge = 0 };
+    // 4 turns: wood 5>2 (gain), metal 1<5 (worse) -> false.
+    try testing.expect(!event_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
+}
+
+test "cloneIsStrictlyBetter: all rates equal -> false (no strict gain)" {
+    const new_m: Materials = .{ .wood = 10, .metal = 10, .leather = 0, .cloth = 0, .knowledge = 0 };
+    const old_m: Materials = .{ .wood = 10, .metal = 10, .leather = 0, .cloth = 0, .knowledge = 0 };
+    // 4 turns: all rates equal -> no strict gain -> false (offer manual overwrite).
+    try testing.expect(!event_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
+}
+
+test "cloneIsStrictlyBetter: gains on some, ties on rest -> true" {
+    const new_m: Materials = .{ .wood = 20, .metal = 10, .leather = 0, .cloth = 0, .knowledge = 0 };
+    const old_m: Materials = .{ .wood = 10, .metal = 10, .leather = 0, .cloth = 0, .knowledge = 0 };
+    // 4 turns: wood 5>2 (gain), metal 2==2 (tie), rest 0==0 -> true.
+    try testing.expect(event_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
+}
+
+test "save_clone_info: appends when no existing clone for that uuid" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    pushSuper(&history, .{ .save_clone_info = .{
+        .mission_uuid = "uuid-A",
+        .mission_name = "Mission A",
+        .total_turns = 5,
+        .total_materials = .{ .wood = 10, .metal = 0, .leather = 0, .cloth = 0, .knowledge = 0 },
+    } });
+    runToIdle(&history);
+    const clones = history.current_state.player_data.clones;
+    try testing.expectEqual(@as(usize, 1), clones.len);
+    try testing.expectEqualStrings("uuid-A", clones[0].mission_uuid);
+    try testing.expectEqualStrings("Mission A", clones[0].name);
+    try testing.expectEqual(@as(u32, 5), clones[0].turns_to_complete);
+    try testing.expectEqual(@as(u32, 10), clones[0].materials_collected.wood);
+}
+
+test "save_clone_info: replaces existing clone for the same uuid" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const pre_clones = try backing.allocator().dupe(Clone, &.{.{
+        .mission_uuid = "uuid-A",
+        .name = "Old A",
+        .turns_to_complete = 10,
+        .materials_collected = .{ .wood = 5, .metal = 0, .leather = 0, .cloth = 0, .knowledge = 0 },
+    }});
+    var history = harness.newHistory(null);
+    history.current_state.player_data.clones = pre_clones;
+    pushSuper(&history, .{ .save_clone_info = .{
+        .mission_uuid = "uuid-A",
+        .mission_name = "Mission A",
+        .total_turns = 4,
+        .total_materials = .{ .wood = 20, .metal = 0, .leather = 0, .cloth = 0, .knowledge = 0 },
+    } });
+    runToIdle(&history);
+    const clones = history.current_state.player_data.clones;
+    try testing.expectEqual(@as(usize, 1), clones.len);
+    try testing.expectEqualStrings("uuid-A", clones[0].mission_uuid);
+    try testing.expectEqualStrings("Mission A", clones[0].name);
+    try testing.expectEqual(@as(u32, 4), clones[0].turns_to_complete);
+    try testing.expectEqual(@as(u32, 20), clones[0].materials_collected.wood);
+}
+
+test "save_clone_info: leaves other clones untouched" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const pre_clones = try backing.allocator().dupe(Clone, &.{
+        .{ .mission_uuid = "uuid-A", .name = "A", .turns_to_complete = 10, .materials_collected = .{} },
+        .{ .mission_uuid = "uuid-B", .name = "B", .turns_to_complete = 20, .materials_collected = .{ .metal = 5 } },
+    });
+    var history = harness.newHistory(null);
+    history.current_state.player_data.clones = pre_clones;
+    pushSuper(&history, .{ .save_clone_info = .{
+        .mission_uuid = "uuid-A",
+        .mission_name = "A new",
+        .total_turns = 3,
+        .total_materials = .{ .wood = 9, .metal = 0, .leather = 0, .cloth = 0, .knowledge = 0 },
+    } });
+    runToIdle(&history);
+    const clones = history.current_state.player_data.clones;
+    try testing.expectEqual(@as(usize, 2), clones.len);
+    // uuid-A replaced; uuid-B preserved exactly.
+    try testing.expectEqualStrings("uuid-B", clones[1].mission_uuid);
+    try testing.expectEqual(@as(u32, 20), clones[1].turns_to_complete);
+    try testing.expectEqual(@as(u32, 5), clones[1].materials_collected.metal);
+    try testing.expectEqualStrings("uuid-A", clones[0].mission_uuid);
+    try testing.expectEqual(@as(u32, 3), clones[0].turns_to_complete);
+}
+
+test "harvest_clones: pays out rate * turns from each clone" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    // Two clones: rate wood = 10/5 = 2/turn; rate metal = 6/3 = 2/turn.
+    const pre_clones = try backing.allocator().dupe(Clone, &.{
+        .{ .mission_uuid = "u1", .name = "A", .turns_to_complete = 5, .materials_collected = .{ .wood = 10 } },
+        .{ .mission_uuid = "u2", .name = "B", .turns_to_complete = 3, .materials_collected = .{ .metal = 6 } },
+    });
+    var history = harness.newHistory(null);
+    history.current_state.player_data.clones = pre_clones;
+    pushSuper(&history, .{ .harvest_clones = .{ .turns_spent = 4 } });
+    runToIdle(&history);
+    // wood: 2*4 = 8; metal: 2*4 = 8.
+    const materials = history.current_state.player_data.materials;
+    try testing.expectEqual(@as(u32, 8), materials.wood);
+    try testing.expectEqual(@as(u32, 8), materials.metal);
+    try testing.expectEqual(@as(u32, 0), materials.leather);
+}
+
+test "harvest_clones: zero turns_spent is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const pre_clones = try backing.allocator().dupe(Clone, &.{
+        .{ .mission_uuid = "u1", .name = "A", .turns_to_complete = 5, .materials_collected = .{ .wood = 10 } },
+    });
+    var history = harness.newHistory(null);
+    history.current_state.player_data.clones = pre_clones;
+    pushSuper(&history, .{ .harvest_clones = .{ .turns_spent = 0 } });
+    runToIdle(&history);
+    const materials = history.current_state.player_data.materials;
+    try testing.expectEqual(@as(u32, 0), materials.wood);
+}
+
+test "harvest_clones: skips clones with zero turns_to_complete" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const pre_clones = try backing.allocator().dupe(Clone, &.{
+        .{ .mission_uuid = "u1", .name = "A", .turns_to_complete = 0, .materials_collected = .{ .wood = 10 } },
+        .{ .mission_uuid = "u2", .name = "B", .turns_to_complete = 5, .materials_collected = .{ .wood = 10 } },
+    });
+    var history = harness.newHistory(null);
+    history.current_state.player_data.clones = pre_clones;
+    pushSuper(&history, .{ .harvest_clones = .{ .turns_spent = 5 } });
+    runToIdle(&history);
+    // Only u2 contributes: rate 2 * 5 = 10.
+    try testing.expectEqual(@as(u32, 10), history.current_state.player_data.materials.wood);
+}

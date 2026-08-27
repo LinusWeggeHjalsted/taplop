@@ -127,9 +127,18 @@ pub const SuperEvent = union(enum) {
     },
 
     save_clone_info: struct {
+        mission_uuid: []const u8,
         mission_name: []const u8,
         total_turns: u32,
         total_materials: Materials,
+    },
+    // Harvest materials from all saved clones at mission completion. Each
+    // clone pays out `rate * turns_spent` per material, where
+    // `rate = clone.materials_collected / clone.turns_to_complete`. Gated on
+    // `turns_spent > 0` (div-by-zero guard for dev skip-through). See DESIGN
+    // → Clones (clone system).
+    harvest_clones: struct {
+        turns_spent: u32,
     },
 };
 
