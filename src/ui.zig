@@ -2933,7 +2933,6 @@ pub fn buildMissionComplete(
     } });
 
     const p = active_theme.player_gradient.colors;
-    const stat_label_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
 
     // ── Header: "{name} completed", centered at the top. ──
     const header_font_size: i32 = 128;
@@ -2944,7 +2943,6 @@ pub fn buildMissionComplete(
         .text = header_text,
         .screen_position = header_box.position(),
         .font_size = header_font_size,
-        .outlined = true,
         .blocks_input = false,
     } });
 
@@ -2964,8 +2962,6 @@ pub fn buildMissionComplete(
         .text = new_clone_label_text,
         .screen_position = .{ .x = new_clone_start_x, .y = new_clone_y + (new_clone_icon_size - new_clone_label_font_size) / 2 },
         .font_size = new_clone_label_font_size,
-        .color = stat_label_color,
-        .outlined = true,
         .blocks_input = false,
     } });
     try emitMaterialRowHorizontal(
@@ -3000,8 +2996,6 @@ pub fn buildMissionComplete(
             .text = line_text,
             .screen_position = .{ .x = stats_left, .y = stat_y },
             .font_size = stat_font_size,
-            .color = stat_label_color,
-            .outlined = true,
             .blocks_input = false,
         } });
         stat_y += stat_line_height;
@@ -3017,8 +3011,6 @@ pub fn buildMissionComplete(
         .text = harvest_header_text,
         .screen_position = .{ .x = material_right - harvest_header_width, .y = content_y },
         .font_size = harvest_header_font_size,
-        .color = stat_label_color,
-        .outlined = true,
         .blocks_input = false,
     } });
     const material_entries = [_]MaterialEntry{
