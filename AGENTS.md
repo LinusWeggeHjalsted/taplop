@@ -151,6 +151,19 @@ dump doesn't pollute the tree.
   build with `ZIG_LIB_DIR=~/.local/zig-patched-lib zig build web`. Native +
   tests use the normal zig (no env var). When 0.16.1 ships and Arch packages
   it, the patched copy becomes unnecessary.
+- WEB COMPILES ≠ WEB RUNS: `scripts/web.sh` only compiles. Runtime breakage
+  (GLSL shaders, allocator traps, init-order) is invisible until someone
+  opens the page — the web build once sat broken for 136 commits this way
+  (a `page_allocator` segfault landed with the TTF wiring and nothing
+  surfaced it; see DONE.md, "Web black screen"). When a change touches the
+  platform seam (`raylib_backend.zig`, `web.zig`, build.zig wiring, anything
+  shader- or allocation-adjacent), spend the 30 seconds: `scripts/web.sh
+  emrun` and confirm the main menu loads. Runtime web bugs can be debugged
+  WITHOUT a browser: `node zig-out/web/ziglop.js` runs the emcc output
+  headlessly — `std.debug.print` works there, so early-boot code paths
+  (anything before GL/IDBFS init) can be probed like a native CLI. That
+  technique diagnosed the 136-commit black screen entirely outside a
+  browser.
 - Test discovery is automatic: build.zig generates `src/generated_test_root.zig`
   (gitignored) importing every `src/**/*.zig`, and `addTest` uses it as root. Any
   `test` block in any src file is picked up with no manual wiring. Note this
@@ -226,6 +239,15 @@ back at the comment to update it.
   fns, types, fields). Inside a function body it's always `//` — a `///`
   there is "expected statement, found a document comment".
 - `opaque` is a reserved keyword (opaque types) — don't name a variable it.
+- `std.heap.page_allocator` is UNUSABLE on wasm32-emscripten: on wasm it is
+  BrkAllocator, which grows memory via the raw `@wasmMemoryGrow` intrinsic
+  behind emscripten's back — the JS heap views detach and SAFE_HEAP bounds
+  go stale, so the first access to page-allocated memory reports a
+  segfault. On web, ALL allocation goes through libc; transient untracked
+  buffers use `src/transient_allocator.zig` (c_allocator on emscripten,
+  page_allocator on native). Never call `std.heap.page_allocator` directly
+  from shared code. Full why: DESIGN → Platform Seam → Allocator rule for
+  emscripten.
 
 ## Dev Tools
 
@@ -340,7 +362,9 @@ stay here in AGENTS; this map is the seam between the two.
 
 - **Platform seam (raylib)** — DESIGN → Platform Seam (raylib): native/web
   driver split, budget-driven drain, render gating, letterbox, two-camera
-  model, camera pan. Key: `raylib_backend.zig`, `native.zig`, `web.zig`.
+  model, camera pan, SDF text outline, allocator rule for emscripten. Key:
+  `raylib_backend.zig`, `native.zig`, `web.zig`, `transient_allocator.zig`,
+  `tools/sdf_atlas_generator.zig`.
 - **Audio** — DESIGN → Audio: sound as side effect, sfx queue + looping music
   stream, button press/release model, backend cache + init-order gotchas.
 - **Animation** — DESIGN → Animation: looping vs one-shot anims, the
