@@ -5043,3 +5043,24 @@ tinted with the inspected entity's TEAM gradient. See DESIGN → UI Framework
 - 4 tests: player entity (read-only `.image`-only, player-gradient tint),
   enemy entity (enemy-gradient tint), cooldown overlay present, active-
   effects 128px icons. All pass (`PASS (exit 0)`, 283 tests total).
+
+**Fixes landed in the same slice (follow-up):**
+
+- **Right-click never opened the panel** (threshold bug). The movement-
+  threshold cancellation used `>=`, but `drag_threshold_pixels` is 0, so
+  `dx²+dy² >= 0` is always true — `pending_right_click` was cancelled on
+  the very next held frame even with zero movement, so by release it was
+  always `null`. Fixed with `>` (strict): `0 > 0` is false, so a clean
+  no-movement click survives; any actual movement still cancels (became a
+  pan). Confirmed via debug-print tracing (press found the entity, release
+  saw `pending=null`).
+- **Effect icons were magenta boxes.** The bottom-bar active-effects grid
+  + the inspect panel used `definition.name` ("Reflect") as the sprite id,
+  but the shipped asset is `skills/reflect` (the skill icon), not
+  `effects/Reflect`. New `effectIconSpriteId` helper: effects that share a
+  tag with a skill (EffectId/SkillId overlap: `reflect`, `stone_form`,
+  `that_which_lingers`) resolve to `skills/<tag>`; future non-skill effects
+  fall back to the `effect_sprite` path or a magenta placeholder until
+  dedicated UI art ships. Applied to both the bottom-bar effects grid and
+  the inspect panel. Test updated to expect `skills/reflect`/
+  `skills/stone_form`.

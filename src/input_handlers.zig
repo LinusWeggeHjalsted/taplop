@@ -548,12 +548,13 @@ pub fn handleRightClickInspect(
 
     // Movement beyond the threshold cancels the pending right-click (it
     // became a camera pan). Checked on every call while the right button is
-    // held, mirroring `handleDrag`'s threshold promotion.
+    // held. Uses `>` (not `>=`) so a zero-threshold config still tolerates a
+    // no-movement press+release — `0 > 0` is false, so a clean click survives.
     if (ui_state.pending_right_click) |press| {
         if (pointer.right_held) {
             const dx = pointer.position.x - press.press_position.x;
             const dy = pointer.position.y - press.press_position.y;
-            if (dx * dx + dy * dy >= input.drag_threshold_pixels * input.drag_threshold_pixels) {
+            if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
                 ui_state.pending_right_click = null;
             }
         }

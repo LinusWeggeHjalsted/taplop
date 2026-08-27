@@ -2061,6 +2061,13 @@ it shows is `UiState.inspected_entity_index`.
   OMITTED entirely when the entity has no effects); then the gear mirror
   (weapons row + gear stack + combat-stat column, same layout as
   `buildGearPanel`).
+- **Effect icon source.** Active-effect icons in the UI (bottom-bar effects
+  grid + entity-inspect panel) use the SKILL icon (`skills/<tag>`) when the
+  effect shares a tag with a skill (EffectId and SkillId overlap: `reflect`,
+  `stone_form`, `that_which_lingers`). The effect's own `effect_sprite` is a
+  WORLD overlay (under `assets/effects/`), not a UI icon. Future non-skill
+  effects will ship dedicated UI art; until then they fall back to the
+  effect-sprite path or a magenta placeholder. See `effectIconSpriteId`.
 - **Right-click input** (`handleRightClickInspect`, levels only) uses the
   same movement-threshold disambiguation as the inventory drag: a right-press
   on a world entity tile records a `PendingRightClick`; movement beyond

@@ -10,6 +10,7 @@ const types = @import("types.zig");
 const state = @import("state.zig");
 const lookups = @import("generated_lookups.zig");
 const Skill = @import("skills/skill.zig").Skill;
+const Effect = @import("effects/effect.zig").Effect;
 
 const Action = types.Action;
 const ScreenPosition = types.ScreenPosition;
@@ -2143,7 +2144,7 @@ pub fn buildBottomBar(
             };
             const definition = lookups.getEffectDefinition(effect.effect_id);
             try elements.append(allocator, .{ .image = .{
-                .sprite_id = definition.name, // effect name used as the icon id
+                .sprite_id = effectIconSpriteId(effect.effect_id, definition),
                 .screen_position = cell.position(),
                 .width = small_icon_size,
                 .height = small_icon_size,
@@ -2357,6 +2358,23 @@ fn skillIconSpriteId(skill_id: SkillId) []const u8 {
         break :blk t;
     };
     return table[@intFromEnum(skill_id)];
+}
+
+/// The sprite id for an active-effect icon in the UI (bottom-bar effects
+/// grid + entity-inspect panel). Effects created by a skill share the skill's
+/// tag name (EffectId and SkillId overlap: `reflect`, `stone_form`,
+/// `that_which_lingers`), so the skill's icon (`skills/<tag>`) is used —
+/// the effect's own `effect_sprite` is a WORLD overlay (under
+/// `assets/effects/`), not a UI icon. Future non-skill effects will ship
+/// dedicated UI art; until then they fall back to the effect-sprite path
+/// (`effects/<effect_sprite>`) or the effect name (magenta placeholder).
+fn effectIconSpriteId(effect_id: types.EffectId, definition: Effect) []const u8 {
+    const tag = @tagName(effect_id);
+    if (std.meta.stringToEnum(SkillId, tag)) |skill_id| {
+        return skillIconSpriteId(skill_id);
+    }
+    if (definition.effect_sprite) |sprite| return sprite;
+    return definition.name;
 }
 
 /// Render size for a slot's content, by domain. Inventory + gear slots are
@@ -2880,7 +2898,7 @@ pub fn buildEnemyInspectPanel(
             };
             const definition = lookups.getEffectDefinition(effect.effect_id);
             try elements.append(allocator, .{ .image = .{
-                .sprite_id = definition.name,
+                .sprite_id = effectIconSpriteId(effect.effect_id, definition),
                 .screen_position = cell.position(),
                 .width = small_icon_size,
                 .height = small_icon_size,
@@ -4101,9 +4119,9 @@ test "buildEnemyInspectPanel: active effects emit 128px icons" {
     for (elements.items) |element| switch (element) {
         .image => |img| if (img.width == small_icon_size and img.height == small_icon_size and img.tooltip != null) {
             // Effect icons use the effect definition name as the sprite id.
-            // Effect icons use the effect definition's display name as the
-            // sprite id (mirrors the bottom-bar active-effects rendering).
-            if (std.mem.eql(u8, img.sprite_id, "Reflect") or std.mem.eql(u8, img.sprite_id, "Stone Form")) {
+            // Effect icons use the SKILL icon (`skills/<tag>`) when the
+            // effect shares a tag with a skill (reflect/stone_form do).
+            if (std.mem.eql(u8, img.sprite_id, "skills/reflect") or std.mem.eql(u8, img.sprite_id, "skills/stone_form")) {
                 effect_icon_count += 1;
             }
         },
