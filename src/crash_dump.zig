@@ -13,7 +13,8 @@
 //! goes straight to the OS — the arena/integer-only model makes that rare;
 //! a SIGSEGV signal handler is a separate, more invasive step we don't take.
 //!
-//! Safety: the dump uses `std.heap.page_allocator` for its OUTPUT buffer
+//! Safety: the dump uses the transient allocator (`transient_allocator.zig`)
+//! for its OUTPUT buffer
 //! (never the game's arenas, which may be in an inconsistent state at panic
 //! time). It READS `event_history.items` (history_arena-backed) — a panic is
 //! almost always a logic error, not heap corruption, so the arenas are
@@ -26,6 +27,7 @@ const std = @import("std");
 const state = @import("state.zig");
 const parser = @import("parser.zig");
 const session_log = @import("session_log.zig");
+const transient_allocator = @import("transient_allocator.zig");
 
 const GameStateHistory = state.GameStateHistory;
 
@@ -53,7 +55,7 @@ pub fn uninstall() void {
 /// and reconstructable via the existing replay path — so a crash file is a
 /// replayable session log, just named differently. `pub` for testing.
 pub fn dump(history: *GameStateHistory) void {
-    const allocator = std.heap.page_allocator;
+    const allocator = transient_allocator.allocator;
 
     // Timestamp via the entry-file-owned io handle (not a game arena). A
     // clock read can't corrupt state; if it errors, fall back to "unknown"
@@ -82,7 +84,8 @@ pub fn dump(history: *GameStateHistory) void {
 }
 
 /// Format the current wall-clock time (UTC) as "YYYYMMDD_HHMMSS" — mirrors
-/// `input_handlers.formatSessionTimestamp` but uses the page_allocator and
+/// `input_handlers.formatSessionTimestamp` but uses the transient allocator
+/// and
 /// never panics (returns an error on allocation/clock failure so the caller
 /// can fall back).
 fn formatTimestamp(allocator: std.mem.Allocator, io: std.Io) ![]const u8 {

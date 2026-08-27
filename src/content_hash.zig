@@ -18,6 +18,7 @@
 
 const std = @import("std");
 const file_source_mod = @import("file_source.zig");
+const transient_allocator = @import("transient_allocator.zig");
 
 const FileSource = file_source_mod.FileSource;
 const Sha256 = std.crypto.hash.sha2.Sha256;
@@ -108,7 +109,7 @@ fn fileExists(file_source: *const FileSource, path: []const u8) bool {
     // returns false; any hit (even truncated) returns true. We don't need
     // the bytes, only existence. readFile dupes embedded bytes, so to avoid
     // leaking even a small allocation we free immediately on the hit path.
-    const allocator = std.heap.page_allocator;
+    const allocator = transient_allocator.allocator;
     if (file_source.readFile(allocator, path)) |bytes| {
         allocator.free(bytes);
         return true;

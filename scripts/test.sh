@@ -23,7 +23,12 @@ fi
 # artifacts pollute the working tree and don't correspond to a real crash
 # (just a failing test). Clean them up before running so a prior run's
 # leftovers don't linger, and again after so a passing run leaves none.
-rm -rf crashes 2>/dev/null || true
+# Same for saves/: some handler tests exercise real write_save paths through
+# cwd-backed FileSources (autosaves are not replay-gated), planting
+# saves/autosave*.txt in the project root. The test harness itself reads a
+# scratch dir (test_harness.zig), so these are inert artifacts — just tree
+# pollution.
+rm -rf crashes saves 2>/dev/null || true
 
 # Run the build, capturing stdout+stderr together and the exit code separately.
 output="$(zig build test 2>&1)"
@@ -57,8 +62,8 @@ if [ -n "$summary" ]; then
 fi
 
 if [ "$status" -eq 0 ]; then
-    # A passing run should leave no crash artifacts.
-    rm -rf crashes 2>/dev/null || true
+    # A passing run should leave no crash or autosave artifacts.
+    rm -rf crashes saves 2>/dev/null || true
     printf 'PASS (exit 0)\n'
 else
     printf 'FAIL (exit %d)\n' "$status"

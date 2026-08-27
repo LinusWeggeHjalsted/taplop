@@ -42,14 +42,29 @@ pub const Harness = struct {
     color_theme_definitions: ColorThemeDefinitions,
     salvage_definitions: types.SalvageDefinitions,
 
-    /// Initialize the bootstrap: a cwd-backed FileSource + the four config
-    /// loads, all allocated into `arena`. The test owns `arena` (typically
-    /// `backing.allocator()` from an `ArenaAllocator` it defers).
+    /// Initialize the bootstrap: a scratch-dir-backed FileSource + the four
+    /// config loads, all allocated into `arena`. The test owns `arena`
+    /// (typically `backing.allocator()` from an `ArenaAllocator` it defers).
+    ///
+    /// The persistent layer is a fresh scratch dir (NOT cwd): tests that drain
+    /// `end_level`/`write_save` to idle push REAL autosave writes (not
+    /// replay-gated), which must not plant `saves/autosave.txt` in the project
+    /// root — a planted autosave then breaks the "missing autosave is
+    /// recoverable" test on every subsequent run. Reads fall through to the
+    /// embedded map either way, so config loads are unaffected.
     pub fn init(arena: std.mem.Allocator) Harness {
         var threaded_io = std.Io.Threaded.init(arena, .{});
         defer threaded_io.deinit();
         const io = threaded_io.io();
-        const file_source = FileSource.init(io, std.Io.Dir.cwd());
+        const scratch = "zig-cache/test-harness-persistent";
+        std.Io.Dir.cwd().deleteTree(io, scratch) catch {}; // fresh per harness
+        const persistent_dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+            .open_options = .{ .access_sub_paths = true, .iterate = true },
+        }) catch @panic("failed to create test-harness scratch dir");
+        // Leaks the dir handle + io for the process lifetime of the test run —
+        // the harness's FileSource borrows both and there is no harness-wide
+        // teardown hook to close them in. Test binaries are short-lived.
+        const file_source = FileSource.init(io, persistent_dir);
 
         var warnings: std.ArrayList([]const u8) = .empty;
         return .{

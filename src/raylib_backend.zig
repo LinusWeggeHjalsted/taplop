@@ -21,6 +21,7 @@ const rl = @import("raylib");
 const input = @import("input.zig");
 const types = @import("types.zig");
 const ui = @import("ui.zig");
+const transient_allocator = @import("transient_allocator.zig");
 
 const reference_width_int: i32 = types.reference_width;
 const reference_height_int: i32 = types.reference_height;
@@ -157,12 +158,12 @@ fn viewTransform() ViewTransform {
 /// can break the read at runtime. Returns the font + whether it is the
 /// default (so deinit can skip unloading raylib-owned the default).
 fn loadFont(file_source: *const @import("file_source.zig").FileSource) struct { font: rl.Font, is_default: bool } {
-    const bytes = file_source.readFile(std.heap.page_allocator, "assets/fonts/freezilla.ttf") catch |err| {
+    const bytes = file_source.readFile(transient_allocator.allocator, "assets/fonts/freezilla.ttf") catch |err| {
         std.debug.print("warning: failed to load font ({}); falling back to default\n", .{err});
         const fallback = rl.getFontDefault() catch @panic("failed to load default font");
         return .{ .font = fallback, .is_default = true };
     };
-    defer std.heap.page_allocator.free(bytes);
+    defer transient_allocator.allocator.free(bytes);
 
     const font = rl.loadFontFromMemory(".ttf", bytes, font_base_size, null) catch {
         std.debug.print("warning: failed to decode font; falling back to default\n", .{});
