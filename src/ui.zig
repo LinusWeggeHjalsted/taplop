@@ -2440,12 +2440,13 @@ pub fn buildInventoryPanel(
     // Outlined via the programmatic sprite-silhouette highlight while Shift
     // is held so the player sees the mode is active.
     const lightest = active_theme.lightest;
+    const salvage_tool_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
     try elements.append(allocator, .{ .image = .{
         .sprite_id = "ui/salvage_tool",
         .screen_position = .{ .x = sidebar_x, .y = grid_top },
         .width = inventory_slot_size,
         .height = inventory_slot_size,
-        .color = lightest,
+        .color = salvage_tool_color,
         .highlighted = held_modifiers.shift,
         .tooltip = .{ .header = try spanRow(allocator, text(
             "Hold Shift to salvage items into materials - hold and drag to multi-salvage",
