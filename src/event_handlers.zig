@@ -2314,8 +2314,17 @@ pub fn processEvent(
 
                     // Transfer items into the entity's inventory (first-empty-
                     // slot); collect the ones that don't fit as leftovers.
+                    // Items the PLAYER actually picks up also count toward the
+                    // mission's converted-materials accumulator (the clone's
+                    // rate numerator) — valued at salvage value regardless of
+                    // what the player later does with the item. Leftover items
+                    // that don't fit stay on the ground and don't count. See
+                    // DESIGN → Clones (clone system).
                     const stack = level.ground_items[stack_index.?];
                     var leftover_items: std.ArrayList(types.Item) = .empty;
+                    const is_player = pickup.entity_index == 0;
+                    const mission_ptr: ?*types.Mission =
+                        if (is_player) (if (current.mission) |*m| m else null) else null;
                     for (stack.items) |item| {
                         var placed = false;
                         for (&entity.inventory.slots) |*slot| {
@@ -2325,7 +2334,12 @@ pub fn processEvent(
                                 break;
                             }
                         }
-                        if (!placed) {
+                        if (placed) {
+                            if (mission_ptr) |mission| {
+                                const value = functions.computeSalvageValue(item, history.salvage_definitions);
+                                mission.converted_materials_collected.add(value);
+                            }
+                        } else {
                             leftover_items.append(allocator, item) catch
                                 @panic("failed to append leftover item");
                         }

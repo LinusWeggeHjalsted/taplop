@@ -9,6 +9,7 @@ const types = @import("types.zig");
 const state = @import("state.zig");
 const events = @import("events.zig");
 const event_handlers = @import("event_handlers.zig");
+const functions = @import("functions.zig");
 const test_harness = @import("test_harness.zig");
 
 const Harness = test_harness.Harness;
@@ -368,6 +369,87 @@ test "pickup_items: first-empty-slot placement" {
     try testing.expectEqual(@as(usize, 0), history.current_state.level.?.ground_items.len);
     try testing.expect(history.current_state.level.?.entities[0].inventory.slots[1] != null);
     try testing.expect(history.current_state.level.?.entities[0].inventory.slots[2] == null);
+}
+
+// ───────────────────────── pickup_items: clone accumulator ─────────────────────────
+// See DESIGN → Clones (clone system). Player pickups accumulate salvage value
+// into mission.converted_materials_collected (the clone rate numerator).
+
+test "pickup_items: player pickup adds salvage value to mission converted_materials_collected" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const item: types.Item = .{ .weapon = .{ .weapon_damage = 5, .weapon_type = .sword } };
+    const items = try backing.allocator().dupe(types.Item, &.{item});
+    const ground = try backing.allocator().dupe(types.GroundItems, &.{
+        .{ .position = .{ .x = 0, .y = 0 }, .items = items },
+    });
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &three_by_three,
+    ));
+    history.current_state.level.?.ground_items = ground;
+    history.current_state.mission = .{ .uuid = "test-uuid" };
+    pushAndRunSub(&history, .{ .pickup_items = .{ .entity_index = 0, .position = .{ .x = 0, .y = 0 } } });
+    const expected = functions.computeSalvageValue(item, harness.salvage_definitions);
+    const got = history.current_state.mission.?.converted_materials_collected;
+    try testing.expectEqual(expected.wood, got.wood);
+    try testing.expectEqual(expected.metal, got.metal);
+    try testing.expectEqual(expected.leather, got.leather);
+    try testing.expectEqual(expected.cloth, got.cloth);
+    try testing.expectEqual(expected.knowledge, got.knowledge);
+}
+
+test "pickup_items: non-player pickup does not accumulate" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const item: types.Item = .{ .weapon = .{ .weapon_damage = 5, .weapon_type = .sword } };
+    const items = try backing.allocator().dupe(types.Item, &.{item});
+    const ground = try backing.allocator().dupe(types.GroundItems, &.{
+        .{ .position = .{ .x = 0, .y = 0 }, .items = items },
+    });
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 } },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 } },
+        },
+        &three_by_three,
+    ));
+    history.current_state.level.?.ground_items = ground;
+    history.current_state.mission = .{ .uuid = "test-uuid" };
+    // Entity 1 (enemy) picks up — no accumulation.
+    pushAndRunSub(&history, .{ .pickup_items = .{ .entity_index = 1, .position = .{ .x = 0, .y = 0 } } });
+    const got = history.current_state.mission.?.converted_materials_collected;
+    try testing.expectEqual(@as(u32, 0), got.wood);
+    try testing.expectEqual(@as(u32, 0), got.metal);
+}
+
+test "pickup_items: leftover items that don't fit don't accumulate" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    // Full inventory → nothing fits, nothing accumulates.
+    var full_slots: [types.inventory_slot_count]?types.Item = undefined;
+    for (&full_slots) |*s| s.* = .{ .amulet = .{ .spell_damage = 99 } };
+    const item: types.Item = .{ .weapon = .{ .weapon_damage = 5, .weapon_type = .sword } };
+    const items = try backing.allocator().dupe(types.Item, &.{item});
+    const ground = try backing.allocator().dupe(types.GroundItems, &.{
+        .{ .position = .{ .x = 0, .y = 0 }, .items = items },
+    });
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 }, .inventory = .{ .slots = full_slots } }},
+        &three_by_three,
+    ));
+    history.current_state.level.?.ground_items = ground;
+    history.current_state.mission = .{ .uuid = "test-uuid" };
+    pushAndRunSub(&history, .{ .pickup_items = .{ .entity_index = 0, .position = .{ .x = 0, .y = 0 } } });
+    const got = history.current_state.mission.?.converted_materials_collected;
+    try testing.expectEqual(@as(u32, 0), got.wood);
+    try testing.expectEqual(@as(u32, 0), got.metal);
 }
 
 // ───────────────────────── stun ─────────────────────────
