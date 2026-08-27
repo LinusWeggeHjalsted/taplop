@@ -74,6 +74,10 @@ pub fn main(init: std.process.Init.Minimal) void {
 /// return the path (caller-owned dupe) if present. Returns null if the flag
 /// isn't given. A `--name` with no following value prints a warning and is
 /// treated as absent. Used for `--data-dir` and `--replay`.
+///
+/// A leading `~/` (or a lone `~`) in the value is expanded to `$HOME` —
+/// bash doesn't perform tilde expansion after `=` in command arguments, so
+/// `--replay=~/.ziglop/...` would otherwise arrive with a literal `~`.
 fn parseStringFlag(
     args: std.process.Args,
     allocator: std.mem.Allocator,
@@ -85,17 +89,34 @@ fn parseStringFlag(
     while (iter.next()) |arg| {
         if (std.mem.eql(u8, arg, name)) {
             if (iter.next()) |value| {
-                return allocator.dupe(u8, value) catch @panic("failed to dupe flag value");
+                return expandTilde(allocator, value) catch
+                    @panic("failed to dupe flag value");
             }
             std.debug.print("warning: {s} given without a value; ignoring\n", .{name});
             return null;
         }
         if (std.mem.startsWith(u8, arg, name) and arg.len > name.len and arg[name.len] == '=') {
             const value = arg[name.len + 1 ..];
-            return allocator.dupe(u8, value) catch @panic("failed to dupe flag value");
+            return expandTilde(allocator, value) catch
+                @panic("failed to dupe flag value");
         }
     }
     return null;
+}
+
+/// Expand a leading `~` or `~/` to `$HOME`. A value that doesn't start with
+/// `~` is duped unchanged. If `~` is present but `$HOME` is unset, the value
+/// is duped unchanged (the caller's file read will fail with a clear
+/// FileNotFound rather than a cryptic env error). `std.c.getenv` is
+/// available on the native target (libc is linked via raylib); native.zig is
+/// excluded from the headless test build so this never compiles there.
+fn expandTilde(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
+    if (value.len == 0 or value[0] != '~') return allocator.dupe(u8, value);
+    const home = std.c.getenv("HOME") orelse return allocator.dupe(u8, value);
+    const home_slice = std.mem.sliceTo(home, 0);
+    if (value.len == 1) return allocator.dupe(u8, home_slice); // bare `~`
+    // `~/...` → `$HOME/...` (drop the `~`, keep the `/`).
+    return std.fmt.allocPrint(allocator, "{s}{s}", .{ home_slice, value[1..] });
 }
 
 /// Resolve and open the persistent data directory path, creating it if missing.

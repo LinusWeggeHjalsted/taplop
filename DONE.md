@@ -5170,3 +5170,14 @@ future slice; this is the "resume at end" path.
   `expectEqualDeep` against forward play + idle points match; (2) a missing
   file sets `pending_error` and leaves the history at the seeded main-menu
   state. Temp files under `zig-cache/test-recon-load/` (cleaned up).
+
+### `--replay` / `--data-dir` tilde expansion (done)
+
+Bash doesn't expand `~` after `=` in command arguments, so
+`--replay=~/.ziglop/...` arrived with a literal `~` and failed with
+FileNotFound. `parseStringFlag` now expands a leading `~/` (or a bare `~`) to
+`$HOME` before duping, so both `--replay=~/.ziglop/...` and
+`--data-dir=~/.foo` work as users naturally write them. If `$HOME` is unset,
+the value is duped unchanged (the read then fails with a clear FileNotFound
+rather than a cryptic env error). `std.c.getenv` is native-only (libc via
+raylib; native.zig is excluded from the headless test build).
