@@ -968,6 +968,33 @@ fn handlePlayerInputEvent(
                 .inventory_slot_index = salvage.inventory_slot_index,
             } } }}, allocator);
         },
+        .player_salvage_inventory_region => |region| {
+            // Compute the bounding box from the two corner slots (order-
+            // independent) and push one salvage_item per occupied slot.
+            const start_row = @divTrunc(region.start_slot, types.inventory_columns);
+            const start_col = @rem(region.start_slot, types.inventory_columns);
+            const end_row = @divTrunc(region.end_slot, types.inventory_columns);
+            const end_col = @rem(region.end_slot, types.inventory_columns);
+            const min_row = @min(start_row, end_row);
+            const max_row = @max(start_row, end_row);
+            const min_col = @min(start_col, end_col);
+            const max_col = @max(start_col, end_col);
+            const player = getPlayerEntity(current, 0);
+            var salvage_events: std.ArrayList(Event) = .empty;
+            var row: u32 = min_row;
+            while (row <= max_row) : (row += 1) {
+                var col: u32 = min_col;
+                while (col <= max_col) : (col += 1) {
+                    const slot_index = row * types.inventory_columns + col;
+                    if (player.inventory.slots[slot_index] != null) {
+                        salvage_events.append(allocator, .{ .player_event = .{ .salvage_item = .{
+                            .inventory_slot_index = slot_index,
+                        } } }) catch @panic("failed to allocate salvage events");
+                    }
+                }
+            }
+            pushEvents(current, salvage_events.items, allocator);
+        },
         .player_equip_to_gear => |equip| {
             pushEvents(current, &.{.{ .player_event = .{ .equip_item = .{
                 .inventory_slot_index = equip.inventory_slot_index,

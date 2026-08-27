@@ -157,41 +157,91 @@ pub fn handleDrag(
     // --- Left button: press → pending or drag ---
     if (pointer.pressed) {
         if (ui.refAt(ui_elements, pointer.position)) |ref| {
-            // Resolve the slot's CONTENT icon (the item/skill being
-            // dragged), not the element's frame sprite — an empty slot
-            // has a frame but no content, so this also gates drags
-            // to occupied slots only.
-            if (ui.slotContentIcon(current, ref)) |icon| {
+            // Two press paths share `pending_slot_press`:
+            //   • Shift+left on an INVENTORY slot (occupied or empty) tracks
+            //     a salvage-region selection — empty slots are valid region
+            //     corners so the player can drag across mixed occupancy.
+            //   • Otherwise, only OCCUPIED slots track an item drag/click —
+            //     `slotContentIcon` is null for an empty slot, gating drags
+            //     to slots that actually hold something.
+            if (pointer.modifiers.shift and ref == .inventory) {
+                ui_state.pending_slot_press = .{
+                    .source = ref,
+                    // No ghost is rendered for a region selection; the icon
+                    // is unused on this path (empty-slot shift+click is a
+                    // harmless no-op salvage).
+                    .icon_sprite_id = "ui/item_slot",
+                    .press_position = pointer.position,
+                    .button = .left,
+                    .shift_held = true,
+                };
+            } else if (ui.slotContentIcon(current, ref)) |icon| {
                 ui_state.pending_slot_press = .{
                     .source = ref,
                     .icon_sprite_id = icon,
                     .press_position = pointer.position,
                     .button = .left,
+                    .shift_held = pointer.modifiers.shift,
                 };
             }
         }
     }
 
-    // Promote a pending left-press to a drag once the pointer moves beyond
-    // the threshold. The ghost then follows the pointer until release.
+    // Promote a pending left-press once the pointer moves beyond the
+    // threshold. A shift+left press on an INVENTORY slot promotes to a
+    // salvage-region selection (start = the pressed slot); anything else
+    // promotes to an item drag (the ghost follows the pointer until release).
     if (ui_state.pending_slot_press) |press| {
         if (press.button == .left) {
             const dx = pointer.position.x - press.press_position.x;
             const dy = pointer.position.y - press.press_position.y;
             if (dx * dx + dy * dy >= ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
-                ui_state.drag = .{
-                    .source = press.source,
-                    .icon_sprite_id = press.icon_sprite_id,
-                    .size = ui.slotContentSize(press.source),
-                };
+                if (press.shift_held and press.source == .inventory) {
+                    ui_state.salvage_region = .{
+                        .start_slot = press.source.inventory,
+                        .end_slot = press.source.inventory,
+                    };
+                } else {
+                    ui_state.drag = .{
+                        .source = press.source,
+                        .icon_sprite_id = press.icon_sprite_id,
+                        .size = ui.slotContentSize(press.source),
+                    };
+                }
                 ui_state.pending_slot_press = null;
             }
         }
     }
 
-    // --- Left button: release → drop or click ---
+    // While a salvage-region selection is in progress, update the end slot to
+    // the inventory slot currently under the pointer. Runs every call (not
+    // just on events) so the outline tracks the cursor live. When the pointer
+    // is off-grid (null / non-inventory ref) the previous end slot is kept —
+    // the release then salves the last valid region.
+    if (ui_state.salvage_region) |region| {
+        if (ui.refAt(ui_elements, pointer.position)) |ref| switch (ref) {
+            .inventory => |slot_index| ui_state.salvage_region = .{
+                .start_slot = region.start_slot,
+                .end_slot = slot_index,
+            },
+            else => {},
+        };
+    }
+
+    // --- Left button: release → drop, region-salvage, or click ---
     if (pointer.released) {
-        if (ui_state.drag) |drag| {
+        if (ui_state.salvage_region) |region| {
+            // Shift-drag release: salvage the bounding box if Shift is still
+            // held, else cancel. Either way the selection clears.
+            if (pointer.modifiers.shift) {
+                event_handlers.pushPlayerAction(current, .{ .player_salvage_inventory_region = .{
+                    .start_slot = region.start_slot,
+                    .end_slot = region.end_slot,
+                } }, allocator);
+            }
+            ui_state.salvage_region = null;
+            ui_state.pending_slot_press = null;
+        } else if (ui_state.drag) |drag| {
             // Resolve the drop. `target` is null when the release is over empty
             // space (or non-ref UI like a panel background). A resolved
             // orchestrator (swap / assign / equip / clear) is pushed as-is.

@@ -124,6 +124,14 @@ pub const SessionState = struct {
     camera_pan: ?types.Vector2 = null,
     camera_pan_anchor: ?CameraPanAnchor = null,
 
+    /// Held keyboard modifiers at this frame, copied from the per-frame
+    /// `PlayerInput.modifiers` each tick in `update()`. Read by `view()` to
+    /// highlight the salvage-tool indicator while Shift is held (and any
+    /// future modifier-keyed view feedback). Transient view state — off the
+    /// undoable GameState, replay-safe by construction (like tile_cursor /
+    /// camera_pan). See DESIGN → Input.
+    held_modifiers: types.Modifiers = .{},
+
     /// Monotonic session-relative animation clock (accumulated microseconds).
     /// Advanced by `frame()` only when the world isn't paused (options menu /
     /// pending error open), so anims freeze during pause and resume cleanly.
@@ -1124,6 +1132,10 @@ pub const GameStateHistory = struct {
                 },
                 .player_salvage_inventory_item => |salvage| {
                     self.validateInventoryScreenAndSlot(salvage.inventory_slot_index);
+                },
+                .player_salvage_inventory_region => |region| {
+                    self.validateInventoryScreenAndSlot(region.start_slot);
+                    self.validateInventoryScreenAndSlot(region.end_slot);
                 },
                 .player_equip_to_gear => |equip| {
                     self.validateInventoryScreenAndSlot(equip.inventory_slot_index);

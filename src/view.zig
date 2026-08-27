@@ -478,6 +478,8 @@ fn buildMiddlePanels(
                     current_state.player_data.learned_skills,
                     active_theme,
                     drag_source,
+                    session.held_modifiers,
+                    session.ui_state.salvage_region,
                 );
                 break :blk ui.inventory_panel_width;
             },

@@ -604,6 +604,15 @@ pub const PlayerInputEvent = union(enum) {
     player_salvage_inventory_item: struct {
         inventory_slot_index: u32,
     },
+    // Shift-drag a region in the inventory panel. The two slot indices are
+    // opposite corners (order-independent); the handler computes the
+    // bounding box and pushes one salvage_item per occupied slot inside it.
+    // One player action → one undo/idle point (all children drain before the
+    // next idle point).
+    player_salvage_inventory_region: struct {
+        start_slot: u32,
+        end_slot: u32,
+    },
     // Drag inventory → gear slot. Handler pushes equip_item.
     player_equip_to_gear: struct {
         inventory_slot_index: u32,

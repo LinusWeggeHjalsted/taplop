@@ -81,6 +81,11 @@ fn update(
     const ui_elements: []const ui.UiElement =
         if (previous_view_state) |view_state| view_state.ui_elements else &.{};
 
+    // Track held modifiers per-frame so `view()` can render modifier-keyed
+    // feedback (salvage-tool highlight while Shift is held). Transient view
+    // state — see SessionState.held_modifiers.
+    history.session.held_modifiers = player_input.modifiers;
+
     // Button click resolution: press records the button + queues the
     // down-sound + consumes the world click; release fires the action +
     // queues the up-sound ONLY if the release is over the same button that

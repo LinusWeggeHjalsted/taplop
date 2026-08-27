@@ -80,6 +80,15 @@ pub const UiState = struct {
     /// double. See `LastItemClick`.
     last_item_click: ?LastItemClick = null,
 
+    /// In-progress shift-drag region selection in the inventory panel.
+    /// `start_slot` / `end_slot` are inventory indices for opposite corners
+    /// (order-independent); `end_slot` updates live as the pointer moves and
+    /// tracks the last slot the pointer was over (so a release off-grid still
+    /// salves the last valid region). Set only while a shift+left-drag is in
+    /// progress; cleared on release. The region is rendered as a lightest
+    /// outline around the bounding box. See DESIGN → Input.
+    salvage_region: ?SalvageRegion = null,
+
     pub fn toggleMiddlePanel(self: *UiState, panel_id: MiddlePanelId) void {
         // If already open, close it
         for (&self.open_middle_panels) |*slot| {
@@ -181,6 +190,10 @@ pub const PendingSlotPress = struct {
     icon_sprite_id: []const u8,
     press_position: ScreenPosition,
     button: ClickButton,
+    /// Whether Shift was held at press time. A shift+left press on an
+    /// inventory slot promotes to a salvage-region selection (not an item
+    /// drag) once the pointer crosses the drag threshold. See handleDrag.
+    shift_held: bool = false,
 };
 
 /// The most recent plain (no-modifier) single click on a content inventory
@@ -191,6 +204,15 @@ pub const LastItemClick = struct {
     slot_index: u32,
     button: ClickButton,
     time: u64,
+};
+
+/// In-progress shift-drag region selection in the inventory panel. The two
+/// slot indices are opposite corners (order-independent); `end_slot` is
+/// updated live as the pointer moves (tracking the last valid slot the
+/// pointer was over). See `UiState.salvage_region`.
+pub const SalvageRegion = struct {
+    start_slot: u32,
+    end_slot: u32,
 };
 
 // ============================================================
@@ -622,14 +644,23 @@ pub const UiElement = union(enum) {
     solid_rect: SolidRect,
 };
 
-/// A plain filled rectangle (no sprite). Used for UI primitives like the
-/// error popup's scrollbar track + thumb. `blocks_input` defaults to false
-/// (decorative); set true if used as a solid surface.
+/// A plain rectangle (filled by default, or stroked when `filled` is
+/// false). Used for UI primitives like the error popup's scrollbar
+/// track + thumb (filled) and the inventory salvage-region outline
+/// (stroked — same `drawRectangleLinesEx` primitive as the world
+/// range/radius outlines). `blocks_input` defaults to false (decorative);
+/// set true if used as a solid surface.
 pub const SolidRect = struct {
     screen_position: ScreenPosition,
     width: i32,
     height: i32,
     color: Color = default_tint,
+    /// When false, draw a stroked outline (`line_width` per side) instead of
+    /// a filled rectangle.
+    filled: bool = true,
+    /// Stroke width in reference pixels when `filled` is false. Defaults to
+    /// the shared outline thickness used by world range/radius outlines.
+    line_width: i32 = 8,
     tooltip: ?Tooltip = null,
     blocks_input: bool = false,
 };
@@ -2285,6 +2316,12 @@ pub fn buildInventoryPanel(
     /// is active — see view.zig — so it's moot here, but the frame keeps
     /// the slot's hit-test identity intact).
     drag_source: ?SlotRef,
+    /// Held keyboard modifiers this frame. Drives the salvage-tool indicator
+    /// highlight (outlined while Shift is held).
+    held_modifiers: types.Modifiers,
+    /// In-progress shift-drag region selection, if any. Rendered as a lightest
+    /// outline around the bounding box of the two corner slots.
+    salvage_region: ?SalvageRegion,
 ) !void {
     // Solid panel background — blocks input through the panel area.
     try elements.append(allocator, .{ .nine_slice_panel = .{
@@ -2395,6 +2432,53 @@ pub fn buildInventoryPanel(
             .blocks_input = false,
         } });
         icon_top += inventory_slot_size;
+    }
+
+    // Salvage-tool indicator: top of the material sidebar column (the
+    // materials are bottom-aligned, so the top of that column is empty).
+    // Display-only (no action) — it signals that Shift+drag multi-salvages.
+    // Outlined via the programmatic sprite-silhouette highlight while Shift
+    // is held so the player sees the mode is active.
+    const lightest = active_theme.lightest;
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = "ui/salvage_tool",
+        .screen_position = .{ .x = sidebar_x, .y = grid_top },
+        .width = inventory_slot_size,
+        .height = inventory_slot_size,
+        .color = lightest,
+        .highlighted = held_modifiers.shift,
+        .tooltip = .{ .header = try spanRow(allocator, text(
+            "Hold Shift to salvage items into materials - hold and drag to multi-salvage",
+        )) },
+        .blocks_input = false,
+    } });
+
+    // Shift-drag region outline: a lightest stroked rectangle around the
+    // bounding box of the two corner slots. Drawn over the grid (non-blocking)
+    // so hover/click still reach the slots beneath.
+    if (salvage_region) |region| {
+        const start_row = @divTrunc(@as(i32, @intCast(region.start_slot)), types.inventory_columns);
+        const start_col = @rem(@as(i32, @intCast(region.start_slot)), types.inventory_columns);
+        const end_row = @divTrunc(@as(i32, @intCast(region.end_slot)), types.inventory_columns);
+        const end_col = @rem(@as(i32, @intCast(region.end_slot)), types.inventory_columns);
+        const min_row = @min(start_row, end_row);
+        const min_col = @min(start_col, end_col);
+        const max_row = @max(start_row, end_row);
+        const max_col = @max(start_col, end_col);
+        const region_origin = ScreenPosition{
+            .x = grid.origin.x + min_col * inventory_slot_size,
+            .y = grid.origin.y + min_row * inventory_slot_size,
+        };
+        const region_width = (max_col - min_col + 1) * inventory_slot_size;
+        const region_height = (max_row - min_row + 1) * inventory_slot_size;
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = region_origin,
+            .width = region_width,
+            .height = region_height,
+            .color = lightest,
+            .filled = false,
+            .blocks_input = false,
+        } });
     }
 }
 

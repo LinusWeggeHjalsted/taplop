@@ -274,9 +274,9 @@ Open:
 - Add icon_sprite_id to Skill, Item, and Effect definitions (bottom bar
   temporarily uses their name as placeholder icon id).
 - Move UI sprite assets from Unity project. Done so far (in assets/):
-  ui/icon_inventory,gear,skills,skip; ui/button_background; ui/turn_move,
+  ui/icon_inventory,gear,skills,skip,options; ui/button_background; ui/turn_move,
   turn_attack; ui/skill_button; ui/skill_slot_empty; skills/*;
-  ui/health_globe (+ _border); ui/panel. Still placeholder ids:
+  ui/health_globe (+ _border); ui/panel; ui/salvage_tool. Still placeholder ids:
   ui/icon_swap, ui/momentum.
 - Center cooldown/label text using measured text width — DONE (emitCenteredNumber
   measures the formatted number via FontMetrics; see DONE.md).
@@ -349,7 +349,8 @@ Core lifecycle DONE (SlotRef/DragState, pointer, slotAt/slotRefAt,
 handleDrag, drag ghost — history in DONE.md). The movement-threshold
 click/drag disambiguation + inventory click intents (equip / salvage /
 learn, with modifier + double-click UX) + drag refactor to orchestrators
-are DONE — see DONE.md (inventory click+drag slice). Open:
+are DONE — see DONE.md (inventory click+drag slice). Multi-salvage
+(shift+drag a region in the inventory panel) DONE — see DONE.md. Open:
 
 - Cancel drag / snap item back when the pointer release is lost outside the
   game (focus loss, pointer leaves window) — currently a lost mouse-up leaves

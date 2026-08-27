@@ -278,6 +278,54 @@ test "salvage_item: valid item is removed and materials increase by its salvage 
     try testing.expectEqual(after, history.current_state.player_data.materials);
 }
 
+// ───────────────────────── player_salvage_inventory_region ─────────────────────────
+
+// The region orchestrator fans out one salvage_item per OCCUPIED slot in
+// the bounding box of the two corner indices (order-independent). Empty
+// slots in the box are skipped. Mirrors the live shift-drag gesture.
+test "player_salvage_inventory_region: salves occupied slots in the box, skips empty" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    // Place items at slot 0 (row 0 col 0), slot 9 (row 1 col 1), and slot 17
+    // (row 2 col 1). Leave the rest empty.
+    const weapon_a: Weapon = .{ .name = "a", .weapon_type = .sword, .weapon_damage = 4 };
+    const weapon_b: Weapon = .{ .name = "b", .weapon_type = .sword, .weapon_damage = 4 };
+    const weapon_c: Weapon = .{ .name = "c", .weapon_type = .sword, .weapon_damage = 4 };
+    player(&history).inventory.slots[0] = .{ .weapon = weapon_a };
+    player(&history).inventory.slots[9] = .{ .weapon = weapon_b };
+    player(&history).inventory.slots[17] = .{ .weapon = weapon_c };
+    const before = history.current_state.player_data.materials;
+    // Box from slot 0 to slot 17 covers rows 0–2, cols 0–1 (6 slots), 3
+    // occupied. Corners given in reverse order to confirm order-independence.
+    pushInputAndRun(&history, .{ .player_salvage_inventory_region = .{
+        .start_slot = 17,
+        .end_slot = 0,
+    } });
+    try testing.expectEqual(@as(?Item, null), player(&history).inventory.slots[0]);
+    try testing.expectEqual(@as(?Item, null), player(&history).inventory.slots[9]);
+    try testing.expectEqual(@as(?Item, null), player(&history).inventory.slots[17]);
+    var after = before;
+    after.add(functions.computeSalvageValue(.{ .weapon = weapon_a }, history.salvage_definitions));
+    after.add(functions.computeSalvageValue(.{ .weapon = weapon_b }, history.salvage_definitions));
+    after.add(functions.computeSalvageValue(.{ .weapon = weapon_c }, history.salvage_definitions));
+    try testing.expectEqual(after, history.current_state.player_data.materials);
+}
+
+test "player_salvage_inventory_region: box with no occupied slots is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    const before = history.current_state.player_data.materials;
+    pushInputAndRun(&history, .{ .player_salvage_inventory_region = .{
+        .start_slot = 0,
+        .end_slot = 7, // entire first row, all empty
+    } });
+    try testing.expectEqual(before, history.current_state.player_data.materials);
+}
+
 // ───────────────────────── utility skills ─────────────────────────
 
 test "equip_utility_skill: out-of-range slot is a no-op" {

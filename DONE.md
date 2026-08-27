@@ -4904,3 +4904,51 @@ orchestrator + stats display) deferred — waiting on the user's panel design.
   `active_theme.darkest`).
 - Remaining placeholder ids: `ui/icon_swap`, `ui/momentum` (no assets exist
   yet — truly missing, not migrated).
+
+### Multi-salvage (shift-drag region) + salvage-tool indicator (DONE)
+
+Shift+left-drag in the inventory panel marks a rectangular region (lightest
+outline around the bounding box of the start + end slots); on release with
+Shift still held, all occupied slots in the box salvage into materials at
+once. Releasing Shift before the mouse cancels. Existing shift+left-click
+(single salvage) is preserved — the movement threshold disambiguates click
+vs region-drag, same as the plain click-vs-item-drag split.
+
+- **Asset:** `SalvageTool.png` (256×256) copied from the Unity project to
+  `assets/ui/salvage_tool.png`.
+- **Salvage-tool indicator:** display-only `Image` at the top of the
+  inventory panel's material-sidebar column (materials are bottom-aligned,
+  so the column top is empty). Tooltip: "Hold Shift to salvage items into
+  materials - hold and drag to multi-salvage". `highlighted` (programmatic
+  sprite-silhouette outline) while `session.held_modifiers.shift` so the
+  player sees the mode is active. Non-blocking (display only, no action —
+  a future toggle is possible but not wired).
+- **Held modifiers:** `SessionState.held_modifiers` (transient view state,
+  replay-safe by construction) copied from `player_input.modifiers` each
+  tick in `update()` so `view()` can render modifier-keyed feedback.
+- **Region state:** `UiState.salvage_region: ?SalvageRegion` (`start_slot` +
+  `end_slot`, order-independent). `end_slot` updates live each frame to the
+  inventory slot under the pointer; when the pointer is off-grid the
+  previous end slot is kept (release salves the last valid region). Cleared
+  on release + on screen transition (whole-UiState reset).
+- **Outline:** `SolidRect` UiElement gained `filled: bool = true` +
+  `line_width: i32 = 8`; the backend strokes via `drawRectangleLinesEx`
+  (same primitive as the world range/radius outlines) when `!filled`. The
+  region is one stroked rect around the bounding box (lightest, non-
+  blocking).
+- **Event:** `player_salvage_inventory_region` PlayerInputEvent (`start_slot`
+  + `end_slot: u32`). Handler computes the bounding box from the two corners
+  and pushes one `salvage_item` per occupied slot (ArrayList of events,
+  single `pushEvents`). One player action → one undo/idle point (all
+  children drain before the next idle point). `validatePlayerAction` checks
+  both slots in range + level/hub screen. Auto-whitelisted by
+  `isPlayerAction` (it's a PlayerInputEvent).
+- **Input (`handleDrag`):** `PendingSlotPress` gained `shift_held: bool`.
+  Shift+left press on an inventory slot (occupied OR empty — empty slots are
+  valid region corners) records a pending press with `shift_held = true`;
+  moving past the threshold promotes it to `salvage_region` instead of an
+  item drag. Non-shift presses keep the existing occupied-only gate. Release
+  with `salvage_region` active: push the orchestrator if Shift is still
+  held, else cancel; clear the region either way.
+- 2 new gear tests (region salves occupied + skips empty; empty-box no-op).
+  272 tests pass.

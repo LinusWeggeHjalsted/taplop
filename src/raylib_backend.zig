@@ -936,7 +936,14 @@ pub const RaylibBackend = struct {
                 self.drawSprite(image.sprite_id, dest, null, image.color, image.alpha);
                 if (image.highlighted) self.drawHighlightOutline(image.sprite_id, dest, highlight_color);
             },
-            .solid_rect => |rect| rl.drawRectangleRec(referenceRectangle(rect.screen_position, rect.width, rect.height), toRaylibColor(rect.color, 255)),
+            .solid_rect => |rect| {
+                const r = referenceRectangle(rect.screen_position, rect.width, rect.height);
+                if (rect.filled) {
+                    rl.drawRectangleRec(r, toRaylibColor(rect.color, 255));
+                } else {
+                    rl.drawRectangleLinesEx(r, @floatFromInt(rect.line_width), toRaylibColor(rect.color, 255));
+                }
+            },
         }
     }
 
