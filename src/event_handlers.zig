@@ -527,13 +527,6 @@ fn handlePlayerInputEvent(
 
         // --- Meta: new game ---
         .start_new_game => {
-            // Back up an existing autosave before overwriting it on the
-            // first subsequent end_hub/end_level. Pushed first so it runs
-            // before the new-player load (LIFO order within the drain; the
-            // backup reads the autosave file, independent of GameState).
-            // See DESIGN → File System & IO (Autosave).
-            pushEvents(current, &.{.{ .meta_event = .backup_autosave }}, allocator);
-
             var balance_warnings: std.ArrayList([]const u8) = .empty;
             const parsed_sections = blk: {
                 const bytes = history.readReconstructionFile("data/new_player.txt") catch {
@@ -558,6 +551,14 @@ fn handlePlayerInputEvent(
             surfaceWarnings(history, &balance_warnings, allocator);
             loadCampaignAndPushHub(current, history, allocator);
             if (history.load_error) return;
+            // Push backup_autosave AFTER loadCampaignAndPushHub so it lands
+            // ON TOP of start_hub (LIFO → runs first). If it were pushed
+            // before, start_hub would run first and its transitionScreen(.hub)
+            // would clear the event stack, wiping backup_autosave before it
+            // runs. The backup reads the autosave file (independent of
+            // GameState), so running before start_hub is correct. See DESIGN
+            // → File System & IO (Autosave).
+            pushEvents(current, &.{.{ .meta_event = .backup_autosave }}, allocator);
         },
 
         // --- Meta: save ---

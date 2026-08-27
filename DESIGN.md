@@ -874,6 +874,10 @@ MetaEvent (handler-gated `!replaying`, same side-effect convention as
 `write_save`) that, when an autosave exists, copies it to
 `saves/autosave-YYYYMMDD_HHMMSS.txt` (timestamp from
 `formatSessionTimestamp`, same `YYYYMMDD_HHMMSS` format the crash dump uses).
+The push happens AFTER `loadCampaignAndPushHub` so `backup_autosave` lands
+ON TOP of `start_hub` on the event stack (LIFO → runs first). Pushing it
+before would let `start_hub` run first, and its `transitionScreen(.hub)`
+clears the event stack — wiping `backup_autosave` before it ever runs.
 The player can later load a backup by pointing `load_save` at it (the load
 path is arbitrary, not hardcoded to `autosave_path`). Best-effort: a backup
 failure surfaces the error popup but does NOT abort the new game — the

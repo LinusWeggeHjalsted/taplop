@@ -4797,3 +4797,25 @@ own tests, applied to handler tests for the first time. This also informs
 the AGENTS latent-bug note about the harness writing `saves/autosave.txt`
 into cwd: the temp-dir reassignment is the clean fix for any future
 disk-touching handler test.
+
+### Autosave backup: transitionScreen stack-clear fix (DONE)
+
+The initial implementation pushed `backup_autosave` at the TOP of the
+`start_new_game` handler, before `loadCampaignAndPushHub`. That left it
+BELOW `start_hub` on the event stack (LIFO → `start_hub` pops first).
+`start_hub`'s handler calls `transitionScreen(.hub)`, which does
+`self.event_stack = &.{}` — clearing the entire stack, wiping
+`backup_autosave` before it ever ran. The backup was silently never
+created.
+
+Fix: push `backup_autosave` AFTER `loadCampaignAndPushHub` so it lands ON
+TOP of `start_hub` (LIFO → runs first, before the screen transition clears
+the stack). The backup reads the autosave file (independent of GameState),
+so running before `start_hub` is semantically correct.
+
+The full-flow test (`start_new_game: backs up existing autosave before
+start_hub clears the stack`) catches this: it runs the full orchestrator to
+idle against a temp-dir FileSource seeded with a fake autosave, then scans
+for a backup file. Verified by reverting the fix (test fails — no backup
+found) and re-applying (test passes). DESIGN note updated to record the
+push-ordering constraint.
