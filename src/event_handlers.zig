@@ -527,6 +527,13 @@ fn handlePlayerInputEvent(
 
         // --- Meta: new game ---
         .start_new_game => {
+            // Back up an existing autosave before overwriting it on the
+            // first subsequent end_hub/end_level. Pushed first so it runs
+            // before the new-player load (LIFO order within the drain; the
+            // backup reads the autosave file, independent of GameState).
+            // See DESIGN → File System & IO (Autosave).
+            pushEvents(current, &.{.{ .meta_event = .backup_autosave }}, allocator);
+
             var balance_warnings: std.ArrayList([]const u8) = .empty;
             const parsed_sections = blk: {
                 const bytes = history.readReconstructionFile("data/new_player.txt") catch {
@@ -1059,6 +1066,59 @@ pub fn processEvent(
                         history.session.setPendingError(
                             history.history_arena.allocator(),
                             "failed to write save file",
+                        );
+                        return;
+                    };
+                },
+                .backup_autosave => {
+                    // Side effect: skip during replay (undo/redo scrubbing
+                    // must not re-copy files). See DESIGN → File System & IO.
+                    if (history.replaying) return;
+                    // No autosave present → nothing to back up.
+                    if (!history.file_source.fileExists(writers.autosave_path)) return;
+                    // Pure file copy: read the autosave bytes, write them at
+                    // a timestamped backup path. Best-effort — a failure
+                    // surfaces the popup but does NOT abort the new game
+                    // (the backup is preservation, not a prerequisite).
+                    const autosave_bytes = history.file_source.readFile(
+                        allocator,
+                        writers.autosave_path,
+                    ) catch {
+                        history.session.setPendingError(
+                            history.history_arena.allocator(),
+                            "failed to back up autosave",
+                        );
+                        return;
+                    };
+                    defer allocator.free(autosave_bytes);
+                    // Timestamp format "YYYYMMDD_HHMMSS" — mirrors
+                    // `input_handlers.formatSessionTimestamp` /
+                    // `crash_dump.formatTimestamp` (inlined here to avoid a
+                    // circular import; event_handlers is imported by
+                    // input_handlers). Consolidates into a util/time module
+                    // when the main.zig split lands.
+                    const seconds: u64 = @intCast(std.Io.Clock.now(.real, history.io).toSeconds());
+                    const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = seconds };
+                    const year_day = epoch_seconds.getEpochDay().calculateYearDay();
+                    const month_day = year_day.calculateMonthDay();
+                    const day_seconds = epoch_seconds.getDaySeconds();
+                    const backup_path = std.fmt.allocPrint(
+                        allocator,
+                        "saves/autosave-{d:0>4}{d:0>2}{d:0>2}_{d:0>2}{d:0>2}{d:0>2}.txt",
+                        .{
+                            year_day.year,
+                            month_day.month.numeric(),
+                            @as(u32, month_day.day_index) + 1,
+                            day_seconds.getHoursIntoDay(),
+                            day_seconds.getMinutesIntoHour(),
+                            day_seconds.getSecondsIntoMinute(),
+                        },
+                    ) catch @panic("failed to allocate backup path");
+                    defer allocator.free(backup_path);
+                    history.file_source.writeFile(backup_path, autosave_bytes) catch {
+                        history.session.setPendingError(
+                            history.history_arena.allocator(),
+                            "failed to back up autosave",
                         );
                         return;
                     };

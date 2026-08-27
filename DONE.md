@@ -4758,3 +4758,42 @@ inherits @max(old, incoming); into empty slot preserves incoming cd;
 outgoing skill cd preserved (not cleared); main_hand weapon inherits @max
 for all 3 skills (incl. hidden skill_3); off_hand weapon inherits @max for
 all 3; weapon into empty hand preserves own cds. Suite now 244 (was 237).
+
+### Autosave backup on new game (DONE)
+
+Starting a new game while an autosave is present no longer silently destroys
+the old save. `start_new_game` now pushes a `backup_autosave` MetaEvent
+(handler-gated `!replaying`, same side-effect convention as `write_save`)
+before the new-player load. When an autosave exists at `saves/autosave.txt`,
+the handler copies it to `saves/autosave-YYYYMMDD_HHMMSS.txt` (timestamp
+inlined — mirrors `formatSessionTimestamp` / `crash_dump.formatTimestamp`;
+inlining avoids a circular import since `input_handlers` imports
+`event_handlers`). Best-effort: a backup failure surfaces the error popup
+but does NOT abort the new game (the backup is preservation, not a
+prerequisite). No autosave present → no-op. The backup is a pure file copy
+(read bytes → write at timestamped path), no PlayerData decode/encode, so it
+can't corrupt. Settled design in DESIGN → File System & IO (Autosave).
+
+No new session-log machinery: the comptime-generic serializer picks up the
+new `backup_autosave` MetaEvent variant automatically; `isPlayerAction`
+only whitelists `PlayerInputEvent`, so it's never player-seedable at an
+idle point (it's always handler-pushed by `start_new_game`).
+
+Tests (3 new in `handler_tests_autosave.zig`, suite 244 → 247):
+- `backup_autosave: copies existing autosave to a timestamped backup` —
+  seeds a fake autosave in a temp-dir-backed FileSource, pushes the event,
+  scans `saves/` for a matching `autosave-*.txt`, verifies contents match.
+- `backup_autosave: no autosave present is a no-op` — no autosave seeded,
+  verifies no backup file appears.
+- `start_new_game: pushes backup_autosave before the new-player load` —
+  inspects the event stack after one `processEvent` to confirm the
+  orchestrator pushed `backup_autosave` (the wiring contract).
+
+The disk-touching tests use a temp-dir-backed `FileSource` (reassigned on
+the harness after init, since `newHistory` reads `&self.file_source` at
+call time and the config arrays are already loaded from embedded data) so
+no files leak into the project root — the pattern from `file_source.zig`'s
+own tests, applied to handler tests for the first time. This also informs
+the AGENTS latent-bug note about the harness writing `saves/autosave.txt`
+into cwd: the temp-dir reassignment is the clean fix for any future
+disk-touching handler test.

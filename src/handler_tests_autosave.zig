@@ -18,6 +18,7 @@ const writers = @import("writers.zig");
 const Harness = test_harness.Harness;
 const runToIdle = test_harness.runToIdle;
 const Vector2 = types.Vector2;
+const FileSource = @import("file_source.zig").FileSource;
 
 const three_by_three = [_]Vector2{
     .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
@@ -213,4 +214,145 @@ test "save_game: pushes timestamped write + autosave write after sync" {
     try testing.expectEqualStrings("saves/save_TEST.txt", timestamped.meta_event.write_save.save_path);
     try testing.expectEqual(@as(std.meta.Tag(events.MetaEvent), .write_save), std.meta.activeTag(autosave.meta_event));
     try testing.expectEqualStrings(writers.autosave_path, autosave.meta_event.write_save.save_path);
+}
+
+// ───────────── backup_autosave (disk-touching, temp-dir isolated) ─────────────
+// See DESIGN → File System & IO (Autosave). These tests write real files,
+// so they use a temp-dir-backed FileSource (reassigned on the harness after
+// init) instead of the cwd-backed default — no files leak into the project
+// root. `newHistory` reads `&self.file_source` at call time, and the config
+// arrays are already loaded from embedded data, so reassigning the field
+// before `newHistory` gives the history a temp-dir source with real config.
+
+// `backup_autosave`: when an autosave exists, the handler copies it to a
+// timestamped `saves/autosave-YYYYMMDD_HHMMSS.txt`. We seed a fake autosave,
+// push the event, then scan the saves/ dir for one matching file and verify
+// its contents match the original. The timestamp is unpredictable, so the
+// scan is by prefix + file-extension.
+test "backup_autosave: copies existing autosave to a timestamped backup" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var threaded_io = std.Io.Threaded.init(backing.allocator(), .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const scratch = "zig-cache/test-backup-autosave";
+    const temp_dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    harness.file_source = FileSource.init(io, temp_dir);
+
+    // Seed a fake autosave in the temp dir.
+    const autosave_contents = "Metadata\nfile_format_version 1\nplayer_name Old Save\n";
+    harness.file_source.writeFile(writers.autosave_path, autosave_contents) catch @panic("seed autosave");
+
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .backup_autosave }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // Scan saves/ for a backup file and verify its contents.
+    const saves_dir = temp_dir.openDir(io, "saves", .{ .iterate = true }) catch @panic("open saves dir");
+    defer std.Io.Dir.close(saves_dir, io);
+    var it = saves_dir.iterate();
+    var found = false;
+    while (it.next(io) catch @panic("iterate saves")) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.startsWith(u8, entry.name, "autosave-")) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".txt")) continue;
+        const backup_path = std.fmt.allocPrint(testing.allocator, "saves/{s}", .{entry.name}) catch @panic("alloc backup path");
+        defer testing.allocator.free(backup_path);
+        const backup_bytes = harness.file_source.readFile(testing.allocator, backup_path) catch @panic("read backup");
+        defer testing.allocator.free(backup_bytes);
+        try testing.expectEqualStrings(autosave_contents, backup_bytes);
+        found = true;
+        break;
+    }
+    try testing.expect(found);
+}
+
+// `backup_autosave`: when no autosave exists, the handler is a no-op — no
+// backup file is written. Uses the same temp-dir isolation.
+test "backup_autosave: no autosave present is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var threaded_io = std.Io.Threaded.init(backing.allocator(), .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const scratch = "zig-cache/test-backup-autosave-noop";
+    const temp_dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    harness.file_source = FileSource.init(io, temp_dir);
+
+    // No autosave seeded. The backup handler should detect this via
+    // fileExists and skip. We need a saves/ dir to exist (so openDir doesn't
+    // error in the scan) — create it by writing a dummy file then removing it.
+    temp_dir.createDirPath(io, "saves") catch @panic("create saves dir");
+
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .backup_autosave }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // No backup file should exist. Scan saves/ (empty → no matches).
+    const saves_dir = temp_dir.openDir(io, "saves", .{ .iterate = true }) catch @panic("open saves dir");
+    defer std.Io.Dir.close(saves_dir, io);
+    var it = saves_dir.iterate();
+    while (it.next(io) catch @panic("iterate saves")) |entry| {
+        if (entry.kind != .file) continue;
+        if (std.mem.startsWith(u8, entry.name, "autosave-")) {
+            try testing.expect(false); // found a backup when none expected
+        }
+    }
+}
+
+// `start_new_game` pushes `backup_autosave` as a child before the new-player
+// load. Inspect the stack after one processEvent: backup_autosave should be
+// on the stack (the new-player load reads new_player.txt which exists in the
+// embedded map, so it would proceed — but we only check that backup_autosave
+// was pushed, not that it ran). This is the wiring contract: the orchestrator
+// pushes the backup before clobbering the save.
+test "start_new_game: pushes backup_autosave before the new-player load" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .start_new_game,
+        history.current_arena.allocator(),
+    );
+    event_handlers.processEvent(&history);
+
+    // After the orchestrator pops, backup_autosave should be on the stack.
+    // (The new-player load may also push start_hub etc. below it, so scan
+    // the whole stack rather than asserting a specific position.)
+    var found_backup = false;
+    for (history.current_state.event_stack) |ev| {
+        if (std.meta.activeTag(ev) == .meta_event and
+            std.meta.activeTag(ev.meta_event) == .backup_autosave)
+        {
+            found_backup = true;
+            break;
+        }
+    }
+    try testing.expect(found_backup);
 }

@@ -54,6 +54,11 @@ pub const MetaEvent = union(enum) {
     write_save: struct {
         save_path: []const u8,
     },
+    // Copy the current autosave to a timestamped backup path, so starting a
+    // new game doesn't silently destroy an existing autosave. No-op when no
+    // autosave is present. Best-effort: a failure surfaces the error popup
+    // but does not abort the new game. See DESIGN → File System & IO (Autosave).
+    backup_autosave: void,
     start_mission: struct {
         mission_path: []const u8,
         start_hub_id: ?[]const u8,
