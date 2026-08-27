@@ -1402,6 +1402,7 @@ pub fn processEvent(
                                     pushEvents(current, &.{.{ .meta_event = .{ .end_mission = .{
                                         .hub_id = mission.end_hub,
                                         .completed_mission = .{
+                                            .uuid = mission.uuid,
                                             .name = mission.name,
                                             .path = mission.path,
                                         },

@@ -796,12 +796,32 @@ pub const Campaign = struct {
 /// the mission-complete overlay (mission name + path). Lives on GameState
 /// (on the undo timeline) so undo/redo handles the overlay naturally — undo
 /// to before completion clears it, redo re-shows it. See DESIGN → Architecture.
+/// Info carried through the end_level → end_mission → start_hub cascade for
+/// the mission-complete overlay. Lives on GameState (on the undo timeline) so
+/// undo/redo handles the overlay naturally — undo to before completion clears
+/// it, redo re-shows it. The `uuid` is the clone key (see DESIGN → Custom
+/// Missions & Online Services → Content identity); `turns_spent` +
+/// `converted_materials` snapshot the run so the hub-side overlay + the
+/// manual-overwrite orchestrator can reconstruct `save_clone_info` without the
+/// `Mission` (which is gone by the time the overlay renders in the hub). See
+/// DESIGN → Architecture.
 pub const MissionCompleteInfo = struct {
+    uuid: []const u8 = &.{},
     name: []const u8,
     path: []const u8,
+    turns_spent: u32 = 0,
+    converted_materials: Materials = .{},
+    /// True when a clone for this mission already exists AND the just-completed
+    /// run was NOT strictly better (Pareto) — the overlay offers a manual
+    /// "Overwrite Clone" button. False on a first completion (auto-saved) or a
+    /// strictly-better run (auto-overwrote). See DESIGN → Clones (clone system).
+    overwrite_offered: bool = false,
 };
 
 pub const Mission = struct {
+    /// Stable identifier for this mission (clone key + custom-mission identity).
+    /// See DESIGN → Custom Missions & Online Services → Content identity.
+    uuid: []const u8 = &.{},
     name: []const u8 = &.{},
     path: []const u8 = &.{},
     level_count: u32 = 0,

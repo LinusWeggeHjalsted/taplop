@@ -362,13 +362,13 @@ test "listCustomMissions: lists missions with metadata + custom-asset detection"
 
     // Mission 1: plain folder name, config files only (no custom assets).
     file_source.writeFile("custom_missions/skeleton_attack/mission.txt",
-        "Metadata\nfile_format_version 1\nlevel_count 1\nname Skeleton Attack\n") catch @panic("w1");
+        "Metadata\nfile_format_version 2\nmission_uuid 11111111-1111-1111-1111-111111111111\nlevel_count 1\nname Skeleton Attack\n") catch @panic("w1");
     file_source.writeFile("custom_missions/skeleton_attack/level_1.txt",
         "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w2");
 
     // Mission 2: UUID_slug folder name, config + a custom sprite (custom assets).
     file_source.writeFile("custom_missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/mission.txt",
-        "Metadata\nfile_format_version 1\nlevel_count 2\nname Tree Grove\n") catch @panic("w3");
+        "Metadata\nfile_format_version 2\nmission_uuid 22222222-2222-2222-2222-222222222222\nlevel_count 2\nname Tree Grove\n") catch @panic("w3");
     file_source.writeFile("custom_missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/level_1.txt",
         "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w4");
     file_source.writeFile("custom_missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/level_2.txt",

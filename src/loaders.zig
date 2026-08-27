@@ -1522,6 +1522,7 @@ pub fn loadMission(
     if (findSection(sections, "Metadata")) |section| {
         if (section.entry_groups.len > 0) {
             const pairs = section.entry_groups[0].pairs;
+            mission.uuid = findValue(pairs, "mission_uuid") orelse return error.MissingMissionUuid;
             if (findValue(pairs, "name")) |value| mission.name = value;
             if (findValue(pairs, "start_hub")) |value| mission.start_hub = value;
             if (findValue(pairs, "end_hub")) |value| mission.end_hub = value;
@@ -2344,7 +2345,8 @@ test "loadMission parses mission metadata" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 1
+        \\file_format_version 2
+        \\mission_uuid 11111111-1111-1111-1111-111111111111
         \\name First Mission
         \\start_hub camp
         \\end_hub village
@@ -2356,6 +2358,7 @@ test "loadMission parses mission metadata" {
 
     const mission = try loadMission(sections, allocator);
 
+    try std.testing.expectEqualStrings("11111111-1111-1111-1111-111111111111", mission.uuid);
     try std.testing.expectEqualStrings("First Mission", mission.name);
     try std.testing.expectEqualStrings("camp", mission.start_hub.?);
     try std.testing.expectEqualStrings("village", mission.end_hub.?);

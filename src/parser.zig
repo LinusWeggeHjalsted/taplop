@@ -24,7 +24,7 @@ const FileSource = file_source_mod.FileSource;
 /// writer emits the current constant. See DESIGN → Versioning.
 pub const level_file_format_version: u32 = 1;
 pub const hub_file_format_version: u32 = 1;
-pub const mission_file_format_version: u32 = 1;
+pub const mission_file_format_version: u32 = 2;
 pub const campaign_file_format_version: u32 = 1;
 pub const player_save_file_format_version: u32 = 1;
 pub const settings_file_format_version: u32 = 1;
@@ -541,7 +541,7 @@ pub const hub_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
 //
 // Only a Metadata section with name, start_hub, end_hub, level_count.
 
-const mission_metadata_keys = [_][]const u8{ "file_format_version", "name", "start_hub", "end_hub", "level_count" };
+const mission_metadata_keys = [_][]const u8{ "file_format_version", "mission_uuid", "name", "start_hub", "end_hub", "level_count" };
 
 pub const mission_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &mission_metadata_keys },

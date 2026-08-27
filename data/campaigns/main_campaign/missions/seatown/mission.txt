@@ -1,5 +1,6 @@
 Metadata
-file_format_version 1
+file_format_version 2
+mission_uuid e30e91c5-7abc-4208-b3b2-3130208a788b
 name Seatown
 start_hub camp_at_the_crossroads
 end_hub camp_at_the_crossroads

@@ -1,5 +1,6 @@
 Metadata
-file_format_version 1
+file_format_version 2
+mission_uuid 6c19598d-157c-4390-90d8-dceaf626b52f
 name Wetlands
 start_hub camp_at_the_crossroads
 end_hub camp_at_the_crossroads
