@@ -479,6 +479,36 @@ pub fn cloneIsStrictlyBetter(
     return has_strict_gain;
 }
 
+/// Pointer to the current mission, or null if the acting entity isn't the
+/// player (entity_index 0) or no mission is active. Shared by the per-event
+/// accumulators (tiles_moved, skills_used, damage_dealt/taken, converted
+/// materials) so they're one-liners at each call site. See DESIGN → Clones
+/// (clone system).
+fn playerMissionPtr(current: *GameState) ?*types.Mission {
+    if (current.mission) |*mission| return mission;
+    return null;
+}
+
+/// Pure harvest payout: per material, `rate * turns_spent` summed over all
+/// clones, where `rate = clone.materials_collected / clone.turns_to_complete`
+/// (integer division). Skips clones with `turns_to_complete == 0`. Shared by
+/// the `harvest_clones` handler and the `end_level` completion branch (which
+/// snapshots the payout onto `MissionCompleteInfo` for the overlay). See
+/// DESIGN → Clones (clone system).
+pub fn computeHarvest(clones: []const types.Clone, turns_spent: u32) types.Materials {
+    if (turns_spent == 0) return .{};
+    var payout: types.Materials = .{};
+    for (clones) |clone| {
+        if (clone.turns_to_complete == 0) continue;
+        payout.wood += (clone.materials_collected.wood / clone.turns_to_complete) * turns_spent;
+        payout.metal += (clone.materials_collected.metal / clone.turns_to_complete) * turns_spent;
+        payout.leather += (clone.materials_collected.leather / clone.turns_to_complete) * turns_spent;
+        payout.cloth += (clone.materials_collected.cloth / clone.turns_to_complete) * turns_spent;
+        payout.knowledge += (clone.materials_collected.knowledge / clone.turns_to_complete) * turns_spent;
+    }
+    return payout;
+}
+
 /// event for player_data.current_hub.
 fn loadCampaignAndPushHub(
     current: *GameState,
@@ -1458,8 +1488,10 @@ pub fn processEvent(
                                         }
                                     }
                                     var overwrite_offered = false;
+                                    var harvested: types.Materials = .{};
                                     if (turns > 0) {
                                         clone_harvest_turns = turns;
+                                        harvested = computeHarvest(current.player_data.clones, turns);
                                         if (existing_clone) |old| {
                                             if (cloneIsStrictlyBetter(turns, converted, old.turns_to_complete, old.materials_collected)) {
                                                 clone_save_info = .{
@@ -1488,6 +1520,11 @@ pub fn processEvent(
                                             .path = mission.path,
                                             .turns_spent = turns,
                                             .converted_materials = converted,
+                                            .harvested_materials = harvested,
+                                            .tiles_moved = mission.tiles_moved,
+                                            .damage_dealt = mission.damage_dealt,
+                                            .damage_taken = mission.damage_taken,
+                                            .skills_used = mission.skills_used,
                                             .overwrite_offered = overwrite_offered,
                                         },
                                     } } }}, allocator);
@@ -1658,21 +1695,7 @@ pub fn processEvent(
                     // Gated on turns_spent > 0 at the push site, but guard
                     // here too in case a hand-crafted replay seeds it at 0.
                     // See DESIGN → Clones (clone system).
-                    if (harvest.turns_spent == 0) return;
-                    var payout: types.Materials = .{};
-                    for (current.player_data.clones) |clone| {
-                        if (clone.turns_to_complete == 0) continue;
-                        const new_rate = clone.materials_collected.wood / clone.turns_to_complete;
-                        payout.wood += new_rate * harvest.turns_spent;
-                        const metal_rate = clone.materials_collected.metal / clone.turns_to_complete;
-                        payout.metal += metal_rate * harvest.turns_spent;
-                        const leather_rate = clone.materials_collected.leather / clone.turns_to_complete;
-                        payout.leather += leather_rate * harvest.turns_spent;
-                        const cloth_rate = clone.materials_collected.cloth / clone.turns_to_complete;
-                        payout.cloth += cloth_rate * harvest.turns_spent;
-                        const knowledge_rate = clone.materials_collected.knowledge / clone.turns_to_complete;
-                        payout.knowledge += knowledge_rate * harvest.turns_spent;
-                    }
+                    const payout = computeHarvest(current.player_data.clones, harvest.turns_spent);
                     current.player_data.materials.add(payout);
                 },
             }
@@ -2292,6 +2315,14 @@ pub fn processEvent(
                     const entity = getLevelEntity(current, use.caster_index);
                     entity.momentum += 1;
 
+                    // Mission stat: skills used by the player. See DESIGN
+                    // → Clones (clone system).
+                    if (use.caster_index == 0) {
+                        if (playerMissionPtr(current)) |mission| {
+                            mission.skills_used += 1;
+                        }
+                    }
+
                     if (lookups.getSkillDefinition(use.skill_id)) |skill_definition| {
                         // Sound for the cast/swing, by skill type: weapon skills
                         // play the swing; spells/cantrips/enchantments/curses play
@@ -2352,6 +2383,14 @@ pub fn processEvent(
                     const entity = getLevelEntity(current, move.entity_index);
                     entity.position = move.destination;
                     entity.momentum += 1;
+
+                    // Mission stat: tiles moved by the player. See DESIGN
+                    // → Clones (clone system).
+                    if (move.entity_index == 0) {
+                        if (playerMissionPtr(current)) |mission| {
+                            mission.tiles_moved += 1;
+                        }
+                    }
 
                     // Push pickup, aggro check, and level-end check after
                     // movement. LIFO (last in array runs first), so the
@@ -2689,6 +2728,14 @@ pub fn processEvent(
                             defender.current_health -= incoming_damage;
                         }
 
+                        // Mission stats: damage dealt (player is attacker)
+                        // / taken (player is defender). See DESIGN → Clones
+                        // (clone system).
+                        if (playerMissionPtr(current)) |mission| {
+                            if (collision.attacker_index == 0) mission.damage_dealt += incoming_damage;
+                            if (collision.defender_index == 0) mission.damage_taken += incoming_damage;
+                        }
+
                         // One-shot hit flash on the defender (gated
                         // `!replaying`, same shape as the skill-icon anim).
                         // Only when damage is actually dealt. See DESIGN →
@@ -2791,6 +2838,14 @@ pub fn processEvent(
                             defender.current_health = 0;
                         } else {
                             defender.current_health -= incoming_damage;
+                        }
+
+                        // Mission stats: damage dealt (player is attacker)
+                        // / taken (player is defender). See DESIGN → Clones
+                        // (clone system).
+                        if (playerMissionPtr(current)) |mission| {
+                            if (attack.attacker_index == 0) mission.damage_dealt += incoming_damage;
+                            if (attack.defender_index == 0) mission.damage_taken += incoming_damage;
                         }
 
                         // One-shot hit flash on the defender (gated

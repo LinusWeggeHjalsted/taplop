@@ -613,6 +613,84 @@ test "collision: no-op if defender is dead" {
     try testing.expectEqual(@as(u32, 0), levelEntity(&history, 1).current_health);
 }
 
+// ───────────────────────── mission stat accumulators ─────────────────────────
+// See DESIGN → Clones (clone system). damage_dealt/taken accumulate in the
+// attack + collision handlers, player-only, gated on incoming_damage > 0.
+
+test "attack: player damage_dealt accumulates on the mission" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 10, .max_health = 10, .defense = 2 },
+        },
+        &three_by_three,
+    ));
+    history.current_state.mission = .{ .uuid = "test-uuid" };
+    pushAndRunSub(&history, .{ .attack = .{ .attacker_index = 0, .defender_index = 1, .outgoing_damage = 7 } });
+    // 7 - 2 defense = 5 dealt.
+    try testing.expectEqual(@as(u32, 5), history.current_state.mission.?.damage_dealt);
+    try testing.expectEqual(@as(u32, 0), history.current_state.mission.?.damage_taken);
+}
+
+test "attack: player damage_taken accumulates on the mission" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .current_health = 10, .max_health = 10, .defense = 1 },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 10, .max_health = 10 },
+        },
+        &three_by_three,
+    ));
+    history.current_state.mission = .{ .uuid = "test-uuid" };
+    pushAndRunSub(&history, .{ .attack = .{ .attacker_index = 1, .defender_index = 0, .outgoing_damage = 6 } });
+    // 6 - 1 defense = 5 taken.
+    try testing.expectEqual(@as(u32, 5), history.current_state.mission.?.damage_taken);
+    try testing.expectEqual(@as(u32, 0), history.current_state.mission.?.damage_dealt);
+}
+
+test "attack: zero-damage hit does not accumulate" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 10, .max_health = 10, .defense = 10 },
+        },
+        &three_by_three,
+    ));
+    history.current_state.mission = .{ .uuid = "test-uuid" };
+    pushAndRunSub(&history, .{ .attack = .{ .attacker_index = 0, .defender_index = 1, .outgoing_damage = 5 } });
+    // 5 - 10 defense = 0 incoming → no accumulation.
+    try testing.expectEqual(@as(u32, 0), history.current_state.mission.?.damage_dealt);
+}
+
+test "collision: player damage_dealt accumulates on the mission" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 10, .max_health = 10, .defense = 2 },
+        },
+        &three_by_three,
+    ));
+    history.current_state.mission = .{ .uuid = "test-uuid" };
+    pushAndRunSub(&history, .{ .collision = .{ .attacker_index = 0, .defender_index = 1, .damage = 8 } });
+    // 8 - 2 defense = 6 dealt.
+    try testing.expectEqual(@as(u32, 6), history.current_state.mission.?.damage_dealt);
+}
+
 // ───────────────────────── retreat ─────────────────────────
 
 test "retreat: moves the entity away from the target" {

@@ -706,3 +706,92 @@ test "harvest_clones: skips clones with zero turns_to_complete" {
     // Only u2 contributes: rate 2 * 5 = 10.
     try testing.expectEqual(@as(u32, 10), history.current_state.player_data.materials.wood);
 }
+
+// ───────────────────────── mission stat accumulators ─────────────────────────
+// See DESIGN → Clones (clone system). tiles_moved increments in move_entity,
+// skills_used in use_skill — both player-only, gated on mission non-null.
+
+fn pushLevel(history: *state.GameStateHistory, event: LevelEvent) void {
+    event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = event }}, history.current_arena.allocator());
+}
+
+test "move_entity: player tiles_moved accumulates on the mission" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{.{ .team = 0, .position = .{ .x = 0, .y = 0 } }},
+        &five_by_five,
+    ));
+    history.current_state.mission = .{ .uuid = "test-uuid" };
+    pushLevel(&history, .{ .move_entity = .{ .entity_index = 0, .destination = .{ .x = 1, .y = 0 } } });
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.tiles_moved);
+}
+
+test "move_entity: non-player move does not accumulate tiles_moved" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 } },
+            .{ .team = 1, .position = .{ .x = 2, .y = 0 } },
+        },
+        &five_by_five,
+    ));
+    history.current_state.mission = .{ .uuid = "test-uuid" };
+    pushLevel(&history, .{ .move_entity = .{ .entity_index = 1, .destination = .{ .x = 3, .y = 0 } } });
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 0), history.current_state.mission.?.tiles_moved);
+}
+
+test "use_skill: player skills_used accumulates on the mission" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 } },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 10, .max_health = 10 },
+        },
+        &five_by_five,
+    ));
+    history.current_state.mission = .{ .uuid = "test-uuid" };
+    pushLevel(&history, .{ .use_skill = .{ .caster_index = 0, .skill_id = .stab, .target = .{ .x = 1, .y = 0 } } });
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.skills_used);
+}
+
+test "use_skill: non-player skill does not accumulate skills_used" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 } },
+        },
+        &five_by_five,
+    ));
+    history.current_state.mission = .{ .uuid = "test-uuid" };
+    pushLevel(&history, .{ .use_skill = .{ .caster_index = 1, .skill_id = .stab, .target = .{ .x = 0, .y = 0 } } });
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 0), history.current_state.mission.?.skills_used);
+}
+
+test "computeHarvest: pure payout matches harvest_clones handler" {
+    const clones = [_]Clone{
+        .{ .mission_uuid = "u1", .name = "A", .turns_to_complete = 5, .materials_collected = .{ .wood = 10 } },
+        .{ .mission_uuid = "u2", .name = "B", .turns_to_complete = 3, .materials_collected = .{ .metal = 6 } },
+    };
+    const payout = event_handlers.computeHarvest(&clones, 4);
+    // wood: (10/5)*4 = 8; metal: (6/3)*4 = 8.
+    try testing.expectEqual(@as(u32, 8), payout.wood);
+    try testing.expectEqual(@as(u32, 8), payout.metal);
+    try testing.expectEqual(@as(u32, 0), payout.leather);
+}

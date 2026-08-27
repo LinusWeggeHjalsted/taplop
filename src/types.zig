@@ -816,6 +816,15 @@ pub const MissionCompleteInfo = struct {
     path: []const u8,
     turns_spent: u32 = 0,
     converted_materials: Materials = .{},
+    /// Materials gained this run from harvesting all old clones (the
+    /// `harvest_clones` payout). Shown in the mission-complete clone-rewards
+    /// panel. See DESIGN → Clones (clone system).
+    harvested_materials: Materials = .{},
+    /// Run stats for the mission-complete stats panel.
+    tiles_moved: u32 = 0,
+    damage_dealt: u32 = 0,
+    damage_taken: u32 = 0,
+    skills_used: u32 = 0,
     /// True when a clone for this mission already exists AND the just-completed
     /// run was NOT strictly better (Pareto) — the overlay offers a manual
     /// "Overwrite Clone" button. False on a first completion (auto-saved) or a
@@ -834,6 +843,10 @@ pub const Mission = struct {
     start_hub: ?[]const u8 = null,
     end_hub: ?[]const u8 = null,
     turns_spent: u32 = 0,
+    /// Tiles the player moved this mission (incremented in `move_entity`,
+    /// player-only). Shown on the mission-complete stats panel. See DESIGN
+    /// → Clones (clone system).
+    tiles_moved: u32 = 0,
     converted_materials_collected: Materials = .{},
     damage_dealt: u32 = 0,
     damage_taken: u32 = 0,
