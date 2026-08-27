@@ -895,7 +895,7 @@ pub const RaylibBackend = struct {
             .height = @as(f32, @floatFromInt(bar.height)) * world_scale,
         };
         // Depleted background (drawn full).
-        self.drawSprite("world/entity_health_bar_background", destination, null, bar.depleted_color);
+        self.drawSprite("world/entity_health_bar_background", destination, null, bar.depleted_color, 255);
         // Fill (cropped to fraction from the left — `.right` keeps the left
         // portion, matching a health bar that depletes from the right).
         const fill_texture = self.getTexture("world/entity_health_bar_background") orelse return;
@@ -907,7 +907,7 @@ pub const RaylibBackend = struct {
         rl.drawTexturePro(fill_texture, fill_source, fill_dest, .{ .x = 0, .y = 0 }, 0, toRaylibColor(bar.fill_color, 255));
         // Outline frame on top (same rect), tinted with the fill color so the
         // bar's border matches the entity's team gradient index 1.
-        self.drawSprite("world/entity_health_bar_outline", destination, null, bar.fill_color);
+        self.drawSprite("world/entity_health_bar_outline", destination, null, bar.fill_color, 255);
     }
 
     // -- UI element drawing --
@@ -917,7 +917,7 @@ pub const RaylibBackend = struct {
             .nine_slice_panel => |panel| self.drawNineSlice(panel),
             .slot => |slot| {
                 if (slot.icon_sprite_id) |sprite_id| {
-                    self.drawSprite(sprite_id, referenceRectangle(slot.screen_position, slot.size, slot.size), null, slot.icon_color);
+                    self.drawSprite(sprite_id, referenceRectangle(slot.screen_position, slot.size, slot.size), null, slot.icon_color, 255);
                 }
             },
             .button => |button| {
@@ -925,7 +925,7 @@ pub const RaylibBackend = struct {
                 // separate background; the renderer draws nothing for them.
                 if (button.sprite_id) |sprite_id| {
                     const dest = referenceRectangle(button.screen_position, button.width, button.height);
-                    self.drawSprite(sprite_id, dest, null, button.color);
+                    self.drawSprite(sprite_id, dest, null, button.color, 255);
                     if (button.highlighted) self.drawHighlightOutline(sprite_id, dest, highlight_color);
                 }
             },
@@ -933,7 +933,7 @@ pub const RaylibBackend = struct {
             .fill_sprite => |fill| self.drawFillSprite(fill),
             .image => |image| {
                 const dest = referenceRectangle(image.screen_position, image.width, image.height);
-                self.drawSprite(image.sprite_id, dest, null, image.color);
+                self.drawSprite(image.sprite_id, dest, null, image.color, image.alpha);
                 if (image.highlighted) self.drawHighlightOutline(image.sprite_id, dest, highlight_color);
             },
             .solid_rect => |rect| rl.drawRectangleRec(referenceRectangle(rect.screen_position, rect.width, rect.height), toRaylibColor(rect.color, 255)),
@@ -995,6 +995,7 @@ pub const RaylibBackend = struct {
         destination: rl.Rectangle,
         source: ?rl.Rectangle,
         tint: types.Color,
+        alpha: u8,
     ) void {
         const texture = self.getTexture(sprite_id) orelse {
             rl.drawRectangleRec(destination, rl.Color.magenta);
@@ -1006,7 +1007,7 @@ pub const RaylibBackend = struct {
             .width = @floatFromInt(texture.width),
             .height = @floatFromInt(texture.height),
         };
-        rl.drawTexturePro(texture, source orelse whole, destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(tint, 255));
+        rl.drawTexturePro(texture, source orelse whole, destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(tint, alpha));
     }
 
     /// 9-slice: the four corners are drawn 1:1 (at the source slice size), and
@@ -1097,7 +1098,7 @@ pub const RaylibBackend = struct {
     fn drawFillSprite(self: *RaylibBackend, fill: ui.FillSprite) void {
         const destination = referenceRectangle(fill.screen_position, fill.width, fill.height);
         // Background (e.g. depleted health) drawn whole.
-        self.drawSprite(fill.background_sprite_id, destination, null, fill.background_color);
+        self.drawSprite(fill.background_sprite_id, destination, null, fill.background_color, 255);
 
         const texture = self.getTexture(fill.fill_sprite_id) orelse return;
         const fraction = std.math.clamp(fill.fill_fraction, 0, 1);

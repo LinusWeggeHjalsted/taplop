@@ -4884,3 +4884,23 @@ orchestrator + stats display) deferred — waiting on the user's panel design.
   `applyAction` + `releaseSoundForAction` wired.
 - 2 new turnflow tests (overwrite replaces / no-op-without-completed-mission).
   270 tests pass.
+
+## Art migration
+
+### Options icon + cooldown overlay (DONE)
+
+- Copied `Assets/Sprites/Options.png` (256×256 RGBA) from the Unity project
+  to `assets/ui/icon_options.png` — the sprite id the top-bar options button
+  already references (`ui.zig` `buildTopBar`). Was drawing magenta; now real
+  art. No code change (the id was already wired).
+- Replaced the `ui/cooldown_overlay` placeholder (was drawing magenta) with a
+  reuse of `ui/skill_button`: the skill-button frame is drawn over the icon
+  tinted `active_theme.darkest` at alpha 128 (50% transparent), so a
+  on-cooldown skill reads as dimmed/locked while the remaining-turns number
+  sits on top. `Image` UiElement gained an `alpha: u8 = 255` field;
+  `drawSprite` gained an `alpha: u8` param (6 existing callers pass 255, the
+  `.image` arm reads `image.alpha`). `emitSkillButton` gained a
+  `cooldown_overlay_color: Color` param (both call sites pass
+  `active_theme.darkest`).
+- Remaining placeholder ids: `ui/icon_swap`, `ui/momentum` (no assets exist
+  yet — truly missing, not migrated).

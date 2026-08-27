@@ -88,7 +88,7 @@ Test by running `zig build run` and clicking through.
         sprite).
 - **Cross-cutting polish** — 9-slice TILING
   (currently stretched), `highlighted` edge outlines, missing art
-  (ui/icon_swap, ui/momentum, ui/cooldown_overlay draw magenta). (Real TTF
+  (ui/icon_swap, ui/momentum draw magenta). (Real TTF
   font + glyph metrics DONE — see DONE.md.)
 - **Larger systems (beyond MVP)** — middle panels (inventory/gear/skills/enemy
   inspect) + overlays (world map, full combat log) + options/settings/top bar
@@ -277,7 +277,7 @@ Open:
   ui/icon_inventory,gear,skills,skip; ui/button_background; ui/turn_move,
   turn_attack; ui/skill_button; ui/skill_slot_empty; skills/*;
   ui/health_globe (+ _border); ui/panel. Still placeholder ids:
-  ui/icon_swap, ui/momentum, ui/cooldown_overlay.
+  ui/icon_swap, ui/momentum.
 - Center cooldown/label text using measured text width — DONE (emitCenteredNumber
   measures the formatted number via FontMetrics; see DONE.md).
 - Real font metrics — DONE: `ui.FontMetrics` (per-glyph advance table,
@@ -491,7 +491,7 @@ Open:
   regular face is loaded); honoring TextLabel bold/italic + color is a
   follow-up (needs separate bold/italic faces).
 - Missing-art audit: some bottom-bar sprite ids are still placeholders
-  (ui/icon_swap, ui/momentum, ui/cooldown_overlay) and will draw magenta until
+  (ui/icon_swap, ui/momentum) and will draw magenta until
   real assets land.
 - Web Phase 4: asset downscaling for web download budget (the Memory & Budget
   → Asset memory levers matter more for web than native); WebGL1/WebGL2 build

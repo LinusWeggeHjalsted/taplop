@@ -601,6 +601,9 @@ pub const Image = struct {
     width: i32,
     height: i32,
     color: Color = default_tint,
+    /// Tint alpha (0–255). Default fully opaque; overlays like the skill
+    /// cooldown wash use 128 for 50% transparency.
+    alpha: u8 = 255,
     /// Renderer draws a programmatic edge highlight around the sprite's
     /// opaque pixels when set (e.g. the active turn-step indicator).
     highlighted: bool = false,
@@ -1787,6 +1790,9 @@ fn emitSkillButton(
     background_color: Color,
     icon_color: Color,
     prepared_skill: ?SkillId,
+    /// Tint for the cooldown overlay (the skill-button sprite washed at 50%
+    /// alpha). Caller passes the active theme's darkest color.
+    cooldown_overlay_color: Color,
     /// Drag ref for this slot, if it's a reorderable utility slot. Null for
     /// weapon-skill slots (1-3, derived from the equipped weapon — not
     /// draggable). Set by the caller for utility slots 4-8.
@@ -1853,10 +1859,14 @@ fn emitSkillButton(
     const cooldown = player.skill_cooldowns.get(skill_id.?);
     if (cooldown > 0) {
         try elements.append(allocator, .{ .image = .{
-            .sprite_id = "ui/cooldown_overlay",
+            // Reuse the skill-button frame as a translucent wash so the icon
+            // reads as dimmed/locked. Tinted darkest theme color at 50% alpha.
+            .sprite_id = "ui/skill_button",
             .screen_position = cell.position(),
             .width = cell.width,
             .height = cell.height,
+            .color = cooldown_overlay_color,
+            .alpha = 128,
             // Overlay on the skill button — pass hover through to the button.
             .blocks_input = false,
         } });
@@ -1985,7 +1995,7 @@ pub fn buildBottomBar(
         while (slot <= 3) : (slot += 1) {
             // Weapon-skill slots are derived from the equipped weapon — not
             // reorderable, so no drag ref.
-            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill, null, drag_source);
+            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill, active_theme.darkest, null, drag_source);
         }
     }
 
@@ -2011,7 +2021,7 @@ pub fn buildBottomBar(
         while (slot <= 8) : (slot += 1) {
             // Utility-skill slots are reorderable by drag: ref = skill_bar
             // index 0-4 (slot 4 → index 0, ..., slot 8 → index 4).
-            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill, .{ .skill_bar = @as(u32, slot - 4) }, drag_source);
+            try emitSkillButton(elements, allocator, font_metrics, inner.next(slot_size), slot, player, weapon_type_definitions, c_border, c_icon, prepared_skill, active_theme.darkest, .{ .skill_bar = @as(u32, slot - 4) }, drag_source);
         }
     }
 
@@ -2882,19 +2892,29 @@ pub fn buildTopBar(
     active_theme: types.ActiveColorTheme,
 ) !void {
     const p = active_theme.player_gradient.colors;
+    // Match the bottom-bar skip button: background = gradient[5], icon = gradient[1].
+    const c_btn_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const c_btn_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
     const c_btn = p[@min(@as(u32, 4), types.gradient_color_count - 1)];
 
     var row = Row.init(screen.position(), top_bar_height, ui_gap);
 
-    // Options button — flush in the top-left corner (no margin).
+    // Options button — flush in the top-left corner (no margin). Layered
+    // background + icon, same as the skip button.
     const options_cell = row.next(slot_size);
-    try elements.append(allocator, .{ .button = .{
-        .sprite_id = "ui/icon_options",
-        .screen_position = options_cell.position(),
-        .action = .toggle_options_menu,
-        .color = c_btn,
-        .tooltip = .{ .header = try spanRow(allocator, text("Options")) },
-    } });
+    try emitIconButton(
+        elements,
+        allocator,
+        options_cell,
+        button_background_sprite_id,
+        "ui/icon_options",
+        .toggle_options_menu,
+        .{ .header = try spanRow(allocator, text("Options")) },
+        c_btn_bg,
+        c_btn_icon,
+        false,
+        null,
+    );
 
     // Undo button — same size, one `ui_gap` to the right of options.
     const undo_cell = row.next(slot_size);
