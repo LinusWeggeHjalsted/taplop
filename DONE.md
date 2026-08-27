@@ -4985,3 +4985,24 @@ clone system landed.
 Fix: added `mission_uuid` to `save_clone_data_keys` + a regression test that
 runs `validateKeys` against a save with a CloneData section and asserts zero
 warnings.
+
+### Clone harvest paid 0 for fractional-rate clones (DONE)
+
+Symptom: a Beginnings clone (wood 11, metal 25, leather 19, cloth 19,
+turns_to_complete 49) harvested all-0 on every later mission completion.
+Root cause: `computeHarvest` computed `(materials / turns_to_complete) *
+turns_spent` — dividing FIRST truncated the per-turn rate to 0 whenever
+materials < turns_to_complete (true for every material on that clone: max 25
+< 49), so `0 * turns_spent` = 0 forever. The DESIGN "known limitation" note
+had rationalized this as accepted integer-division loss, but the arithmetic
+order was simply wrong.
+
+Fix: rearrange to `(materials * turns_spent) / turns_to_complete` with a u64
+intermediate (overflow guard on the multiply). One truncating divide at the
+end instead of truncating the rate up front: a 30-turn Forest completion now
+harvests wood `(11*30)/49 = 6`, metal `(25*30)/49 = 15` (was 0 for both).
+Loss is now `< 1 per material per harvest` (the fractional remainder) instead
+of possibly 100%. Existing tests use cleanly-divisible values (10/5, 6/3) so
+their asserted payouts are unchanged; added a regression test mirroring the
+real Beginnings clone. Updated the DESIGN note + the `computeHarvest`/
+`harvest_clones` handler doc comments.

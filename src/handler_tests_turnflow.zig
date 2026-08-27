@@ -796,6 +796,22 @@ test "computeHarvest: pure payout matches harvest_clones handler" {
     try testing.expectEqual(@as(u32, 0), payout.leather);
 }
 
+test "computeHarvest: multiply-before-divide pays out fractional-rate clones" {
+    // Regression: a clone whose materials < turns_to_complete has a
+    // fractional per-turn rate. Dividing first (materials / turns) truncates
+    // the rate to 0 and yields nothing; multiplying first pays out the
+    // cross-product before the single truncating divide. Mirrors the real
+    // Beginnings clone (11 wood / 49 turns) that harvested 0.
+    const clones = [_]Clone{
+        .{ .mission_uuid = "u1", .name = "A", .turns_to_complete = 49, .materials_collected = .{ .wood = 11, .metal = 25 } },
+    };
+    const payout = event_handlers.computeHarvest(&clones, 30);
+    // wood: (11*30)/49 = 330/49 = 6; metal: (25*30)/49 = 750/49 = 15.
+    try testing.expectEqual(@as(u32, 6), payout.wood);
+    try testing.expectEqual(@as(u32, 15), payout.metal);
+    try testing.expectEqual(@as(u32, 0), payout.leather);
+}
+
 // ───────────────────────── player_overwrite_clone orchestrator ─────────────────────────
 // See DESIGN → Clones (clone system). The overlay button pushes this; the
 // handler reads last_completed_mission and pushes save_clone_info with the

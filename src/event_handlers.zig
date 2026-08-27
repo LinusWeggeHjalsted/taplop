@@ -489,22 +489,27 @@ fn playerMissionPtr(current: *GameState) ?*types.Mission {
     return null;
 }
 
-/// Pure harvest payout: per material, `rate * turns_spent` summed over all
-/// clones, where `rate = clone.materials_collected / clone.turns_to_complete`
-/// (integer division). Skips clones with `turns_to_complete == 0`. Shared by
-/// the `harvest_clones` handler and the `end_level` completion branch (which
+/// Pure harvest payout: per material, `(materials_collected * turns_spent)
+/// / turns_to_complete` summed over all clones. The multiply happens BEFORE
+/// the divide so a clone whose per-turn rate is fractional (materials <
+/// turns_to_complete) still pays out — dividing first truncates the rate to
+/// 0 and yields nothing. u64 intermediate guards the multiply against u32
+/// overflow. Skips clones with `turns_to_complete == 0`. Shared by the
+/// `harvest_clones` handler and the `end_level` completion branch (which
 /// snapshots the payout onto `MissionCompleteInfo` for the overlay). See
 /// DESIGN → Clones (clone system).
 pub fn computeHarvest(clones: []const types.Clone, turns_spent: u32) types.Materials {
     if (turns_spent == 0) return .{};
     var payout: types.Materials = .{};
+    const t: u64 = turns_spent;
     for (clones) |clone| {
         if (clone.turns_to_complete == 0) continue;
-        payout.wood += (clone.materials_collected.wood / clone.turns_to_complete) * turns_spent;
-        payout.metal += (clone.materials_collected.metal / clone.turns_to_complete) * turns_spent;
-        payout.leather += (clone.materials_collected.leather / clone.turns_to_complete) * turns_spent;
-        payout.cloth += (clone.materials_collected.cloth / clone.turns_to_complete) * turns_spent;
-        payout.knowledge += (clone.materials_collected.knowledge / clone.turns_to_complete) * turns_spent;
+        const d: u64 = clone.turns_to_complete;
+        payout.wood += @intCast((@as(u64, clone.materials_collected.wood) * t) / d);
+        payout.metal += @intCast((@as(u64, clone.materials_collected.metal) * t) / d);
+        payout.leather += @intCast((@as(u64, clone.materials_collected.leather) * t) / d);
+        payout.cloth += @intCast((@as(u64, clone.materials_collected.cloth) * t) / d);
+        payout.knowledge += @intCast((@as(u64, clone.materials_collected.knowledge) * t) / d);
     }
     return payout;
 }
@@ -1731,7 +1736,8 @@ pub fn processEvent(
                 },
                 .harvest_clones => |harvest| {
                     // Payout from all saved clones: per material,
-                    // `rate * turns_spent` where `rate = materials / turns`.
+                    // `(materials * turns_spent) / turns_to_complete`
+                    // (multiply before divide — see computeHarvest).
                     // Gated on turns_spent > 0 at the push site, but guard
                     // here too in case a hand-crafted replay seeds it at 0.
                     // See DESIGN → Clones (clone system).

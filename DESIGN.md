@@ -1257,12 +1257,15 @@ So a clone is a permanent, compounding material factory keyed by mission.
   (no file writes / sound / anim at the handler site; the `write_save` that
   persists the result is separately gated `!replaying`).
 
-- **Known limitation: integer division rounding.** `rate = materials / turns`
-  truncates, so a clone with 10 wood / 3 turns has rate 3 (not 3.33). A
-  4-turn completion harvests `3 * 4 = 12` wood, not 13.33. Accepted: all
-  gameplay logic uses integers (AGENTS → Code Style); the loss is bounded
-  (≤ turns-1 per material per clone) and the alternative (fixed-point rates)
-  adds complexity for negligible gain.
+- **Integer division rounding.** Payout is `(materials_collected * turns_spent)
+  / turns_to_complete` per material, with the MULTIPLY before the divide and
+  a u64 intermediate. This matters when a clone's per-turn rate is
+  fractional (materials < turns_to_complete): dividing first truncates the
+  rate to 0 and pays out nothing, which is how the real Beginnings clone
+  (11 wood / 49 turns) harvested 0. Multiplying first pays the cross-product
+  before one truncating divide, so the loss is `< 1 per material per
+  harvest` (the fractional remainder) instead of possibly 100%. All gameplay
+  logic stays integer (AGENTS → Code Style); no fixed-point state needed.
 
 ## Architecture
 
