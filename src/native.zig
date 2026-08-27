@@ -3,7 +3,9 @@
 //! shared game logic in main.zig stays raylib-free. It sets up the allocator,
 //! IO, the persistent data directory (~/.ziglop by default, overridable via
 //! --data-dir or $ZIGLOP_DATA), and the FileSource, then hands control to
-//! main.run with a RaylibBackend. See DESIGN → File System & IO.
+//! main.run with a RaylibBackend. An optional --replay <path> flag loads a
+//! session log and reconstructs the session before the loop starts. See
+//! DESIGN → File System & IO + Logging & Replay.
 
 const std = @import("std");
 const game = @import("main.zig");
@@ -31,7 +33,8 @@ pub fn main(init: std.process.Init.Minimal) void {
     //   3. $HOME/.ziglop (default)
     // Created if missing. All writable artifacts (saves, logs, replays) live
     // here, and shipped-content reads check here first for player mods.
-    const data_dir_override = parseDataDirFlag(init.args, allocator);
+    const data_dir_override = parseStringFlag(init.args, allocator, "--data-dir");
+    const replay_path = parseStringFlag(init.args, allocator, "--replay");
     const persistent_dir = openPersistentDir(io, allocator, data_dir_override) catch
         @panic("failed to open persistent data directory");
     defer persistent_dir.close(io);
@@ -51,6 +54,15 @@ pub fn main(init: std.process.Init.Minimal) void {
 
     var setup = session_setup.createSessionSetup(allocator, &file_source, io, &backend);
     setup.fixupPointers();
+    // Replay a session log from the command line (--replay <path>): load +
+    // reconstruct the session from the event history before entering the
+    // game loop. The game resumes at the end of the log. Recoverable — a
+    // bad path / corrupt file surfaces a dismissible popup and the game
+    // falls back to the main menu instead of crashing. See DESIGN → Logging
+    // & Replay.
+    if (replay_path) |path| {
+        game.loadAndReconstructSession(&setup.frame_state.history, path, io);
+    }
     // Open the audio device + load sfx/music after settings are available.
     // No-op-safe if the device can't open (the game runs silent). See
     // DESIGN → Audio.
@@ -58,25 +70,29 @@ pub fn main(init: std.process.Init.Minimal) void {
     game.run(&backend, &setup);
 }
 
-/// Scan argv for a `--data-dir <path>` or `--data-dir=<path>` flag and return
-/// the path (caller-owned dupe) if present. Returns null if the flag isn't
-/// given. A `--data-dir` with no following value prints a warning and is
-/// treated as absent (falls through to env / default).
-fn parseDataDirFlag(args: std.process.Args, allocator: std.mem.Allocator) ?[]u8 {
+/// Scan argv for a string flag (`--name <value>` or `--name=<value>`) and
+/// return the path (caller-owned dupe) if present. Returns null if the flag
+/// isn't given. A `--name` with no following value prints a warning and is
+/// treated as absent. Used for `--data-dir` and `--replay`.
+fn parseStringFlag(
+    args: std.process.Args,
+    allocator: std.mem.Allocator,
+    name: []const u8,
+) ?[]u8 {
     var iter = std.process.Args.Iterator.init(args);
     defer iter.deinit();
     _ = iter.next(); // skip program name
     while (iter.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--data-dir")) {
+        if (std.mem.eql(u8, arg, name)) {
             if (iter.next()) |value| {
-                return allocator.dupe(u8, value) catch @panic("failed to dupe --data-dir value");
+                return allocator.dupe(u8, value) catch @panic("failed to dupe flag value");
             }
-            std.debug.print("warning: --data-dir given without a value; ignoring\n", .{});
+            std.debug.print("warning: {s} given without a value; ignoring\n", .{name});
             return null;
         }
-        if (std.mem.startsWith(u8, arg, "--data-dir=")) {
-            const value = arg["--data-dir=".len..];
-            return allocator.dupe(u8, value) catch @panic("failed to dupe --data-dir value");
+        if (std.mem.startsWith(u8, arg, name) and arg.len > name.len and arg[name.len] == '=') {
+            const value = arg[name.len + 1 ..];
+            return allocator.dupe(u8, value) catch @panic("failed to dupe flag value");
         }
     }
     return null;

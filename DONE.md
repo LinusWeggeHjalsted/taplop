@@ -5132,3 +5132,41 @@ Tests: skills-panel element-count assertions updated (header adds a text_label
 + button: 7 → 9 in the few-skills test; grid_top shifted by
 `middle_panel_header_height`); enemy-inspect read-only test's `.button` panic
 loosened to allow the close button specifically.
+
+### `--replay <path>` CLI flag — session reconstruction from a log file (done)
+
+A native runtime flag that loads a session log from disk and reconstructs the
+session from its event history, resuming at the END of the log (the game
+continues from wherever the original session was — mid-hub, mid-level, etc.).
+The stepping replay-viewer UI (the `.replay_viewer` screen) is a separate
+future slice; this is the "resume at end" path.
+
+- **Flag:** `--replay <path>` / `--replay=<path>` in `native.zig`, parsed
+  alongside `--data-dir` by a generalized `parseStringFlag(args, allocator,
+  name)` (replaces the old `parseDataDirFlag`). The path is cwd-relative or
+  absolute (same semantics as `--data-dir`). Web has no argv — a URL-param /
+  file-picker path is a future item.
+- **Glue:** `main.loadAndReconstructSession(history, path, io)` — raylib-free
+  (unit-testable), reads the file via `std.Io.Dir.cwd().readFileAlloc`,
+  `parser.parseConfigFile` → `session_log.loadEventLog` →
+  `warnIfSessionLogFromDifferentBuild` (advisory stderr, same as the round-trip
+  test) → `history.reconstructFromEventLog(events, events.len, processEvent)`.
+  Called after `fixupPointers()` and before `game.run`, so crash_dump (installed
+  in `run`) captures the reconstructed history.
+- **Recoverable errors:** a bad path / corrupt file / unsupported
+  `file_format_version` sets a dismissible `pending_error` popup (the existing
+  machinery) and returns without reconstructing — the game falls back to the
+  seeded main-menu state. Reconstruction divergence (the log doesn't match
+  this build's shipped content) still panics per the replay-verification
+  policy — that's a real bug, not a bad flag.
+- **Pre-existing limitation (not introduced here):** a custom-mission replay
+  whose files changed since the original session panics until the
+  reconstruction cache is serialized into the session log
+  (`file_format_version` 2, deferred with custom-mission sharing). Shipped-
+  content replays work today. See DESIGN → File System & IO → Reconstruction
+  cache + Determinism & Tiebreaking → Replay VERIFICATION.
+- **Tests:** two in main.zig — (1) forward-play a session, serialize, write to
+  a temp file, `loadAndReconstructSession` into a fresh history, assert
+  `expectEqualDeep` against forward play + idle points match; (2) a missing
+  file sets `pending_error` and leaves the history at the seeded main-menu
+  state. Temp files under `zig-cache/test-recon-load/` (cleaned up).

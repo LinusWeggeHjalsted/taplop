@@ -49,7 +49,10 @@ Test by running `zig build run` and clicking through.
   those still rely on the implicit context-gate. Small slice; lands with the
   binding-UI work or standalone.
 - **Replay viewer** — wire the .replay_viewer screen to STEP through a loaded
-  log. See "Logging & Replay" below.
+  log. The `--replay <path>` CLI flag (DONE — see DONE.md) loads a session
+  log and reconstructs the session to its END state (resume mid-session);
+  the in-game viewer is the stepping UI on top of the same machinery. See
+  "Logging & Replay" below.
 - **Mission end states** — mission_complete / mission_fail screens + player
   death. See "Mission Flow" below.
 - **Level editor** — major planned system, not yet broken down. The Screen

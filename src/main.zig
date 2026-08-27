@@ -581,6 +581,67 @@ fn gameLoop(backend: anytype, frame_state: *FrameState) void {
     }
 }
 
+/// Upper bound on a single replay-file read. Session logs are small (a few
+/// KB for a typical session), but this matches `FileSource`'s read limit so
+/// an unusually long session can't trip it. The bytes land in `history_arena`
+/// (process-lifetime) — they outlive the parse but that's the same residency
+/// the reconstruction cache has, and the arena is never the bottleneck.
+const replay_read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
+
+/// Load a session log from `path` (cwd-relative or absolute) and reconstruct
+/// the session from its event history, resuming at the end of the log. Used
+/// by the native `--replay <path>` CLI flag. Raylib-free so it's unit-
+/// testable.
+///
+/// Recoverable: on any load failure (file missing, corrupt, unsupported
+/// `file_format_version`), sets a dismissible `pending_error` popup and
+/// returns WITHOUT reconstructing — the game falls back to the seeded
+/// main-menu state the caller already set up. Reconstruction divergence
+/// (the log doesn't match this build's shipped content — e.g. a custom
+/// mission whose files changed since the original session) still panics per
+/// the replay-verification policy; that's a real bug, not a bad flag. See
+/// DESIGN → Logging & Replay.
+pub fn loadAndReconstructSession(
+    history: *state.GameStateHistory,
+    path: []const u8,
+    io: std.Io,
+) void {
+    const allocator = history.history_arena.allocator();
+    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, allocator, replay_read_limit) catch |err| {
+        const msg = std.fmt.allocPrint(
+            allocator,
+            "Could not load replay file '{s}': {s}",
+            .{ path, @errorName(err) },
+        ) catch "failed to format replay load error";
+        history.session.setPendingError(allocator, msg);
+        return;
+    };
+    const sections = parser.parseConfigFile(bytes, allocator) catch |err| {
+        const msg = std.fmt.allocPrint(
+            allocator,
+            "Could not parse replay file '{s}': {s}",
+            .{ path, @errorName(err) },
+        ) catch "failed to format replay parse error";
+        history.session.setPendingError(allocator, msg);
+        return;
+    };
+    const log = session_log.loadEventLog(sections, allocator) catch |err| {
+        const msg = std.fmt.allocPrint(
+            allocator,
+            "Could not load session log from '{s}': {s}",
+            .{ path, @errorName(err) },
+        ) catch "failed to format replay load error";
+        history.session.setPendingError(allocator, msg);
+        return;
+    };
+    input_handlers.warnIfSessionLogFromDifferentBuild(log.game_version);
+    history.reconstructFromEventLog(
+        log.events,
+        @intCast(log.events.len),
+        &event_handlers.processEvent,
+    );
+}
+
 /// Entry point shared by every platform: drive the backend-driven game loop
 /// against a session the caller has already set up. The caller (native.zig /
 /// web.zig) builds the `SessionSetup` via `session_setup.createSessionSetup`,
@@ -695,6 +756,120 @@ test "session log round-trips through reconstruction (forward play == replay)" {
     );
     while (history2.undo(&event_handlers.processEvent)) {}
     try std.testing.expectEqual(@as(u32, 0), history2.current_idle_index);
+}
+
+test "loadAndReconstructSession: resumes at the end of a loaded log file" {
+    // The --replay CLI path reads a session log from disk and reconstructs
+    // the session from its event history, landing at the end of the log.
+    // This mirrors the round-trip test above but exercises the file-based
+    // glue (`loadAndReconstructSession`) instead of calling
+    // `reconstructFromEventLog` directly: serialize a session, write it to
+    // a temp file, load + reconstruct into a fresh history, assert the
+    // final state matches forward play. See DESIGN → Logging & Replay.
+    const allocator = std.testing.allocator;
+
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    // Forward-play a short session (main menu -> new game -> hub -> one hub
+    // move) into history1.
+    var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    runToIdle(&history1);
+    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
+    runToIdle(&history1);
+    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history1.current_arena.allocator());
+    runToIdle(&history1);
+    try std.testing.expectEqual(state.Screen.hub, history1.current_state.screen);
+
+    // Serialize the session log and write it to a temp file under zig-cache.
+    const body = try session_log.writeEventLog(history1.event_history.items, "20260101_000000", arena);
+    const scratch = "zig-cache/test-recon-load";
+    std.Io.Dir.cwd().createDirPath(io, scratch) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_path = "zig-cache/test-recon-load/session.txt";
+    std.Io.Dir.cwd().writeFile(io, .{ .sub_path = file_path, .data = body }) catch
+        @panic("failed to write replay file");
+
+    // Load + reconstruct into a fresh history2 via the CLI glue.
+    var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    loadAndReconstructSession(&history2, file_path, io);
+
+    // No pending error (a clean load surfaces no popup).
+    try std.testing.expect(history2.session.pendingError() == null);
+    // The reconstructed final state matches forward play.
+    try std.testing.expectEqualDeep(history1.current_state, history2.current_state);
+    // The reconstructed idle points match (undo/redo works as if played live).
+    try std.testing.expectEqualSlices(u32, history1.idle_points.items, history2.idle_points.items);
+}
+
+test "loadAndReconstructSession: missing file sets pending_error, stays at main menu" {
+    // A bad --replay path is recoverable: the game surfaces a dismissible
+    // popup and falls back to the seeded main-menu state instead of
+    // crashing. The history is left untouched (still at the initial seed).
+    const allocator = std.testing.allocator;
+
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+
+    loadAndReconstructSession(&history, "zig-cache/nonexistent-replay-file.txt", io);
+
+    // A pending error popup is set (the dismissible warning).
+    try std.testing.expect(history.session.pendingError() != null);
+    // The state is unchanged from the seed — still at the main menu.
+    try std.testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
+    try std.testing.expectEqual(@as(u32, 0), history.current_event_index);
 }
 
 test "replay verification: clean replay through the slow path passes" {
