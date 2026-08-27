@@ -364,6 +364,111 @@ test "unequip_utility_skill: valid slot clears to null" {
     try testing.expectEqual(@as(?SkillId, null), player(&history).equipped_utility_skills[2]);
 }
 
+// ───────────── equip_utility_skill: cooldown inheritance ─────────────
+// See DESIGN → Architecture (Cooldown inheritance on skill/weapon swap).
+// Equipping a skill onto a bar slot sets the incoming cd to @max(old slot
+// cd, incoming cd); the outgoing skill's cd is PRESERVED (not cleared).
+
+test "equip_utility_skill: incoming inherits @max(old slot cd, incoming cd)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).equipped_utility_skills[1] = .howl;
+    player(&history).skill_cooldowns.set(.howl, 3);
+    player(&history).skill_cooldowns.set(.replenish, 1);
+    pushAndRun(&history, .{ .equip_utility_skill = .{ .skill_id = .replenish, .slot_index = 1 } });
+    try testing.expectEqual(@as(u32, 3), player(&history).skill_cooldowns.get(.replenish));
+}
+
+test "equip_utility_skill: into empty slot preserves incoming cd" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).skill_cooldowns.set(.replenish, 4);
+    pushAndRun(&history, .{ .equip_utility_skill = .{ .skill_id = .replenish, .slot_index = 2 } });
+    try testing.expectEqual(@as(u32, 4), player(&history).skill_cooldowns.get(.replenish));
+}
+
+test "equip_utility_skill: outgoing skill cd is preserved (not cleared)" {
+    // Rotating a used skill off the bar must not reset it — otherwise the
+    // player could cycle use→swap-out→swap-back-in to bypass cooldowns.
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).equipped_utility_skills[1] = .howl;
+    player(&history).skill_cooldowns.set(.howl, 3);
+    player(&history).skill_cooldowns.set(.replenish, 0);
+    pushAndRun(&history, .{ .equip_utility_skill = .{ .skill_id = .replenish, .slot_index = 1 } });
+    try testing.expectEqual(@as(u32, 3), player(&history).skill_cooldowns.get(.howl));
+}
+
+// ───────────── equip_item: weapon cooldown inheritance ─────────────
+// See DESIGN → Architecture (Cooldown inheritance on skill/weapon swap).
+// Equipping a weapon sets ALL THREE of its skill cds to @max(old weapon's
+// corresponding cd, new weapon's corresponding cd), even the hidden one.
+
+test "equip_item: main_hand weapon inherits @max for all 3 skills" {
+    // sword (old, main_hand): slice=3, spinblade=0, flash_strike=5
+    // spear (new, inventory): toss=1, impale=0, skewer=2
+    // expect: toss=max(3,1)=3, impale=max(0,0)=0, skewer=max(5,2)=5
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    const sword: Weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 2 };
+    const spear: Weapon = .{ .name = "spear", .weapon_type = .spear, .weapon_damage = 7 };
+    player(&history).main_hand_weapon = sword;
+    player(&history).inventory.slots[4] = .{ .weapon = spear };
+    player(&history).skill_cooldowns.set(.slice, 3);
+    player(&history).skill_cooldowns.set(.flash_strike, 5);
+    player(&history).skill_cooldowns.set(.toss, 1);
+    player(&history).skill_cooldowns.set(.skewer, 2);
+    pushAndRun(&history, .{ .equip_item = .{ .inventory_slot_index = 4, .gear_slot = .main_hand } });
+    try testing.expectEqual(@as(u32, 3), player(&history).skill_cooldowns.get(.toss));
+    try testing.expectEqual(@as(u32, 0), player(&history).skill_cooldowns.get(.impale));
+    // skill_3 (skewer) is hidden while spear is in main_hand, but its cd is
+    // set anyway and surfaces if the player swap_hands.
+    try testing.expectEqual(@as(u32, 5), player(&history).skill_cooldowns.get(.skewer));
+}
+
+test "equip_item: off_hand weapon inherits @max for all 3 skills" {
+    // Only skill_3 is exposed for the off hand, but all 3 are inherited.
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    const sword: Weapon = .{ .name = "sword", .weapon_type = .sword, .weapon_damage = 2 };
+    const spear: Weapon = .{ .name = "spear", .weapon_type = .spear, .weapon_damage = 7 };
+    player(&history).off_hand_weapon = sword;
+    player(&history).inventory.slots[4] = .{ .weapon = spear };
+    player(&history).skill_cooldowns.set(.slice, 3);
+    player(&history).skill_cooldowns.set(.flash_strike, 5);
+    player(&history).skill_cooldowns.set(.toss, 1);
+    player(&history).skill_cooldowns.set(.skewer, 2);
+    pushAndRun(&history, .{ .equip_item = .{ .inventory_slot_index = 4, .gear_slot = .off_hand } });
+    try testing.expectEqual(@as(u32, 3), player(&history).skill_cooldowns.get(.toss));
+    try testing.expectEqual(@as(u32, 0), player(&history).skill_cooldowns.get(.impale));
+    try testing.expectEqual(@as(u32, 5), player(&history).skill_cooldowns.get(.skewer));
+}
+
+test "equip_item: weapon into empty hand preserves own cds" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    const spear: Weapon = .{ .name = "spear", .weapon_type = .spear, .weapon_damage = 7 };
+    player(&history).inventory.slots[3] = .{ .weapon = spear };
+    player(&history).skill_cooldowns.set(.toss, 2);
+    player(&history).skill_cooldowns.set(.skewer, 4);
+    pushAndRun(&history, .{ .equip_item = .{ .inventory_slot_index = 3, .gear_slot = .main_hand } });
+    try testing.expectEqual(@as(u32, 2), player(&history).skill_cooldowns.get(.toss));
+    try testing.expectEqual(@as(u32, 0), player(&history).skill_cooldowns.get(.impale));
+    try testing.expectEqual(@as(u32, 4), player(&history).skill_cooldowns.get(.skewer));
+}
+
 // ───────────────── player_assign_utility_skill (no-duplicate rule) ─────────────────
 
 /// Push a single player-input orchestrator event and run to idle.

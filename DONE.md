@@ -4713,3 +4713,48 @@ ticks against a harness history): drag to empty space clears the slot; drag
 onto a cross-domain inventory ref clears the slot; release back on the
 source slot is a no-op; drag onto another bar slot swaps (regression — the
 fallback doesn't fire when `dragToOrchestrator` resolves).
+
+## Gameplay balance
+
+### Cooldown inheritance on skill/weapon swap (DONE)
+
+Restricts the player to their 5 equipped utility skills at a time by closing
+the "rotate fresh skills in, use them all" bypass: equipping a skill or
+weapon onto the bar sets the incoming skill cooldowns to `@max(outgoing,
+incoming)` — never lower, so a fresh swap can't reset a cooldown that was
+ticking on the displaced skill. Settled design + rationale (why the outgoing
+cd is PRESERVED, not cleared; why `turn_start` ticking every SkillId makes
+preservation self-enforcing; why `swap_hands` is excluded) in DESIGN →
+Architecture (Cooldown inheritance on skill/weapon swap).
+
+Two handler sites in `event_handlers.zig`:
+- `equip_utility_skill` — snapshots the old slot skill's cd and the incoming
+  skill's cd, assigns the slot, sets the incoming cd to `@max(old, incoming)`.
+  The outgoing skill's cd stays in `skill_cooldowns` (keyed by SkillId, not
+  slot), still ticking down each `turn_start`.
+- `equip_item` (main_hand/off_hand) — captures the displaced weapon BEFORE
+  the gear-slot swap, then `transferWeaponCooldowns` sets all THREE of the
+  new weapon's skill cds to `@max(old weapon's corresponding cd, new
+  weapon's corresponding cd)`, paired positionally (skill_1↔skill_1, etc.).
+  The hidden skill's cd is set even though only slots 1-2 (main) or slot 3
+  (off) are exposed for that hand — it surfaces later if the player
+  `swap_hands`. Both old+new cds are snapshotted before any `set` so a
+  degenerate SkillId overlap between weapon types can't double-decrement.
+
+No new event or session-log field: cooldowns are entity state mutated
+directly in the handler (same shape as `applyGearChangeSideEffects`
+clamping health), so it's replay-safe by construction — replay rebuilds
+the same `skill_cooldowns` from the same events, no clock or side effect
+involved.
+
+Deliberately NOT applied to: `swap_utility_skills` (both skills already on
+the bar, cds travel by SkillId — a pure slot swap changes nothing),
+`unequip_utility_skill` / `unequip_item` (no incoming skill to inherit),
+`swap_hands` (changes which skills are accessible, not which are equipped —
+a used skill stays on cd when it reappears in the other hand, no bypass).
+
+Tests (7 new in `handler_tests_gear.zig`, contract-level): utility equip
+inherits @max(old, incoming); into empty slot preserves incoming cd;
+outgoing skill cd preserved (not cleared); main_hand weapon inherits @max
+for all 3 skills (incl. hidden skill_3); off_hand weapon inherits @max for
+all 3; weapon into empty hand preserves own cds. Suite now 244 (was 237).

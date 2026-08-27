@@ -401,6 +401,43 @@ fn applyGearChangeSideEffects(
     }
 }
 
+/// Set the incoming weapon's three skill cooldowns to `@max(old, new)` so
+/// equipping a fresh weapon can't bypass a cooldown that was ticking on the
+/// displaced weapon's skills. Runs for all three skills regardless of which
+/// hand holds the weapon — the hidden skill's cd surfaces later if the player
+/// `swap_hands`. Both old+new cds are snapshotted before any `set` so a
+/// degenerate SkillId overlap between weapon types can't double-decrement.
+/// See DESIGN → Architecture (Cooldown inheritance on skill/weapon swap).
+fn transferWeaponCooldowns(
+    player: *Entity,
+    old_weapon: ?types.Weapon,
+    new_weapon: ?types.Weapon,
+    weapon_type_definitions: *const [weapon_type_count]types.WeaponTypeDefinition,
+) void {
+    const new_w = new_weapon orelse return;
+    const new_def = &weapon_type_definitions[@intFromEnum(new_w.weapon_type)];
+    const new_skills = [_]types.SkillId{ new_def.skill_1, new_def.skill_2, new_def.skill_3 };
+
+    const old_skills: [3]?types.SkillId = if (old_weapon) |old_w| blk: {
+        const old_def = &weapon_type_definitions[@intFromEnum(old_w.weapon_type)];
+        break :blk .{ old_def.skill_1, old_def.skill_2, old_def.skill_3 };
+    } else .{ null, null, null };
+
+    // Snapshot every cooldown before any mutation so a degenerate SkillId
+    // overlap between old and new weapon types can't double-decrement.
+    var new_cds: [3]u32 = undefined;
+    var old_cds: [3]u32 = undefined;
+    for (&new_cds, &old_cds, new_skills, old_skills) |*new_cd, *old_cd, new_skill, old_skill| {
+        new_cd.* = player.skill_cooldowns.get(new_skill);
+        old_cd.* = if (old_skill) |s| player.skill_cooldowns.get(s) else 0;
+    }
+    // Pair positionally: new skill_i inherits the max of old skill_i and
+    // new skill_i. No old weapon → old cd is 0 → new cd is preserved as-is.
+    for (new_cds, old_cds, new_skills) |new_cd, old_cd, new_skill| {
+        player.skill_cooldowns.set(new_skill, @max(old_cd, new_cd));
+    }
+}
+
 /// Get a mutable pointer to an entity in the current level.
 fn getLevelEntity(
     current: *GameState,
@@ -1469,11 +1506,28 @@ pub fn processEvent(
                     const item = slot.* orelse return;
                     if (!itemFitsGearSlot(item, equip.gear_slot)) return;
 
+                    // Capture the displaced weapon before the gear-slot swap
+                    // overwrites the slot, so its skill cooldowns can be
+                    // inherited by the incoming weapon. See DESIGN → Architecture.
+                    const old_weapon: ?types.Weapon = switch (equip.gear_slot) {
+                        .main_hand, .off_hand => if (gearSlotItem(player, equip.gear_slot)) |old_item| old_item.weapon else null,
+                        else => null,
+                    };
+
                     // Old gear (if any) drops back into the inventory slot.
                     slot.* = gearSlotItem(player, equip.gear_slot);
                     setGearSlot(player, equip.gear_slot, item);
 
                     applyGearChangeSideEffects(current, equip.gear_slot, allocator);
+
+                    if (equip.gear_slot == .main_hand or equip.gear_slot == .off_hand) {
+                        transferWeaponCooldowns(
+                            player,
+                            old_weapon,
+                            item.weapon,
+                            history.weapon_type_definitions,
+                        );
+                    }
                 },
                 .unequip_item => |unequip| {
                     const player = getPlayerEntity(current, 0);
@@ -1496,7 +1550,18 @@ pub fn processEvent(
                 .equip_utility_skill => |equip| {
                     if (equip.slot_index >= utility_skill_count) return;
                     const player = getPlayerEntity(current, 0);
+
+                    // Cooldown inheritance: the incoming skill's cd becomes
+                    // @max(old slot skill cd, incoming cd) so a fresh swap
+                    // can't bypass a cooldown that was ticking on the
+                    // displaced skill. The outgoing skill's cd is PRESERVED
+                    // (not cleared) in skill_cooldowns — see DESIGN → Architecture.
+                    const old_skill = player.equipped_utility_skills[equip.slot_index];
+                    const incoming_cd = player.skill_cooldowns.get(equip.skill_id);
+                    const old_cd = if (old_skill) |s| player.skill_cooldowns.get(s) else 0;
+
                     player.equipped_utility_skills[equip.slot_index] = equip.skill_id;
+                    player.skill_cooldowns.set(equip.skill_id, @max(old_cd, incoming_cd));
 
                     // Changing utility skills can invalidate a prepared skill.
                     cancelPreparedSkill(current);
