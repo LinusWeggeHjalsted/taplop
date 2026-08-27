@@ -2895,7 +2895,6 @@ pub fn buildTopBar(
     // Match the bottom-bar skip button: background = gradient[5], icon = gradient[1].
     const c_btn_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const c_btn_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
-    const c_btn = p[@min(@as(u32, 4), types.gradient_color_count - 1)];
 
     var row = Row.init(screen.position(), top_bar_height, ui_gap);
 
@@ -2916,15 +2915,22 @@ pub fn buildTopBar(
         null,
     );
 
-    // Undo button — same size, one `ui_gap` to the right of options.
+    // Undo button — same size, one `ui_gap` to the right of options. Same
+    // layered background + icon treatment as the options button.
     const undo_cell = row.next(slot_size);
-    try elements.append(allocator, .{ .button = .{
-        .sprite_id = "ui/icon_undo",
-        .screen_position = undo_cell.position(),
-        .action = .undo,
-        .color = c_btn,
-        .tooltip = .{ .header = try spanRow(allocator, text("Undo")) },
-    } });
+    try emitIconButton(
+        elements,
+        allocator,
+        undo_cell,
+        button_background_sprite_id,
+        "ui/icon_undo",
+        .undo,
+        .{ .header = try spanRow(allocator, text("Undo")) },
+        c_btn_bg,
+        c_btn_icon,
+        false,
+        null,
+    );
 }
 
 /// Build the mission-complete overlay: a full-screen 9-slice panel with a
