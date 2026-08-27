@@ -862,6 +862,27 @@ entry file. Web (emscripten) is WIRED: web.zig mounts an IDBFS slice at
 /ziglop (IndexedDB-backed, survives browser close) and builds FileSource on
 that dir — same read/write code path as native, just a different dir source.
 
+### Autosave
+
+The autosave (`saves/autosave.txt`) is the recovery path for a player who
+exits mid-session: `end_hub` / `end_level` push `write_save{autosave_path}`
+before discarding the world, so progress is never lost to a crash or quit.
+A NEW game overwrites it on the first subsequent `end_hub`/`end_level` — so
+starting a new game while an autosave is present would silently destroy the
+old save. To prevent that, `start_new_game` pushes a `backup_autosave`
+MetaEvent (handler-gated `!replaying`, same side-effect convention as
+`write_save`) that, when an autosave exists, copies it to
+`saves/autosave-YYYYMMDD_HHMMSS.txt` (timestamp from
+`formatSessionTimestamp`, same `YYYYMMDD_HHMMSS` format the crash dump uses).
+The player can later load a backup by pointing `load_save` at it (the load
+path is arbitrary, not hardcoded to `autosave_path`). Best-effort: a backup
+failure surfaces the error popup but does NOT abort the new game — the
+backup is preservation, not a prerequisite. Collision (two new games within
+the same wall-clock second produce the same filename) is accepted — the
+second overwrites the first, a scenario implausible enough not to warrant a
+suffix counter. The backup is a pure file copy (read autosave bytes → write
+at the timestamped path); no PlayerData decode/encode, so it can't corrupt.
+
 ### Raylib seam
 
 `raylib_backend.zig` stays the ONLY file that `@import("raylib")`. The texture
