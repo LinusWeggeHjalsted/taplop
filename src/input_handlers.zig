@@ -895,7 +895,13 @@ pub fn handleAnytimeInput(
             ui_state.toggleMiddlePanel(.skills);
         }
 
-        // Entity inspect is right-click driven (handleRightClickInspect, run
+        if (in_game.toggle_enemy_inspect) {
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
+            ui_state.toggleMiddlePanel(.enemy_inspect);
+            ui_state.inspected_entity_index = null;
+        }
+
+        // Entity inspect is also right-click driven (handleRightClickInspect, run
         // later in update); no keyboard binding yet. See InGameInput note.
 
         if (in_game.toggle_world_map) {

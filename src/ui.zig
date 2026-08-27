@@ -447,12 +447,31 @@ pub const double_click_threshold_us: u64 = 400_000;
 /// One inventory grid cell (half `slot_size` — ported from the Unity
 /// 256×256 ItemSlot.png at 0.5x). See DESIGN → UI Framework.
 pub const inventory_slot_size: i32 = 128;
-/// Inventory panel: `ui_gap` clearance + 8×12 flush grid (1024×1536) +
-/// `ui_gap` + 128-wide material sidebar + `ui_gap` clearance.
-/// Width  = 16 + 1024 + 16 + 128 + 16 = 1200.
-/// Height = 16 + 1536 + 16            = 1568.
+/// Inventory panel content area (below the header): `ui_gap` clearance +
+/// 8×12 flush grid (1024×1536) + `ui_gap` + 128-wide material sidebar +
+/// `ui_gap` clearance. Width  = 16 + 1024 + 16 + 128 + 16 = 1200.
+/// Content height = 16 + 1536 + 16 = 1568 = middle_panel_height − header_height.
 pub const inventory_panel_width: i32 = 1200;
-pub const middle_panel_height: i32 = 1568;
+/// Middle panels fill the full middle section height (reference_height −
+/// top_bar_height − bottom_bar_height = 1648). The header strip
+/// (`header_height`) sits at the top of each panel; the content area below
+/// is `middle_panel_height − header_height` = 1568, which fits the
+/// inventory grid (16 + 12×128 + 16) exactly. See `emitPanelHeader`.
+pub const middle_panel_height: i32 = 1648;
+/// Height of the title + close-button strip at the top of every middle
+/// panel. Sized so the inventory grid fits exactly below it (1648 − 80 −
+/// 1568 = 0 slack). The close button matches this height.
+pub const middle_panel_header_height: i32 = 80;
+/// Close-button edge length (matches `middle_panel_header_height`). Flush
+/// in the panel's top-right corner. Sprite `ui/close_button` is a placeholder
+/// (magenta fallback) until real art lands; the hover outline still renders
+/// via the `highlighted` rect-outline fallback in the renderer.
+pub const close_button_size: i32 = middle_panel_header_height;
+/// Title text font size for middle-panel headers. Vertically centered in
+/// `middle_panel_header_height` (raylib draws from the top of a font_size-
+/// tall cell).
+pub const middle_panel_header_font_size: i32 = 56;
+pub const close_button_sprite_id: []const u8 = "ui/close_button";
 /// Skills panel: `ui_gap` clearance + a 4-wide grid of `slot_size` (256)
 /// cells (1024 wide) + `ui_gap` clearance. Width = 16 + 1024 + 16 = 1056.
 /// Height shares `middle_panel_height` with the other middle panels.
@@ -1740,6 +1759,50 @@ fn emitCornerNumber(
 /// independently.
 pub const button_background_sprite_id: []const u8 = "ui/button_background";
 
+/// Emit a middle-panel header: a title `text_label` on the left (vertically
+/// centered in the `header_height` strip) + a close `button` flush in the
+/// panel's top-right corner. Returns the content bounds — the area below the
+/// header where the panel body lives. The close button carries the panel's
+/// toggle action (firing it while open closes the panel); the view() hover
+/// pass sets `highlighted` on the button under the pointer, so the renderer
+/// rings it with the theme lightest. Callers emit the 9-slice panel
+/// background first, then this, then position body elements within the
+/// returned content bounds.
+fn emitPanelHeader(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    bounds: Rectangle,
+    title: []const u8,
+    close_action: Action,
+) !Rectangle {
+    const origin = bounds.position();
+    // raylib draws a glyph from the top of a font_size-tall cell, so offset
+    // by (header_height − font_size)/2 to center the visual mass.
+    const text_y = origin.y + @divFloor(middle_panel_header_height - middle_panel_header_font_size, 2);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = title,
+        .screen_position = .{ .x = origin.x + ui_gap, .y = text_y },
+        .font_size = middle_panel_header_font_size,
+        .blocks_input = false,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = close_button_sprite_id,
+        .screen_position = .{
+            .x = origin.x + bounds.width - close_button_size,
+            .y = origin.y,
+        },
+        .width = close_button_size,
+        .height = close_button_size,
+        .action = close_action,
+    } });
+    return .{
+        .x = bounds.x,
+        .y = bounds.y + middle_panel_header_height,
+        .width = bounds.width,
+        .height = bounds.height - middle_panel_header_height,
+    };
+}
+
 /// Emit a layered icon button: a background sprite (carries the action,
 /// tooltip, and hit-test) with the icon drawn on top. The icon passes hover
 /// through to the background so the whole button is one target. Callers pass
@@ -2507,13 +2570,14 @@ pub fn buildInventoryPanel(
         .width = bounds.width,
         .height = bounds.height,
     } });
+    const content = try emitPanelHeader(elements, allocator, bounds, "Inventory", .toggle_inventory);
 
     const p = active_theme.player_gradient.colors;
     const slot_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
     // Item icons render at player-gradient index 1.
     const item_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
 
-    const origin = bounds.position();
+    const origin = content.position();
     const grid = Grid{
         .origin = .{ .x = origin.x + ui_gap, .y = origin.y + ui_gap },
         .cell_width = inventory_slot_size,
@@ -2702,12 +2766,13 @@ pub fn buildGearPanel(
         .width = bounds.width,
         .height = bounds.height,
     } });
+    const content = try emitPanelHeader(elements, allocator, bounds, "Gear", .toggle_gear);
 
     const p = active_theme.player_gradient.colors;
     const slot_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const item_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
 
-    const origin = bounds.position();
+    const origin = content.position();
     const cell_size = inventory_slot_size;
 
     // Emit one gear slot: frame + item icon (suppressed on drag source) +
@@ -2841,6 +2906,7 @@ pub fn buildEnemyInspectPanel(
         .width = bounds.width,
         .height = bounds.height,
     } });
+    const content = try emitPanelHeader(elements, allocator, bounds, entity.name, .toggle_enemy_inspect);
 
     // Team gradient: player (team 0) vs enemy (team ≠ 0). Same fixed
     // indices the bottom bar + gear panel use, resolved against the team's
@@ -2852,7 +2918,7 @@ pub fn buildEnemyInspectPanel(
     const c_gear_item = g[@min(@as(u32, 1), types.gradient_color_count - 1)];
     const cooldown_overlay_color = active_theme.darkest;
 
-    const origin = bounds.position();
+    const origin = content.position();
 
     // --- Skill bar: 4×2 grid of slot_size slots ---
     const skill_grid_origin: ScreenPosition = .{
@@ -3083,17 +3149,18 @@ pub fn buildSkillsPanel(
         .width = bounds.width,
         .height = bounds.height,
     } });
+    const content = try emitPanelHeader(elements, allocator, bounds, "Skills", .toggle_skills);
 
     const p = active_theme.player_gradient.colors;
     const frame_color = p[@min(@as(u32, 3), types.gradient_color_count - 1)];
     const icon_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
 
-    const origin = bounds.position();
+    const origin = content.position();
     const grid_origin: ScreenPosition = .{
         .x = origin.x + ui_gap,
         .y = origin.y + ui_gap,
     };
-    const grid_height = bounds.height - 2 * ui_gap;
+    const grid_height = content.height - 2 * ui_gap;
     const visible_rows = @divFloor(grid_height, slot_size);
     const total_rows = @divTrunc(@as(i32, @intCast(learned_skills.len)) + skills_panel_columns - 1, skills_panel_columns);
     const max_scroll_row = @max(@as(i32, 0), total_rows - visible_rows);
@@ -3227,8 +3294,8 @@ test "buildSkillsPanel: few skills — one row, slots + icons, no scrollbar" {
     };
     try buildSkillsPanel(&elements, arena.allocator(), metrics, bounds, &learned, theme, &scroll_offset, null);
 
-    // 1 panel + 3 slots + 3 icons, no scrollbar.
-    try std.testing.expectEqual(@as(usize, 7), elements.items.len);
+    // 1 panel + 2 header (title + close button) + 3 slots + 3 icons, no scrollbar.
+    try std.testing.expectEqual(@as(usize, 9), elements.items.len);
     try std.testing.expectEqual(@as(i32, 0), scroll_offset); // clamped
     for (elements.items) |element| switch (element) {
         .solid_rect => @panic("unexpected scrollbar for few skills"),
@@ -3292,7 +3359,7 @@ test "buildSkillsPanel: overflow — scrollbar present, only visible rows emitte
     try std.testing.expectEqual(@as(usize, 2), solid_count);
 
     // No slot's bottom edge exceeds the visible grid bottom (no half-skills).
-    const grid_top = ui_gap;
+    const grid_top = middle_panel_header_height + ui_gap;
     const grid_bottom = grid_top + 6 * slot_size; // visible_rows * slot_size
     for (elements.items) |element| switch (element) {
         .slot => |slot| {
@@ -4023,10 +4090,14 @@ test "buildEnemyInspectPanel: player entity emits skill + gear slots, read-only"
     var elements: UiElementList = .empty;
     try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, theme, &weapon_types);
 
-    // No .slot or .button elements — everything is read-only .image.
+    // No .slot elements and no gameplay-clickable .button — everything is
+    // read-only .image, except the panel-header close button (a .button
+    // carrying the toggle_enemy_inspect action).
     for (elements.items) |element| switch (element) {
         .slot => @panic("inspect panel emitted a draggable .slot"),
-        .button => @panic("inspect panel emitted a clickable .button"),
+        .button => |btn| if (btn.action != .toggle_enemy_inspect) {
+            @panic("inspect panel emitted a clickable .button other than close");
+        },
         else => {},
     };
 

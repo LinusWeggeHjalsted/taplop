@@ -298,6 +298,7 @@ pub const InGameInput = struct {
     toggle_inventory: bool = false,
     toggle_gear: bool = false,
     toggle_skills: bool = false,
+    toggle_enemy_inspect: bool = false,
     // (Future: a keyboard inspect binding — e.g. alt+Enter opens inspect
     // on the tile-cursor entity — would land as an `Action.inspect_cursor`
     // bool here via `checkAction`, consumed in `handleIdleInput` where the
@@ -369,6 +370,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,
+        .toggle_enemy_inspect => player_input.anytime.in_game.toggle_enemy_inspect = true,
         .toggle_world_map => player_input.anytime.in_game.toggle_world_map = true,
         .swap_weapons => player_input.anytime.in_game.swap_weapons = true,
         .move_cursor_up => player_input.anytime.in_game.move_cursor_up = true,

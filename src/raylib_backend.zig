@@ -949,10 +949,17 @@ pub const RaylibBackend = struct {
 
     /// Draw a precomputed OUTER edge-outline mask over `destination`, tinted with
     /// `highlight_color`. Used by highlighted UI elements (Button/Image) to
-    /// ring the sprite silhouette. No-op if the sprite or its mask is
-    /// unavailable.
+    /// ring the sprite silhouette. Falls back to a rectangle outline when
+    /// the sprite or its mask is unavailable (e.g. a placeholder magenta
+    /// box) so the hover highlight still reads.
     fn drawHighlightOutline(self: *RaylibBackend, sprite_id: []const u8, destination: rl.Rectangle, highlight_color: types.Color) void {
-        const mask = self.getOutlineTexture(sprite_id) orelse return;
+        const mask = self.getOutlineTexture(sprite_id) orelse {
+            // Fallback for missing sprites (or mask build failures): ring
+            // the destination rectangle directly. Lets the hover highlight
+            // work on placeholder magenta boxes before the real asset lands.
+            rl.drawRectangleLinesEx(destination, @floatFromInt(outline_thickness), toRaylibColor(highlight_color, 255));
+            return;
+        };
         const source = rl.Rectangle{
             .x = 0,
             .y = 0,

@@ -5099,3 +5099,36 @@ Mid-session reflection surfaced four issues:
    invisible to passing tests using "nice" values. Noted in TODO → Tech Debt
    as a process reminder; not actionable as a single task.
 
+
+### Middle-panel headers + close buttons (done)
+
+The four middle panels (inventory, gear, skills, enemy inspect) gained a
+header strip at the top: a title `text_label` on the left + a close `button`
+flush in the top-right corner. The close button carries the panel's toggle
+action (firing it while open closes the panel); enemy inspect needed a new
+`Action.toggle_enemy_inspect` (button-only, no keybind) since its close path
+also clears `UiState.inspected_entity_index` (the right-click close did both;
+the handler in `handleAnytimeInput` mirrors it).
+
+Layout math: middle section = `reference_height − top_bar − bottom_bar` =
+1648. The inventory grid (12×128 + 2×16 margin = 1568) is the height
+constraint, so the header is sized to the remaining slack: 1648 − 1568 = 80.
+`middle_panel_height` grew 1568 → 1648 so panels fill the section exactly
+(centering offset is now 0); `middle_panel_header_height = 80`,
+`close_button_size = 80` (matches the header), `middle_panel_header_font_size
+= 56` (centered in the 80px strip). A shared `emitPanelHeader` helper emits
+the title + close button and returns the content bounds (area below the
+header) so each builder positions its body within it.
+
+Close-button art (`ui/close_button`) doesn't exist yet → magenta fallback. The
+hover outline (`highlighted` → `drawHighlightOutline`) previously no-op'd on a
+missing sprite (no silhouette mask to dilate); added a rect-outline fallback
+in `drawHighlightOutline` so the hover highlight rings the magenta box with
+the theme lightest now, and works for any highlighted missing-sprite button/
+image. The view() hover pass (`buttonIndexAt`) already sets `highlighted` on
+the topmost button under the pointer, so no input-side change was needed.
+
+Tests: skills-panel element-count assertions updated (header adds a text_label
++ button: 7 → 9 in the few-skills test; grid_top shifted by
+`middle_panel_header_height`); enemy-inspect read-only test's `.button` panic
+loosened to allow the close button specifically.
