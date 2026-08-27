@@ -253,7 +253,9 @@ Open:
   skills slot); drag refs emitted (drag-to-bar is a later slice). Sorting /
   grouping / search deferred. See DONE.md.
 - buildEnemyInspectPanel: entity stats, skill bar with cooldowns, active
-  effects.
+  effects. DONE (right-click-to-inspect + read-only mirror of
+  skills/effects/gear, team-gradient coloring — see DESIGN → UI Framework →
+  Entity inspect).
 - buildWorldMap: campaign graph visualization, clickable hubs/missions.
 - buildFullCombatLog: scrollable detailed combat log (renders
   ViewState.combat_log; see Combat Log).

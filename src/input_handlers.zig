@@ -481,6 +481,106 @@ pub fn handleCameraPan(
         session.camera_pan_anchor = null;
     }
 }
+
+/// Right-click entity inspection (levels only). A right-press on a world
+/// tile with an entity records a pending right-click; movement beyond
+/// `drag_threshold_pixels` cancels it (the press became a camera pan); a
+/// clean release toggles the enemy_inspect panel on that entity (same
+/// entity → close, different → switch, none open → open). Suppressed over
+/// blocking UI (same occlusion check as the tile cursor + camera pan) so a
+/// right-click on a panel never inspects the world behind it. Hubs are
+/// excluded — inspection is level-only by design.
+///
+/// Runs anytime alongside `handleCameraPan` / `handleDrag`. The two right-
+/// click consumers coexist without conflict: a no-movement right-press sets
+/// the pan anchor + a pending right-click, and on release the anchor clears
+/// (no pan offset was ever computed) while the pending right-click fires
+/// the inspect. A right-drag past the threshold cancels the pending right-
+/// click and lets the pan proceed.
+pub fn handleRightClickInspect(
+    history: *GameStateHistory,
+    pointer: input.PointerInput,
+    ui_elements: []const ui.UiElement,
+    camera: types.Camera,
+    camera_zoom: f32,
+    viewport: input.ViewportSize,
+) void {
+    const current = &history.current_state;
+    const ui_state = &history.session.ui_state;
+
+    // Levels only.
+    if (current.screen != .level) {
+        ui_state.pending_right_click = null;
+        return;
+    }
+    const level = current.level orelse {
+        ui_state.pending_right_click = null;
+        return;
+    };
+
+    // Right-press: if over a world tile (not blocking UI) with an entity,
+    // record a pending right-click. Over blocking UI or an empty tile, clear
+    // any stale pending (a right-click on a panel or empty ground inspects
+    // nothing).
+    if (pointer.right_pressed) {
+        if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
+            ui_state.pending_right_click = null;
+            return;
+        }
+        const mouse_tile = input.screenToTile(
+            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+            camera,
+            camera_zoom,
+            viewport,
+        );
+        for (level.entities, 0..) |entity, index| {
+            if (entity.position.x == mouse_tile.x and entity.position.y == mouse_tile.y) {
+                ui_state.pending_right_click = .{
+                    .entity_index = @intCast(index),
+                    .press_position = pointer.position,
+                };
+                return;
+            }
+        }
+        ui_state.pending_right_click = null;
+        return;
+    }
+
+    // Movement beyond the threshold cancels the pending right-click (it
+    // became a camera pan). Checked on every call while the right button is
+    // held, mirroring `handleDrag`'s threshold promotion.
+    if (ui_state.pending_right_click) |press| {
+        if (pointer.right_held) {
+            const dx = pointer.position.x - press.press_position.x;
+            const dy = pointer.position.y - press.press_position.y;
+            if (dx * dx + dy * dy >= input.drag_threshold_pixels * input.drag_threshold_pixels) {
+                ui_state.pending_right_click = null;
+            }
+        }
+    }
+
+    // Right-release: if a pending right-click survived (no threshold
+    // crossing), toggle inspect on that entity.
+    if (pointer.right_released) {
+        if (ui_state.pending_right_click) |press| {
+            if (ui_state.inspected_entity_index) |current_inspected| {
+                if (current_inspected == press.entity_index) {
+                    // Same entity — close the panel.
+                    ui_state.toggleMiddlePanel(.enemy_inspect);
+                    ui_state.inspected_entity_index = null;
+                } else {
+                    // Different entity — switch target.
+                    ui_state.inspected_entity_index = press.entity_index;
+                }
+            } else {
+                // Not inspecting — open the panel.
+                ui_state.inspected_entity_index = press.entity_index;
+                ui_state.toggleMiddlePanel(.enemy_inspect);
+            }
+        }
+        ui_state.pending_right_click = null;
+    }
+}
 pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
     if (!std.mem.eql(u8, log_game_version, build_info.game_version)) {
         std.debug.print(

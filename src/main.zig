@@ -168,6 +168,12 @@ fn update(
     // input camera. See handleCameraPan.
     input_handlers.handleCameraPan(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
+    // Right-click entity inspection (levels only). Runs alongside the camera
+    // pan + drag; the two right-click consumers coexist via the movement-
+    // threshold disambiguation (a clean right-click inspects, a right-drag
+    // pans). See handleRightClickInspect.
+    input_handlers.handleRightClickInspect(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
+
     // Turn-flow pause: while waiting, drain the timer and stall event
     // processing until it elapses. Anytime input and drag above still run, so
     // undo/redo/options remain responsive mid-wait (undo rebuilds state and

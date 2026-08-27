@@ -75,6 +75,13 @@ pub const UiState = struct {
     /// a time.
     pending_slot_press: ?PendingSlotPress = null,
 
+    /// A right-press on a world entity tile awaiting click-vs-drag
+    /// disambiguation (levels only). Cancels if the pointer moves beyond
+    /// the drag threshold (became a camera pan); on a clean release toggles
+    /// the enemy_inspect panel on `inspected_entity_index`. See
+    /// `handleRightClickInspect` in input_handlers.
+    pending_right_click: ?PendingRightClick = null,
+
     /// Most recent plain single click on a content inventory slot, for
     /// double-click detection. Cleared on modifier-clicks and on a fired
     /// double. See `LastItemClick`.
@@ -194,6 +201,17 @@ pub const PendingSlotPress = struct {
     /// inventory slot promotes to a salvage-region selection (not an item
     /// drag) once the pointer crosses the drag threshold. See handleDrag.
     shift_held: bool = false,
+};
+
+/// A right-press on a world tile with an entity, awaiting click-vs-drag
+/// disambiguation (movement-threshold lifecycle). If the pointer stays
+/// within `drag_threshold_pixels` until release, the entity is inspected
+/// (toggle the enemy_inspect panel on `inspected_entity_index`). If it
+/// moves beyond the threshold first, this is cancelled — the press became
+/// a camera pan. See `handleRightClickInspect` in input_handlers.
+pub const PendingRightClick = struct {
+    entity_index: u32,
+    press_position: ScreenPosition,
 };
 
 /// The most recent plain (no-modifier) single click on a content inventory
@@ -433,16 +451,19 @@ pub const inventory_slot_size: i32 = 128;
 /// Width  = 16 + 1024 + 16 + 128 + 16 = 1200.
 /// Height = 16 + 1536 + 16            = 1568.
 pub const inventory_panel_width: i32 = 1200;
-pub const inventory_panel_height: i32 = 1568;
+pub const middle_panel_height: i32 = 1568;
 /// Skills panel: `ui_gap` clearance + a 4-wide grid of `slot_size` (256)
 /// cells (1024 wide) + `ui_gap` clearance. Width = 16 + 1024 + 16 = 1056.
-/// Height shares `inventory_panel_height` with the other middle panels.
+/// Height shares `middle_panel_height` with the other middle panels.
 pub const skills_panel_width: i32 = 1056;
 pub const skills_panel_columns: i32 = 4;
 /// Scrollbar lives in the panel's right `ui_gap` margin (16px), so the
 /// track is 12px centered within it. See `buildSkillsPanel`.
 pub const skills_scrollbar_width: i32 = 12;
-pub const enemy_inspect_panel_width: i32 = 600;
+/// Enemy-inspect panel width: the 4-wide skill grid (4 × `slot_size` +
+/// 2 × `ui_gap` side margins = 1056). The gear mirror + active-effects
+/// strip fit within this width. See `buildEnemyInspectPanel`.
+pub const enemy_inspect_panel_width: i32 = 4 * slot_size + 2 * ui_gap;
 
 /// Default tint for UI elements. For sprites (Button/Slot/Image) this means
 /// "no tint" (pure white, show original art). For text it is the "unset"
@@ -2179,7 +2200,7 @@ pub fn buildBottomBar(
 /// flush grid of `ui/item_slot` cells tinted with player-gradient index 5,
 /// and a reserved 128-wide sidebar region on the right (material counts land
 /// in a follow-up slice). `bounds` is the panel's outer rectangle (sized to
-/// `inventory_panel_width` × `inventory_panel_height`); the grid sits
+/// `inventory_panel_width` × `middle_panel_height`); the grid sits
 /// `ui_gap` inside the top-left, the sidebar sits `ui_gap` right of the grid.
 /// Slots carry no `ref` yet — drag/drop + item icons are later slices.
 /// Font size for the material-count labels in the inventory sidebar (fits
@@ -2295,7 +2316,7 @@ fn emitMaterialIcons(
 /// renders a lightest stroked outline around the bounding box of the
 /// selected region (see `UiState.salvage_region`). `bounds` is the panel's
 /// outer rectangle (sized to `inventory_panel_width` ×
-/// `inventory_panel_height`); the grid sits `ui_gap` inside the top-left,
+/// `middle_panel_height`); the grid sits `ui_gap` inside the top-left,
 /// the sidebar sits `ui_gap` right of the grid.
 /// Sprite id for an item's inventory/gear icon. Weapons resolve per
 /// `WeaponType` (Unity's `WandItem` maps to our `staff`); gear types have
@@ -2598,7 +2619,7 @@ pub fn gearPanelWidth(font_metrics: FontMetrics) i32 {
 /// stats in a column to the right of the gear stack (starting flush under
 /// the off-hand). All slots + item icons 128×128 (`inventory_slot_size`).
 /// Panel width is derived from the longest stat line (`gearPanelWidth`);
-/// height shares `inventory_panel_height` with the other middle panels.
+/// height shares `middle_panel_height` with the other middle panels.
 /// Slots carry `ref = .{ .gear = ... }` so drag to/from inventory works
 /// (equip/unequip via the existing orchestrator mapping). The item icon is
 /// suppressed on the drag source (shown only as the ghost).
@@ -2720,6 +2741,244 @@ pub fn buildGearPanel(
         stat_y += stat_line_height;
     }
     _ = font_metrics;
+}
+
+/// Entity-inspect panel (right-click an entity in a level). Read-only
+/// mirror of the player's skill bar + active effects + gear panel, tinted
+/// with the inspected entity's TEAM gradient (player gradient for team 0,
+/// enemy gradient otherwise). No slots carry a `SlotRef` and no buttons
+/// carry an `Action` — nothing is draggable or clickable; tooltips still
+/// work on hover. Opened by right-clicking a tile with an entity (see
+/// `handleRightClickInspect` in input_handlers). See DESIGN → UI Framework
+/// → Entity inspect.
+///
+/// Layout (top to bottom inside the panel):
+///   1. Skill bar — 4×2 grid of `slot_size` (256) slots, slots 1-4 top row,
+///      5-8 bottom. Empty slots show the diamond marker; cooldowns show
+///      the translucent wash + remaining-turns number.
+///   2. Active effects — `small_icon_size` (128) icons flowing left→right
+///      then wrapping down, max 8 columns. Omitted entirely when the entity
+///      has no active effects.
+///   3. Gear mirror — weapons (main/off hand) top-left, amulet→coat→gloves→
+///      pants→boots stacked below the main-hand, combat-stat column to the
+///      right (flush under the off-hand). All 128×128 (`inventory_slot_size`).
+pub fn buildEnemyInspectPanel(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    bounds: Rectangle,
+    entity: Entity,
+    learned_skills: []const types.SkillId,
+    active_theme: types.ActiveColorTheme,
+    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+) !void {
+    // Solid panel background — blocks input through the panel area.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = bounds.position(),
+        .width = bounds.width,
+        .height = bounds.height,
+    } });
+
+    // Team gradient: player (team 0) vs enemy (team ≠ 0). Same fixed
+    // indices the bottom bar + gear panel use, resolved against the team's
+    // own gradient instead of always the player's.
+    const g = if (entity.team == 0) active_theme.player_gradient.colors else active_theme.enemy_gradient.colors;
+    const c_skill_frame = g[@min(@as(u32, 3), types.gradient_color_count - 1)];
+    const c_skill_icon = g[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    const c_gear_slot = g[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const c_gear_item = g[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    const cooldown_overlay_color = active_theme.darkest;
+
+    const origin = bounds.position();
+
+    // --- Skill bar: 4×2 grid of slot_size slots ---
+    const skill_grid_origin: ScreenPosition = .{
+        .x = origin.x + ui_gap,
+        .y = origin.y + ui_gap,
+    };
+    const skill_grid = Grid{
+        .origin = skill_grid_origin,
+        .cell_width = slot_size,
+        .cell_height = slot_size,
+        .gap = 0,
+        .columns = 4,
+    };
+    const skill_slots = entity.collectSkillSlots(weapon_type_definitions);
+    for (skill_slots, 0..) |maybe_skill, index| {
+        const cell = skill_grid.cell(@intCast(index));
+        if (maybe_skill) |skill_id| {
+            const definition = lookups.getSkillDefinition(skill_id) orelse {
+                // Unknown skill id — render the empty marker rather than crash.
+                try elements.append(allocator, .{ .image = .{
+                    .sprite_id = "ui/skill_slot_empty",
+                    .screen_position = cell.position(),
+                    .width = cell.width,
+                    .height = cell.height,
+                    .color = c_skill_frame,
+                } });
+                continue;
+            };
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = "ui/skill_button",
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .color = c_skill_frame,
+                .tooltip = try buildSkillTooltip(allocator, definition),
+            } });
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = skillIconSpriteId(skill_id),
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .color = c_skill_icon,
+                .blocks_input = false,
+            } });
+            const cooldown = entity.skill_cooldowns.get(skill_id);
+            if (cooldown > 0) {
+                try elements.append(allocator, .{ .image = .{
+                    .sprite_id = "ui/skill_button",
+                    .screen_position = cell.position(),
+                    .width = cell.width,
+                    .height = cell.height,
+                    .color = cooldown_overlay_color,
+                    .alpha = 128,
+                    .blocks_input = false,
+                } });
+                try emitCenteredNumber(elements, allocator, font_metrics, cell, cooldown, cooldown_font_size);
+            }
+        } else {
+            // Empty slot — diamond marker, same as the skill bar.
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = "ui/skill_slot_empty",
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .color = c_skill_frame,
+            } });
+        }
+    }
+
+    // --- Active effects: 128px icons, max 8 columns, left→right then down ---
+    var cursor_y = skill_grid_origin.y + 2 * slot_size + ui_gap;
+    if (entity.active_effects.len > 0) {
+        const effects_origin: ScreenPosition = .{
+            .x = origin.x + ui_gap,
+            .y = cursor_y,
+        };
+        const effect_columns: i32 = 8;
+        for (entity.active_effects, 0..) |effect, index| {
+            const ordinal: i32 = @intCast(index);
+            const column = @mod(ordinal, effect_columns);
+            const grid_row = @divFloor(ordinal, effect_columns);
+            const cell: Rectangle = .{
+                .x = effects_origin.x + column * small_icon_size,
+                .y = effects_origin.y + grid_row * small_icon_size,
+                .width = small_icon_size,
+                .height = small_icon_size,
+            };
+            const definition = lookups.getEffectDefinition(effect.effect_id);
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = definition.name,
+                .screen_position = cell.position(),
+                .width = small_icon_size,
+                .height = small_icon_size,
+                .tooltip = .{
+                    .header = try spanRow(allocator, text(definition.name)),
+                    .body = try allocator.dupe(TooltipRow, &.{
+                        try spanRow(allocator, text(definition.description)),
+                        try spanRow(allocator, text(
+                            try std.fmt.allocPrint(allocator, "Current duration {d}", .{effect.duration}),
+                        )),
+                    }),
+                },
+            } });
+            try emitCenteredNumber(elements, allocator, font_metrics, cell, effect.duration, overlay_font_size);
+        }
+        const effect_rows = @divTrunc(@as(i32, @intCast(entity.active_effects.len)) + effect_columns - 1, effect_columns);
+        cursor_y += effect_rows * small_icon_size + ui_gap;
+    }
+
+    // --- Gear mirror: weapons row + gear stack + stat column ---
+    const gear_top_y = cursor_y;
+    const gear_cell_size = inventory_slot_size;
+    const col0_x = origin.x + ui_gap;
+    const col1_x = col0_x + gear_cell_size + ui_gap;
+
+    const emitGearSlot = struct {
+        fn run(
+            elems: *UiElementList,
+            alloc: std.mem.Allocator,
+            cell_pos: ScreenPosition,
+            gear_slot: GearSlot,
+            ent: Entity,
+            skills: []const types.SkillId,
+            s_color: Color,
+            i_color: Color,
+        ) !void {
+            const item = gearSlotItem(ent, gear_slot);
+            const slot_tooltip: ?Tooltip = if (item) |it|
+                try buildItemTooltip(alloc, it, skills)
+            else
+                null;
+            try elems.append(alloc, .{ .image = .{
+                .sprite_id = "ui/item_slot",
+                .screen_position = cell_pos,
+                .width = gear_cell_size,
+                .height = gear_cell_size,
+                .color = s_color,
+                .tooltip = slot_tooltip,
+            } });
+            if (item) |it| {
+                try elems.append(alloc, .{ .image = .{
+                    .sprite_id = itemIconSpriteId(it),
+                    .screen_position = cell_pos,
+                    .width = gear_cell_size,
+                    .height = gear_cell_size,
+                    .color = i_color,
+                    .blocks_input = false,
+                } });
+            }
+        }
+    }.run;
+
+    try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = gear_top_y }, .main_hand, entity, learned_skills, c_gear_slot, c_gear_item);
+    try emitGearSlot(elements, allocator, .{ .x = col1_x, .y = gear_top_y }, .off_hand, entity, learned_skills, c_gear_slot, c_gear_item);
+
+    const gear_slots = [_]GearSlot{ .amulet, .coat, .gloves, .pants, .boots };
+    var row_y = gear_top_y + gear_cell_size + ui_gap;
+    for (gear_slots) |gs| {
+        try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = row_y }, gs, entity, learned_skills, c_gear_slot, c_gear_item);
+        row_y += gear_cell_size + ui_gap;
+    }
+
+    // Combat-stat column (flush under the off-hand, same as buildGearPanel).
+    const stats_x = col1_x;
+    const stats_top = gear_top_y + gear_cell_size + ui_gap;
+    const stat_line_height: i32 = gear_stat_font_size + 16;
+    const main_damage = if (entity.main_hand_weapon) |w| entity.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
+    const off_damage = if (entity.off_hand_weapon) |w| entity.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
+    const stat_values = [_]u32{
+        main_damage,
+        off_damage,
+        entity.getEffectiveSpellDamage(),
+        entity.getEffectiveMaxHealth(),
+        entity.getEffectiveDefense(),
+        entity.getEffectivePickupRadius(0),
+        entity.getEffectiveSpeed(),
+    };
+    var stat_y = stats_top;
+    for (gear_stat_labels, stat_values) |label, value| {
+        const line = try std.fmt.allocPrint(allocator, "{s} {d}", .{ label, value });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = line,
+            .screen_position = .{ .x = stats_x, .y = stat_y },
+            .font_size = gear_stat_font_size,
+            .blocks_input = false,
+        } });
+        stat_y += stat_line_height;
+    }
 }
 
 /// Skills browser panel: a 9-slice background, then a 4-wide grid of
@@ -2901,7 +3160,7 @@ test "buildSkillsPanel: few skills — one row, slots + icons, no scrollbar" {
         .x = 0,
         .y = 0,
         .width = skills_panel_width,
-        .height = inventory_panel_height,
+        .height = middle_panel_height,
     };
     try buildSkillsPanel(&elements, arena.allocator(), metrics, bounds, &learned, theme, &scroll_offset, null);
 
@@ -2945,7 +3204,7 @@ test "buildSkillsPanel: overflow — scrollbar present, only visible rows emitte
         .x = 0,
         .y = 0,
         .width = skills_panel_width,
-        .height = inventory_panel_height,
+        .height = middle_panel_height,
     };
     try buildSkillsPanel(&elements, arena.allocator(), metrics, bounds, &learned, theme, &scroll_offset, null);
 
@@ -3001,7 +3260,7 @@ test "buildSkillsPanel: drag source suppresses the icon, keeps the slot ref" {
         .x = 0,
         .y = 0,
         .width = skills_panel_width,
-        .height = inventory_panel_height,
+        .height = middle_panel_height,
     };
     try buildSkillsPanel(
         &elements,
@@ -3654,4 +3913,201 @@ test "placeTooltip: shared edge — panel sits flush on the chosen side" {
     const tooltip_h: i32 = 500;
     const placement = placeTooltip(.{ .x = 1500, .y = source_y }, 256, 256, 400, tooltip_h);
     try std.testing.expectEqual(source_y, placement.y + tooltip_h);
+}
+
+// ───────────────────────── entity inspect panel ─────────────────────────
+// See `buildEnemyInspectPanel`. Read-only mirror of the player's skill bar +
+// active effects + gear, tinted with the inspected entity's team gradient.
+
+/// A minimal weapon-type table for inspect-panel tests: every weapon type
+/// maps skill_1 → stab, skill_2 → chop, skill_3 → throw so equipped weapons
+/// populate slots 1-3 deterministically.
+fn testWeaponTypeDefinitions() [weapon_type_count]WeaponTypeDefinition {
+    var defs: [weapon_type_count]WeaponTypeDefinition = undefined;
+    for (&defs) |*d| d.* = .{ .skill_1 = .stab, .skill_2 = .chop, .skill_3 = .throw };
+    return defs;
+}
+
+test "buildEnemyInspectPanel: player entity emits skill + gear slots, read-only" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const player_color: types.Color = .{ .r = 10, .g = 20, .b = 30 };
+    const enemy_color: types.Color = .{ .r = 90, .g = 80, .b = 70 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = black,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{enemy_color} ** 6 },
+        .player_gradient = .{ .colors = .{player_color} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const weapon_types = testWeaponTypeDefinitions();
+
+    var entity: Entity = .{};
+    entity.team = 0;
+    entity.main_hand_weapon = .{ .weapon_type = .sword };
+    entity.off_hand_weapon = .{ .weapon_type = .shield };
+    entity.equipped_utility_skills = .{ .slice, .stab, null, null, null };
+
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = enemy_inspect_panel_width,
+        .height = middle_panel_height,
+    };
+    var elements: UiElementList = .empty;
+    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, theme, &weapon_types);
+
+    // No .slot or .button elements — everything is read-only .image.
+    for (elements.items) |element| switch (element) {
+        .slot => @panic("inspect panel emitted a draggable .slot"),
+        .button => @panic("inspect panel emitted a clickable .button"),
+        else => {},
+    };
+
+    // The skill-bar frame images are tinted with the PLAYER gradient (team 0).
+    const expected_frame = player_color; // index 3 → player_color (all 6 are same)
+    var found_skill_frame = false;
+    for (elements.items) |element| switch (element) {
+        .image => |img| if (std.mem.eql(u8, img.sprite_id, "ui/skill_button")) {
+            try std.testing.expectEqual(expected_frame, img.color);
+            found_skill_frame = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(found_skill_frame);
+}
+
+test "buildEnemyInspectPanel: enemy entity uses enemy gradient" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const player_color: types.Color = .{ .r = 10, .g = 20, .b = 30 };
+    const enemy_color: types.Color = .{ .r = 90, .g = 80, .b = 70 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = black,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{enemy_color} ** 6 },
+        .player_gradient = .{ .colors = .{player_color} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const weapon_types = testWeaponTypeDefinitions();
+
+    var entity: Entity = .{};
+    entity.team = 1; // enemy
+    entity.main_hand_weapon = .{ .weapon_type = .sword };
+
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = enemy_inspect_panel_width,
+        .height = middle_panel_height,
+    };
+    var elements: UiElementList = .empty;
+    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, theme, &weapon_types);
+
+    // Skill-bar frame tinted with the ENEMY gradient (team ≠ 0).
+    var found_enemy_frame = false;
+    for (elements.items) |element| switch (element) {
+        .image => |img| if (std.mem.eql(u8, img.sprite_id, "ui/skill_button")) {
+            try std.testing.expectEqual(enemy_color, img.color);
+            found_enemy_frame = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(found_enemy_frame);
+}
+
+test "buildEnemyInspectPanel: cooldown overlay + number when skill on cooldown" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = black,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const weapon_types = testWeaponTypeDefinitions();
+
+    var entity: Entity = .{};
+    entity.team = 0;
+    entity.main_hand_weapon = .{ .weapon_type = .sword };
+    // Slot 1 = stab (sword skill_1); put it on cooldown.
+    entity.skill_cooldowns.set(.stab, 3);
+
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = enemy_inspect_panel_width,
+        .height = middle_panel_height,
+    };
+    var elements: UiElementList = .empty;
+    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, theme, &weapon_types);
+
+    // A cooldown overlay is a translucent (alpha 128) skill_button image on
+    // top of the filled slot. Count them — exactly one skill is on cooldown.
+    var overlay_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .image => |img| if (std.mem.eql(u8, img.sprite_id, "ui/skill_button") and img.alpha == 128) {
+            overlay_count += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 1), overlay_count);
+}
+
+test "buildEnemyInspectPanel: active effects emit 128px icons" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = black,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const weapon_types = testWeaponTypeDefinitions();
+
+    var entity: Entity = .{};
+    entity.team = 1;
+    // Allocate active_effects in the arena (Entity.active_effects is a slice).
+    const effects = try arena.allocator().alloc(types.Effect, 2);
+    effects[0] = .{ .effect_id = .reflect, .duration = 2 };
+    effects[1] = .{ .effect_id = .stone_form, .duration = 4 };
+    entity.active_effects = effects;
+
+    const bounds = Rectangle{
+        .x = 0,
+        .y = 0,
+        .width = enemy_inspect_panel_width,
+        .height = middle_panel_height,
+    };
+    var elements: UiElementList = .empty;
+    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, theme, &weapon_types);
+
+    // Two effect icons at 128px, carrying tooltips.
+    var effect_icon_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .image => |img| if (img.width == small_icon_size and img.height == small_icon_size and img.tooltip != null) {
+            // Effect icons use the effect definition name as the sprite id.
+            // Effect icons use the effect definition's display name as the
+            // sprite id (mirrors the bottom-bar active-effects rendering).
+            if (std.mem.eql(u8, img.sprite_id, "Reflect") or std.mem.eql(u8, img.sprite_id, "Stone Form")) {
+                effect_icon_count += 1;
+            }
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 2), effect_icon_count);
 }

@@ -2034,3 +2034,42 @@ streamed at runtime but still downloaded).
 - **Text coloring.** `ui.default_tint` (pure white) is the default `color` on every UI element. For sprites (Button/Slot/Image) it means "no tint" (show original art). For TEXT it's the "unset" sentinel: the renderer's `drawTextLabel` substitutes the active theme's `lightest` (the artist's offwhite) so uncolored text inherits the theme without builders needing a runtime color. Explicitly colored text (via `ui.colored(...)`) passes a non-`default_tint` color and is unaffected. Damage/heal numbers (`floating_text`) already pass `active_theme.lightest` explicitly at their call sites. The substitution is text-only — sprite tints keep `default_tint` = "no tint."
 - **Text measurement seam.** `ui.FontMetrics` (raylib-free value type: `base_size` + `[95]i32` per-ASCII-glyph advances) is the single layout-side authority for text width. The backend extracts it from the loaded `rl.Font` (`RaylibBackend.fontMetrics`) and threads it through `RenderContext.font_metrics` into the builders. Its contract: **mirror the renderer's cursor advance exactly.** `measureSpanWidth` reproduces `rl.drawTextEx`'s per-glyph step (`advanceX × font_size/base_size + spacing`, float-accumulated), so laid-out width == drawn width and multi-span emit (`x += measureSpanWidth`) flows like one continuous string. The shared `glyph_spacing_font_divisor` constant is the one source of truth for the spacing both read — any new draw parameter the layout needs to know (letter-spacing, kerning) must be added there, not re-derived in the seam. Vertical: **center on the `font_size` glyph cell, stack on `lineHeight`** — raylib draws a glyph from the top of a `font_size`-tall cell, so centering that cell (not the 1.2× `lineHeight` box) puts the visual mass on the element's center; `lineHeight` is for multi-line y-advance only.
 
+### Entity inspect
+
+The enemy-inspect middle panel (`buildEnemyInspectPanel`, opened by right-
+-clicking a world tile with an entity — levels only) is a READ-ONLY mirror of
+the player's skill bar + active effects + gear panel. It shares the middle-
+panel band + `middle_panel_height` with inventory/gear/skills; which entity
+it shows is `UiState.inspected_entity_index`.
+
+- **Read-only by construction.** Every slot is an `.image`, never a `.slot`
+  or `.button` — so no `SlotRef` (not draggable from/to) and no `Action`
+  (not clickable). Tooltips still work (`.image` carries `tooltip`; `tooltipAt`
+  hit-tests it). This is the seam: the inspect panel reuses the bottom bar /
+  gear panel's visual recipe but swaps the interactive element type for an
+  inert one with the same sprite + tint.
+- **Team-gradient coloring.** The panel resolves the inspected entity's TEAM
+  gradient (player gradient for team 0, enemy gradient otherwise) and applies
+  the SAME fixed indices the bottom bar + gear panel use (skill frame 3, skill
+  icon 1, gear slot 5, gear item 1, cooldown overlay = `theme.darkest`). The
+  entity's own `color_index` is for the body sprite, not UI — the panel uses
+  the team gradient, not the entity's color_index.
+- **Layout** (top to bottom): a 4×2 grid of `slot_size` skill slots (1-4 top,
+  5-8 bottom, empty slots show the diamond marker, cooldowns show the wash +
+  number — all from `collectSkillSlots`); then active effects as
+  `small_icon_size` (128) icons flowing left→right then down (max 8 columns,
+  OMITTED entirely when the entity has no effects); then the gear mirror
+  (weapons row + gear stack + combat-stat column, same layout as
+  `buildGearPanel`).
+- **Right-click input** (`handleRightClickInspect`, levels only) uses the
+  same movement-threshold disambiguation as the inventory drag: a right-press
+  on a world entity tile records a `PendingRightClick`; movement beyond
+  `drag_threshold_pixels` cancels it (the press became a camera pan); a clean
+  release toggles inspect (same → close, different → switch, none → open).
+  It coexists with `handleCameraPan` — a no-movement right-press sets both
+  the pan anchor + a pending right-click, and on release the anchor clears
+  (no offset was computed) while the pending right-click fires the inspect.
+  Suppressed over blocking UI (same `blockingElementAt` check as the tile
+  cursor + pan) so a right-click on a panel never inspects the world behind
+  it. Hubs are excluded — inspection is level-only by design.
+

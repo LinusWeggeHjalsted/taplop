@@ -5006,3 +5006,40 @@ of possibly 100%. Existing tests use cleanly-divisible values (10/5, 6/3) so
 their asserted payouts are unchanged; added a regression test mirroring the
 real Beginnings clone. Updated the DESIGN note + the `computeHarvest`/
 `harvest_clones` handler doc comments.
+
+### Entity inspect panel (DONE)
+
+Right-click an entity in a level to open the enemy-inspect middle panel — a
+read-only mirror of the player's skill bar + active effects + gear panel,
+tinted with the inspected entity's TEAM gradient. See DESIGN → UI Framework
+→ Entity inspect for the settled design.
+
+- `buildEnemyInspectPanel` (ui.zig): 4×2 skill grid (slots 1-4 top, 5-8
+  bottom, `slot_size` 256, empty-marker + cooldown overlay + number from
+  `collectSkillSlots`) → active effects (`small_icon_size` 128, max 8 cols,
+  left→right then down, OMITTED when no effects) → gear mirror (weapons row
+  + gear stack + combat-stat column, same layout as `buildGearPanel`).
+- **Read-only by construction:** every slot is an `.image`, never `.slot` or
+  `.button` — no `SlotRef` (not draggable from/to), no `Action` (not
+  clickable). Tooltips still work (`.image` carries `tooltip`).
+- **Team-gradient coloring:** player gradient for team 0, enemy gradient
+  otherwise, at the same fixed indices the bottom bar + gear panel use.
+- `handleRightClickInspect` (input_handlers.zig, levels only): movement-
+  threshold disambiguation reusing `drag_threshold_pixels` — a clean right-
+  click inspects, a right-drag past the threshold cancels (became a camera
+  pan). Coexists with `handleCameraPan` (a no-movement right-press sets both
+  the pan anchor + a pending right-click; on release the anchor clears with
+  no offset and the pending right-click fires the inspect). Suppressed over
+  blocking UI (`blockingElementAt`). Hubs excluded by design.
+- `UiState.pending_right_click` + `PendingRightClick` struct for the
+  threshold lifecycle.
+- `inventory_panel_height` → `middle_panel_height` (rename — the shared
+  middle-panel height was misnamed after gear/skills/enemy-inspect adopted
+  it).
+- `weapon_type_definitions` threaded into `buildMiddlePanels` (the inspect
+  panel needs it for `collectSkillSlots`).
+- `enemy_inspect_panel_width` set to the real value (4 × `slot_size` + 2 ×
+  `ui_gap` = 1056; was a 600 placeholder).
+- 4 tests: player entity (read-only `.image`-only, player-gradient tint),
+  enemy entity (enemy-gradient tint), cooldown overlay present, active-
+  effects 128px icons. All pass (`PASS (exit 0)`, 283 tests total).

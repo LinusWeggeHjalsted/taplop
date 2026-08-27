@@ -213,6 +213,7 @@ pub fn view(
             session,
             current_state,
             active_theme,
+            weapon_type_definitions,
         ) catch @panic("failed to build middle panels");
 
         // Range/radius outline: when the pointer hovers a skill button,
@@ -453,6 +454,7 @@ fn buildMiddlePanels(
     session: *state.SessionState,
     current_state: *const GameState,
     active_theme: types.ActiveColorTheme,
+    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
 ) !void {
     const section = middleSectionRect();
     var cursor_x: i32 = 0;
@@ -462,9 +464,9 @@ fn buildMiddlePanels(
             .inventory => blk: {
                 const bounds = Rectangle{
                     .x = cursor_x,
-                    .y = section.y + @divTrunc(section.height - ui.inventory_panel_height, 2),
+                    .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
                     .width = ui.inventory_panel_width,
-                    .height = ui.inventory_panel_height,
+                    .height = ui.middle_panel_height,
                 };
                 // The live inventory rides on the player entity (in-level
                 // pickups land on `entity.inventory`; `player_data.inventory`
@@ -492,9 +494,9 @@ fn buildMiddlePanels(
                 const panel_width = ui.gearPanelWidth(font_metrics);
                 const bounds = Rectangle{
                     .x = cursor_x,
-                    .y = section.y + @divTrunc(section.height - ui.inventory_panel_height, 2),
+                    .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
                     .width = panel_width,
-                    .height = ui.inventory_panel_height,
+                    .height = ui.middle_panel_height,
                 };
                 const player = if (ui.playerEntity(current_state)) |pl| pl else types.Entity{};
                 const drag_source: ?ui.SlotRef = if (session.ui_state.drag) |d| d.source else null;
@@ -513,9 +515,9 @@ fn buildMiddlePanels(
             .skills => blk: {
                 const bounds = Rectangle{
                     .x = cursor_x,
-                    .y = section.y + @divTrunc(section.height - ui.inventory_panel_height, 2),
+                    .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
                     .width = ui.skills_panel_width,
-                    .height = ui.inventory_panel_height,
+                    .height = ui.middle_panel_height,
                 };
                 const drag_source: ?ui.SlotRef = if (session.ui_state.drag) |d| d.source else null;
                 try ui.buildSkillsPanel(
@@ -531,7 +533,29 @@ fn buildMiddlePanels(
                 break :blk ui.skills_panel_width;
             },
             // Builder pending — enemy inspect reserves no space.
-            .enemy_inspect => continue,
+            .enemy_inspect => blk: {
+                const entity_index = session.ui_state.inspected_entity_index orelse continue;
+                const level = current_state.level orelse continue;
+                if (entity_index >= level.entities.len) continue;
+                const entity = level.entities[entity_index];
+                const bounds = Rectangle{
+                    .x = cursor_x,
+                    .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
+                    .width = ui.enemy_inspect_panel_width,
+                    .height = ui.middle_panel_height,
+                };
+                try ui.buildEnemyInspectPanel(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    bounds,
+                    entity,
+                    current_state.player_data.learned_skills,
+                    active_theme,
+                    weapon_type_definitions,
+                );
+                break :blk ui.enemy_inspect_panel_width;
+            },
         };
         cursor_x += width + ui.ui_gap;
     }
