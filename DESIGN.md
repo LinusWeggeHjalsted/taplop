@@ -1261,6 +1261,34 @@ the campaign.
 - Derived-from-entity data has a single source of truth: skill-bar slot
   resolution lives in `Entity.skillInSlot` / `Entity.collectSkillSlots`, not
   duplicated per caller
+- **Cooldown inheritance on skill/weapon swap.** Equipping a skill or
+  weapon onto the bar sets the incoming skill cooldowns to `@max(outgoing,
+  incoming)` — never lower, so a fresh swap can't bypass a cooldown that
+  was ticking on the displaced skill. This is what restricts the player to
+  their 5 equipped utility skills at a time: rotating a used skill out and
+  a fresh one in doesn't reset the used one, and rotating it back in
+  inherits its preserved (still-ticking) cooldown. Two sites:
+  `equip_utility_skill` — the incoming skill's cd becomes
+  `@max(old slot skill cd, incoming cd)`. The outgoing skill's cooldown is
+  PRESERVED in `skill_cooldowns` (not cleared) — clearing it would reopen
+  the cycle exploit (use A, swap out, swap back in, use again). Since
+  `skill_cooldowns` is keyed by SkillId (not slot) and `turn_start`
+  decrements every SkillId's cooldown (not just equipped ones), a
+  preserved cd keeps ticking while the skill sits off the bar.
+  `equip_item` (main_hand/off_hand) — `transferWeaponCooldowns` sets all
+  THREE of the new weapon's skill cds to `@max(old weapon's corresponding
+  cd, new weapon's corresponding cd)`, even though only slots 1-2 (main)
+  or slot 3 (off) are exposed for that hand. The hidden skill's cd is set
+  anyway and surfaces later if the player `swap_hands`. Both old+new cds
+  are snapshotted before any `set` so a degenerate SkillId overlap between
+  weapon types can't double-decrement. No new event or session-log field:
+  cooldowns are entity state mutated directly in the handler (same shape
+  as `applyGearChangeSideEffects` clamping health), replay-safe by
+  construction. Deliberately NOT applied to: `swap_utility_skills` (both
+  skills already on the bar, cds travel by SkillId), `unequip_utility_skill`
+  / `unequip_item` (no incoming skill to inherit), and `swap_hands`
+  (changes which skills are accessible, not which are equipped — a used
+  skill stays on cd when it reappears in the other hand, no bypass).
 - `current.level.?` (and similar) force-unwraps in level/sub-level event
   handlers are intentional invariant assertions (those events only run in a
   level; the event stack is cleared on screen transition). Prefer fail-fast
