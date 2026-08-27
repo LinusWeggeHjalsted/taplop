@@ -2198,13 +2198,17 @@ const MaterialEntry = struct {
 };
 
 /// Build the inventory panel into `bounds`: a 9-slice background, an 8×12
-/// flush grid of `ui/item_slot` cells tinted with player-gradient index 5,
-/// and a 128-wide sidebar on the right showing the player's material counts
-/// as a stack of icons (bottom-aligned) each with an outlined count label in
-/// its bottom-right corner. `bounds` is the panel's outer rectangle (sized to
-/// `inventory_panel_width` × `inventory_panel_height`); the grid sits
-/// `ui_gap` inside the top-left, the sidebar sits `ui_gap` right of the grid.
-/// Slots carry no `ref` yet — drag/drop + item icons are later slices.
+/// flush grid of `ui/item_slot` cells (each carrying an inventory `SlotRef`
+/// so press/click/drag handlers can resolve which slot was acted on), and a
+/// 128-wide sidebar on the right. The sidebar stacks the five material
+/// icons bottom-aligned (each with an outlined count label + a `{count}
+/// {type}` tooltip) and tops them with the salvage-tool indicator (display-
+/// only, outlined while Shift is held). A shift+left-drag over the grid
+/// renders a lightest stroked outline around the bounding box of the
+/// selected region (see `UiState.salvage_region`). `bounds` is the panel's
+/// outer rectangle (sized to `inventory_panel_width` ×
+/// `inventory_panel_height`); the grid sits `ui_gap` inside the top-left,
+/// the sidebar sits `ui_gap` right of the grid.
 /// Sprite id for an item's inventory/gear icon. Weapons resolve per
 /// `WeaponType` (Unity's `WandItem` maps to our `staff`); gear types have
 /// one icon each; `skill_tome` uses a single generic tome icon (the taught
