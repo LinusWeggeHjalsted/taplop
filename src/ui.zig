@@ -1703,7 +1703,34 @@ fn emitCenteredNumber(
         .text = label,
         .screen_position = label_box.position(),
         .font_size = font_size,
+        // Outlined for readability over varied icon art.
+        .outlined = true,
         // Sits on top of its parent icon/button; let its tooltip win the hover.
+        .blocks_input = false,
+    } });
+}
+
+/// Emit a number label in the BOTTOM-RIGHT corner of `cell`, outlined for
+/// readability. Mirrors the material-count placement (`material_count_font_size`
+/// + `material_count_inset`) so effect-duration numbers read like the
+/// inventory material counts. Used for active-effect duration overlays.
+fn emitCornerNumber(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell: Rectangle,
+    value: u32,
+) !void {
+    const label = try std.fmt.allocPrint(allocator, "{d}", .{value});
+    const label_width = font_metrics.measureSpanWidth(text(label), material_count_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = .{
+            .x = cell.x + cell.width - label_width - material_count_inset,
+            .y = cell.y + cell.height - material_count_font_size - material_count_inset,
+        },
+        .font_size = material_count_font_size,
+        .outlined = true,
         .blocks_input = false,
     } });
 }
@@ -2040,6 +2067,22 @@ pub fn buildBottomBar(
         .blocks_input = false,
     } });
 
+    // Current-health number centered on the ball, outlined for readability
+    // over the fill. Passes hover through to the globe (the tooltip shows
+    // `current / max`). Drawn AFTER the border so it sits on top of both.
+    {
+        const health_text = try std.fmt.allocPrint(allocator, "{d}", .{player.current_health});
+        const label_width = font_metrics.measureSpanWidth(text(health_text), overlay_font_size);
+        const label_box = ball.placeCenter(label_width, overlay_font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = health_text,
+            .screen_position = label_box.position(),
+            .font_size = overlay_font_size,
+            .outlined = true,
+            .blocks_input = false,
+        } });
+    }
+
     // Weapon skills sub-bar (slots 1-3, packed flush).
     const weapon_sub_bar = row.next(weapon_skills_width);
     {
@@ -2159,7 +2202,7 @@ pub fn buildBottomBar(
                     }),
                 },
             } });
-            try emitCenteredNumber(elements, allocator, font_metrics, cell, effect.duration, overlay_font_size);
+            try emitCornerNumber(elements, allocator, font_metrics, cell, effect.duration);
         }
     }
 
@@ -2914,7 +2957,7 @@ pub fn buildEnemyInspectPanel(
                     }),
                 },
             } });
-            try emitCenteredNumber(elements, allocator, font_metrics, cell, effect.duration, overlay_font_size);
+            try emitCornerNumber(elements, allocator, font_metrics, cell, effect.duration);
         }
         const effect_rows = @divTrunc(@as(i32, @intCast(entity.active_effects.len)) + effect_columns - 1, effect_columns);
         cursor_y += effect_rows * small_icon_size + ui_gap;
