@@ -4971,3 +4971,17 @@ icon_size / direction / `Materials` value. `emitMaterialRowHorizontal`
 deleted (single caller folded in); `MaterialEntry` deleted. Behavior
 unchanged (icon blocking + `{count} {name}` tooltip + non-blocking outlined
 count label bottom-right, same as before).
+
+### CloneData mission_uuid missing from save key whitelist (DONE)
+
+Symptom: loading an autosave (Continue at game start) surfaced a spurious
+"unknown uuid key in CloneData" popup. Root cause: `save_clone_data_keys`
+in parser.zig (the per-section key whitelist for `CloneData`) omitted
+`mission_uuid`, so `validateKeys` flagged it even though the writer emits it
+and the loader reads it. The `loadPlayerSave` round-trip test passed `warnings:
+null`, so it never exercised `validateKeys` and missed the regression when the
+clone system landed.
+
+Fix: added `mission_uuid` to `save_clone_data_keys` + a regression test that
+runs `validateKeys` against a save with a CloneData section and asserts zero
+warnings.

@@ -635,8 +635,8 @@ pub const salvage_key_map = std.StaticStringMap([]const []const u8).initComptime
 // item_name + weapon_type + damage. Armor sections carry item_name + their
 // stat bonuses. Inventory entries carry slot + item_type + item-specific
 // keys (same as level Items but with `slot`). UtilitySkills carries
-// slot_4..slot_8. CloneData entries carry clone_name + turn count +
-// materials. DiscoveredHubs entries carry `name`.
+// slot_4..slot_8. CloneData entries carry mission_uuid (the clone key) +
+// clone_name + turn count + materials. DiscoveredHubs entries carry `name`.
 
 const save_info_keys = [_][]const u8{
     "player_name", "current_campaign", "current_hub",
@@ -656,7 +656,7 @@ const save_inventory_keys = [_][]const u8{
 };
 const save_utility_skills_keys = [_][]const u8{ "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" };
 const save_clone_data_keys = [_][]const u8{
-    "clone_name", "turns_to_complete",
+    "mission_uuid", "clone_name", "turns_to_complete",
     "wood", "metal", "leather", "cloth", "knowledge",
 };
 const save_discovered_hubs_keys = [_][]const u8{"name"};
@@ -1069,5 +1069,47 @@ test "validateKeys: no warnings for valid keys" {
     const sections = try parseConfigFile(config, allocator);
     var warnings: std.ArrayList([]const u8) = .empty;
     validateKeys(sections, level_key_map, "test/level_1.txt", allocator, &warnings);
+    try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
+}
+
+test "validateKeys: no warnings for player save with CloneData" {
+    // Regression guard: the CloneData section carries mission_uuid (the clone
+    // key) alongside clone_name + materials + turns_to_complete. An earlier
+    // whitelist omitted mission_uuid, so loading an autosave surfaced a
+    // spurious unknown-key popup on Continue.
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const config =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\Info
+        \\player_name Test Player
+        \\current_campaign first_mission
+        \\current_hub starting_village
+        \\turns 0
+        \\deaths 0
+        \\defeated_enemies 0
+        \\skills_used 0
+        \\wood_salvage 0
+        \\metal_salvage 0
+        \\leather_salvage 0
+        \\cloth_salvage 0
+        \\knowledge 0
+        \\
+        \\CloneData
+        \\mission_uuid bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+        \\clone_name First Clone
+        \\wood 10
+        \\metal 20
+        \\leather 5
+        \\cloth 5
+        \\knowledge 0
+        \\turns_to_complete 15
+    ;
+    const sections = try parseConfigFile(config, allocator);
+    var warnings: std.ArrayList([]const u8) = .empty;
+    validateKeys(sections, player_save_key_map, "saves/autosave.txt", allocator, &warnings);
     try std.testing.expectEqual(@as(usize, 0), warnings.items.len);
 }
