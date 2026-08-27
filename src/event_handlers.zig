@@ -1974,17 +1974,18 @@ pub fn processEvent(
                 .turn_end => |turn| {
                     const entity = getLevelEntity(current, turn.entity_index);
 
-                    // Trigger on_end_turn for all active effects
-                    for (entity.active_effects) |active_effect| {
-                        const definition = lookups.getEffectDefinition(active_effect.effect_id);
-                        if (definition.onEndTurn(turn.entity_index, current.*, allocator)) |effect_events| {
-                            pushEvents(current, effect_events, allocator);
-                        }
-                    }
-
                     // If this is the player's turn ending, push the full next round:
                     // all active/alive enemy turn_starts sorted by distance (closest first),
                     // plus the next player turn_start at the bottom (processed last).
+                    //
+                    // The round events are pushed BEFORE on_end_turn effect hooks
+                    // so the heals (and any other on_end_turn events) land on TOP
+                    // of the LIFO stack and run before any turn_starts — i.e. at
+                    // the END of this turn, not the start of the next. (Swapping
+                    // the two blocks was the fix for Stone Form healing at the
+                    // start of the player's next turn instead of the end of the
+                    // current one; enemy turn_end doesn't build a round so the
+                    // order is moot there.)
                     if (turn.entity_index == 0) {
                         // Turn counters. The per-mission counter (turns_spent)
                         // lives on the live mission working copy and is
@@ -2059,7 +2060,20 @@ pub fn processEvent(
 
                         pushEvents(current, round_events.items, allocator);
                     }
-                    // Non-player turn_end: no pushing needed, next turn_start is already on the stack
+                    // Non-player turn_end: no round to build, next turn_start is
+                    // already on the stack.
+
+                    // Trigger on_end_turn for all active effects. Pushed AFTER the
+                    // round events (above) so on_end_turn events (e.g. Stone Form
+                    // heal) sit on top of the LIFO stack and run before any
+                    // turn_starts — at the END of this turn, not the start of the
+                    // next.
+                    for (entity.active_effects) |active_effect| {
+                        const definition = lookups.getEffectDefinition(active_effect.effect_id);
+                        if (definition.onEndTurn(turn.entity_index, current.*, allocator)) |effect_events| {
+                            pushEvents(current, effect_events, allocator);
+                        }
+                    }
                 },
                 .player_turn_move => {
                     const level = &current.level.?;

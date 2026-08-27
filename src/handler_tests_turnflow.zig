@@ -865,3 +865,32 @@ test "player_overwrite_clone: no-op when no completed mission" {
     try testing.expectEqual(@as(usize, 1), clones.len);
     try testing.expectEqual(@as(u32, 10), clones[0].turns_to_complete);
 }
+
+test "turn_end: Stone Form on_end_turn heal runs BEFORE next turn_start (LIFO order)" {
+    // Regression: on_end_turn events (Stone Form heal) were pushed BEFORE the
+    // round-building turn_starts, so on the LIFO stack the turn_starts sat on
+    // top and ran first — the heal fired at the START of the player's next
+    // turn, not the END of the current one. Fix: push round events first,
+    // then on_end_turn events so the heal lands on top.
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    // Player with Stone Form active, 20 max health → heal = 4.
+    const effects = try backing.allocator().alloc(types.Effect, 1);
+    effects[0] = .{ .effect_id = .stone_form, .duration = 3 };
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 10, .active_effects = effects },
+            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .is_active = true },
+        },
+        &five_by_five,
+    ));
+    pushOne(&history, .{ .turn_end = .{ .entity_index = 0 } });
+    // After running to idle, the heal should have applied (current_health
+    // 10 + 4 = 14) and the round should have played out (enemy turn + next
+    // player turn_start). The key assertion: the heal ran as part of the
+    // player's turn_end, not deferred to the next turn_start.
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 14), levelEntity(&history, 0).current_health);
+}
