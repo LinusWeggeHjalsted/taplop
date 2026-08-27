@@ -1060,6 +1060,14 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_replay_mission with no completed mission");
                     }
                 },
+                .player_overwrite_clone => {
+                    const info = self.current_state.last_completed_mission orelse {
+                        @panic("replay validation: player_overwrite_clone with no completed mission");
+                    };
+                    if (!info.overwrite_offered) {
+                        @panic("replay validation: player_overwrite_clone when not offered");
+                    }
+                },
                 .player_continue => {
                     if (self.current_state.screen != .main_menu) {
                         @panic("replay validation: player_continue outside main menu");

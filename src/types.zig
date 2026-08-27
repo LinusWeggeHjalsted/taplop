@@ -99,6 +99,7 @@ pub const Action = enum {
     // Mission-complete overlay commands.
     continue_after_mission,
     replay_mission,
+    overwrite_clone,
     // Dev tool: skip the current level (pushes end_level with the default
     // continuation — next level or mission-end). Bound to ctrl+Enter; gated
     // to dev builds via `@import("build_info").dev_mode` at the handler site,
@@ -127,7 +128,7 @@ pub fn releaseSoundForAction(action: Action) ?SoundId {
         .undo, .redo => .menu,
         .save_game => .menu,
         .restart_mission, .exit_mission, .exit_to_menu => .menu,
-        .continue_after_mission, .replay_mission => .menu,
+        .continue_after_mission, .replay_mission, .overwrite_clone => .menu,
         // Skill slots: suppress the generic button-up (the use_skill event
         // plays weapon_swing/spell on auto-fire; the prepare path plays
         // button_click_up explicitly). See DESIGN → Audio.

@@ -2908,16 +2908,25 @@ pub fn buildTopBar(
 }
 
 /// Build the mission-complete overlay: a full-screen 9-slice panel with a
-/// "{mission_name} completed" header centered above a two-button stack
-/// (Continue, Replay Mission). Rendered when `SessionState.pending_mission_complete`
+/// "{mission_name} completed" header centered at the top, a two-column stats
+/// + clone-harvest area in the middle, and Continue + Replay Mission buttons
+/// side by side at the bottom. Rendered when `GameState.last_completed_mission`
 /// is set (the player completed the last level of a mission; the cascade has
-/// already transitioned to the hub). See DESIGN → Architecture.
+/// already transitioned to the hub). See DESIGN → Architecture + DESIGN →
+/// Clones (clone system).
+///
+/// Left column (above the buttons, flush left): run stats — turns spent,
+/// tiles moved, skills used, damage dealt, damage taken. Right column (flush
+/// right): clone-harvest rewards — the five material icons with their summed
+/// payout from all old clones this run. A future medals/leaderboards tab will
+/// make this a tabbed view; for now stats + clone is enough.
 pub fn buildMissionComplete(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     screen: Rectangle,
-    mission_name: []const u8,
+    info: types.MissionCompleteInfo,
+    active_theme: types.ActiveColorTheme,
 ) !void {
     // Full-screen panel background.
     try elements.append(allocator, .{ .nine_slice_panel = .{
@@ -2927,37 +2936,37 @@ pub fn buildMissionComplete(
         .height = screen.height,
     } });
 
+    // Header centered at the top.
     const header_font_size: i32 = 128;
-    const header_text = try std.fmt.allocPrint(allocator, "{s} completed", .{mission_name});
+    const header_text = try std.fmt.allocPrint(allocator, "{s} completed", .{info.name});
     const header_width = font_metrics.measureSpanWidth(text(header_text), header_font_size);
-    const header_label = screen.placeCenter(header_width, header_font_size);
-    // Place the header above the button stack.
-    const buttons_height: i32 = 2 * menu_button_height + ui_gap;
+    const header_box = screen.placeTopCenter(header_width, header_font_size, ui_gap * 4);
     try elements.append(allocator, .{ .text_label = .{
         .text = header_text,
-        .screen_position = .{
-            .x = header_label.x,
-            .y = header_label.y - buttons_height - ui_gap - header_font_size,
-        },
+        .screen_position = header_box.position(),
         .font_size = header_font_size,
+        .outlined = true,
         .blocks_input = false,
     } });
 
-    const MenuButton = struct { label: []const u8, action: Action };
-    const buttons = [_]MenuButton{
+    // Bottom buttons: Continue + Replay Mission (+ Overwrite Clone if
+    // offered), side by side, centered.
+    const overwrite_offered = info.overwrite_offered;
+    const button_count: i32 = if (overwrite_offered) 3 else 2;
+    const ButtonSpec = struct { label: []const u8, action: Action };
+    var buttons: [3]ButtonSpec = .{
         .{ .label = "Continue", .action = .continue_after_mission },
         .{ .label = "Replay Mission", .action = .replay_mission },
+        .{ .label = "Overwrite Clone", .action = .overwrite_clone },
     };
-
-    const total_height = rowWidth(@intCast(buttons.len), menu_button_height, ui_gap);
-    const origin = screen
-        .placeCenter(menu_button_width, total_height)
-        .position();
-
-    for (buttons, 0..) |menu_button, index| {
+    const buttons_total_width = rowWidth(button_count, menu_button_width, ui_gap);
+    const buttons_row = screen.placeBottomCenter(buttons_total_width, menu_button_height, ui_gap * 4);
+    const buttons_origin = buttons_row.position();
+    var button_index: i32 = 0;
+    for (buttons[0..@intCast(button_count)]) |menu_button| {
         const cell: Rectangle = .{
-            .x = origin.x,
-            .y = origin.y + @as(i32, @intCast(index)) * (menu_button_height + ui_gap),
+            .x = buttons_origin.x + button_index * (menu_button_width + ui_gap),
+            .y = buttons_origin.y,
             .width = menu_button_width,
             .height = menu_button_height,
         };
@@ -2970,6 +2979,78 @@ pub fn buildMissionComplete(
             menu_button_font_size,
             menu_button.action,
         );
+        button_index += 1;
+    }
+
+    // Stats column (left, flush left, above the buttons). Each row is a
+    // label + value line. Bottom-aligned to sit just above the button row.
+    const stat_font_size: i32 = 64;
+    const stat_line_height: i32 = stat_font_size + ui_gap;
+    const stat_entries = [_]struct { label: []const u8, value: u32 }{
+        .{ .label = "Turns Spent", .value = info.turns_spent },
+        .{ .label = "Tiles Moved", .value = info.tiles_moved },
+        .{ .label = "Skills Used", .value = info.skills_used },
+        .{ .label = "Damage Dealt", .value = info.damage_dealt },
+        .{ .label = "Damage Taken", .value = info.damage_taken },
+    };
+    const stats_height = @as(i32, @intCast(stat_entries.len)) * stat_line_height;
+    const stats_bottom = buttons_row.y - ui_gap * 4;
+    const stats_left = screen.x + ui_gap * 4;
+    var stat_y = stats_bottom - stats_height;
+    const stat_label_color = active_theme.player_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    for (stat_entries) |entry| {
+        const value_text = try std.fmt.allocPrint(allocator, "{d}", .{entry.value});
+        const line_text = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ entry.label, value_text });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = line_text,
+            .screen_position = .{ .x = stats_left, .y = stat_y },
+            .font_size = stat_font_size,
+            .color = stat_label_color,
+            .outlined = true,
+            .blocks_input = false,
+        } });
+        stat_y += stat_line_height;
+    }
+
+    // Clone-harvest rewards column (right, flush right, above the buttons).
+    // The five material icons stack bottom-aligned (bottom edge aligns with
+    // the stats column's bottom edge), each with an outlined count label.
+    const p = active_theme.player_gradient.colors;
+    const material_entries = [_]MaterialEntry{
+        .{ .sprite_id = "ui/material_wood", .count = info.harvested_materials.wood, .color_index = 5 },
+        .{ .sprite_id = "ui/material_metal", .count = info.harvested_materials.metal, .color_index = 2 },
+        .{ .sprite_id = "ui/material_leather", .count = info.harvested_materials.leather, .color_index = 5 },
+        .{ .sprite_id = "ui/material_cloth", .count = info.harvested_materials.cloth, .color_index = 2 },
+        .{ .sprite_id = "ui/material_knowledge", .count = info.harvested_materials.knowledge, .color_index = 0 },
+    };
+    const material_stack_height = @as(i32, @intCast(material_entries.len)) * inventory_slot_size;
+    const material_bottom = stats_bottom;
+    const material_right = screen.x + screen.width - ui_gap * 4;
+    var icon_top = material_bottom - material_stack_height;
+    for (material_entries) |entry| {
+        const icon_x = material_right - inventory_slot_size;
+        const icon_color = p[@min(entry.color_index, types.gradient_color_count - 1)];
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = entry.sprite_id,
+            .screen_position = .{ .x = icon_x, .y = icon_top },
+            .width = inventory_slot_size,
+            .height = inventory_slot_size,
+            .color = icon_color,
+            .blocks_input = false,
+        } });
+        const count_text = try std.fmt.allocPrint(allocator, "{d}", .{entry.count});
+        const label_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = count_text,
+            .screen_position = .{
+                .x = icon_x + inventory_slot_size - label_width - material_count_inset,
+                .y = icon_top + inventory_slot_size - material_count_font_size - material_count_inset,
+            },
+            .font_size = material_count_font_size,
+            .outlined = true,
+            .blocks_input = false,
+        } });
+        icon_top += inventory_slot_size;
     }
 }
 

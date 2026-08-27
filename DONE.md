@@ -4862,3 +4862,25 @@ push-ordering constraint.
 
 Slice 3 (UI: conditional Overwrite Clone button + `player_overwrite_clone`
 orchestrator + stats display) deferred — waiting on the user's panel design.
+
+### Mission-complete panel + Overwrite Clone orchestrator (DONE)
+
+- `buildMissionComplete` rewritten: full-screen 9-slice panel with a centered
+  header at the top, a left flush-left stats column (Turns Spent, Tiles Moved,
+  Skills Used, Damage Dealt, Damage Taken — outlined, player-gradient tinted),
+  a right flush-right clone-harvest rewards column (the five material icons at
+  `inventory_slot_size`, bottom-aligned, each with an outlined count label
+  showing the summed payout from all old clones this run), and Continue +
+  Replay Mission (+ Overwrite Clone when `overwrite_offered`) buttons side by
+  side at the bottom. Signature now takes `MissionCompleteInfo` + the active
+  theme (for material-icon tinting); `view()` call site updated. Medals +
+  leaderboards deferred (will become a tabbed view).
+- `player_overwrite_clone` PlayerInputEvent added + handled: reads
+  `last_completed_mission` and pushes `save_clone_info` from the snapshot
+  (uuid/name/turns/converted_materials), replacing the existing clone.
+  Whitelisted by `isPlayerAction` automatically (it's a PlayerInputEvent);
+  `validatePlayerAction` checks `last_completed_mission != null &&
+  overwrite_offered`. Input dispatch + `Action.overwrite_clone` +
+  `applyAction` + `releaseSoundForAction` wired.
+- 2 new turnflow tests (overwrite replaces / no-op-without-completed-mission).
+  270 tests pass.

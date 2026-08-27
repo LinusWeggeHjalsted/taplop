@@ -765,6 +765,19 @@ fn handlePlayerInputEvent(
                 .{ .meta_event = .end_hub },
             }, allocator);
         },
+        .player_overwrite_clone => {
+            // Replace the existing clone for this mission with the just-
+            // completed run's data. Only offered when overwrite_offered is
+            // set (a clone exists + the run was not strictly better). See
+            // DESIGN → Clones (clone system).
+            const info = current.last_completed_mission orelse return;
+            pushEvents(current, &.{.{ .super_event = .{ .save_clone_info = .{
+                .mission_uuid = info.uuid,
+                .mission_name = info.name,
+                .total_turns = info.turns_spent,
+                .total_materials = info.converted_materials,
+            } } }}, allocator);
+        },
 
         // --- Player: swap weapons ---
         .swap_hands => {

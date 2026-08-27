@@ -795,3 +795,57 @@ test "computeHarvest: pure payout matches harvest_clones handler" {
     try testing.expectEqual(@as(u32, 8), payout.metal);
     try testing.expectEqual(@as(u32, 0), payout.leather);
 }
+
+// ───────────────────────── player_overwrite_clone orchestrator ─────────────────────────
+// See DESIGN → Clones (clone system). The overlay button pushes this; the
+// handler reads last_completed_mission and pushes save_clone_info with the
+// run's snapshot, replacing the existing clone.
+
+test "player_overwrite_clone: replaces the existing clone with the run snapshot" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const pre_clones = try backing.allocator().dupe(Clone, &.{.{
+        .mission_uuid = "uuid-A",
+        .name = "Old A",
+        .turns_to_complete = 10,
+        .materials_collected = .{ .wood = 5 },
+    }});
+    var history = harness.newHistory(null);
+    history.current_state.player_data.clones = pre_clones;
+    history.current_state.last_completed_mission = .{
+        .uuid = "uuid-A",
+        .name = "Mission A",
+        .path = "path/a",
+        .turns_spent = 4,
+        .converted_materials = .{ .wood = 20 },
+        .overwrite_offered = true,
+    };
+    pushPlayerInput(&history, .player_overwrite_clone);
+    runToIdle(&history);
+    const clones = history.current_state.player_data.clones;
+    try testing.expectEqual(@as(usize, 1), clones.len);
+    try testing.expectEqualStrings("uuid-A", clones[0].mission_uuid);
+    try testing.expectEqual(@as(u32, 4), clones[0].turns_to_complete);
+    try testing.expectEqual(@as(u32, 20), clones[0].materials_collected.wood);
+}
+
+test "player_overwrite_clone: no-op when no completed mission" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const pre_clones = try backing.allocator().dupe(Clone, &.{.{
+        .mission_uuid = "uuid-A",
+        .name = "Old A",
+        .turns_to_complete = 10,
+        .materials_collected = .{ .wood = 5 },
+    }});
+    var history = harness.newHistory(null);
+    history.current_state.player_data.clones = pre_clones;
+    // No last_completed_mission set — handler returns early.
+    pushPlayerInput(&history, .player_overwrite_clone);
+    runToIdle(&history);
+    const clones = history.current_state.player_data.clones;
+    try testing.expectEqual(@as(usize, 1), clones.len);
+    try testing.expectEqual(@as(u32, 10), clones[0].turns_to_complete);
+}

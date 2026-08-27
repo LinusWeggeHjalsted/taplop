@@ -649,6 +649,16 @@ pub fn handleAnytimeInput(
                     event_handlers.processEvent(history);
                 }
             },
+            .overwrite_clone => {
+                const info = current.last_completed_mission orelse return;
+                if (!info.overwrite_offered) return;
+                const baseline = history.current_state.event_stack.len;
+                event_handlers.pushPlayerAction(current, .player_overwrite_clone, allocator);
+                while (history.current_state.event_stack.len > baseline) {
+                    if (history.load_error) break;
+                    event_handlers.processEvent(history);
+                }
+            },
             else => {},
         }
     }

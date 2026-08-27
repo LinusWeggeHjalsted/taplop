@@ -362,7 +362,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .zoom_reset => player_input.anytime.zoom_reset = true,
         .save_game => player_input.anytime.options_action = action,
         .restart_mission, .exit_mission, .exit_to_menu => player_input.anytime.options_action = action,
-        .continue_after_mission, .replay_mission => player_input.anytime.options_action = action,
+        .continue_after_mission, .replay_mission, .overwrite_clone => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,

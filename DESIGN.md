@@ -1231,7 +1231,9 @@ So a clone is a permanent, compounding material factory keyed by mission.
   5. **Auto-save clone** (`save_clone_info` SuperEvent): if no existing clone
      OR strictly better, replace/append. Otherwise set
      `MissionCompleteInfo.overwrite_offered = true` and DON'T auto-save — the
-     overlay offers a manual "Overwrite Clone" button (Slice 3, UI).
+     overlay offers a manual "Overwrite Clone" button (`player_overwrite_clone`
+     PlayerInputEvent → pushes `save_clone_info` from the `MissionCompleteInfo`
+     snapshot, since the `Mission` is gone in the hub).
   6. `MissionCompleteInfo` carries `{uuid, name, path, turns_spent,
      converted_materials, overwrite_offered}` so the hub-side overlay + the
      manual-overwrite orchestrator can reconstruct `save_clone_info` from the

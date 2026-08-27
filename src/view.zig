@@ -361,7 +361,8 @@ pub fn view(
             frame_allocator,
             font_metrics,
             ui.screenRect(),
-            info.name,
+            info,
+            active_theme,
         ) catch @panic("failed to build mission complete overlay");
     }
 
