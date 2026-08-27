@@ -300,29 +300,9 @@ pub fn view(
         }
     }
 
-    // Hover tooltip: the topmost element under the pointer that carries
-    // tooltip content spawns a tooltip, appended last so it draws on top.
-    // Suppressed while dragging.
-    if (session.ui_state.drag == null) {
-        const pointer = session.input_state.mouse_screen_position;
-        const point = pointer.toScreenPosition();
-        if (ui.tooltipAt(ui_elements.items, point)) |hovered| {
-            const bounds = ui.boundsOf(hovered);
-            ui.buildTooltip(
-                &ui_elements,
-                frame_allocator,
-                font_metrics,
-                bounds.position(),
-                bounds.width,
-                bounds.height,
-                ui.tooltipOf(hovered).?,
-            ) catch @panic("failed to build tooltip");
-        }
-    }
-
     // Options menu: full-screen modal panel with a context-specific button
-    // stack. Drawn on top of normal UI (bottom/top bars, tooltips) but under
-    // the error popup (which is the most-modal surface). Pure over
+    // stack. Drawn on top of normal UI (bottom/top bars) but under the error
+    // popup (which is the most-modal surface). Pure over
     // SessionState.ui_state.options_menu_open. See DESIGN → UI Framework.
     if (session.ui_state.options_menu_open) {
         ui.buildOptionsMenu(
@@ -364,6 +344,31 @@ pub fn view(
             info,
             active_theme,
         ) catch @panic("failed to build mission complete overlay");
+    }
+
+    // Hover tooltip: the topmost element under the pointer that carries
+    // tooltip content spawns a tooltip, appended here so it draws on top of
+    // all gameplay + overlay UI (bars, panels, options menu, mission
+    // complete/fail). Modal 9-slice panels shield tooltip-bearing elements
+    // behind them via `hitTest`'s blocks_input short-circuit, so a tooltip
+    // never bleeds through a modal surface from an element underneath.
+    // Suppressed while dragging. The error popup (appended next) stays above
+    // tooltips as the most-modal surface.
+    if (session.ui_state.drag == null) {
+        const pointer = session.input_state.mouse_screen_position;
+        const point = pointer.toScreenPosition();
+        if (ui.tooltipAt(ui_elements.items, point)) |hovered| {
+            const bounds = ui.boundsOf(hovered);
+            ui.buildTooltip(
+                &ui_elements,
+                frame_allocator,
+                font_metrics,
+                bounds.position(),
+                bounds.width,
+                bounds.height,
+                ui.tooltipOf(hovered).?,
+            ) catch @panic("failed to build tooltip");
+        }
     }
 
     // Recoverable error popup: modal, centered, drawn on top of all other

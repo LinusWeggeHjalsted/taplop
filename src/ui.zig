@@ -3204,23 +3204,24 @@ fn emitMaterialRowHorizontal(
     active_theme: types.ActiveColorTheme,
 ) !void {
     const p = active_theme.player_gradient.colors;
-    const entries = [_]struct { sprite_id: []const u8, count: u32, color_index: u32 }{
-        .{ .sprite_id = "ui/material_wood", .count = materials.wood, .color_index = 5 },
-        .{ .sprite_id = "ui/material_metal", .count = materials.metal, .color_index = 2 },
-        .{ .sprite_id = "ui/material_leather", .count = materials.leather, .color_index = 5 },
-        .{ .sprite_id = "ui/material_cloth", .count = materials.cloth, .color_index = 2 },
-        .{ .sprite_id = "ui/material_knowledge", .count = materials.knowledge, .color_index = 0 },
+    const entries = [_]struct { sprite_id: []const u8, count: u32, color_index: u32, name: []const u8 }{
+        .{ .sprite_id = "ui/material_wood", .count = materials.wood, .color_index = 5, .name = "Wood" },
+        .{ .sprite_id = "ui/material_metal", .count = materials.metal, .color_index = 2, .name = "Metal" },
+        .{ .sprite_id = "ui/material_leather", .count = materials.leather, .color_index = 5, .name = "Leather" },
+        .{ .sprite_id = "ui/material_cloth", .count = materials.cloth, .color_index = 2, .name = "Cloth" },
+        .{ .sprite_id = "ui/material_knowledge", .count = materials.knowledge, .color_index = 0, .name = "Knowledge" },
     };
     var x = origin.x;
     for (entries) |entry| {
         const icon_color = p[@min(entry.color_index, types.gradient_color_count - 1)];
+        const tooltip_text = try std.fmt.allocPrint(allocator, "{d} {s}", .{ entry.count, entry.name });
         try elements.append(allocator, .{ .image = .{
             .sprite_id = entry.sprite_id,
             .screen_position = .{ .x = x, .y = origin.y },
             .width = icon_size,
             .height = icon_size,
             .color = icon_color,
-            .blocks_input = false,
+            .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
         } });
         const count_text = try std.fmt.allocPrint(allocator, "{d}", .{entry.count});
         const label_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
