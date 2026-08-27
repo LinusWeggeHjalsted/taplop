@@ -3047,37 +3047,30 @@ pub fn buildMissionComplete(
         icon_top += inventory_slot_size;
     }
 
-    // ── Bottom buttons: Continue + Replay Mission (+ Overwrite Clone if
-    //    offered), side by side, centered. ──
-    const overwrite_offered = info.overwrite_offered;
-    const button_count: i32 = if (overwrite_offered) 3 else 2;
-    const ButtonSpec = struct { label: []const u8, action: Action };
-    var buttons: [3]ButtonSpec = .{
-        .{ .label = "Continue", .action = .continue_after_mission },
-        .{ .label = "Replay Mission", .action = .replay_mission },
-        .{ .label = "Overwrite Clone", .action = .overwrite_clone },
-    };
-    const buttons_total_width = rowWidth(button_count, menu_button_width, ui_gap);
-    const buttons_row = screen.placeBottomCenter(buttons_total_width, menu_button_height, ui_gap * 4);
-    const buttons_origin = buttons_row.position();
-    var button_index: i32 = 0;
-    for (buttons[0..@intCast(button_count)]) |menu_button| {
-        const cell: Rectangle = .{
-            .x = buttons_origin.x + button_index * (menu_button_width + ui_gap),
-            .y = buttons_origin.y,
-            .width = menu_button_width,
-            .height = menu_button_height,
-        };
-        try emitPanelButton(
-            elements,
-            allocator,
-            font_metrics,
-            cell,
-            menu_button.label,
-            menu_button_font_size,
-            menu_button.action,
-        );
-        button_index += 1;
+    // ── Bottom buttons: Replay Mission in the bottom-left corner, Continue
+    //    in the bottom-right corner. Overwrite Clone (when offered) sits
+    //    centered between them. ──
+    const buttons_row = screen.placeBottomCenter(menu_button_width, menu_button_height, ui_gap * 4);
+    const button_y = buttons_row.y;
+    const margin = ui_gap * 4;
+    // Replay Mission — bottom-left.
+    try emitPanelButton(elements, allocator, font_metrics, .{
+        .x = screen.x + margin,
+        .y = button_y,
+        .width = menu_button_width,
+        .height = menu_button_height,
+    }, "Replay Mission", menu_button_font_size, .replay_mission);
+    // Continue — bottom-right.
+    try emitPanelButton(elements, allocator, font_metrics, .{
+        .x = screen.x + screen.width - margin - menu_button_width,
+        .y = button_y,
+        .width = menu_button_width,
+        .height = menu_button_height,
+    }, "Continue", menu_button_font_size, .continue_after_mission);
+    // Overwrite Clone — centered (only when offered).
+    if (info.overwrite_offered) {
+        const centered = screen.placeBottomCenter(menu_button_width, menu_button_height, ui_gap * 4);
+        try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Clone", menu_button_font_size, .overwrite_clone);
     }
 }
 
