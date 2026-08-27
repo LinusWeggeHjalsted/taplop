@@ -188,14 +188,16 @@ pub fn handleDrag(
     }
 
     // Promote a pending left-press once the pointer moves beyond the
-    // threshold. A shift+left press on an INVENTORY slot promotes to a
-    // salvage-region selection (start = the pressed slot); anything else
-    // promotes to an item drag (the ghost follows the pointer until release).
+    // threshold. Uses `>` (strict) so a zero-threshold config still tolerates
+    // a no-movement press+release as a CLICK (0 > 0 is false → pending
+    // survives → release reaches the click branch). `>=` would promote on
+    // the press frame itself (0 >= 0 is true), making click-to-equip dead.
+    // See `handleRightClickInspect` for the same `>` convention.
     if (ui_state.pending_slot_press) |press| {
         if (press.button == .left) {
             const dx = pointer.position.x - press.press_position.x;
             const dy = pointer.position.y - press.press_position.y;
-            if (dx * dx + dy * dy >= ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
+            if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
                 if (press.shift_held and press.source == .inventory) {
                     ui_state.salvage_region = .{
                         .start_slot = press.source.inventory,
@@ -548,8 +550,9 @@ pub fn handleRightClickInspect(
 
     // Movement beyond the threshold cancels the pending right-click (it
     // became a camera pan). Checked on every call while the right button is
-    // held. Uses `>` (not `>=`) so a zero-threshold config still tolerates a
+    // held. Uses `>` (strict) so a zero-threshold config still tolerates a
     // no-movement press+release — `0 > 0` is false, so a clean click survives.
+    // Same convention as the inventory drag promotion in `handleDrag`.
     if (ui_state.pending_right_click) |press| {
         if (pointer.right_held) {
             const dx = pointer.position.x - press.press_position.x;
@@ -892,22 +895,8 @@ pub fn handleAnytimeInput(
             ui_state.toggleMiddlePanel(.skills);
         }
 
-        if (in_game.toggle_entity_inspect) |entity_index| {
-            if (ui_state.inspected_entity_index) |current_inspected| {
-                if (current_inspected == entity_index) {
-                    // Same entity — close the panel
-                    ui_state.toggleMiddlePanel(.enemy_inspect);
-                    ui_state.inspected_entity_index = null;
-                } else {
-                    // Different entity — switch target
-                    ui_state.inspected_entity_index = entity_index;
-                }
-            } else {
-                // Not inspecting — open panel
-                ui_state.inspected_entity_index = entity_index;
-                ui_state.toggleMiddlePanel(.enemy_inspect);
-            }
-        }
+        // Entity inspect is right-click driven (handleRightClickInspect, run
+        // later in update); no keyboard binding yet. See InGameInput note.
 
         if (in_game.toggle_world_map) {
             if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);

@@ -5064,3 +5064,38 @@ tinted with the inspected entity's TEAM gradient. See DESIGN → UI Framework
   dedicated UI art ships. Applied to both the bottom-bar effects grid and
   the inspect panel. Test updated to expect `skills/reflect`/
   `skills/stone_form`.
+
+### Reflection cleanup: dead input field, threshold comparator, test-values note (DONE)
+
+Mid-session reflection surfaced four issues:
+
+1. **Dead `InGameInput.toggle_entity_inspect` field.** Declared as `?u32` in
+   `InGameInput` and read in `handleAnytimeInput`, but never written by
+   `translateInput` — the binding layer maps bindings→bool flags, and an
+   entity index needs tile-cursor resolution (consumption layer). The
+   `handleAnytimeInput` arm was dead code (always null). Removed the field +
+   the dead arm; left a note on the future keyboard binding approach
+   (`Action.inspect_cursor` bool → `checkAction` → consumed in
+   `handleIdleInput` where the tile cursor lives, mirroring the
+   `confirm`-folds-into-`tile_clicked` pattern). Right-click remains the only
+   inspect path.
+2. **Inventory drag `>=` threshold was a latent bug.** With
+   `drag_threshold_pixels = 0`, `0 >= 0` is always true, so a left-press
+   promoted to a drag on the press frame itself (promotion runs right after
+   the press block in the same `handleDrag` call). That made `pending_slot_press`
+   always consumed before release, so the `else if (pending_slot_press)` click
+   branch (`resolveInventoryClick` → equip/salvage/double-click) was DEAD CODE
+   for left clicks — a quick click always became a self-drop no-op drag.
+   Click-to-equip never worked; only drag-to-gear did. Fixed by changing `>=`
+   to `>` (strict: `0 > 0` is false, so a no-movement click survives as a
+   pending press → reaches the click branch; movement > 0 still promotes to
+   drag). Same `>` convention as `handleRightClickInspect`. Added comments at
+   both sites explaining the comparator choice.
+3. **Duplicated rendering recipes in `buildEnemyInspectPanel`** (skill-button
+   + gear-slot visuals inlined instead of reusing `emitSkillButton`/
+   `emitGearSlot`). Noted in TODO → Tech Debt; deferred (a deliberate cleanup
+   slice).
+4. **Test values that miss edge cases.** Three bugs this session were
+   invisible to passing tests using "nice" values. Noted in TODO → Tech Debt
+   as a process reminder; not actionable as a single task.
+

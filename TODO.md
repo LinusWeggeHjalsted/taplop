@@ -733,6 +733,29 @@ Done items in DONE.md. Open:
   keeping in mind events can also originate from save/replay data.
 - Consider splitting processEvent handlers by scope (player/level/hub/meta)
   into separate files for readability once it grows further.
+- **Duplicated rendering recipes in `buildEnemyInspectPanel`.** The skill-
+  button visual (frame + icon + cooldown overlay + empty-diamond marker)
+  and the gear-slot visual (slot frame + item icon + tooltip) are inlined
+  in the inspect panel instead of reusing `emitSkillButton` /
+  `buildGearPanel`'s `emitGearSlot`, because those are hardcoded to the
+  player entity + carry `Action`/`SlotRef` (interactive). The inspect panel
+  is read-only. If the skill-button or gear-slot visuals change, both sites
+  need updating. Refactor to a shared core taking an entity + a read-only
+  flag — deferred (a deliberate cleanup slice, not urgent).
+- **Test values that miss edge cases.** Three bugs this session were
+  invisible to passing tests because the tests used "nice" values: (1)
+  `computeHarvest` tests used cleanly-divisible ratios (10/5, 6/3) so the
+  multiply-before-divide vs divide-before-multiply order didn't matter;
+  (2) the `loadPlayerSave` round-trip test passed `warnings: null` so
+  `validateKeys` never ran, hiding the missing `mission_uuid` whitelist;
+  (3) no test covered `on_end_turn` at all, let alone the LIFO ordering
+  against round-building. Recurring shape: tests exist + pass but don't
+  exercise the boundary. A convention ("use awkward values" — fractional
+  rates, non-null warnings, empty/edge states) or a coverage matrix would
+  help. The inventory click path was the same shape — `resolveInventoryClick`
+  had zero coverage, so the `>=` threshold bug (click-to-equip was dead code)
+  was never caught. Not actionable as a single task; keep in mind when
+  writing new tests.
 - Snapshot/checkpoint ring buffers are a clean FIFO (slot = ring_index %
   size = oldest), but discardFutureTimeline nulls ahead-of-branch slots,
   leaving holes the marching ring_index won't preferentially reuse — so
