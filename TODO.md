@@ -216,18 +216,11 @@ Open / in-progress:
         black text outline, per-entity 0.125s stagger.
     - [ ] Future: attack swings, death dissolves (multi-frame one-shots;
           same machinery, richer `AnimKind`).
-    - [ ] **Programmatic text outline** (replace the 9-draw drop-shadow
-          ring for `floating_text`). The sprite-outline dilation (`generate-
-          OutlineMask`) can't run on text today: `rl.imageTextEx` returns a
-          degenerate raster for our TTF font (its internal `MeasureTextEx`
-          at `baseSize` yields `textSize.y` ~0 → resize-by-0 → invalid
-          image), and a GPU `RenderTexture2D` readback perturbs the main
-          render target mid-pass (visible flash). Needs a working CPU font
-          raster — a custom rasterizer, fixing why `imageTextEx` mis-
-          measures our font, or pre-rasterizing each unique string at load
-          time outside the render pass. The `generateOutlineMask(image,
-          thickness)` parameterization is already in place; the gap is the
-          source `Image`. See DONE.md (slice 3 revert) for the diagnosis.
+    - [x] **Programmatic text outline** — DONE via the SDF text-outline
+          pipeline (see DESIGN → Platform Seam → SDF text outline): build-
+          time SDF glyph atlas + fragment shader replaces the 9-draw
+          drop-shadow ring for `floating_text` + outlined UI labels. History
+          in DONE.md.
   - Per-sheet frame data (count, frame size) hardcoded per builder for now
     (flag is the only animation); general per-sprite metadata table is the
     "Sprite asset metadata" item below.
@@ -689,15 +682,11 @@ Done items in DONE.md. Open:
   sub-struct or a named bundle instead of another top-level field. No
   action now; flag for the next time one is added.
 - [x] **Split `parser.zig`** into a generic format layer + loaders + writers + session log — done; history in DONE.md.
-- **Test harness writes `saves/autosave.txt` into cwd.** The harness
-  `FileSource` uses `std.Io.Dir.cwd()` as the persistent dir, and `end_level`/
-  `end_hub`/`save_game` now push a real `write_save{autosave_path}` (not
-  replay-gated — live writes fire). No current test runs those handlers to
-  idle (the round-trip tests stay in-hub), so nothing leaks today. A future
-  full-session test that drives a level→hub transition to idle would drop a
-  real `saves/autosave.txt` in the project root. Fix when that test lands:
-  either point the harness `FileSource` at a temp dir, or filter the autosave
-  write in tests via a `replaying`-style gate. Latent, not biting.
+- [x] **Test harness writes `saves/autosave.txt` into cwd** — fixed: the
+      harness `FileSource` now uses a scratch dir
+      (`zig-cache/test-harness-persistent`), and `scripts/test.sh` cleans
+      `saves/` (main.zig tests still exercise write_save through cwd-backed
+      sources — inert artifacts, just tree pollution). History in DONE.md.
 - Test coverage for processEvent handlers: DONE across all four tiers.
   Harness: `src/test_harness.zig` (`Harness.init` + `newHistory` +
   `runToIdle` + `levelStateWithEntities`/`levelEntity` + smoke test).

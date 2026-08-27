@@ -128,6 +128,71 @@ next session meets it as a surprise instead of a known.
   shipped `assets/**/*.png`, keyed by sprite id) and `generated_assets.zig`
   (embedded content map). All are gitignored.
 
+### SDF text outline (outlined text rendering)
+
+Outlined text (damage/heal numbers, outlined UI labels) renders via a
+**signed distance field** pipeline: a glyph atlas whose texels encode
+distance-to-glyph-edge (positive inside, edge at alpha 128) instead of
+coverage, plus a fragment shader that thresholds the field into fill +
+outline band. One shader-driven `drawTextEx` per string — no per-string
+CPU raster, no dilation pass, no texture cache (the pre-SDF approach was
+an 8-direction drop-shadow ring: 9 draws, fuzzy at non-integer offsets,
+no antialiased outer edge; kept as the fallback).
+
+Key pieces (`raylib_backend.zig`):
+
+- **Build-time atlas**: `tools/sdf_atlas_generator.zig` is a HOST tool
+  linking raylib as a library (no window — SDF generation is pure CPU) that
+  bakes the atlas via the SAME raylib calls the runtime once used
+  (`loadFontData(.sdf)` + `genImageFontAtlas`) — zero metric drift. The blob
+  (header + per-glyph metrics + atlas bytes) is embedded via the
+  `generated_sdf_font` module; `initSdfTextOutline` parses it (microseconds)
+  and assembles the `rl.Font` manually. This moved ~1.4s (release) of
+  startup SDF generation to build time.
+- **Encoding range**: raylib's SDF defaults encode only ±2px of distance —
+  far too little for 8px outlines. The generator's raylib dep is compiled
+  with `-DFONT_SDF_CHAR_PADDING=22 -DFONT_SDF_PIXEL_DIST_SCALE=6.0`
+  (±21 atlas px, covering 8px at the smallest outlined size, 48px from the
+  128px base atlas). `sdf_pixel_dist_scale`/`sdf_char_padding` in
+  raylib_backend.zig must stay in lockstep (a `@compileError` + blob
+  validation guard this; the blob carries its baked params and mismatches
+  degrade to the fallback).
+- **Shader**: embedded GLSL (330 on desktop, ES 1.00 on web — both variants
+  in raylib_backend.zig, selected comptime). Thresholds the decoded field:
+  `d >= 0` fill, `[-outlineWidth, 0)` outline band, `fwidth`-sized
+  antialiasing (fixed smoothing on GLSL ES 1.00, no `fwidth`). Straight
+  alpha out (raylib blends premultiplied-input as straight; the old
+  raylib SDF example's shader outputs the same shape).
+- **GRAY_ALPHA, not GRAYSCALE**: the runtime texture is reconstructed as
+  GRAY_ALPHA (gray=255, alpha=SDF) because raylib swizzles GRAY_ALPHA to
+  `(r,r,r,g)` on desktop GL — a grayscale texture samples `.a` as constant
+  1.0 and renders solid boxes (this bit us once; the blob stores only the
+  alpha channel and the runtime interleaves).
+- **Fallback policy**: any init failure (blob invalid, texture upload,
+  shader compile) logs a warning and flips to the 8-direction shadow ring
+  — decided ONCE at init, fixed for the session. An SDF font must never be
+  drawn without its shader (texels are distances, not coverage). A
+  persistent-dir font shadow does NOT affect outlined text (the blob is
+  baked from the shipped TTF at build time — accepted; shadowing is a
+  side-effect seam, not a designed feature).
+
+### Allocator rule for emscripten (no page_allocator on web)
+
+`std.heap.page_allocator` is **unusable on wasm32-emscripten**: it is
+BrkAllocator, which grows wasm memory via the raw `@wasmMemoryGrow`
+intrinsic. Emscripten's JS glue only refreshes its heap views (HEAP8/...)
+and SAFE_HEAP bounds when growth goes through ITS allocator (emmalloc
+sbrk → emscripten_resize_heap). A raw grow leaves the JS side stale — the
+views detach (JS access to wasm memory aborts) and SAFE_HEAP keeps the old
+memory size (wasm access to the grown region reports a segfault). This was
+the web black-screen regression: `loadFont` duped the TTF into grown
+memory and the first stbtt read tripped SAFE_HEAP.
+
+Rule: on emscripten, ALL allocations go through libc. Transient,
+untracked allocations (font bytes, crash-dump output, existence probes)
+use `transient_allocator.zig` — c_allocator on emscripten, page_allocator
+on native. Never call `std.heap.page_allocator` directly from shared code.
+
 ## Audio
 
 Sound is a **side effect**, never gameplay state. Same replay-safety rule as
@@ -271,13 +336,8 @@ dumb (draw sprite + source rect). Two classes, with different state homes:
     the bbox edge/corner nearest that direction and traveling half a tile, eased with
     `tween.easeOutCubic` (fast then slow). The number tracks the entity
     (resolved from the live level each frame, like the skill icon). Tinted
-    with `active_theme.lightest` + a black edge-outline drawn as an
-    8-direction drop-shadow ring (8 black `DrawTextEx` calls at ±
-    `text_outline_thickness` offset, then the fill on top). This avoids
-    `rl.imageTextEx` (which fails for our TTF font — its CPU-side per-glyph
-    images are degenerate after `loadFontFromMemory`) and GPU render-texture
-    readback (which perturbs the main render target mid-pass). 9 draws per
-    active number per frame; negligible since numbers are rare. Triggered
+    with `active_theme.lightest` + a black edge-outline via the SDF
+    text-outline pipeline (see below). Triggered
     by the `attack` and `collision`
     handlers; unlike the hit flash it shows even on a 0-damage hit (a
     fully-absorbed collision/attack renders a "0") so a connecting hit is

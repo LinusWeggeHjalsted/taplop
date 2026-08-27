@@ -33,6 +33,65 @@ pub fn build(b: *std.Build) void {
     // See DESIGN → Decorations & Footprint.
     const sprite_metadata_module = generateSpriteMetadataFile(b);
 
+    // `.config` flags are injected into the raylib C library compile. The
+    // FONT_SDF_* defines widen the SDF glyph encoding for the build-time SDF
+    // font-atlas generator (tools/sdf_atlas_generator.zig — the atlas is
+    // embedded and NO SDF code runs at game runtime, so these defines only
+    // matter to the generator's raylib dependency below). The values MUST
+    // match the `sdf_pixel_dist_scale` / `sdf_char_padding` constants in
+    // raylib_backend.zig (the shader decodes the field assuming this
+    // encoding, and the runtime validates the blob's baked params against
+    // them).
+    const raylib_sdf_config_flags = "-DSUPPORT_CUSTOM_FRAME_CONTROL " ++
+        "-DFONT_SDF_CHAR_PADDING=22 " ++
+        "-DFONT_SDF_PIXEL_DIST_SCALE=6.0f";
+
+    // === Generated SDF font atlas ===
+    // A build-time HOST tool (tools/sdf_atlas_generator.zig) links raylib as
+    // a library (no window — glyph SDF generation is pure CPU) and bakes the
+    // SDF glyph atlas + per-glyph metrics into a binary blob via the SAME
+    // raylib code path (loadFontData(.sdf) + genImageFontAtlas) the runtime
+    // used previously — zero metric drift by construction. The blob is
+    // embedded through the `generated_sdf_font` module (same shape as
+    // `generated_sprite_metadata`); raylib_backend.zig parses it and
+    // assembles the rl.Font at init, so NO SDF computation runs at game
+    // startup (it measured ~1.4s in a release build). Regenerates only when
+    // the font file or generator changes (build cache).
+    const sdf_generator_exe = b.addExecutable(.{
+        .name = "sdf_atlas_generator",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/sdf_atlas_generator.zig"),
+            .target = b.resolveTargetQuery(.{}), // always the build host
+            .optimize = .ReleaseFast, // 95 SDF glyphs at -O0 costs seconds
+        }),
+    });
+    const raylib_generator_dep = b.dependency("raylib_zig", .{
+        .target = b.resolveTargetQuery(.{}),
+        .optimize = .ReleaseFast,
+        // The FONT_SDF_* defines ARE load-bearing here (they set the SDF
+        // encoding range raylib bakes into the glyphs); see the comment on
+        // raylib_sdf_config_flags above.
+        .config = raylib_sdf_config_flags,
+    });
+    sdf_generator_exe.root_module.addImport("raylib", raylib_generator_dep.module("raylib"));
+    sdf_generator_exe.root_module.linkLibrary(raylib_generator_dep.artifact("raylib"));
+    const sdf_generator_run = b.addRunArtifact(sdf_generator_exe);
+    // Input file (dependency-tracked: editing the font regenerates the atlas)
+    // then output blob path.
+    sdf_generator_run.addFileArg(b.path("assets/fonts/freezilla.ttf"));
+    const sdf_blob = sdf_generator_run.addOutputFileArg("sdf_font.bin");
+
+    // Wrapper module: package root = write-files dir, so @embedFile reaches
+    // the copied blob without escaping the package root.
+    const sdf_write_files = b.addWriteFiles();
+    _ = sdf_write_files.addCopyFile(sdf_blob, "sdf_font.bin");
+    const sdf_font_module = b.createModule(.{
+        .root_source_file = sdf_write_files.add(
+            "sdf_font.zig",
+            "pub const bytes = @embedFile(\"sdf_font.bin\");\n",
+        ),
+    });
+
     // === Build info (game version) ===
     // Computes the game_version string at configure time (YYYY.MM.<commits
     // this month>[-dirty], derived from the build date + git) and exposes it
@@ -92,6 +151,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("raylib", raylib);
     exe.root_module.addImport("generated_assets", assets_module);
     exe.root_module.addImport("generated_sprite_metadata", sprite_metadata_module);
+    exe.root_module.addImport("generated_sdf_font", sdf_font_module);
     exe.root_module.linkLibrary(raylib_artifact);
 
     // Strip system .so files from the raylib archive before the exe links.
@@ -165,6 +225,7 @@ pub fn build(b: *std.Build) void {
     wasm.root_module.addImport("raylib", raylib_web);
     wasm.root_module.addImport("generated_assets", assets_module);
     wasm.root_module.addImport("generated_sprite_metadata", sprite_metadata_module);
+    wasm.root_module.addImport("generated_sdf_font", sdf_font_module);
     wasm.root_module.linkLibrary(raylib_web_artifact);
 
     var emcc_flags = zemscripten.emccDefaultFlags(b.allocator, .{

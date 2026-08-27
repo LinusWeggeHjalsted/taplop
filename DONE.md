@@ -5212,3 +5212,78 @@ asserts: (1) no stale `waiting` after reconstruction, (2) undo advances the
 idle index each step (not stuck), (3) redo returns to the start (reversible).
 The test uses only player-pushable top-level events so reconstruction's
 `isPlayerAction` gate accepts the stream.
+
+### SDF text outline (replaces the drop-shadow ring)
+
+Outlined text (damage/heal numbers via `floating_text`, outlined UI labels)
+now renders through a signed-distance-field pipeline: ONE shader-driven
+`drawTextEx` per string instead of the 8-direction black drop-shadow ring
+(9 draws). Settled design in DESIGN → Platform Seam → SDF text outline;
+history of the approach here.
+
+- Why SDF: the atlas texels encode distance-to-glyph-edge instead of
+  coverage, so the fragment shader can threshold the field at any width —
+  fill at `d >= 0`, outline band at `[-w, 0)`. A mathematically uniform,
+  antialiased outline computed per fragment at draw time; no per-string CPU
+  raster (the old `imageTextEx` blocker), no GPU readback (the old
+  render-target perturbation blocker), no dilation cache. Reference:
+  raylib's text_font_sdf example.
+- Build-time atlas: runtime SDF generation measured ~1.4s (release) / ~7s
+  (debug) at startup — unacceptable, so the atlas is BAKED at build time
+  (`tools/sdf_atlas_generator.zig`, a host tool linking raylib as a
+  library, calling the same `loadFontData(.sdf)` + `genImageFontAtlas` the
+  runtime used → zero metric drift). The blob embeds via the
+  `generated_sdf_font` module; runtime parse is microseconds. Startup SDF
+  cost amortized to zero (debug init: 8s → 0.25s).
+- Encoding: raylib's SDF defaults (±2px range, 4px padding) can't carry an
+  8px outline, so the generator compiles with
+  `-DFONT_SDF_CHAR_PADDING=22 -DFONT_SDF_PIXEL_DIST_SCALE=6.0` (±21 atlas
+  px — covers 8px at the smallest outlined size, 48px drawn from the 128px
+  base). Constants kept in lockstep via `@compileError` + blob validation
+  (mismatch → warning + ring fallback).
+- Two bugs hit during bring-up, both instructive: (1) WHITE BOXES — the
+  blob serialized only the alpha channel and the runtime rebuilt a
+  GRAYSCALE texture, but raylib swizzles GRAYSCALE to `(r,r,r,1)` on
+  desktop GL so the shader's `.a` sample was constant 1.0 → every glyph
+  rect rendered solid. Fix: rebuild GRAY_ALPHA (swizzle `(r,r,r,g)`), the
+  format `genImageFontAtlas` itself produces. (2) BLACK SCREENSHOT — the
+  spike's `takeScreenshot` ran before `endDrawing()` flushed the draw
+  batch (SUPPORT_CUSTOM_FRAME_CONTROL moves the flush there), so it read
+  an empty framebuffer. Fix: flush → screenshot → swap. Both found via a
+  temporary `--sdf-spike` comparison-card harness (removed after the
+  visual verdict).
+- Fallback: any init failure (blob invalid, upload, shader compile) logs
+  once and flips the whole session to the old ring — decided at init, not
+  per frame. The ring code lives on in `drawOutlinedText`'s else branch.
+
+### Web black screen: page_allocator is unusable on emscripten (bug fix)
+
+The web build segfaulted at startup (black screen, `Aborted(segmentation
+fault)`) inside `loadFont` → stbtt `ttUSHORT` — a pre-existing regression
+from the TTF wiring (136 commits untested on web), surfaced by SDF web
+verification.
+
+Root cause: `std.heap.page_allocator` on wasm32-emscripten is BrkAllocator,
+which grows wasm memory via the RAW `@wasmMemoryGrow` intrinsic. Emscripten
+only refreshes its JS heap views + SAFE_HEAP bounds when growth goes
+through ITS allocator (emmalloc sbrk → emscripten_resize_heap). Raw growth
+leaves the JS side stale: views detach (JS access to wasm memory aborts)
+and SAFE_HEAP keeps the old memory size, so wasm access to the freshly
+grown region reports a segfault — `loadFont`'s page_allocator dupe put the
+TTF bytes in grown memory and the first stbtt read tripped SAFE_HEAP.
+
+Diagnosis without a browser: reproduced under `node ziglop.js` (emcc output
+runs there; the debug block ran the font flow before GL/IDBFS init). A raw
+`page_allocator.alloc` probe faults on first access; a `@wasmMemoryGrow`
+probe detaches the views mid-print. Fixes:
+
+- `src/transient_allocator.zig`: c_allocator on emscripten,
+  page_allocator on native, for the three transient-buffer call sites
+  (loadFont, content_hash.fileExists, crash_dump.dump). Rule recorded in
+  DESIGN → Platform Seam → Allocator rule for emscripten.
+- Test-suite self-pollution fixed as collateral: handler tests draining
+  `end_level`/`write_save` plant real `saves/autosave.txt` in the project
+  root (harness FileSource used cwd), which broke the "missing autosave is
+  recoverable" test on every run after the first. The harness now uses a
+  scratch dir; `scripts/test.sh` also cleans `saves/` (main.zig tests
+  still write there via their own cwd sources — inert, just pollution).
