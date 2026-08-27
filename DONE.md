@@ -5181,3 +5181,34 @@ FileNotFound. `parseStringFlag` now expands a leading `~/` (or a bare `~`) to
 the value is duped unchanged (the read then fails with a clear FileNotFound
 rather than a cryptic env error). `std.c.getenv` is native-only (libc via
 raylib; native.zig is excluded from the headless test build).
+
+### Reconstruction: clear `waiting` during replay loop (bug fix)
+
+`replayToWithIdleTracking` left `current_state.waiting` set during its replay
+loop. A `wait` MetaEvent sets `waiting`, but replay is instant (no real-time
+timer drain like the live loop has), so `waiting` persisted through subsequent
+events. Snapshots taken at stack-empty moments after any wait event captured
+`waiting = true`, breaking the live-loop invariant (idle-point snapshots never
+carry `waiting`).
+
+Symptom: after `--replay` reconstruction, undo appeared "swallowed" — most
+undo signals did nothing. `restoreTo`'s fast path restored the buggy snapshot
+(with `waiting = true`), then `undo`'s mid-drain special case (`waiting !=
+null` → restore to the SAME idle point, no progress) spun on the same index,
+and `discardFutureTimeline` ate redo history on each spin. The player had to
+"wait a bit" between undos for one to occasionally land.
+
+Fix: clear `waiting = null` inside the `replayToWithIdleTracking` loop after
+each `apply_event` (before the idle-point check). Replay never honors waits,
+so `waiting` should never persist during replay — this is replay's equivalent
+of the live loop's wait-timer drain. The post-loop `waiting = null` is kept
+for parity with `replayTo` (belt-and-suspenders).
+
+Regression test: "reconstruction with wait events: undo/redo reversible, no
+stale waiting" — forward-plays a session through the real game flow (new game
+→ hub → walk onto a mission exit → level → walk player toward enemy to aggro
+→ skip turn → enemy turns with wait events), serializes, reconstructs, and
+asserts: (1) no stale `waiting` after reconstruction, (2) undo advances the
+idle index each step (not stuck), (3) redo returns to the start (reversible).
+The test uses only player-pushable top-level events so reconstruction's
+`isPlayerAction` gate accepts the stream.

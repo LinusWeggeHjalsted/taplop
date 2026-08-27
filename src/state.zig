@@ -1390,6 +1390,16 @@ pub const GameStateHistory = struct {
 
             apply_event(self);
 
+            // Replay is instant — no real-time wait timer. A `wait` MetaEvent
+            // sets `waiting` during the loop, but replay never honors it, so
+            // clear it immediately. Without this, snapshots taken at the
+            // next stack-empty moment capture `waiting = true`, breaking the
+            // live-loop invariant (idle-point snapshots never carry `waiting`)
+            // and sticking undo/redo via the mid-drain special case in `undo`.
+            // The live loop clears `waiting` via the wait-timer drain; this
+            // explicit clear is replay's equivalent.
+            self.current_state.waiting = null;
+
             // Idle point = the stack just drained. (recordIdlePoint snapshots
             // + compacts, mirroring the live gameLoop's idle bookkeeping.)
             if (self.current_state.event_stack.len == 0) {
@@ -1397,6 +1407,9 @@ pub const GameStateHistory = struct {
             }
         }
 
+        // Belt-and-suspenders: the in-loop clear above keeps `waiting` null
+        // throughout, so this is redundant once the loop exits. Kept for
+        // parity with `replayTo`.
         self.current_state.waiting = null;
     }
 

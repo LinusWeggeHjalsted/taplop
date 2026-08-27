@@ -872,6 +872,172 @@ test "loadAndReconstructSession: missing file sets pending_error, stays at main 
     try std.testing.expectEqual(@as(u32, 0), history.current_event_index);
 }
 
+test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
+    // Regression: `replayToWithIdleTracking` used to leave `waiting` set
+    // during its replay loop (the wait MetaEvent sets it, but replay is
+    // instant with no timer drain to clear it). Snapshots taken at
+    // stack-empty moments after a wait event captured `waiting = true`,
+    // breaking the live-loop invariant (idle-point snapshots never carry
+    // `waiting`). On undo, `restoreTo`'s fast path restored that buggy
+    // snapshot, and `undo`'s mid-drain special case (`waiting != null`)
+    // spun on the same idle point — undo appeared "swallowed" and redo
+    // history was eaten by `discardFutureTimeline` on each spin.
+    //
+    // This test forward-plays a session that includes enemy turns (which
+    // push wait MetaEvents), serializes, reconstructs, and asserts:
+    //   1. `waiting == null` after reconstruction (the final clear works).
+    //   2. Undo advances `current_idle_index` each step (not stuck).
+    //   3. Undo + redo returns to the same state (reversible).
+    const allocator = std.testing.allocator;
+
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    // Forward-play the real game flow: main menu → start_new_game (player
+    // action) → hub → move_player onto a mission exit tile (player action
+    // that pushes start_mission + end_hub as handler children) → level.
+    // Then move the player adjacent to an enemy and skip the turn to trigger
+    // enemy turns with wait events. Every top-level event is a player action,
+    // so reconstruction's isPlayerAction gate accepts them.
+    var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    runToIdle(&history1);
+    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
+    runToIdle(&history1);
+    try std.testing.expectEqual(state.Screen.hub, history1.current_state.screen);
+
+    // Find the beginnings mission exit tile in the hub and move the player
+    // onto it (move_player is a player action; landing on the exit pushes
+    // start_mission + end_hub as handler children).
+    const hub = &history1.current_state.hub.?;
+    var beginnings_exit: ?types.Vector2 = null;
+    for (hub.mission_exits) |exit| {
+        if (std.mem.eql(u8, exit.mission_id, "beginnings")) {
+            beginnings_exit = exit.position;
+            break;
+        }
+    }
+    try std.testing.expect(beginnings_exit != null);
+    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .move_player = .{
+        .destination = beginnings_exit.?,
+    } } }}, history1.current_arena.allocator());
+    runToIdle(&history1);
+    try std.testing.expectEqual(state.Screen.level, history1.current_state.screen);
+
+    // The player starts out of aggro range of every enemy, so skipping the
+    // turn alone won't trigger enemy turns (enemies are inactive until
+    // aggro_check activates them). Walk the player toward the nearest enemy
+    // one step at a time (player_move_action pathfinds one step per turn)
+    // until the enemy aggros. Then skip the turn to trigger enemy turns with
+    // wait events. Each player_move_action is a player action that
+    // reconstruction accepts.
+    const enemy_pos = history1.current_state.level.?.entities[1].position;
+    var aggroed = false;
+    var walk_steps: u32 = 0;
+    while (!aggroed and walk_steps < 10) : (walk_steps += 1) {
+        const player_pos = history1.current_state.level.?.entities[0].position;
+        // Step one tile toward the enemy (Chebyshev neighbor): sign(dx), sign(dy).
+        const sign = struct {
+            fn of(v: i32) i32 {
+                if (v > 0) return 1;
+                if (v < 0) return -1;
+                return 0;
+            }
+        }.of;
+        const step: types.Vector2 = .{
+            .x = player_pos.x + sign(enemy_pos.x - player_pos.x),
+            .y = player_pos.y + sign(enemy_pos.y - player_pos.y),
+        };
+        event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .player_move_action = .{
+            .destination = step,
+        } } }}, history1.current_arena.allocator());
+        runToIdle(&history1);
+        aggroed = history1.current_state.level.?.entities[1].is_active;
+    }
+    try std.testing.expect(aggroed);
+
+    // Skip the player's move + attack to end the turn → enemy turns drain
+    // (pushing wait events) → turn_start for the next player turn.
+    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .player_skip_move = .{} } }}, history1.current_arena.allocator());
+    runToIdle(&history1);
+    if (history1.current_state.level.?.turn_phase == .player_attack) {
+        event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .player_skip_attack }}, history1.current_arena.allocator());
+        runToIdle(&history1);
+    }
+
+    // Confirm the session actually included wait events (enemy turns fired).
+    var has_wait = false;
+    for (history1.event_history.items) |event| {
+        if (event == .meta_event and event.meta_event == .wait) {
+            has_wait = true;
+            break;
+        }
+    }
+    try std.testing.expect(has_wait);
+
+    // Serialize → reconstruct into a fresh history.
+    const body = try session_log.writeEventLog(history1.event_history.items, "20260101_000000", arena);
+    const sections = try parser.parseConfigFile(body, arena);
+    const log = try session_log.loadEventLog(sections, arena);
+
+    var history2 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    history2.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent);
+
+    // (1) No stale `waiting` after reconstruction.
+    try std.testing.expect(history2.current_state.waiting == null);
+    // Final state matches forward play.
+    try std.testing.expectEqualDeep(history1.current_state, history2.current_state);
+
+    // (2) Undo advances the idle index each step (not stuck). Undo a few
+    // steps and confirm the index strictly decreases each time.
+    const start_idle_idx = history2.current_idle_index;
+    const start_event_idx = history2.current_event_index;
+    var prev_idle_idx = start_idle_idx;
+    var undo_steps: u32 = 0;
+    while (undo_steps < 4 and history2.undo(&event_handlers.processEvent)) {
+        undo_steps += 1;
+        try std.testing.expect(history2.current_idle_index < prev_idle_idx);
+        try std.testing.expect(history2.current_state.waiting == null);
+        prev_idle_idx = history2.current_idle_index;
+    }
+    try std.testing.expect(undo_steps > 0); // at least one undo worked
+
+    // (3) Redo back to the start — reversible. Each redo strictly increases
+    // the idle index, and the final state matches the pre-undo state.
+    var redo_steps: u32 = 0;
+    while (redo_steps < undo_steps and history2.redo(&event_handlers.processEvent)) {
+        redo_steps += 1;
+        try std.testing.expect(history2.current_state.waiting == null);
+    }
+    try std.testing.expectEqual(redo_steps, undo_steps);
+    try std.testing.expectEqual(start_idle_idx, history2.current_idle_index);
+    try std.testing.expectEqual(start_event_idx, history2.current_event_index);
+}
+
 test "replay verification: clean replay through the slow path passes" {
     // The natural-stack replay loops (state.zig) verify before each dispatch
     // that the event about to run (stack top) matches the recorded stream.

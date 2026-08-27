@@ -1,18 +1,18 @@
-.zig-cache/
-zig-out/
-zig-pkg/
-src/generated_lookups.zig
-src/generated_test_root.zig
+
+crashes/
+# Crash session-log dumps (panic handler writes crashes/crash_*.txt via the
 generated_assets.zig
 generated_sprite_metadata.zig
-
-# Session event-log dumps (ctrl+L) now write to the persistent data dir
-# (~/.ziglop/logs/), not the working directory — no longer gitignore-relevant
 # here. Kept for safety in case any old dumps linger in the tree.
-session_log_*.txt
-
-# Crash session-log dumps (panic handler writes crashes/crash_*.txt via the
-# session FileSource). In production this lands in ~/.ziglop/crashes/; in the
-# test build the test FileSource uses cwd as its persistent dir, so a test
 # panic drops the file at the repo root. Kept for debugging test crashes.
-crashes/
+saves/
+# Session event-log dumps (ctrl+L) now write to the persistent data dir
+# session FileSource). In production this lands in ~/.ziglop/crashes/; in the
+session_log_*.txt
+src/generated_lookups.zig
+src/generated_test_root.zig
+# test build the test FileSource uses cwd as its persistent dir, so a test
+.zig-cache/
+# (~/.ziglop/logs/), not the working directory — no longer gitignore-relevant
+zig-out/
+zig-pkg/
