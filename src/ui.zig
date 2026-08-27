@@ -2148,6 +2148,7 @@ pub fn buildBottomBar(
                 .screen_position = cell.position(),
                 .width = small_icon_size,
                 .height = small_icon_size,
+                .color = c_icon,
                 .tooltip = .{
                     .header = try spanRow(allocator, text(definition.name)),
                     .body = try allocator.dupe(TooltipRow, &.{
@@ -2902,6 +2903,7 @@ pub fn buildEnemyInspectPanel(
                 .screen_position = cell.position(),
                 .width = small_icon_size,
                 .height = small_icon_size,
+                .color = c_skill_icon,
                 .tooltip = .{
                     .header = try spanRow(allocator, text(definition.name)),
                     .body = try allocator.dupe(TooltipRow, &.{
