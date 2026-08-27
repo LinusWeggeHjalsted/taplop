@@ -4952,3 +4952,22 @@ vs region-drag, same as the plain click-vs-item-drag split.
   held, else cancel; clear the region either way.
 - 2 new gear tests (region salves occupied + skips empty; empty-box no-op).
   272 tests pass.
+
+### Material-icon sites deduplicated (DONE)
+
+The five-material icon set (sprite / color_index / name) was defined in
+THREE separate array literals (inventory sidebar, mission-complete harvest
+column, new-clone summary row) — the third (`emitMaterialRowHorizontal`)
+used its own inline anonymous struct that didn't even share `MaterialEntry`.
+Add/reorder a material → three edit sites with no compile-time guarantee
+they agree.
+
+Unified to one source of truth: `MaterialKind` (static parts) + a shared
+`material_kinds` array + `materialCount(materials, index)` (switch, so a
+new kind is a compile error until wired) + `emitMaterialIcons(...)` (one
+body, parameterized by `MaterialIconDirection` `.vertical`/`.horizontal`).
+All three sites now call `emitMaterialIcons` with their own origin /
+icon_size / direction / `Materials` value. `emitMaterialRowHorizontal`
+deleted (single caller folded in); `MaterialEntry` deleted. Behavior
+unchanged (icon blocking + `{count} {name}` tooltip + non-blocking outlined
+count label bottom-right, same as before).

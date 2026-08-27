@@ -2189,13 +2189,101 @@ pub const material_count_font_size: i32 = 48;
 pub const material_count_inset: i32 = 8;
 
 /// One entry in the inventory sidebar's material stack.
-const MaterialEntry = struct {
+/// Static display info for one material kind (the parts that don't vary by
+/// context). The single source of truth for the five-material icon set —
+/// every material-icon site in the UI reads from `material_kinds` so the
+/// sprite / color / name mapping can't drift between them. Counts are
+/// context-specific (inventory totals vs mission-complete harvest vs new-
+/// clone summary) and supplied per site via a `types.Materials` value.
+const MaterialKind = struct {
     sprite_id: []const u8,
-    count: u32,
     color_index: u32,
     /// Display name for the tooltip (e.g. "Wood").
     name: []const u8,
 };
+
+/// The five material kinds in display order (top-to-bottom for vertical
+/// stacks, left-to-right for horizontal rows).
+const material_kinds = [_]MaterialKind{
+    .{ .sprite_id = "ui/material_wood", .color_index = 5, .name = "Wood" },
+    .{ .sprite_id = "ui/material_metal", .color_index = 2, .name = "Metal" },
+    .{ .sprite_id = "ui/material_leather", .color_index = 5, .name = "Leather" },
+    .{ .sprite_id = "ui/material_cloth", .color_index = 2, .name = "Cloth" },
+    .{ .sprite_id = "ui/material_knowledge", .color_index = 0, .name = "Knowledge" },
+};
+
+/// Read the count for `kind_index` out of `materials`. Kept as a switch so
+/// adding a material kind is a compile error until every index is handled.
+fn materialCount(materials: types.Materials, kind_index: usize) u32 {
+    return switch (kind_index) {
+        0 => materials.wood,
+        1 => materials.metal,
+        2 => materials.leather,
+        3 => materials.cloth,
+        4 => materials.knowledge,
+        else => unreachable,
+    };
+}
+
+/// Layout direction for `emitMaterialIcons`: `.vertical` stacks icons flush
+/// (no gap, step = icon_size downward); `.horizontal` spaces them with
+/// `ui_gap` (step = icon_size + ui_gap rightward). Matches the two layouts
+/// the material-icon sites use (sidebar / harvest column = vertical;
+/// new-clone summary row = horizontal).
+const MaterialIconDirection = enum { vertical, horizontal };
+
+/// Emit the five material icons (each a blocking `Image` with a
+/// `{count} {name}` tooltip) plus a non-blocking outlined count label in
+/// each icon's bottom-right corner. Walks `material_kinds` in display order
+/// starting at `origin` (top-left of the first icon), stepping by
+/// `direction`. `materials` supplies the per-kind counts. The shared body
+/// for the inventory sidebar, the mission-complete harvest column, and the
+/// new-clone summary row — so the icon set + tooltip format can't drift.
+fn emitMaterialIcons(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    origin: ScreenPosition,
+    icon_size: i32,
+    direction: MaterialIconDirection,
+    materials: types.Materials,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const p = active_theme.player_gradient.colors;
+    var pos = origin;
+    for (material_kinds, 0..) |kind, index| {
+        const count = materialCount(materials, index);
+        const icon_color = p[@min(kind.color_index, types.gradient_color_count - 1)];
+        const tooltip_text = try std.fmt.allocPrint(allocator, "{d} {s}", .{ count, kind.name });
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = kind.sprite_id,
+            .screen_position = pos,
+            .width = icon_size,
+            .height = icon_size,
+            .color = icon_color,
+            .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
+        } });
+        // Count label: bottom-right corner of the icon, outlined for
+        // readability over the icon art. Passes hover through to the icon
+        // so the icon's tooltip is the single target.
+        const count_text = try std.fmt.allocPrint(allocator, "{d}", .{count});
+        const label_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = count_text,
+            .screen_position = .{
+                .x = pos.x + icon_size - label_width - material_count_inset,
+                .y = pos.y + icon_size - material_count_font_size - material_count_inset,
+            },
+            .font_size = material_count_font_size,
+            .outlined = true,
+            .blocks_input = false,
+        } });
+        switch (direction) {
+            .vertical => pos.y += icon_size,
+            .horizontal => pos.x += icon_size + ui_gap,
+        }
+    }
+}
 
 /// Build the inventory panel into `bounds`: a 9-slice background, an 8×12
 /// flush grid of `ui/item_slot` cells (each carrying an inventory `SlotRef`
@@ -2403,44 +2491,18 @@ pub fn buildInventoryPanel(
     const sidebar_x = origin.x + ui_gap + types.inventory_columns * inventory_slot_size + ui_gap;
     const grid_top = origin.y + ui_gap;
     const grid_bottom = grid_top + types.inventory_rows * inventory_slot_size;
-    const material_entries = [_]MaterialEntry{
-        .{ .sprite_id = "ui/material_wood", .count = materials.wood, .color_index = 5, .name = "Wood" },
-        .{ .sprite_id = "ui/material_metal", .count = materials.metal, .color_index = 2, .name = "Metal" },
-        .{ .sprite_id = "ui/material_leather", .count = materials.leather, .color_index = 5, .name = "Leather" },
-        .{ .sprite_id = "ui/material_cloth", .count = materials.cloth, .color_index = 2, .name = "Cloth" },
-        .{ .sprite_id = "ui/material_knowledge", .count = materials.knowledge, .color_index = 0, .name = "Knowledge" },
-    };
-    const stack_height = @as(i32, material_entries.len) * inventory_slot_size;
-    var icon_top = grid_bottom - stack_height;
-    for (material_entries) |entry| {
-        const icon_pos = ScreenPosition{ .x = sidebar_x, .y = icon_top };
-        const icon_color = p[@min(entry.color_index, types.gradient_color_count - 1)];
-        const tooltip_text = try std.fmt.allocPrint(allocator, "{d} {s}", .{ entry.count, entry.name });
-        try elements.append(allocator, .{ .image = .{
-            .sprite_id = entry.sprite_id,
-            .screen_position = icon_pos,
-            .width = inventory_slot_size,
-            .height = inventory_slot_size,
-            .color = icon_color,
-            .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
-        } });
-        // Count label: bottom-right corner of the icon, outlined for
-        // readability over the icon art. Passes hover through to the icon
-        // so the icon's tooltip is the single target.
-        const count_text = try std.fmt.allocPrint(allocator, "{d}", .{entry.count});
-        const label_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
-        try elements.append(allocator, .{ .text_label = .{
-            .text = count_text,
-            .screen_position = .{
-                .x = sidebar_x + inventory_slot_size - label_width - material_count_inset,
-                .y = icon_top + inventory_slot_size - material_count_font_size - material_count_inset,
-            },
-            .font_size = material_count_font_size,
-            .outlined = true,
-            .blocks_input = false,
-        } });
-        icon_top += inventory_slot_size;
-    }
+    const stack_height = @as(i32, material_kinds.len) * inventory_slot_size;
+    const icon_top = grid_bottom - stack_height;
+    try emitMaterialIcons(
+        elements,
+        allocator,
+        font_metrics,
+        .{ .x = sidebar_x, .y = icon_top },
+        inventory_slot_size,
+        .vertical,
+        materials,
+        active_theme,
+    );
 
     // Salvage-tool indicator: top of the material sidebar column (the
     // materials are bottom-aligned, so the top of that column is empty).
@@ -3051,8 +3113,6 @@ pub fn buildMissionComplete(
         .height = screen.height,
     } });
 
-    const p = active_theme.player_gradient.colors;
-
     // ── Header: "{name} completed", centered at the top. ──
     const header_font_size: i32 = 128;
     const header_text = try std.fmt.allocPrint(allocator, "{s} completed", .{info.name});
@@ -3083,13 +3143,14 @@ pub fn buildMissionComplete(
         .font_size = new_clone_label_font_size,
         .blocks_input = false,
     } });
-    try emitMaterialRowHorizontal(
+    try emitMaterialIcons(
         elements,
         allocator,
         font_metrics,
         .{ .x = new_clone_start_x + new_clone_label_width + ui_gap, .y = new_clone_y },
-        info.converted_materials,
         new_clone_icon_size,
+        .horizontal,
+        info.converted_materials,
         active_theme,
     );
 
@@ -3132,40 +3193,17 @@ pub fn buildMissionComplete(
         .font_size = harvest_header_font_size,
         .blocks_input = false,
     } });
-    const material_entries = [_]MaterialEntry{
-        .{ .sprite_id = "ui/material_wood", .count = info.harvested_materials.wood, .color_index = 5, .name = "Wood" },
-        .{ .sprite_id = "ui/material_metal", .count = info.harvested_materials.metal, .color_index = 2, .name = "Metal" },
-        .{ .sprite_id = "ui/material_leather", .count = info.harvested_materials.leather, .color_index = 5, .name = "Leather" },
-        .{ .sprite_id = "ui/material_cloth", .count = info.harvested_materials.cloth, .color_index = 2, .name = "Cloth" },
-        .{ .sprite_id = "ui/material_knowledge", .count = info.harvested_materials.knowledge, .color_index = 0, .name = "Knowledge" },
-    };
-    var icon_top = content_y + harvest_header_font_size + ui_gap * 2;
-    for (material_entries) |entry| {
-        const icon_x = material_right - inventory_slot_size;
-        const icon_color = p[@min(entry.color_index, types.gradient_color_count - 1)];
-        const tooltip_text = try std.fmt.allocPrint(allocator, "{d} {s}", .{ entry.count, entry.name });
-        try elements.append(allocator, .{ .image = .{
-            .sprite_id = entry.sprite_id,
-            .screen_position = .{ .x = icon_x, .y = icon_top },
-            .width = inventory_slot_size,
-            .height = inventory_slot_size,
-            .color = icon_color,
-            .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
-        } });
-        const count_text = try std.fmt.allocPrint(allocator, "{d}", .{entry.count});
-        const label_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
-        try elements.append(allocator, .{ .text_label = .{
-            .text = count_text,
-            .screen_position = .{
-                .x = icon_x + inventory_slot_size - label_width - material_count_inset,
-                .y = icon_top + inventory_slot_size - material_count_font_size - material_count_inset,
-            },
-            .font_size = material_count_font_size,
-            .outlined = true,
-            .blocks_input = false,
-        } });
-        icon_top += inventory_slot_size;
-    }
+    const icon_top = content_y + harvest_header_font_size + ui_gap * 2;
+    try emitMaterialIcons(
+        elements,
+        allocator,
+        font_metrics,
+        .{ .x = material_right - inventory_slot_size, .y = icon_top },
+        inventory_slot_size,
+        .vertical,
+        info.harvested_materials,
+        active_theme,
+    );
 
     // ── Bottom buttons: Replay Mission in the bottom-left corner, Continue
     //    in the bottom-right corner. Overwrite Clone (when offered) sits
@@ -3191,55 +3229,6 @@ pub fn buildMissionComplete(
     if (info.overwrite_offered) {
         const centered = screen.placeBottomCenter(menu_button_width, menu_button_height, ui_gap * 4);
         try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Clone", menu_button_font_size, .overwrite_clone);
-    }
-}
-
-/// Emit a horizontal row of the five material icons with count labels,
-/// starting at `origin` (top-left of the row). Each icon is `icon_size`×
-/// `icon_size`, spaced `ui_gap` apart. Used for the "New clone:" summary
-/// line. See DESIGN → Clones (clone system).
-fn emitMaterialRowHorizontal(
-    elements: *UiElementList,
-    allocator: std.mem.Allocator,
-    font_metrics: FontMetrics,
-    origin: ScreenPosition,
-    materials: types.Materials,
-    icon_size: i32,
-    active_theme: types.ActiveColorTheme,
-) !void {
-    const p = active_theme.player_gradient.colors;
-    const entries = [_]struct { sprite_id: []const u8, count: u32, color_index: u32, name: []const u8 }{
-        .{ .sprite_id = "ui/material_wood", .count = materials.wood, .color_index = 5, .name = "Wood" },
-        .{ .sprite_id = "ui/material_metal", .count = materials.metal, .color_index = 2, .name = "Metal" },
-        .{ .sprite_id = "ui/material_leather", .count = materials.leather, .color_index = 5, .name = "Leather" },
-        .{ .sprite_id = "ui/material_cloth", .count = materials.cloth, .color_index = 2, .name = "Cloth" },
-        .{ .sprite_id = "ui/material_knowledge", .count = materials.knowledge, .color_index = 0, .name = "Knowledge" },
-    };
-    var x = origin.x;
-    for (entries) |entry| {
-        const icon_color = p[@min(entry.color_index, types.gradient_color_count - 1)];
-        const tooltip_text = try std.fmt.allocPrint(allocator, "{d} {s}", .{ entry.count, entry.name });
-        try elements.append(allocator, .{ .image = .{
-            .sprite_id = entry.sprite_id,
-            .screen_position = .{ .x = x, .y = origin.y },
-            .width = icon_size,
-            .height = icon_size,
-            .color = icon_color,
-            .tooltip = .{ .header = try spanRow(allocator, text(tooltip_text)) },
-        } });
-        const count_text = try std.fmt.allocPrint(allocator, "{d}", .{entry.count});
-        const label_width = font_metrics.measureSpanWidth(text(count_text), material_count_font_size);
-        try elements.append(allocator, .{ .text_label = .{
-            .text = count_text,
-            .screen_position = .{
-                .x = x + icon_size - label_width - material_count_inset,
-                .y = origin.y + icon_size - material_count_font_size - material_count_inset,
-            },
-            .font_size = material_count_font_size,
-            .outlined = true,
-            .blocks_input = false,
-        } });
-        x += icon_size + ui_gap;
     }
 }
 
