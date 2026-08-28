@@ -474,6 +474,13 @@ fn buildMiddlePanels(
                 // on PlayerData (no entity field), so the sidebar reads
                 // `player_data.materials`.
                 const inventory = if (ui.playerEntity(current_state)) |player| player.inventory else types.Inventory{};
+                // Comparison baseline for item tooltips: the player's
+                // equipped gear (entity 0 in a level, the hub player
+                // outside one).
+                const equipped_gear = if (ui.playerEntity(current_state)) |player|
+                    ui.equippedGearFromEntity(player)
+                else
+                    null;
                 const drag_source: ?ui.SlotRef = if (session.ui_state.drag) |d| d.source else null;
                 try ui.buildInventoryPanel(
                     elements,
@@ -483,6 +490,7 @@ fn buildMiddlePanels(
                     inventory,
                     current_state.player_data.materials,
                     current_state.player_data.learned_skills,
+                    equipped_gear,
                     active_theme,
                     drag_source,
                     session.held_modifiers,
@@ -551,6 +559,10 @@ fn buildMiddlePanels(
                     bounds,
                     entity,
                     current_state.player_data.learned_skills,
+                    // Compare the inspected enemy's gear against the
+                    // player's — unless the inspected entity IS the player
+                    // (entity 0 in a level; inspect only opens in levels).
+                    if (entity_index == 0) null else if (ui.playerEntity(current_state)) |player| ui.equippedGearFromEntity(player) else null,
                     active_theme,
                     weapon_type_definitions,
                 );

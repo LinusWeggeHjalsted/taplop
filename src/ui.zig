@@ -1453,21 +1453,105 @@ fn itemTypeName(item: types.Item) []const u8 {
     };
 }
 
+/// The player's equipped gear, used as the baseline for tooltip stat
+/// comparisons. Mirrors the gear fields on Entity (entity 0 in a level,
+/// the hub player outside one). Null fields = empty slot (baseline 0).
+pub const EquippedGear = struct {
+    main_hand_weapon: ?types.Weapon = null,
+    off_hand_weapon: ?types.Weapon = null,
+    amulet: ?types.Amulet = null,
+    coat: ?types.Coat = null,
+    gloves: ?types.Gloves = null,
+    pants: ?types.Pants = null,
+    boots: ?types.Boots = null,
+};
+
+/// Snapshot of an entity's equipped gear for tooltip comparisons.
+pub fn equippedGearFromEntity(entity: Entity) EquippedGear {
+    return .{
+        .main_hand_weapon = entity.main_hand_weapon,
+        .off_hand_weapon = entity.off_hand_weapon,
+        .amulet = entity.amulet,
+        .coat = entity.coat,
+        .gloves = entity.gloves,
+        .pants = entity.pants,
+        .boots = entity.boots,
+    };
+}
+
+/// Comparison-number colors in gear tooltips: full-saturation green/red.
+const comparison_positive_color: Color = .{ .r = 0, .g = 255, .b = 0 };
+const comparison_negative_color: Color = .{ .r = 255, .g = 0, .b = 0 };
+
+/// One comparison number: "+d" green when the hovered item's stat is
+/// higher, "-d" red when lower, uncolored "0" when equal.
+fn comparisonSpan(
+    allocator: std.mem.Allocator,
+    item_value: u32,
+    equipped_value: u32,
+) !Span {
+    const difference: i32 = @as(i32, @intCast(item_value)) - @as(i32, @intCast(equipped_value));
+    if (difference > 0) {
+        return colored(try std.fmt.allocPrint(allocator, "+{d}", .{difference}), comparison_positive_color);
+    }
+    if (difference < 0) {
+        return colored(try std.fmt.allocPrint(allocator, "{d}", .{difference}), comparison_negative_color);
+    }
+    return text("0");
+}
+
+/// A stat row: plain "Label value" when both baselines are null
+/// (comparison suppressed — gear panel, player inspect), "Label value (d)"
+/// with one baseline, "Label value (d1, d2)" with both (weapons compare
+/// against each equipped hand). A non-null baseline of 0 means the slot is
+/// empty (compare against nothing equipped).
+fn statRow(
+    allocator: std.mem.Allocator,
+    label: []const u8,
+    value: u32,
+    first_baseline: ?u32,
+    second_baseline: ?u32,
+) !TooltipRow {
+    if (first_baseline == null and second_baseline == null) {
+        const line = try std.fmt.allocPrint(allocator, "{s} {d}", .{ label, value });
+        return spanRow(allocator, text(line));
+    }
+    var spans: std.ArrayList(Span) = .empty;
+    try spans.append(allocator, text(try std.fmt.allocPrint(allocator, "{s} {d} (", .{ label, value })));
+    try spans.append(allocator, try comparisonSpan(allocator, value, first_baseline orelse 0));
+    if (second_baseline) |baseline| {
+        try spans.append(allocator, text(", "));
+        try spans.append(allocator, try comparisonSpan(allocator, value, baseline));
+    }
+    try spans.append(allocator, text(")"));
+    return spans.toOwnedSlice(allocator);
+}
+
 /// Build an inventory item tooltip. Weapons show name + weapon type +
-/// damage; other gear shows name + item type + each stat; skill tomes show
-/// the skill name + learned/learn-prompt. `learned_skills` is the player's
-/// current learned-skill set (for the tome line).
+/// damage (compared against BOTH equipped hands); other gear shows name +
+/// item type + each stat (compared against the same slot's equipped item);
+/// skill tomes show the skill name + learned/learn-prompt. `learned_skills`
+/// is the player's current learned-skill set (for the tome line).
+/// `equipped` is the comparison baseline; null suppresses comparisons.
 pub fn buildItemTooltip(
     allocator: std.mem.Allocator,
     item: types.Item,
     learned_skills: []const types.SkillId,
+    equipped: ?EquippedGear,
 ) !Tooltip {
     switch (item) {
         .weapon => |weapon| {
             var body: std.ArrayList(TooltipRow) = .empty;
             try body.append(allocator, try spanRow(allocator, text(weaponTypeName(weapon.weapon_type))));
-            const damage_line = try std.fmt.allocPrint(allocator, "Damage {d}", .{weapon.weapon_damage});
-            try body.append(allocator, try spanRow(allocator, text(damage_line)));
+            const main_baseline: ?u32 = if (equipped) |e|
+                (if (e.main_hand_weapon) |w| w.weapon_damage else 0)
+            else
+                null;
+            const off_baseline: ?u32 = if (equipped) |e|
+                (if (e.off_hand_weapon) |w| w.weapon_damage else 0)
+            else
+                null;
+            try body.append(allocator, try statRow(allocator, "Damage", weapon.weapon_damage, main_baseline, off_baseline));
             return .{
                 .header = try spanRow(allocator, text(weapon.name)),
                 .body = try body.toOwnedSlice(allocator),
@@ -1476,8 +1560,11 @@ pub fn buildItemTooltip(
         .amulet => |amulet| {
             var body: std.ArrayList(TooltipRow) = .empty;
             try body.append(allocator, try spanRow(allocator, text("Amulet")));
-            const line = try std.fmt.allocPrint(allocator, "Spell Damage {d}", .{amulet.spell_damage});
-            try body.append(allocator, try spanRow(allocator, text(line)));
+            const spell_baseline: ?u32 = if (equipped) |e|
+                (if (e.amulet) |a| a.spell_damage else 0)
+            else
+                null;
+            try body.append(allocator, try statRow(allocator, "Spell Damage", amulet.spell_damage, spell_baseline, null));
             return .{
                 .header = try spanRow(allocator, text(amulet.name)),
                 .body = try body.toOwnedSlice(allocator),
@@ -1486,10 +1573,16 @@ pub fn buildItemTooltip(
         .coat => |coat| {
             var body: std.ArrayList(TooltipRow) = .empty;
             try body.append(allocator, try spanRow(allocator, text("Coat")));
-            const health = try std.fmt.allocPrint(allocator, "Health {d}", .{coat.health_bonus});
-            try body.append(allocator, try spanRow(allocator, text(health)));
-            const defense = try std.fmt.allocPrint(allocator, "Defense {d}", .{coat.defense_bonus});
-            try body.append(allocator, try spanRow(allocator, text(defense)));
+            const health_baseline: ?u32 = if (equipped) |e|
+                (if (e.coat) |c| c.health_bonus else 0)
+            else
+                null;
+            const defense_baseline: ?u32 = if (equipped) |e|
+                (if (e.coat) |c| c.defense_bonus else 0)
+            else
+                null;
+            try body.append(allocator, try statRow(allocator, "Health", coat.health_bonus, health_baseline, null));
+            try body.append(allocator, try statRow(allocator, "Defense", coat.defense_bonus, defense_baseline, null));
             return .{
                 .header = try spanRow(allocator, text(coat.name)),
                 .body = try body.toOwnedSlice(allocator),
@@ -1498,10 +1591,16 @@ pub fn buildItemTooltip(
         .gloves => |gloves| {
             var body: std.ArrayList(TooltipRow) = .empty;
             try body.append(allocator, try spanRow(allocator, text("Gloves")));
-            const health = try std.fmt.allocPrint(allocator, "Health {d}", .{gloves.health_bonus});
-            try body.append(allocator, try spanRow(allocator, text(health)));
-            const damage = try std.fmt.allocPrint(allocator, "Damage {d}", .{gloves.damage_bonus});
-            try body.append(allocator, try spanRow(allocator, text(damage)));
+            const health_baseline: ?u32 = if (equipped) |e|
+                (if (e.gloves) |g| g.health_bonus else 0)
+            else
+                null;
+            const damage_baseline: ?u32 = if (equipped) |e|
+                (if (e.gloves) |g| g.damage_bonus else 0)
+            else
+                null;
+            try body.append(allocator, try statRow(allocator, "Health", gloves.health_bonus, health_baseline, null));
+            try body.append(allocator, try statRow(allocator, "Damage", gloves.damage_bonus, damage_baseline, null));
             return .{
                 .header = try spanRow(allocator, text(gloves.name)),
                 .body = try body.toOwnedSlice(allocator),
@@ -1510,10 +1609,16 @@ pub fn buildItemTooltip(
         .pants => |pants| {
             var body: std.ArrayList(TooltipRow) = .empty;
             try body.append(allocator, try spanRow(allocator, text("Pants")));
-            const health = try std.fmt.allocPrint(allocator, "Health {d}", .{pants.health_bonus});
-            try body.append(allocator, try spanRow(allocator, text(health)));
-            const pickup = try std.fmt.allocPrint(allocator, "Pickup Radius {d}", .{pants.pickup_radius_bonus});
-            try body.append(allocator, try spanRow(allocator, text(pickup)));
+            const health_baseline: ?u32 = if (equipped) |e|
+                (if (e.pants) |p| p.health_bonus else 0)
+            else
+                null;
+            const pickup_baseline: ?u32 = if (equipped) |e|
+                (if (e.pants) |p| p.pickup_radius_bonus else 0)
+            else
+                null;
+            try body.append(allocator, try statRow(allocator, "Health", pants.health_bonus, health_baseline, null));
+            try body.append(allocator, try statRow(allocator, "Pickup Radius", pants.pickup_radius_bonus, pickup_baseline, null));
             return .{
                 .header = try spanRow(allocator, text(pants.name)),
                 .body = try body.toOwnedSlice(allocator),
@@ -1522,10 +1627,16 @@ pub fn buildItemTooltip(
         .boots => |boots| {
             var body: std.ArrayList(TooltipRow) = .empty;
             try body.append(allocator, try spanRow(allocator, text("Boots")));
-            const health = try std.fmt.allocPrint(allocator, "Health {d}", .{boots.health_bonus});
-            try body.append(allocator, try spanRow(allocator, text(health)));
-            const speed = try std.fmt.allocPrint(allocator, "Speed {d}", .{boots.speed_bonus});
-            try body.append(allocator, try spanRow(allocator, text(speed)));
+            const health_baseline: ?u32 = if (equipped) |e|
+                (if (e.boots) |b| b.health_bonus else 0)
+            else
+                null;
+            const speed_baseline: ?u32 = if (equipped) |e|
+                (if (e.boots) |b| b.speed_bonus else 0)
+            else
+                null;
+            try body.append(allocator, try statRow(allocator, "Health", boots.health_bonus, health_baseline, null));
+            try body.append(allocator, try statRow(allocator, "Speed", boots.speed_bonus, speed_baseline, null));
             return .{
                 .header = try spanRow(allocator, text(boots.name)),
                 .body = try body.toOwnedSlice(allocator),
@@ -1613,7 +1724,7 @@ test "buildItemTooltip: weapon shows name, type, damage" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const weapon = types.Item{ .weapon = .{ .name = "Iron Sword", .weapon_type = .sword, .weapon_damage = 5 } };
-    const tooltip = try buildItemTooltip(arena.allocator(), weapon, &.{});
+    const tooltip = try buildItemTooltip(arena.allocator(), weapon, &.{}, null);
     try std.testing.expectEqualStrings("Iron Sword", tooltip.header.?[0].text);
     try std.testing.expectEqual(@as(usize, 2), tooltip.body.len);
     try std.testing.expectEqualStrings("Sword", tooltip.body[0][0].text);
@@ -1624,7 +1735,7 @@ test "buildItemTooltip: coat shows name, type, health, defense" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const coat = types.Item{ .coat = .{ .name = "Leather Coat", .health_bonus = 3, .defense_bonus = 2 } };
-    const tooltip = try buildItemTooltip(arena.allocator(), coat, &.{});
+    const tooltip = try buildItemTooltip(arena.allocator(), coat, &.{}, null);
     try std.testing.expectEqualStrings("Leather Coat", tooltip.header.?[0].text);
     try std.testing.expectEqual(@as(usize, 3), tooltip.body.len);
     try std.testing.expectEqualStrings("Coat", tooltip.body[0][0].text);
@@ -1637,7 +1748,7 @@ test "buildItemTooltip: skill tome not learned shows learn prompt" {
     defer arena.deinit();
     const tome = types.Item{ .skill_tome = .{ .skill = .slice, .value = 5 } };
     const learned = [_]types.SkillId{};
-    const tooltip = try buildItemTooltip(arena.allocator(), tome, &learned);
+    const tooltip = try buildItemTooltip(arena.allocator(), tome, &learned, null);
     try std.testing.expectEqualStrings("Slice Tome", tooltip.header.?[0].text);
     try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
     try std.testing.expectEqualStrings("Activate to learn Slice", tooltip.body[0][0].text);
@@ -1648,10 +1759,78 @@ test "buildItemTooltip: skill tome already learned shows learned line" {
     defer arena.deinit();
     const tome = types.Item{ .skill_tome = .{ .skill = .slice, .value = 5 } };
     const learned = [_]types.SkillId{.slice};
-    const tooltip = try buildItemTooltip(arena.allocator(), tome, &learned);
+    const tooltip = try buildItemTooltip(arena.allocator(), tome, &learned, null);
     try std.testing.expectEqualStrings("Slice Tome", tooltip.header.?[0].text);
     try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
     try std.testing.expectEqualStrings("Already learned", tooltip.body[0][0].text);
+}
+
+test "buildItemTooltip: weapon compares damage against both equipped hands" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const weapon = types.Item{ .weapon = .{ .name = "Iron Sword", .weapon_type = .sword, .weapon_damage = 5 } };
+    const equipped = EquippedGear{
+        .main_hand_weapon = .{ .name = "Old Sword", .weapon_type = .sword, .weapon_damage = 4 },
+        .off_hand_weapon = .{ .name = "Old Dagger", .weapon_type = .dagger, .weapon_damage = 5 },
+    };
+    const tooltip = try buildItemTooltip(arena.allocator(), weapon, &.{}, equipped);
+    // Row spans: "Damage 5 (" | "+1" green | ", " | "0" uncolored | ")"
+    const row = tooltip.body[1];
+    try std.testing.expectEqual(@as(usize, 5), row.len);
+    try std.testing.expectEqualStrings("Damage 5 (", row[0].text);
+    try std.testing.expectEqualStrings("+1", row[1].text);
+    try std.testing.expectEqual(comparison_positive_color, row[1].color);
+    try std.testing.expectEqualStrings(", ", row[2].text);
+    try std.testing.expectEqualStrings("0", row[3].text);
+    try std.testing.expectEqual(default_tint, row[3].color);
+    try std.testing.expectEqualStrings(")", row[4].text);
+}
+
+test "buildItemTooltip: weapon negative comparison and empty off hand baseline" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const weapon = types.Item{ .weapon = .{ .name = "Iron Sword", .weapon_type = .sword, .weapon_damage = 5 } };
+    // Main hand does 7 (worse: -2), off hand empty (better than 0: +5).
+    const equipped = EquippedGear{
+        .main_hand_weapon = .{ .name = "Big Axe", .weapon_type = .axe, .weapon_damage = 7 },
+    };
+    const tooltip = try buildItemTooltip(arena.allocator(), weapon, &.{}, equipped);
+    const row = tooltip.body[1];
+    try std.testing.expectEqualStrings("-2", row[1].text);
+    try std.testing.expectEqual(comparison_negative_color, row[1].color);
+    try std.testing.expectEqualStrings("+5", row[3].text);
+    try std.testing.expectEqual(comparison_positive_color, row[3].color);
+}
+
+test "buildItemTooltip: coat compares each stat against the equipped coat" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const coat = types.Item{ .coat = .{ .name = "Leather Coat", .health_bonus = 3, .defense_bonus = 2 } };
+    // Equipped coat: health 4 (worse: -1), defense 2 (equal: 0). Empty
+    // slots elsewhere must not matter — only the same slot's item is read.
+    const equipped = EquippedGear{
+        .coat = .{ .name = "Old Coat", .health_bonus = 4, .defense_bonus = 2 },
+    };
+    const tooltip = try buildItemTooltip(arena.allocator(), coat, &.{}, equipped);
+    const health_row = tooltip.body[1];
+    try std.testing.expectEqual(@as(usize, 3), health_row.len);
+    try std.testing.expectEqualStrings("Health 3 (", health_row[0].text);
+    try std.testing.expectEqualStrings("-1", health_row[1].text);
+    try std.testing.expectEqual(comparison_negative_color, health_row[1].color);
+    try std.testing.expectEqualStrings(")", health_row[2].text);
+    const defense_row = tooltip.body[2];
+    try std.testing.expectEqualStrings("0", defense_row[1].text);
+    try std.testing.expectEqual(default_tint, defense_row[1].color);
+}
+
+test "buildItemTooltip: empty equipped slot compares against zero" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const boots = types.Item{ .boots = .{ .name = "Boots", .health_bonus = 2, .speed_bonus = 1 } };
+    const tooltip = try buildItemTooltip(arena.allocator(), boots, &.{}, EquippedGear{});
+    const speed_row = tooltip.body[2];
+    try std.testing.expectEqualStrings("+1", speed_row[1].text);
+    try std.testing.expectEqual(comparison_positive_color, speed_row[1].color);
 }
 
 
@@ -2548,6 +2727,9 @@ pub fn buildInventoryPanel(
     inventory: types.Inventory,
     materials: types.Materials,
     learned_skills: []const types.SkillId,
+    /// The player's equipped gear — baseline for item-tooltip stat
+    /// comparisons. Null suppresses them.
+    equipped: ?EquippedGear,
     active_theme: types.ActiveColorTheme,
     /// The slot currently being dragged from, if any. The item `Image` is
     /// suppressed on the source slot so the item reads as "in flight"
@@ -2596,7 +2778,7 @@ pub fn buildInventoryPanel(
         // slot.
         const occupied_slot = inventory.slots[@intCast(index)];
         const slot_tooltip: ?Tooltip = if (occupied_slot) |item|
-            try buildItemTooltip(allocator, item, learned_skills)
+            try buildItemTooltip(allocator, item, learned_skills, equipped)
         else
             null;
         try elements.append(allocator, .{ .slot = .{
@@ -2792,8 +2974,10 @@ pub fn buildGearPanel(
             const ref: SlotRef = .{ .gear = gear_slot };
             const is_drag_source = if (src) |s| s.eql(ref) else false;
             const item = gearSlotItem(pl, gear_slot);
+            // Equipped-item tooltips show no comparisons (an item
+            // compared to itself is all zeros).
             const slot_tooltip: ?Tooltip = if (item) |it|
-                try buildItemTooltip(alloc, it, skills)
+                try buildItemTooltip(alloc, it, skills, null)
             else
                 null;
             try elems.append(alloc, .{ .slot = .{
@@ -2896,6 +3080,11 @@ pub fn buildEnemyInspectPanel(
     bounds: Rectangle,
     entity: Entity,
     learned_skills: []const types.SkillId,
+    /// The PLAYER's equipped gear — baseline for the inspected entity's
+    /// gear-tooltip comparisons (dropped enemy gear is directly usable,
+    /// so the comparison is actionable). Null (inspecting the player
+    /// itself, or no player) suppresses comparisons.
+    equipped: ?EquippedGear,
     active_theme: types.ActiveColorTheme,
     weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
 ) !void {
@@ -3043,12 +3232,13 @@ pub fn buildEnemyInspectPanel(
             gear_slot: GearSlot,
             ent: Entity,
             skills: []const types.SkillId,
+            item_equipped: ?EquippedGear,
             s_color: Color,
             i_color: Color,
         ) !void {
             const item = gearSlotItem(ent, gear_slot);
             const slot_tooltip: ?Tooltip = if (item) |it|
-                try buildItemTooltip(alloc, it, skills)
+                try buildItemTooltip(alloc, it, skills, item_equipped)
             else
                 null;
             try elems.append(alloc, .{ .image = .{
@@ -3072,13 +3262,13 @@ pub fn buildEnemyInspectPanel(
         }
     }.run;
 
-    try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = gear_top_y }, .main_hand, entity, learned_skills, c_gear_slot, c_gear_item);
-    try emitGearSlot(elements, allocator, .{ .x = col1_x, .y = gear_top_y }, .off_hand, entity, learned_skills, c_gear_slot, c_gear_item);
+    try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = gear_top_y }, .main_hand, entity, learned_skills, equipped, c_gear_slot, c_gear_item);
+    try emitGearSlot(elements, allocator, .{ .x = col1_x, .y = gear_top_y }, .off_hand, entity, learned_skills, equipped, c_gear_slot, c_gear_item);
 
     const gear_slots = [_]GearSlot{ .amulet, .coat, .gloves, .pants, .boots };
     var row_y = gear_top_y + gear_cell_size + ui_gap;
     for (gear_slots) |gs| {
-        try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = row_y }, gs, entity, learned_skills, c_gear_slot, c_gear_item);
+        try emitGearSlot(elements, allocator, .{ .x = col0_x, .y = row_y }, gs, entity, learned_skills, equipped, c_gear_slot, c_gear_item);
         row_y += gear_cell_size + ui_gap;
     }
 
@@ -4088,7 +4278,7 @@ test "buildEnemyInspectPanel: player entity emits skill + gear slots, read-only"
         .height = middle_panel_height,
     };
     var elements: UiElementList = .empty;
-    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, theme, &weapon_types);
+    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
 
     // No .slot elements and no gameplay-clickable .button — everything is
     // read-only .image, except the panel-header close button (a .button
@@ -4142,7 +4332,7 @@ test "buildEnemyInspectPanel: enemy entity uses enemy gradient" {
         .height = middle_panel_height,
     };
     var elements: UiElementList = .empty;
-    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, theme, &weapon_types);
+    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
 
     // Skill-bar frame tinted with the ENEMY gradient (team ≠ 0).
     var found_enemy_frame = false;
@@ -4184,7 +4374,7 @@ test "buildEnemyInspectPanel: cooldown overlay + number when skill on cooldown" 
         .height = middle_panel_height,
     };
     var elements: UiElementList = .empty;
-    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, theme, &weapon_types);
+    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
 
     // A cooldown overlay is a translucent (alpha 128) skill_button image on
     // top of the filled slot. Count them — exactly one skill is on cooldown.
@@ -4228,7 +4418,7 @@ test "buildEnemyInspectPanel: active effects emit 128px icons" {
         .height = middle_panel_height,
     };
     var elements: UiElementList = .empty;
-    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, theme, &weapon_types);
+    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
 
     // Two effect icons at 128px, carrying tooltips.
     var effect_icon_count: usize = 0;

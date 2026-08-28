@@ -92,7 +92,9 @@ Test by running `zig build run` and clicking through.
 - **Cross-cutting polish** — 9-slice TILING
   (currently stretched), `highlighted` edge outlines, missing art
   (ui/icon_swap, ui/momentum draw magenta). (Real TTF
-  font + glyph metrics DONE — see DONE.md.)
+  font + glyph metrics DONE — see DONE.md.) Gear-tooltip comparison
+  colors are full green/red placeholders — artist to pick softer shades
+  (`comparison_positive_color`/`comparison_negative_color`, ui.zig).
 - **Larger systems (beyond MVP)** — middle panels (inventory/gear/skills/enemy
   inspect) + overlays (world map, full combat log) + options/settings/top bar
   (drag-drop needs panels to be usable); NPC interaction/dialogue; audio.

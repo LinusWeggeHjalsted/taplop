@@ -5287,3 +5287,30 @@ probe detaches the views mid-print. Fixes:
   recoverable" test on every run after the first. The harness now uses a
   scratch dir; `scripts/test.sh` also cleans `saves/` (main.zig tests
   still write there via their own cwd sources — inert, just pollution).
+
+### Gear-tooltip stat comparisons (done)
+
+Inventory/inspect item tooltips now show how each stat compares to the
+player's equipped gear: `Damage 4 (+1, 0)` for weapons (first number vs
+equipped main hand, second vs off hand), `Defense 1 (-1)` for other gear
+(vs the same slot's equipped item). Differences are colored spans —
+`+d` full green, `-d` full red, `0` uncolored (theme lightest via the
+default-tint substitution in `drawTextLabel`). Raw gear stats only (the
+tooltip number itself is raw; `getEffective*` values stay in the stat
+sidebars).
+
+- `ui.EquippedGear` (snapshot of an entity's 7 gear fields) +
+  `equippedGearFromEntity`; view.zig builds it from `ui.playerEntity`
+  (entity 0 in a level, the hub player in a hub — works in both screens).
+- `buildItemTooltip` gained `equipped: ?EquippedGear`; null suppresses
+  comparisons. Rows built by `statRow` (plain / one baseline / two
+  baselines) with `comparisonSpan` per number; empty equipped slot
+  compares against 0.
+- Call sites: inventory panel (comparisons on), gear panel (null — an
+  equipped item compared to itself is all zeros), enemy inspect panel
+  (player's gear as baseline, unless inspecting the player itself —
+  entity index 0 — where it's null; dropped enemy gear is directly
+  usable, so the comparison is actionable there).
+- Tests: both-hands weapon row span-by-span (text + colors + `0`
+  uncolored), negative/empty-off-hand baselines, per-stat coat
+  comparison, empty-slot-vs-zero.
