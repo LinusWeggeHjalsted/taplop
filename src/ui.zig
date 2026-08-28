@@ -4629,8 +4629,7 @@ pub fn buildSettingsPanel(
     // Row 0: Master Volume (0–100).
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        var buf: [16]u8 = undefined;
-        const value_label = std.fmt.bufPrint(&buf, "{d}%", .{settings.master_volume}) catch unreachable;
+        const value_label = std.fmt.allocPrint(allocator, "{d}%", .{settings.master_volume}) catch @panic("failed to format slider value");
         emitSliderRow(elements, allocator, font_metrics, "Master Volume", .master_volume, 0, 100, settings.master_volume, value_label, content_x, r_y);
     }
     row_index += 1;
@@ -4638,8 +4637,7 @@ pub fn buildSettingsPanel(
     // Row 1: Music Volume (0–100).
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        var buf: [16]u8 = undefined;
-        const value_label = std.fmt.bufPrint(&buf, "{d}%", .{settings.music_volume}) catch unreachable;
+        const value_label = std.fmt.allocPrint(allocator, "{d}%", .{settings.music_volume}) catch @panic("failed to format slider value");
         emitSliderRow(elements, allocator, font_metrics, "Music Volume", .music_volume, 0, 100, settings.music_volume, value_label, content_x, r_y);
     }
     row_index += 1;
@@ -4647,8 +4645,7 @@ pub fn buildSettingsPanel(
     // Row 2: Sound Effects Volume (0–100).
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        var buf: [16]u8 = undefined;
-        const value_label = std.fmt.bufPrint(&buf, "{d}%", .{settings.sound_effects_volume}) catch unreachable;
+        const value_label = std.fmt.allocPrint(allocator, "{d}%", .{settings.sound_effects_volume}) catch @panic("failed to format slider value");
         emitSliderRow(elements, allocator, font_metrics, "Sound Effects Volume", .sound_effects_volume, 0, 100, settings.sound_effects_volume, value_label, content_x, r_y);
     }
     row_index += 1;
@@ -4656,10 +4653,10 @@ pub fn buildSettingsPanel(
     // Row 3: Render FPS Cap (0–256, 0 = Uncapped).
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        const value_label: []const u8 = if (settings.render_fps_cap == 0) "Uncapped" else blk: {
-            var buf: [16]u8 = undefined;
-            break :blk std.fmt.bufPrint(&buf, "{d}", .{settings.render_fps_cap}) catch unreachable;
-        };
+        const value_label: []const u8 = if (settings.render_fps_cap == 0)
+            "Uncapped"
+        else
+            std.fmt.allocPrint(allocator, "{d}", .{settings.render_fps_cap}) catch @panic("failed to format slider value");
         emitSliderRow(elements, allocator, font_metrics, "Render FPS Cap", .render_fps_cap, 0, 256, settings.render_fps_cap, value_label, content_x, r_y);
     }
     row_index += 1;
@@ -4667,8 +4664,7 @@ pub fn buildSettingsPanel(
     // Row 4: Animation FPS (1–16).
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        var buf: [16]u8 = undefined;
-        const value_label = std.fmt.bufPrint(&buf, "{d}", .{settings.animation_fps}) catch unreachable;
+        const value_label = std.fmt.allocPrint(allocator, "{d}", .{settings.animation_fps}) catch @panic("failed to format slider value");
         emitSliderRow(elements, allocator, font_metrics, "Animation FPS", .animation_fps, 1, 16, settings.animation_fps, value_label, content_x, r_y);
     }
     row_index += 1;
