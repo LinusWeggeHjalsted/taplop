@@ -250,6 +250,7 @@ const key_repeat_interval_microseconds: u64 = 40 * std.time.us_per_ms;
 pub const PointerInput = struct {
     pressed: bool = false, // primary button went down this tick
     released: bool = false, // primary button went up this tick
+    held: bool = false, // primary button is held (for slider drag)
     position: types.ScreenPosition = .{ .x = 0, .y = 0 },
     /// Secondary (right) button edges + held state, for the camera-pan drag.
     /// Not a binding — like the tile cursor, this is raw pointer state
@@ -800,6 +801,7 @@ pub fn translateInput(
     result.pointer = .{
         .pressed = InputState.isHeld(&mouse_pressed, "left"),
         .released = InputState.isHeld(&mouse_released, "left"),
+        .held = InputState.isHeld(&state.mouse_buttons_held, "left"),
         .position = state.mouse_screen_position.toScreenPosition(),
         .right_pressed = InputState.isHeld(&mouse_pressed, "right"),
         .right_released = InputState.isHeld(&mouse_released, "right"),

@@ -289,15 +289,16 @@ Open:
         `options_action`. Toggles: vsync + the 2 gameplay bools. Choices:
         camera_zoom 4-button row (25/50/75/100), player_color_index 6-swatch
         row. `markSettingsDirty` on every change. DONE.
-  - [ ] **Slice 3b — sliders + audio live-apply:** new `slider` `UiElement`
-        variant + click/drag handler (integer, step 1):
-        render_fps_cap 0–256 (0 = "Uncapped" label), animation_fps 1–16, the
-        3 volumes 0–100. `markWriteDirty(.settings, …)` on every change.
-  - [ ] **Slice 4 — live-apply:** `SessionState.last_applied_settings`
-        snapshot; `frame()` diff-and-apply → `backend.applyVolumes` on audio
-        diff. vsync shows a "(change requires restart)" label, no live apply
-        (`applyVsync` stays init-only). camera_zoom / render_fps_cap /
-        animation_fps already read live.
+  - [x] **Slice 3b — sliders + audio live-apply:** new `slider` `UiElement`
+        variant + `handleSliderDrag` (click-to-jump + drag-to-scrub, integer,
+        step 1): render_fps_cap 0–256 (0 = "Uncapped" label), animation_fps
+        1–16, the 3 volumes 0–100. `markSettingsDirty` on every drag step.
+        Audio live-apply via `frame()` diff-and-apply
+        (`SessionState.last_applied_volumes` snapshot → `backend.applyVolumes`
+        on diff). VSync label shows "(change requires restart)". DONE.
+  - [x] **Slice 4 — live-apply:** merged into 3b. `camera_zoom` /
+        `render_fps_cap` / `animation_fps` already read live by `view()`/
+        `frame()`; audio via the diff-and-apply; vsync restart-only. DONE.
   - [ ] **Deferred — text input widget:** freeform integer entry for
         `render_fps_cap` / `animation_fps` (currently sliders cover them).
         Needs a focus model + text buffer on `SessionState` + raw-character

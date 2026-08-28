@@ -502,6 +502,77 @@ pub fn handleCameraPan(
 /// (no pan offset was ever computed) while the pending right-click fires
 /// the inspect. A right-drag past the threshold cancels the pending right-
 /// click and lets the pan proceed.
+
+/// Compute an integer slider value from a pointer x position over the
+/// slider's track. Clamps to `[min, max]`, step 1.
+fn sliderValueFromPointer(slider: ui.Slider, pointer_x: i32) u32 {
+    const track_x: f32 = @floatFromInt(slider.screen_position.x);
+    const track_w: f32 = @floatFromInt(slider.width);
+    const px: f32 = @floatFromInt(pointer_x);
+    const fraction = if (track_w > 0)
+        @max(0.0, @min(1.0, (px - track_x) / track_w))
+    else
+        0.0;
+    const range: f32 = if (slider.max > slider.min) @floatFromInt(slider.max - slider.min) else 0;
+    return slider.min + @as(u32, @intFromFloat(@round(fraction * range)));
+}
+
+/// Apply a slider value to `history.settings` based on the slider's
+/// `setting_id`. Mutates settings directly (off the undo timeline) + marks
+/// dirty for debounced persistence. Called on every drag step (the debounce
+/// coalesces — the write fires 1s after the last scrub).
+fn applySliderValue(history: *GameStateHistory, slider: ui.Slider, pointer_x: i32) void {
+    const value = sliderValueFromPointer(slider, pointer_x);
+    const settings = &history.settings;
+    switch (slider.setting_id) {
+        .master_volume => settings.master_volume = value,
+        .music_volume => settings.music_volume = value,
+        .sound_effects_volume => settings.sound_effects_volume = value,
+        .render_fps_cap => settings.render_fps_cap = value,
+        .animation_fps => settings.animation_fps = value,
+        else => return,
+    }
+    markSettingsDirty(history);
+}
+
+/// Settings slider drag handler. Runs before the options-menu gate (sliders
+/// must work while the settings overlay is open on top of the options menu).
+/// Left-press on a slider begins a drag + jumps to the pointer; left-held
+/// scrubs; left-release ends the drag. The slider is hit-tested against the
+/// previous frame's UI (same as the button model). See DESIGN → UI Framework
+/// → Settings screen.
+pub fn handleSliderDrag(
+    history: *GameStateHistory,
+    pointer: input.PointerInput,
+    ui_elements: []const ui.UiElement,
+) void {
+    const session = &history.session;
+    if (!session.ui_state.settings_open) {
+        if (session.ui_state.active_slider != null) session.ui_state.active_slider = null;
+        return;
+    }
+
+    // Left-press over a slider begins a drag + jumps to the pointer.
+    if (pointer.pressed) {
+        if (ui.sliderAt(ui_elements, pointer.position)) |slider| {
+            session.ui_state.active_slider = slider.setting_id;
+            applySliderValue(history, slider, pointer.position.x);
+        }
+    }
+
+    // Left-held with an active slider: scrub (find the slider for the active
+    // setting in the current UI + apply the value from the pointer x).
+    if (pointer.held and session.ui_state.active_slider != null) {
+        if (ui.findSlider(ui_elements, session.ui_state.active_slider.?)) |slider| {
+            applySliderValue(history, slider, pointer.position.x);
+        }
+    }
+
+    // Left-release ends the drag.
+    if (pointer.released) {
+        session.ui_state.active_slider = null;
+    }
+}
 pub fn handleRightClickInspect(
     history: *GameStateHistory,
     pointer: input.PointerInput,

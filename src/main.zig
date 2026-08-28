@@ -163,6 +163,11 @@ fn update(
     // but other inputs are blocked when the options menu is open)
     input_handlers.handleAnytimeInput(history, player_input.anytime, player_input.pointer.position, ui_elements);
 
+    // Settings slider drag runs before the options-menu gate so sliders work
+    // while the settings overlay is open on top of the options menu. See
+    // DESIGN → UI Framework → Settings screen.
+    input_handlers.handleSliderDrag(history, player_input.pointer, ui_elements);
+
     // Options menu pauses the game
     if (history.session.ui_state.options_menu_open) return;
 
@@ -251,6 +256,20 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // Music streams require a per-frame update call (raylib decodes in
     // chunks). No-op when audio isn't initialized. See DESIGN → Audio.
     backend.updateMusic();
+
+    // Live-apply audio volumes: compare the current settings against the
+    // last-applied snapshot and re-apply on a diff. Keeps input handlers
+    // pure (no backend pointer) — the settings slider mutates
+    // `history.settings` directly, and this diff fires next frame. See
+    // DESIGN → UI Framework → Settings screen (Live-apply).
+    {
+        const s = history.settings;
+        const last = history.session.last_applied_volumes;
+        if (s.master_volume != last.master or s.music_volume != last.music or s.sound_effects_volume != last.sfx) {
+            backend.applyVolumes(s);
+            history.session.last_applied_volumes = .{ .master = s.master_volume, .music = s.music_volume, .sfx = s.sound_effects_volume };
+        }
+    }
 
     const platform_input = backend.pollInput();
     // Camera is derived (centered on the player), computed each frame so input

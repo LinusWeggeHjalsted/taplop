@@ -168,6 +168,16 @@ pub const SessionState = struct {
     /// replay-safe by construction. See DESIGN → Input.
     session_clock: u64 = 0,
 
+    /// Snapshot of the audio settings the last time `frame()` applied them
+    /// to the backend. `frame()` compares `history.settings` against this
+    /// and calls `backend.applyVolumes` on a diff, then updates it. Null
+    /// until the first apply (init calls `applyVolumes` directly, so the
+    /// first frame sets this without a re-apply). Only the 3 volume fields
+    /// need live apply — vsync is restart-only, the display fields are read
+    /// live by `view()`/`frame()`. See DESIGN → UI Framework → Settings
+    /// screen (Live-apply).
+    last_applied_volumes: struct { master: u32, music: u32, sfx: u32 } = .{ .master = 0, .music = 0, .sfx = 0 },
+
     /// Pending debounced writes (currently settings persistence). A small fixed array keyed by `PendingWrite.Tag`; each tag
     /// coalesces (a new dirty-mark refreshes the deadline rather than
     /// enqueueing a second write). Fired by `frame()` when the deadline

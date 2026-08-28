@@ -5456,3 +5456,52 @@ Controls (5 rows, centered between header and Back button):
 `emitSettingButton` helper (like `emitPanelButton` but with `setting_ref` +
 `highlighted` instead of just an action). The 5 slider fields (3 volumes +
 render_fps_cap + animation_fps) are not shown yet — 3b adds the slider rows.
+
+### Slice 3b — sliders + audio live-apply
+
+New `slider` `UiElement` variant for integer slider controls. The settings
+screen now shows all 10 editable fields: 5 sliders (master_volume 0–100,
+music_volume 0–100, sound_effects_volume 0–100, render_fps_cap 0–256 with
+0 = "Uncapped" label, animation_fps 1–16) + 3 toggles (vsync, auto-skip,
+auto-target) + 2 choices (camera_zoom 4-button, player_color_index 6-swatch).
+
+**Slider widget:**
+- `Slider` struct (`{ setting_id, min, max, value, screen_position, width,
+  height }`) + `slider` variant in `UiElement`. Backend renders a dark track
+  + lightest fill (proportional) + lightest thumb square at the fill end.
+  The value label is a separate `text_label` emitted by the builder (rebuilt
+  each frame from the live settings value, so it tracks the drag in real
+  time).
+- `PointerInput.held: bool` added (primary button held state — previously
+  only `right_held` existed; the slider drag needs left-held).
+- `UiState.active_slider: ?SettingId` — the in-progress slider drag. Set on
+  left-press over a slider, cleared on left-release.
+- `handleSliderDrag` (input_handlers.zig) runs before the options-menu gate
+  in `update()` (sliders must work while the settings overlay is open on top
+  of the options menu). Left-press over a slider → begin drag + jump to
+  pointer; left-held → scrub (find the slider for the active setting in the
+  current UI + apply the value from the pointer x); left-release → end drag.
+  `sliderValueFromPointer` computes the integer value from the pointer x
+  over the track (clamp to [min,max], round to nearest step).
+- `applySliderValue` mutates `history.settings` directly (off the undo
+  timeline) + `markSettingsDirty` on every drag step (the debounce coalesces
+  — the write fires 1s after the last scrub).
+- `sliderAt` + `findSlider` hit-test functions in ui.zig (same `hitTest`
+  primitive as buttons; `findSlider` is a linear scan by setting_id, used
+  during an active drag to find the slider matching `active_slider` in the
+  rebuilt UI).
+
+**Audio live-apply (frame diff-and-apply):**
+- `SessionState.last_applied_volumes: { master, music, sfx }` — snapshot of
+  the 3 volume fields the last time `frame()` applied them.
+- `frame()` compares `history.settings` volumes against the snapshot; on
+  diff, calls `backend.applyVolumes(settings)` + updates the snapshot. This
+  keeps input handlers pure (no backend pointer) — the slider mutates
+  `history.settings` directly, and the diff fires next frame (≤16ms latency,
+  imperceptible). The first frame after init does one redundant apply
+  (snapshot starts at 0,0,0; init already called `applyVolumes`) — harmless.
+- VSync does NOT live-apply (`rl.setConfigFlags` may not take effect without
+  a window recreate); the VSync row label shows "(change requires restart)"
+  and `applyVsync` stays init-only. camera_zoom / render_fps_cap /
+  animation_fps are read live each frame by `view()`/`frame()` — no apply
+  step needed.

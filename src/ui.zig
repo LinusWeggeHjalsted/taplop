@@ -78,6 +78,12 @@ pub const UiState = struct {
     /// Framework → Settings screen.
     settings_open: bool = false,
 
+    /// Which slider is being dragged (left-press on a slider → held →
+    /// release). Null when no slider drag is in progress. Off the undo
+    /// timeline (UI interaction state, like `drag`). Cleared by the
+    /// screen-transition UI reset.
+    active_slider: ?types.SettingId = null,
+
     /// Load-save browser vertical scroll offset, in ROWS (not pixels) — one
     /// scroll tick = one full row pitch, so text placement is identical at
     /// every scroll position. Clamped to `[0, max_scroll_row]` in
@@ -662,6 +668,23 @@ pub const Button = struct {
     blocks_input: bool = true,
 };
 
+/// An integer slider control (step 1). The backend draws a track + fill
+/// + thumb; the input handler (`handleSliderDrag`) manages click/drag.
+/// The value label is emitted as a separate `text_label` by the builder
+/// (rebuilt each frame from the live settings value, so it tracks the drag
+/// in real time). See DESIGN → UI Framework → Settings screen.
+pub const Slider = struct {
+    setting_id: types.SettingId,
+    min: u32,
+    max: u32,
+    value: u32,
+    screen_position: ScreenPosition,
+    width: i32,
+    height: i32,
+    tooltip: ?Tooltip = null,
+    blocks_input: bool = true,
+};
+
 /// A text label.
 pub const TextLabel = struct {
     text: []const u8,
@@ -726,6 +749,7 @@ pub const UiElement = union(enum) {
     fill_sprite: FillSprite,
     image: Image,
     solid_rect: SolidRect,
+    slider: Slider,
 };
 
 /// A plain rectangle (filled by default, or stroked when `filled` is
@@ -768,6 +792,7 @@ pub fn boundsOf(element: UiElement) Rectangle {
         .fill_sprite => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
         .image => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
         .solid_rect => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
+        .slider => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
     };
 }
 
@@ -830,6 +855,13 @@ fn isButton(element: UiElement) bool {
     };
 }
 
+fn isSlider(element: UiElement) bool {
+    return switch (element) {
+        .slider => true,
+        else => false,
+    };
+}
+
 /// The topmost tooltip-bearing element under `position` (respecting
 /// occlusion), or null. Used by the hover pass in view().
 pub fn tooltipAt(
@@ -857,6 +889,30 @@ pub fn buttonIndexAt(
     position: ScreenPosition,
 ) ?usize {
     return hitTest(ui_elements, position, isButton);
+}
+
+/// The topmost slider under `position` (respecting occlusion), or null.
+/// Used by `handleSliderDrag` to begin a drag on left-press.
+pub fn sliderAt(
+    ui_elements: []const UiElement,
+    position: ScreenPosition,
+) ?Slider {
+    return if (hitTest(ui_elements, position, isSlider)) |i| ui_elements[i].slider else null;
+}
+
+/// Find the slider for `id` in `ui_elements` (first match, no occlusion
+/// check — used during an active drag to find the slider matching the
+/// `active_slider` setting id). Returns null if not found (e.g. the panel
+/// was rebuilt and the slider isn't present this frame).
+pub fn findSlider(
+    ui_elements: []const UiElement,
+    id: types.SettingId,
+) ?Slider {
+    for (ui_elements) |element| switch (element) {
+        .slider => |slider| if (slider.setting_id == id) return slider,
+        else => {},
+    };
+    return null;
 }
 
 /// The topmost input-blocking element under `position`, or null. Used for
@@ -4400,6 +4456,9 @@ pub const settings_choice_button_width: i32 = 240;
 /// Player-color swatch size (one of 6).
 pub const settings_swatch_size: i32 = 120;
 pub const settings_swatch_gap: i32 = 16;
+/// Slider track width.
+pub const settings_slider_width: i32 = 800;
+pub const settings_slider_value_gap: i32 = 32;
 
 /// Emit a settings control button: a tinted 9-slice panel + a button
 /// carrying `setting_ref` (the field identity) + a centered text label.
@@ -4484,13 +4543,18 @@ pub fn buildSettingsPanel(
     // the label text, not at a fixed column). Vertically stacked below the
     // header, centered as a group between header and Back button.
 
-    // 5 toggle/choice rows (sliders land in slice 3b):
-    //   0. VSync (toggle)
-    //   1. Camera Zoom (4-button choice)
-    //   2. Player Color (6-swatch choice)
-    //   3. Auto-skip attack step (toggle)
-    //   4. Auto-target at cursor (toggle)
-    const row_count: i32 = 5;
+    // 10 rows (5 toggle/choice + 5 slider):
+    //   0. Master Volume (slider 0–100)
+    //   1. Music Volume (slider 0–100)
+    //   2. Sound Effects Volume (slider 0–100)
+    //   3. Render FPS Cap (slider 0–256, 0 = Uncapped)
+    //   4. Animation FPS (slider 1–16)
+    //   5. VSync (toggle)
+    //   6. Camera Zoom (4-button choice)
+    //   7. Player Color (6-swatch choice)
+    //   8. Auto-skip attack step (toggle)
+    //   9. Auto-target at cursor (toggle)
+    const row_count: i32 = 10;
     const rows_total_height = rowWidth(row_count, settings_row_height, settings_row_gap);
     const buttons_top = screen.y + screen.height - settings_padding -
         settings_button_height - settings_button_gap;
@@ -4519,11 +4583,102 @@ pub fn buildSettingsPanel(
         }
     }.run;
 
+    // Helper: emit a slider row — label (flush left) + slider control +
+    // value text (right of the slider). Returns nothing. The slider value
+    // is read from `settings` via the setting id, so it tracks the drag live
+    // (the panel is rebuilt each frame).
+    const emitSliderRow = struct {
+        fn run(
+            elems: *UiElementList,
+            alloc: std.mem.Allocator,
+            fm: FontMetrics,
+            label_text: []const u8,
+            id: types.SettingId,
+            min: u32,
+            max: u32,
+            value: u32,
+            value_label: []const u8,
+            x: i32,
+            y: i32,
+        ) void {
+            const ctrl_x = emitLabel(elems, alloc, fm, label_text, x, y);
+            elems.append(alloc, .{ .slider = .{
+                .setting_id = id,
+                .min = min,
+                .max = max,
+                .value = value,
+                .screen_position = .{ .x = ctrl_x, .y = y },
+                .width = settings_slider_width,
+                .height = settings_row_height,
+            }}) catch @panic("failed to append slider");
+            // Value text right of the slider.
+            const value_x = ctrl_x + settings_slider_width + settings_slider_value_gap;
+            elems.append(alloc, .{ .text_label = .{
+                .text = value_label,
+                .screen_position = .{ .x = value_x, .y = y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
+                .font_size = settings_row_font_size,
+                .blocks_input = false,
+            }}) catch @panic("failed to append slider value");
+        }
+    }.run;
+
     var row_index: i32 = 0;
-    // Row 0: VSync toggle.
+
+    // ── Slider rows (0–4) ──
+
+    // Row 0: Master Volume (0–100).
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        const ctrl_x = emitLabel(elements, allocator, font_metrics, "VSync", content_x, r_y);
+        var buf: [16]u8 = undefined;
+        const value_label = std.fmt.bufPrint(&buf, "{d}%", .{settings.master_volume}) catch unreachable;
+        emitSliderRow(elements, allocator, font_metrics, "Master Volume", .master_volume, 0, 100, settings.master_volume, value_label, content_x, r_y);
+    }
+    row_index += 1;
+
+    // Row 1: Music Volume (0–100).
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        var buf: [16]u8 = undefined;
+        const value_label = std.fmt.bufPrint(&buf, "{d}%", .{settings.music_volume}) catch unreachable;
+        emitSliderRow(elements, allocator, font_metrics, "Music Volume", .music_volume, 0, 100, settings.music_volume, value_label, content_x, r_y);
+    }
+    row_index += 1;
+
+    // Row 2: Sound Effects Volume (0–100).
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        var buf: [16]u8 = undefined;
+        const value_label = std.fmt.bufPrint(&buf, "{d}%", .{settings.sound_effects_volume}) catch unreachable;
+        emitSliderRow(elements, allocator, font_metrics, "Sound Effects Volume", .sound_effects_volume, 0, 100, settings.sound_effects_volume, value_label, content_x, r_y);
+    }
+    row_index += 1;
+
+    // Row 3: Render FPS Cap (0–256, 0 = Uncapped).
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        const value_label: []const u8 = if (settings.render_fps_cap == 0) "Uncapped" else blk: {
+            var buf: [16]u8 = undefined;
+            break :blk std.fmt.bufPrint(&buf, "{d}", .{settings.render_fps_cap}) catch unreachable;
+        };
+        emitSliderRow(elements, allocator, font_metrics, "Render FPS Cap", .render_fps_cap, 0, 256, settings.render_fps_cap, value_label, content_x, r_y);
+    }
+    row_index += 1;
+
+    // Row 4: Animation FPS (1–16).
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        var buf: [16]u8 = undefined;
+        const value_label = std.fmt.bufPrint(&buf, "{d}", .{settings.animation_fps}) catch unreachable;
+        emitSliderRow(elements, allocator, font_metrics, "Animation FPS", .animation_fps, 1, 16, settings.animation_fps, value_label, content_x, r_y);
+    }
+    row_index += 1;
+
+    // ── Toggle / choice rows (5–9) ──
+
+    // Row 5: VSync toggle.
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "VSync (change requires restart)", content_x, r_y);
         try emitSettingButton(
             elements,
             allocator,
@@ -4538,7 +4693,7 @@ pub fn buildSettingsPanel(
     }
     row_index += 1;
 
-    // Row 1: Camera Zoom — 4 buttons (25/50/75/100 hundredths → display as %).
+    // Row 6: Camera Zoom — 4 buttons (25/50/75/100 hundredths → display as %).
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
         const ctrl_x = emitLabel(elements, allocator, font_metrics, "Camera Zoom", content_x, r_y);
@@ -4565,7 +4720,7 @@ pub fn buildSettingsPanel(
     }
     row_index += 1;
 
-    // Row 2: Player Color — 6 swatches (player gradient indices 0–5).
+    // Row 7: Player Color — 6 swatches (player gradient indices 0–5).
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
         const ctrl_x = emitLabel(elements, allocator, font_metrics, "Player Color", content_x, r_y);
@@ -4593,7 +4748,7 @@ pub fn buildSettingsPanel(
     }
     row_index += 1;
 
-    // Row 3: Auto-skip attack step toggle.
+    // Row 8: Auto-skip attack step toggle.
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
         const ctrl_x = emitLabel(elements, allocator, font_metrics, "Auto-skip Attack Step", content_x, r_y);
@@ -4611,7 +4766,7 @@ pub fn buildSettingsPanel(
     }
     row_index += 1;
 
-    // Row 4: Auto-target at cursor toggle.
+    // Row 9: Auto-target at cursor toggle.
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
         const ctrl_x = emitLabel(elements, allocator, font_metrics, "Auto-target at Cursor", content_x, r_y);

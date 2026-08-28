@@ -1226,6 +1226,30 @@ pub const RaylibBackend = struct {
                     rl.drawRectangleLinesEx(r, @floatFromInt(rect.line_width), toRaylibColor(rect.color, 255));
                 }
             },
+            .slider => |slider| {
+                // Integer slider: track (dark) + fill (lightest, proportional)
+                // + thumb (lightest square at the fill end). The value label
+                // is a separate text_label emitted by the builder.
+                const dest = referenceRectangle(slider.screen_position, slider.width, slider.height);
+                const track_height: f32 = 16;
+                const track_y = dest.y + (dest.height - track_height) / 2;
+                const track_rect = rl.Rectangle{ .x = dest.x, .y = track_y, .width = dest.width, .height = track_height };
+                const track_color = rl.Color{ .r = 80, .g = 80, .b = 80, .a = 255 };
+                rl.drawRectangleRec(track_rect, track_color);
+                const range: f32 = if (slider.max > slider.min) @as(f32, @floatFromInt(slider.max - slider.min)) else 1;
+                const fraction = @as(f32, @floatFromInt(slider.value - slider.min)) / range;
+                const fill_width = dest.width * fraction;
+                if (fill_width > 0) {
+                    const fill_rect = rl.Rectangle{ .x = dest.x, .y = track_y, .width = fill_width, .height = track_height };
+                    rl.drawRectangleRec(fill_rect, toRaylibColor(highlight_color, 255));
+                }
+                // Thumb: a square centered on the track at the fill end.
+                const thumb_size: f32 = 48;
+                const thumb_x = dest.x + fill_width - thumb_size / 2;
+                const thumb_y = dest.y + (dest.height - thumb_size) / 2;
+                const thumb_rect = rl.Rectangle{ .x = thumb_x, .y = thumb_y, .width = thumb_size, .height = thumb_size };
+                rl.drawRectangleRec(thumb_rect, toRaylibColor(highlight_color, 255));
+            },
         }
     }
 
