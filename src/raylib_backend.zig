@@ -1714,59 +1714,6 @@ pub const RaylibBackend = struct {
         }
     }
 
-    /// Bleed opaque colors into transparent-edge pixels in-place. PNG
-    /// encoders store black RGB at alpha=0 edges; bilinear downscale blends
-    /// those black RGBs into visible edge pixels → a dark halo (most visible
-    /// on tiles, whose jagged transparent outline has many such edges). For
-    /// each pixel with alpha == 0, set its RGB to the average of the 4- or 8-
-    /// connected opaque neighbors (alpha stays 0). Works with the existing
-    /// straight-alpha blend — only the RGB of transparent pixels changes, so
-    /// compositing is unaffected; bilinear now blends the right color across
-    /// the alpha edge. One-time CPU pass per sprite (cached). The image MUST
-    /// be `.uncompressed_r8g8b8a8` (convert first if needed). See DESIGN →
-    /// Platform Seam → Render target resolution (edge bleed).
-    fn bleedTransparentEdges(image: *rl.Image) void {
-        if (image.format != .uncompressed_r8g8b8a8) return;
-        const w: usize = @intCast(image.width);
-        const h: usize = @intCast(image.height);
-        if (w == 0 or h == 0) return;
-        const px: [*]u8 = @ptrCast(image.data);
-        const stride = w * 4;
-        for (0..h) |y| {
-            for (0..w) |x| {
-                const i = y * stride + x * 4;
-                if (px[i + 3] != 0) continue; // only fully-transparent pixels
-                var sum_r: u32 = 0;
-                var sum_g: u32 = 0;
-                var sum_b: u32 = 0;
-                var count: u32 = 0;
-                // 8-connected neighbors, clipped to bounds. Only opaque
-                // neighbors contribute; the average excludes other
-                // transparent pixels so a lone transparent edge pixel next
-                // to one opaque tile takes that tile's color.
-                const x0: usize = if (x == 0) 0 else x - 1;
-                const x1: usize = if (x == w - 1) w - 1 else x + 1;
-                const y0: usize = if (y == 0) 0 else y - 1;
-                const y1: usize = if (y == h - 1) h - 1 else y + 1;
-                for (y0..y1 + 1) |ny| {
-                    for (x0..x1 + 1) |nx| {
-                        if (nx == x and ny == y) continue;
-                        const ni = ny * stride + nx * 4;
-                        if (px[ni + 3] == 0) continue;
-                        sum_r += px[ni + 0];
-                        sum_g += px[ni + 1];
-                        sum_b += px[ni + 2];
-                        count += 1;
-                    }
-                }
-                if (count == 0) continue; // no opaque neighbor — leave black
-                px[i + 0] = @intCast(sum_r / count);
-                px[i + 1] = @intCast(sum_g / count);
-                px[i + 2] = @intCast(sum_b / count);
-            }
-        }
-    }
-
     /// Load `sprite_id` from the file source, decode, and cache the main
     /// texture only (the outline mask is generated lazily by
     /// `ensureOutlineLoaded`). A missing/unreadable asset is a normal
@@ -1789,27 +1736,15 @@ pub const RaylibBackend = struct {
             const bytes = self.file_source.readFile(self.allocator, path) catch
                 break :blk null;
             defer self.allocator.free(bytes);
-            var image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
+            const image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
             defer rl.unloadImage(image);
-            // Normalize to RGBA so the bleed pass has a stable byte layout and
-            // so alpha is always at byte offset 3 (PNGs without alpha decode
-            // to RGB, which would skip the bleed entirely and upload as RGB —
-            // fine for fully-opaque art, but unify the path).
-            image.setFormat(.uncompressed_r8g8b8a8);
-            // Bleed opaque colors into transparent-edge pixels before upload.
-            // PNG encoders store black RGB at alpha=0 edges; bilinear downscale
-            // (the 4K design space → smaller render target via the `beginMode2D`
-            // camera zoom) blends those black RGBs into visible edge pixels →
-            // a dark halo. Bleeding the neighbor's color into transparent
-            // pixels fixes the blend at every scale. See DESIGN → Platform
-            // Seam → Render target resolution (edge bleed).
-            bleedTransparentEdges(&image);
             const tex = rl.loadTextureFromImage(image) catch break :blk null;
-            // Bilinear so downscaled draws sample smoothly instead of with
-            // hard nearest-neighbor edges. At a 1:1 render target this is a
-            // no-op visually; it only matters when the target is smaller
-            // than the design space. See DESIGN → Platform Seam → Render
-            // target resolution.
+            // Bilinear so downscaled draws (the 4K design space → smaller
+            // render target via the `beginMode2D` camera zoom) sample smoothly
+            // instead of with hard nearest-neighbor edges. At a 1:1 render
+            // target this is a no-op visually; it only matters when the target
+            // is smaller than the design space. See DESIGN → Platform Seam →
+            // Render target resolution.
             rl.setTextureFilter(tex, .bilinear);
             break :blk tex;
         };
