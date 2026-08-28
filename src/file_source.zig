@@ -272,21 +272,48 @@ pub const FileSource = struct {
 /// Only `*.txt` files count — the dir is also where stray non-save artifacts
 /// would land. A missing saves/ dir is an empty list (fresh install), not an
 /// error. Caller owns the returned slice + its strings (`freeSaveFiles`).
+///
+/// On web (emscripten IDBFS), `readdir` is broken (returns undefined entries,
+/// and Zig's `Dir.iterate` fails with `error.Unexpected`). The web path
+/// enumerates `saves/` via JS (`FS.lookupPath` + `Object.keys(node.contents)`)
+/// writing the name list to a temp file, then stats each file from Zig
+/// (individual file `stat` calls work on IDBFS). See DESIGN → File System & IO.
 pub fn listSaveFiles(
     self: *const FileSource,
     allocator: std.mem.Allocator,
 ) ![]SaveFileEntry {
+    var entries: std.ArrayList(SaveFileEntry) = .empty;
+    errdefer freeSaveFiles(allocator, entries.items);
+
+    if (@import("builtin").os.tag == .emscripten) {
+        try self.listSaveFilesWeb(allocator, &entries);
+    } else {
+        try self.listSaveFilesNative(allocator, &entries);
+    }
+
+    std.mem.sort(SaveFileEntry, entries.items, {}, saveFileOrder);
+    return entries.toOwnedSlice(allocator);
+}
+
+/// Temp file (persistent-dir root, outside saves/) used by the web path to
+/// pass the JS-enumerated filename list back to Zig. Written by JS, read +
+/// deleted by Zig. Mirrors the `.import_marker` pattern.
+const saves_listing_temp = ".saves_listing";
+
+/// Native path: open saves/, iterate entries, filter .txt, stat each.
+fn listSaveFilesNative(
+    self: *const FileSource,
+    allocator: std.mem.Allocator,
+    entries: *std.ArrayList(SaveFileEntry),
+) !void {
     const saves_dir = self.persistent_dir.openDir(self.io, "saves", .{
         .access_sub_paths = true,
         .iterate = true,
     }) catch |err| switch (err) {
-        error.FileNotFound => return &.{},
+        error.FileNotFound => return,
         else => return err,
     };
     defer std.Io.Dir.close(saves_dir, self.io);
-
-    var entries: std.ArrayList(SaveFileEntry) = .empty;
-    errdefer freeSaveFiles(allocator, entries.items);
 
     var it = saves_dir.iterate();
     while (try it.next(self.io)) |dir_entry| {
@@ -308,9 +335,66 @@ pub fn listSaveFiles(
             .mtime_ns = stat.mtime.nanoseconds,
         });
     }
+}
 
-    std.mem.sort(SaveFileEntry, entries.items, {}, saveFileOrder);
-    return entries.toOwnedSlice(allocator);
+/// Web path: emscripten IDBFS `readdir` is broken (returns undefined entries),
+/// so enumerate `saves/` via JS (`FS.lookupPath` + `Object.keys(node.contents)`)
+/// and write the `.txt` filename list to a temp file. Zig reads the temp file,
+/// then stats each file individually (stat works on IDBFS — only readdir is
+/// broken). The temp file is deleted after reading.
+fn listSaveFilesWeb(
+    self: *const FileSource,
+    allocator: std.mem.Allocator,
+    entries: *std.ArrayList(SaveFileEntry),
+) !void {
+    // JS: enumerate saves/ via lookupPath + Object.keys, filter .txt, write
+    // the newline-separated name list to a temp file. If saves/ doesn't exist
+    // (fresh install), write an empty file so Zig reads an empty list.
+    const script =
+        "(function() {" ++
+        "try {" ++
+        "  var node = FS.lookupPath('" ++ persistent_mount_path ++ "/saves');" ++
+        "  if (!node || !node.node) { FS.writeFile('" ++ persistent_mount_path ++ "/" ++ saves_listing_temp ++ "', ''); return; }" ++
+        "  var names = Object.keys(node.node.contents).filter(function(n) { return n.endsWith('.txt'); });" ++
+        "  FS.writeFile('" ++ persistent_mount_path ++ "/" ++ saves_listing_temp ++ "', names.join('\\n'));" ++
+        "} catch(e) {" ++
+        "  try { FS.writeFile('" ++ persistent_mount_path ++ "/" ++ saves_listing_temp ++ "', ''); } catch(e2) {}" ++
+        "}" ++
+        "})();";
+    emscripten_run_script(script);
+
+    // Read the temp file (individual file reads work on IDBFS).
+    const listing_bytes = self.persistent_dir.readFileAlloc(self.io, saves_listing_temp, allocator, read_limit) catch |err| switch (err) {
+        error.FileNotFound => return, // JS didn't write it — empty saves
+        else => return err,
+    };
+    defer allocator.free(listing_bytes);
+    // Clean up the temp file.
+    self.persistent_dir.deleteFile(self.io, saves_listing_temp) catch {};
+
+    // Parse newline-separated filenames, stat each, build entries.
+    var lines = std.mem.splitScalar(u8, listing_bytes, '\n');
+    while (lines.next()) |name| {
+        if (name.len == 0) continue;
+
+        const relative_path = try std.fmt.allocPrint(allocator, "saves/{s}", .{name});
+        errdefer allocator.free(relative_path);
+        const owned_name = try allocator.dupe(u8, name);
+        errdefer allocator.free(owned_name);
+
+        // Stat via the persistent dir (individual file stats work on IDBFS).
+        // A stat failure (vanished between enumerate + stat) skips the entry.
+        const stat = self.persistent_dir.statFile(self.io, relative_path, .{}) catch {
+            allocator.free(relative_path);
+            allocator.free(owned_name);
+            continue;
+        };
+        try entries.append(allocator, .{
+            .name = owned_name,
+            .path = relative_path,
+            .mtime_ns = stat.mtime.nanoseconds,
+        });
+    }
 }
 
 /// Delete a file from the persistent dir (used to consume the import
