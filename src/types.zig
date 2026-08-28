@@ -45,6 +45,15 @@ pub const Vector2 = struct {
 pub const Action = enum {
     undo,
     redo,
+    /// Escape. Generic "close topmost overlay": closes the settings overlay,
+    /// load-save browser, credits, world map / full combat log, or the
+    /// options menu (whichever is topmost); on mission fail / mission
+    /// complete it fires the overlay's primary button (exit mission /
+    /// continue); with nothing open (level/hub only) it opens the options
+    /// menu. Named for the historical options-menu toggle — renaming awaits
+    /// the InputBindings per-action migration (a user settings.txt replaces
+    /// the binding set, so a rename strands existing installs). See DESIGN →
+    /// Input → Escape overlay chain.
     toggle_options_menu,
     toggle_inventory,
     toggle_gear,

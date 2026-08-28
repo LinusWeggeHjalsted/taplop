@@ -268,6 +268,8 @@ pub const PointerInput = struct {
 pub const AnytimeInput = struct {
     undo: bool = false,
     redo: bool = false,
+    /// Escape — drives the overlay-close chain in handleAnytimeInput (see
+    /// Action.toggle_options_menu + DESIGN → Input → Escape overlay chain).
     toggle_options_menu: bool = false,
     dump_event_log: bool = false,
     /// Dismiss a recoverable error popup (see SessionState.pending_error).

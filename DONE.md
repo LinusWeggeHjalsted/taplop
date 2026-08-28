@@ -5679,3 +5679,42 @@ all UI regardless of screen. The clock read stays in `frame()` only (never
 in handlers / `view()`), so the replay-purity invariant holds; the field is
 off the undoable GameState, so replay-safe by construction. Visible on all
 screens (main menu / level / hub / overlays), not just where the top bar is.
+
+## Escape overlay chain
+
+Escape is now a generic "close the topmost overlay" chain
+(`handleEscapeKey` in input_handlers.zig, reached via the
+`toggle_options_menu` anytime arm) instead of a bare options-menu toggle.
+Ordered to mirror the view's z-order: settings (closes alone — the in-game
+drill-in steps back to the options menu underneath, replacing the old
+close-both cascade) → mission fail (Exit Mission orchestrator) → mission
+complete (Continue's `dismiss_mission_complete`) → load-save browser →
+credits → options menu (leaves any full-screen overlay beneath it open) →
+topmost full-screen overlay (world map / full combat log) → else open the
+options menu (level/hub only, no-op at the main menu). Middle panels are
+deliberately not in the chain. The error popup never reaches it (the
+`pending_error` modal gate consumes `dismiss_error` first). Design + the
+layered-close rationale: DESIGN → Input → Escape overlay chain.
+
+Supporting changes:
+
+- **`pushPlayerActionAndDrain`** (input_handlers.zig): extracted the
+  push-orchestrator-then-drain loop that was copy-pasted ×7 in the
+  `options_action` dispatch (save/restart/exit×2/continue/replay/overwrite);
+  the escape chain's mission fail/complete arms reuse it. Carries the
+  drain-baseline prose (overlay opened in a previous frame → entry
+  `event_stack.len` IS the baseline; drains down to it, leaving a mid-drain
+  enemy turn intact; aborts on `load_error`).
+- Every escape step that does something queues the `.menu` sound
+  (`queueMenuSound`) — the keybind path has no button, so the input-handler
+  site queues the feedback sound (the established audio convention).
+- `Action.toggle_options_menu` / `AnytimeInput.toggle_options_menu` doc
+  comments now record the broader Escape meaning + why it ISN'T renamed:
+  the InputBindings full-replace gap would strand existing installs on the
+  old action (see TODO → InputBindings per-action migration).
+- Tests: `src/input_tests_escape.zig` (6 tests via the harness +
+  `handleAnytimeInput` directly): layered settings close, options open on
+  level, main-menu no-op + credits/load-save close, topmost full-screen
+  overlay close, mission-fail exit (full cascade to the hub, asserting the
+  recorded `player_exit_mission`), mission-complete dismiss (recorded on
+  the timeline).

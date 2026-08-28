@@ -766,6 +766,39 @@ combat-log UI rendering + replay-viewer UI still TODO)
   limitation as the crash dump; a change-then-immediate-tab-close may lose
   the last debounced write).
 
+### Escape overlay chain
+
+Escape is one anytime action (`Action.toggle_options_menu` — named for its
+historical options-menu toggle; renaming awaits the InputBindings per-action
+migration, since a renamed/new action is invisible to installs with a user
+settings.txt). `handleEscapeKey` (input_handlers.zig) consumes it as a
+generic "close the topmost overlay" chain, ordered to mirror the view's
+z-order (topmost surface first):
+
+1. **Settings overlay** — closes ONLY it. In-game it opens on top of the
+   options menu, so Escape steps back to the menu underneath (layered close,
+   not a cascade).
+2. **Mission fail** (view-derived `playerDead`) — fires the overlay's Exit
+   Mission button's orchestrator (`player_exit_mission` + drain).
+3. **Mission complete** (view-derived `last_completed_mission`) — fires the
+   Continue button's `dismiss_mission_complete` + drain.
+4. **Load-save browser / credits** (main-menu overlays).
+5. **Options menu** — closes it, leaving any full-screen overlay beneath
+   it open.
+6. **Full-screen overlays** (world map, full combat log) — closes the
+   topmost open one (last occupied slot draws on top).
+7. Nothing open → opens the options menu, level/hub only (no-op on the
+   main menu — the menu's exit entries are meaningless there).
+
+The error popup is more-modal still but never reaches the chain: the
+`pending_error` gate at the top of `handleAnytimeInput` consumes
+`dismiss_error` first. Mission fail/complete reuse the exact orchestrator
+events their overlay buttons push (both routed through
+`pushPlayerActionAndDrain`), so Escape ≡ clicking the button — recorded
+player actions on the undo timeline. Middle panels (inventory/gear/skills/
+enemy inspect) are deliberately NOT in the chain: their per-panel toggles
+(I/G/S) are the close path; revisit if playtesting asks for it.
+
 ## Error Handling
 
 A `@panic` (unrecoverable failure) dumps the live `event_history` to

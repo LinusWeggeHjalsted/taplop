@@ -734,6 +734,125 @@ pub fn formatSessionTimestamp(
     ) catch @panic("failed to format session-log timestamp");
 }
 
+/// Push a player-action orchestrator event and drain it (plus its handler-
+/// pushed children) to completion within this call. Used by the
+/// options_action dispatch and the Escape overlay chain, both inside
+/// handleAnytimeInput — which runs before update()'s options-menu/pause
+/// gates, so the drain proceeds even while a modal overlay is open. The
+/// overlay opened in a previous frame and nothing drains while it's open
+/// (update() returns at its gate), so event_stack.len on entry equals the
+/// depth when the overlay opened — that's the drain baseline. Draining back
+/// DOWN to the baseline leaves anything pushed beneath (e.g. a mid-drain
+/// enemy turn) intact. Idle-point recording is left to the normal
+/// maybeRecordIdlePoint in gameLoop (no special case): if the stack empties
+/// (overlay opened from idle) an undo stop is recorded; mid-enemy-turn the
+/// action bundles into that drain's idle point. Aborts on load_error (the
+/// drain-loop convention — the error popup takes over).
+fn pushPlayerActionAndDrain(
+    history: *GameStateHistory,
+    action: events.PlayerInputEvent,
+) void {
+    const current = &history.current_state;
+    const allocator = history.current_arena.allocator();
+    const baseline = current.event_stack.len;
+    event_handlers.pushPlayerAction(current, action, allocator);
+    while (current.event_stack.len > baseline) {
+        if (history.load_error) break;
+        event_handlers.processEvent(history);
+    }
+}
+
+/// Queue the menu sound for an Escape keypress that does something (a
+/// closing overlay or a triggered action). Keybind-triggered actions have no
+/// button, so the input-handler site queues the feedback sound (see DESIGN →
+/// Audio → Button press/release model).
+fn queueMenuSound(history: *GameStateHistory) void {
+    if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
+}
+
+/// Escape: close the topmost open overlay; with nothing closable open (and
+/// on level/hub), open the options menu. The steps mirror the view's z-order
+/// (topmost surface first; the error popup is more-modal still but is
+/// consumed by the pending_error gate at the top of handleAnytimeInput).
+/// Mission fail/complete reuse the exact orchestrator events their overlay
+/// buttons push, so Escape ≡ clicking the button — both land on the undo
+/// timeline as recorded player actions. See DESIGN → Input → Escape overlay
+/// chain.
+fn handleEscapeKey(history: *GameStateHistory) void {
+    const current = &history.current_state;
+    const ui_state = &history.session.ui_state;
+
+    // Settings overlay (drawn above everything but the error popup). In-game
+    // it opens on top of the options menu, so Escape steps back to the menu
+    // underneath — only the settings layer closes.
+    if (ui_state.settings_open) {
+        queueMenuSound(history);
+        ui_state.settings_open = false;
+        return;
+    }
+
+    // Mission-fail overlay: Escape fires the same orchestrator its Exit
+    // Mission button does (end_level routes PlayerData persistence + the
+    // return to the hub). Undo (processed earlier in handleAnytimeInput)
+    // remains the other escape from the fail state.
+    if (view_mod.playerDead(current)) {
+        if (current.screen != .level) return;
+        queueMenuSound(history);
+        pushPlayerActionAndDrain(history, .player_exit_mission);
+        return;
+    }
+
+    // Mission-complete overlay: Escape fires the Continue button's
+    // dismiss_mission_complete (on the undo timeline — undo re-shows, redo
+    // dismisses).
+    if (current.last_completed_mission != null) {
+        queueMenuSound(history);
+        pushPlayerActionAndDrain(history, .dismiss_mission_complete);
+        return;
+    }
+
+    // Main-menu overlays (the options menu and mission overlays can never be
+    // open on the main menu, so these sit topmost whenever they're up).
+    if (ui_state.load_save_menu_open) {
+        queueMenuSound(history);
+        ui_state.load_save_menu_open = false;
+        return;
+    }
+    if (ui_state.credits_open) {
+        queueMenuSound(history);
+        ui_state.credits_open = false;
+        return;
+    }
+
+    // Options menu (always-on-top modal): close it, leaving any full-screen
+    // overlay beneath it open.
+    if (ui_state.options_menu_open) {
+        queueMenuSound(history);
+        ui_state.options_menu_open = false;
+        return;
+    }
+
+    // Full-screen overlays (world map, full combat log): close the topmost
+    // open one (the last occupied slot draws on top).
+    var topmost_overlay_slot: ?usize = null;
+    for (ui_state.open_full_screen_overlays, 0..) |overlay, slot_index| {
+        if (overlay != null) topmost_overlay_slot = slot_index;
+    }
+    if (topmost_overlay_slot) |slot_index| {
+        queueMenuSound(history);
+        ui_state.open_full_screen_overlays[slot_index] = null;
+        return;
+    }
+
+    // Nothing to close: open the options menu. It is the in-game pause/exit
+    // menu — its entries (Restart/Exit Mission/Exit to Main Menu) are
+    // meaningful only in level/hub; the main menu has its own button stack,
+    // so Escape is a no-op there.
+    if (current.screen == .main_menu) return;
+    queueMenuSound(history);
+    ui_state.options_menu_open = true;
+}
+
 pub fn handleAnytimeInput(
     history: *GameStateHistory,
     anytime: input.AnytimeInput,
@@ -785,41 +904,12 @@ pub fn handleAnytimeInput(
     }
 
     if (anytime.toggle_options_menu) {
-        // The options menu is the in-game pause/exit menu — its entries
-        // (Restart/Exit Mission/Exit to Main Menu) are meaningful only in
-        // level/hub. The main menu has its own button stack, so Escape is
-        // a no-op there. See DESIGN → UI Framework → Settings screen.
-        if (history.current_state.screen == .main_menu) return;
-        // Don't open the options menu when a modal overlay is already up
-        // (mission_fail or mission_complete) — one modal at a time.
-        // Undo/redo still works (processed above) as an escape from the fail
-        // state.
-        if (!view_mod.playerDead(&history.current_state) and
-            history.current_state.last_completed_mission == null)
-        {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
-            history.session.ui_state.options_menu_open = !history.session.ui_state.options_menu_open;
-            // Closing the options menu (Escape) also closes the settings
-            // overlay stacked on top of it — otherwise Escape leaves an
-            // orphaned settings panel over the live game. The settings menu
-            // is only ever open on top of the options menu (in-game) or over
-            // the main menu (where Escape is a no-op above), so this only
-            // affects the in-game drill-in path.
-            if (!history.session.ui_state.options_menu_open) {
-                history.session.ui_state.settings_open = false;
-            }
-        }
+        handleEscapeKey(history);
     }
 
     // Options menu actions dispatch before the modal gate so they take effect
-    // immediately despite the menu pausing the game. The menu opens in a
-    // previous frame; nothing drains while it's open (update() returns at the
-    // gate below), so event_stack.len here equals the depth when the menu
-    // opened — that's the drain baseline. Push the action's events on top,
-    // then drain back down to it. Idle-point recording is left to the normal
-    // maybeRecordIdlePoint in gameLoop (no special case): if the stack
-    // empties (menu opened from idle) an undo stop is recorded; if mid-
-    // enemy-turn the save bundles into that drain's idle point.
+    // immediately despite the menu pausing the game. Draining is
+    // pushPlayerActionAndDrain's job (see its doc for the baseline reasoning).
     if (anytime.options_action) |action| {
         const current = &history.current_state;
         const allocator = history.current_arena.allocator();
@@ -831,41 +921,21 @@ pub fn handleAnytimeInput(
                     "saves/save_{s}.txt",
                     .{timestamp},
                 ) catch @panic("failed to format save path");
-                const baseline = history.current_state.event_stack.len;
-                event_handlers.pushPlayerAction(current, .{ .save_game = .{ .save_path = save_path } }, allocator);
-                while (history.current_state.event_stack.len > baseline) {
-                    if (history.load_error) break;
-                    event_handlers.processEvent(history);
-                }
+                pushPlayerActionAndDrain(history, .{ .save_game = .{ .save_path = save_path } });
             },
             // Exit-path buttons: push the player orchestrator event, then
             // drain. The orchestrator handler pushes the machinery (end_level
             // or end_hub + open_main_menu) as children. See events.zig.
             .restart_mission => {
                 if (current.screen != .level) return;
-                const baseline = history.current_state.event_stack.len;
-                event_handlers.pushPlayerAction(current, .player_restart_mission, allocator);
-                while (history.current_state.event_stack.len > baseline) {
-                    if (history.load_error) break;
-                    event_handlers.processEvent(history);
-                }
+                pushPlayerActionAndDrain(history, .player_restart_mission);
             },
             .exit_mission => {
                 if (current.screen != .level) return;
-                const baseline = history.current_state.event_stack.len;
-                event_handlers.pushPlayerAction(current, .player_exit_mission, allocator);
-                while (history.current_state.event_stack.len > baseline) {
-                    if (history.load_error) break;
-                    event_handlers.processEvent(history);
-                }
+                pushPlayerActionAndDrain(history, .player_exit_mission);
             },
             .exit_to_menu => {
-                const baseline = history.current_state.event_stack.len;
-                event_handlers.pushPlayerAction(current, .player_exit_to_menu, allocator);
-                while (history.current_state.event_stack.len > baseline) {
-                    if (history.load_error) break;
-                    event_handlers.processEvent(history);
-                }
+                pushPlayerActionAndDrain(history, .player_exit_to_menu);
             },
             // Mission-complete overlay: Continue pushes dismiss_mission_complete
             // (on the undo timeline — undo re-shows, redo dismisses). Replay
@@ -875,31 +945,16 @@ pub fn handleAnytimeInput(
             // only in the hub); undo from the level back to the hub re-shows
             // it (last_completed_mission is in the snapshot).
             .continue_after_mission => {
-                const baseline = history.current_state.event_stack.len;
-                event_handlers.pushPlayerAction(current, .dismiss_mission_complete, allocator);
-                while (history.current_state.event_stack.len > baseline) {
-                    if (history.load_error) break;
-                    event_handlers.processEvent(history);
-                }
+                pushPlayerActionAndDrain(history, .dismiss_mission_complete);
             },
             .replay_mission => {
                 if (current.last_completed_mission == null) return;
-                const baseline = history.current_state.event_stack.len;
-                event_handlers.pushPlayerAction(current, .player_replay_mission, allocator);
-                while (history.current_state.event_stack.len > baseline) {
-                    if (history.load_error) break;
-                    event_handlers.processEvent(history);
-                }
+                pushPlayerActionAndDrain(history, .player_replay_mission);
             },
             .overwrite_clone => {
                 const info = current.last_completed_mission orelse return;
                 if (!info.overwrite_offered) return;
-                const baseline = history.current_state.event_stack.len;
-                event_handlers.pushPlayerAction(current, .player_overwrite_clone, allocator);
-                while (history.current_state.event_stack.len > baseline) {
-                    if (history.load_error) break;
-                    event_handlers.processEvent(history);
-                }
+                pushPlayerActionAndDrain(history, .player_overwrite_clone);
             },
             // Settings button (main menu OR options menu): toggle the
             // settings overlay. From the options menu it opens on top
