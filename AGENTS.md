@@ -256,8 +256,11 @@ option, not a runtime flag:
 
 - `-Ddev-mode` build option (in `build.zig`), defaulted to
   `optimize == .Debug`. So `zig build run` (debug) gets dev tools for free;
-  `-Ddev-mode=true -Doptimize=ReleaseFast` opts in for a near-release build;
-  release/web builds default to clean (no dev tools compiled in). Exposed to
+  `-Ddev-mode=true -Doptimize=ReleaseFast` opts in for a near-release build.
+  Dev mode follows the optimize level, so the web build (which defaults to
+  Debug like every `zig build` target) has it ON unless you pass
+  `--release=fast`; a release web build is clean (no dev tools compiled in).
+  Exposed to
 code via `@import("build_info").dev_mode` (comptime-constant per build,
   threaded through the shared `build_info_module` used by exe + wasm +
   tests).
@@ -301,15 +304,18 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   dragToEvent test lives here.
 - `src/view.zig` — `view()` (builds ViewState each frame from GameState +
   SessionState + the per-frame arena) + world drawable builders (tiles,
-  overlays, entities, flag poles) + camera math (computeCamera, tileToScreen)
-  + sprite/flag frame/pivot constants.
+  overlays, entities, decoration pieces, ground items, flag poles, occlusion
+  insets, health bars) + camera math (computeCamera, tileToScreen) +
+  sprite/flag frame/pivot constants.
 - `src/native.zig` — native exe entry (raylib); `src/web.zig` — web (emscripten)
   exe entry (IDBFS persistence + emscripten main-loop driver);
   `src/raylib_backend.zig` — raylib window/clock/input/render backend (see DESIGN → Platform Seam)
 - `src/state.zig` — GameState, GameStateHistory (+ SessionState, undo/redo/
-  replay timeline: recordEvent/discardFutureTimeline), Screen
+  replay timeline: recordEvent/discardFutureTimeline/replayTo/
+  reconstructFromEventLog/validatePlayerAction), Screen
 - `src/types.zig` — all game data types, Entity with getEffective* methods
-- `src/events.zig` — event hierarchy (Meta, Super, Level, SubLevel, Editor)
+- `src/events.zig` — event hierarchy (Meta, Super, Player, Level, SubLevel,
+  Editor, PlayerInput, ReplayViewer categories)
 - `src/parser.zig` — generic config-file format layer: `Section`/
   `EntryGroup`/`KeyValuePair` types, `parseConfigFile`, section/key
   whitelists + `validateSections`/`validateFileFormatVersion`/
