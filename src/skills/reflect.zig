@@ -12,8 +12,9 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Reflect: an off-hand skill. Grants the Reflect effect on the caster — while
-/// active, incoming damage is prevented and dealt back to the attacker.
-/// Turn-ending (weapon skill).
+/// active, incoming attack damage is prevented and dealt back to the attacker.
+/// Collision damage from knockback is NOT reflected — it's the counterplay
+/// around the shield. Turn-ending (weapon skill).
 pub const skill = Skill{
     .name = "Reflect",
     .skill_type = .weapon_skill,

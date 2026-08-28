@@ -2760,8 +2760,8 @@ pub fn processEvent(
                     // applied the attacker's outgoing modifiers (same as
                     // `attack`); the handler applies only the defender's
                     // incoming modifiers. Collision does NOT go through
-                    // damage intercepts (Reflect doesn't reflect collision
-                    // damage — by design).
+                    // damage intercepts — deliberate counterplay around
+                    // Reflect. See DESIGN → Architecture.
                     const incoming_damage = defender.getEffectiveIncomingDamage(collision.damage);
 
                     // Damage number always shows (even 0) so a connecting

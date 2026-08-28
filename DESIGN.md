@@ -1342,6 +1342,13 @@ So a clone is a permanent, compounding material factory keyed by mission.
   event. Only add a new event when a skill must mutate a state dimension no
   existing event covers; prefer composing existing primitives. Reactive
   mechanics (e.g. Reflect) belong in the effect system, not as skill events.
+  **Reflect does not intercept collision damage — deliberate counterplay.**
+  The `attack` handler routes damage through the defender's damage
+  interceptors (the transform stage); the `collision` handler deliberately
+  skips that fold. Knockback into an obstacle is the intended way to deal
+  damage through a Reflect shield, so the skill/effect descriptions say
+  "incoming ATTACK damage". Any future interceptor inherits the same
+  attack-only scope.
   **Aggro + level-end are decoupled.** `aggro_check` (no payload) scans every
   inactive entity and activates it if it sees an opposing entity within ITS
   OWN `aggro_range` — self-centric, one event covers the whole level. Pushed

@@ -13,7 +13,7 @@ const DamageInterception = effect_mod.DamageInterception;
 /// the damage to the receiver and emits an attack back at the attacker.
 pub const effect = Effect{
     .name = "Reflect",
-    .description = "Incoming damage is prevented and dealt to the attacker",
+    .description = "Incoming attack damage is prevented and dealt to the attacker",
     .additive_effect_modifiers = .{},
     .effect_sprite = "reflect",
     .intercept_incoming_damage_fn = &interceptIncomingDamage,
