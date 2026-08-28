@@ -2253,7 +2253,7 @@ on the main menu, surfacing nonsensical exit buttons.
 
 **Control kinds.** Every field is one of:
 - **Toggle** (bool): click to flip. `vsync`,
-  `auto_skip_attack_step_out_of_combat`, `auto_target_at_cursor`.
+  `auto_skip_attack_step_out_of_combat`, `auto_target_at_cursor`, `show_fps`.
 - **Choice** (discrete values): `camera_zoom` (4-button row: 25 / 50 /
   75 / 100 hundredths; 100 = 1.0× zoomed in, 25 = 0.25× max zoom out,
   default 50; the f32 lives at the render/input seam), `player_color_index`

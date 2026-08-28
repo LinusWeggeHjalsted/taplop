@@ -231,6 +231,9 @@ pub fn loadSettings(
             if (findValue(pairs, "auto_target_at_cursor")) |value| {
                 settings.auto_target_at_cursor = asBool(value) orelse settings.auto_target_at_cursor;
             }
+            if (findValue(pairs, "show_fps")) |value| {
+                settings.show_fps = asBool(value) orelse settings.show_fps;
+            }
             if (findValue(pairs, "player_color_index")) |value| {
                 settings.player_color_index = asU32(value) orelse settings.player_color_index;
             }
@@ -1887,6 +1890,7 @@ test "loadSettings parses settings sections into a Settings struct" {
         \\Gameplay
         \\auto_skip_attack_step_out_of_combat false
         \\auto_target_at_cursor true
+        \\show_fps true
         \\
         \\InputBindings
         \\input_type key
@@ -1917,6 +1921,7 @@ test "loadSettings parses settings sections into a Settings struct" {
     // Gameplay values
     try std.testing.expectEqual(false, settings.auto_skip_attack_step_out_of_combat);
     try std.testing.expectEqual(true, settings.auto_target_at_cursor);
+    try std.testing.expectEqual(true, settings.show_fps);
 
     // Input bindings
     try std.testing.expectEqual(2, settings.input_bindings.len);

@@ -178,6 +178,17 @@ pub const SessionState = struct {
     /// screen (Live-apply).
     last_applied_volumes: struct { master: u32, music: u32, sfx: u32 } = .{ .master = 0, .music = 0, .sfx = 0 },
 
+    /// Smoothed FPS counter for the optional on-screen diagnostic overlay
+    /// (`settings.show_fps`). An exponential moving average over the actual
+    /// rendered frame interval (the time between consecutive renders, sampled
+    /// in `frame()`'s render gate). Transient view state — off the undoable
+    /// GameState, advanced in `frame()` only (never in handlers, so the
+    /// replay-purity invariant holds), so replay-safe by construction. 0
+    /// until the first render lands (then seeded with the first instant FPS).
+    /// See DESIGN → Animation for the clock-in-`frame()`-only invariant this
+    /// mirrors.
+    fps_smoothed: f32 = 0,
+
     /// Pending debounced writes (currently settings persistence). A small fixed array keyed by `PendingWrite.Tag`; each tag
     /// coalesces (a new dirty-mark refreshes the deadline rather than
     /// enqueueing a second write). Fired by `frame()` when the deadline

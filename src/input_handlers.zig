@@ -923,6 +923,7 @@ pub fn handleAnytimeInput(
                         settings.auto_skip_attack_step_out_of_combat = !settings.auto_skip_attack_step_out_of_combat,
                     .auto_target_at_cursor =>
                         settings.auto_target_at_cursor = !settings.auto_target_at_cursor,
+                    .show_fps => settings.show_fps = !settings.show_fps,
                     .camera_zoom => settings.camera_zoom = sref.choice_value orelse return,
                     .player_color_index => settings.player_color_index = sref.choice_value orelse return,
                     // Sliders are handled by the drag handler (slice 3b),

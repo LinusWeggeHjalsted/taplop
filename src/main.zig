@@ -516,6 +516,22 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         history.current_state.waiting == null and
         history.session.pending_error == null;
     if (!drain_in_progress and since_last_render >= render_interval) {
+        // Smoothed FPS: an EMA over the actual rendered frame interval
+        // (`since_last_render` IS the time between this render and the last).
+        // Advanced here, in `frame()` only — never in handlers, so the
+        // replay-purity invariant holds (handlers never touch wall-clock).
+        // Read by `view()` for the optional `show_fps` overlay. See DESIGN
+        // → Animation for the clock-in-`frame()`-only rule this mirrors.
+        if (since_last_render > 0) {
+            const instant: f32 = @as(f32, std.time.us_per_s) /
+                @as(f32, @floatFromInt(since_last_render));
+            if (history.session.fps_smoothed == 0) {
+                history.session.fps_smoothed = instant; // cold-start seed
+            } else {
+                const alpha: f32 = 0.1;
+                history.session.fps_smoothed += alpha * (instant - history.session.fps_smoothed);
+            }
+        }
         // Render camera is computed from the POST-update current_state, NOT the
         // pre-update camera used for input above. The input camera must reflect
         // the previously-rendered view (clicks are made against what's on

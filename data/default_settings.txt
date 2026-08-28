@@ -15,6 +15,7 @@ animation_fps 4
 Gameplay
 auto_skip_attack_step_out_of_combat true
 auto_target_at_cursor true
+show_fps false
 player_color_index 0
 
 InputBindings

@@ -5505,3 +5505,22 @@ auto-target) + 2 choices (camera_zoom 4-button, player_color_index 6-swatch).
   and `applyVsync` stays init-only. camera_zoom / render_fps_cap /
   animation_fps are read live each frame by `view()`/`frame()` — no apply
   step needed.
+
+### Show FPS setting + diagnostic overlay
+
+`Settings.show_fps: bool` (default off) + `SettingId.show_fps` toggle row in
+the settings panel (row 10, same shape as the other toggle rows; row_count
+bumped 10 → 11). Persisted in `data/default_settings.txt` Gameplay section
+(`show_fps false`); loader/writer/key-whitelist wired.
+
+The on-screen FPS counter is an EMA over the ACTUAL rendered frame interval:
+`frame()`'s render gate already computes `since_last_render` (real-clock µs
+between consecutive renders), so inside the gate an EMA (`alpha = 0.1`,
+cold-start seeded with the first instant FPS, `since_last_render > 0` guard)
+updates `SessionState.fps_smoothed` (f32). `view()` reads `session.fps_smoothed`
++ `settings.show_fps` and emits a non-blocking, outlined `text_label`
+(`"FPS <N>"`, rounded) at `(16, 16)` — appended last so it draws on top of
+all UI regardless of screen. The clock read stays in `frame()` only (never
+in handlers / `view()`), so the replay-purity invariant holds; the field is
+off the undoable GameState, so replay-safe by construction. Visible on all
+screens (main menu / level / hub / overlays), not just where the top bar is.

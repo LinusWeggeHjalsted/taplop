@@ -4543,7 +4543,7 @@ pub fn buildSettingsPanel(
     // the label text, not at a fixed column). Vertically stacked below the
     // header, centered as a group between header and Back button.
 
-    // 10 rows (5 toggle/choice + 5 slider):
+    // 11 rows (5 toggle/choice + 5 slider + 1 fps toggle):
     //   0. Master Volume (slider 0–100)
     //   1. Music Volume (slider 0–100)
     //   2. Sound Effects Volume (slider 0–100)
@@ -4554,7 +4554,8 @@ pub fn buildSettingsPanel(
     //   7. Player Color (6-swatch choice)
     //   8. Auto-skip attack step (toggle)
     //   9. Auto-target at cursor (toggle)
-    const row_count: i32 = 10;
+    //  10. Show FPS (toggle)
+    const row_count: i32 = 11;
     const rows_total_height = rowWidth(row_count, settings_row_height, settings_row_gap);
     const buttons_top = screen.y + screen.height - settings_padding -
         settings_button_height - settings_button_gap;
@@ -4774,6 +4775,24 @@ pub fn buildSettingsPanel(
             if (settings.auto_target_at_cursor) "On" else "Off",
             settings_row_font_size,
             .{ .id = .auto_target_at_cursor },
+            false,
+            button_color,
+        );
+    }
+    row_index += 1;
+
+    // Row 10: Show FPS toggle.
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Show FPS", content_x, r_y);
+        try emitSettingButton(
+            elements,
+            allocator,
+            font_metrics,
+            .{ .x = ctrl_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
+            if (settings.show_fps) "On" else "Off",
+            settings_row_font_size,
+            .{ .id = .show_fps },
             false,
             button_color,
         );

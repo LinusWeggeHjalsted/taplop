@@ -142,6 +142,7 @@ pub const SettingId = enum {
     animation_fps,
     auto_skip_attack_step_out_of_combat,
     auto_target_at_cursor,
+    show_fps,
     player_color_index,
 };
 
@@ -221,6 +222,10 @@ pub const Settings = struct {
     animation_fps: u32 = 8,
     auto_skip_attack_step_out_of_combat: bool = true,
     auto_target_at_cursor: bool = true,
+    /// Render an FPS counter in the top-left corner. Diagnostic overlay —
+    /// off the undoable GameState (read live by `view()`), so replay-safe
+    /// by construction. Default off.
+    show_fps: bool = false,
     /// Player color index into the current theme's player gradient. Read at
     /// render time to tint the player entity + UI. Default 0 (lightest).
     player_color_index: u32 = 0,

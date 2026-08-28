@@ -265,6 +265,7 @@ pub fn writeSettings(
     try buffer.appendSlice(allocator, "\nGameplay\n");
     try buffer.print(allocator, "auto_skip_attack_step_out_of_combat {}\n", .{settings.auto_skip_attack_step_out_of_combat});
     try buffer.print(allocator, "auto_target_at_cursor {}\n", .{settings.auto_target_at_cursor});
+    try buffer.print(allocator, "show_fps {}\n", .{settings.show_fps});
     try buffer.print(allocator, "player_color_index {d}\n", .{settings.player_color_index});
 
     // InputBindings — one entry group per binding, blank-line-separated.

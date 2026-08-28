@@ -457,6 +457,24 @@ pub fn view(
     else
         &.{};
 
+    // FPS diagnostic overlay: drawn last (on top of all UI) in the top-left
+    // corner when `settings.show_fps` is on. Non-blocking so it can't steal
+    // clicks; outlined for readability over any background. Reads the EMA
+    // maintained in `frame()`'s render gate — pure over SessionState, so
+    // replay-safe.
+    if (settings.show_fps) {
+        const fps_rounded: i32 = @intFromFloat(@round(session.fps_smoothed));
+        const fps_text = std.fmt.allocPrint(frame_allocator, "FPS {d}", .{fps_rounded}) catch
+            @panic("failed to format fps label");
+        ui_elements.append(frame_allocator, .{ .text_label = .{
+            .text = fps_text,
+            .screen_position = .{ .x = 16, .y = 16 },
+            .font_size = ui.settings_row_font_size,
+            .outlined = true,
+            .blocks_input = false,
+        } }) catch @panic("failed to append fps label");
+    }
+
     return .{
         .background_color = worldGradientColor(active_theme, 2),
         .active_color_theme = active_theme,
