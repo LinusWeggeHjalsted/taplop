@@ -965,21 +965,9 @@ pub const RaylibBackend = struct {
                 }
             },
             .cursor => {
-                // Outline hugging the tile graphic's silhouette instead of
-                // a plain rectangle: draw the precomputed edge mask of
-                // world/tile tinted with the cursor color. Falls back to
-                // rectangle lines if the mask is unavailable.
-                if (self.getOutlineTexture("world/tile")) |mask| {
-                    const source = rl.Rectangle{
-                        .x = 0,
-                        .y = 0,
-                        .width = @floatFromInt(mask.width),
-                        .height = @floatFromInt(mask.height),
-                    };
-                    rl.drawTexturePro(mask, source, rectangle, .{ .x = 0, .y = 0 }, 0, toRaylibColor(overlay.color, 255));
-                } else {
-                    rl.drawRectangleLinesEx(rectangle, line_width, toRaylibColor(overlay.color, 255));
-                }
+                // Square outline around the hovered tile (same primitive as
+                // the range/radius/aggro outlines).
+                rl.drawRectangleLinesEx(rectangle, line_width, toRaylibColor(overlay.color, 255));
             },
             .range_outline, .radius_outline, .aggro_outline => {
                 rl.drawRectangleLinesEx(rectangle, line_width, toRaylibColor(overlay.color, 255));
