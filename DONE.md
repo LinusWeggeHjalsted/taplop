@@ -5624,6 +5624,19 @@ texels, bilinear sampling blends in premultiplied space: a transparent
   texture sources must call `premultiplyAlpha` (or be binary) or they'll
   render washed out.
 
+**Font atlas format bug (fixed same session).** The first premultiply pass
+converted the font readback to RGBA8 before `updateTexture` — but raylib
+font atlases are `GRAY_ALPHA` (2bpp), and `updateTexture` uploads bytes
+assuming the TEXTURE's format. Uploading 4bpp data to a 2bpp texture
+reinterpreted the first half of the atlas bytes as gray-alpha pairs → all
+panel/button/tooltip text garbled into wrong-sized sliced fragments. Fix:
+premultiply in the texture's NATIVE format (gray = gray*alpha/255 for
+GRAY_ALPHA; RGBA8 via the shared helper), NO format conversion, then
+re-upload. The premult-blend math for a premultiplied gray-alpha glyph is
+exactly right: fragment rgb = coverage*tint.rgb, fragment a = coverage, and
+(ONE, ONE_MINUS_SRC_ALPHA) composites coverage*tint over the destination —
+the straight-alpha result.
+
 **Dead-code cleanup:** the tile-highlight renderer arm still had the
 pre-animation-sheet shape — an `else` rectangle-fill branch for
 `source_rectangle == null`, which no producer emits

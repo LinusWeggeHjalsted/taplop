@@ -275,18 +275,39 @@ fn blitTransform() ViewTransform {
 /// re-upload) so text composites correctly under `BLEND_ALPHA_PREMULTIPLY`.
 /// The atlas is white-glyph-on-transparent with straight alpha; under a
 /// premultiplied blend that would render too dark (white*alpha applied
-/// twice), so we premultiply once at load. One-time startup cost. Best-
-/// effort: if the GPU readback fails, the atlas stays straight-alpha (text
-/// renders slightly off under premult blend, but never crashes). See
-/// DESIGN → Platform Seam → Render target resolution (premultiplied alpha).
+/// twice), so we premultiply once at load. One-time startup cost.
+///
+/// The premultiply happens in the texture's NATIVE format — raylib font
+/// atlases are `GRAY_ALPHA` (gray = color, alpha = coverage; premultiplying
+/// means gray = gray*alpha/255). `updateTexture` uploads bytes assuming the
+/// texture's own format, so converting the readback image to RGBA8 first
+/// would upload 4bpp data to a 2bpp texture and garble the atlas (glyphs
+/// sliced into wrong-sized fragments). Best-effort: if the readback fails or
+/// the format is unexpected, the atlas stays straight-alpha (text renders
+/// slightly off under premult blend, but never crashes). See DESIGN →
+/// Platform Seam → Render target resolution (premultiplied alpha).
 fn premultiplyFontTexture(texture: rl.Texture2D) void {
     var image = rl.loadImageFromTexture(texture) catch {
         std.debug.print("warning: font atlas readback failed; text may render slightly dark\n", .{});
         return;
     };
     defer rl.unloadImage(image);
-    image.setFormat(.uncompressed_r8g8b8a8);
-    RaylibBackend.premultiplyAlpha(&image);
+    switch (image.format) {
+        .uncompressed_gray_alpha => {
+            const w: usize = @intCast(image.width);
+            const h: usize = @intCast(image.height);
+            const px: [*]u8 = @ptrCast(image.data);
+            for (0..w * h) |i| {
+                const a: u16 = px[i * 2 + 1];
+                px[i * 2] = @intCast((@as(u16, px[i * 2]) * a + 127) / 255);
+            }
+        },
+        .uncompressed_r8g8b8a8 => RaylibBackend.premultiplyAlpha(&image),
+        else => {
+            std.debug.print("warning: font atlas has unexpected format {}; text may render slightly dark\n", .{image.format});
+            return;
+        },
+    }
     rl.updateTexture(texture, image.data);
 }
 
