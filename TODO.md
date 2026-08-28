@@ -94,7 +94,8 @@ Test by running `zig build run` and clicking through.
   (ui/icon_swap, ui/momentum draw magenta). (Real TTF
   font + glyph metrics DONE — see DONE.md.) Gear-tooltip comparison
   colors are full green/red placeholders — artist to pick softer shades
-  (`comparison_positive_color`/`comparison_negative_color`, ui.zig).
+  (`ui.positive_color`/`ui.negative_color`, shared by tooltip comparisons
+  and combat damage/heal numbers).
 - **Larger systems (beyond MVP)** — middle panels (inventory/gear/skills/enemy
   inspect) + overlays (world map, full combat log) + options/settings/top bar
   (drag-drop needs panels to be usable); NPC interaction/dialogue; audio.
@@ -214,7 +215,8 @@ Open / in-progress:
         nonzero damage; damage numbers on `attack`/`collision` (500ms) and
         heal numbers on `heal` (500ms) — float 1 tile eased with
         `tween.easeOutCubic` from the bbox edge/corner (damage: away from
-        attacker; heal: up-right from top-left), `active_theme.lightest` +
+        attacker; heal: up-right from top-left), `ui.positive_color`/
+        `ui.negative_color` (heals green, damage red — including 0 values) +
         black text outline, per-entity 0.125s stagger.
     - [ ] Future: attack swings, death dissolves (multi-frame one-shots;
           same machinery, richer `AnimKind`).

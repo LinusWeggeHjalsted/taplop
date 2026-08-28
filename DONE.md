@@ -5314,3 +5314,13 @@ sidebars).
 - Tests: both-hands weapon row span-by-span (text + colors + `0`
   uncolored), negative/empty-off-hand baselines, per-stat coat
   comparison, empty-slot-vs-zero.
+
+### Combat damage/heal numbers use the stat-feedback colors (done)
+
+Floating damage numbers in combat are now red and heal numbers green
+(including 0 values), replacing the previous `active_theme.lightest`
+tint. The tooltip comparison colors were renamed
+`comparison_positive_color`/`comparison_negative_color` → pub
+`ui.positive_color`/`ui.negative_color` since they now serve both
+consumers (gear-tooltip comparisons + combat numbers) — one artist-pass
+shade change updates both.

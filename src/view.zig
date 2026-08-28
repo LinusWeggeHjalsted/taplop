@@ -973,7 +973,8 @@ fn buildWorldOverlays(
                     .text = text,
                     .screen_position = pos,
                     .font_size = number_font_size,
-                    .color = active_theme.lightest,
+                    // Damage reads red regardless of magnitude — including 0.
+                    .color = ui.negative_color,
                 } }) catch @panic("failed to append world overlay");
             },
             .heal_number => |info| {
@@ -998,7 +999,8 @@ fn buildWorldOverlays(
                     .text = text,
                     .screen_position = pos,
                     .font_size = number_font_size,
-                    .color = active_theme.lightest,
+                    // Heals read green regardless of magnitude — including 0.
+                    .color = ui.positive_color,
                 } }) catch @panic("failed to append world overlay");
             },
         }

@@ -1479,9 +1479,10 @@ pub fn equippedGearFromEntity(entity: Entity) EquippedGear {
     };
 }
 
-/// Comparison-number colors in gear tooltips: full-saturation green/red.
-const comparison_positive_color: Color = .{ .r = 0, .g = 255, .b = 0 };
-const comparison_negative_color: Color = .{ .r = 255, .g = 0, .b = 0 };
+/// Green/red for stat feedback: gear-tooltip comparisons and combat
+/// damage/heal numbers (damage red, heals green — including 0 values).
+pub const positive_color: Color = .{ .r = 0, .g = 255, .b = 0 };
+pub const negative_color: Color = .{ .r = 255, .g = 0, .b = 0 };
 
 /// One comparison number: "+d" green when the hovered item's stat is
 /// higher, "-d" red when lower, uncolored "0" when equal.
@@ -1492,10 +1493,10 @@ fn comparisonSpan(
 ) !Span {
     const difference: i32 = @as(i32, @intCast(item_value)) - @as(i32, @intCast(equipped_value));
     if (difference > 0) {
-        return colored(try std.fmt.allocPrint(allocator, "+{d}", .{difference}), comparison_positive_color);
+        return colored(try std.fmt.allocPrint(allocator, "+{d}", .{difference}), positive_color);
     }
     if (difference < 0) {
-        return colored(try std.fmt.allocPrint(allocator, "{d}", .{difference}), comparison_negative_color);
+        return colored(try std.fmt.allocPrint(allocator, "{d}", .{difference}), negative_color);
     }
     return text("0");
 }
@@ -1779,7 +1780,7 @@ test "buildItemTooltip: weapon compares damage against both equipped hands" {
     try std.testing.expectEqual(@as(usize, 5), row.len);
     try std.testing.expectEqualStrings("Damage 5 (", row[0].text);
     try std.testing.expectEqualStrings("+1", row[1].text);
-    try std.testing.expectEqual(comparison_positive_color, row[1].color);
+    try std.testing.expectEqual(positive_color, row[1].color);
     try std.testing.expectEqualStrings(", ", row[2].text);
     try std.testing.expectEqualStrings("0", row[3].text);
     try std.testing.expectEqual(default_tint, row[3].color);
@@ -1797,9 +1798,9 @@ test "buildItemTooltip: weapon negative comparison and empty off hand baseline" 
     const tooltip = try buildItemTooltip(arena.allocator(), weapon, &.{}, equipped);
     const row = tooltip.body[1];
     try std.testing.expectEqualStrings("-2", row[1].text);
-    try std.testing.expectEqual(comparison_negative_color, row[1].color);
+    try std.testing.expectEqual(negative_color, row[1].color);
     try std.testing.expectEqualStrings("+5", row[3].text);
-    try std.testing.expectEqual(comparison_positive_color, row[3].color);
+    try std.testing.expectEqual(positive_color, row[3].color);
 }
 
 test "buildItemTooltip: coat compares each stat against the equipped coat" {
@@ -1816,7 +1817,7 @@ test "buildItemTooltip: coat compares each stat against the equipped coat" {
     try std.testing.expectEqual(@as(usize, 3), health_row.len);
     try std.testing.expectEqualStrings("Health 3 (", health_row[0].text);
     try std.testing.expectEqualStrings("-1", health_row[1].text);
-    try std.testing.expectEqual(comparison_negative_color, health_row[1].color);
+    try std.testing.expectEqual(negative_color, health_row[1].color);
     try std.testing.expectEqualStrings(")", health_row[2].text);
     const defense_row = tooltip.body[2];
     try std.testing.expectEqualStrings("0", defense_row[1].text);
@@ -1830,7 +1831,7 @@ test "buildItemTooltip: empty equipped slot compares against zero" {
     const tooltip = try buildItemTooltip(arena.allocator(), boots, &.{}, EquippedGear{});
     const speed_row = tooltip.body[2];
     try std.testing.expectEqualStrings("+1", speed_row[1].text);
-    try std.testing.expectEqual(comparison_positive_color, speed_row[1].color);
+    try std.testing.expectEqual(positive_color, speed_row[1].color);
 }
 
 
