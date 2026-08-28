@@ -62,12 +62,12 @@ pub fn build(b: *std.Build) void {
         .root_module = b.createModule(.{
             .root_source_file = b.path("tools/sdf_atlas_generator.zig"),
             .target = b.resolveTargetQuery(.{}), // always the build host
-            .optimize = .ReleaseFast, // 95 SDF glyphs at -O0 costs seconds
+            .optimize = .Debug, // fast to compile; the SDF run is a few seconds slower but only runs once per clean build
         }),
     });
     const raylib_generator_dep = b.dependency("raylib_zig", .{
         .target = b.resolveTargetQuery(.{}),
-        .optimize = .ReleaseFast,
+        .optimize = .Debug,
         // The FONT_SDF_* defines ARE load-bearing here (they set the SDF
         // encoding range raylib bakes into the glyphs); see the comment on
         // raylib_sdf_config_flags above.
@@ -109,6 +109,9 @@ pub fn build(b: *std.Build) void {
     const dev_mode = b.option(bool, "dev-mode", "Enable dev-only tools (skip level, etc.)") orelse
         (optimize == .Debug);
     build_info.addOption(bool, "dev_mode", dev_mode);
+    // Opt-in emscripten runtime debug features (ASSERTIONS, SAFE_HEAP, source
+    // maps) for browser-devtools work. Off by default for faster web links.
+    const web_debug_runtime = b.option(bool, "web-debug-runtime", "Enable emscripten ASSERTIONS/SAFE_HEAP/source maps") orelse false;
     const build_info_module = build_info.createModule();
 
     // === Native target (raylib desktop client) ===
@@ -225,6 +228,20 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .emsdk_allocator = .emmalloc,
     });
+    // Strip the expensive emscripten runtime-debug features from Debug web
+    // builds to speed up the emcc link (the dominant web-build cost, ~17s
+    // of the ~18s incremental). ASSERTIONS + SAFE_HEAP instrument every
+    // memory access / API call; -gsource-map parses DWARF to build source
+    // maps. The Zig compiler debug checks + allocator debug mode catch the
+    // same classes of bug; these emscripten features are opt-in via
+    // -Dweb-debug-runtime for browser-devtools work. -fsanitize=undefined
+    // stays (raylib C objects reference UBSan symbols).
+    if (optimize == .Debug and !web_debug_runtime) {
+        _ = emcc_flags.remove("-gsource-map");
+        emcc_settings.put("ASSERTIONS", "0") catch @panic("emcc settings OOM");
+        emcc_settings.put("SAFE_HEAP", "0") catch @panic("emcc settings OOM");
+        emcc_settings.put("USE_OFFSET_CONVERTER", "0") catch @panic("emcc settings OOM");
+    }
     // The game uses the emscripten filesystem: IDBFS for persistence (mounted
     // at /ziglop in web.zig), and embedded assets fall back through
     // FileSource.readFile to the persistent dir. FORCE_FILESYSTEM enables the

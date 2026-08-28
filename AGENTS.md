@@ -264,6 +264,15 @@ option, not a runtime flag:
 code via `@import("build_info").dev_mode` (comptime-constant per build,
   threaded through the shared `build_info_module` used by exe + wasm +
   tests).
+- `-Dweb-debug-runtime` build option (in `build.zig`), defaulted false. The
+  web Debug build strips emscripten's expensive runtime-debug features
+  (ASSERTIONS, SAFE_HEAP, source maps) by default to speed up the emcc link
+  (the dominant web-build cost). Pass `-Dweb-debug-runtime=true` to restore
+  them for browser-devtools work (source maps, null-pointer checks, etc.).
+  `-fsanitize=undefined` stays on regardless (raylib's C objects reference
+  UBSan symbols). The sdf_atlas_generator also builds in Debug (not
+  ReleaseFast) for faster clean builds; the SDF generation run is a few
+  seconds slower but only runs once per clean build.
 - The BINDING ships in `data/default_settings.txt` regardless (so the
   settings file stays the source of truth and a future binding-UI sees one
   set). The gate is at the HANDLER site (`if (build_info.dev_mode and ...)`),
