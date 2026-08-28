@@ -7,6 +7,7 @@
 
 const std = @import("std");
 const generated = @import("generated");
+const build_info = @import("build_info");
 
 pub const SkillId = generated.SkillId;
 pub const EffectId = generated.EffectId;
@@ -954,10 +955,34 @@ pub const NPC = struct {
 // View state — output of view(), input to renderer
 // ============================================================
 
-/// Fixed reference resolution. The view function produces coordinates
-/// in this space; the renderer scales to the actual viewport.
+/// Fixed reference (design) resolution. The view function + all UI layout
+/// math produce coordinates in this space; the renderer draws them into a
+/// separate (possibly smaller) render target via a camera zoom, then blits
+/// to the window. See DESIGN → Platform Seam → Render target resolution.
 pub const reference_width: i32 = 3840;
 pub const reference_height: i32 = 2160;
+
+/// Offscreen render target resolution (from the `-Drender-width`/`-Drender-
+/// height` build options, default 1920×1080). The backend creates its
+/// `RenderTexture` at this size and scales 4K design-space content into it
+/// via `beginMode2D`. Lower than reference → less fill rate. MUST share the
+/// reference aspect ratio (16:9) — the camera zoom is uniform, so a
+/// mismatched aspect would squish content (comptime-checked below).
+pub const render_width: i32 = build_info.render_width;
+pub const render_height: i32 = build_info.render_height;
+
+// Comptime aspect-ratio guard: the camera zoom (`render_width /
+// reference_width`) must be uniform, so the render target's aspect ratio
+// must match the reference's. A build with a mismatched aspect fails at
+// compile time with a clear message rather than rendering squished content.
+comptime {
+    const ref_ar = reference_width * reference_height; // unused, keeps both live
+    _ = ref_ar;
+    if (render_width * reference_height != render_height * reference_width) {
+        @compileError("render target aspect ratio must match reference (16:9): " ++
+            "render-width/render-height must be in the same ratio as 3840/2160");
+    }
+}
 
 /// Screen-space position in the reference resolution coordinate system.
 /// Integer because we work in a fixed logical resolution.

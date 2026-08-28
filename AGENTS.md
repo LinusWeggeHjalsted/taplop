@@ -377,7 +377,8 @@ stay here in AGENTS; this map is the seam between the two.
 
 - **Platform seam (raylib)** — DESIGN → Platform Seam (raylib): native/web
   driver split, budget-driven drain, render gating, letterbox, two-camera
-  model, camera pan, SDF text outline, allocator rule for emscripten. Key:
+  model, camera pan, render target resolution, SDF text outline, allocator
+  rule for emscripten. Key:
   `raylib_backend.zig`, `native.zig`, `web.zig`, `transient_allocator.zig`,
   `tools/sdf_atlas_generator.zig`.
 - **Audio** — DESIGN → Audio: sound as side effect, sfx queue + looping music

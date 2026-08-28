@@ -44,6 +44,25 @@ next session meets it as a surprise instead of a known.
   `applyVsync`). Entry is `pub fn run(backend, *SessionSetup)` — the caller
   builds the `SessionSetup` (config + `FrameState`) via `session_setup.zig`
   before calling `run`.
+- **Render target resolution** — the offscreen `RenderTexture` size is
+  DECOUPLED from the 4K design space (`types.reference_width/height`). All
+  layout/view math lives in 4K reference space; the backend draws into a
+  separate, possibly smaller target (`types.render_width/height`, build
+  options `-Drender-width`/`-Drender-height`, default 1920×1080) via a
+  `beginMode2D(Camera2D)` camera zoom (`render_scale = render_width /
+  reference_width`) that auto-scales every draw call down — no per-call-site
+  changes. The target is then blitted to the window letterboxed via a
+  `blitTransform` (render-dims → window), separate from the pointer's
+  `viewTransform` (reference 4K → window, used to map clicks back into the
+  design space the game thinks in). Lowering the render target cuts fill rate
+  (the dominant cost on fill-rate-limited GPUs — a level-visible 4K target
+  can cap uncapped FPS at ~60 on an old integrated GPU; 1080p is 4× less
+  fill). The render target MUST share the reference's 16:9 aspect ratio
+  (comptime-checked in types.zig) — the camera zoom is uniform, so a
+  mismatched aspect would squish content. Opt back to 3840×2160 for crispness
+  on high-DPI displays. `beginMode2D` does NOT affect `clearBackground`
+  (clears the full target regardless of matrix), so it runs before the camera
+  block.
 - The drain is BUDGET-DRIVEN: `frame()` calls `update()` repeatedly while the
   stack is non-empty, no wait is active, and <10ms has elapsed — so a
   multi-event drain completes within a single frame instead of one event per

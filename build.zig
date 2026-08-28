@@ -112,6 +112,21 @@ pub fn build(b: *std.Build) void {
     // Opt-in emscripten runtime debug features (ASSERTIONS, SAFE_HEAP, source
     // maps) for browser-devtools work. Off by default for faster web links.
     const web_debug_runtime = b.option(bool, "web-debug-runtime", "Enable emscripten ASSERTIONS/SAFE_HEAP/source maps") orelse false;
+    // Render target resolution — the offscreen RenderTexture size. Decoupled
+    // from the 4K design space (`types.reference_width/height`, which all
+    // layout/view math lives in): the backend draws 4K-space content into
+    // this smaller target via a `beginMode2D` camera zoom, then blits the
+    // target to the window. Lowering this cuts fill rate (the dominant cost
+    // on fill-rate-limited GPUs — a level-visible 4K target can cap uncapped
+    // FPS at ~60 on an old integrated GPU). Default 1920×1080 (4× less fill
+    // than 4K); opt back to 3840×2160 for crispness on high-DPI displays.
+    // MUST match the reference aspect ratio (16:9) — the camera zoom is
+    // uniform, so a mismatched aspect would squish content. See DESIGN →
+    // Platform Seam → Render target resolution.
+    const render_width = b.option(i32, "render-width", "Offscreen render target width (default 1920)") orelse 1920;
+    const render_height = b.option(i32, "render-height", "Offscreen render target height (default 1080)") orelse 1080;
+    build_info.addOption(i32, "render_width", render_width);
+    build_info.addOption(i32, "render_height", render_height);
     const build_info_module = build_info.createModule();
 
     // === Native target (raylib desktop client) ===

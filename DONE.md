@@ -5541,6 +5541,44 @@ overlay applies on web. Native is untouched (sync I/O, no race). The
 headless `node zig-out/web/ziglop.js` probe can't exercise this path (needs
 `window`/`FS`/rAF), so runtime verification is browser-only.
 
+### Render target resolution (decoupled from 4K design space)
+
+The offscreen `RenderTexture` was 3840×2160 (same as the reference/design
+space). Fill rate at 4K dominated the uncapped render cost: a level-visible
+scene (dozens of tiles + multi-layer entities + decorations + a full bottom
+bar = hundreds of textured quads rasterized into 8.3MP) capped an old
+integrated laptop GPU at ~60fps even in a `--release=fast` native build,
+while the sparse main menu hit 200fps. Fill rate, not draw-call count, was
+the ceiling (raylib already batches same-texture draws; an atlas wouldn't
+help).
+
+Fix: DECOUPLE the render target from the design space. All layout/view/UI
+math stays in 4K reference space (`types.reference_width/height`, unchanged).
+The backend creates its `RenderTexture` at a separate, smaller resolution
+(`types.render_width/height`, build options `-Drender-width`/`-Drender-
+height`, default 1920×1080) and wraps all draws in `beginMode2D(Camera2D)`
+with `zoom = render_scale` (`render_width / reference_width`, comptime).
+raylib's 2D camera auto-scales every `drawTexturePro`/`drawRectangleRec`/
+`drawTextEx` destination down — NO per-call-site changes in the ~30 draw
+sites. `clearBackground` is camera-independent (clears the full target), so
+it runs before the camera block.
+
+The blit to the window uses a new `blitTransform()` (render-dims → window,
+letterboxed), SEPARATE from the pointer's `viewTransform()` (reference 4K →
+window, unchanged). The game still thinks in 4K design space; clicks map
+window→4K via `viewTransform`, independent of the render target size. The
+on-screen content is identical because render + reference share 16:9 — a
+comptime aspect-ratio guard in `types.zig` rejects a mismatched render
+aspect with `@compileError` (the camera zoom is uniform; a mismatched
+aspect would squish content).
+
+1080p is 4× less fill than 4K → expect a large FPS jump on fill-rate-
+limited GPUs. Opt back to 4K with `-Drender-width=3840 -Drender-height=2160`
+for crispness on high-DPI displays. The build option lets A/B testing
+without code changes. Verified: native build (both 1080p + 4K), tests
+(headless, unaffected — no raylib), web compile. Runtime perf needs a
+browser/native click-test with a level visible.
+
 ### Show FPS setting + diagnostic overlay
 
 `Settings.show_fps: bool` (default off) + `SettingId.show_fps` toggle row in

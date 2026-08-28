@@ -9,12 +9,19 @@
 //!   render(view_state, viewport) void
 //!
 //! Rendering model: all UI/world content is authored in a fixed reference
-//! resolution (types.reference_width x reference_height). We draw it 1:1 into a
-//! reference-sized RenderTexture, then blit that to the window letterboxed
-//! (aspect-preserving, centered). Input maps the pointer back through the
-//! inverse of that same letterbox transform, so clicks line up with what is
-//! drawn. render() draws the background, the world drawables (tiles,
-//! decorations, entities, markers), and the flat UI element list.
+//! (design) resolution (types.reference_width x types.reference_height = 4K).
+//! We draw it into a RenderTexture at a SEPARATE, possibly smaller render
+//! target resolution (types.render_width/height, build option, default 1080p)
+//! via a `beginMode2D` camera zoom that scales 4K-space content down, then
+//! blit the target to the window letterboxed (aspect-preserving, centered).
+//! Input maps the pointer back through the inverse of the reference→window
+//! letterbox transform (independent of the render target size — the game
+//! thinks in 4K design space), so clicks line up with what is drawn. Decoupling
+//! the render target from the design space lets us cut fill rate (the dominant
+//! cost on fill-rate-limited GPUs) without touching layout/view math. See
+//! DESIGN → Platform Seam → Render target resolution. render() draws the
+//! background, the world drawables (tiles, decorations, entities, markers),
+//! and the flat UI element list.
 
 const std = @import("std");
 const rl = @import("raylib");
@@ -27,6 +34,14 @@ const reference_width_int: i32 = types.reference_width;
 const reference_height_int: i32 = types.reference_height;
 const reference_width: f32 = @floatFromInt(reference_width_int);
 const reference_height: f32 = @floatFromInt(reference_height_int);
+// Offscreen render target dims (build option, default 1920×1080) + the
+// uniform camera zoom that scales 4K design-space draws into the target.
+// See DESIGN → Platform Seam → Render target resolution.
+const render_width_int: i32 = types.render_width;
+const render_height_int: i32 = types.render_height;
+const render_width: f32 = @floatFromInt(render_width_int);
+const render_height: f32 = @floatFromInt(render_height_int);
+const render_scale: f32 = render_width / reference_width;
 
 /// Base rasterization size for the TTF font. raylib bakes glyphs into an
 /// atlas at this fixed size; `drawTextEx` scales from it. Sized to cover the
@@ -232,6 +247,25 @@ fn viewTransform() ViewTransform {
         .scale = scale,
         .offset_x = (window_width - reference_width * scale) / 2,
         .offset_y = (window_height - reference_height * scale) / 2,
+    };
+}
+
+/// Like `viewTransform` but for the render-target → window blit (the
+/// offscreen target is `render_width × render_height`, not the 4K reference).
+/// The pointer transform (`viewTransform`) stays reference-based — the game
+/// thinks in 4K design space — so these differ when the render target is
+/// smaller than reference. They share the same aspect ratio (16:9, comptime-
+/// checked in types.zig), so the on-screen content is identical; only the
+/// intermediate pixel count changes. See DESIGN → Platform Seam → Render
+/// target resolution.
+fn blitTransform() ViewTransform {
+    const window_width: f32 = @floatFromInt(rl.getScreenWidth());
+    const window_height: f32 = @floatFromInt(rl.getScreenHeight());
+    const scale = @min(window_width / render_width, window_height / render_height);
+    return .{
+        .scale = scale,
+        .offset_x = (window_width - render_width * scale) / 2,
+        .offset_y = (window_height - render_height * scale) / 2,
     };
 }
 
@@ -509,8 +543,8 @@ pub const RaylibBackend = struct {
         rl.initWindow(width, height, title);
         rl.setExitKey(.null); // Escape is a game binding (options menu), not quit.
 
-        const render_target = rl.loadRenderTexture(reference_width_int, reference_height_int) catch
-            @panic("failed to create reference-resolution render target");
+        const render_target = rl.loadRenderTexture(render_width_int, render_height_int) catch
+            @panic("failed to create render target");
         // Smooth the universal reference(4K) -> window blit. raylib defaults
         // textures to point (nearest-neighbor) filtering, which on the
         // downscale turns smooth alpha edges into jagged chunky boundaries
@@ -888,9 +922,16 @@ pub const RaylibBackend = struct {
         _ = viewport;
         _ = self.frame_arena.reset(.retain_capacity);
 
-        // Draw all reference-space content into the offscreen target.
+        // Draw all reference-space content into the offscreen target. The
+        // target may be smaller than the 4K reference (build option, default
+        // 1080p); a `beginMode2D` camera zoom scales every draw call down so
+        // layout math stays in 4K design space while fill happens at the
+        // target resolution. clearBackground is NOT camera-affected, so it
+        // runs before the camera block and clears the full target. See
+        // DESIGN → Platform Seam → Render target resolution.
         rl.beginTextureMode(self.render_target);
         rl.clearBackground(toRaylibColor(view_state.background_color, 255));
+        rl.beginMode2D(.{ .offset = .{ .x = 0, .y = 0 }, .target = .{ .x = 0, .y = 0 }, .rotation = 0, .zoom = render_scale });
         // World layers first (tiles, then overlays + ground drawables as they
         // land), then the UI on top.
         for (view_state.tiles) |tile| self.drawWorldSprite(
@@ -905,10 +946,14 @@ pub const RaylibBackend = struct {
         for (view_state.world_overlays) |overlay| self.drawWorldOverlay(overlay, view_state.world_scale);
         const theme_darkest = view_state.active_color_theme.darkest;
         for (view_state.ui_elements) |element| self.drawUiElement(element, view_state.active_color_theme.lightest, theme_darkest);
+        rl.endMode2D();
         rl.endTextureMode();
 
         // Blit the target to the window, letterboxed. RenderTextures are stored
-        // y-flipped, so the source height is negated.
+        // y-flipped, so the source height is negated. The blit uses the RENDER
+        // target dims (not the 4K reference) — the pointer transform
+        // (`viewTransform`, window→4K) is independent and stays reference-
+        // based.
         rl.beginDrawing();
         // With SUPPORT_CUSTOM_FRAME_CONTROL, endDrawing() only flushes the
         // render batch — we swap the buffer ourselves (vsync paces here).
@@ -917,18 +962,18 @@ pub const RaylibBackend = struct {
             rl.swapScreenBuffer();
         }
         rl.clearBackground(rl.Color.black);
-        const transform = viewTransform();
+        const transform = blitTransform();
         const source = rl.Rectangle{
             .x = 0,
             .y = 0,
-            .width = reference_width,
-            .height = -reference_height,
+            .width = render_width,
+            .height = -render_height,
         };
         const destination = rl.Rectangle{
             .x = transform.offset_x,
             .y = transform.offset_y,
-            .width = reference_width * transform.scale,
-            .height = reference_height * transform.scale,
+            .width = render_width * transform.scale,
+            .height = render_height * transform.scale,
         };
         rl.drawTexturePro(self.render_target.texture, source, destination, .{ .x = 0, .y = 0 }, 0, rl.Color.white);
     }
