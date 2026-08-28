@@ -5345,5 +5345,5 @@ timestamped save still lands in IDBFS as redundancy.
   one source of truth shared by the IDBFS mount and the JS absolute paths.
 - Design + the browser user-gesture caveat recorded in DESIGN → File System
   & IO → Web save export. Verified: native tests + build + `scripts/web.sh`
-  compile. NOT yet verified live in a browser (download gesture context) —
-  click Export Save in a `scripts/web.sh emrun` session to confirm.
+  compile + live in a browser — download fires from the options menu and the
+  saved file round-trips correctly (user-confirmed).
