@@ -2363,5 +2363,9 @@ handlers just mutate `history.settings` + `markWriteDirty`. **vsync does NOT
 live-apply** — `rl.setConfigFlags` may not take effect without a window
 recreate, so the vsync control shows a "(change requires restart)" label
 and the setting persists for next launch; `applyVsync` is called only at
-init (unchanged).
+init (unchanged). **On web the vsync setting is a NO-OP**: the browser's
+requestAnimationFrame paces rendering to the display refresh regardless —
+rAF IS vsync on web, and no page code can render faster than it — so the
+web label reads "(always on in browser)" and both the toggle and the
+render cap can only ever render *slower* than refresh, never faster.
 

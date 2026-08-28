@@ -4672,10 +4672,18 @@ pub fn buildSettingsPanel(
 
     // ── Toggle / choice rows (5–9) ──
 
-    // Row 5: VSync toggle.
+    // Row 5: VSync toggle. Label is platform-specific: on web the setting
+    // is a no-op — the browser's requestAnimationFrame paces rendering to
+    // the display refresh regardless (rAF IS vsync on web; no page code can
+    // out-run it). On native it's a real GLFW swap-interval toggle that only
+    // applies at window creation, hence the restart note.
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        const ctrl_x = emitLabel(elements, allocator, font_metrics, "VSync (change requires restart)", content_x, r_y);
+        const vsync_label = if (@import("builtin").os.tag == .emscripten)
+            "VSync (always on in browser)"
+        else
+            "VSync (change requires restart)";
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, vsync_label, content_x, r_y);
         try emitSettingButton(
             elements,
             allocator,
