@@ -5589,6 +5589,26 @@ edges. Fix: `setTextureFilter(tex, .bilinear)` in `ensureSpriteLoaded` +
 `rgbaBufToTexture` (outline masks, also drawn scaled). Smooths the
 downscale at no per-frame cost; a no-op visually at a 1:1 render target.
 
+**Edge color bleed (the dark-halo fix).** Bilinear downscale then surfaced a
+second artifact: dark pixels around the transparent edges of sprites,
+especially tiles. Cause: PNG encoders store black RGB at alpha=0 edge
+pixels (meaningless color where transparent); at 4K-target 1:1 those
+pixels were never sampled into visible output, but at 1080p's 0.5× bilinear
+each visible edge pixel blends an opaque tile pixel with an adjacent
+transparent pixel (RGB=0) → the blended RGB pulls toward black → a dark
+halo along the alpha edge. Fix (Option B from the discussion): a one-time
+CPU `bleedTransparentEdges` pass at sprite load, before upload. For each
+pixel with alpha == 0, set its RGB to the average of its 8-connected
+opaque neighbors (alpha stays 0). The transparent edge pixels now carry
+the tile's color instead of black, so bilinear blends the right color and
+the alpha channel handles the transparency — no halo, at every scale. No
+blend-mode change (works with the existing straight-alpha pipeline); the
+RGB of transparent pixels doesn't affect compositing, only the bilinear
+sample. Image is normalized to RGBA8 first (`setFormat`) so the pass has a
+stable byte layout. Outline masks + font/SDF atlases are NOT bled (masks
+are intentionally binary; atlases are coverage/gray-alpha, no RGB-bleed
+class). Surgical to sprite textures only.
+
 ### Show FPS setting + diagnostic overlay
 
 `Settings.show_fps: bool` (default off) + `SettingId.show_fps` toggle row in
