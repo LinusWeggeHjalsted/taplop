@@ -286,7 +286,8 @@ Open:
         `SettingId` enum + per-field descriptors in the builder; `SettingRef`
         on control elements; `IdleInput.clicked_setting` for toggle/choice
         clicks. Toggles: vsync + the 2 gameplay bools. Choices: camera_zoom
-        4-button row, player_color_index 6-swatch row. New `slider`
+        4-button row (25/50/75/100 — migrated to u32 in the zoom slice),
+        player_color_index 6-swatch row. New `slider`
         `UiElement` variant + click/drag handler (integer, step 1):
         render_fps_cap 0–256 (0 = "Uncapped" label), animation_fps 1–16, the
         3 volumes 0–100. `markWriteDirty(.settings, …)` on every change.

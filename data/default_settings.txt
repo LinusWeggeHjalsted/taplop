@@ -9,7 +9,7 @@ sound_effects_volume 50
 Display
 vsync true
 render_fps_cap 0
-camera_zoom 0.5
+camera_zoom 50
 animation_fps 4
 
 Gameplay

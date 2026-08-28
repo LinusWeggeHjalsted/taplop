@@ -2254,10 +2254,11 @@ on the main menu, surfacing nonsensical exit buttons.
 **Control kinds.** Every field is one of:
 - **Toggle** (bool): click to flip. `vsync`,
   `auto_skip_attack_step_out_of_combat`, `auto_target_at_cursor`.
-- **Choice** (discrete values): `camera_zoom` (4-button row: 0.25 / 0.5 /
-  0.75 / 1.0, active highlighted), `player_color_index` (6-swatch row:
-  click a color square to pick; the swatches show the player-gradient
-  colors so the value is visible).
+- **Choice** (discrete values): `camera_zoom` (4-button row: 25 / 50 /
+  75 / 100 hundredths; 100 = 1.0× zoomed in, 25 = 0.25× max zoom out,
+  default 50; the f32 lives at the render/input seam), `player_color_index`
+  (6-swatch row: click a color square to pick; the swatches show the
+  player-gradient colors so the value is visible).
 - **Slider** (integer range, step 1): one `slider` `UiElement` variant
   serves ALL slider fields — there are no float sliders. `render_fps_cap`
   (0–256; 0 = "Uncapped" shown as a label, not a number), `animation_fps`
@@ -2275,7 +2276,8 @@ struct) to the backend seam: `RaylibBackend.applyVolumes` /
 `playSounds` convert `@as(f32, vol) / 100.0` immediately before the raylib
 call. AGENTS → Code Style already restricts floats to input/settings/
 rendering; this narrows it further — `Settings` is all-integer for scalar
-fields except `camera_zoom` (f32, but a 4-choice not a slider). Migration is
+fields except `camera_zoom` (u32 hundredths, a 4-choice 25/50/75/100; the
+f32 lives at the render/input seam). Migration is
 free pre-release (no real players; the taplop rename is itself pre-release):
 `settings_file_format_version` 1 → 2; an old v1 user `settings.txt` is
 rejected by the hard version gate → `loadConfigWithFallback` falls back to

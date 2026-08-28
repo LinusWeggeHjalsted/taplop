@@ -711,7 +711,7 @@ pub fn translateInput(
 
     const modifiers = getModifiers(state);
     const bindings = settings.input_bindings;
-    const zoom = settings.camera_zoom;
+    const zoom = @as(f32, @floatFromInt(settings.camera_zoom)) / 100.0;
 
     // Advance synthetic key-repeat timers now that all edges for this tick
     // have been processed (new presses start at delay, releases are gone).

@@ -5386,3 +5386,37 @@ design — richer UI when the design settles (see TODO).
   state + Back), player_load_save orchestrator stack test. Native + web
   compile verified; NOT yet click-tested live (browser import flow needs a
   user gesture) — playtest `scripts/web.sh emrun` → Load Save → Import.
+
+## Settings screen
+
+### camera_zoom integer migration (u32 25/50/75/100)
+
+`Settings.camera_zoom` migrated from f32 (0.25–1.0, freeform) to u32
+hundredths (25–100, a 4-choice 25/50/75/100). Default 50 (= 0.5×). The f32
+lives at the render/input seam only: `main.zig` and `input.zig` convert
+`@as(f32, @floatFromInt(zoom)) / 100.0` at each read site before threading
+into `computeCamera`/`update`/`screenToTile`/`floatWorldPoint`; the
+rendering math (`view()` builders, `RenderContext.camera_zoom`) is
+unchanged — it still receives an f32. So the on-screen result is identical;
+only the storage type moved to u32.
+
+This completes the "Settings is all-integer for scalar fields" property
+started by the volume migration: every scalar field is now u32 or bool
+except none — `camera_zoom` was the last f32 and it's gone. The 4-choice
+values (25/50/75/100) are the only valid ones; the zoom in/out/keyboard
+shortcuts step by 25 and clamp to [25, 100], so they land exactly on a
+choice. Parse clamps out-of-range user values silently (preferences, not
+gameplay).
+
+Constants: `camera_zoom_step`/`min_camera_zoom`/`max_camera_zoom`/
+`default_camera_zoom` in input_handlers.zig are u32 (25/25/100/50);
+min/max duplicated in loaders.zig (loaders must not import the input
+layer — the 4-choice values are the source of truth in DESIGN).
+
+Dead code removed: `input.zig` had a `const zoom = settings.camera_zoom`
+that was actually used (at the `screenToTile` call) — not dead, my mistake
+in the first pass; restored as the f32 conversion.
+
+DESIGN fix: the stale `types.zig` comment "1.0 = no zoom, <1 = zoomed out,
+>1 = zoomed in" is replaced — default is 0.5, 1.0 is zoomed in (the
+previous comment described an older freeform-zoom model).

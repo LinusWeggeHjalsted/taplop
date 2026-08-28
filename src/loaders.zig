@@ -22,7 +22,6 @@ const findSection = parser.findSection;
 const findValue = parser.findValue;
 const asU32 = parser.asU32;
 const asI32 = parser.asI32;
-const asF32 = parser.asF32;
 const asBool = parser.asBool;
 const asColor = parser.asColor;
 const parseEnum = parser.parseEnum;
@@ -39,6 +38,12 @@ const settings_file_format_version = parser.settings_file_format_version;
 const color_themes_file_format_version = parser.color_themes_file_format_version;
 const player_loadout_file_format_version = parser.player_loadout_file_format_version;
 const decorations_file_format_version = parser.decorations_file_format_version;
+/// camera_zoom valid range (hundredths). Mirrors `input_handlers`'s
+/// `min_camera_zoom`/`max_camera_zoom` — duplicated here because loaders
+/// must not import the input layer; the 4-choice values (25/50/75/100) are
+/// the single source of truth in DESIGN → UI Framework → Settings screen.
+const min_camera_zoom: u32 = 25;
+const max_camera_zoom: u32 = 100;
 const Settings = types.Settings;
 const Level = types.Level;
 const Hub = types.Hub;
@@ -204,7 +209,11 @@ pub fn loadSettings(
                 settings.render_fps_cap = asU32(value) orelse settings.render_fps_cap;
             }
             if (findValue(pairs, "camera_zoom")) |value| {
-                settings.camera_zoom = asF32(value) orelse settings.camera_zoom;
+                // camera_zoom is a u32 4-choice (25/50/75/100 hundredths).
+                // Clamp to the valid range; a hand-edited file with an
+                // out-of-range value silently clamps (preferences, not
+                // gameplay). See DESIGN → UI Framework → Settings screen.
+                if (asU32(value)) |v| settings.camera_zoom = @max(min_camera_zoom, @min(max_camera_zoom, v));
             }
             if (findValue(pairs, "animation_fps")) |value| {
                 settings.animation_fps = asU32(value) orelse settings.animation_fps;
@@ -1873,7 +1882,7 @@ test "loadSettings parses settings sections into a Settings struct" {
         \\Display
         \\vsync false
         \\render_fps_cap 144
-        \\camera_zoom 2.0
+        \\camera_zoom 75
         \\
         \\Gameplay
         \\auto_skip_attack_step_out_of_combat false
@@ -1903,7 +1912,7 @@ test "loadSettings parses settings sections into a Settings struct" {
     // Display values
     try std.testing.expectEqual(false, settings.vsync);
     try std.testing.expectEqual(@as(u32, 144), settings.render_fps_cap);
-    try std.testing.expectApproxEqAbs(2.0, settings.camera_zoom, 0.001);
+    try std.testing.expectEqual(@as(u32, 75), settings.camera_zoom);
 
     // Gameplay values
     try std.testing.expectEqual(false, settings.auto_skip_attack_step_out_of_combat);

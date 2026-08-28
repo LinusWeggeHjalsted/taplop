@@ -196,7 +196,11 @@ pub const Settings = struct {
     /// render time to tint the player entity + UI. Default 0 (lightest).
     player_color_index: u32 = 0,
     input_bindings: []const InputBinding,
-    camera_zoom: f32 = 0.5, // 1.0 = no zoom, <1 = zoomed out, >1 = zoomed in
+    /// Camera zoom, in hundredths (0–100). Only the values 25/50/75/100
+    /// are valid (a 4-choice, not a continuous slider): 100 = 1.0× (zoomed
+    /// in), 25 = 0.25× (max zoom out), default 50. The f32 lives at the
+    /// render/input seam only (`@as(f32, @floatFromInt(zoom)) / 100.0`).
+    camera_zoom: u32 = 50,
 };
 
 pub const Camera = struct {

@@ -249,7 +249,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     const platform_input = backend.pollInput();
     // Camera is derived (centered on the player), computed each frame so input
     // (screenToTile) and rendering (tileToTile) stay in sync.
-    const camera_zoom = history.settings.camera_zoom;
+    const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
     // Input camera: computed BEFORE the drain, reflecting the previously-
     // rendered view (the player clicks against what's on screen). Includes
     // the current camera pan so screenToTile maps clicks against the panned
@@ -1625,8 +1625,9 @@ test "anytime swap_weapons while idle: records an undoable idle point" {
     // processes it (stack non-empty → processEvent), leaving stack empty.
     var player_input: input.PlayerInput = .{};
     player_input.anytime.in_game.swap_weapons = true;
-    const camera = view_mod.computeCamera(&history.current_state, history.settings.camera_zoom, history.session.camera_pan);
-    update(&history, player_input, null, 16_000, camera, history.settings.camera_zoom, .{ .width = 3840, .height = 2160 });
+    const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
+    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
+    update(&history, player_input, null, 16_000, camera, camera_zoom, .{ .width = 3840, .height = 2160 });
 
     // The swap processed: weapons are now swapped.
     try std.testing.expectEqual(@as(?types.WeaponType, .staff), history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_type);
@@ -1682,8 +1683,9 @@ test "anytime swap_weapons during a wait: handled immediately, no idle point, ab
     // the wait remaining (500ms) — so the wait does NOT elapse this tick.
     var player_input: input.PlayerInput = .{};
     player_input.anytime.in_game.swap_weapons = true;
-    const camera = view_mod.computeCamera(&history.current_state, history.settings.camera_zoom, history.session.camera_pan);
-    update(&history, player_input, null, 100_000, camera, history.settings.camera_zoom, .{ .width = 3840, .height = 2160 });
+    const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
+    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
+    update(&history, player_input, null, 100_000, camera, camera_zoom, .{ .width = 3840, .height = 2160 });
 
     // The interjection was handled IMMEDIATELY (not delayed until the wait
     // elapsed): weapons are swapped this tick.
@@ -1764,8 +1766,9 @@ test "undo/redo via anytime input does not record duplicate idle points (no cycl
 /// exercise the same condition the production idle branch uses.
 fn runIdleUpdate(history: *GameStateHistory, player_input: input.PlayerInput) void {
     const event_index_before = history.current_event_index;
-    const camera = view_mod.computeCamera(&history.current_state, history.settings.camera_zoom, history.session.camera_pan);
-    update(history, player_input, null, 16_000, camera, history.settings.camera_zoom, .{ .width = 3840, .height = 2160 });
+    const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
+    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
+    update(history, player_input, null, 16_000, camera, camera_zoom, .{ .width = 3840, .height = 2160 });
     const events_processed = history.current_event_index != event_index_before;
     history.maybeRecordIdlePoint(events_processed);
 }

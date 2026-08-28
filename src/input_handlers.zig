@@ -34,10 +34,10 @@ const GameStateHistory = state.GameStateHistory;
 /// always one step (so the floor divides evenly into the range). Tune from
 /// feel; if linear spacing feels uneven across the range, swap the additive
 /// step for a generated level table (a localized change here).
-const camera_zoom_step: f32 = 0.25;
-const min_camera_zoom: f32 = camera_zoom_step;
-const max_camera_zoom: f32 = 1.0;
-const default_camera_zoom: f32 = 0.5;
+const camera_zoom_step: u32 = 25;
+const min_camera_zoom: u32 = 25;
+const max_camera_zoom: u32 = 100;
+const default_camera_zoom: u32 = 50;
 
 /// True when the pointer is over a skills-browser slot (a ref-bearing
 /// element whose ref is `.learned_skill`). Used to route the mouse wheel to
@@ -865,14 +865,15 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.skills_scroll_offset = 0;
             }
         } else {
-            // Additive zoom in fixed steps, clamped to [min, max]. Additive (not
-            // multiplicative) so one zoom-in followed by one zoom-out always
-            // returns to the exact same value (no float drift). scroll_delta is
-            // accumulated wheel notches (positive = scroll up = zoom in); a single
-            // notch is ±1.0, scaled by the step. Tune the step/bounds from feel.
-            const zoom_step: f32 = camera_zoom_step;
-            const delta: f32 = anytime.scroll_delta * zoom_step;
-            const clamped = @max(min_camera_zoom, @min(max_camera_zoom, history.settings.camera_zoom + delta));
+            // Additive zoom in fixed steps, clamped to [min, max]. Additive
+            // (not multiplicative) so one zoom-in followed by one zoom-out
+            // always returns to the exact same value. scroll_delta is
+            // accumulated wheel notches (positive = scroll up = zoom in); a
+            // single notch is ±1 step (25 hundredths). Only 25/50/75/100 are
+            // valid, so the step lands exactly on a choice value.
+            const delta_steps: i32 = @intFromFloat(anytime.scroll_delta);
+            const delta: i32 = delta_steps * @as(i32, @intCast(camera_zoom_step));
+            const clamped: u32 = @intCast(@max(@as(i32, @intCast(min_camera_zoom)), @min(@as(i32, @intCast(max_camera_zoom)), @as(i32, @intCast(history.settings.camera_zoom)) + delta)));
             if (clamped != history.settings.camera_zoom) {
                 history.settings.camera_zoom = clamped;
                 markSettingsDirty(history);
