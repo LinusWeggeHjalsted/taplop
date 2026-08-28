@@ -262,6 +262,44 @@ Open:
 - buildWorldMap: campaign graph visualization, clickable hubs/missions.
 - buildFullCombatLog: scrollable detailed combat log (renders
   ViewState.combat_log; see Combat Log).
+- **Settings screen** — settled design: DESIGN → UI Framework → Settings
+  screen. Full-screen modal overlay (`UiState.settings_open`), reachable
+  from the main-menu Settings button AND from a new "Settings" button in
+  the options menu (level + hub; settings opens on top, Back returns to the
+  options menu). Input bindings deferred. Slices:
+  - [ ] **Slice 1 — overlay shell + options-menu wiring:** `settings_open`
+        on `UiState`; `buildSettingsPanel` shell (full-screen `blocks_input`
+        panel + Back button bottom-left, closes via `Action.open_settings`
+        toggle). Gate `toggle_options_menu` (Escape) on `screen != .main_menu`
+        (options menu not reachable from main menu — its exit buttons are
+        nonsensical there). Add "Settings" button to `buildOptionsMenu` (all
+        contexts it appears in). Main-menu `.open_settings` toggles
+        `settings_open` (currently a no-op).
+  - [ ] **Slice 2 — volume integer migration:** `settings_file_format_version`
+        1 → 2; convert `master_volume` / `music_volume` / `sound_effects_volume`
+        from f32 0.0–1.0 to u32 0–100 (loader + writer + defaults +
+        `data/default_settings.txt`); parse clamps 0–100. Backend
+        `applyVolumes` / `playSounds` convert `@as(f32, vol) / 100.0` at the
+        raylib seam. Free pre-release migration (v1 user file → version gate
+        → fallback to defaults → next write persists v2).
+  - [ ] **Slice 3 — controls (toggles + choices + sliders) + persistence:**
+        `SettingId` enum + per-field descriptors in the builder; `SettingRef`
+        on control elements; `IdleInput.clicked_setting` for toggle/choice
+        clicks. Toggles: vsync + the 2 gameplay bools. Choices: camera_zoom
+        4-button row, player_color_index 6-swatch row. New `slider`
+        `UiElement` variant + click/drag handler (integer, step 1):
+        render_fps_cap 0–256 (0 = "Uncapped" label), animation_fps 1–16, the
+        3 volumes 0–100. `markWriteDirty(.settings, …)` on every change.
+  - [ ] **Slice 4 — live-apply:** `SessionState.last_applied_settings`
+        snapshot; `frame()` diff-and-apply → `backend.applyVolumes` on audio
+        diff. vsync shows a "(change requires restart)" label, no live apply
+        (`applyVsync` stays init-only). camera_zoom / render_fps_cap /
+        animation_fps already read live.
+  - [ ] **Deferred — text input widget:** freeform integer entry for
+        `render_fps_cap` / `animation_fps` (currently sliders cover them).
+        Needs a focus model + text buffer on `SessionState` + raw-character
+        keyboard routing seam in `translateInput`/`pollInput` + caret render.
+        Revisit if slider-only entry feels limiting.
 - buildOptionsMenu: settings controls (volume, gameplay toggles).
 - buildMainMenu Continue availability: DONE — Continue now shows when
   PlayerData is populated OR an autosave exists; clicking it resumes (loads

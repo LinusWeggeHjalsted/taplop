@@ -68,6 +68,16 @@ pub const UiState = struct {
     /// Auto-cleared by the screen-transition UI reset.
     credits_open: bool = false,
 
+    /// Settings screen (full screen). Modal overlay; opens ON TOP OF the
+    /// options menu (in-game, via the options-menu "Settings" button) or
+    /// directly over the main menu (via the main-menu "Settings" button).
+    /// Back button closes it. The options menu stays open underneath when
+    /// opened in-game, so its top-of-`update()` gate keeps the world paused
+    /// — no separate gating for this overlay. Toggled by `Action.open_settings`.
+    /// Auto-cleared by the screen-transition UI reset. See DESIGN → UI
+    /// Framework → Settings screen.
+    settings_open: bool = false,
+
     /// Load-save browser vertical scroll offset, in ROWS (not pixels) — one
     /// scroll tick = one full row pitch, so text placement is identical at
     /// every scroll position. Clamped to `[0, max_scroll_row]` in
@@ -3968,6 +3978,11 @@ pub fn buildOptionsMenu(
     buttons[button_count] = .{ .label = "Export Save", .action = .save_game };
     button_count += 1;
 
+    // Settings: opens the settings overlay on top of this one (drill-in).
+    // Present in every context the options menu appears in (level + hub).
+    buttons[button_count] = .{ .label = "Settings", .action = .open_settings };
+    button_count += 1;
+
     buttons[button_count] = .{ .label = "Exit to Main Menu", .action = .exit_to_menu };
     button_count += 1;
 
@@ -4355,6 +4370,76 @@ pub fn buildCreditsPanel(
         "Back",
         menu_button_font_size,
         .open_credits,
+        button_color,
+    );
+}
+
+// --- Settings screen (full screen, overlay) ---
+
+/// Settings-screen shell constants. The control rows will land in slice 3;
+/// for now the panel is a full-screen `blocks_input` surface + a Back
+/// button bottom-left so the overlay wiring (open/close, gating, options-
+/// menu drill-in) can land + test independently of the controls.
+pub const settings_padding: i32 = 48;
+pub const settings_header_font_size: i32 = 96;
+pub const settings_button_gap: i32 = 48;
+/// Back button size (bottom-left). Matches the load-save / credits Back
+/// buttons so the main-menu overlays feel consistent.
+pub const settings_button_width: i32 = 768;
+pub const settings_button_height: i32 = 160;
+
+/// Build the settings screen: a full-screen modal panel with a centered
+/// "Settings" header and a Back button in the bottom-left. The panel blocks
+/// input to the surface behind it (main menu or the options menu). The Back
+/// button reuses the `.open_credits` action's sibling `.open_settings`
+/// (toggle semantics — the entry button opens, the Back button closes,
+/// same action). See DESIGN → UI Framework → Settings screen.
+pub fn buildSettingsPanel(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    button_color: Color,
+) !void {
+    // Full-screen modal background — blocks input to the surface behind it.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = screen.position(),
+        .width = screen.width,
+        .height = screen.height,
+        .blocks_input = true,
+    } });
+
+    const content_x = screen.x + settings_padding;
+    const content_width = screen.width - 2 * settings_padding;
+
+    // Header, centered horizontally near the top.
+    const header_text = "Settings";
+    const header_width = font_metrics.measureSpanWidth(text(header_text), settings_header_font_size);
+    const header_x = content_x + @divTrunc(content_width - header_width, 2);
+    const header_y = screen.y + settings_padding;
+    try elements.append(allocator, .{ .text_label = .{
+        .text = header_text,
+        .screen_position = .{ .x = header_x, .y = header_y },
+        .font_size = settings_header_font_size,
+        .blocks_input = false,
+    } });
+
+    // Back button, bottom-left.
+    const button_y = screen.y + screen.height - settings_padding - settings_button_height;
+    try emitPanelButton(
+        elements,
+        allocator,
+        font_metrics,
+        .{
+            .x = content_x,
+            .y = button_y,
+            .width = settings_button_width,
+            .height = settings_button_height,
+        },
+        "Back",
+        menu_button_font_size,
+        .open_settings,
         button_color,
     );
 }

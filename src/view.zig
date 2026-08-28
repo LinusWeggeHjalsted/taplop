@@ -411,6 +411,21 @@ pub fn view(
         }
     }
 
+    // Settings screen: full-screen modal overlay. Opens on top of the
+    // options menu (in-game drill-in) or directly over the main menu (main-
+    // menu Settings button). Drawn under the error popup so a recoverable
+    // error still surfaces on top. `blocks_input` panel shields the surface
+    // behind it. See DESIGN → UI Framework → Settings screen.
+    if (session.ui_state.settings_open) {
+        ui.buildSettingsPanel(
+            &ui_elements,
+            frame_allocator,
+            font_metrics,
+            ui.screenRect(),
+            button_color,
+        ) catch @panic("failed to build settings panel");
+    }
+
     // Recoverable error popup: modal, centered, drawn on top of all other
     // UI (including tooltips). Pure over SessionState.pending_error. See
     // DESIGN → Error Handling.

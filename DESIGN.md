@@ -2224,3 +2224,92 @@ it shows is `UiState.inspected_entity_index`.
   cursor + pan) so a right-click on a panel never inspects the world behind
   it. Hubs are excluded — inspection is level-only by design.
 
+### Settings screen
+
+A full-screen modal overlay (`UiState.settings_open: bool`) that exposes
+every scalar `Settings` field for editing. Mirrors the load-save browser /
+credits screen overlays: a `blocks_input` 9-slice panel, a Back button
+bottom-left that closes it. Input bindings are NOT exposed (deferred — see
+TODO). The screen is reachable from TWO entry points, both wired through
+`Action.open_settings`:
+
+1. The main-menu "Settings" button (opens settings directly over the main
+   menu — the world is already idle there, so no pause concern).
+2. The in-game options menu's "Settings" button (added to `buildOptionsMenu`
+   in ALL contexts the options menu appears in — level + hub). Settings opens
+   ON TOP OF the options menu (drill-in); Back from settings returns to the
+   options menu, not the game. The options menu stays open underneath, so
+   its top-of-`update()` gate keeps the world paused while settings is up —
+   no separate gating for the settings overlay. This is the modal-overlay
+   stacking rule from DESIGN → Modal overlays: each `blocks_input` panel
+   shields the one behind it.
+
+**Options menu is NOT reachable from the main menu.** `toggle_options_menu`
+(Escape) is gated on `screen != .main_menu`. The main menu has its own
+button stack (Continue / New Game / Load Save / Editor / Settings /
+Credits); the options menu's Restart/Exit-Mission/Exit-to-Menu entries are
+meaningful only in level/hub. Pre-fix, Escape opened the options menu even
+on the main menu, surfacing nonsensical exit buttons.
+
+**Control kinds.** Every field is one of:
+- **Toggle** (bool): click to flip. `vsync`,
+  `auto_skip_attack_step_out_of_combat`, `auto_target_at_cursor`.
+- **Choice** (discrete values): `camera_zoom` (4-button row: 0.25 / 0.5 /
+  0.75 / 1.0, active highlighted), `player_color_index` (6-swatch row:
+  click a color square to pick; the swatches show the player-gradient
+  colors so the value is visible).
+- **Slider** (integer range, step 1): one `slider` `UiElement` variant
+  serves ALL slider fields — there are no float sliders. `render_fps_cap`
+  (0–256; 0 = "Uncapped" shown as a label, not a number), `animation_fps`
+  (1–16), and the three volumes (`master_volume` / `music_volume` /
+  `sound_effects_volume`, 0–100 — see "Volume integer migration" below).
+  Interaction: click anywhere on the track → jump to the nearest step;
+  press-and-drag along the track → scrub live; no keyboard slider control
+  (the UI is mouse-driven throughout; keyboard focus is a deferred concern).
+
+**Volume integer migration.** The three volume fields were f32 0.0–1.0;
+they are now u32 0–100 (percentage, obvious on disk + in UI). This collapses
+audio sliders onto the same integer-slider widget as the fps fields (one
+control kind, not two) and moves the last floats out of `Settings` (a data
+struct) to the backend seam: `RaylibBackend.applyVolumes` /
+`playSounds` convert `@as(f32, vol) / 100.0` immediately before the raylib
+call. AGENTS → Code Style already restricts floats to input/settings/
+rendering; this narrows it further — `Settings` is all-integer for scalar
+fields except `camera_zoom` (f32, but a 4-choice not a slider). Migration is
+free pre-release (no real players; the taplop rename is itself pre-release):
+`settings_file_format_version` 1 → 2; an old v1 user `settings.txt` is
+rejected by the hard version gate → `loadConfigWithFallback` falls back to
+embedded defaults + surfaces the warning popup → the next debounced write
+persists v2. Parse clamps volumes to 0–100 (robustness vs hand-edited files).
+
+**Field binding.** A `SettingId` enum (one per field) + a per-control
+`SettingRef` (like `SlotRef`) carries `{ setting_id }` on slider / choice /
+toggle elements so the input handler knows which field to mutate and how.
+`IdleInput.clicked_setting: ?SettingId` is the click-to-cycle path for
+toggles/choices (the load-save `clicked_save_row` pattern); sliders are
+handled directly in the input handlers by hit-testing against the control
+rect (drag state, like the camera-pan anchor). Settings live on
+`GameStateHistory` (off the undo timeline — preferences, not gameplay), so
+mutating them is a DIRECT WRITE in the input handler, not an event (same as
+`ui_state` toggles) — replay-safe by construction.
+
+**Persistence.** Every control mutation calls `markWriteDirty(.settings, …)`
+(the existing debounced-settings writer; 1s quiet / 5s max-wait). The
+writer emits the full settings file in the v2 format. Native `run` defer +
+web `beforeunload` flush on shutdown.
+
+**Live-apply.** Most fields are read live each frame already (`camera_zoom`
+by `view()`/`computeCamera`; `render_fps_cap` by
+`renderIntervalMicroseconds`; `animation_fps` by `view()`), so a change
+there takes effect next frame with no apply step. Audio + vsync need an
+explicit apply. The apply model is **frame()-diff-and-apply** (keeps input
+handlers pure — no backend pointer): `SessionState` holds a
+`last_applied_settings` snapshot; `frame()` compares it to `history.settings`
+(cheap scalar equality over ~10 fields) and, on diff, calls
+`backend.applyVolumes` for audio changes, then updates the snapshot. Input
+handlers just mutate `history.settings` + `markWriteDirty`. **vsync does NOT
+live-apply** — `rl.setConfigFlags` may not take effect without a window
+recreate, so the vsync control shows a "(change requires restart)" label
+and the setting persists for next launch; `applyVsync` is called only at
+init (unchanged).
+

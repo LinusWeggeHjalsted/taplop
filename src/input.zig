@@ -370,6 +370,12 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .save_game => player_input.anytime.options_action = action,
         .restart_mission, .exit_mission, .exit_to_menu => player_input.anytime.options_action = action,
         .continue_after_mission, .replay_mission, .overwrite_clone => player_input.anytime.options_action = action,
+        // Settings is reachable from both the main-menu button and the
+        // options-menu button; routing through `options_action` lets one
+        // handler (in `handleAnytimeInput`) serve both contexts — the
+        // options_action switch runs regardless of screen. See DESIGN → UI
+        // Framework → Settings screen.
+        .open_settings => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,
@@ -398,7 +404,6 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .load_save_row,
         .import_save,
         .open_editor,
-        .open_settings,
         .open_credits,
         => player_input.idle.menu_action = action,
     }

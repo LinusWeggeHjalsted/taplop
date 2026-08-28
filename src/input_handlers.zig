@@ -714,6 +714,11 @@ pub fn handleAnytimeInput(
     }
 
     if (anytime.toggle_options_menu) {
+        // The options menu is the in-game pause/exit menu — its entries
+        // (Restart/Exit Mission/Exit to Main Menu) are meaningful only in
+        // level/hub. The main menu has its own button stack, so Escape is
+        // a no-op there. See DESIGN → UI Framework → Settings screen.
+        if (history.current_state.screen == .main_menu) return;
         // Don't open the options menu when a modal overlay is already up
         // (mission_fail or mission_complete) — one modal at a time.
         // Undo/redo still works (processed above) as an escape from the fail
@@ -816,6 +821,14 @@ pub fn handleAnytimeInput(
                     event_handlers.processEvent(history);
                 }
             },
+            // Settings button (main menu OR options menu): toggle the
+            // settings overlay. From the options menu it opens on top
+            // (drill-in; Back returns here); from the main menu it opens
+            // over the menu directly. Routed through `options_action` so
+            // one handler serves both contexts. See DESIGN → UI Framework
+            // → Settings screen.
+            .open_settings =>
+                history.session.ui_state.settings_open = !history.session.ui_state.settings_open,
             else => {},
         }
     }
