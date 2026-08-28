@@ -728,6 +728,15 @@ pub fn handleAnytimeInput(
         {
             if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
             history.session.ui_state.options_menu_open = !history.session.ui_state.options_menu_open;
+            // Closing the options menu (Escape) also closes the settings
+            // overlay stacked on top of it — otherwise Escape leaves an
+            // orphaned settings panel over the live game. The settings menu
+            // is only ever open on top of the options menu (in-game) or over
+            // the main menu (where Escape is a no-op above), so this only
+            // affects the in-game drill-in path.
+            if (!history.session.ui_state.options_menu_open) {
+                history.session.ui_state.settings_open = false;
+            }
         }
     }
 
