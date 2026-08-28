@@ -1,11 +1,11 @@
 //! UI framework: the flat `UiElement` tagged union (nine_slice_panel, slot,
-//! button, text_label, fill_sprite, image, bar), layout helpers (Rect algebra,
-//! `Row`/`Grid`, screen-space `i32` dims), and the panel/overlay builders
-//! (top bar, bottom bar, main menu, tooltips, skill tooltips, gear, inventory,
-//! skills, enemy inspect, mission complete/fail, options, load-save browser).
-//! `UiState` (open panels/overlays/drag/scroll) lives on `SessionState`, off
-//! the undo timeline. Buttons carry an `Action` so clicks feed the one input
-//! path. See DESIGN → UI Framework.
+//! button, text_label, fill_sprite, image, solid_rect), layout helpers (Rect
+//! algebra, `Row`/`Grid`, screen-space `i32` dims), and the panel/overlay
+//! builders (top bar, bottom bar, main menu, tooltips, skill tooltips, gear,
+//! inventory, skills, enemy inspect, mission complete/fail, options, load-save
+//! browser). `UiState` (open panels/overlays/drag/scroll) lives on
+//! `SessionState`, off the undo timeline. Buttons carry an `Action` so clicks
+//! feed the one input path. See DESIGN → UI Framework.
 
 const std = @import("std");
 const types = @import("types.zig");

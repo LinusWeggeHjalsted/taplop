@@ -20,9 +20,9 @@ next session meets it as a surprise instead of a known.
 
 ## Platform Seam (raylib)
 
-- raylib is linked ONLY into the native exe. Keep it out of the test build (and
-  the emscripten build's shared code) by never importing raylib from any
-  file the test-root scan pulls in.
+- raylib is linked into the native AND web exes (never the test build). Keep
+  it out of the test build by never importing raylib from any file the
+  test-root scan pulls in.
 - `src/main.zig` stays raylib-free. The game loop is platform-agnostic and
   SPLIT into a shared per-frame core + a thin platform driver:
   - `frame(backend, *FrameState)` is the deterministic core: poll input,
@@ -41,7 +41,9 @@ next session meets it as a surprise instead of a known.
   The backend is duck-typed with `shouldClose()`, `deltaMicroseconds()`,
   `pollInput() PlatformInput`, `render(ViewState, ViewportSize)`, plus timing
   helpers (`realClockMicroseconds`, `renderIntervalMicroseconds`, `waitTime`,
-  `applyVsync`). Entry is `pub fn run(backend, allocator, file_source, io)`.
+  `applyVsync`). Entry is `pub fn run(backend, *SessionSetup)` — the caller
+  builds the `SessionSetup` (config + `FrameState`) via `session_setup.zig`
+  before calling `run`.
 - The drain is BUDGET-DRIVEN: `frame()` calls `update()` repeatedly while the
   stack is non-empty, no wait is active, and <10ms has elapsed — so a
   multi-event drain completes within a single frame instead of one event per
@@ -68,8 +70,9 @@ next session meets it as a surprise instead of a known.
   pumping before reading would erase the edge (current == previous → no
   press detected). Read-then-pump works on both platforms (native gets ~1
   iteration of latency at the uncapped speed, negligible).
-- `src/raylib_backend.zig` is the ONLY file that `@import("raylib")` (plus
-  `native.zig` and `web.zig`, which import the backend). It owns the window, the real-clock
+- `src/raylib_backend.zig` is the ONLY file that `@import("raylib")`
+  directly (`native.zig` and `web.zig` import the backend, not raylib). It
+  owns the window, the real-clock
   (`rl.getTime` → microseconds for deltas + render gating), input polling
   (`pollInputEvents` each poll, independent of rendering), and rendering. Built
   with `SUPPORT_CUSTOM_FRAME_CONTROL` so `endDrawing()` only flushes the render
@@ -495,16 +498,19 @@ gameplay — not in snapshots, not touched by replay.
   `file_format_version` (monotonic int per artifact, in its `Metadata` section)
   answers "can this parser read the file?"; `game_version` answers "will a
   correctly-parsed file behave in this build?".
-- `file_format_version` is on EVERY config file type (levels, hubs,
-  missions, campaigns, player saves, settings, color themes, player loadouts,
-  session logs) — one monotonic int per type, in the file's `Metadata` section
-  (the FIRST section, before any type-specific sections). The loader
-  validates it as a HARD gate (`error.UnsupportedFileFormatVersion` on mismatch
-  or absence) and discards it — it's a parse-time compatibility check, not
-  runtime state (not stored on the parsed type). The save writer emits the
-  current constant in a `Metadata` section. Per-type version constants live
-  in parser.zig (`level_file_format_version`, `hub_file_format_version`,
-  etc., all currently 1).
+- `file_format_version` is on the config file types that carry a `Metadata`
+  section today (levels, hubs, missions, campaigns, player saves, settings,
+  color themes, player loadouts, decorations) — one monotonic int per type,
+  in the file's `Metadata` section (the FIRST section, before any type-
+  specific sections). Weapon-type definitions and salvage tables are config
+  files WITHOUT a version (no `Metadata` section); they'd join if their
+  format stabilizes. The loader validates it as a HARD gate
+  (`error.UnsupportedFileFormatVersion` on mismatch or absence) and discards
+  it — it's a parse-time compatibility check, not runtime state (not stored
+  on the parsed type). The save writer emits the current constant in a
+  `Metadata` section. Per-type version constants live in parser.zig
+  (`level_file_format_version`, `hub_file_format_version`, etc.); most are 1,
+  `mission` and `player_save` are 2.
 
 ## Logging & Replay
 
@@ -897,15 +903,15 @@ acquired.
 
 ### Embedding
 
-`build.zig` walks `data/` + `assets/` and emits `src/generated_assets.zig`
-(gitignored, like `generated_lookups.zig` / `generated_test_root.zig`) with one
-`@embedFile` entry per file, assembled into a
-`std.StaticStringMap([]const u8).initComptime` map keyed by project-root-
-relative paths. The build step re-runs every `zig build`, so new files are
-picked up automatically; *content* edits to existing files require a recompile
-(which `zig build run` does anyway). `@embedFile` paths are relative to the
-emitted file's location (`src/`), so the generated entries use `../data/...` /
-`../assets/...` — owned by the build step, not a caller concern.
+`build.zig` walks `data/` + `assets/` and emits `generated_assets.zig`
+(gitignored, at the PROJECT ROOT — same for `generated_sprite_metadata.zig`,
+`generated_lookups.zig` lives in `src/`) with one `@embedFile` entry per file,
+assembled into a `std.StaticStringMap([]const u8).initComptime` map keyed by
+project-root-relative paths. The file lives at the project root (and is exposed
+as a named module whose package root IS the project root) so `@embedFile` can
+reach `data/` and `assets/` directly — no `../`. The build step re-runs every
+`zig build`, so new files are picked up automatically; *content* edits to
+existing files require a recompile (which `zig build run` does anyway).
 
 ### Persistent path
 
@@ -2131,8 +2137,8 @@ Disk size is NOT memory size. Textures are the dominant consumer (~30× the
 PNG folder once decoded), not gamestate: GPU needs raw RGBA = w×h×4. Source
 art has ALREADY been downscaled to display resolution (the Unity audit's
 lever 1 is done): weapons are 512×640 single-pose (~1.3 MB decoded), the
-flag banner is 2048×512 (4 MB, an 8-frame sheet). Current assets: 94 PNGs =
-1.9 MB on disk, ~60 MB decoded RGBA (~80 MB w/ mipmaps). Audio shipped as
+flag banner is 2048×512 (4 MB, an 8-frame sheet). Current assets: 114 PNGs =
+2.3 MB on disk, ~60 MB decoded RGBA (~80 MB w/ mipmaps). Audio shipped as
 OGG (DESIGN → Audio): 15 sfx (~220 KB) + a 3.3 MB looping music stream.
 
 Two separate budgets:
@@ -2153,13 +2159,15 @@ Levers, in impact order (1–2 DONE; the rest are future work):
 4. **GPU texture compression** (ASTC/ETC2/BC via KTX2/Basis) only if later
    measurements demand it — lossy, WebGL/raylib support fiddly.
 
-Web download budget: art is ~1.9 MB PNG + ~3.4 MB OGG audio (music dominates;
+Web download budget: art is ~2.3 MB PNG + ~3.4 MB OGG audio (music dominates;
 streamed at runtime but still downloaded).
 
 ## UI Framework
 
 - `view()` builds a `ViewState` each render from a per-frame arena (reset every frame in the game loop); everything the ViewState points at lives until the next frame
-- UI is a flat `[]const UiElement` (tagged union: nine_slice_panel, slot, button, text_label, fill_sprite, image), appended in back-to-front draw order — no sorting
+- UI is a flat `[]const UiElement` (tagged union: nine_slice_panel, slot,
+  button, text_label, fill_sprite, image, solid_rect), appended in back-to-
+  front draw order — no sorting
 - Builders (`buildBottomBar`, etc. in ui.zig) take a `bounds: Rectangle` and append into a shared `std.ArrayList(UiElement)`; everything positions relative to `bounds`
 - Layout is Rect algebra: `Rectangle` has pure methods (`position/right/bottom/centerX/centerY`, `translate`, `inset`, and 3×3 `place*` anchors like `placeCenter`, `placeBottomCenter`, `placeCenterRight`). Plus `screenRect()`, `rowWidth()`, `Row`, `Grid` helpers in ui.zig
 - Screen-space dimensions (widths/heights/sizes/offsets) are `i32` (rendering, not gameplay). Gameplay quantities (health, counts) stay `u32`
