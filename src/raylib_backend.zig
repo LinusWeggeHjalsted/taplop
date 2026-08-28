@@ -1196,8 +1196,19 @@ pub const RaylibBackend = struct {
                     self.drawSprite(sprite_id, dest, null, button.color, 255);
                     if (button.highlighted) self.drawHighlightOutline(sprite_id, dest, highlight_color);
                 } else if (button.highlighted) {
+                    // Stroked rect OUTSIDE the bounds: inflate by the outline
+                    // thickness on all sides so the stroke frames the button
+                    // instead of overlapping its edge (drawRectangleLinesEx
+                    // centers the stroke on the rect boundary).
+                    const t: i32 = outline_thickness;
                     const dest = referenceRectangle(button.screen_position, button.width, button.height);
-                    rl.drawRectangleLinesEx(dest, @floatFromInt(outline_thickness), toRaylibColor(highlight_color, 255));
+                    const outer = rl.Rectangle{
+                        .x = dest.x - @as(f32, @floatFromInt(t)),
+                        .y = dest.y - @as(f32, @floatFromInt(t)),
+                        .width = dest.width + 2 * @as(f32, @floatFromInt(t)),
+                        .height = dest.height + 2 * @as(f32, @floatFromInt(t)),
+                    };
+                    rl.drawRectangleLinesEx(outer, @floatFromInt(t), toRaylibColor(highlight_color, 255));
                 }
             },
             .text_label => |label| self.drawTextLabel(label, highlight_color),
