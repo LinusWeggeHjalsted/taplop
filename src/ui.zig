@@ -4387,7 +4387,7 @@ pub const settings_header_gap: i32 = 64;
 pub const settings_row_font_size: i32 = 56;
 pub const settings_row_height: i32 = 120;
 pub const settings_row_gap: i32 = 32;
-pub const settings_label_width: i32 = 1200;
+pub const settings_label_to_control_gap: i32 = 48;
 pub const settings_button_gap: i32 = 48;
 /// Back button size (bottom-left). Matches the load-save / credits Back
 /// buttons so the main-menu overlays feel consistent.
@@ -4479,11 +4479,10 @@ pub fn buildSettingsPanel(
         .blocks_input = false,
     } });
 
-    // Control rows. Each row: label (left, `settings_label_width` wide) +
-    // control (right, remaining width). Vertically stacked below the header,
-    // centered as a group in the space between header and Back button.
-    const control_x = content_x + settings_label_width + settings_row_gap;
-    const control_width = content_width - settings_label_width - settings_row_gap;
+    // Control rows. Each row: label (left) + control (right, flush
+    // against the label — measured per-row so the control sits right after
+    // the label text, not at a fixed column). Vertically stacked below the
+    // header, centered as a group between header and Back button.
 
     // 5 toggle/choice rows (sliders land in slice 3b):
     //   0. VSync (toggle)
@@ -4498,48 +4497,60 @@ pub fn buildSettingsPanel(
     const rows_y_start = header_y + lineHeight(settings_header_font_size) + settings_header_gap +
         @divTrunc(buttons_top - (header_y + lineHeight(settings_header_font_size) + settings_header_gap) - rows_total_height, 2);
 
+    // Helper: emit a row label at content_x, vertically centered in the row,
+    // and return the x position flush after the label (label_width + gap).
+    const emitLabel = struct {
+        fn run(
+            elems: *UiElementList,
+            alloc: std.mem.Allocator,
+            fm: FontMetrics,
+            label_text: []const u8,
+            x: i32,
+            y: i32,
+        ) i32 {
+            const label_width = fm.measureSpanWidth(text(label_text), settings_row_font_size);
+            elems.append(alloc, .{ .text_label = .{
+                .text = label_text,
+                .screen_position = .{ .x = x, .y = y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
+                .font_size = settings_row_font_size,
+                .blocks_input = false,
+            }}) catch @panic("failed to append settings label");
+            return x + label_width + settings_label_to_control_gap;
+        }
+    }.run;
+
     var row_index: i32 = 0;
-    const row_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
     // Row 0: VSync toggle.
-    try elements.append(allocator, .{ .text_label = .{
-        .text = "VSync",
-        .screen_position = .{ .x = content_x, .y = row_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
-        .font_size = settings_row_font_size,
-        .blocks_input = false,
-    } });
-    try emitSettingButton(
-        elements,
-        allocator,
-        font_metrics,
-        .{ .x = control_x, .y = row_y, .width = settings_toggle_width, .height = settings_row_height },
-        if (settings.vsync) "On" else "Off",
-        settings_row_font_size,
-        .{ .id = .vsync },
-        false,
-        button_color,
-    );
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "VSync", content_x, r_y);
+        try emitSettingButton(
+            elements,
+            allocator,
+            font_metrics,
+            .{ .x = ctrl_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
+            if (settings.vsync) "On" else "Off",
+            settings_row_font_size,
+            .{ .id = .vsync },
+            false,
+            button_color,
+        );
+    }
     row_index += 1;
 
     // Row 1: Camera Zoom — 4 buttons (25/50/75/100 hundredths → display as %).
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Camera Zoom",
-            .screen_position = .{ .x = content_x, .y = r_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
-            .font_size = settings_row_font_size,
-            .blocks_input = false,
-        } });
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Camera Zoom", content_x, r_y);
         const zoom_values = [_]u32{ 25, 50, 75, 100 };
         const zoom_labels = [_][]const u8{ "25%", "50%", "75%", "100%" };
-        const button_total_width = rowWidth(@intCast(zoom_values.len), settings_choice_button_width, settings_swatch_gap);
-        const button_start_x = control_x + @divTrunc(control_width - button_total_width, 2);
         for (zoom_values, zoom_labels, 0..) |value, label, i| {
             try emitSettingButton(
                 elements,
                 allocator,
                 font_metrics,
                 .{
-                    .x = button_start_x + @as(i32, @intCast(i)) * (settings_choice_button_width + settings_swatch_gap),
+                    .x = ctrl_x + @as(i32, @intCast(i)) * (settings_choice_button_width + settings_swatch_gap),
                     .y = r_y,
                     .width = settings_choice_button_width,
                     .height = settings_row_height,
@@ -4557,17 +4568,10 @@ pub fn buildSettingsPanel(
     // Row 2: Player Color — 6 swatches (player gradient indices 0–5).
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Player Color",
-            .screen_position = .{ .x = content_x, .y = r_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
-            .font_size = settings_row_font_size,
-            .blocks_input = false,
-        } });
-        const swatch_total_width = rowWidth(@as(i32, @intCast(types.gradient_color_count)), settings_swatch_size, settings_swatch_gap);
-        const swatch_start_x = control_x + @divTrunc(control_width - swatch_total_width, 2);
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Player Color", content_x, r_y);
         const swatch_y = r_y + @divTrunc(settings_row_height - settings_swatch_size, 2);
         for (0..types.gradient_color_count) |i| {
-            const sx = swatch_start_x + @as(i32, @intCast(i)) * (settings_swatch_size + settings_swatch_gap);
+            const sx = ctrl_x + @as(i32, @intCast(i)) * (settings_swatch_size + settings_swatch_gap);
             const swatch_rect: Rectangle = .{ .x = sx, .y = swatch_y, .width = settings_swatch_size, .height = settings_swatch_size };
             // Colored fill (the swatch itself).
             try elements.append(allocator, .{ .solid_rect = .{
@@ -4592,17 +4596,12 @@ pub fn buildSettingsPanel(
     // Row 3: Auto-skip attack step toggle.
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Auto-skip Attack Step",
-            .screen_position = .{ .x = content_x, .y = r_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
-            .font_size = settings_row_font_size,
-            .blocks_input = false,
-        } });
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Auto-skip Attack Step", content_x, r_y);
         try emitSettingButton(
             elements,
             allocator,
             font_metrics,
-            .{ .x = control_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
+            .{ .x = ctrl_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
             if (settings.auto_skip_attack_step_out_of_combat) "On" else "Off",
             settings_row_font_size,
             .{ .id = .auto_skip_attack_step_out_of_combat },
@@ -4615,17 +4614,12 @@ pub fn buildSettingsPanel(
     // Row 4: Auto-target at cursor toggle.
     {
         const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "Auto-target at Cursor",
-            .screen_position = .{ .x = content_x, .y = r_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
-            .font_size = settings_row_font_size,
-            .blocks_input = false,
-        } });
+        const ctrl_x = emitLabel(elements, allocator, font_metrics, "Auto-target at Cursor", content_x, r_y);
         try emitSettingButton(
             elements,
             allocator,
             font_metrics,
-            .{ .x = control_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
+            .{ .x = ctrl_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
             if (settings.auto_target_at_cursor) "On" else "Off",
             settings_row_font_size,
             .{ .id = .auto_target_at_cursor },

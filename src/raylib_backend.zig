@@ -1187,11 +1187,17 @@ pub const RaylibBackend = struct {
             },
             .button => |button| {
                 // Spriteless buttons are pure action/hit-test targets over a
-                // separate background; the renderer draws nothing for them.
+                // separate background (e.g. a 9-slice panel behind them); the
+                // renderer draws nothing for them — UNLESS highlighted, in
+                // which case a lightest stroked rect marks them (the active
+                // settings choice, or a hovered clickable).
                 if (button.sprite_id) |sprite_id| {
                     const dest = referenceRectangle(button.screen_position, button.width, button.height);
                     self.drawSprite(sprite_id, dest, null, button.color, 255);
                     if (button.highlighted) self.drawHighlightOutline(sprite_id, dest, highlight_color);
+                } else if (button.highlighted) {
+                    const dest = referenceRectangle(button.screen_position, button.width, button.height);
+                    rl.drawRectangleLinesEx(dest, @floatFromInt(outline_thickness), toRaylibColor(highlight_color, 255));
                 }
             },
             .text_label => |label| self.drawTextLabel(label, highlight_color),
