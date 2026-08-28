@@ -299,10 +299,6 @@ pub const InGameInput = struct {
     toggle_gear: bool = false,
     toggle_skills: bool = false,
     toggle_enemy_inspect: bool = false,
-    // (Future: a keyboard inspect binding — e.g. alt+Enter opens inspect
-    // on the tile-cursor entity — would land as an `Action.inspect_cursor`
-    // bool here via `checkAction`, consumed in `handleIdleInput` where the
-    // tile cursor is resolved. Not wired yet; right-click is the only path.)
     toggle_world_map: bool = false,
     swap_weapons: bool = false,
     /// Raw, unvalidated tile under the mouse this frame (screenToTile of the

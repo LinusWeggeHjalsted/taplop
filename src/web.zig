@@ -17,7 +17,6 @@
 //! (emccStep, emccDefaultFlags, etc.) are still used from build.zig.
 
 const std = @import("std");
-const rl = @import("raylib");
 const game = @import("main.zig");
 const session_setup = @import("session_setup.zig");
 const RaylibBackend = @import("raylib_backend.zig").RaylibBackend;

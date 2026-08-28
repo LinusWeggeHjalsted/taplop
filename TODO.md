@@ -70,8 +70,11 @@ Test by running `zig build run` and clicking through.
 - **Remaining 4b visuals** — gear + effect sprites, sprite animation (8 fps) +
   animated flag banner, ground items, decorations (footprint splitting DONE).
 - **Input/camera leftovers** — tab-targeting (cycle highlighted tiles
-  with Tab; reuse cursor resolution). (Right-click-drag camera pan DONE
-  — see DONE.md.)
+  with Tab; reuse cursor resolution). Keyboard inspect binding (e.g.
+  alt+Enter opens inspect on the tile-cursor entity): lands as an
+  `Action.inspect_cursor` bool via `checkAction`, consumed in
+  `handleIdleInput` where the tile cursor is resolved; right-click is the
+  only inspect path today. (Right-click-drag camera pan DONE — see DONE.md.)
 - **Decoration occlusion readability** — inset outline of entities / ground
   items / flag poles occluded by decoration overhang. Settled design — see
   DESIGN → Decorations & Footprint → Occlusion inset. Slices:

@@ -112,11 +112,11 @@ pub fn build(b: *std.Build) void {
     const build_info_module = build_info.createModule();
 
     // === Native target (raylib desktop client) ===
-    // The native build is the only compile that links raylib today. Its root is
-    // src/native.zig (the raylib-driven entry point); the shared game logic in
-    // src/main.zig stays raylib-free so the (future emscripten) web build and
-    // the test build can compile it. See raylib_backend.zig / native.zig for
-    // the platform seam.
+    // The native + web builds both link raylib (web via the emscripten target
+    // below). The native root is src/native.zig (the raylib-driven entry
+    // point); the shared game logic in src/main.zig stays raylib-free so the
+    // web build and the headless test build can compile it. See
+    // raylib_backend.zig / native.zig for the platform seam.
     const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
         .optimize = optimize,
@@ -187,10 +187,6 @@ pub fn build(b: *std.Build) void {
     // B). Built as a wasm32-emscripten library, then packaged into HTML via
     // emcc (zemscripten). Opt-in: `zig build web` produces zig-out/web/ziglop.html.
     // See DESIGN → Platform Seam (raylib) + File System & IO.
-    //
-    // Phase 0 (toolchain spike): src/web.zig is a minimal raylib window to
-    // validate emcc + raylib + wasm compile and render. The real game loop
-    // wiring lands in Phase 1 (frame-body refactor) + Phase 2 (IDBFS + game).
     const zemscripten = @import("zemscripten");
 
     const web_target = b.resolveTargetQuery(.{ .os_tag = .emscripten, .cpu_arch = .wasm32 });
@@ -229,13 +225,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .emsdk_allocator = .emmalloc,
     });
-    // The game uses the emscripten filesystem (IDBFS for persistence in Phase 2;
-    // embedded assets don't need it but FileSource.readFile falls back to the
-    // persistent dir, so the FS must exist). Allow memory growth so the wasm
-    // heap can expand beyond the initial allocation. USE_GLFW=3 links
-    // emscripten's GLFW3 shim — raylib's PLATFORM_WEB calls glfw* functions
-    // that emscripten provides via this shim (matching the raylib C library's
-    // own emccDefaultSettings wrapper).
     // The game uses the emscripten filesystem: IDBFS for persistence (mounted
     // at /ziglop in web.zig), and embedded assets fall back through
     // FileSource.readFile to the persistent dir. FORCE_FILESYSTEM enables the

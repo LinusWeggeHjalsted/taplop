@@ -1,11 +1,12 @@
 //! Platform-agnostic composition root. Owns the uncapped game loop
 //! (`gameLoop`/`run`), the per-iteration `update` step that ties input
-//! polling, event processing, and view construction together, and startup
-//! config loading (settings, color themes, weapon types, salvage tables).
-//! Never imports raylib — the platform driver (`native.zig`/`web.zig`)
-//! calls `run` with a duck-typed backend and drives `frame` per platform.
-//! See DESIGN → Platform Seam for the frame/driver split and the
-//! budget-driven drain.
+//! polling, event processing, and view construction together, and the
+//! round-trip reconstruction test. Startup config loading lives in
+//! `session_setup.zig`; the entry files build the `SessionSetup` there and
+//! hand it to `run`. Never imports raylib — the platform driver
+//! (`native.zig`/`web.zig`) calls `run` with a duck-typed backend and drives
+//! `frame` per platform. See DESIGN → Platform Seam for the frame/driver
+//! split and the budget-driven drain.
 
 const std = @import("std");
 const types = @import("types.zig");
