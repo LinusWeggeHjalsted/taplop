@@ -282,13 +282,15 @@ Open:
         `applyVolumes` / `playSounds` convert `@as(f32, vol) / 100.0` at the
         raylib seam. Free pre-release migration (v1 user file → version gate
         → fallback to defaults → next write persists v2).
-  - [ ] **Slice 3 — controls (toggles + choices + sliders) + persistence:**
-        `SettingId` enum + per-field descriptors in the builder; `SettingRef`
-        on control elements; `IdleInput.clicked_setting` for toggle/choice
-        clicks. Toggles: vsync + the 2 gameplay bools. Choices: camera_zoom
-        4-button row (25/50/75/100 — migrated to u32 in the zoom slice),
-        player_color_index 6-swatch row. New `slider`
-        `UiElement` variant + click/drag handler (integer, step 1):
+  - [~] **Slice 3a — toggles + choices + persistence:** `SettingId` enum
+        + `SettingRef` on `Button`; `AnytimeInput.clicked_setting` for
+        toggle/choice clicks (folded in main.zig release dispatch, the
+        `clicked_save_row` pattern); `.change_setting` action routed through
+        `options_action`. Toggles: vsync + the 2 gameplay bools. Choices:
+        camera_zoom 4-button row (25/50/75/100), player_color_index 6-swatch
+        row. `markSettingsDirty` on every change. DONE.
+  - [ ] **Slice 3b — sliders + audio live-apply:** new `slider` `UiElement`
+        variant + click/drag handler (integer, step 1):
         render_fps_cap 0–256 (0 = "Uncapped" label), animation_fps 1–16, the
         3 volumes 0–100. `markWriteDirty(.settings, …)` on every change.
   - [ ] **Slice 4 — live-apply:** `SessionState.last_applied_settings`

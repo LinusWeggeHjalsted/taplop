@@ -288,6 +288,12 @@ pub const AnytimeInput = struct {
     /// so the action takes effect immediately even though the menu pauses
     /// the game. Null when no options button was clicked this tick.
     options_action: ?types.Action = null,
+    /// Which settings control was clicked, set alongside
+    /// `options_action == .change_setting` by the button-release dispatch
+    /// in main.zig — Action can't carry a payload, so the SettingRef rides
+    /// here. Valid only in the same frame as the click. See DESIGN → UI
+    /// Framework → Settings screen.
+    clicked_setting: ?types.SettingRef = null,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -376,6 +382,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         // options_action switch runs regardless of screen. See DESIGN → UI
         // Framework → Settings screen.
         .open_settings => player_input.anytime.options_action = action,
+        .change_setting => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,

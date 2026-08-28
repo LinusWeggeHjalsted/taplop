@@ -128,6 +128,12 @@ fn update(
                             .save_file => |row| player_input.idle.clicked_save_row = row,
                             else => {},
                         };
+                        // Settings controls: the SettingRef (which field +
+                        // which value) rides in `anytime.clicked_setting`
+                        // alongside the `.change_setting` action.
+                        if (button.setting_ref) |sref| {
+                            player_input.anytime.clicked_setting = sref;
+                        }
                         // Release sound: generic button-up for actions without a
                         // specific sound. Actions WITH a specific sound (skip,
                         // swap_weapons, panel toggles) get their sound from the

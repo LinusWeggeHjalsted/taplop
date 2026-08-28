@@ -422,6 +422,8 @@ pub fn view(
             frame_allocator,
             font_metrics,
             ui.screenRect(),
+            settings,
+            active_theme.player_gradient,
             button_color,
         ) catch @panic("failed to build settings panel");
     }

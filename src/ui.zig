@@ -654,6 +654,11 @@ pub const Button = struct {
     /// (e.g. a skill-bar slot: click = activate the skill, drag = reorder/
     /// clear). Null for action-only buttons. See `refAt`.
     ref: ?SlotRef = null,
+    /// Settings control identity, if this button is a settings toggle or
+    /// choice. The `.change_setting` action + `AnytimeInput.clicked_setting`
+    /// fold this into the handler. Null for non-settings buttons. See
+    /// DESIGN → UI Framework → Settings screen.
+    setting_ref: ?types.SettingRef = null,
     blocks_input: bool = true,
 };
 
@@ -4376,29 +4381,78 @@ pub fn buildCreditsPanel(
 
 // --- Settings screen (full screen, overlay) ---
 
-/// Settings-screen shell constants. The control rows will land in slice 3;
-/// for now the panel is a full-screen `blocks_input` surface + a Back
-/// button bottom-left so the overlay wiring (open/close, gating, options-
-/// menu drill-in) can land + test independently of the controls.
 pub const settings_padding: i32 = 48;
 pub const settings_header_font_size: i32 = 96;
+pub const settings_header_gap: i32 = 64;
+pub const settings_row_font_size: i32 = 56;
+pub const settings_row_height: i32 = 120;
+pub const settings_row_gap: i32 = 32;
+pub const settings_label_width: i32 = 1200;
 pub const settings_button_gap: i32 = 48;
 /// Back button size (bottom-left). Matches the load-save / credits Back
 /// buttons so the main-menu overlays feel consistent.
 pub const settings_button_width: i32 = 768;
 pub const settings_button_height: i32 = 160;
+/// Toggle button (On/Off) width — sits in the control area of a row.
+pub const settings_toggle_width: i32 = 400;
+/// Camera-zoom choice button width (one of 4).
+pub const settings_choice_button_width: i32 = 240;
+/// Player-color swatch size (one of 6).
+pub const settings_swatch_size: i32 = 120;
+pub const settings_swatch_gap: i32 = 16;
+
+/// Emit a settings control button: a tinted 9-slice panel + a button
+/// carrying `setting_ref` (the field identity) + a centered text label.
+/// Like `emitPanelButton` but for the settings binding (setting_ref on the
+/// button, not a SlotRef) with a `highlighted` flag for the active choice.
+fn emitSettingButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell: Rectangle,
+    label: []const u8,
+    font_size: i32,
+    sref: types.SettingRef,
+    highlighted: bool,
+    button_color: Color,
+) !void {
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = .change_setting,
+        .setting_ref = sref,
+        .highlighted = highlighted,
+    } });
+    const label_width = font_metrics.measureSpanWidth(text(label), font_size);
+    const label_box = cell.placeCenter(label_width, font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = label_box.position(),
+        .font_size = font_size,
+        .blocks_input = false,
+    } });
+}
 
 /// Build the settings screen: a full-screen modal panel with a centered
-/// "Settings" header and a Back button in the bottom-left. The panel blocks
-/// input to the surface behind it (main menu or the options menu). The Back
-/// button reuses the `.open_credits` action's sibling `.open_settings`
-/// (toggle semantics — the entry button opens, the Back button closes,
-/// same action). See DESIGN → UI Framework → Settings screen.
+/// "Settings" header, a column of control rows (toggle/choice — sliders
+/// land in slice 3b), and a Back button in the bottom-left. The panel
+/// blocks input to the surface behind it (main menu or the options menu).
+/// See DESIGN → UI Framework → Settings screen.
 pub fn buildSettingsPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     screen: Rectangle,
+    settings: types.Settings,
+    player_gradient: types.ColorGradient,
     button_color: Color,
 ) !void {
     // Full-screen modal background — blocks input to the surface behind it.
@@ -4424,6 +4478,161 @@ pub fn buildSettingsPanel(
         .font_size = settings_header_font_size,
         .blocks_input = false,
     } });
+
+    // Control rows. Each row: label (left, `settings_label_width` wide) +
+    // control (right, remaining width). Vertically stacked below the header,
+    // centered as a group in the space between header and Back button.
+    const control_x = content_x + settings_label_width + settings_row_gap;
+    const control_width = content_width - settings_label_width - settings_row_gap;
+
+    // 5 toggle/choice rows (sliders land in slice 3b):
+    //   0. VSync (toggle)
+    //   1. Camera Zoom (4-button choice)
+    //   2. Player Color (6-swatch choice)
+    //   3. Auto-skip attack step (toggle)
+    //   4. Auto-target at cursor (toggle)
+    const row_count: i32 = 5;
+    const rows_total_height = rowWidth(row_count, settings_row_height, settings_row_gap);
+    const buttons_top = screen.y + screen.height - settings_padding -
+        settings_button_height - settings_button_gap;
+    const rows_y_start = header_y + lineHeight(settings_header_font_size) + settings_header_gap +
+        @divTrunc(buttons_top - (header_y + lineHeight(settings_header_font_size) + settings_header_gap) - rows_total_height, 2);
+
+    var row_index: i32 = 0;
+    const row_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+    // Row 0: VSync toggle.
+    try elements.append(allocator, .{ .text_label = .{
+        .text = "VSync",
+        .screen_position = .{ .x = content_x, .y = row_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
+        .font_size = settings_row_font_size,
+        .blocks_input = false,
+    } });
+    try emitSettingButton(
+        elements,
+        allocator,
+        font_metrics,
+        .{ .x = control_x, .y = row_y, .width = settings_toggle_width, .height = settings_row_height },
+        if (settings.vsync) "On" else "Off",
+        settings_row_font_size,
+        .{ .id = .vsync },
+        false,
+        button_color,
+    );
+    row_index += 1;
+
+    // Row 1: Camera Zoom — 4 buttons (25/50/75/100 hundredths → display as %).
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "Camera Zoom",
+            .screen_position = .{ .x = content_x, .y = r_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
+            .font_size = settings_row_font_size,
+            .blocks_input = false,
+        } });
+        const zoom_values = [_]u32{ 25, 50, 75, 100 };
+        const zoom_labels = [_][]const u8{ "25%", "50%", "75%", "100%" };
+        const button_total_width = rowWidth(@intCast(zoom_values.len), settings_choice_button_width, settings_swatch_gap);
+        const button_start_x = control_x + @divTrunc(control_width - button_total_width, 2);
+        for (zoom_values, zoom_labels, 0..) |value, label, i| {
+            try emitSettingButton(
+                elements,
+                allocator,
+                font_metrics,
+                .{
+                    .x = button_start_x + @as(i32, @intCast(i)) * (settings_choice_button_width + settings_swatch_gap),
+                    .y = r_y,
+                    .width = settings_choice_button_width,
+                    .height = settings_row_height,
+                },
+                label,
+                settings_row_font_size,
+                .{ .id = .camera_zoom, .choice_value = value },
+                settings.camera_zoom == value,
+                button_color,
+            );
+        }
+    }
+    row_index += 1;
+
+    // Row 2: Player Color — 6 swatches (player gradient indices 0–5).
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "Player Color",
+            .screen_position = .{ .x = content_x, .y = r_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
+            .font_size = settings_row_font_size,
+            .blocks_input = false,
+        } });
+        const swatch_total_width = rowWidth(@as(i32, @intCast(types.gradient_color_count)), settings_swatch_size, settings_swatch_gap);
+        const swatch_start_x = control_x + @divTrunc(control_width - swatch_total_width, 2);
+        const swatch_y = r_y + @divTrunc(settings_row_height - settings_swatch_size, 2);
+        for (0..types.gradient_color_count) |i| {
+            const sx = swatch_start_x + @as(i32, @intCast(i)) * (settings_swatch_size + settings_swatch_gap);
+            const swatch_rect: Rectangle = .{ .x = sx, .y = swatch_y, .width = settings_swatch_size, .height = settings_swatch_size };
+            // Colored fill (the swatch itself).
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = swatch_rect.position(),
+                .width = swatch_rect.width,
+                .height = swatch_rect.height,
+                .color = player_gradient.colors[i],
+            } });
+            // Invisible hit-test button over the swatch.
+            try elements.append(allocator, .{ .button = .{
+                .screen_position = swatch_rect.position(),
+                .width = swatch_rect.width,
+                .height = swatch_rect.height,
+                .action = .change_setting,
+                .setting_ref = .{ .id = .player_color_index, .choice_value = @intCast(i) },
+                .highlighted = settings.player_color_index == i,
+            } });
+        }
+    }
+    row_index += 1;
+
+    // Row 3: Auto-skip attack step toggle.
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "Auto-skip Attack Step",
+            .screen_position = .{ .x = content_x, .y = r_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
+            .font_size = settings_row_font_size,
+            .blocks_input = false,
+        } });
+        try emitSettingButton(
+            elements,
+            allocator,
+            font_metrics,
+            .{ .x = control_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
+            if (settings.auto_skip_attack_step_out_of_combat) "On" else "Off",
+            settings_row_font_size,
+            .{ .id = .auto_skip_attack_step_out_of_combat },
+            false,
+            button_color,
+        );
+    }
+    row_index += 1;
+
+    // Row 4: Auto-target at cursor toggle.
+    {
+        const r_y = rows_y_start + row_index * (settings_row_height + settings_row_gap);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "Auto-target at Cursor",
+            .screen_position = .{ .x = content_x, .y = r_y + @divTrunc(settings_row_height - settings_row_font_size, 2) },
+            .font_size = settings_row_font_size,
+            .blocks_input = false,
+        } });
+        try emitSettingButton(
+            elements,
+            allocator,
+            font_metrics,
+            .{ .x = control_x, .y = r_y, .width = settings_toggle_width, .height = settings_row_height },
+            if (settings.auto_target_at_cursor) "On" else "Off",
+            settings_row_font_size,
+            .{ .id = .auto_target_at_cursor },
+            false,
+            button_color,
+        );
+    }
 
     // Back button, bottom-left.
     const button_y = screen.y + screen.height - settings_padding - settings_button_height;

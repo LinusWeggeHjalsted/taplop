@@ -124,6 +124,35 @@ pub const Action = enum {
     open_editor,
     open_settings,
     open_credits,
+    // A settings toggle or choice button was clicked. The SettingRef (which
+    // field + which value) rides in `AnytimeInput.clicked_setting`. See
+    // DESIGN → UI Framework → Settings screen.
+    change_setting,
+};
+
+/// One per editable `Settings` scalar field. Drives the settings-screen
+/// control→field binding (see DESIGN → UI Framework → Settings screen).
+pub const SettingId = enum {
+    master_volume,
+    music_volume,
+    sound_effects_volume,
+    vsync,
+    render_fps_cap,
+    camera_zoom,
+    animation_fps,
+    auto_skip_attack_step_out_of_combat,
+    auto_target_at_cursor,
+    player_color_index,
+};
+
+/// Carried on a settings control `Button` so the input handler knows which
+/// field to mutate and how. For toggles, `choice_value` is null (the
+/// handler flips the bool). For choices, `choice_value` is the value this
+/// button represents (e.g. camera_zoom 50, player_color_index 3). Sliders
+/// carry the id only and handle their own drag state (slice 3b).
+pub const SettingRef = struct {
+    id: SettingId,
+    choice_value: ?u32 = null,
 };
 
 /// The context-specific sound an action plays on button release, if any.

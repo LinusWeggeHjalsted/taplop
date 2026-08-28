@@ -5420,3 +5420,39 @@ in the first pass; restored as the f32 conversion.
 DESIGN fix: the stale `types.zig` comment "1.0 = no zoom, <1 = zoomed out,
 >1 = zoomed in" is replaced — default is 0.5, 1.0 is zoomed in (the
 previous comment described an older freeform-zoom model).
+
+### Slice 3a — toggles + choices + persistence
+
+The settings screen now has 5 working controls (toggles + choices); sliders
+land in 3b. Binding mechanism:
+
+- `SettingId` enum (types.zig, one per editable field) + `SettingRef` struct
+  `{ id, choice_value: ?u32 }`. Lives in types.zig (alongside `Action`)
+  because input.zig needs it but doesn't import ui.zig.
+- `Button.setting_ref: ?types.SettingRef` — a new optional field, separate
+  from `ref: ?SlotRef` (settings controls aren't draggable, so they don't
+  touch the drag machinery).
+- `Action.change_setting` — routed through `applyAction` →
+  `anytime.options_action` (same path as `.open_settings`, so one handler
+  serves both main-menu and in-game contexts).
+- `AnytimeInput.clicked_setting: ?types.SettingRef` — folded in main.zig's
+  button-release dispatch alongside `applyAction` (the `clicked_save_row`
+  pattern: Action can't carry a payload, so the ref rides in a sibling
+  field, same-frame only).
+- `handleAnytimeInput`'s `options_action` switch: `.change_setting` arm
+  reads `anytime.clicked_setting`, mutates `history.settings` directly
+  (settings are off the undo timeline — a direct write, like `ui_state`
+  toggles — so replay-safe by construction), queues a click sound, and
+  calls `markSettingsDirty` for debounced persistence.
+
+Controls (5 rows, centered between header and Back button):
+- VSync: toggle button (On/Off).
+- Camera Zoom: 4 buttons (25%/50%/75%/100%), active highlighted.
+- Player Color: 6 color swatches (player gradient indices 0–5), colored
+  fill + invisible hit-test button, active highlighted.
+- Auto-skip Attack Step: toggle.
+- Auto-target at Cursor: toggle.
+
+`emitSettingButton` helper (like `emitPanelButton` but with `setting_ref` +
+`highlighted` instead of just an action). The 5 slider fields (3 volumes +
+render_fps_cap + animation_fps) are not shown yet — 3b adds the slider rows.

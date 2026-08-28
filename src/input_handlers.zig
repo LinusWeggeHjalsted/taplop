@@ -838,6 +838,35 @@ pub fn handleAnytimeInput(
             // → Settings screen.
             .open_settings =>
                 history.session.ui_state.settings_open = !history.session.ui_state.settings_open,
+            // A settings toggle or choice was clicked. The SettingRef rode
+            // in `anytime.clicked_setting`. Mutate `history.settings` (a
+            // direct write — settings are off the undo timeline, like
+            // `ui_state` toggles) + mark dirty for debounced persistence.
+            // See DESIGN → UI Framework → Settings screen.
+            .change_setting => {
+                const sref = anytime.clicked_setting orelse return;
+                const settings = &history.settings;
+                switch (sref.id) {
+                    .vsync => settings.vsync = !settings.vsync,
+                    .auto_skip_attack_step_out_of_combat =>
+                        settings.auto_skip_attack_step_out_of_combat = !settings.auto_skip_attack_step_out_of_combat,
+                    .auto_target_at_cursor =>
+                        settings.auto_target_at_cursor = !settings.auto_target_at_cursor,
+                    .camera_zoom => settings.camera_zoom = sref.choice_value orelse return,
+                    .player_color_index => settings.player_color_index = sref.choice_value orelse return,
+                    // Sliders are handled by the drag handler (slice 3b),
+                    // not by this click path. A click on a slider label
+                    // area without a choice_value is a no-op here.
+                    .master_volume,
+                    .music_volume,
+                    .sound_effects_volume,
+                    .render_fps_cap,
+                    .animation_fps,
+                    => return,
+                }
+                if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
+                markSettingsDirty(history);
+            },
             else => {},
         }
     }
