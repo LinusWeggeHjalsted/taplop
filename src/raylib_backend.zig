@@ -686,20 +686,28 @@ pub const RaylibBackend = struct {
 
     /// Apply music + sfx volumes from settings. Sfx volume is applied per-play
     /// (see `playSounds`); this sets the music stream volume. Master scales
-    /// both. No-op when audio isn't ready.
+    /// both. Volumes are u32 0–100 in Settings; converted to f32 0.0–1.0
+    /// here at the raylib seam. No-op when audio isn't ready. See DESIGN → UI
+    /// Framework → Settings screen (Volume integer migration).
     pub fn applyVolumes(self: *RaylibBackend, settings: types.Settings) void {
         if (!self.audio_ready) return;
         if (self.music) |music| {
-            rl.setMusicVolume(music, settings.music_volume * settings.master_volume);
+            const master = @as(f32, @floatFromInt(settings.master_volume)) / 100.0;
+            const music_vol = @as(f32, @floatFromInt(settings.music_volume)) / 100.0;
+            rl.setMusicVolume(music, music_vol * master);
         }
     }
 
     /// Play all queued one-shot sounds (drained from `SessionState`), each at
-    /// `sfx_volume * master_volume`. Missing sounds (cached null) are skipped.
-    /// No-op when audio isn't ready. See DESIGN → Audio.
+    /// `sfx_volume * master_volume`. Volumes are u32 0–100 in Settings;
+    /// converted to f32 0.0–1.0 here at the raylib seam. Missing sounds
+    /// (cached null) are skipped. No-op when audio isn't ready. See DESIGN →
+    /// Audio.
     pub fn playSounds(self: *RaylibBackend, sounds: []const types.SoundId, settings: types.Settings) void {
         if (!self.audio_ready) return;
-        const volume = settings.sound_effects_volume * settings.master_volume;
+        const master = @as(f32, @floatFromInt(settings.master_volume)) / 100.0;
+        const sfx_vol = @as(f32, @floatFromInt(settings.sound_effects_volume)) / 100.0;
+        const volume = sfx_vol * master;
         for (sounds) |sound| {
             if (self.sound_cache.get(sound)) |maybe_loaded| {
                 if (maybe_loaded) |loaded| {

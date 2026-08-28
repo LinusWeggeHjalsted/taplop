@@ -172,9 +172,13 @@ pub const InputBinding = struct {
 };
 
 pub const Settings = struct {
-    master_volume: f32 = 1.0, // 0.0–1.0, scales music + sfx alike
-    music_volume: f32 = 0.5, // 0.0–1.0, before master
-    sound_effects_volume: f32 = 0.5, // 0.0–1.0, before master
+    // Volumes are u32 percentages 0–100 (clamped at parse). The backend
+    // converts to f32 0.0–1.0 at the raylib seam (`applyVolumes` /
+    // `playSounds`). See DESIGN → UI Framework → Settings screen (Volume
+    // integer migration).
+    master_volume: u32 = 100, // 0–100, scales music + sfx alike
+    music_volume: u32 = 50, // 0–100, before master
+    sound_effects_volume: u32 = 50, // 0–100, before master
     vsync: bool = true,
     // Frames-per-second cap for rendering. 0 = no explicit cap. Ignored when
     // vsync is on (vsync paces renders to the monitor refresh rate). When

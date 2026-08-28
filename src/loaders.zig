@@ -174,18 +174,21 @@ pub fn loadSettings(
     var settings: Settings = base orelse .{ .input_bindings = &.{} };
     const has_base = base != null;
 
-    // Audio
+    // Audio — volumes are u32 percentages 0–100, clamped inline (a
+    // hand-edited file with >100 silently clamps; settings are preferences,
+    // not gameplay, so no warning popup). See DESIGN → UI Framework →
+    // Settings screen (Volume integer migration).
     if (findSection(sections, "Audio")) |section| {
         if (section.entry_groups.len > 0) {
             const pairs = section.entry_groups[0].pairs;
             if (findValue(pairs, "master_volume")) |value| {
-                settings.master_volume = asF32(value) orelse settings.master_volume;
+                if (asU32(value)) |v| settings.master_volume = @min(v, 100);
             }
             if (findValue(pairs, "music_volume")) |value| {
-                settings.music_volume = asF32(value) orelse settings.music_volume;
+                if (asU32(value)) |v| settings.music_volume = @min(v, 100);
             }
             if (findValue(pairs, "sound_effects_volume")) |value| {
-                settings.sound_effects_volume = asF32(value) orelse settings.sound_effects_volume;
+                if (asU32(value)) |v| settings.sound_effects_volume = @min(v, 100);
             }
         }
     }
@@ -1861,11 +1864,11 @@ test "loadSettings parses settings sections into a Settings struct" {
     const allocator = std.testing.allocator;
     const raw_text =
         \\Metadata
-        \\file_format_version 1
+        \\file_format_version 2
         \\
         \\Audio
-        \\music_volume 0.8
-        \\sound_effects_volume 0.3
+        \\music_volume 80
+        \\sound_effects_volume 30
         \\
         \\Display
         \\vsync false
@@ -1893,9 +1896,9 @@ test "loadSettings parses settings sections into a Settings struct" {
     const settings = try loadSettings(sections, allocator, null);
     defer freeSettings(settings, allocator);
 
-    // Audio values
-    try std.testing.expectApproxEqAbs(0.8, settings.music_volume, 0.001);
-    try std.testing.expectApproxEqAbs(0.3, settings.sound_effects_volume, 0.001);
+    // Audio values (u32 percentages 0–100)
+    try std.testing.expectEqual(@as(u32, 80), settings.music_volume);
+    try std.testing.expectEqual(@as(u32, 30), settings.sound_effects_volume);
 
     // Display values
     try std.testing.expectEqual(false, settings.vsync);

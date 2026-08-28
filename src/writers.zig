@@ -248,6 +248,8 @@ pub fn writeSettings(
 
     // Audio
     try buffer.appendSlice(allocator, "\nAudio\n");
+    // Audio — u32 percentages 0–100. See DESIGN → UI Framework → Settings
+    // screen (Volume integer migration).
     try buffer.print(allocator, "master_volume {d}\n", .{settings.master_volume});
     try buffer.print(allocator, "music_volume {d}\n", .{settings.music_volume});
     try buffer.print(allocator, "sound_effects_volume {d}\n", .{settings.sound_effects_volume});

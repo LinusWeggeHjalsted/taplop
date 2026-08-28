@@ -446,7 +446,7 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     // Write a user settings.txt with a couple of distinct, checkable bindings.
     const user_settings =
         \\Metadata
-        \\file_format_version 1
+        \\file_format_version 2
         \\
         \\InputBindings
         \\input_type key
