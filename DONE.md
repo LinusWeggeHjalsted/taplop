@@ -5324,3 +5324,26 @@ tint. The tooltip comparison colors were renamed
 `ui.positive_color`/`ui.negative_color` since they now serve both
 consumers (gear-tooltip comparisons + combat numbers) — one artist-pass
 shade change updates both.
+
+### Web save export: browser download + "Export Save" rename (done)
+
+On web, the options-menu save button (renamed "Save Game" → "Export Save" for
+clarity) now also triggers a browser download of the just-written timestamped
+save — a file on disk without digging through IndexedDB. The autosave stays
+IDBFS-only (smooth resume; a download per autosave would be noise), and the
+timestamped save still lands in IDBFS as redundancy.
+
+- `file_source.triggerBrowserDownload(allocator, path)`: comptime-gated on
+  emscripten (no-op on native, extern never linked outside web builds — same
+  pattern as the IDBFS flush). Reads the file back from the emscripten
+  in-memory FS via `FS.readFile`, then anchor-clicks a `text/plain` Blob with
+  the file's basename; URL revoked + anchor removed after 1s.
+- Hook: the `write_save` handler, after a successful non-autosave write. The
+  replay gate upstream already covered it ("doesn't spam download prompts on
+  web" was written into that comment when the gate landed).
+- `persistent_mount_path` ("/ziglop") moved from web.zig to file_source.zig —
+  one source of truth shared by the IDBFS mount and the JS absolute paths.
+- Design + the browser user-gesture caveat recorded in DESIGN → File System
+  & IO → Web save export. Verified: native tests + build + `scripts/web.sh`
+  compile. NOT yet verified live in a browser (download gesture context) —
+  click Export Save in a `scripts/web.sh emrun` session to confirm.

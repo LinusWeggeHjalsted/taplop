@@ -23,6 +23,7 @@ const session_setup = @import("session_setup.zig");
 const RaylibBackend = @import("raylib_backend.zig").RaylibBackend;
 const types = @import("types.zig");
 const FileSource = @import("file_source.zig").FileSource;
+const file_source_mod = @import("file_source.zig");
 const crash_dump = @import("crash_dump.zig");
 
 // --- Emscripten externs (minimal subset of what zemscripten wraps) ---
@@ -46,7 +47,9 @@ pub const panic = crash_dump.panic;
 
 /// The virtual path where the IDBFS-backed persistent dir is mounted. Mirrors
 /// $HOME/.ziglop on native — FileSource reads/writes against this path.
-const persistent_virtual_path = "/ziglop";
+/// The constant lives in file_source.zig (shared with the JS seams that
+/// build absolute FS paths, e.g. triggerBrowserDownload).
+const persistent_virtual_path = file_source_mod.persistent_mount_path;
 
 /// Holds the session-long state the main-loop callback needs access to. The
 /// emscripten callback API passes a single `*anyopaque`, so we bundle the

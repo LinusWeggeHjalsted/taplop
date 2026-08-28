@@ -20,6 +20,7 @@ const functions = @import("functions.zig");
 const parser = @import("parser.zig");
 const loaders = @import("loaders.zig");
 const writers = @import("writers.zig");
+const file_source_mod = @import("file_source.zig");
 const lookups = @import("generated_lookups.zig");
 const deep_copy = @import("deep_copy.zig");
 const Skill = @import("skills/skill.zig").Skill;
@@ -1175,6 +1176,14 @@ pub fn processEvent(
                         );
                         return;
                     };
+                    // On web, the timestamped save (not the autosave — that's
+                    // the smooth-resume path in IDBFS) is also offered to the
+                    // player as a browser download, so a save file on disk
+                    // doesn't require digging through browser storage. No-op
+                    // on native. See DESIGN → File System & IO.
+                    if (!std.mem.eql(u8, write.save_path, writers.autosave_path)) {
+                        file_source_mod.triggerBrowserDownload(allocator, write.save_path);
+                    }
                 },
                 .backup_autosave => {
                     // Side effect: skip during replay (undo/redo scrubbing

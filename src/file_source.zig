@@ -325,6 +325,43 @@ fn flushPersistentDir() void {
     emscripten_run_script("FS.syncfs(false, function(err) { if (err) console.error('IDBFS flush failed:', err); });");
 }
 
+/// The virtual path where web mounts the IDBFS-backed persistent dir
+/// (mirrors $HOME/.ziglop on native). Single source of truth for the mount
+/// (web.zig) and for absolute FS paths in JS seams like
+/// `triggerBrowserDownload`.
+pub const persistent_mount_path = "/ziglop";
+
+/// On web, offer a file from the persistent dir to the player as a browser
+/// download (anchor click on a Blob of the file's bytes). The file must
+/// already be written — this reads it back from the emscripten in-memory FS.
+/// On native this is a no-op (comptime-dead branch), so the extern is never
+/// linked outside web builds. `allocator` only backs the script-string
+/// formatting.
+pub fn triggerBrowserDownload(allocator: std.mem.Allocator, path: []const u8) void {
+    if (@import("builtin").os.tag == .emscripten) {
+        const file_name = std.fs.path.basename(path);
+        const script_body = std.fmt.allocPrint(
+            allocator,
+            "(function() {{" ++
+                "var data = FS.readFile('{s}/{s}', {{encoding:'utf8'}});" ++
+                "var blob = new Blob([data], {{type:'text/plain'}});" ++
+                "var url = URL.createObjectURL(blob);" ++
+                "var a = document.createElement('a');" ++
+                "a.href = url;" ++
+                "a.download = '{s}';" ++
+                "document.body.appendChild(a);" ++
+                "a.click();" ++
+                "setTimeout(function() {{ URL.revokeObjectURL(url); a.remove(); }}, 1000);" ++
+                "}})();",
+            .{ persistent_mount_path, path, file_name },
+        ) catch @panic("failed to format download script");
+        defer allocator.free(script_body);
+        const script = allocator.dupeZ(u8, script_body) catch @panic("failed to null-terminate download script");
+        defer allocator.free(script);
+        emscripten_run_script(script);
+    }
+}
+
 // --- tests for listCustomMissions ---
 
 const testing = std.testing;

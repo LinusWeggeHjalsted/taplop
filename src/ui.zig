@@ -3916,7 +3916,7 @@ pub fn buildOptionsMenu(
         button_count += 1;
     }
 
-    buttons[button_count] = .{ .label = "Save Game", .action = .save_game };
+    buttons[button_count] = .{ .label = "Export Save", .action = .save_game };
     button_count += 1;
 
     buttons[button_count] = .{ .label = "Exit to Main Menu", .action = .exit_to_menu };

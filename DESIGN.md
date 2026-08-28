@@ -960,6 +960,29 @@ later (`loadMusicStreamFromMemory` / `loadSoundFromWave`).
 constructs the `FileSource`, and passes it into `main.run`. `main.zig` and all
 game logic stay path-agnostic.
 
+### Web save export (browser download)
+
+On web, a successful non-autosave `write_save` (the options-menu "Export
+Save" button) triggers a browser download of the just-written file — the
+player gets a save on disk without digging through IndexedDB. The seam is
+`file_source.triggerBrowserDownload` (reads the file back from the emscripten
+in-memory FS, anchor-clicks a Blob; comptime-dead on native so the extern
+never links outside web builds). Design points:
+
+- The AUTOSAVE never downloads — IDBFS stays the smooth-resume path; a
+  download prompt per autosave would be noise. Same for `backup_autosave`
+  (preservation, not a player action).
+- The timestamped save still lands in IDBFS too — the download is additive
+  redundancy, not a replacement.
+- Replay-gated upstream (`write_save` skips side effects while replaying), so
+  undo/redo scrubbing can't re-fire downloads.
+- The mount path constant is shared (`file_source.persistent_mount_path`)
+  between web.zig's IDBFS mount and the JS that builds absolute FS paths.
+- Browser user-gesture policy could block a programmatic download if the
+  click's activation expires before the handler runs; if that ever surfaces,
+  the fix is a JS-side queued-download flag consumed on the next real pointer
+  event. Pairs with a future upload/load-via-file-picker path.
+
 ### Modding by shadowing (side effect, not a designed feature)
 
 Because the read order checks the persistent dir BEFORE the embedded map, a
