@@ -141,17 +141,17 @@ pub const SessionState = struct {
 
     /// Held keyboard modifiers at this frame, copied from the per-frame
     /// `PlayerInput.modifiers` each tick in `update()`. Read by `view()` to
-    /// highlight the salvage-tool indicator while Shift is held (and any
-    /// future modifier-keyed view feedback). Transient view state — off the
-    /// undoable GameState, replay-safe by construction (like tile_cursor /
-    /// camera_pan). See DESIGN → Input.
+    /// highlight the salvage-tool indicator while Shift is held. Transient
+    /// view state — off the undoable GameState, replay-safe by construction
+    /// (like tile_cursor / camera_pan). See DESIGN → Input.
     held_modifiers: types.Modifiers = .{},
 
     /// Monotonic session-relative animation clock (accumulated microseconds).
     /// Advanced by `frame()` only when the world isn't paused (options menu /
     /// pending error open), so anims freeze during pause and resume cleanly.
-    /// Read by `view()` to pick sprite-animation frames (flag banner now;
-    /// one-shot anim gating later). NEVER read by event handlers — that would
+    /// Read by `view()` to pick sprite-animation frames (the flag banner) and
+    /// gate one-shot anims (skill-icon pop, hit flash, damage/heal numbers).
+    /// NEVER read by event handlers — that would
     /// make a handler impure (its output would depend on wall-clock time),
     /// breaking the replay-verification invariant (handlers are deterministic
     /// functions of (state, event)). See DESIGN → Animation. Off the
@@ -1057,10 +1057,9 @@ pub const GameStateHistory = struct {
     /// they never reach here (their legality is enforced by the parent
     /// handler's own logic, and `verifyReplayMatch` checks their structure).
     ///
-    /// Fail-fast `@panic` for now (malicious replay = reject). A future
-    /// viewer-facing load may soften this to a popup; server-side leaderboard
-    /// validation keeps it hard. See DESIGN → Determinism & Tiebreaking →
-    /// Replay VERIFICATION.
+    /// Fail-fast `@panic` (malicious replay = reject); server-side leaderboard
+    /// validation reuses this hard gate. See DESIGN → Determinism &
+    /// Tiebreaking → Replay VERIFICATION.
     fn validatePlayerAction(self: *GameStateHistory, event: Event) void {
         switch (event) {
             .player_input_event => |pi| switch (pi) {
