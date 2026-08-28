@@ -4047,7 +4047,7 @@ pub const load_save_button_height: i32 = 160;
 /// Build the load-save browser: a full-screen modal panel listing
 /// `save_files` (newest first — the slice arrives pre-sorted from
 /// `FileSource.listSaveFiles`), one clickable row per save, a Back button
-/// bottom-left and (web only) an Import External Save button bottom-right.
+/// bottom-left and (web only) an Import button bottom-right.
 /// Overflowing lists scroll: only the visible row window is emitted and a
 /// scrollbar is drawn. `scroll_offset` is in rows and clamped here to
 /// `[0, max_scroll_row]` (the view is the only place that knows the max,
@@ -4177,7 +4177,7 @@ pub fn buildLoadSavePanel(
         }
     }
 
-    // Bottom corners: Back (always) + Import External Save (web only).
+    // Bottom corners: Back (always) + Import (web only).
     const button_y = screen.y + screen.height - load_save_padding - load_save_button_height;
     try emitPanelButton(
         elements,
@@ -4204,7 +4204,7 @@ pub fn buildLoadSavePanel(
                 .width = load_save_button_width,
                 .height = load_save_button_height,
             },
-            "Import External Save",
+            "Import",
             menu_button_font_size,
             .import_save,
         );
