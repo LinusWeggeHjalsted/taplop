@@ -111,13 +111,6 @@ pub fn build(b: *std.Build) void {
     build_info.addOption(bool, "dev_mode", dev_mode);
     const build_info_module = build_info.createModule();
 
-    // === Web target (deferred) ===
-    // The web build will be a wasm32-emscripten exe that reuses the SAME
-    // raylib backend + gameLoop as native (raylib supports web via emscripten).
-    // The old wasm32-freestanding target (hand-written JS renderer driving an
-    // exported `update`) was removed: we chose the raylib/emscripten path, so
-    // that stub is dead. Add the emscripten exe here when the web phase lands.
-
     // === Native target (raylib desktop client) ===
     // The native build is the only compile that links raylib today. Its root is
     // src/native.zig (the raylib-driven entry point); the shared game logic in
