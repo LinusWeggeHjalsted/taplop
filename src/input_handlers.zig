@@ -1183,16 +1183,6 @@ pub fn handleIdleInput(
 
     // Main menu: menu buttons emit a menu_action (no keybind path).
     if (current.screen == .main_menu) {
-        // Lazy autosave recheck: on web, IDBFS syncfs (load from IndexedDB)
-        // is async and may complete after the startup fileExists check.
-        // Re-check here while the button is absent so Continue appears once
-        // syncfs lands. Gate: only while !autosave_available (once true, it
-        // stays true — no per-frame stat). See DESIGN → File System & IO.
-        if (!history.session.autosave_available) {
-            if (history.file_source.fileExists(writers.autosave_path)) {
-                history.session.autosave_available = true;
-            }
-        }
         if (idle.menu_action) |action| {
             switch (action) {
                 .new_game => event_handlers.pushPlayerAction(current, .start_new_game, allocator),

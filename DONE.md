@@ -5506,6 +5506,41 @@ auto-target) + 2 choices (camera_zoom 4-button, player_color_index 6-swatch).
   animation_fps are read live each frame by `view()`/`frame()` — no apply
   step needed.
 
+### Web IDBFS boot race — two-phase boot (settings overlay + autosave)
+
+`web.zig:main()` used to run `createSessionSetup` immediately after
+`mountPersistentDir()`, which fires `FS.syncfs(true, cb)` — ASYNC (IndexedDB
+has no sync API). The callback that populates the in-memory IDBFS layer fires
+on the event loop, AFTER `createSessionSetup`'s startup reads. So every web
+launch raced: `overlayUserSettings` read `settings.txt` from an empty layer
+→ `FileNotFound` → fell back to defaults (the user's persisted settings were
+never applied); the autosave `fileExists` check likewise missed. The
+`mountPersistentDir` comment even rationalized the race as "correct for a
+first run" — but a returning user lost their settings/autosave every launch.
+
+Autosave had a point-fix: a per-frame lazy recheck in `handleIdleInput` on
+the main menu (re-stat `saves/autosave.txt` while `!autosave_available`, flip
+the flag when syncfs landed → Continue appeared a few frames late). Settings
+had no such fix and never worked on web.
+
+Root-cause fix: TWO-PHASE boot. `main()` now does only window + IDBFS mount +
+FileSource/Backend construction, then registers `frameCallback` and returns.
+The callback polls `window.__ziglopSyncfsLoaded` (set in the `syncfs(true, …)`
+callback) each rAF; until set, returns without rendering (a few brief blank
+frames — syncfs is typically <50ms; GL clear color shows). On the first rAF
+after the flag, it runs `createSessionSetup` + `initAudio` +
+`crash_dump.install` + `fixupPointers` ONCE (gated `!booted`), then drives
+`game.frame` every call. New extern `emscripten_run_script_int` for the flag
+poll. `WebSession` gained `setup: ?SessionSetup`, `file_source`/`io`/
+`allocator` pointers, `booted: bool`.
+
+This fixed both reads at the source, so the lazy autosave recheck became
+dead code and was DELETED from `input_handlers.handleIdleInput` — Continue
+now shows on the first rendered frame (no late-flicker), and settings
+overlay applies on web. Native is untouched (sync I/O, no race). The
+headless `node zig-out/web/ziglop.js` probe can't exercise this path (needs
+`window`/`FS`/rAF), so runtime verification is browser-only.
+
 ### Show FPS setting + diagnostic overlay
 
 `Settings.show_fps: bool` (default off) + `SettingId.show_fps` toggle row in

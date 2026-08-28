@@ -928,6 +928,37 @@ entry file. Web (emscripten) is WIRED: web.zig mounts an IDBFS slice at
 /ziglop (IndexedDB-backed, survives browser close) and builds FileSource on
 that dir — same read/write code path as native, just a different dir source.
 
+### Web IDBFS boot race (two-phase boot)
+
+IndexedDB is ASYNC-ONLY — there is no synchronous way to populate the
+in-memory IDBFS layer from it. `FS.syncfs(true, cb)` starts the load and
+fires `cb` on the event loop when the in-memory layer is ready. Any read
+before `cb` sees an empty layer (every file `FileNotFound`).
+
+`createSessionSetup` does startup reads against the persistent dir
+(`overlayUserSettings` reads `settings.txt`; the autosave detector stats
+`saves/autosave.txt`). If `web.zig:main()` ran it immediately after
+`mountPersistentDir()` (the old shape), those reads raced the syncfs load
+and missed persisted state EVERY launch — the settings overlay never
+applied on web, and Continue didn't appear until a later point-fix poll.
+
+Fix: TWO-PHASE boot. `main()` does only the window + IDBFS mount +
+FileSource/Backend construction, then registers `frameCallback` and
+returns. The callback polls `window.__ziglopSyncfsLoaded` (set in the
+`syncfs(true, …)` callback) each rAF; until set, it returns without
+rendering (a few brief blank frames — syncfs is typically <50ms). On the
+first rAF after the flag is set, it runs `createSessionSetup` +
+`initAudio` + `crash_dump.install` + `fixupPointers` ONCE (gated on
+`!booted`), then drives `game.frame` every call after. `main()`'s locals
+(`file_source`, `io`, `allocator`) live for the tab's lifetime because
+`emscripten_set_main_loop_arg`'s `simulate_infinite_loop` halts main's
+control flow, so the `WebSession`'s pointers into them stay valid.
+
+This fixed the root cause for both reads at once, so the per-frame lazy
+autosave recheck (formerly in `handleIdleInput` on the main menu) became
+dead code and was DELETED — Continue now appears on the first rendered
+frame instead of a few frames late.
+
 ### Autosave
 
 The autosave (`saves/autosave.txt`) is the recovery path for a player who
