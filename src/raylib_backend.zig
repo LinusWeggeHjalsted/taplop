@@ -271,53 +271,31 @@ fn blitTransform() ViewTransform {
     };
 }
 
-/// Premultiply a font atlas texture in-place (readback → premultiply →
-/// re-upload) so text composites correctly under `BLEND_ALPHA_PREMULTIPLY`.
-/// The atlas is white-glyph-on-transparent with straight alpha; under a
-/// premultiplied blend that would render too dark (white*alpha applied
-/// twice), so we premultiply once at load. One-time startup cost.
-///
-/// The premultiply happens in the texture's NATIVE format — raylib font
-/// atlases are `GRAY_ALPHA` (gray = color, alpha = coverage; premultiplying
-/// means gray = gray*alpha/255). `updateTexture` uploads bytes assuming the
-/// texture's own format, so converting the readback image to RGBA8 first
-/// would upload 4bpp data to a 2bpp texture and garble the atlas (glyphs
-/// sliced into wrong-sized fragments). Best-effort: if the readback fails or
-/// the format is unexpected, the atlas stays straight-alpha (text renders
-/// slightly off under premult blend, but never crashes). See DESIGN →
-/// Platform Seam → Render target resolution (premultiplied alpha).
-fn premultiplyFontTexture(texture: rl.Texture2D) void {
-    var image = rl.loadImageFromTexture(texture) catch {
-        std.debug.print("warning: font atlas readback failed; text may render slightly dark\n", .{});
-        return;
-    };
-    defer rl.unloadImage(image);
-    switch (image.format) {
-        .uncompressed_gray_alpha => {
-            const w: usize = @intCast(image.width);
-            const h: usize = @intCast(image.height);
-            const px: [*]u8 = @ptrCast(image.data);
-            for (0..w * h) |i| {
-                const a: u16 = px[i * 2 + 1];
-                px[i * 2] = @intCast((@as(u16, px[i * 2]) * a + 127) / 255);
-            }
-        },
-        .uncompressed_r8g8b8a8 => RaylibBackend.premultiplyAlpha(&image),
-        else => {
-            std.debug.print("warning: font atlas has unexpected format {}; text may render slightly dark\n", .{image.format});
-            return;
-        },
-    }
-    rl.updateTexture(texture, image.data);
-}
-
 /// Load the game font. Reads the embedded TTF (`assets/fonts/freezilla.ttf`)
 /// through the FileSource and rasterizes a glyph atlas at `font_base_size`.
-/// On any failure (missing file, decode error) falls back to raylib's default
-/// bitmap font so the game stays playable — the recoverable-error policy
-/// applies because a persistent-dir shadow (`~/.ziglop/assets/fonts/...`)
-/// can break the read at runtime. Returns the font + whether it is the
-/// default (so deinit can skip unloading raylib-owned the default).
+/// The atlas is built ENTIRELY ON THE CPU (`loadFontData` →
+/// `genImageFontAtlas`) so it can be PREMULTIPLIED before upload — text
+/// composites correctly under the render pass's `BLEND_ALPHA_PREMULTIPLY`
+/// blend. A GPU-readback premultiply (`loadImageFromTexture` →
+/// `updateTexture`) is NOT portable: raylib's GL readback always returns
+/// RGBA (`glReadPixels` with GL_RGBA) regardless of the texture's
+/// GRAY_ALPHA format, and re-uploading 4bpp data to the 2bpp texture
+/// garbles the atlas (observed on web — blank/garbled glyphs in panels).
+/// Mirrors raylib's `LoadFontFromMemory` (95 default ASCII glyphs, padding
+/// 4 = FONT_TTF_DEFAULT_CHARS_PADDING, pack method 0) minus the per-glyph
+/// sub-image refresh (only needed for ImageDrawText, which we never use).
+/// The assembled Font's glyphs/recs are C-allocated by the raylib calls, so
+/// `rl.unloadFont` frees them correctly (see deinit).
+///
+/// On any failure (missing file, decode error) falls back to raylib's
+/// default bitmap font so the game stays playable — the recoverable-error
+/// policy applies because a persistent-dir shadow
+/// (`~/.ziglop/assets/fonts/...`) can break the read at runtime. The
+/// default font is left straight-alpha (rendering too bright under premult
+/// blend) — acceptable for this near-unreachable fallback; its atlas is
+/// raylib-owned and can't be rebuilt on the CPU. Returns the font + whether
+/// it is the default (so deinit can skip unloading raylib-owned the
+/// default).
 fn loadFont(file_source: *const @import("file_source.zig").FileSource) struct { font: rl.Font, is_default: bool } {
     const bytes = file_source.readFile(transient_allocator.allocator, "assets/fonts/freezilla.ttf") catch |err| {
         std.debug.print("warning: failed to load font ({}); falling back to default\n", .{err});
@@ -326,22 +304,66 @@ fn loadFont(file_source: *const @import("file_source.zig").FileSource) struct { 
     };
     defer transient_allocator.allocator.free(bytes);
 
-    const font = rl.loadFontFromMemory(".ttf", bytes, font_base_size, null) catch {
+    // Decode glyph rasterizations (95 default ASCII glyphs — the same set
+    // LoadFontFromMemory's null-codepoints path uses). C-owned; freed by
+    // `unloadFontData` (via unloadFont on success, or explicitly on error).
+    const glyphs = rl.loadFontData(bytes, font_base_size, null, .default) catch {
         std.debug.print("warning: failed to decode font; falling back to default\n", .{});
         const fallback = rl.getFontDefault() catch @panic("failed to load default font");
-        premultiplyFontTexture(fallback.texture);
+        return .{ .font = fallback, .is_default = true };
+    };
+
+    // Build the atlas on the CPU. GenImageFontAtlas produces a GRAY_ALPHA
+    // image (gray = color, alpha = coverage); premultiply in that native
+    // format (gray = gray*alpha/255). C-owned recs; freed by unloadFont.
+    const glyph_padding: i32 = 4; // FONT_TTF_DEFAULT_CHARS_PADDING
+    const built = rl.genImageFontAtlas(glyphs, font_base_size, glyph_padding, 0) catch {
+        rl.unloadFontData(glyphs);
+        std.debug.print("warning: failed to build font atlas; falling back to default\n", .{});
+        const fallback = rl.getFontDefault() catch @panic("failed to load default font");
+        return .{ .font = fallback, .is_default = true };
+    };
+    var atlas_image = built[0];
+    const recs = built[1];
+    defer rl.unloadImage(atlas_image);
+
+    switch (atlas_image.format) {
+        .uncompressed_gray_alpha => {
+            const w: usize = @intCast(atlas_image.width);
+            const h: usize = @intCast(atlas_image.height);
+            if (w > 0 and h > 0) {
+                const px: [*]u8 = @ptrCast(atlas_image.data);
+                for (0..w * h) |i| {
+                    const a: u16 = px[i * 2 + 1];
+                    px[i * 2] = @intCast((@as(u16, px[i * 2]) * a + 127) / 255);
+                }
+            }
+        },
+        .uncompressed_r8g8b8a8 => RaylibBackend.premultiplyAlpha(&atlas_image),
+        else => std.debug.print("warning: font atlas has unexpected format {}; text may render slightly dark\n", .{atlas_image.format}),
+    }
+
+    const texture = rl.loadTextureFromImage(atlas_image) catch {
+        // recs is C-allocated with no zig-facing free fn — it leaks on this
+        // rare once-per-process failure path. Glyphs are freed explicitly.
+        rl.unloadFontData(glyphs);
+        std.debug.print("warning: failed to upload font atlas; falling back to default\n", .{});
+        const fallback = rl.getFontDefault() catch @panic("failed to load default font");
         return .{ .font = fallback, .is_default = true };
     };
     // Bilinear so downscaling from the base size to smaller `font_size`s is
     // smooth (matches the reference->window blit). Upcasting would blur, but
     // no size in use exceeds `font_base_size`.
-    rl.setTextureFilter(font.texture, .bilinear);
-    // Premultiply the atlas so text composites correctly under the render
-    // pass's `BLEND_ALPHA_PREMULTIPLY` blend (straight-alpha text would
-    // render too dark). Readback → premultiply → re-upload. One-time startup
-    // cost. See DESIGN → Platform Seam → Render target resolution.
-    premultiplyFontTexture(font.texture);
-    return .{ .font = font, .is_default = false };
+    rl.setTextureFilter(texture, .bilinear);
+
+    return .{ .font = .{
+        .baseSize = font_base_size,
+        .glyphCount = @intCast(glyphs.len),
+        .glyphPadding = glyph_padding,
+        .texture = texture,
+        .recs = recs.ptr,
+        .glyphs = glyphs.ptr,
+    }, .is_default = false };
 }
 
 /// The SDF text-outline pipeline (see `drawOutlinedText`): a glyph atlas

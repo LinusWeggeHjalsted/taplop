@@ -5637,6 +5637,24 @@ exactly right: fragment rgb = coverage*tint.rgb, fragment a = coverage, and
 (ONE, ONE_MINUS_SRC_ALPHA) composites coverage*tint over the destination —
 the straight-alpha result.
 
+**Web font atlas readback bug (fixed same session).** The native-format
+readback fix still broke text ON WEB: raylib's GL texture readback
+(`loadImageFromTexture` → `glReadPixels` with GL_RGBA) ALWAYS returns an
+RGBA image regardless of the texture's GRAY_ALPHA format, so on web the
+switch took the RGBA arm and `updateTexture` re-uploaded 4bpp data to the
+2bpp texture — same garbling class (blank/garbled glyphs in panels).
+Robust fix: stop reading back entirely. `loadFont` now builds the atlas
+ENTIRELY ON THE CPU (`loadFontData` → `genImageFontAtlas`, mirroring
+LoadFontFromMemory: 95 default ASCII glyphs, padding 4, pack method 0),
+premultiplies the GRAY_ALPHA atlas image before upload, and hand-assembles
+the `rl.Font` (glyphs/recs/texture all C-allocated by the raylib calls, so
+`rl.unloadFont` frees them correctly). Identical code path on every
+platform, no GPU round-trip. The default-font fallback is left
+straight-alpha (renders too bright under premult blend) — acceptable for
+the near-unreachable fallback; its atlas is raylib-owned and can't be
+rebuilt on the CPU. The per-glyph sub-image refresh from
+LoadFontFromMemory is skipped (only needed for ImageDrawText, unused).
+
 **Dead-code cleanup:** the tile-highlight renderer arm still had the
 pre-animation-sheet shape — an `else` rectangle-fill branch for
 `source_rectangle == null`, which no producer emits
