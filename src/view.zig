@@ -90,7 +90,7 @@ pub fn view(
     var ground_entries: std.ArrayList(GroundEntry) = .empty;
     if (current_state.level) |*level| {
         buildTiles(&tiles, frame_allocator, level.level_tiles, active_theme, camera, camera_zoom);
-        buildHighlightOverlays(&tile_overlays, frame_allocator, level.highlighted_tiles, active_theme, camera, camera_zoom);
+        buildHighlightOverlays(&tile_overlays, frame_allocator, level.highlighted_tiles, active_theme, camera, camera_zoom, session.animation_clock, settings.animation_fps);
         buildCursorOverlay(&tile_overlays, frame_allocator, level.level_tiles, session, active_theme, camera, camera_zoom);
         buildPreparedSkillRadiusOutline(&tile_overlays, frame_allocator, level, session, active_theme, camera, camera_zoom);
         if (level.level_end) |end_position| {
@@ -738,6 +738,15 @@ const flag_banner_sprite_id = "world/flag";
 const flag_banner_frame_count: u32 = 8;
 const flag_banner_frame_width: i32 = 256;
 const flag_banner_frame_height: i32 = 512;
+
+/// Animated tile-highlight sprite (`world/tile_highlight.png`): a horizontal
+/// strip of 4 frames, each 256x256 (one tile). Drawn over each targetable
+/// tile, advancing at `settings.animation_fps` (looping — no per-instance
+/// state). Mirrors the flag banner animation; see DESIGN → Animation.
+const tile_highlight_sprite_id = "world/tile_highlight";
+const tile_highlight_frame_count: u32 = 4;
+const tile_highlight_frame_width: i32 = 256;
+const tile_highlight_frame_height: i32 = 256;
 
 fn levelEndDrawable(
     tile: types.Vector2,
@@ -1784,8 +1793,10 @@ fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
     return anchor;
 }
 
-/// Move-range highlights: a translucent fill over each reachable tile, tinted
-/// with a player-gradient color.
+/// Move-range highlights: an animated marching-ants overlay on each
+/// targetable tile, tinted with the theme's `lightest`. Mirrors the flag
+/// banner animation (frame index from `session.animation_clock` /
+/// `settings.animation_fps`, looping — no per-instance state).
 fn buildHighlightOverlays(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
@@ -1793,12 +1804,25 @@ fn buildHighlightOverlays(
     active_theme: types.ActiveColorTheme,
     camera: types.Camera,
     zoom: f32,
+    animation_clock_microseconds: u64,
+    animation_fps: u32,
 ) void {
+    const effective_fps: u32 = if (animation_fps == 0) 8 else animation_fps;
+    const frame_duration_us: u64 = 1_000_000 / effective_fps;
+    const elapsed_frames: u64 = animation_clock_microseconds / frame_duration_us;
+    const frame_index: u32 = @intCast(elapsed_frames % tile_highlight_frame_count);
+    const source_rectangle: types.Rectangle = .{
+        .x = @as(i32, @intCast(frame_index)) * tile_highlight_frame_width,
+        .y = 0,
+        .width = tile_highlight_frame_width,
+        .height = tile_highlight_frame_height,
+    };
     for (highlighted_tiles) |tile| {
         list.append(allocator, .{
             .screen_position = tileToScreen(tile, camera, zoom),
             .overlay_type = .highlight,
-            .color = active_theme.player_gradient.colors[2],
+            .color = active_theme.lightest,
+            .source_rectangle = source_rectangle,
         }) catch @panic("failed to append highlight overlay");
     }
 }

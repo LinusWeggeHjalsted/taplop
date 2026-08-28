@@ -1060,6 +1060,9 @@ pub const TileOverlayDrawable = struct {
     /// Square side in tiles. 1 for per-tile overlays (highlight, cursor);
     /// the range/radius outline spans `extent` tiles centered on the player.
     extent: u32 = 1,
+    /// Source rectangle into the overlay sprite (for sprite-based overlays
+    /// like the animated tile highlight). Null for primitive overlays.
+    source_rectangle: ?Rectangle = null,
 };
 
 // -- Layer 3: Ground drawables --

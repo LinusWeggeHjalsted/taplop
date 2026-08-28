@@ -943,7 +943,27 @@ pub const RaylibBackend = struct {
         };
         const line_width = @as(f32, @floatFromInt(outline_thickness)) * world_scale;
         switch (overlay.overlay_type) {
-            .highlight => rl.drawRectangleRec(rectangle, toRaylibColor(overlay.color, 90)),
+            .highlight => {
+                // Animated marching-ants sprite over each targetable tile
+                // (`world/tile_highlight`), tinted with the overlay color.
+                // The source rectangle selects the current frame. Falls back
+                // to the old translucent fill if the sprite is unavailable.
+                if (overlay.source_rectangle) |src_rect| {
+                    if (self.getTexture("world/tile_highlight")) |texture| {
+                        const source = rl.Rectangle{
+                            .x = @floatFromInt(src_rect.x),
+                            .y = @floatFromInt(src_rect.y),
+                            .width = @floatFromInt(src_rect.width),
+                            .height = @floatFromInt(src_rect.height),
+                        };
+                        rl.drawTexturePro(texture, source, rectangle, .{ .x = 0, .y = 0 }, 0, toRaylibColor(overlay.color, 255));
+                    } else {
+                        rl.drawRectangleRec(rectangle, toRaylibColor(overlay.color, 90));
+                    }
+                } else {
+                    rl.drawRectangleRec(rectangle, toRaylibColor(overlay.color, 90));
+                }
+            },
             .cursor => {
                 // Outline hugging the tile graphic's silhouette instead of
                 // a plain rectangle: draw the precomputed edge mask of

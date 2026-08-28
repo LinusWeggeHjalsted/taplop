@@ -305,10 +305,9 @@ Open:
 - PLACEHOLDER ASSET: the original ui/panel.png was NOT a valid 9-slice source
   (a 176×176 rounded rect centered with a 104px transparent margin), so
   9-slicing collapsed it to thin lines. Regenerated procedurally as a proper
-  edge-to-edge rounded panel. Original saved at assets/ui/panel.original.png
-  — FLAGGED for the artist to produce a real 9-slice panel (border at the
-  image edges, corner radius ≤ 128; a distinct opaque tooltip panel can be a
-  separate sprite).
+  edge-to-edge rounded panel. FLAGGED for the artist to produce a real 9-slice
+  panel (border at the image edges, corner radius ≤ 128; a distinct opaque
+  tooltip panel can be a separate sprite).
 
 ## Decoration Footprint
 
