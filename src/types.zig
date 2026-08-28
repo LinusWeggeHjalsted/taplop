@@ -231,8 +231,8 @@ pub const ActiveColorTheme = struct {
 /// Level/Hub/EditorLevel (`custom_theme: ?CustomColorTheme`); when null,
 /// `activeThemeFor` derives from `color_wheel_index` as before (backward
 /// compatible). `lightest`/`darkest` stay from the global
-/// ColorThemeDefinitions (lightest = tile-cursor color; darkest is unused
-/// since the background now comes from world_gradient[2]). See DESIGN →
+/// ColorThemeDefinitions: `lightest` is the tile-cursor color and the UI
+/// text-default; `darkest` tints 9-slice panel backgrounds. See DESIGN →
 /// Architecture → Level Editor → Editor UI layout (right metadata panel).
 pub const CustomColorTheme = struct {
     world_gradient: ColorGradient,

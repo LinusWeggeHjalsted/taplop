@@ -895,7 +895,8 @@ pub const RaylibBackend = struct {
         for (view_state.ground_drawables) |ground| self.drawGroundDrawable(ground, view_state.world_scale);
         for (view_state.occlusion_insets) |inset| self.drawOcclusionInset(inset, view_state.world_scale);
         for (view_state.world_overlays) |overlay| self.drawWorldOverlay(overlay, view_state.world_scale);
-        for (view_state.ui_elements) |element| self.drawUiElement(element, view_state.active_color_theme.lightest);
+        const theme_darkest = view_state.active_color_theme.darkest;
+        for (view_state.ui_elements) |element| self.drawUiElement(element, view_state.active_color_theme.lightest, theme_darkest);
         rl.endTextureMode();
 
         // Blit the target to the window, letterboxed. RenderTextures are stored
@@ -1160,9 +1161,9 @@ pub const RaylibBackend = struct {
 
     // -- UI element drawing --
 
-    fn drawUiElement(self: *RaylibBackend, element: ui.UiElement, highlight_color: types.Color) void {
+    fn drawUiElement(self: *RaylibBackend, element: ui.UiElement, highlight_color: types.Color, theme_darkest: types.Color) void {
         switch (element) {
-            .nine_slice_panel => |panel| self.drawNineSlice(panel),
+            .nine_slice_panel => |panel| self.drawNineSlice(panel, theme_darkest),
             .slot => |slot| {
                 if (slot.icon_sprite_id) |sprite_id| {
                     self.drawSprite(sprite_id, referenceRectangle(slot.screen_position, slot.size, slot.size), null, slot.icon_color, 255);
@@ -1274,12 +1275,19 @@ pub const RaylibBackend = struct {
 
     /// 9-slice: the four corners are drawn 1:1 (at the source slice size), and
     /// the edges + center are stretched to fill the remaining area.
-    fn drawNineSlice(self: *RaylibBackend, panel: ui.NineSlicePanel) void {
+    fn drawNineSlice(self: *RaylibBackend, panel: ui.NineSlicePanel, theme_darkest: types.Color) void {
         const texture = self.getTexture(panel.sprite_id) orelse {
             rl.drawRectangleRec(referenceRectangle(panel.screen_position, panel.width, panel.height), rl.Color.magenta);
             return;
         };
-        const tint = toRaylibColor(panel.color, 255);
+        // `default_tint` (pure white) is the "unset" sentinel: a panel that
+        // didn't pick an explicit color inherits the active theme's `darkest`
+        // (mirrors the text-label convention in `drawTextLabel`). An explicit
+        // `.color` overrides it.
+        const tint = if (std.meta.eql(panel.color, ui.default_tint))
+            toRaylibColor(theme_darkest, 255)
+        else
+            toRaylibColor(panel.color, 255);
         const source_slice_width: f32 = @as(f32, @floatFromInt(texture.width)) / 3;
         const source_slice_height: f32 = @as(f32, @floatFromInt(texture.height)) / 3;
 
