@@ -1738,7 +1738,15 @@ pub const RaylibBackend = struct {
             defer self.allocator.free(bytes);
             const image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
             defer rl.unloadImage(image);
-            break :blk rl.loadTextureFromImage(image) catch null;
+            const tex = rl.loadTextureFromImage(image) catch break :blk null;
+            // Bilinear so downscaled draws (the 4K design space → smaller
+            // render target via the `beginMode2D` camera zoom) sample smoothly
+            // instead of with hard nearest-neighbor edges. At a 1:1 render
+            // target this is a no-op visually; it only matters when the target
+            // is smaller than the design space. See DESIGN → Platform Seam →
+            // Render target resolution.
+            rl.setTextureFilter(tex, .bilinear);
+            break :blk tex;
         };
 
         self.texture_cache.put(self.allocator, key, texture) catch @panic("failed to cache texture");
@@ -1975,7 +1983,11 @@ pub const RaylibBackend = struct {
             .mipmaps = 1,
             .format = .uncompressed_r8g8b8a8,
         };
-        return rl.loadTextureFromImage(mask_image) catch error.LoadTexture;
+        const tex = rl.loadTextureFromImage(mask_image) catch return error.LoadTexture;
+        // Bilinear: outline masks are drawn scaled (by world_scale + the
+        // render camera zoom), so nearest-neighbor would show hard edges.
+        rl.setTextureFilter(tex, .bilinear);
+        return tex;
     }
 };
 

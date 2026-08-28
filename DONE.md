@@ -5579,6 +5579,16 @@ without code changes. Verified: native build (both 1080p + 4K), tests
 (headless, unaffected — no raylib), web compile. Runtime perf needs a
 browser/native click-test with a level visible.
 
+**Bilinear on sprite textures.** The initial 1080p build showed hard
+nearest-neighbor edges on downscaled sprites: `ensureSpriteLoaded` loaded
+each sprite texture with raylib's default point filter, and the render
+target itself was bilinear (only the target→window blit was smooth). At a
+4K target (the old default) sprites drew 1:1 so the sprite filter didn't
+matter; at 1080p with a 0.5× camera zoom, every sprite sampled with hard
+edges. Fix: `setTextureFilter(tex, .bilinear)` in `ensureSpriteLoaded` +
+`rgbaBufToTexture` (outline masks, also drawn scaled). Smooths the
+downscale at no per-frame cost; a no-op visually at a 1:1 render target.
+
 ### Show FPS setting + diagnostic overlay
 
 `Settings.show_fps: bool` (default off) + `SettingId.show_fps` toggle row in
