@@ -17,23 +17,30 @@
 #   scripts/web.sh --raw      # full verbatim output (no filtering)
 #   scripts/web.sh emrun      # zig build emrun (serve + open in a browser)
 #   scripts/web.sh emrun --raw
+#   scripts/web.sh --release=fast   # passed through to zig build
+#   scripts/web.sh emrun --release=fast --raw
+#
+# Unknown args (anything other than --raw / emrun) are forwarded to
+# `zig build` verbatim, so standard zig flags like --release=fast,
+# -Doptimize=..., -Ddev-mode=true all work.
 
 set -u
 
 raw=0
 target="web"
+zig_args=()
 for arg in "$@"; do
   case "$arg" in
     --raw) raw=1 ;;
     emrun) target="emrun" ;;
-    *) echo "unknown arg: $arg" >&2; exit 2 ;;
+    *) zig_args+=("$arg") ;;
   esac
 done
 
 # Suppress emsdk_env.sh noise if anything in the build sources it.
 export EMSDK_QUIET=1
 
-output="$(ZIG_LIB_DIR="${ZIG_LIB_DIR:-$HOME/.local/zig-patched-lib}" zig build "$target" 2>&1)"
+output="$(ZIG_LIB_DIR="${ZIG_LIB_DIR:-$HOME/.local/zig-patched-lib}" zig build "$target" "${zig_args[@]}" 2>&1)"
 status=$?
 
 if [ "$raw" -eq 1 ]; then
