@@ -61,6 +61,13 @@ pub const UiState = struct {
     /// when a load succeeds (screen leaves main_menu).
     load_save_menu_open: bool = false,
 
+    /// Credits screen (main menu, full screen). Modal overlay like the
+    /// load-save browser; the panel blocks input to the main-menu buttons
+    /// behind it. Toggled by the `.open_credits` action (the Credits button
+    /// opens, the Back button closes — same action, toggle semantics).
+    /// Auto-cleared by the screen-transition UI reset.
+    credits_open: bool = false,
+
     /// Load-save browser vertical scroll offset, in ROWS (not pixels) — one
     /// scroll tick = one full row pitch, so text placement is identical at
     /// every scroll position. Clamped to `[0, max_scroll_row]` in
@@ -1060,6 +1067,7 @@ pub fn buildErrorPopup(
     font_metrics: FontMetrics,
     session: *state.SessionState,
     message: []const u8,
+    button_color: Color,
 ) !void {
     const content_width_limit = error_popup_max_width - 2 * error_popup_padding;
 
@@ -1217,6 +1225,7 @@ pub fn buildErrorPopup(
         "Dismiss",
         error_dismiss_button_font_size,
         .dismiss_error,
+        button_color,
     );
 }
 
@@ -2057,12 +2066,16 @@ fn emitPanelButton(
     label: []const u8,
     font_size: i32,
     action: Action,
+    button_color: Color,
 ) !void {
+    // Button panels take an explicit tint (player gradient index 5) so they
+    // read as buttons against background panels, which stay theme `darkest`.
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
         .screen_position = cell.position(),
         .width = cell.width,
         .height = cell.height,
+        .color = button_color,
     } });
     try elements.append(allocator, .{ .button = .{
         .screen_position = cell.position(),
@@ -3715,6 +3728,9 @@ pub fn buildMissionComplete(
     info: types.MissionCompleteInfo,
     active_theme: types.ActiveColorTheme,
 ) !void {
+    // Button panels tint with player gradient index 5 to read as buttons
+    // against the theme-`darkest` background panel.
+    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
     // Full-screen panel background.
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
@@ -3827,18 +3843,18 @@ pub fn buildMissionComplete(
         .y = button_y,
         .width = menu_button_width,
         .height = menu_button_height,
-    }, "Replay Mission", menu_button_font_size, .replay_mission);
+    }, "Replay Mission", menu_button_font_size, .replay_mission, button_color);
     // Continue — bottom-right.
     try emitPanelButton(elements, allocator, font_metrics, .{
         .x = screen.x + screen.width - margin - menu_button_width,
         .y = button_y,
         .width = menu_button_width,
         .height = menu_button_height,
-    }, "Continue", menu_button_font_size, .continue_after_mission);
+    }, "Continue", menu_button_font_size, .continue_after_mission, button_color);
     // Overwrite Clone — centered (only when offered).
     if (info.overwrite_offered) {
         const centered = screen.placeBottomCenter(menu_button_width, menu_button_height, ui_gap * 4);
-        try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Clone", menu_button_font_size, .overwrite_clone);
+        try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Clone", menu_button_font_size, .overwrite_clone, button_color);
     }
 }
 
@@ -3853,6 +3869,7 @@ pub fn buildMissionFail(
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     screen: Rectangle,
+    button_color: Color,
 ) !void {
     // Full-screen panel background.
     try elements.append(allocator, .{ .nine_slice_panel = .{
@@ -3904,6 +3921,7 @@ pub fn buildMissionFail(
             menu_button.label,
             menu_button_font_size,
             menu_button.action,
+            button_color,
         );
     }
 }
@@ -3921,6 +3939,7 @@ pub fn buildOptionsMenu(
     font_metrics: FontMetrics,
     screen: Rectangle,
     current_screen: state.Screen,
+    button_color: Color,
 ) !void {
     // Full-screen panel background.
     try elements.append(allocator, .{ .nine_slice_panel = .{
@@ -3972,6 +3991,7 @@ pub fn buildOptionsMenu(
             menu_button.label,
             menu_button_font_size,
             menu_button.action,
+            button_color,
         );
     }
 }
@@ -3986,6 +4006,7 @@ pub fn buildMainMenu(
     font_metrics: FontMetrics,
     screen: Rectangle,
     continue_available: bool,
+    button_color: Color,
 ) !void {
     const MenuButton = struct { label: []const u8, action: Action };
     var buttons: [6]MenuButton = undefined;
@@ -4027,6 +4048,7 @@ pub fn buildMainMenu(
             menu_button.label,
             menu_button_font_size,
             menu_button.action,
+            button_color,
         );
     }
 }
@@ -4065,6 +4087,7 @@ pub fn buildLoadSavePanel(
     screen: Rectangle,
     save_files: []const @import("file_source.zig").SaveFileEntry,
     scroll_offset: *i32,
+    button_color: Color,
 ) !void {
     // Full-screen modal background — blocks input to the main-menu buttons
     // behind it.
@@ -4197,6 +4220,7 @@ pub fn buildLoadSavePanel(
         "Back",
         menu_button_font_size,
         .toggle_load_save_menu,
+        button_color,
     );
     if (@import("builtin").os.tag == .emscripten) {
         try emitPanelButton(
@@ -4212,8 +4236,127 @@ pub fn buildLoadSavePanel(
             "Import",
             menu_button_font_size,
             .import_save,
+            button_color,
         );
     }
+}
+
+// --- Credits screen (main menu, full screen) ---
+
+pub const credits_header_font_size: i32 = 96;
+pub const credits_header_gap: i32 = 80;
+/// Name line font size — larger than the roles line so each person reads
+/// as a heading above their credits.
+pub const credits_name_font_size: i32 = 72;
+/// Roles line font size — the credit detail under each name.
+pub const credits_role_font_size: i32 = 48;
+/// Gap between a person's name and their roles line.
+pub const credits_name_to_role_gap: i32 = 16;
+/// Gap between each person block (name + roles).
+pub const credits_person_gap: i32 = 64;
+pub const credits_padding: i32 = 48;
+pub const credits_button_gap: i32 = 48;
+/// Back button size (bottom-left). Matches the load-save Back button so the
+/// two main-menu overlays feel consistent.
+pub const credits_button_width: i32 = 768;
+pub const credits_button_height: i32 = 160;
+
+/// Build the credits screen: a full-screen modal panel with a centered
+/// "Credits" header, three person blocks (name in a larger font above their
+/// roles in a smaller font, gaps between each person), and a Back button in
+/// the bottom-left. The panel blocks input to the main-menu buttons behind
+/// it. The Back button reuses the `.open_credits` action (toggle semantics —
+/// same pattern as the load-save browser's Back button).
+pub fn buildCreditsPanel(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    button_color: Color,
+) !void {
+    // Full-screen modal background — blocks input to the main-menu buttons
+    // behind it.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = screen.position(),
+        .width = screen.width,
+        .height = screen.height,
+        .blocks_input = true,
+    } });
+
+    const content_x = screen.x + credits_padding;
+    const content_width = screen.width - 2 * credits_padding;
+
+    // Header, centered horizontally near the top.
+    const header_text = "Credits";
+    const header_width = font_metrics.measureSpanWidth(text(header_text), credits_header_font_size);
+    const header_x = content_x + @divTrunc(content_width - header_width, 2);
+    const header_y = screen.y + credits_padding;
+    try elements.append(allocator, .{ .text_label = .{
+        .text = header_text,
+        .screen_position = .{ .x = header_x, .y = header_y },
+        .font_size = credits_header_font_size,
+        .blocks_input = false,
+    } });
+
+    // Each person is a block: name (larger font) on its own line, roles
+    // (smaller font) on the next line. A gap separates each person block.
+    const Credit = struct { name: []const u8, roles: []const u8 };
+    const credits = [_]Credit{
+        .{ .name = "Linus W. Hjalsted", .roles = "game director, game design, program design, UI/UX design, level design" },
+        .{ .name = "Cille R. K. Abildhauge", .roles = "art director, graphics, world building" },
+        .{ .name = "Victor H. B. Willaredt", .roles = "sound director, sound design, music" },
+    };
+    const name_height = lineHeight(credits_name_font_size);
+    const role_height = lineHeight(credits_role_font_size);
+    const person_height = name_height + credits_name_to_role_gap + role_height;
+    const block_height = rowWidth(credits.len, person_height, credits_person_gap);
+    // Vertically center the credit block in the space between the header
+    // and the bottom buttons.
+    const buttons_top = screen.y + screen.height - credits_padding -
+        credits_button_height - credits_button_gap;
+    const block_y = header_y + lineHeight(credits_header_font_size) +
+        @divTrunc(buttons_top - (header_y + lineHeight(credits_header_font_size)) - block_height, 2);
+    for (credits, 0..) |credit, index| {
+        const person_y = block_y + @as(i32, @intCast(index)) * (person_height + credits_person_gap);
+
+        const name_width = font_metrics.measureSpanWidth(text(credit.name), credits_name_font_size);
+        const name_x = content_x + @divTrunc(content_width - name_width, 2);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = credit.name,
+            .screen_position = .{ .x = name_x, .y = person_y },
+            .font_size = credits_name_font_size,
+            .blocks_input = false,
+        } });
+
+        const role_width = font_metrics.measureSpanWidth(text(credit.roles), credits_role_font_size);
+        const role_x = content_x + @divTrunc(content_width - role_width, 2);
+        const role_y = person_y + name_height + credits_name_to_role_gap;
+        try elements.append(allocator, .{ .text_label = .{
+            .text = credit.roles,
+            .screen_position = .{ .x = role_x, .y = role_y },
+            .font_size = credits_role_font_size,
+            .blocks_input = false,
+        } });
+    }
+
+    // Back button, bottom-left.
+    const button_y = screen.y + screen.height - credits_padding - credits_button_height;
+    try emitPanelButton(
+        elements,
+        allocator,
+        font_metrics,
+        .{
+            .x = content_x,
+            .y = button_y,
+            .width = credits_button_width,
+            .height = credits_button_height,
+        },
+        "Back",
+        menu_button_font_size,
+        .open_credits,
+        button_color,
+    );
 }
 
 test "buildErrorPopup emits a modal panel, header, body, and a Dismiss button" {
@@ -4224,7 +4367,7 @@ test "buildErrorPopup emits a modal panel, header, body, and a Dismiss button" {
 
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     var elements: UiElementList = .empty;
-    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "failed to parse data/campaigns/act_one.txt: missing Campaign section");
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "failed to parse data/campaigns/act_one.txt: missing Campaign section", .{ .r = 50, .g = 50, .b = 50 });
 
     // Panel + header label(s) + body label(s) + (panel + button + label) from emitPanelButton.
     // At minimum: 1 nine_slice (popup) + 1 header text + N body texts + 1 nine_slice (button) + 1 button + 1 label.
@@ -4254,7 +4397,7 @@ test "buildErrorPopup: short message — no scrollbar, scroll offset clamped to 
 
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     var elements: UiElementList = .empty;
-    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "short error");
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "short error", .{ .r = 50, .g = 50, .b = 50 });
 
     // No scrollbar (no solid_rect) since content fits in the visible region.
     for (elements.items) |element| switch (element) {
@@ -4281,7 +4424,7 @@ test "buildErrorPopup: long message — scrollbar present, only visible lines em
 
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     var elements: UiElementList = .empty;
-    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items);
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items, .{ .r = 50, .g = 50, .b = 50 });
 
     // Scrollbar present (at least 2 solid_rects: track + thumb).
     var solid_count: usize = 0;
@@ -4311,7 +4454,7 @@ test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
 
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     var elements: UiElementList = .empty;
-    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items);
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items, .{ .r = 50, .g = 50, .b = 50 });
 
     // Clamped to max_scroll (which is body_content_height - visible_body_height,
     // both positive since content overflows). Exact value depends on wrapping,
@@ -4673,7 +4816,7 @@ test "buildLoadSavePanel: rows carry refs + actions, scroll window + clamp" {
 
     var scroll: i32 = 0;
     var elements: UiElementList = .empty;
-    try buildLoadSavePanel(&elements, allocator, metrics, screen, &files, &scroll);
+    try buildLoadSavePanel(&elements, allocator, metrics, screen, &files, &scroll, .{ .r = 50, .g = 50, .b = 50 });
 
     // The scroll offset was clamped... 20 rows vs ~14 visible → max > 0, but
     // offset 0 stays 0. Rows emitted: only the visible window.
@@ -4694,7 +4837,7 @@ test "buildLoadSavePanel: rows carry refs + actions, scroll window + clamp" {
     // Scroll to the end: clamp to max_scroll_row, last row visible.
     scroll = 999;
     var elements_end: UiElementList = .empty;
-    try buildLoadSavePanel(&elements_end, allocator, metrics, screen, &files, &scroll);
+    try buildLoadSavePanel(&elements_end, allocator, metrics, screen, &files, &scroll, .{ .r = 50, .g = 50, .b = 50 });
     var last_ref_index: u32 = 0;
     for (elements_end.items) |element| switch (element) {
         .button => |button| if (button.action == .load_save_row) {
@@ -4710,7 +4853,7 @@ test "buildLoadSavePanel: rows carry refs + actions, scroll window + clamp" {
     // Negative scroll clamps to 0.
     scroll = -5;
     var elements_neg: UiElementList = .empty;
-    try buildLoadSavePanel(&elements_neg, allocator, metrics, screen, &files, &scroll);
+    try buildLoadSavePanel(&elements_neg, allocator, metrics, screen, &files, &scroll, .{ .r = 50, .g = 50, .b = 50 });
     try std.testing.expectEqual(@as(i32, 0), scroll);
 }
 
@@ -4724,7 +4867,7 @@ test "buildLoadSavePanel: empty list shows placeholder, Back always emitted" {
 
     var scroll: i32 = 0;
     var elements: UiElementList = .empty;
-    try buildLoadSavePanel(&elements, allocator, metrics, screen, &.{}, &scroll);
+    try buildLoadSavePanel(&elements, allocator, metrics, screen, &.{}, &scroll, .{ .r = 50, .g = 50, .b = 50 });
 
     var found_placeholder = false;
     var found_back = false;

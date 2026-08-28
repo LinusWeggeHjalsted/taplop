@@ -79,6 +79,10 @@ pub fn view(
     const font_metrics = render.font_metrics;
 
     const active_theme = activeThemeFor(current_state, color_theme_definitions);
+    // Button panels tint with player gradient index 5 to read as buttons
+    // against background panels (theme `darkest`). Threaded into every
+    // panel-button builder.
+    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
 
     // World layer: checkerboard tiles + entity sprites for the hub/level.
     var tiles: std.ArrayList(types.TileDrawable) = .empty;
@@ -247,6 +251,7 @@ pub fn view(
             font_metrics,
             ui.screenRect(),
             continue_available,
+            button_color,
         ) catch @panic("failed to build main menu");
 
         // Load-save browser, drawn over the main menu when open. The list
@@ -260,7 +265,21 @@ pub fn view(
                 ui.screenRect(),
                 session.save_files,
                 &session.ui_state.load_save_scroll_offset,
+                button_color,
             ) catch @panic("failed to build load save panel");
+        }
+
+        // Credits screen, drawn over the main menu when open. Modal like
+        // the load-save browser — the panel blocks input to the buttons
+        // behind it.
+        if (session.ui_state.credits_open) {
+            ui.buildCreditsPanel(
+                &ui_elements,
+                frame_allocator,
+                font_metrics,
+                ui.screenRect(),
+                button_color,
+            ) catch @panic("failed to build credits panel");
         }
     }
 
@@ -330,6 +349,7 @@ pub fn view(
             font_metrics,
             ui.screenRect(),
             current_state.screen,
+            button_color,
         ) catch @panic("failed to build options menu");
     }
 
@@ -344,6 +364,7 @@ pub fn view(
             frame_allocator,
             font_metrics,
             ui.screenRect(),
+            button_color,
         ) catch @panic("failed to build mission fail overlay");
     }
 
@@ -394,7 +415,7 @@ pub fn view(
     // UI (including tooltips). Pure over SessionState.pending_error. See
     // DESIGN → Error Handling.
     if (session.pendingError()) |message| {
-        ui.buildErrorPopup(&ui_elements, frame_allocator, font_metrics, session, message) catch
+        ui.buildErrorPopup(&ui_elements, frame_allocator, font_metrics, session, message, button_color) catch
             @panic("failed to build error popup");
     }
 

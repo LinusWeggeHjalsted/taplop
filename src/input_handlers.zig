@@ -1114,7 +1114,11 @@ pub fn handleIdleInput(
                 // is never emitted there — drop files into the persistent
                 // saves/ dir by hand instead).
                 .import_save => file_source_mod.triggerBrowserUpload(),
-                .open_settings, .open_credits => {},
+                // Credits screen: toggle the panel (the Back button reuses
+                // this action to close — same toggle pattern as the
+                // load-save browser).
+                .open_credits => history.session.ui_state.credits_open =
+                    !history.session.ui_state.credits_open,
                 else => {},
             }
         }
