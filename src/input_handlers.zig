@@ -909,8 +909,8 @@ pub fn handleAnytimeInput(
             ui_state.inspected_entity_index = null;
         }
 
-        // Entity inspect is also right-click driven (handleRightClickInspect, run
-        // later in update); no keyboard binding yet. See InGameInput note.
+        // Entity inspect is also right-click driven (handleRightClickInspect,
+        // run later in update); a keyboard binding for it is not wired.
 
         if (in_game.toggle_world_map) {
             if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);

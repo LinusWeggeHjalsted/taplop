@@ -1222,8 +1222,7 @@ pub fn processEvent(
                     // `input_handlers.formatSessionTimestamp` /
                     // `crash_dump.formatTimestamp` (inlined here to avoid a
                     // circular import; event_handlers is imported by
-                    // input_handlers). Consolidates into a util/time module
-                    // when the main.zig split lands.
+                    // input_handlers). See TODO → Logging & Replay.
                     const seconds: u64 = @intCast(std.Io.Clock.now(.real, history.io).toSeconds());
                     const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = seconds };
                     const year_day = epoch_seconds.getEpochDay().calculateYearDay();
@@ -2407,8 +2406,8 @@ pub fn processEvent(
                     if (lookups.getSkillDefinition(use.skill_id)) |skill_definition| {
                         // Sound for the cast/swing, by skill type: weapon skills
                         // play the swing; spells/cantrips/enchantments/curses play
-                        // the spell cast (cantrip/enchantment assets are TODO; spell
-                        // is the placeholder). See DESIGN → Audio.
+                        // the spell cast (cantrip/enchantment reuse `spell` — see
+                        // TODO → Audio). See DESIGN → Audio.
                         if (!history.replaying) {
                             const cast_sound: types.SoundId = switch (skill_definition.skill_type) {
                                 .weapon_skill => .weapon_swing,

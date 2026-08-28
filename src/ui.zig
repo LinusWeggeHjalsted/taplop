@@ -1901,8 +1901,9 @@ const cooldown_font_size: i32 = 96;
 const overlay_font_size: i32 = 64;
 
 /// Emit a centered integer label inside `cell` (cooldowns, momentum,
-/// effect durations). Uses a square `font_size` box for centering — real
-/// centering awaits measured text width once fonts exist.
+/// effect durations). Centered on the MEASURED text width via `font_metrics`
+/// so multi-digit numbers sit truly centered; vertical centering uses the
+/// `font_size` glyph cell (raylib draws from the top of that cell).
 fn emitCenteredNumber(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -2507,12 +2508,12 @@ pub fn buildBottomBar(
 
 /// Build the inventory panel into `bounds`: a 9-slice background, an 8×12
 /// flush grid of `ui/item_slot` cells tinted with player-gradient index 5,
-/// and a reserved 128-wide sidebar region on the right (material counts land
-/// in a follow-up slice). `bounds` is the panel's outer rectangle (sized to
-/// `inventory_panel_width` × `middle_panel_height`); the grid sits
-/// `ui_gap` inside the top-left, the sidebar sits `ui_gap` right of the grid.
-/// Slots carry no `ref` yet — drag/drop + item icons are later slices.
-/// Font size for the material-count labels in the inventory sidebar (fits
+/// and a 128-wide material-count sidebar on the right. `bounds` is the
+/// panel's outer rectangle (sized to `inventory_panel_width` ×
+/// `middle_panel_height`); the grid sits `ui_gap` inside the top-left, the
+/// sidebar sits `ui_gap` right of the grid. Each occupied slot emits an item
+/// `Image` + a `SlotRef` (drag source / click target). Font size for the
+/// material-count labels in the inventory sidebar (fits
 /// in the bottom-right corner of a 128px material icon).
 pub const material_count_font_size: i32 = 48;
 /// Inset from a material icon's bottom-right corner to its count label.
@@ -2630,9 +2631,10 @@ fn emitMaterialIcons(
 /// Sprite id for an item's inventory/gear icon. Weapons resolve per
 /// `WeaponType` (Unity's `WandItem` maps to our `staff`); gear types have
 /// one icon each; `skill_tome` uses a single generic tome icon (the taught
-/// skill is separate info — a per-skill tome icon is a later slice). All
-/// item icons live under `assets/items/` at 128×128 (ported from the Unity
-/// `Resources/Items/` sprites at native size). See DESIGN → UI Framework.
+/// skill is separate info; a per-skill tome icon is not wired — see TODO →
+/// UI Framework). All item icons live under `assets/items/` at 128×128
+/// (ported from the Unity `Resources/Items/` sprites at native size). See
+/// DESIGN → UI Framework.
 pub fn itemIconSpriteId(item: types.Item) []const u8 {
     return switch (item) {
         .weapon => |weapon| switch (weapon.weapon_type) {
@@ -2673,8 +2675,8 @@ fn skillIconSpriteId(skill_id: SkillId) []const u8 {
 /// tag name (EffectId and SkillId overlap: `reflect`, `stone_form`,
 /// `that_which_lingers`), so the skill's icon (`skills/<tag>`) is used —
 /// the effect's own `effect_sprite` is a WORLD overlay (under
-/// `assets/effects/`), not a UI icon. Future non-skill effects will ship
-/// dedicated UI art; until then they fall back to the effect-sprite path
+/// `assets/effects/`), not a UI icon. Non-skill effects without a
+/// matching SkillId fall back to the effect-sprite path
 /// (`effects/<effect_sprite>`) or the effect name (magenta placeholder).
 fn effectIconSpriteId(effect_id: types.EffectId, definition: Effect) []const u8 {
     const tag = @tagName(effect_id);
@@ -3333,11 +3335,11 @@ pub fn buildEnemyInspectPanel(
 /// per learned skill in `learned_skills` order (parsed order — no
 /// sorting/grouping/search yet). Each slot is a `ui/skill_button` frame
 /// tinted with player-gradient index 3 carrying `ref = .{ .learned_skill =
-/// ... }` (future drag source/drop target) + a non-blocking `skills/<tag>`
-/// icon overlay tinted with index 1, mirroring the skill bar. No `action` —
+/// ... }` (drag source/drop target) + a non-blocking `skills/<tag>` icon
+/// overlay tinted with index 1, mirroring the skill bar. No `action` —
 /// clicking a browser entry doesn't fire a skill (it's not on the bar);
-/// interaction is drag-to-bar, a later slice. The drag source's icon is
-/// suppressed ("in flight"), matching inventory/gear.
+/// drag-to-bar is not wired (see TODO → UI Framework). The drag source's
+/// icon is suppressed ("in flight"), matching inventory/gear.
 ///
 /// Vertical overflow is cut at a full skill's bottom (no half-skills): only
 /// whole rows within the visible height are emitted. A scrollbar (track +
@@ -3642,9 +3644,10 @@ test "buildSkillsPanel: drag source suppresses the icon, keeps the slot ref" {
 
 /// Top bar: options button flush in the top-left corner, then `ui_gap`,
 /// then the undo button, then the remaining width reserved for the combat
-/// log (not yet rendered). Left-anchored row mirroring the bottom bar's
-/// conventions (`Row`, `ui_gap`, `slot_size`). No background of its own —
-/// purely a layout region, like the bottom bar. Undo is never disabled: the
+/// log (not rendered — see TODO → Combat Log). Left-anchored row mirroring
+/// the bottom bar's conventions (`Row`, `ui_gap`, `slot_size`). No
+/// background of its own — purely a layout region, like the bottom bar.
+/// Undo is never disabled: the
 /// only state with nothing to undo is a fresh main menu, where this bar is
 /// not shown; `history.undo` no-ops at the earliest idle point regardless.
 pub fn buildTopBar(
@@ -4053,8 +4056,8 @@ pub const load_save_button_height: i32 = 160;
 /// Overflowing lists scroll: only the visible row window is emitted and a
 /// scrollbar is drawn. `scroll_offset` is in rows and clamped here to
 /// `[0, max_scroll_row]` (the view is the only place that knows the max,
-/// which depends on the row count). Barebones by design — the real UI
-/// treatment lands later.
+/// which depends on the row count). Barebones by design (see TODO →
+/// Platform Layer for the future polish slice).
 pub fn buildLoadSavePanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,

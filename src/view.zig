@@ -205,7 +205,8 @@ pub fn view(
         // band between the top and bottom bars. Each open panel with a builder
         // is placed at the current x cursor; `ui_gap` separates consecutive
         // panels. Horizontal scrolling when panels exceed the screen width is
-        // a later slice (`ui_state.middle_section_scroll_offset` exists).
+        // not wired (`ui_state.middle_section_scroll_offset` exists); see TODO
+        // → UI Framework.
         buildMiddlePanels(
             &ui_elements,
             frame_allocator,
