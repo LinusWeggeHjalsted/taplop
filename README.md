@@ -29,8 +29,9 @@ the only one is:
 - **ctrl+Enter** — skip the current level (pushes the normal end-level
   cascade; replay-safe).
 
-release and web builds default to dev mode OFF. to opt it into a release
-build:
+dev mode follows the optimize level: debug builds (the `zig build` default,
+including `zig build web`) have it ON; release builds have it OFF. to opt a
+release build into dev mode:
 
 ```sh
 zig build run --release=fast -Ddev-mode=true
