@@ -105,9 +105,11 @@ comptime {
 /// structure as raylib's text_font_sdf example). Decodes the distance
 /// field, builds an antialiased fill (inside the glyph edge) and outline
 /// band (within `outlineWidth` atlas px outside the edge), composites the
-/// outline under the fill (source-over), and outputs straight alpha for
-/// raylib's default alpha blending. `fwidth` sizes the antialias band to
-/// ~1 screen pixel. The `/6.0` decode matches `sdf_pixel_dist_scale`.
+/// outline under the fill (source-over), and outputs PREMULTIPLIED alpha
+/// for the render pass's `BLEND_ALPHA_PREMULTIPLY` blend (the RGB is already
+/// scaled by outA — no straight-alpha division). `fwidth` sizes the
+/// antialias band to ~1 screen pixel. The `/6.0` decode matches
+/// `sdf_pixel_dist_scale`.
 const sdf_outline_fs_glsl330 =
     \\#version 330
     \\in vec2 fragTexCoord;
@@ -125,7 +127,7 @@ const sdf_outline_fs_glsl330 =
     \\    float fa = fill*fragColor.a;
     \\    float ba = band*outlineColor.a;
     \\    float outA = fa + ba*(1.0 - fa);
-    \\    vec3 outRGB = (fragColor.rgb*fa + outlineColor.rgb*ba*(1.0 - fa))/max(outA, 1.0/255.0);
+    \\    vec3 outRGB = fragColor.rgb*fa + outlineColor.rgb*ba*(1.0 - fa);
     \\    finalColor = vec4(outRGB, outA);
     \\}
 ;
@@ -151,7 +153,7 @@ const sdf_outline_fs_glsl100 =
     \\    float fa = fill*fragColor.a;
     \\    float ba = band*outlineColor.a;
     \\    float outA = fa + ba*(1.0 - fa);
-    \\    vec3 outRGB = (fragColor.rgb*fa + outlineColor.rgb*ba*(1.0 - fa))/max(outA, 1.0/255.0);
+    \\    vec3 outRGB = fragColor.rgb*fa + outlineColor.rgb*ba*(1.0 - fa);
     \\    gl_FragColor = vec4(outRGB, outA);
     \\}
 ;
@@ -269,6 +271,25 @@ fn blitTransform() ViewTransform {
     };
 }
 
+/// Premultiply a font atlas texture in-place (readback → premultiply →
+/// re-upload) so text composites correctly under `BLEND_ALPHA_PREMULTIPLY`.
+/// The atlas is white-glyph-on-transparent with straight alpha; under a
+/// premultiplied blend that would render too dark (white*alpha applied
+/// twice), so we premultiply once at load. One-time startup cost. Best-
+/// effort: if the GPU readback fails, the atlas stays straight-alpha (text
+/// renders slightly off under premult blend, but never crashes). See
+/// DESIGN → Platform Seam → Render target resolution (premultiplied alpha).
+fn premultiplyFontTexture(texture: rl.Texture2D) void {
+    var image = rl.loadImageFromTexture(texture) catch {
+        std.debug.print("warning: font atlas readback failed; text may render slightly dark\n", .{});
+        return;
+    };
+    defer rl.unloadImage(image);
+    image.setFormat(.uncompressed_r8g8b8a8);
+    RaylibBackend.premultiplyAlpha(&image);
+    rl.updateTexture(texture, image.data);
+}
+
 /// Load the game font. Reads the embedded TTF (`assets/fonts/freezilla.ttf`)
 /// through the FileSource and rasterizes a glyph atlas at `font_base_size`.
 /// On any failure (missing file, decode error) falls back to raylib's default
@@ -287,12 +308,18 @@ fn loadFont(file_source: *const @import("file_source.zig").FileSource) struct { 
     const font = rl.loadFontFromMemory(".ttf", bytes, font_base_size, null) catch {
         std.debug.print("warning: failed to decode font; falling back to default\n", .{});
         const fallback = rl.getFontDefault() catch @panic("failed to load default font");
+        premultiplyFontTexture(fallback.texture);
         return .{ .font = fallback, .is_default = true };
     };
     // Bilinear so downscaling from the base size to smaller `font_size`s is
     // smooth (matches the reference->window blit). Upcasting would blur, but
     // no size in use exceeds `font_base_size`.
     rl.setTextureFilter(font.texture, .bilinear);
+    // Premultiply the atlas so text composites correctly under the render
+    // pass's `BLEND_ALPHA_PREMULTIPLY` blend (straight-alpha text would
+    // render too dark). Readback → premultiply → re-upload. One-time startup
+    // cost. See DESIGN → Platform Seam → Render target resolution.
+    premultiplyFontTexture(font.texture);
     return .{ .font = font, .is_default = false };
 }
 
@@ -931,6 +958,15 @@ pub const RaylibBackend = struct {
         // DESIGN → Platform Seam → Render target resolution.
         rl.beginTextureMode(self.render_target);
         rl.clearBackground(toRaylibColor(view_state.background_color, 255));
+        // Premultiplied alpha blending for the compositing pass: every
+        // composited texture (sprites, font atlas) is premultiplied at load,
+        // so BLEND_ALPHA_PREMULTIPLY (ONE, ONE_MINUS_SRC_ALPHA) composites
+        // them correctly AND lets bilinear downsampling blend in premult
+        // space — killing the dark halo straight-alpha textures show at
+        // transparent edges when downscaled. The SDF outline shader outputs
+        // premultiplied too. Outline masks are binary (already premult).
+        // See DESIGN → Platform Seam → Render target resolution.
+        rl.beginBlendMode(.alpha_premultiply);
         rl.beginMode2D(.{ .offset = .{ .x = 0, .y = 0 }, .target = .{ .x = 0, .y = 0 }, .rotation = 0, .zoom = render_scale });
         // World layers first (tiles, then overlays + ground drawables as they
         // land), then the UI on top.
@@ -947,6 +983,7 @@ pub const RaylibBackend = struct {
         const theme_darkest = view_state.active_color_theme.darkest;
         for (view_state.ui_elements) |element| self.drawUiElement(element, view_state.active_color_theme.lightest, theme_darkest);
         rl.endMode2D();
+        rl.endBlendMode();
         rl.endTextureMode();
 
         // Blit the target to the window, letterboxed. RenderTextures are stored
@@ -999,22 +1036,22 @@ pub const RaylibBackend = struct {
             .highlight => {
                 // Animated marching-ants sprite over each targetable tile
                 // (`world/tile_highlight`), tinted with the overlay color.
-                // The source rectangle selects the current frame. Falls back
-                // to the old translucent fill if the sprite is unavailable.
-                if (overlay.source_rectangle) |src_rect| {
-                    if (self.getTexture("world/tile_highlight")) |texture| {
-                        const source = rl.Rectangle{
-                            .x = @floatFromInt(src_rect.x),
-                            .y = @floatFromInt(src_rect.y),
-                            .width = @floatFromInt(src_rect.width),
-                            .height = @floatFromInt(src_rect.height),
-                        };
-                        rl.drawTexturePro(texture, source, rectangle, .{ .x = 0, .y = 0 }, 0, toRaylibColor(overlay.color, 255));
-                    } else {
-                        rl.drawRectangleRec(rectangle, toRaylibColor(overlay.color, 90));
-                    }
+                // `source_rectangle` (the current animation frame) is always
+                // set by the producer (`buildHighlightOverlays`) — the
+                // pre-animation-sheet translucent-fill shape is gone; only
+                // the texture-load-miss fallback keeps the primitive draw
+                // (defensive degrade, consistent with missing-art handling).
+                const src_rect = overlay.source_rectangle.?;
+                if (self.getTexture("world/tile_highlight")) |texture| {
+                    const source = rl.Rectangle{
+                        .x = @floatFromInt(src_rect.x),
+                        .y = @floatFromInt(src_rect.y),
+                        .width = @floatFromInt(src_rect.width),
+                        .height = @floatFromInt(src_rect.height),
+                    };
+                    rl.drawTexturePro(texture, source, rectangle, .{ .x = 0, .y = 0 }, 0, toRaylibColor(overlay.color, 255));
                 } else {
-                    rl.drawRectangleRec(rectangle, toRaylibColor(overlay.color, 90));
+                    rl.drawRectangleRec(rectangle, toPremultipliedColor(overlay.color, 90));
                 }
             },
             .cursor => {
@@ -1347,7 +1384,7 @@ pub const RaylibBackend = struct {
             .width = @as(f32, @floatFromInt(inset.frame_width)) * world_scale,
             .height = @as(f32, @floatFromInt(inset.frame_height)) * world_scale,
         };
-        rl.drawTexturePro(mask, source, destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(.{ .r = 0, .g = 0, .b = 0 }, inset.alpha));
+        rl.drawTexturePro(mask, source, destination, .{ .x = 0, .y = 0 }, 0, toPremultipliedColor(.{ .r = 0, .g = 0, .b = 0 }, inset.alpha));
     }
 
     /// Draw a sprite into `destination`. `source` selects a sub-region of the
@@ -1372,7 +1409,7 @@ pub const RaylibBackend = struct {
             .width = @floatFromInt(texture.width),
             .height = @floatFromInt(texture.height),
         };
-        rl.drawTexturePro(texture, source orelse whole, destination, .{ .x = 0, .y = 0 }, 0, toRaylibColor(tint, alpha));
+        rl.drawTexturePro(texture, source orelse whole, destination, .{ .x = 0, .y = 0 }, 0, toPremultipliedColor(tint, alpha));
     }
 
     /// 9-slice: the four corners are drawn 1:1 (at the source slice size), and
@@ -1714,6 +1751,28 @@ pub const RaylibBackend = struct {
         }
     }
 
+    /// Premultiply RGB by alpha in-place (for `BLEND_ALPHA_PREMULTIPLY`).
+    /// For each pixel: r = r*a/255, g = g*a/255, b = b*a/255 (alpha
+    /// unchanged). With premultiplied textures, bilinear downsampling blends
+    /// in premultiplied space — transparent-edge pixels (RGB=0) contribute
+    /// zero color, killing the dark halo straight-alpha textures show when
+    /// downscaled. The image MUST be `.uncompressed_r8g8b8a8` (convert first).
+    /// See DESIGN → Platform Seam → Render target resolution (premultiplied
+    /// alpha).
+    fn premultiplyAlpha(image: *rl.Image) void {
+        if (image.format != .uncompressed_r8g8b8a8) return;
+        const w: usize = @intCast(image.width);
+        const h: usize = @intCast(image.height);
+        if (w == 0 or h == 0) return;
+        const px: [*]u8 = @ptrCast(image.data);
+        const stride = w * 4;
+        for (0..h * stride) |i| {
+            if (i % 4 == 3) continue; // skip alpha byte
+            const a: u16 = px[(i / 4) * 4 + 3];
+            px[i] = @intCast((@as(u16, px[i]) * a + 127) / 255);
+        }
+    }
+
     /// Load `sprite_id` from the file source, decode, and cache the main
     /// texture only (the outline mask is generated lazily by
     /// `ensureOutlineLoaded`). A missing/unreadable asset is a normal
@@ -1736,15 +1795,25 @@ pub const RaylibBackend = struct {
             const bytes = self.file_source.readFile(self.allocator, path) catch
                 break :blk null;
             defer self.allocator.free(bytes);
-            const image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
+            var image = rl.loadImageFromMemory(".png", bytes) catch break :blk null;
             defer rl.unloadImage(image);
+            // Normalize to RGBA8 so premultiply has a stable byte layout.
+            image.setFormat(.uncompressed_r8g8b8a8);
+            // Premultiply RGB by alpha before upload. With the render pass's
+            // `BLEND_ALPHA_PREMULTIPLY` blend mode, bilinear downsampling
+            // (the 4K design space → smaller render target) blends in
+            // premultiplied space, so transparent-edge pixels (RGB=0 after
+            // premultiply) contribute zero color — no dark halo. Straight-
+            // alpha textures under a premultiplied blend render too dark, so
+            // EVERY composited texture must be premultiplied. See DESIGN →
+            // Platform Seam → Render target resolution (premultiplied alpha).
+            premultiplyAlpha(&image);
             const tex = rl.loadTextureFromImage(image) catch break :blk null;
-            // Bilinear so downscaled draws (the 4K design space → smaller
-            // render target via the `beginMode2D` camera zoom) sample smoothly
-            // instead of with hard nearest-neighbor edges. At a 1:1 render
-            // target this is a no-op visually; it only matters when the target
-            // is smaller than the design space. See DESIGN → Platform Seam →
-            // Render target resolution.
+            // Bilinear so downscaled draws sample smoothly instead of with
+            // hard nearest-neighbor edges. At a 1:1 render target this is a
+            // no-op visually; it only matters when the target is smaller
+            // than the design space. See DESIGN → Platform Seam → Render
+            // target resolution.
             rl.setTextureFilter(tex, .bilinear);
             break :blk tex;
         };
@@ -1993,6 +2062,27 @@ pub const RaylibBackend = struct {
 
 fn toRaylibColor(color: types.Color, alpha: u8) rl.Color {
     return .{ .r = color.r, .g = color.g, .b = color.b, .a = alpha };
+}
+
+/// Premultiplied tint for draws under `BLEND_ALPHA_PREMULTIPLY`: the RGB is
+/// scaled by alpha so a translucent draw contributes proportionally dimmed
+/// color (raylib multiplies the fragment color by the tint; with a straight-
+/// alpha tint the RGB contribution wouldn't be scaled by the alpha and the
+/// draw would render too bright). For textures the premultiplied texel RGB
+/// is additionally scaled by the tint RGB, so the total contribution is
+/// texelRGB*texelA*tintA — exactly "the sprite at opacity tintA". Used for
+/// translucent rectangle fills (tile highlights) and partial-alpha sprite
+/// draws (`UiElement.image.alpha`). Opaque (255) tints are identity.
+/// See DESIGN → Platform Seam → Render target resolution (premultiplied
+/// alpha).
+fn toPremultipliedColor(color: types.Color, alpha: u8) rl.Color {
+    const a: u16 = alpha;
+    return .{
+        .r = @intCast((@as(u16, color.r) * a + 127) / 255),
+        .g = @intCast((@as(u16, color.g) * a + 127) / 255),
+        .b = @intCast((@as(u16, color.b) * a + 127) / 255),
+        .a = alpha,
+    };
 }
 
 fn referenceRectangle(screen_position: types.ScreenPosition, width: i32, height: i32) rl.Rectangle {

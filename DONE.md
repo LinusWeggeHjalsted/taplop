@@ -5589,6 +5589,47 @@ edges. Fix: `setTextureFilter(tex, .bilinear)` in `ensureSpriteLoaded` +
 `rgbaBufToTexture` (outline masks, also drawn scaled). Smooths the
 downscale at no per-frame cost; a no-op visually at a 1:1 render target.
 
+**Premultiplied alpha (the dark-halo fix).** Bilinear downscale then
+surfaced dark pixels around sprites' transparent edges (tiles especially).
+Cause: PNGs store black RGB at alpha=0 edge pixels; bilinear blends that
+black RGB into visible edge pixels → a dark halo. A first attempt (Option B:
+bleeding opaque neighbor colors into transparent-edge pixels at load) did
+NOT fix it — the halo persists because PNG edges also carry PARTIAL-alpha
+pixels with dark RGB (anti-aliased edge coverage), which a bleed can't touch
+without changing the visible color. The robust fix is Option A: PREMULTIPLY.
+
+- Every composited texture is premultiplied at load (`r = r*a/255`):
+  `ensureSpriteLoaded` (all sprites, normalized to RGBA8 first) and the font
+  atlas (GPU readback via `loadImageFromTexture` → premultiply →
+  `updateTexture`; also the default-font fallback). Outline masks are binary
+  (alpha 0/255) — already effectively premultiplied, no-op. The SDF atlas is
+  only sampled by its shader (never blended directly) — untouched.
+- The render pass composites under `beginBlendMode(.alpha_premultiply)`
+  (ONE, ONE_MINUS_SRC_ALPHA) inside `beginTextureMode`. With premultiplied
+texels, bilinear sampling blends in premultiplied space: a transparent
+  edge pixel contributes EXACTLY zero color, killing the halo at every
+  scale — including partial-alpha anti-aliased edges.
+- The SDF outline shaders (GLSL 330 + GLSL ES 100) now output PREMULTIPLIED
+  RGB: the straight-alpha `/max(outA, 1/255)` division is gone; the weighted
+  sum `fragColor.rgb*fa + outlineColor.rgb*ba*(1-fa)` IS the premultiplied
+  RGB.
+- Translucent PRIMITIVE draws premultiply their color via the new
+  `toPremultipliedColor` helper (RGB scaled by alpha): the tile-highlight
+  rectangle fallback (alpha 90), `drawSprite` partial-alpha tints
+  (`UiElement.image.alpha`), and the occlusion-inset black tint (a no-op for
+  black, kept for the invariant's uniformity). `toRaylibColor` stays for
+  opaque (255) tints, where both are identical.
+- Invariant: EVERYTHING composited inside the premult-blend pass must be
+  premultiplied — straight-alpha textures render too bright under it. New
+  texture sources must call `premultiplyAlpha` (or be binary) or they'll
+  render washed out.
+
+**Dead-code cleanup:** the tile-highlight renderer arm still had the
+pre-animation-sheet shape — an `else` rectangle-fill branch for
+`source_rectangle == null`, which no producer emits
+(`buildHighlightOverlays` always sets it). Deleted; the texture-load-miss
+fallback rectangle (defensive degrade for a corrupt/missing asset) stays.
+
 ### Show FPS setting + diagnostic overlay
 
 `Settings.show_fps: bool` (default off) + `SettingId.show_fps` toggle row in
