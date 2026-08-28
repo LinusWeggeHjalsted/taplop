@@ -502,8 +502,15 @@ Open:
 - Web save via browser download prompt: DONE — the options-menu "Export
   Save" button writes the timestamped save to IDBFS and triggers a browser
   download of it (autosave stays IDBFS-only). See DESIGN → File System & IO
-  → Web save export. The future upload/load-via-file-picker counterpart
-  (import a downloaded save back) is still open — it pairs with this.
+  → Web save export.
+- Web save import (file picker → saves/ → load): DONE — "Import External
+  Save" in the load-save browser. See DESIGN → File System & IO → Load-save
+  browser + web save import.
+- Load-save browser: DONE (scan/rescan/scroll/import per DESIGN → File
+  System & IO → Load-save browser). It is deliberately barebones — the real
+  UI treatment (columns: player name / hub / timestamp formatting, richer
+  row visuals, keyboard navigation) is a future polish slice when the UI
+  design settles.
 
 ## Audio
 

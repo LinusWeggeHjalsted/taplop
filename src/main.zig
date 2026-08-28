@@ -120,6 +120,13 @@ fn update(
                 if (ui.buttonAt(ui_elements, pointer_position)) |button| {
                     if (button.action == pressed_action) {
                         input.applyAction(&player_input, button.action);
+                        // Payloadful buttons: the load-save rows carry their
+                        // row index in the SlotRef (Action can't). Ride it
+                        // alongside the folded action — same-frame only.
+                        if (button.ref) |ref| switch (ref) {
+                            .save_file => |row| player_input.idle.clicked_save_row = row,
+                            else => {},
+                        };
                         // Release sound: generic button-up for actions without a
                         // specific sound. Actions WITH a specific sound (skip,
                         // swap_weapons, panel toggles) get their sound from the

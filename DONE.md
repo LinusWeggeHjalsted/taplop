@@ -5347,3 +5347,42 @@ timestamped save still lands in IDBFS as redundancy.
   & IO → Web save export. Verified: native tests + build + `scripts/web.sh`
   compile + live in a browser — download fires from the options menu and the
   saved file round-trips correctly (user-confirmed).
+
+### Load-save browser + web save import (done)
+
+The main-menu "Load Save" button (previously a no-op stub in
+`handleIdleInput` — "needs a file picker") now opens a full-screen modal
+browser: `saves/*.txt` listed newest-first (mtime desc, name tiebreak;
+autosave included), Back bottom-left, and on web "Import External Save"
+bottom-right. Clicking a row loads it through the ordinary `load_save` path
+(a failed load → recoverable popup, browser stays open). Barebones by
+design — richer UI when the design settles (see TODO).
+
+- `FileSource.listSaveFiles`/`freeSaveFiles` + `SaveFileEntry` (scan lives
+  in the input path; `view()` stays file-free — list on
+  `SessionState.save_files`, backing-allocator owned, replaced per rescan).
+  Rescan on open + every 500ms while open, so externally dropped files
+  appear live. The rescan runs AFTER the menu-action switch — a row click's
+  index refers to the list its button was rendered from.
+- `SlotRef.save_file` (row index) carries the click payload (Action can't);
+  main.zig folds it into `IdleInput.clicked_save_row` at release dispatch.
+  Save rows are never drag sources (slotContentIcon → null), so the drag
+  machinery ignores them — the compiler-guided variant arms document this.
+- New event `player_load_save{path}` (PlayerInputEvent → replay whitelist
+  stays a tag check; legality arm: main_menu screen only; handler = thin
+  push of meta `load_save`). Session-log round-trip test auto-covers it.
+- Scroll in whole rows: offset on UiState, clamped in the builder; only the
+  visible window emits; scrollbar (error-popup pattern). One wheel notch =
+  one row pitch → identical text placement at every offset.
+- Web import: `triggerBrowserUpload` (static JS — file picker, sanitized
+  filename, writes into saves/ + `.import_marker` at the persistent root).
+  Zig polls the marker while the browser is open (idle input — the
+  acquisition-step rule from DESIGN → Custom Missions), deletes it, loads
+  via the normal path. Native: no button; drop files into the persistent
+  saves/ dir by hand (the periodic rescan picks them up).
+- Tests: listSaveFiles (empty dir, .txt filter, newest-first with forced
+  distinct mtimes — the naive sequential-write version failed on mtime
+  ties), buildLoadSavePanel (refs+actions, scroll window/clamp, empty
+  state + Back), player_load_save orchestrator stack test. Native + web
+  compile verified; NOT yet click-tested live (browser import flow needs a
+  user gesture) — playtest `scripts/web.sh emrun` → Load Save → Import.

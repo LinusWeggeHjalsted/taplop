@@ -266,6 +266,59 @@ pub const FileSource = struct {
 
         return entries.toOwnedSlice(allocator);
     }
+
+/// List the save files in saves/ (including the autosave), newest first
+/// (mtime descending; name ascending breaks mtime ties deterministically).
+/// Only `*.txt` files count — the dir is also where stray non-save artifacts
+/// would land. A missing saves/ dir is an empty list (fresh install), not an
+/// error. Caller owns the returned slice + its strings (`freeSaveFiles`).
+pub fn listSaveFiles(
+    self: *const FileSource,
+    allocator: std.mem.Allocator,
+) ![]SaveFileEntry {
+    const saves_dir = self.persistent_dir.openDir(self.io, "saves", .{
+        .access_sub_paths = true,
+        .iterate = true,
+    }) catch |err| switch (err) {
+        error.FileNotFound => return &.{},
+        else => return err,
+    };
+    defer std.Io.Dir.close(saves_dir, self.io);
+
+    var entries: std.ArrayList(SaveFileEntry) = .empty;
+    errdefer freeSaveFiles(allocator, entries.items);
+
+    var it = saves_dir.iterate();
+    while (try it.next(self.io)) |dir_entry| {
+        if (dir_entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, dir_entry.name, ".txt")) continue;
+
+        // Stat through the open saves_dir by bare name — a failure here
+        // (vanished between iterate + stat, permissions quirk) skips the
+        // entry without having allocated anything for it yet.
+        const stat = saves_dir.statFile(self.io, dir_entry.name, .{}) catch continue;
+
+        const relative_path = try std.fmt.allocPrint(allocator, "saves/{s}", .{dir_entry.name});
+        errdefer allocator.free(relative_path);
+        const name = try allocator.dupe(u8, dir_entry.name);
+        errdefer allocator.free(name);
+        try entries.append(allocator, .{
+            .name = name,
+            .path = relative_path,
+            .mtime_ns = stat.mtime.nanoseconds,
+        });
+    }
+
+    std.mem.sort(SaveFileEntry, entries.items, {}, saveFileOrder);
+    return entries.toOwnedSlice(allocator);
+}
+
+/// Delete a file from the persistent dir (used to consume the import
+/// marker). Missing file is an error like any other — callers poll with
+/// `fileExists` first.
+pub fn deleteFile(self: *const FileSource, path: []const u8) !void {
+    try self.persistent_dir.deleteFile(self.io, path);
+}
 };
 
 /// Scan a custom-mission folder for files beyond the known config set
@@ -308,6 +361,36 @@ fn matchesLevelFile(name: []const u8, level_count: u32) bool {
     return n >= 1 and n <= level_count;
 }
 
+/// One save file in the load-save browser. `path` is persistent-dir
+/// relative (what load_save expects); `name` is the bare filename (the
+/// browser's display label); `mtime_ns` is the file's last-modified time,
+/// the browser's sort key (newest first). Saves are write-once, so mtime
+/// is the creation time in practice — Linux commonly doesn't expose a
+/// true creation time, and Io.Stat's mtime works on both native and the
+/// IDBFS mount.
+pub const SaveFileEntry = struct {
+    name: []const u8,
+    path: []const u8,
+    mtime_ns: i128,
+};
+
+/// Free a slice returned by `listSaveFiles` (entries + strings).
+pub fn freeSaveFiles(allocator: std.mem.Allocator, files: []const SaveFileEntry) void {
+    for (files) |file| {
+        allocator.free(file.name);
+        allocator.free(file.path);
+    }
+    allocator.free(files);
+}
+
+/// Newest-first ordering: mtime descending, name ascending as the
+/// deterministic tiebreak.
+fn saveFileOrder(_: void, a: SaveFileEntry, b: SaveFileEntry) bool {
+    if (a.mtime_ns != b.mtime_ns) return a.mtime_ns > b.mtime_ns;
+    return std.mem.lessThan(u8, a.name, b.name);
+}
+
+
 // Web-only: flush the IDBFS in-memory layer to IndexedDB. The extern is
 // declared here (not gated) because Zig only emits a symbol reference when the
 // call site is reachable — and flushPersistentDir is only called from the
@@ -330,6 +413,13 @@ fn flushPersistentDir() void {
 /// (web.zig) and for absolute FS paths in JS seams like
 /// `triggerBrowserDownload`.
 pub const persistent_mount_path = "/ziglop";
+
+/// Marker file (persistent-dir root) written by the web import JS after the
+/// picked save file has landed in saves/. Zig polls it while the load-save
+/// browser is open; finding it means "an import completed — load this path".
+/// Deleted immediately after reading. Lives OUTSIDE saves/ so the save-list
+/// scan never sees it.
+pub const import_marker_path = ".import_marker";
 
 /// On web, offer a file from the persistent dir to the player as a browser
 /// download (anchor click on a Blob of the file's bytes). The file must
@@ -358,6 +448,41 @@ pub fn triggerBrowserDownload(allocator: std.mem.Allocator, path: []const u8) vo
         defer allocator.free(script_body);
         const script = allocator.dupeZ(u8, script_body) catch @panic("failed to null-terminate download script");
         defer allocator.free(script);
+        emscripten_run_script(script);
+    }
+}
+
+/// On web, open a browser file picker for importing a save: the picked file
+/// is written into saves/ under its (sanitized) own name, then the import
+/// marker is written so the Zig-side poll picks it up and loads it. The
+/// write order (save first, marker second) guarantees the bytes exist when
+/// the marker does. Native is a no-op (comptime-dead branch). The filename
+/// is sanitized in JS (path-traversal + quote safety) — barebones allowlist.
+/// Static script (no per-call formatting), so no allocator needed.
+pub fn triggerBrowserUpload() void {
+    if (@import("builtin").os.tag == .emscripten) {
+        const script =
+            "(function() {" ++
+            "var input = document.createElement('input');" ++
+            "input.type = 'file';" ++
+            "input.accept = '.txt';" ++
+            "input.onchange = function() {" ++
+            "  var file = input.files[0];" ++
+            "  if (!file) return;" ++
+            "  var name = file.name.replace(/[^A-Za-z0-9_.-]/g, '_');" ++
+            "  if (name.indexOf('.') == 0) name = '_' + name;" ++
+            "  var reader = new FileReader();" ++
+            "  reader.onload = function() {" ++
+            "    FS.writeFile('" ++ persistent_mount_path ++ "/saves/' + name, new Uint8Array(reader.result));" ++
+            "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ import_marker_path ++ "', 'saves/' + name);" ++
+            "    FS.syncfs(false, function(err) { if (err) console.error('IDBFS flush failed:', err); });" ++
+            "  };" ++
+            "  reader.readAsArrayBuffer(file);" ++
+            "};" ++
+            "document.body.appendChild(input);" ++
+            "input.click();" ++
+            "setTimeout(function() { input.remove(); }, 5000);" ++
+            "})();";
         emscripten_run_script(script);
     }
 }
@@ -448,4 +573,68 @@ test "listCustomMissions: lists missions with metadata + custom-asset detection"
     }
     try testing.expect(found_skeleton);
     try testing.expect(found_tree);
+}
+
+// --- tests for listSaveFiles ---
+
+test "listSaveFiles: empty when saves/ absent" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-list-saves-empty";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    const files = try file_source.listSaveFiles(allocator);
+    try testing.expectEqual(@as(usize, 0), files.len);
+    freeSaveFiles(allocator, files);
+}
+
+test "listSaveFiles: only .txt files, newest first, non-txt excluded" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-list-saves";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    // Write oldest first, with a sleep between writes: sequential writes
+    // can land within the filesystem's mtime resolution (ties would fall to
+    // the name tiebreak), so force distinct stamps. 2ms is comfortably above
+    // any current filesystem's timestamp granularity.
+    std.Io.Dir.cwd().createDirPath(io, scratch) catch {};
+    try dir.createDirPath(io, "saves");
+    const saves_dir = dir.openDir(io, "saves", .{
+        .access_sub_paths = true,
+        .iterate = true,
+    }) catch @panic("failed to open saves dir");
+    try saves_dir.writeFile(io, .{ .sub_path = "oldest.txt", .data = "old" });
+    try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
+    try saves_dir.writeFile(io, .{ .sub_path = "middle.txt", .data = "mid" });
+    try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
+    try saves_dir.writeFile(io, .{ .sub_path = "newest.txt", .data = "new" });
+    try saves_dir.writeFile(io, .{ .sub_path = "notes.md", .data = "not a save" });
+    std.Io.Dir.close(saves_dir, io);
+
+    const files = try file_source.listSaveFiles(allocator);
+    defer freeSaveFiles(allocator, files);
+
+    try testing.expectEqual(@as(usize, 3), files.len);
+    try testing.expectEqualStrings("newest.txt", files[0].name);
+    try testing.expectEqualStrings("saves/newest.txt", files[0].path);
+    try testing.expectEqualStrings("middle.txt", files[1].name);
+    try testing.expectEqualStrings("oldest.txt", files[2].name);
+    // Sanity on the sort key: mtimes strictly descending.
+    try testing.expect(files[0].mtime_ns > files[1].mtime_ns);
+    try testing.expect(files[1].mtime_ns > files[2].mtime_ns);
 }

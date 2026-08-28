@@ -894,3 +894,26 @@ test "turn_end: Stone Form on_end_turn heal runs BEFORE next turn_start (LIFO or
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 14), levelEntity(&history, 0).current_health);
 }
+
+// ───────────────────────── player_load_save ─────────────────────────
+
+test "player_load_save: pushes the meta load_save with the picked path" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(null);
+
+    // Main-menu start state (the browser only exists there).
+    try testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
+
+    pushPlayerInput(&history, .{ .player_load_save = .{ .save_path = "saves/save_x.txt" } });
+    stepOnce(&history);
+
+    // The orchestrator ran and left the machinery event on top of the stack
+    // (LIFO: one child pushed, not yet drained; beneath it sits the start
+    // state's open_main_menu).
+    try testing.expectEqual(@as(usize, 2), history.current_state.event_stack.len);
+    const top = history.current_state.event_stack[1];
+    try testing.expectEqual(std.meta.activeTag(top), .meta_event);
+    try testing.expectEqualStrings("saves/save_x.txt", top.meta_event.load_save.save_path);
+}

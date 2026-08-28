@@ -20,6 +20,7 @@ const writers = @import("writers.zig");
 const session_log = @import("session_log.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
+const file_source_mod = @import("file_source.zig");
 const event_handlers = @import("event_handlers.zig");
 const view_mod = @import("view.zig");
 const build_info = @import("build_info");
@@ -93,6 +94,8 @@ pub fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputE
     // push a no-op swap/equip into the event log.
     if (ui.SlotRef.eql(from, to)) return null;
     return switch (from) {
+        // Save rows are never drag sources (see slotContentIcon).
+        .save_file => null,
         .inventory => |inventory_index| switch (to) {
             .gear => |gear_slot| .{ .player_equip_to_gear = .{
                 .inventory_slot_index = inventory_index,
@@ -821,14 +824,19 @@ pub fn handleAnytimeInput(
     if (history.session.ui_state.options_menu_open) return;
 
     if (anytime.scroll_delta != 0) {
-        // If the pointer is over a skills-browser slot, scroll the browser
-        // instead of zooming the camera. One row per wheel notch (positive
-        // delta = scroll up = move toward the top). The offset is clamped to
-        // `[0, max_scroll_row]` in `buildSkillsPanel` (the view is the only
-        // place that knows `max_scroll_row`, which depends on the learned-
-        // skill count); the lower bound is clamped here so a downward scroll
-        // past 0 doesn't accumulate negative drift between frames.
-        if (skillsSlotUnderPointer(ui_elements, pointer_position)) {
+        // Load-save browser open: the wheel scrolls the save list, one full
+        // row per notch (whole-row ticks keep text placement identical at
+        // every offset). The panel is a fullscreen modal, so any wheel input
+        // while it's open belongs to the list — never the camera (which has
+        // no meaning on the main menu anyway). Upper clamp is authoritative
+        // in the builder; the lower clamp here prevents negative drift.
+        if (history.session.ui_state.load_save_menu_open) {
+            const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+            history.session.ui_state.load_save_scroll_offset -= delta_rows;
+            if (history.session.ui_state.load_save_scroll_offset < 0) {
+                history.session.ui_state.load_save_scroll_offset = 0;
+            }
+        } else if (skillsSlotUnderPointer(ui_elements, pointer_position)) {
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
             history.session.ui_state.skills_scroll_offset -= delta_rows;
             if (history.session.ui_state.skills_scroll_offset < 0) {
@@ -967,6 +975,69 @@ fn resolveSkillSlotAction(
     return .{ .prepare = skill_id };
 }
 
+/// Rescan saves/ into `session.save_files`, freeing the previous list.
+/// Allocation goes through the backing allocator (session-lifetime, like
+/// the sound/anim queues); the only leak is the final list at process exit.
+fn rescanSaveFilesNow(history: *GameStateHistory) void {
+    const files = history.file_source.listSaveFiles(history.backing_allocator) catch {
+        // Unreadable dir mid-session (permissions, external deletion):
+        // keep the previous list rather than blanking the browser.
+        return;
+    };
+    file_source_mod.freeSaveFiles(history.backing_allocator, history.session.save_files);
+    history.session.save_files = files;
+    history.session.save_files_last_scan_us = history.session.animation_clock;
+}
+
+/// Rescan interval in animation-clock microseconds. One directory iterate +
+/// stat-per-file + sort per interval — cheap, but not free, so not per-frame.
+const save_file_rescan_interval_us: u64 = 500_000;
+
+/// Throttled wrapper: rescans only when the interval elapsed since the last
+/// scan (the on-open scan stamps the clock, so the first periodic rescan is
+/// one full interval after open).
+fn rescanSaveFilesIfDue(history: *GameStateHistory) void {
+    if (history.session.save_files_last_scan_us == state.SessionState.save_files_never_scanned) {
+        rescanSaveFilesNow(history);
+        return;
+    }
+    if (history.session.animation_clock - history.session.save_files_last_scan_us >=
+        save_file_rescan_interval_us)
+    {
+        rescanSaveFilesNow(history);
+    }
+}
+
+/// Consume the web import marker, if present: the picked file has landed in
+/// saves/ — delete the marker, rescan (so the file shows in the list), and
+/// load it. A parse failure inside the load surfaces the recoverable popup
+/// and leaves the browser open with the imported file visible for retry.
+fn pollImportMarker(history: *GameStateHistory) void {
+    if (!history.file_source.fileExists(file_source_mod.import_marker_path)) return;
+
+    const allocator = history.backing_allocator;
+    const marker_bytes = history.file_source.readFile(allocator, file_source_mod.import_marker_path) catch {
+        // Unreadable marker: delete it so we don't spin on a corrupt file;
+        // the imported save (if any) still shows up via the periodic rescan.
+        history.file_source.deleteFile(file_source_mod.import_marker_path) catch {};
+        return;
+    };
+    defer allocator.free(marker_bytes);
+    history.file_source.deleteFile(file_source_mod.import_marker_path) catch {};
+
+    // The marker body is the persistent-relative save path written by the
+    // import JS. Trim any trailing newline for robustness.
+    const save_path = std.mem.trim(u8, marker_bytes, "\r\n");
+    if (save_path.len == 0) return;
+
+    const path_copy = allocator.dupe(u8, save_path) catch
+        @panic("failed to allocate imported save path");
+    rescanSaveFilesNow(history);
+    event_handlers.pushPlayerAction(&history.current_state, .{ .player_load_save = .{
+        .save_path = path_copy,
+    } }, history.current_arena.allocator());
+}
+
 pub fn handleIdleInput(
     history: *GameStateHistory,
     idle_input: input.IdleInput,
@@ -999,12 +1070,55 @@ pub fn handleIdleInput(
                 } }, allocator),
                 // Continue: resume the last game. Two branches in the handler
                 // (populated PlayerData → resume from memory; empty → load the
-                // autosave first). load_save needs a file picker; open_settings /
-                // open_credits need their screens — wired when those land.
+                // autosave first).
                 .continue_game => event_handlers.pushPlayerAction(current, .player_continue, allocator),
-                .load_save, .open_settings, .open_credits => {},
+                // Load-save browser: toggle the panel; on open, scan now +
+                // reset the scroll (the list may be stale from a previous
+                // open or never scanned this session).
+                .toggle_load_save_menu => {
+                    history.session.ui_state.load_save_menu_open = !history.session.ui_state.load_save_menu_open;
+                    if (history.session.ui_state.load_save_menu_open) {
+                        history.session.ui_state.load_save_scroll_offset = 0;
+                        rescanSaveFilesNow(history);
+                    }
+                },
+                // A save row was clicked. The row index rode in
+                // clicked_save_row (set by the button-release dispatch in
+                // main.zig) and refers to the list the CLICKED BUTTON was
+                // rendered from — which is why the rescan/poll below runs
+                // AFTER this switch: it must not replace the list between
+                // the dispatch (start of update) and this resolution.
+                // Bounds-checked against the current list as a belt-and-
+                // suspenders stale guard.
+                .load_save_row => {
+                    if (!history.session.ui_state.load_save_menu_open) return;
+                    const row = idle.clicked_save_row orelse return;
+                    if (row >= history.session.save_files.len) return;
+                    event_handlers.pushPlayerAction(current, .{ .player_load_save = .{
+                        .save_path = history.session.save_files[row].path,
+                    } }, allocator);
+                },
+                // Web import: open the browser file picker. The picked file
+                // lands in saves/ and the import marker is written; the poll
+                // above picks it up next frame. No-op on native (the button
+                // is never emitted there — drop files into the persistent
+                // saves/ dir by hand instead).
+                .import_save => file_source_mod.triggerBrowserUpload(),
+                .open_settings, .open_credits => {},
                 else => {},
             }
+        }
+
+        // Load-save browser housekeeping (every frame while open, AFTER the
+        // action switch — see the load_save_row arm for why). Poll the
+        // import marker (web — a picked file has landed in saves/) and
+        // rescan the directory on a throttle so files dropped in from
+        // outside appear live. Both are acquisition steps in idle input —
+        // never in an event handler (see DESIGN → Custom Missions for the
+        // replay-safety rationale).
+        if (history.session.ui_state.load_save_menu_open) {
+            pollImportMarker(history);
+            rescanSaveFilesIfDue(history);
         }
         return;
     }

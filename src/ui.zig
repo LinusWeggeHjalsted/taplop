@@ -53,6 +53,20 @@ pub const UiState = struct {
     /// Options menu is separate — always on top, locks input.
     options_menu_open: bool = false,
 
+    /// Load-save browser (main menu, full screen). Like the options menu
+    /// it's a modal overlay; the panel itself blocks input to the main-menu
+    /// buttons behind it. Auto-cleared by the screen-transition UI reset
+    /// when a load succeeds (screen leaves main_menu).
+    load_save_menu_open: bool = false,
+
+    /// Load-save browser vertical scroll offset, in ROWS (not pixels) — one
+    /// scroll tick = one full row pitch, so text placement is identical at
+    /// every scroll position. Clamped to `[0, max_scroll_row]` in
+    /// `buildLoadSavePanel` (the view is the only place that knows the max,
+    /// which depends on the save count). Off the undo timeline like the
+    /// other scrolls.
+    load_save_scroll_offset: i32 = 0,
+
     /// Which entity is being inspected (for enemy_inspect panel).
     inspected_entity_index: ?u32 = null,
 
@@ -144,6 +158,7 @@ pub const SlotRef = union(enum) {
     gear: GearSlot, // equipped gear slot
     skill_bar: u32, // utility bar slot index (0-4)
     learned_skill: SkillId, // an entry in the skills-menu pool
+    save_file: u32, // a row in the load-save browser (index into SessionState.save_files)
 
     /// Whether two refs identify the same slot (same variant + same index/
     /// gear slot / skill id). Tagged-union equality with a same-variant
@@ -164,6 +179,10 @@ pub const SlotRef = union(enum) {
             },
             .learned_skill => |as| switch (b) {
                 .learned_skill => |bs| as == bs,
+                else => false,
+            },
+            .save_file => |ai| switch (b) {
+                .save_file => |bi| ai == bi,
                 else => false,
             },
         };
@@ -2671,6 +2690,9 @@ pub fn slotContentSize(ref: SlotRef) i32 {
     return switch (ref) {
         .inventory, .gear => inventory_slot_size,
         .skill_bar, .learned_skill => slot_size,
+        // Unreachable: save rows never start drags (slotContentIcon is
+        // null for them). Size value is arbitrary.
+        .save_file => slot_size,
     };
 }
 
@@ -2703,6 +2725,9 @@ pub fn slotContentIcon(game_state: *const GameState, ref: SlotRef) ?[]const u8 {
             break :blk null;
         },
         .learned_skill => |skill_id| skillIconSpriteId(skill_id),
+        // Save rows have no drag content — null here is what keeps the drag
+        // machinery from ever starting on them (a press can't promote).
+        .save_file => null,
     };
 }
 
@@ -3966,7 +3991,7 @@ pub fn buildMainMenu(
     }
     buttons[button_count] = .{ .label = "New Game", .action = .new_game };
     button_count += 1;
-    buttons[button_count] = .{ .label = "Load Save", .action = .load_save };
+    buttons[button_count] = .{ .label = "Load Save", .action = .toggle_load_save_menu };
     button_count += 1;
     // Dev entry point (hardcoded beginnings mission).
     buttons[button_count] = .{ .label = "Editor", .action = .open_editor };
@@ -3997,6 +4022,191 @@ pub fn buildMainMenu(
             menu_button.label,
             menu_button_font_size,
             menu_button.action,
+        );
+    }
+}
+
+// --- Load-save browser (main menu, full screen) ---
+
+pub const load_save_header_font_size: i32 = 72;
+pub const load_save_header_gap: i32 = 32;
+pub const load_save_row_font_size: i32 = 56;
+/// One save row's height. The scroll unit is the full row PITCH (height +
+/// gap) so scrolled text sits at identical y positions at every offset.
+pub const load_save_row_height: i32 = 112;
+pub const load_save_row_gap: i32 = 8;
+pub const load_save_padding: i32 = 48;
+pub const load_save_button_gap: i32 = 48; // gap between rows region and bottom buttons
+pub const load_save_scrollbar_width: i32 = 12;
+pub const load_save_scrollbar_gap: i32 = 16;
+/// Import/Back button size (bottom corners). Import label is long, so the
+/// buttons are wider than tall menu buttons but reuse the menu font.
+pub const load_save_button_width: i32 = 768;
+pub const load_save_button_height: i32 = 160;
+
+/// Build the load-save browser: a full-screen modal panel listing
+/// `save_files` (newest first — the slice arrives pre-sorted from
+/// `FileSource.listSaveFiles`), one clickable row per save, a Back button
+/// bottom-left and (web only) an Import External Save button bottom-right.
+/// Overflowing lists scroll: only the visible row window is emitted and a
+/// scrollbar is drawn. `scroll_offset` is in rows and clamped here to
+/// `[0, max_scroll_row]` (the view is the only place that knows the max,
+/// which depends on the row count). Barebones by design — the real UI
+/// treatment lands later.
+pub fn buildLoadSavePanel(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    save_files: []const @import("file_source.zig").SaveFileEntry,
+    scroll_offset: *i32,
+) !void {
+    // Full-screen modal background — blocks input to the main-menu buttons
+    // behind it.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = screen.position(),
+        .width = screen.width,
+        .height = screen.height,
+        .blocks_input = true,
+    } });
+
+    const content_x = screen.x + load_save_padding;
+    const content_width = screen.width - 2 * load_save_padding;
+
+    // Header.
+    const header_y = screen.y + load_save_padding;
+    try elements.append(allocator, .{ .text_label = .{
+        .text = "Load Save",
+        .screen_position = .{ .x = content_x, .y = header_y },
+        .font_size = load_save_header_font_size,
+        .blocks_input = false,
+    } });
+
+    // Rows region: from below the header to above the bottom buttons.
+    const rows_y = header_y + lineHeight(load_save_header_font_size) + load_save_header_gap;
+    const rows_bottom = screen.y + screen.height - load_save_padding -
+        load_save_button_height - load_save_button_gap;
+    const rows_height = rows_bottom - rows_y;
+    const row_pitch = load_save_row_height + load_save_row_gap;
+    const visible_rows: usize = @intCast(@max(0, @divTrunc(rows_height, row_pitch)));
+
+    // Clamp the scroll offset (authoritative — the input handler can't know
+    // max_scroll_row without the row count).
+    const total_rows: usize = save_files.len;
+    const max_scroll_row: i32 = @intCast(total_rows - @min(total_rows, visible_rows));
+    if (scroll_offset.* < 0) scroll_offset.* = 0;
+    if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
+    const scrolls = total_rows > visible_rows;
+
+    if (total_rows == 0) {
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "No save files",
+            .screen_position = .{ .x = content_x, .y = rows_y },
+            .font_size = load_save_row_font_size,
+            .blocks_input = false,
+        } });
+    } else {
+        // Rows widen right up to the scrollbar gutter when one is drawn.
+        const rows_width = if (scrolls)
+            content_width - load_save_scrollbar_width - load_save_scrollbar_gap
+        else
+            content_width;
+
+        const first: usize = @intCast(scroll_offset.*);
+        const last_exclusive = @min(total_rows, first + visible_rows);
+        for (first..last_exclusive) |index| {
+            const cell: Rectangle = .{
+                .x = content_x,
+                .y = rows_y + @as(i32, @intCast(index - first)) * row_pitch,
+                .width = rows_width,
+                .height = load_save_row_height,
+            };
+            try elements.append(allocator, .{ .nine_slice_panel = .{
+                .sprite_id = "ui/panel",
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+            } });
+            try elements.append(allocator, .{ .button = .{
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .action = .load_save_row,
+                .ref = .{ .save_file = @intCast(index) },
+            } });
+            // Label: filename minus extension, centered like a panel button
+            // label (horizontal via measurement, vertical via the glyph cell).
+            const file = save_files[index];
+            const label = file.name[0 .. file.name.len - ".txt".len];
+            const label_width = font_metrics.measureSpanWidth(text(label), load_save_row_font_size);
+            const label_box = cell.placeCenter(label_width, load_save_row_font_size);
+            try elements.append(allocator, .{ .text_label = .{
+                .text = label,
+                .screen_position = label_box.position(),
+                .font_size = load_save_row_font_size,
+                .blocks_input = false,
+            } });
+        }
+
+        // Scrollbar: track + proportional thumb along the rows region, same
+        // fixed grays as the error popup's scrollbar.
+        if (scrolls) {
+            const scrollbar_x = content_x + content_width - load_save_scrollbar_width;
+            const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = scrollbar_x, .y = rows_y },
+                .width = load_save_scrollbar_width,
+                .height = rows_height,
+                .color = track_color,
+            } });
+            const visible_span_rows: i32 = @intCast(@min(total_rows, visible_rows));
+            const track_travel = rows_height - visible_span_rows * row_pitch;
+            const thumb_height = @max(@as(i32, 40), visible_span_rows * row_pitch);
+            const thumb_y = rows_y + if (max_scroll_row == 0)
+                0
+            else
+                @divTrunc(scroll_offset.* * track_travel, max_scroll_row);
+            const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = scrollbar_x, .y = thumb_y },
+                .width = load_save_scrollbar_width,
+                .height = thumb_height,
+                .color = thumb_color,
+            } });
+        }
+    }
+
+    // Bottom corners: Back (always) + Import External Save (web only).
+    const button_y = screen.y + screen.height - load_save_padding - load_save_button_height;
+    try emitPanelButton(
+        elements,
+        allocator,
+        font_metrics,
+        .{
+            .x = content_x,
+            .y = button_y,
+            .width = load_save_button_width,
+            .height = load_save_button_height,
+        },
+        "Back",
+        menu_button_font_size,
+        .toggle_load_save_menu,
+    );
+    if (@import("builtin").os.tag == .emscripten) {
+        try emitPanelButton(
+            elements,
+            allocator,
+            font_metrics,
+            .{
+                .x = screen.x + screen.width - load_save_padding - load_save_button_width,
+                .y = button_y,
+                .width = load_save_button_width,
+                .height = load_save_button_height,
+            },
+            "Import External Save",
+            menu_button_font_size,
+            .import_save,
         );
     }
 }
@@ -4435,4 +4645,93 @@ test "buildEnemyInspectPanel: active effects emit 128px icons" {
         else => {},
     };
     try std.testing.expectEqual(@as(usize, 2), effect_icon_count);
+}
+
+test "buildLoadSavePanel: rows carry refs + actions, scroll window + clamp" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+
+    // Enough rows to overflow the visible window (rows region is roughly
+    // 2160 - 2*48 - header(~86) - 32 - 160 - 48 ≈ 1700px → ~14 visible rows).
+    var files: [20]@import("file_source.zig").SaveFileEntry = undefined;
+    for (&files, 0..) |*file, i| {
+        file.* = .{
+            .name = try std.fmt.allocPrint(allocator, "save_{d}.txt", .{i}),
+            .path = try std.fmt.allocPrint(allocator, "saves/save_{d}.txt", .{i}),
+            .mtime_ns = @intCast(1000 - i),
+        };
+    }
+
+    var scroll: i32 = 0;
+    var elements: UiElementList = .empty;
+    try buildLoadSavePanel(&elements, allocator, metrics, screen, &files, &scroll);
+
+    // The scroll offset was clamped... 20 rows vs ~14 visible → max > 0, but
+    // offset 0 stays 0. Rows emitted: only the visible window.
+    var row_buttons: usize = 0;
+    var first_ref_index: ?u32 = null;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .load_save_row) {
+            row_buttons += 1;
+            const ref = button.ref.?;
+            if (first_ref_index == null) first_ref_index = ref.save_file;
+        },
+        else => {},
+    };
+    try std.testing.expect(row_buttons > 0);
+    try std.testing.expect(row_buttons < files.len); // window, not all rows
+    try std.testing.expectEqual(@as(u32, 0), first_ref_index.?); // starts at scroll 0
+
+    // Scroll to the end: clamp to max_scroll_row, last row visible.
+    scroll = 999;
+    var elements_end: UiElementList = .empty;
+    try buildLoadSavePanel(&elements_end, allocator, metrics, screen, &files, &scroll);
+    var last_ref_index: u32 = 0;
+    for (elements_end.items) |element| switch (element) {
+        .button => |button| if (button.action == .load_save_row) {
+            last_ref_index = button.ref.?.save_file;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(u32, files.len - 1), last_ref_index);
+    // Clamped to exactly the last window start.
+    const max_scroll_row: i32 = @intCast(files.len - row_buttons);
+    try std.testing.expectEqual(max_scroll_row, scroll);
+
+    // Negative scroll clamps to 0.
+    scroll = -5;
+    var elements_neg: UiElementList = .empty;
+    try buildLoadSavePanel(&elements_neg, allocator, metrics, screen, &files, &scroll);
+    try std.testing.expectEqual(@as(i32, 0), scroll);
+}
+
+test "buildLoadSavePanel: empty list shows placeholder, Back always emitted" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+
+    var scroll: i32 = 0;
+    var elements: UiElementList = .empty;
+    try buildLoadSavePanel(&elements, allocator, metrics, screen, &.{}, &scroll);
+
+    var found_placeholder = false;
+    var found_back = false;
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| if (std.mem.eql(u8, label.text, "No save files")) {
+            found_placeholder = true;
+        },
+        .button => |button| if (button.action == .toggle_load_save_menu) {
+            found_back = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(found_placeholder);
+    try std.testing.expect(found_back);
 }

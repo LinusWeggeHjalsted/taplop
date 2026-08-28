@@ -247,6 +247,20 @@ pub fn view(
             ui.screenRect(),
             continue_available,
         ) catch @panic("failed to build main menu");
+
+        // Load-save browser, drawn over the main menu when open. The list
+        // lives on SessionState (scanned from the input path — view stays
+        // file-free; see SessionState.save_files).
+        if (session.ui_state.load_save_menu_open) {
+            ui.buildLoadSavePanel(
+                &ui_elements,
+                frame_allocator,
+                font_metrics,
+                ui.screenRect(),
+                session.save_files,
+                &session.ui_state.load_save_scroll_offset,
+            ) catch @panic("failed to build load save panel");
+        }
     }
 
     // Drag ghost: the dragged content follows the pointer, drawn last (on
@@ -268,6 +282,9 @@ pub fn view(
             .height = drag.size,
         };
         switch (drag.source) {
+            // Save rows never start drags (slotContentIcon is null for them);
+            // the arm exists only to satisfy the variant switch.
+            .save_file => {},
             .skill_bar, .learned_skill => {
                 const bg_color = p[@min(@as(u32, 3), types.gradient_color_count - 1)];
                 ui_elements.append(frame_allocator, .{ .image = .{

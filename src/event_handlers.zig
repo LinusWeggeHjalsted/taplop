@@ -591,6 +591,18 @@ fn handlePlayerInputEvent(
             }
         },
 
+        // --- Meta: load a save from the load-save browser ---
+        // Thin orchestrator: the browser's acquisition (scan/pick) happened
+        // in idle input; here we just feed the resident path to the normal
+        // load path (read → parse → load → resume at the save's hub). A
+        // corrupt/missing file fails inside `load_save` recoverably (popup +
+        // revert) — the browser stays open for another pick.
+        .player_load_save => |load| {
+            pushEvents(current, &.{.{ .meta_event = .{ .load_save = .{
+                .save_path = load.save_path,
+            } } }}, allocator);
+        },
+
         // --- Meta: new game ---
         .start_new_game => {
             var balance_warnings: std.ArrayList([]const u8) = .empty;

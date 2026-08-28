@@ -499,6 +499,15 @@ pub const PlayerInputEvent = union(enum) {
     // load_save the autosave then resume (the fresh-launch case). See DESIGN
     // → File System & IO (autosave).
     player_continue: void,
+    // Main-menu load-save browser: load the save at `save_path` (a row
+    // click, or the picked file from the web import). Handler pushes the
+    // meta `load_save` event — the normal load path, so replay re-reads the
+    // file silently. The path references a file already resident in the
+    // persistent dir (acquisition happened in idle input — see DESIGN →
+    // Custom Missions for why that split matters).
+    player_load_save: struct {
+        save_path: []const u8,
+    },
 
     // --- Meta: exit/skip orchestrators ---
     // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;

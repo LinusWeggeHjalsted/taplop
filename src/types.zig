@@ -110,7 +110,17 @@ pub const Action = enum {
     // Main menu commands.
     continue_game,
     new_game,
-    load_save,
+    // Opens/closes the load-save browser (main-menu "Load Save" + the
+    // browser's Back button).
+    toggle_load_save_menu,
+    // A save row in the load-save browser. The row index rides alongside
+    // in IdleInput.clicked_save_row (set from the button's SlotRef at the
+    // release-dispatch site — Action alone can't carry a payload).
+    load_save_row,
+    // Load-save browser's "Import External Save" (web only): opens a file
+    // picker; the picked file lands in saves/ and loads. Native builds never
+    // emit the button (drop files into the persistent saves/ dir by hand).
+    import_save,
     open_editor,
     open_settings,
     open_credits,

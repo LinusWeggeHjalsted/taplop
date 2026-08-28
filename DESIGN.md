@@ -981,7 +981,53 @@ never links outside web builds). Design points:
 - Browser user-gesture policy could block a programmatic download if the
   click's activation expires before the handler runs; if that ever surfaces,
   the fix is a JS-side queued-download flag consumed on the next real pointer
-  event. Pairs with a future upload/load-via-file-picker path.
+  event. Pairs with the import path below.
+
+### Load-save browser + web save import
+
+The main-menu "Load Save" button opens a full-screen modal browser over the
+main menu. Design points:
+
+- **Scan lives in the input path, never in `view()`.** `FileSource.listSaveFiles`
+  lists saves/ (all `*.txt`, autosave included — it's a legitimate load target)
+  sorted newest-first by mtime (write-once files, so mtime ≡ creation time;
+  name is the deterministic tiebreak). The list lives on
+  `SessionState.save_files` (file-derived UI state, like
+  `autosave_available`), owned by the backing allocator: each rescan frees
+  the previous slice, so the only leak is the final list at process exit.
+- **Rescan on open + every 500ms while open** (animation-clock throttled), so
+  files dropped into saves/ from outside appear live. The rescan runs AFTER
+  the menu-action switch in `handleIdleInput`: a `load_save_row` click's
+  index refers to the list the clicked button was rendered from, and a rescan
+  between the release dispatch (start of `update`) and the handler could
+  otherwise shift the list under the index.
+- **Rows carry their identity in the Button's `SlotRef.save_file`** (row
+  index), since `Action` can't carry a payload. The release dispatch in
+  main.zig folds the index into `IdleInput.clicked_save_row` alongside the
+  action. Save rows are never drag sources (`slotContentIcon` returns null
+  for `.save_file`), so the drag machinery ignores them.
+- **Clicking a row pushes `player_load_save{path}`** — a PlayerInputEvent so
+  the replay player-action whitelist stays a pure tag check; the handler
+  pushes the ordinary meta `load_save` (acquisition already happened in idle
+  input; the recorded event references a resident file). A failed load
+  surfaces the recoverable popup and leaves the browser open.
+- **Scrolling is whole rows**: the offset is in rows, clamped in the builder
+  (the view is the only place that knows the max); one wheel notch = one row
+  pitch, so text placement is identical at every offset. Only the visible row
+  window is emitted (error-popup windowing pattern).
+- **Web import ("Import External Save", bottom-right; web only)**:
+  `triggerBrowserUpload` opens a file picker; the JS writes the picked file
+  into saves/ under its sanitized name, then writes
+  `.import_marker` (persistent-dir root, outside saves/ so the scan never
+  sees it) containing the path. The Zig side polls the marker while the
+  browser is open (idle input — the acquisition-step rule), deletes it, and
+  loads the path through the normal `player_load_save` flow. Write order
+  (save then marker) guarantees the bytes exist when the marker does; a name
+  collision overwrites (importing your own export is the primary case).
+  Native has no import button — drop files into the persistent saves/ dir by
+  hand; the periodic rescan picks them up.
+- The browser auto-closes on a successful load via the screen-transition UI
+  reset (`ui_state = .{}` when the screen leaves main_menu).
 
 ### Modding by shadowing (side effect, not a designed feature)
 

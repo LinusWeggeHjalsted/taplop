@@ -103,6 +103,10 @@ pub const WaitState = struct {
 // reproduces — the cursor value at prepare-time is never needed for
 // reconstruction. See DESIGN → Replay & Side Effects (SessionState rule).
 pub const SessionState = struct {
+    /// Sentinel for `save_files_last_scan_us` — no scan has run yet this
+    /// session.
+    pub const save_files_never_scanned: u64 = std.math.maxInt(u64);
+
     input_state: input.InputState = .{},
     ui_state: UiState = .{},
     tile_cursor: ?types.Vector2 = null,
@@ -115,6 +119,17 @@ pub const SessionState = struct {
     /// GameState → replay-safe by construction. See DESIGN → File System &
     /// IO (autosave).
     autosave_available: bool = false,
+
+    /// The save files listed in the load-save browser (newest first), plus
+    /// the animation-clock stamp of the last scan. File-derived UI state
+    /// like `autosave_available` — off the undoable GameState, but scanned
+    /// from the input path (never `view()`, which stays file-free): on open
+    /// + throttled periodic rescans while the browser is open, so files
+    /// dropped into saves/ from outside appear live. Owned by
+    /// `backing_allocator`; each rescan frees the previous slice, so the
+    /// only leak is the FINAL list at process exit (bounded, one slice).
+    save_files: []file_source_mod.SaveFileEntry = &.{},
+    save_files_last_scan_us: u64 = save_files_never_scanned,
     // Camera pan (right-drag): offset in world pixels added to the player-
     // centered camera, plus the drag anchor. Transient view state — off the
     // undoable GameState, replay-safe by construction (like tile_cursor / the
@@ -1079,6 +1094,11 @@ pub const GameStateHistory = struct {
                 .player_continue => {
                     if (self.current_state.screen != .main_menu) {
                         @panic("replay validation: player_continue outside main menu");
+                    }
+                },
+                .player_load_save => {
+                    if (self.current_state.screen != .main_menu) {
+                        @panic("replay validation: player_load_save outside main menu");
                     }
                 },
                 // Level combat actions: inner legality checks.

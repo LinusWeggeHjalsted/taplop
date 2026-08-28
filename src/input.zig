@@ -345,6 +345,13 @@ pub const IdleInput = struct {
     /// button is clicked (no keybind path). Handled by the main_menu branch of
     /// handleIdleInput.
     menu_action: ?types.Action = null,
+
+    /// Which save row in the load-save browser was clicked (index into
+    /// SessionState.save_files), set alongside `menu_action == .load_save_row`
+    /// by the button-release dispatch in main.zig — Action can't carry the
+    /// payload, so it rides in this sibling field. Valid only in the same
+    /// frame as the click (not a keybind path).
+    clicked_save_row: ?u32 = null,
 };
 
 /// Fold a UI Button's Action into `player_input` so a click drives the exact
@@ -391,7 +398,9 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .skill_slot_8 => player_input.idle.skill_slot_selected = 8,
         .continue_game,
         .new_game,
-        .load_save,
+        .toggle_load_save_menu,
+        .load_save_row,
+        .import_save,
         .open_editor,
         .open_settings,
         .open_credits,
