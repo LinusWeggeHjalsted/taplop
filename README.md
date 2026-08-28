@@ -66,4 +66,14 @@ scripts/web.sh emrun      # serve + open it in a browser
 # (raw: scripts/web.sh --raw passes through unfiltered)
 ```
 
+the script defaults to a debug build (matching `zig build`'s default). for a
+release build, pass any standard `zig build` flag through and it forwards
+verbatim:
+
+```sh
+scripts/web.sh --release=fast      # ReleaseFast web build
+scripts/web.sh --release=safe      # ReleaseSafe
+scripts/web.sh emrun --release=fast # serve a release build
+```
+
 this workaround goes away once Zig 0.16.1 ships and your distro packages it.
