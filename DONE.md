@@ -5843,3 +5843,41 @@ where the export goes: native → "Saves to {persistent dir}/saves/", web →
   main (the path must outlive the Dir handle), the helper just
   mkdir -p + opens.
 - Test: both tooltip variants + other buttons stay tooltip-free.
+
+### InputBindings per-action migration (full-set + inject)
+
+Root cause fixed: a user `settings.txt` with an InputBindings section
+REPLACED the default binding set entirely, so any NEW official binding
+(skip_level, future editor keys, renames) was invisible to existing
+installs — the root cause of skip_level not working until the user file
+was deleted. DESIGN always intended per-action overlay; the implementation
+never did it.
+
+Fix (settled "full-set + migrate" design): `loadSettings`'s InputBindings
+branch, when a base is provided (the `overlayUserSettings` path), appends
+the base's bindings for every action the user file doesn't mention. The
+user file stays authoritative for the actions it names (rebind = replace,
+not additive). Idempotent by construction — the next debounced settings
+write (always full-format) persists the injected bindings, so later loads
+see those actions as mentioned; no write-on-load. A user file WITHOUT an
+InputBindings section keeps the defaults untouched (injection lives in the
+bindings branch only).
+
+Rename behavior falls out for free: an old-name binding for a renamed
+action parses to nothing (unknown enum value, dropped) → the renamed
+action counts as unmentioned → its new default is injected; the next write
+drops the stale line. Custom bindings under the old name are NOT migrated
+(no alias map — pre-release, one existing install). If a rename ever
+touches a heavily customized action, the design notes a one-time
+old→new alias step at load (DESIGN → Input → Binding overlay semantics).
+This unblocks the `toggle_options_menu` rename.
+
+Tests: `loadSettings injects default bindings for actions the user file
+doesn't mention` (user rebinding wins verbatim, unmentioned defaults
+injected with modifiers, mentioned action NOT additive) + idempotence
+(file mentioning every action → no injection) + no-section case (defaults
+untouched). The session_setup `overlayUserSettings` leak-clean test updated
+to the new semantics (user undo/redo bindings win; merged set > 2 with the
+injected defaults). Test-ownership note: `loadSettings` CONSUMES the base's
+bindings (frees on replace, aliases otherwise) — tests free the merged
+result only.

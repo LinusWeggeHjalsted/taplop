@@ -740,19 +740,21 @@ combat-log UI rendering + replay-viewer UI still TODO)
   (a same-combo different-action pair is a config error), but the loader does
   not validate it today — it appends every binding, and equal-specificity ties
   co-fire per the hybrid precedence rule above; one action → multiple combos
-  (additive — skip can live on Space AND Enter). Changing an official default
-  for an EXISTING action doesn't reach players who have a user file (their
-  binding is authoritative, even if it was an old default they never
-  deliberately chose — we don't interrupt their flow).
-  **KNOWN GAP (settled fix, deferred — see TODO → InputBindings per-action
-  migration):** the implementation today REPLACES the entire InputBindings
-  set on any user file with an InputBindings section, NOT per-action. So a
-  NEW default binding (e.g. skip_level) is invisible to any existing install
-  with a settings.txt — the user file is authoritative for the whole section,
-  shadowing the new default. The settled fix is full-set + migrate: keep the
-  user file as the authoritative full set, but on load INJECT default
-  bindings for actions the file doesn't mention (idempotent via the next
-  debounced settings write). Actions the file mentions stay authoritative.
+  (additive — skip can live on Space AND Enter). The overlay implements
+  **full-set + migrate**: a user file with an InputBindings section carries
+  the user's bindings for the actions it NAMES, plus INJECTED default
+  bindings for every action it doesn't mention (load-time, in
+  `loadSettings`) — so a new official binding (skip_level, future editor
+  keys, a renamed action) reaches existing installs instead of being
+  shadowed by the user file. Idempotent by construction: the next debounced
+  settings write (always full-format) persists the injected bindings, so
+  later loads see those actions as mentioned and nothing re-injects; no
+  write-on-load. An old-name binding for a RENAMED action parses to nothing
+  (unknown enum value, dropped at load) — the renamed action then counts as
+  unmentioned and its new default is injected; the next write drops the
+  stale line from the file. Pre-release (one existing install), no alias
+  map is carried for old names; if a rename ever touches a heavily
+  customized action, add a one-time old-name→new-name alias step at load.
 - **Debounced writes (`PendingWrite`).** A general debounce primitive on
   `SessionState` (settings, future editor autosave). `markWriteDirty(tag,
   write_fn, now)` coalesces by tag (a burst of changes → one write). Debounce

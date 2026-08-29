@@ -281,6 +281,46 @@ pub fn loadSettings(
             });
         }
 
+        // Inject default bindings for actions the user file doesn't mention
+        // — the per-action migration (see DESIGN → Input → Binding overlay
+        // semantics): the user file is authoritative for the actions it
+        // names, but actions it doesn't name fall back to their defaults, so
+        // a NEW official binding (skip_level, future editor keys, renames)
+        // reaches existing installs instead of being shadowed by the
+        // full-set replace. Idempotent by construction: the next debounced
+        // settings write persists the injected bindings (writes are
+        // full-format), so later loads see those actions as mentioned and
+        // nothing re-injects. Only runs when a base was provided (the
+        // overlay path); a standalone load has no defaults to inject.
+        if (has_base) {
+            for (settings.input_bindings) |default_binding| {
+                var mentioned = false;
+                for (bindings.items) |user_binding| {
+                    if (user_binding.action == default_binding.action) {
+                        mentioned = true;
+                        break;
+                    }
+                }
+                if (mentioned) continue;
+                const default_name = switch (default_binding.input) {
+                    .key => |name| name,
+                    .mouse_button => |name| name,
+                    .gamepad_button => |name| name,
+                };
+                const default_name_owned = try allocator.dupe(u8, default_name);
+                const default_input: types.RawInput = switch (default_binding.input) {
+                    .key => .{ .key = default_name_owned },
+                    .mouse_button => .{ .mouse_button = default_name_owned },
+                    .gamepad_button => .{ .gamepad_button = default_name_owned },
+                };
+                try bindings.append(allocator, .{
+                    .input = default_input,
+                    .modifiers = default_binding.modifiers,
+                    .action = default_binding.action,
+                });
+            }
+        }
+
         // Free the base's bindings before replacing (when a base is provided,
         // its bindings — and their owned input_name strings — were heap-
         // allocated by a prior loadSettings call; when no base,
@@ -2724,4 +2764,154 @@ test "data/default_settings.txt binds ctrl+L to dump_event_log" {
         }
     }
     try std.testing.expect(found);
+}
+
+/// Test helper: build an owned `[]InputBinding` (duped input names) so a
+/// base Settings can be freed with `freeSettings` under `testing.allocator`.
+fn testOwnedBindings(
+    allocator: std.mem.Allocator,
+    specs: []const struct { key: []const u8, ctrl: bool = false, action: types.Action },
+) ![]types.InputBinding {
+    var bindings: std.ArrayList(types.InputBinding) = .empty;
+    for (specs) |spec| {
+        try bindings.append(allocator, .{
+            .input = .{ .key = try allocator.dupe(u8, spec.key) },
+            .modifiers = .{ .ctrl = spec.ctrl },
+            .action = spec.action,
+        });
+    }
+    return bindings.toOwnedSlice(allocator);
+}
+
+test "loadSettings injects default bindings for actions the user file doesn't mention" {
+    // The per-action migration: a user InputBindings section is authoritative
+    // for the actions it names, but unmentioned actions fall back to their
+    // DEFAULT bindings (injected) — so a new official binding reaches
+    // existing installs whose user file predates it (the skip_level gap).
+    const allocator = std.testing.allocator;
+
+    // Defaults: skip → Space, dump_event_log → ctrl+L, undo → ctrl+Z.
+    const base = Settings{
+        .input_bindings = try testOwnedBindings(allocator, &.{
+            .{ .key = "Space", .action = .skip },
+            .{ .key = "L", .ctrl = true, .action = .dump_event_log },
+            .{ .key = "Z", .ctrl = true, .action = .undo },
+        }),
+    };
+    // loadSettings CONSUMES the base's bindings (frees them on replace;
+    // aliases them otherwise) — only the merged result is freed here (same
+    // ownership shape as the session_setup overlay test).
+
+    // User file mentions ONLY skip (rebound to Enter) — e.g. an old install
+    // whose file predates the dump_event_log + undo defaults.
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name Enter
+        \\action skip
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    const merged = try loadSettings(sections, allocator, base);
+    defer freeSettings(merged, allocator);
+
+    // The user's rebinding of skip wins (Enter), and the default Space→skip
+    // is NOT carried over (mentioned = user-authoritative).
+    try std.testing.expectEqual(@as(usize, 3), merged.input_bindings.len);
+    // The user's skip binding is the ONLY skip binding (Enter, not the
+    // default Space) — mentioned means user-authoritative, not additive.
+    for (merged.input_bindings) |binding| {
+        if (binding.action == .skip) {
+            try std.testing.expectEqualStrings("Enter", binding.input.key);
+        }
+    }
+
+    // Unmentioned actions get their defaults injected verbatim (key +
+    // modifiers), so the player isn't silently missing bindings.
+    const dump_binding = for (merged.input_bindings) |binding| {
+        if (binding.action == .dump_event_log) break binding;
+    } else return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("L", dump_binding.input.key);
+    try std.testing.expect(dump_binding.modifiers.ctrl);
+
+    const undo_binding = for (merged.input_bindings) |binding| {
+        if (binding.action == .undo) break binding;
+    } else return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("Z", undo_binding.input.key);
+    try std.testing.expect(undo_binding.modifiers.ctrl);
+}
+
+test "loadSettings binding overlay is idempotent once injected bindings are written back" {
+    // Second load with a file that mentions every action (the shape the
+    // debounced write produces after the first injection): nothing new is
+    // injected, the user's set comes through unchanged.
+    const allocator = std.testing.allocator;
+
+    const base = Settings{
+        .input_bindings = try testOwnedBindings(allocator, &.{
+            .{ .key = "Space", .action = .skip },
+            .{ .key = "L", .ctrl = true, .action = .dump_event_log },
+        }),
+    };
+    // loadSettings consumes the base's bindings — free merged only.
+
+    // The post-write file: skip (still default) + dump_event_log (still
+    // default) — the exact content writeSettings would emit after injection.
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name Space
+        \\action skip
+        \\
+        \\input_type key
+        \\input_name L
+        \\ctrl true
+        \\action dump_event_log
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    const merged = try loadSettings(sections, allocator, base);
+    defer freeSettings(merged, allocator);
+
+    // Exactly the user file's two bindings — no duplicate injection.
+    try std.testing.expectEqual(@as(usize, 2), merged.input_bindings.len);
+}
+
+test "loadSettings without an InputBindings section keeps the base bindings untouched" {
+    // A user file that only touches scalars (no bindings section) leaves the
+    // defaults in place — the injection lives in the bindings branch only.
+    const allocator = std.testing.allocator;
+
+    const base = Settings{
+        .input_bindings = try testOwnedBindings(allocator, &.{
+            .{ .key = "Space", .action = .skip },
+        }),
+    };
+    // No InputBindings section → the base's bindings are aliased into the
+    // merged result (not consumed) — free merged only.
+
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\Audio
+        \\master_volume 40
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    const merged = try loadSettings(sections, allocator, base);
+    defer freeSettings(merged, allocator);
+
+    try std.testing.expectEqual(@as(u32, 40), merged.master_volume);
+    try std.testing.expectEqual(@as(usize, 1), merged.input_bindings.len);
+    try std.testing.expectEqual(.skip, merged.input_bindings[0].action);
 }

@@ -142,9 +142,12 @@ pub fn loadSettingsFromDisk(
 /// Overlay a user's persistent `settings.txt` (in the persistent dir) on top
 /// of the shipped defaults. The user file is the SAME FORMAT as
 /// `data/default_settings.txt` but carries only the fields the player has
-/// changed: scalars overlay per-field (user value wins, missing keeps default);
-/// InputBindings, if present, REPLACE the default binding set entirely (the
-/// user's bindings are authoritative — see DESIGN → Input). A missing or
+/// changed: scalars overlay per-field (user value wins, missing keeps
+/// default); InputBindings overlay PER-ACTION — bindings for actions the
+/// user file names are authoritative (replacing the defaults' bindings for
+/// those actions), while actions it doesn't name fall back to their default
+/// bindings (injected on load; the next debounced write persists them —
+/// see DESIGN → Input → Binding overlay semantics). A missing or
 /// unparseable user file leaves the defaults untouched (with a warning).
 /// Replay-safe: settings are loaded once at startup, never during replay.
 pub fn overlayUserSettings(
@@ -173,10 +176,11 @@ pub fn overlayUserSettings(
     defer allocator.free(user_bytes);
 
     // Load with the defaults as the base — loadSettings overlays present
-    // fields and replaces bindings if the user file has an InputBindings
-    // section (freeing the base's owned binding strings on replace). A
-    // file_format_version mismatch or parse failure is recoverable (warn +
-    // keep defaults) per DESIGN → Error Handling.
+    // fields and overlays bindings per-action (user bindings for named
+    // actions + injected defaults for unmentioned ones; the base's owned
+    // binding strings are freed on replace). A file_format_version mismatch
+    // or parse failure is recoverable (warn + keep defaults) per DESIGN →
+    // Error Handling.
     const merged = loaders.loadSettings(user_sections, allocator, defaults) catch {
         warnings.append(allocator, std.fmt.allocPrint(allocator,
             "Failed to load user settings.txt; using defaults.", .{}) catch
@@ -466,12 +470,34 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     // into `allocator` (which would leak since the test doesn't free them).
     try testing.expectEqual(@as(usize, 0), warnings.items.len);
 
-    // Overlay replaced the binding set with the two user bindings (owned
-    // strings, duped by loadSettings). The old base bindings were freed
-    // inside loadSettings on replace — no leak.
-    try testing.expectEqual(@as(usize, 2), merged.input_bindings.len);
-    try testing.expectEqualStrings("KeyZ", merged.input_bindings[0].input.key);
-    try testing.expectEqualStrings("KeyY", merged.input_bindings[1].input.key);
+    // Overlay is PER-ACTION: the user's bindings for undo/redo win (owned
+    // strings, duped by loadSettings; the defaults' undo/redo bindings are
+    // NOT carried over), while every action the user file doesn't mention
+    // falls back to its default binding — injected, so no official binding
+    // is lost to the full-set replace (the skip_level gap). The old base
+    // bindings were freed inside loadSettings on replace — no leak.
+    var found_user_undo = false;
+    var found_user_redo = false;
+    for (merged.input_bindings) |binding| {
+        switch (binding.action) {
+            .undo => {
+                // User's binding replaced the default (ctrl+KeyZ) exactly.
+                try testing.expectEqualStrings("KeyZ", binding.input.key);
+                try testing.expect(!binding.modifiers.ctrl);
+                found_user_undo = true;
+            },
+            .redo => {
+                try testing.expectEqualStrings("KeyY", binding.input.key);
+                found_user_redo = true;
+            },
+            else => {},
+        }
+    }
+    try testing.expect(found_user_undo);
+    try testing.expect(found_user_redo);
+    // The unmentioned defaults came along: the merged set is strictly larger
+    // than the user's two bindings.
+    try testing.expect(merged.input_bindings.len > 2);
 
     // Round-trip through writeSettings (buffer lives in allocator; free it).
     const written = try writers.writeSettings(merged, allocator);
