@@ -997,12 +997,28 @@ pub fn handleAnytimeInput(
             // Editor palette group header (expand/collapse). The group
             // index rode in `anytime.clicked_editor_group`. View-side
             // display state — a direct UiState write, off the undo timeline
-            // (same class as the panel-toggle flags).
+            // (same class as the panel-toggle flags). Accordion: expanding
+            // a group collapses the others (one group open at a time);
+            // collapsing just closes the clicked one.
             .toggle_editor_palette_group => {
                 const group_index = anytime.clicked_editor_group orelse return;
                 if (group_index >= 3) return;
-                history.session.ui_state.editor_palette_collapsed[group_index] =
-                    !history.session.ui_state.editor_palette_collapsed[group_index];
+                if (history.session.ui_state.editor_palette_collapsed[group_index]) {
+                    for (&history.session.ui_state.editor_palette_collapsed) |*is_collapsed| {
+                        is_collapsed.* = true;
+                    }
+                    history.session.ui_state.editor_palette_collapsed[group_index] = false;
+                } else {
+                    history.session.ui_state.editor_palette_collapsed[group_index] = true;
+                }
+            },
+            // Editor tool cell click (make it the active tool). The
+            // EditorToolId rode in `anytime.clicked_editor_tool`. View-side
+            // display state for now; migrates onto the Editor via
+            // `editor_set_tool` when the edit-verb handlers land.
+            .select_editor_tool => {
+                const tool = anytime.clicked_editor_tool orelse return;
+                history.session.ui_state.editor_active_tool = tool;
             },
             else => {},
         }

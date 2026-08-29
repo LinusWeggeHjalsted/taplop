@@ -253,6 +253,7 @@ pub fn view(
                 active_theme,
                 &session.ui_state.editor_palette_scroll,
                 &session.ui_state.editor_palette_collapsed,
+                session.ui_state.editor_active_tool,
             ) catch @panic("failed to build editor bottom bar");
         }
     } else if (current_state.screen == .main_menu) {

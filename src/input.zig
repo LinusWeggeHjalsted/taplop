@@ -303,6 +303,11 @@ pub const AnytimeInput = struct {
     /// pattern as `clicked_setting`. Valid only in the same frame as the
     /// click.
     clicked_editor_group: ?usize = null,
+    /// Which editor tool was clicked (make it active), set alongside
+    /// `options_action == .select_editor_tool` by the button-release
+    /// dispatch in main.zig — same payload-rides-along pattern as
+    /// `clicked_setting`. Valid only in the same frame as the click.
+    clicked_editor_tool: ?types.EditorToolId = null,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -393,6 +398,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .open_settings => player_input.anytime.options_action = action,
         .change_setting => player_input.anytime.options_action = action,
         .toggle_editor_palette_group => player_input.anytime.options_action = action,
+        .select_editor_tool => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,

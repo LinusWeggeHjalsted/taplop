@@ -5992,3 +5992,34 @@ groups' footprint is their visible cells. The emission-order contract
 behind `editorPaletteGroupAt` updated: bar-band backgrounds are now 2
 fixed tools + per EXPANDED group `min(size, 8)` cells (collapsed groups
 and the relocated pluses contribute none).
+
+### Editor palette: accordion, flush plus, tool selection + outlines
+
+Four iteration refinements:
+- **"+" flush against the header button** — the per-group add-new button
+  sits directly adjacent to the header's right edge (was right-aligned
+  over the group's row extent), reading as tied to the group.
+- **Accordion groups** — expanding a group collapses the others (one
+  open group at a time); collapsing just closes the clicked one.
+  Handler-side policy in the `.toggle_editor_palette_group` arm.
+- **Tile tool icon at half size** — `emitEditorToolCell` gained a
+  `graphic_scale` multiplier applied to the fitted icon rect (1.0
+  everywhere, 0.5 for the tile tool; the tile art is busy at full cell
+  scale).
+- **Tool selection + hover/selected outlines** — tool cells became real
+  Buttons (background sprite carries action + payload; icon image on
+  top, non-blocking). `Action.select_editor_tool` +
+  `Button.editor_tool: ?EditorToolId` (new union in types.zig:
+  select/tile/entity_type/decoration_type/item_type) → folded into
+  `AnytimeInput.clicked_editor_tool` → handler sets
+  `UiState.editor_active_tool` (default `.select`). The active tool's
+  button is built `highlighted = true` (lightest edge outline — same
+  path as the turn-step indicator); hovered tools get the outline from
+  the generic hover pass in `view()` (topmost button under the pointer),
+  which tool cells now participate in for free.
+
+The active tool is view-side state (`UiState`) for now — it migrates
+onto the Editor via the `editor_set_tool` event when the edit-verb
+handlers land (TODO). The `editorPaletteGroupAt` emission-order contract
+updated again: bar-band `button_background` BUTTONS (was images) are
+the tool cells; header buttons are spriteless and contribute nothing.

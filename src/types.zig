@@ -144,6 +144,10 @@ pub const Action = enum {
     // of screen state. See DESIGN → Architecture → Level Editor → Editor
     // UI layout (tool palette).
     toggle_editor_palette_group,
+    // An editor tool cell was clicked (make it the active tool). The
+    // EditorToolId rides in `AnytimeInput.clicked_editor_tool`. See DESIGN
+    // → Architecture → Level Editor (active-tool model).
+    select_editor_tool,
 };
 
 /// One per editable `Settings` scalar field. Drives the settings-screen
@@ -835,6 +839,18 @@ pub const EditorMode = enum {
     edit, // UI/input = editor; levels array is the source of truth
     playtest, // UI/input = gameplay; current.level is live, editor dormant
     validate, // UI/input = gameplay, forced full-mission; editor dormant
+};
+
+/// The active editor tool (the palette selection). View-side display
+/// state for now (`UiState.editor_active_tool`); migrates onto the Editor
+/// + `editor_set_tool` event when the edit-verb handlers land. Indices are
+/// into the corresponding Editor palette arrays.
+pub const EditorToolId = union(enum) {
+    select: void,
+    tile: void,
+    entity_type: u32,
+    decoration_type: u32,
+    item_type: u32,
 };
 
 pub const Editor = struct {

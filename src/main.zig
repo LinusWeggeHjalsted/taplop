@@ -140,6 +140,12 @@ fn update(
                         if (button.editor_group) |group_index| {
                             player_input.anytime.clicked_editor_group = group_index;
                         }
+                        // Editor tool cells: the tool identity rides in
+                        // `anytime.clicked_editor_tool` alongside the
+                        // `.select_editor_tool` action.
+                        if (button.editor_tool) |tool| {
+                            player_input.anytime.clicked_editor_tool = tool;
+                        }
                         // Release sound: generic button-up for actions without a
                         // specific sound. Actions WITH a specific sound (skip,
                         // swap_weapons, panel toggles) get their sound from the

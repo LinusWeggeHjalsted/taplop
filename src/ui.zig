@@ -119,6 +119,14 @@ pub const UiState = struct {
     /// display state, like `editor_palette_scroll`).
     editor_palette_collapsed: [3]bool = .{ false, false, false },
 
+    /// The active editor tool (palette selection). Default: the Select
+    /// tool. Drives the selected-tool outline in the palette; the viewport
+    /// consumption (what a viewport click does) lands with the edit-verb
+    /// handlers. Off the undo timeline (view-side, like the collapse +
+    /// scroll state); migrates onto the Editor via `editor_set_tool` when
+    /// the event lands.
+    editor_active_tool: types.EditorToolId = .select,
+
     /// Combat log scroll offset (for full combat log view).
     combat_log_scroll_offset: i32 = 0,
 
@@ -847,6 +855,10 @@ pub const Button = struct {
     /// `AnytimeInput.clicked_editor_group` fold this into the handler —
     /// same pattern as `setting_ref`.
     editor_group: ?usize = null,
+    /// Editor tool identity, if this button is a tool cell (make it the
+    /// active tool). The `.select_editor_tool` action +
+    /// `AnytimeInput.clicked_editor_tool` fold this into the handler.
+    editor_tool: ?types.EditorToolId = null,
     blocks_input: bool = true,
 };
 
@@ -2820,13 +2832,12 @@ pub fn editorPaletteGroupSize(editor: types.Editor, group_index: usize) usize {
 }
 
 /// Which editor palette group's tool cells contain `position`, if any.
-/// Tool cells carry no `SlotRef` (inert until tool selection is wired), so
-/// detection is geometric: on the editor screen the only
-/// `ui/button_background` images in the bottom-bar band are the tool cells,
-/// emitted in a deterministic order (2 fixed tools, then per expanded
-/// group `min(size, max_tools)` type cells). Segmenting that sequence maps
-/// a cell — and thus the pointer over it — to its group. Collapsed groups
-/// contribute no cells. Valid only on the editor screen; callers gate on it.
+/// Tool cells are Buttons whose sprite is `ui/button_background` (the
+/// header buttons are spriteless over panels; the "+" is an image in the
+/// strip above), so detection matches those in the bottom-bar band and
+/// segments the emission order: 2 fixed tools, then per EXPANDED group
+/// `min(size, max_tools)` type cells (collapsed groups contribute none).
+/// Valid only on the editor screen; callers gate on it.
 pub fn editorPaletteGroupAt(
     editor: types.Editor,
     collapsed: [3]bool,
@@ -2836,18 +2847,17 @@ pub fn editorPaletteGroupAt(
     if (position.y < types.reference_height - bottom_bar_height) return null;
     var cell_index: usize = 0;
     for (ui_elements) |element| switch (element) {
-        .image => |image| {
-            if (!std.mem.eql(u8, image.sprite_id, button_background_sprite_id)) continue;
-            if (image.screen_position.y < types.reference_height - bottom_bar_height) continue;
-            // Registered after the filters so non-tool images don't consume
-            // a cell index; fires on continue/return alike.
+        .button => |button| {
+            const sprite_id = button.sprite_id orelse continue;
+            if (!std.mem.eql(u8, sprite_id, button_background_sprite_id)) continue;
+            if (button.screen_position.y < types.reference_height - bottom_bar_height) continue;
             defer cell_index += 1;
             const group = editorPaletteGroupOfCell(editor, collapsed, cell_index) orelse continue;
             const cell: Rectangle = .{
-                .x = image.screen_position.x,
-                .y = image.screen_position.y,
-                .width = image.width,
-                .height = image.height,
+                .x = button.screen_position.x,
+                .y = button.screen_position.y,
+                .width = button.width,
+                .height = button.height,
             };
             if (cell.contains(position)) return group;
         },
@@ -2891,33 +2901,42 @@ fn scaleToFit(cell: Rectangle, sprite_width: i32, sprite_height: i32) Rectangle 
     return cell.placeCenter(fitted_width, fitted_height);
 }
 
-/// Emit one editor tool cell: `ui/button_background` tinted as a button
-/// (player gradient index 5), with the tool's graphic scaled to fit
-/// (aspect-preserved, centered) on top. The background carries the tooltip
-/// + input blocking; the graphic passes hover through. Static shell — tool
-/// activation (active-tool state, click handling) is a later slice, so the
-/// background is an inert image rather than an actionable button.
+/// Emit one editor tool cell: a `ui/button_background` Button tinted as a
+/// button (player gradient index 5) carrying the tool's action + payload +
+/// tooltip + input, with the tool's graphic scaled to fit (aspect-preserved,
+/// centered, then multiplied by `graphic_scale`) on top — the icon passes
+/// hover through to the button. Selecting the tool makes it active; the
+/// ACTIVE tool's button is highlighted (lightest edge outline), as is the
+/// hovered one via the generic hover pass in `view()`.
 fn emitEditorToolCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     cell: Rectangle,
+    tool: types.EditorToolId,
     graphic_sprite_id: []const u8,
     graphic_source_rectangle: ?Rectangle,
     graphic_width: i32,
     graphic_height: i32,
+    graphic_scale: f32,
     graphic_color: Color,
     button_color: Color,
     tooltip_header: []const u8,
+    active_tool: types.EditorToolId,
 ) !void {
-    try elements.append(allocator, .{ .image = .{
+    try elements.append(allocator, .{ .button = .{
         .sprite_id = button_background_sprite_id,
         .screen_position = cell.position(),
         .width = cell.width,
         .height = cell.height,
+        .action = .select_editor_tool,
+        .editor_tool = tool,
         .color = button_color,
+        .highlighted = std.meta.eql(tool, active_tool),
         .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
     } });
-    const fitted = scaleToFit(cell, graphic_width, graphic_height);
+    const scaled_width: i32 = @intFromFloat(@as(f32, @floatFromInt(graphic_width)) * graphic_scale);
+    const scaled_height: i32 = @intFromFloat(@as(f32, @floatFromInt(graphic_height)) * graphic_scale);
+    const fitted = scaleToFit(cell, scaled_width, scaled_height);
     try elements.append(allocator, .{ .image = .{
         .sprite_id = graphic_sprite_id,
         .screen_position = fitted.position(),
@@ -2954,6 +2973,7 @@ pub fn buildEditorBottomBar(
     active_theme: types.ActiveColorTheme,
     scroll_offsets: *[3]i32,
     collapsed: *[3]bool,
+    active_tool: types.EditorToolId,
 ) !void {
     const p = active_theme.player_gradient.colors;
     const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
@@ -2982,7 +3002,7 @@ pub fn buildEditorBottomBar(
     var content_width: i32 = 2 * slot_size; // Select + Tile
     for (group_sizes, 0..) |size, group_index| {
         if (collapsed[group_index] or size == 0) {
-            footprints[group_index] = header_widths[group_index] + ui_gap + editor_plus_size;
+            footprints[group_index] = header_widths[group_index] + editor_plus_size;
         } else {
             const visible: i32 = @intCast(@min(size, editor_palette_max_tools));
             footprints[group_index] = visible * slot_size + (visible - 1) * ui_gap;
@@ -2995,30 +3015,37 @@ pub fn buildEditorBottomBar(
     const header_y = bar.y - ui_gap - editor_header_strip_height;
     var row = Row.init(bar.position(), bottom_bar_height, ui_gap);
 
-    // Fixed tools.
+    // Fixed tools. The tile graphic draws at half size (the tile art is
+    // busy at full cell scale).
     try emitEditorToolCell(
         elements,
         allocator,
         row.next(slot_size),
+        .select,
         "world/tile_highlight",
         .{ .x = 0, .y = 0, .width = tile_highlight_frame_size, .height = tile_highlight_frame_size },
         tile_highlight_frame_size,
         tile_highlight_frame_size,
+        1.0,
         active_theme.lightest,
         button_color,
         "Select",
+        active_tool,
     );
     try emitEditorToolCell(
         elements,
         allocator,
         row.next(slot_size),
+        .tile,
         "world/tile",
         null,
         tile_highlight_frame_size,
         tile_highlight_frame_size,
+        0.5,
         world[@min(@as(u32, 1), types.gradient_color_count - 1)],
         button_color,
         "Tile paint",
+        active_tool,
     );
 
     // Palette groups. Each group emits: a header toggle button + a "+"
@@ -3065,14 +3092,11 @@ pub fn buildEditorBottomBar(
             .blocks_input = false,
         } });
 
-        // "+" (add-new): 128x128 in the header strip, rightmost over the
-        // group (right-aligned with the group's row extent). Clamped to not
-        // overlap the header on narrow groups. Inert until the edit-verb
-        // handlers land — tooltip-carrying image, like the tool cells.
-        const plus_x = @max(
-            group_left + footprint - editor_plus_size,
-            group_left + header_width + ui_gap,
-        );
+        // "+" (add-new): 128x128 in the header strip, flush against the
+        // header button's right edge (adjacent — reads as tied to the
+        // group). Inert until the edit-verb handlers land — tooltip-
+        // carrying image, like the tool cells.
+        const plus_x = group_left + header_width;
         try elements.append(allocator, .{ .image = .{
             .sprite_id = button_background_sprite_id,
             .screen_position = .{ .x = plus_x, .y = header_y },
@@ -3118,13 +3142,16 @@ pub fn buildEditorBottomBar(
                         elements,
                         allocator,
                         cellAt(bar.y, group_left, ordinal),
+                        .{ .entity_type = @intCast(first_visible + ordinal) },
                         sprite_id,
                         null,
                         editor_entity_frame_width,
                         editor_entity_frame_height,
+                        1.0,
                         enemy[color_index],
                         button_color,
                         type_definition.id,
+                        active_tool,
                     );
                 },
                 1 => for (editor.decoration_types[first_visible .. first_visible + visible], 0..) |type_definition, ordinal| {
@@ -3138,13 +3165,16 @@ pub fn buildEditorBottomBar(
                         elements,
                         allocator,
                         cellAt(bar.y, group_left, ordinal),
+                        .{ .decoration_type = @intCast(first_visible + ordinal) },
                         sprite_id,
                         null,
                         type_definition.pixel_dims.x,
                         type_definition.pixel_dims.y,
+                        1.0,
                         world[color_index],
                         button_color,
                         type_definition.id,
+                        active_tool,
                     );
                 },
                 else => for (editor.item_types[first_visible .. first_visible + visible], 0..) |type_definition, ordinal| {
@@ -3152,13 +3182,16 @@ pub fn buildEditorBottomBar(
                         elements,
                         allocator,
                         cellAt(bar.y, group_left, ordinal),
+                        .{ .item_type = @intCast(first_visible + ordinal) },
                         itemIconSpriteId(type_definition.item),
                         null,
                         inventory_slot_size,
                         inventory_slot_size,
+                        1.0,
                         item_icon_color,
                         button_color,
                         type_definition.id,
+                        active_tool,
                     );
                 },
             }
@@ -4394,6 +4427,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
         theme,
         &scroll_offsets,
         &collapsed,
+        .select,
     );
 
     // 2 fixed tools x (bg + graphic) + 3 groups x (header panel + button
@@ -4405,15 +4439,16 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     // moved to the header strip, out of the bar band.
     var background_count: usize = 0;
     for (elements.items) |element| switch (element) {
-        .image => |image| {
-            if (std.mem.eql(u8, image.sprite_id, button_background_sprite_id) and
-                image.screen_position.y >= types.reference_height - bottom_bar_height)
+        .button => |button| {
+            if (button.sprite_id != null and
+                std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
+                button.screen_position.y >= types.reference_height - bottom_bar_height)
             {
                 background_count += 1;
-                try std.testing.expectEqual(bottom_bar_height, image.height);
+                try std.testing.expectEqual(bottom_bar_height, button.height);
                 try std.testing.expectEqual(
                     types.reference_height - bottom_bar_height,
-                    image.screen_position.y,
+                    button.screen_position.y,
                 );
             }
         },
@@ -4464,17 +4499,16 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     const header_top: i32 = types.reference_height - bottom_bar_height - ui_gap - editor_header_strip_height;
     var enemy_cell_index: usize = 0;
     for (elements.items) |element| switch (element) {
-        .image => |image| {
-            if (std.mem.eql(u8, image.sprite_id, button_background_sprite_id) and
-                image.screen_position.y >= types.reference_height - bottom_bar_height)
-            {
-                // Cells emit in order: Select, Tile, enemy, …
-                if (enemy_cell_index == 2) first_enemy_cell = image.screen_position;
-                enemy_cell_index += 1;
-            }
-        },
         .button => |button| {
             if (button.editor_group == 0) enemies_header_button = button.screen_position;
+            if (button.sprite_id != null and
+                std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
+                button.screen_position.y >= types.reference_height - bottom_bar_height)
+            {
+                // Cells emit in order: Select, Tile, enemy, …
+                if (enemy_cell_index == 2) first_enemy_cell = button.screen_position;
+                enemy_cell_index += 1;
+            }
         },
         .text_label => |label| {
             if (std.mem.eql(u8, label.text, "Enemies")) {
@@ -4546,6 +4580,7 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
         theme,
         &scroll_offsets,
         &collapsed,
+        .select,
     );
 
     // The over-scrolled offset clamps to size - max = 12 - 8 = 4; negative
@@ -4562,15 +4597,15 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
     var found_last = false;
     var previous_tooltip: ?Tooltip = null;
     for (elements.items) |element| switch (element) {
+        .button => |button| previous_tooltip = button.tooltip,
         .image => |image| {
             if (std.mem.eql(u8, image.sprite_id, "decorations/ruin_1")) {
                 decoration_cells += 1;
-                const tooltip = previous_tooltip.?; // bg precedes its graphic
+                const tooltip = previous_tooltip.?; // button precedes its graphic
                 const header = tooltip.header.?[0].text;
                 if (std.mem.eql(u8, header, "Ruin 0")) found_first = true;
                 if (std.mem.eql(u8, header, "Ruin 11")) found_last = true;
             }
-            previous_tooltip = image.tooltip;
         },
         else => {
             previous_tooltip = null;
@@ -4585,11 +4620,11 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
     const tool_backgrounds: usize = blk: {
         var count: usize = 0;
         for (elements.items) |element| switch (element) {
-            .image => |image| if (std.mem.eql(
+            .button => |button| if (button.sprite_id != null and std.mem.eql(
                 u8,
-                image.sprite_id,
+                button.sprite_id.?,
                 button_background_sprite_id,
-            ) and image.screen_position.y >= types.reference_height - bottom_bar_height)
+            ) and button.screen_position.y >= types.reference_height - bottom_bar_height)
             {
                 count += 1;
             },
@@ -4607,14 +4642,15 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
     var cell_index: usize = 0;
     var decoration_cell_center: ?types.ScreenPosition = null;
     for (elements.items) |element| switch (element) {
-        .image => |image| {
-            if (!std.mem.eql(u8, image.sprite_id, button_background_sprite_id)) continue;
-            if (image.screen_position.y < types.reference_height - bottom_bar_height) continue;
+        .button => |button| {
+            if (button.sprite_id == null) continue;
+            if (!std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id)) continue;
+            if (button.screen_position.y < types.reference_height - bottom_bar_height) continue;
             defer cell_index += 1;
             if (cell_index == 4) {
                 decoration_cell_center = .{
-                    .x = image.screen_position.x + @divTrunc(image.width, 2),
-                    .y = image.screen_position.y + @divTrunc(image.height, 2),
+                    .x = button.screen_position.x + @divTrunc(button.width, 2),
+                    .y = button.screen_position.y + @divTrunc(button.height, 2),
                 };
             }
         },
@@ -4635,14 +4671,15 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
     {
         var index: usize = 0;
         for (elements.items) |element| switch (element) {
-            .image => |image| {
-                if (std.mem.eql(u8, image.sprite_id, button_background_sprite_id) and
-                    image.screen_position.y >= types.reference_height - bottom_bar_height)
+            .button => |button| {
+                if (button.sprite_id != null and
+                    std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
+                    button.screen_position.y >= types.reference_height - bottom_bar_height)
                 {
                     if (index == 0) {
                         first_cell_center = .{
-                            .x = image.screen_position.x + @divTrunc(image.width, 2),
-                            .y = image.screen_position.y + @divTrunc(image.height, 2),
+                            .x = button.screen_position.x + @divTrunc(button.width, 2),
+                            .y = button.screen_position.y + @divTrunc(button.height, 2),
                         };
                     }
                     index += 1;
