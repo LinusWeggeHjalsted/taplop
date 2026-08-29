@@ -482,7 +482,7 @@ pub const menu_button_font_size: i32 = 96;
 /// Main-menu title ("taplop") — centered at the top of the screen, above
 /// the button stack. Larger than every other UI font size (atlas glyphs
 /// upscale 1.5× from the 128px base — accepted softness for a title).
-pub const main_menu_title_font_size: i32 = 192;
+pub const main_menu_title_font_size: i32 = 256;
 /// Gap between the main-menu title band and the first button.
 pub const main_menu_title_gap: i32 = 96;
 /// Shared height for every `emitPanelButton` panel-backed button (main
@@ -4287,7 +4287,6 @@ pub fn buildMainMenu(
             .y = origin.y,
         },
         .font_size = main_menu_title_font_size,
-        .outlined = true,
         .blocks_input = false,
     } });
     const buttons_origin_y = origin.y + main_menu_title_gap + main_menu_title_font_size;
