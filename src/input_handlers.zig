@@ -409,8 +409,8 @@ fn resolveInventoryClick(
 
 /// Camera pan (right-drag): grab the world point under the cursor and drag
 /// it so it stays under the cursor. Runs anytime (not gated on the event
-/// stack) so the player can look around mid-wait / mid-turn. Levels/hubs
-/// only. The pan offset lives on SessionState (transient view state, replay-
+/// stack) so the player can look around mid-wait / mid-turn. Levels/hubs/
+/// editor only. The pan offset lives on SessionState (transient view state, replay-
 /// safe by construction — see DESIGN → Replay & Side Effects). `camera` must already include the
 /// current pan offset (so screenToTile / floatWorldPoint map the cursor
 /// against the camera the player is actually seeing).
@@ -431,10 +431,11 @@ pub fn handleCameraPan(
     const current = &history.current_state;
     const session = &history.session;
 
-    // Outside a level/hub there's nothing to pan. Clear any stale pan/anchor
-    // so re-entering a world doesn't inherit it (frame() also clears on
-    // screen transition, but this covers direct entry without a transition).
-    if (current.screen != .level and current.screen != .hub) {
+    // Outside a level/hub/editor there's nothing to pan. Clear any stale
+    // pan/anchor so re-entering a world doesn't inherit it (frame() also
+    // clears on screen transition, but this covers direct entry without a
+    // transition).
+    if (current.screen != .level and current.screen != .hub and current.screen != .editor) {
         session.camera_pan = null;
         session.camera_pan_anchor = null;
         return;

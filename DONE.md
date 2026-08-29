@@ -6108,3 +6108,17 @@ builds, without ever building a concrete `Level`. See DESIGN → Architecture
   exact unified y-sort order of all 5 ground drawables, sprite ids resolved
   through the palette, the co-located item bag grouping (ONE bag, count 2),
   and null health bars.
+
+### Editor camera pan (right-drag)
+
+Right-click-drag pans the editor viewport, same as levels/hubs. The gate in
+`handleCameraPan` (input_handlers.zig) was the only exclusion — the editor
+screen is now in the allowed set. Everything else already worked through the
+shared seams: the pan solver's `player_centered` recompute goes through
+`computeCamera` → `playerPosition`'s editor arm (active level's
+`player_start`), so the offset is relative to the spawn-centered camera;
+pan-start suppression over blocking UI covers the tool palette (cells are
+blocking buttons); screen transitions clear the pan via the existing reset.
+`handleRightClickInspect` keeps its own level-only gate (no right-click
+consumer conflict on the editor screen). DESIGN → Platform Seam → Camera pan
+updated.

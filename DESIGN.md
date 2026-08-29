@@ -136,8 +136,10 @@ next session meets it as a surprise instead of a known.
   other or to the pan offset.
 - **Camera pan (right-drag)** is transient view state on `SessionState`
   (`camera_pan` + `camera_pan_anchor`), off `GameState` — replay-safe by
-  construction (like `tile_cursor` / the animation clock). Levels/hubs only;
-  cleared on player move (recenter) and screen transition. `handleCameraPan`
+  construction (like `tile_cursor` / the animation clock). Levels/hubs + the
+  editor viewport; cleared on player move (recenter) and screen transition.
+  In the editor the camera centers on the active level's `player_start`
+  (`playerPosition` editor arm), so pan is relative to that. `handleCameraPan`
   (input_handlers.zig) runs anytime (mid-wait / mid-turn), grabs the world
   point under the cursor at drag start (sub-tile float precision via
   `input.floatWorldPoint`, the float inverse of the camera transform), and
