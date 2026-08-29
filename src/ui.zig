@@ -479,6 +479,12 @@ pub const swap_button_size: i32 = 128;
 /// Main-menu button — wide stacked buttons on the title screen.
 pub const menu_button_width: i32 = 1024;
 pub const menu_button_font_size: i32 = 96;
+/// Main-menu title ("taplop") — centered at the top of the screen, above
+/// the button stack. Larger than every other UI font size (atlas glyphs
+/// upscale 1.5× from the 128px base — accepted softness for a title).
+pub const main_menu_title_font_size: i32 = 192;
+/// Top margin for the main-menu title.
+pub const main_menu_title_top_margin: i32 = 96;
 /// Shared height for every `emitPanelButton` panel-backed button (main
 /// menu, mission end screens, error-popup dismiss, load-save browser,
 /// credits, settings). One tuning knob for the panel-button height class —
@@ -4268,6 +4274,20 @@ pub fn buildMainMenu(
     const origin = screen
         .placeCenter(menu_button_width, total_height)
         .position();
+
+    // Title: "taplop" centered horizontally (measured width) at the top of
+    // the screen, above the button stack. The stack stays screen-centered;
+    // with up to 7 buttons the stack top sits well below the title band.
+    const title = "taplop";
+    const title_width = font_metrics.measureSpanWidth(text(title), main_menu_title_font_size);
+    const title_box = screen.placeTopCenter(title_width, main_menu_title_font_size, main_menu_title_top_margin);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = title,
+        .screen_position = title_box.position(),
+        .font_size = main_menu_title_font_size,
+        .outlined = true,
+        .blocks_input = false,
+    } });
 
     for (buttons[0..button_count], 0..) |menu_button, index| {
         const cell: Rectangle = .{

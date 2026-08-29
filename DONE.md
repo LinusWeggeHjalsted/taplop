@@ -5807,3 +5807,15 @@ Visual change: main-menu + mission end-screen buttons shrink 256 → 160
 (their 96px font keeps the same 32px top/bottom glyph margin the secondary
 buttons have, so the class reads uniform). Everything else is unchanged
 (they were already 160).
+
+### Main-menu title ("taplop")
+
+`buildMainMenu` now emits a large "taplop" `text_label` centered at the top
+of the screen, above the (still screen-centered) button stack: measured
+width via the FontMetrics seam (`placeTopCenter`), 192px font (largest in
+the UI), theme lightest via the `default_tint` substitution, black outline
+(`outlined = true`) for readability over the background, non-blocking.
+Constants: `main_menu_title_font_size` (192) +
+`main_menu_title_top_margin` (96). Caveat noted at the constant: 192 is
+1.5× the 128px font atlas base size, so the title glyphs upscale (slightly
+soft); bumping `font_base_size` in the backend is the fix if it bothers.
