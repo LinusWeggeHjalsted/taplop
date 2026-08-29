@@ -5820,3 +5820,26 @@ outline), non-blocking. Constants: `main_menu_title_font_size` (256) +
 `main_menu_title_gap` (96). Caveat: 256 is 2× the 128px font atlas base
 size, so the title glyphs upscale (slightly soft); bumping `font_base_size`
 in the backend is the fix if it bothers.
+
+### Export Save tooltip (options menu)
+
+The options-menu Export Save button carries a hover tooltip describing
+where the export goes: native → "Saves to {persistent dir}/saves/", web →
+"Triggers a file download".
+
+- `emitPanelButton` gained a `?Tooltip` param (the panel-button primitive
+  had no tooltip path; the tooltip attaches to the hit-test `.button`
+  element). All other call sites pass null.
+- `buildOptionsMenu` gained a `persistent_dir_path: ?[]const u8` param —
+  NULL MEANS WEB by construction: the web entry never sets a path (the
+  export is a browser download, no user-visible location), so the tooltip
+  branch is a plain null check, fully testable headless (no comptime
+  platform gate in ui.zig).
+- New `SessionState.persistent_dir_path: ?[]const u8` — set once by the
+  NATIVE entry (process-lifetime allocation) from the resolved path
+  (--data-dir / $ZIGLOP_DATA / $HOME/.ziglop); null on web. Off the undo
+  timeline → replay-safe, like `autosave_available`.
+- native.zig: `openPersistentDir` split — path resolution now happens in
+  main (the path must outlive the Dir handle), the helper just
+  mkdir -p + opens.
+- Test: both tooltip variants + other buttons stay tooltip-free.

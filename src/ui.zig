@@ -1457,6 +1457,7 @@ pub fn buildErrorPopup(
         error_dismiss_button_font_size,
         .dismiss_error,
         button_color,
+        null,
     );
 }
 
@@ -2287,8 +2288,9 @@ fn emitIconButton(
 }
 
 /// Emit a panel-backed button: a 9-slice panel background, a spriteless
-/// Button over it (owns the action + hit-test), and a centered text label on
-/// top. Used for text buttons (main menu, settings, dialog choices).
+/// Button over it (owns the action + hit-test + optional tooltip), and a
+/// centered text label on top. Used for text buttons (main menu, settings,
+/// dialog choices).
 fn emitPanelButton(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -2298,6 +2300,7 @@ fn emitPanelButton(
     font_size: i32,
     action: Action,
     button_color: Color,
+    tooltip: ?Tooltip,
 ) !void {
     // Button panels take an explicit tint (player gradient index 5) so they
     // read as buttons against background panels, which stay theme `darkest`.
@@ -2313,6 +2316,7 @@ fn emitPanelButton(
         .width = cell.width,
         .height = cell.height,
         .action = action,
+        .tooltip = tooltip,
     } });
     // Centered label. Horizontal centering uses the measurement seam;
     // vertical centering uses the `font_size` glyph cell (not `lineHeight`) —
@@ -4080,18 +4084,18 @@ pub fn buildMissionComplete(
         .y = button_y,
         .width = menu_button_width,
         .height = panel_button_height,
-    }, "Replay Mission", menu_button_font_size, .replay_mission, button_color);
+    }, "Replay Mission", menu_button_font_size, .replay_mission, button_color, null);
     // Continue — bottom-right.
     try emitPanelButton(elements, allocator, font_metrics, .{
         .x = screen.x + screen.width - margin - menu_button_width,
         .y = button_y,
         .width = menu_button_width,
         .height = panel_button_height,
-    }, "Continue", menu_button_font_size, .continue_after_mission, button_color);
+    }, "Continue", menu_button_font_size, .continue_after_mission, button_color, null);
     // Overwrite Clone — centered (only when offered).
     if (info.overwrite_offered) {
         const centered = screen.placeBottomCenter(menu_button_width, panel_button_height, ui_gap * 4);
-        try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Clone", menu_button_font_size, .overwrite_clone, button_color);
+        try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Clone", menu_button_font_size, .overwrite_clone, button_color, null);
     }
 }
 
@@ -4159,6 +4163,7 @@ pub fn buildMissionFail(
             menu_button_font_size,
             menu_button.action,
             button_color,
+            null,
         );
     }
 }
@@ -4177,6 +4182,12 @@ pub fn buildOptionsMenu(
     screen: Rectangle,
     current_screen: state.Screen,
     button_color: Color,
+    /// Where the exported save lands, for the Export Save tooltip. Native:
+    /// the resolved persistent dir (tooltip: "Saves to <dir>/saves/"). Web:
+    /// null — the export IS a browser download (tooltip: "Triggers a file
+    /// download"). Threaded from `SessionState.persistent_dir_path` (set
+    /// once by the entry file; see its doc).
+    persistent_dir_path: ?[]const u8,
 ) !void {
     // Full-screen panel background.
     try elements.append(allocator, .{ .nine_slice_panel = .{
@@ -4186,7 +4197,7 @@ pub fn buildOptionsMenu(
         .height = screen.height,
     } });
 
-    const MenuButton = struct { label: []const u8, action: Action };
+    const MenuButton = struct { label: []const u8, action: Action, tooltip: ?Tooltip = null };
     var buttons: [8]MenuButton = undefined;
     var button_count: usize = 0;
 
@@ -4202,7 +4213,18 @@ pub fn buildOptionsMenu(
         button_count += 1;
     }
 
-    buttons[button_count] = .{ .label = "Export Save", .action = .save_game };
+    // Where the exported save goes: on native, the timestamped save lands
+    // in <persistent dir>/saves/ (the autosave update is a side effect); on
+    // web it's offered as a browser download (no user-visible path).
+    const export_save_body = if (persistent_dir_path) |dir|
+        try std.fmt.allocPrint(allocator, "Saves to {s}/saves/", .{dir})
+    else
+        "Triggers a file download";
+    buttons[button_count] = .{
+        .label = "Export Save",
+        .action = .save_game,
+        .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(export_save_body))}) },
+    };
     button_count += 1;
 
     // Settings: opens the settings overlay on top of this one (drill-in).
@@ -4234,6 +4256,7 @@ pub fn buildOptionsMenu(
             menu_button_font_size,
             menu_button.action,
             button_color,
+            menu_button.tooltip,
         );
     }
 }
@@ -4307,6 +4330,7 @@ pub fn buildMainMenu(
             menu_button_font_size,
             menu_button.action,
             button_color,
+            null,
         );
     }
 }
@@ -4478,6 +4502,7 @@ pub fn buildLoadSavePanel(
         menu_button_font_size,
         .toggle_load_save_menu,
         button_color,
+        null,
     );
     if (@import("builtin").os.tag == .emscripten) {
         try emitPanelButton(
@@ -4494,6 +4519,7 @@ pub fn buildLoadSavePanel(
             menu_button_font_size,
             .import_save,
             button_color,
+            null,
         );
     }
 }
@@ -4612,6 +4638,7 @@ pub fn buildCreditsPanel(
         menu_button_font_size,
         .open_credits,
         button_color,
+        null,
     );
 }
 
@@ -5001,6 +5028,7 @@ pub fn buildSettingsPanel(
         menu_button_font_size,
         .open_settings,
         button_color,
+        null,
     );
 }
 
@@ -5551,4 +5579,53 @@ test "buildLoadSavePanel: empty list shows placeholder, Back always emitted" {
     };
     try std.testing.expect(found_placeholder);
     try std.testing.expect(found_back);
+}
+
+test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    // Native (a persistent dir path is known): "Saves to <dir>/saves/".
+    {
+        var elements: UiElementList = .empty;
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, button_color, "/home/tester/.ziglop");
+        const button = (for (elements.items) |element| switch (element) {
+            .button => |b| if (b.action == .save_game) break b,
+            else => {},
+        } else @panic("no Export Save button"));
+        const tooltip = button.tooltip orelse @panic("Export Save button has no tooltip");
+        try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
+        try std.testing.expectEqual(@as(usize, 1), tooltip.body[0].len);
+        try std.testing.expectEqualStrings("Saves to /home/tester/.ziglop/saves/", tooltip.body[0][0].text);
+    }
+
+    // Web (null path): the export is a browser download.
+    {
+        var elements: UiElementList = .empty;
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, button_color, null);
+        const button = (for (elements.items) |element| switch (element) {
+            .button => |b| if (b.action == .save_game) break b,
+            else => {},
+        } else @panic("no Export Save button"));
+        const tooltip = button.tooltip orelse @panic("Export Save button has no tooltip");
+        try std.testing.expectEqual(@as(usize, 1), tooltip.body.len);
+        try std.testing.expectEqualStrings("Triggers a file download", tooltip.body[0][0].text);
+    }
+
+    // Other buttons stay tooltip-free.
+    {
+        var elements: UiElementList = .empty;
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, button_color, "/x");
+        for (elements.items) |element| switch (element) {
+            .button => |b| if (b.action != .save_game) {
+                try std.testing.expect(b.tooltip == null);
+            },
+            else => {},
+        };
+    }
 }

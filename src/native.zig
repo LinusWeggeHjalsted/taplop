@@ -35,7 +35,12 @@ pub fn main(init: std.process.Init.Minimal) void {
     // here, and shipped-content reads check here first for player mods.
     const data_dir_override = parseStringFlag(init.args, allocator, "--data-dir");
     const replay_path = parseStringFlag(init.args, allocator, "--replay");
-    const persistent_dir = openPersistentDir(io, allocator, data_dir_override) catch
+    // The resolved path outlives the Dir handle: it's stored on the session
+    // for user-facing messages (the Export Save tooltip). Process-lifetime
+    // allocation, never freed.
+    const persistent_dir_path = resolvePersistentPath(allocator, data_dir_override) catch
+        @panic("could not resolve persistent data path: pass --data-dir, or set $HOME or $ZIGLOP_DATA");
+    const persistent_dir = openPersistentDir(io, persistent_dir_path) catch
         @panic("failed to open persistent data directory");
     defer persistent_dir.close(io);
 
@@ -54,6 +59,9 @@ pub fn main(init: std.process.Init.Minimal) void {
 
     var setup = session_setup.createSessionSetup(allocator, &file_source, io, &backend);
     setup.fixupPointers();
+    // User-facing persistent path (Export Save tooltip). Web leaves this
+    // null (see SessionState.persistent_dir_path).
+    setup.frame_state.history.session.persistent_dir_path = persistent_dir_path;
     // Replay a session log from the command line (--replay <path>): load +
     // reconstruct the session from the event history before entering the
     // game loop. The game resumes at the end of the log. Recoverable — a
@@ -119,19 +127,12 @@ fn expandTilde(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
     return std.fmt.allocPrint(allocator, "{s}{s}", .{ home_slice, value[1..] });
 }
 
-/// Resolve and open the persistent data directory path, creating it if missing.
-/// `flag_override` (from --data-dir) takes precedence over $ZIGLOP_DATA, which
-/// takes precedence over the $HOME/.ziglop default. The caller closes the
-/// returned Dir.
+/// Open the persistent data directory at `path`, creating it if missing.
+/// The caller closes the returned Dir.
 fn openPersistentDir(
     io: std.Io,
-    allocator: std.mem.Allocator,
-    flag_override: ?[]const u8,
+    path: []const u8,
 ) !std.Io.Dir {
-    const path = resolvePersistentPath(allocator, flag_override) catch
-        @panic("could not resolve persistent data path: pass --data-dir, or set $HOME or $ZIGLOP_DATA");
-    defer allocator.free(path);
-
     // mkdir -p then open. Idempotent — succeeds if the dir already exists.
     return std.Io.Dir.cwd().createDirPathOpen(io, path, .{
         .open_options = .{ .access_sub_paths = true, .iterate = true },

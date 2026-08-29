@@ -351,6 +351,7 @@ pub fn view(
             ui.screenRect(),
             current_state.screen,
             button_color,
+            session.persistent_dir_path,
         ) catch @panic("failed to build options menu");
     }
 

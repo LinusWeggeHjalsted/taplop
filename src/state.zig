@@ -120,6 +120,14 @@ pub const SessionState = struct {
     /// IO (autosave).
     autosave_available: bool = false,
 
+    /// The on-disk path of the persistent data dir, for user-facing messages
+    /// (the Export Save tooltip: "Saves to <dir>/saves/"). Set once by the
+    /// NATIVE entry from its resolved path (flag / env / $HOME — a
+    /// process-lifetime allocation); null on web, where the export is a
+    /// browser download with no user-visible path. Off the undoable
+    /// GameState → replay-safe by construction.
+    persistent_dir_path: ?[]const u8 = null,
+
     /// The save files listed in the load-save browser (newest first), plus
     /// the animation-clock stamp of the last scan. File-derived UI state
     /// like `autosave_available` — off the undoable GameState, but scanned
