@@ -3178,32 +3178,32 @@ const gear_stat_labels = [_][]const u8{
 };
 
 /// Gear panel width, derived from the longest stat line so the stats
-/// column (starting at the off-hand's left edge) fits without truncation.
+/// column (flush against the gear stack) fits without truncation.
 /// Mirrors the tooltip/error-popup approach (`measureSpanWidth` → content
 /// width + padding). Layout: weapon row (2 slots + gap) on top; gear stack
-/// (1 slot) under main-hand; stats start at the off-hand's bottom-left
-/// corner and extend right. Width = max(weapon row, stats from col1) +
-/// 2 side margins.
+/// (1 slot) under main-hand; stats flush against the gear stack's right
+/// edge, starting under the off-hand. Width = margin + slot + stats +
+/// margin.
 pub fn gearPanelWidth(font_metrics: FontMetrics) i32 {
-    // Value gutter: space + up to 4 digits (stats are bounded; see balance
+    // Value gutter: space + up to 2 digits (stats are bounded; see balance
     // bounds in loaders.zig). Keeps the width stable as values change.
-    const value_gutter = font_metrics.measureSpanWidth(text(" 9999"), gear_stat_font_size);
+    const value_gutter = font_metrics.measureSpanWidth(text(" 99"), gear_stat_font_size);
     var stats_width: i32 = 0;
     for (gear_stat_labels) |label| {
         const line_width = font_metrics.measureSpanWidth(text(label), gear_stat_font_size) + value_gutter;
         if (line_width > stats_width) stats_width = line_width;
     }
-    // Weapon row content (from left margin): 2 slots + 1 gap.
-    const weapon_row_width = 2 * inventory_slot_size + ui_gap;
-    // Stats content (from left margin): col1 offset + stats text.
-    const stats_column_width = inventory_slot_size + ui_gap + stats_width;
-    return @max(weapon_row_width, stats_column_width) + 2 * ui_gap;
+    // Non-weapon row content: panel margin (ui_gap) + 1 slot.
+    const non_weapon_row_width = ui_gap + inventory_slot_size;
+    // Stats content: stats text + panel margin (ui_gap).
+    const stats_column_width = stats_width + ui_gap;
+    return non_weapon_row_width + stats_column_width;
 }
 
 /// Gear panel: equipped weapons (main/off hand) top-left, then amulet →
 /// coat → gloves → pants → boots stacked below the main-hand, and combat
-/// stats in a column to the right of the gear stack (starting flush under
-/// the off-hand). All slots + item icons 128×128 (`inventory_slot_size`).
+/// stats flush against the gear stack's right edge (starting under the
+/// off-hand). All slots + item icons 128×128 (`inventory_slot_size`).
 /// Panel width is derived from the longest stat line (`gearPanelWidth`);
 /// height shares `middle_panel_height` with the other middle panels.
 /// Slots carry `ref = .{ .gear = ... }` so drag to/from inventory works
@@ -3298,11 +3298,10 @@ pub fn buildGearPanel(
         row_y += cell_size + ui_gap;
     }
 
-    // Combat stats in a column starting at the off-hand slot's BOTTOM-LEFT
-    // corner (flush — no gap), flowing down the right side of the gear stack.
-    // Effective values (gear + effect modifiers + momentum where applicable).
-    // See `getEffective*` on Entity.
-    const stats_x = col1_x;
+    // Combat stats flush against the gear stack's right edge (no gap),
+    // flowing down under the off-hand. Effective values (gear + effect
+    // modifiers + momentum where applicable). See `getEffective*` on Entity.
+    const stats_x = col0_x + cell_size;
     const stats_top = top_y + cell_size + ui_gap;
     const stat_line_height: i32 = gear_stat_font_size + 16;
 
@@ -3349,8 +3348,8 @@ pub fn buildGearPanel(
 ///      then wrapping down, max 8 columns. Omitted entirely when the entity
 ///      has no active effects.
 ///   3. Gear mirror — weapons (main/off hand) top-left, amulet→coat→gloves→
-///      pants→boots stacked below the main-hand, combat-stat column to the
-///      right (flush under the off-hand). All 128×128 (`inventory_slot_size`).
+///      pants→boots stacked below the main-hand, combat-stat column flush
+///      against the gear stack's right edge (under the off-hand). All 128×128 (`inventory_slot_size`).
 pub fn buildEntityInspectPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -3550,8 +3549,9 @@ pub fn buildEntityInspectPanel(
         row_y += gear_cell_size + ui_gap;
     }
 
-    // Combat-stat column (flush under the off-hand, same as buildGearPanel).
-    const stats_x = col1_x;
+    // Combat-stat column (flush against the gear stack, same as
+    // buildGearPanel).
+    const stats_x = col0_x + gear_cell_size;
     const stats_top = gear_top_y + gear_cell_size + ui_gap;
     const stat_line_height: i32 = gear_stat_font_size + 16;
     // The inspect stat column leads with the entity's live combat state
@@ -5381,10 +5381,10 @@ test "buildEntityInspectPanel: enemy entity uses enemy gradient" {
             found_enemy_frame = true;
         },
         .text_label => |label| {
-            // Stat lines live in the column flush under the off-hand (x =
-            // 16 + 128 + 16); the panel title shares the font size, so gate
+            // Stat lines live in the column flush against the gear stack
+            // (x = 16 + 128); the panel title shares the font size, so gate
             // on position, not just text.
-            if (label.screen_position.x == ui_gap + inventory_slot_size + ui_gap and label.font_size == gear_stat_font_size) {
+            if (label.screen_position.x == ui_gap + inventory_slot_size and label.font_size == gear_stat_font_size) {
                 if (stat_lines < 2) first_stat_lines[stat_lines] = label.text;
                 stat_lines += 1;
                 if (std.mem.eql(u8, label.text, "Current Health 7")) found_current_health = true;
