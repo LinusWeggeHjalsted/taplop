@@ -479,7 +479,7 @@ pub const swap_button_size: i32 = 128;
 /// Stagger offset for main-menu buttons: even-indexed buttons shift LEFT by
 /// this much, odd-indexed shift RIGHT — an alternating zigzag down the
 /// stack. Must stay < menu_button_width / 2 to keep buttons on-screen.
-pub const main_menu_button_stagger: i32 = 128;
+pub const main_menu_button_stagger: i32 = 64;
 /// Main-menu button — wide stacked buttons on the title screen.
 pub const menu_button_width: i32 = 1024;
 pub const menu_button_font_size: i32 = 96;
