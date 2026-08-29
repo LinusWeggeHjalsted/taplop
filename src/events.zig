@@ -194,8 +194,8 @@ pub const EditorEvent = union(enum) {
         color_wheel_index: u32,
     },
     // Set a fully custom per-level theme (or null to revert to the wheel).
-    // The 18 colors (3 gradients) come from the right metadata panel's hex
-    // fields. See DESIGN → CustomColorTheme.
+    // See DESIGN → Architecture → Level Editor → Level theme (gradient
+    // picking).
     editor_set_level_custom_theme: struct {
         level_index: u32,
         custom_theme: ?CustomColorTheme,

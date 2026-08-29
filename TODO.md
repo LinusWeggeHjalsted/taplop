@@ -432,14 +432,18 @@ yet implemented. Remaining work:
   `editor_set_active_level` is handled, inline in `processEvent`). Wiring
   the handlers is part of the UI slice.
 - Editor input/UI: the settled layout/interaction design (DESIGN →
-  Architecture → Level Editor → Editor UI layout). Build as a vertical
-  slice — static shell first (tabs + viewport + bottom bar + inspector
-  rendering with real data, no interaction), then wire input per tool +
-  the edit-verb handlers. Still-needed event structs:
-  `editor_toggle_inspector` / `editor_set_tool`. Default level template
-  (`data/default_level.txt`). Currently the `.editor` screen has no view or
-  input handler — the building blocks are reachable (main-menu "Editor"
-  button) but the screen is blank.
+  Architecture → Level Editor → Editor UI layout — four zones: tabs,
+  left inspector, viewport, right settings sidebar + bottom tool palette;
+  plus the centered sprite picker, the gradient-picking level-theme model,
+  and the editor drawable projection for the viewport). Build as a
+  vertical slice — static shell first (tabs + viewport + bottom bar +
+  inspector + settings sidebar rendering with real data, no interaction),
+  then wire input per tool + the edit-verb handlers. Still-needed event
+  structs: `editor_toggle_inspector` / `editor_set_tool` / gradient-
+  override setters. Default level template (`data/default_level.txt`).
+  Currently the `.editor` screen has no view or input handler — the
+  building blocks are reachable (main-menu "Editor" button) but the
+  screen is blank.
 - Validation result + replay attachment: on successful validation, attach a
   saved mission replay to the custom mission (next save writes it into the
   custom mission dir) for re-validation before uploading to the online

@@ -1775,20 +1775,21 @@ player.txt + all level_N.txt via `readReconstructionFile` (cache-deterministic).
 concern.
 
 **Editor UI layout (settled design; implementation pending).** Three-zone
-layout + a left inspector:
+layout + a left inspector + a right settings sidebar:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ [Level 1] [Level 2] [Level 3]⟷   [+]        [Test][Validate] │  tabs + primary actions
-├──────────────┬──────────────────────────────────────────┤
-│              │                                          │
-│  Inspector   │           Level Viewport                 │
-│  (left bar,  │      (rendered as in-game;              │
-│   toggleable)│       clickable for paint/place/select) │
-│              │                                          │
-├──────────────┴──────────────────────────────────────────┤
-│ [Select][Tile] [Enemies ▾] [Decorations ▾] [Items ▾] ⟷  │  tool palette (bottom bar)
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ [Level 1] [Level 2] [Level 3]⟷ [+]                  [Test][Validate] │  tabs + primary actions
+├──────────────┬────────────────────────────────────┬──────────────┤
+│              │                                    │   Settings   │
+│  Inspector   │           Level Viewport           │   (right     │
+│  (left bar,  │      (rendered as in-game;         │    bar,      │
+│   toggleable)│       clickable for paint/         │    toggle-   │
+│              │       place/select)                │    able)     │
+│              │                                    │              │
+├──────────────┴────────────────────────────────────┴──────────────┤
+│ [Select][Tile] [Enemies ▾] [Decorations ▾] [Items ▾] ⟷           │  tool palette (bottom bar)
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 - **Tabs (top):** one per level, horizontally scrollable when too many for
@@ -1818,10 +1819,15 @@ layout + a left inspector:
   type (see selection model). User-toggleable (button in the bottom bar,
   mirroring in-game panel toggles), open by default. Auto-opens on new
   enemy/decoration/item creation (an empty type isn't useful until
-  populated). NO DIALOGS anywhere — all field editing is inline within the
-  inspector: sprite selection (scrollable/searchable list of shipped +
-  mission-folder sprite ids), skill assignment, gear equip, stat fields,
-  footprint editing (decorations), etc.
+  populated). Field editing is inline within the inspector: skill
+  assignment, gear equip, stat fields, footprint editing (decorations),
+  etc. Base-sprite selection is the one exception — it goes through the
+  centered sprite picker (below); decoration layers added via the
+  inspector pick their sprite through the picker the same way.
+- **Settings sidebar (right bar):** mission + active-level settings.
+  User-toggleable like the inspector, open by default. Mission settings:
+  mission name. Active-level settings: level name, theme settings
+  (gradient picks — see "Level theme" below).
 - **Primary actions (top-right):** Test + Validate buttons. Test =
   `start_playtest` on the active level (single-level); Validate =
   `start_validation` (full playthrough from level 1). Both transition to
@@ -1829,6 +1835,46 @@ layout + a left inspector:
   return to `.editor`. The bottom bar during playtest/validate is the
   in-game bottom bar (the screen transition handles it; `view()` branches
   on screen). Upload/Publish UI is DEFERRED (lands with online services).
+
+**Centered sprite picker.** Picking a base sprite for an enemy or
+decoration tool opens a centered modal panel with two sections:
+(a) the custom `.png`s in the mission directory, (b) the officially
+shipped sprites for that domain (enemy sprites for enemy tools,
+decoration sprites for decoration tools). Clicking an option closes the
+picker and sets the tool's sprite id. Decoration layer sprites pick
+through the same panel. Ground items always render as the shared
+ground-bag sprite — there is no sprite to pick for them. The picker is
+the editor's only centered panel; everything else stays inline in the
+inspector / settings sidebar.
+
+**Level theme (gradient picking).** A level's theme is composed from the
+authoritative gradient list in `color_themes.txt` (currently 3 gradients;
+will grow to a full handpicked color wheel). The level stores:
+- **world gradient index** — picked from the list (the role
+  `color_wheel_index` plays today).
+- **enemy / player gradient overrides** — optional indices; when unset
+  (the default) the gradient is DERIVED from the world index, equally
+  spaced across the wheel for role clarity — the same rule as
+  `activeThemeFor`: enemy = world + N/3, player = world + 2·N/3 (N =
+  gradients in the theme). Disabling the auto-derivation (per role) and
+  picking a specific gradient is the override.
+
+This index-based model SUPERSEDES `CustomColorTheme` (raw 18-color
+granular authoring): per-color control is deliberately out of scope —
+authors pick from the handpicked wheel. The `custom_theme` scaffolding
+(types.zig + `editor_set_level_custom_theme`) is replaced by the override
+fields + their events when the editor theme slice lands.
+
+**Editor viewport rendering (drawable projection).** The editor playfield
+never builds a concrete `Level`; `view()` gains an editor-mode branch that
+projects the `EditorLevel` structure into the same drawable kinds the
+in-game view builds. Placements store their location + a pointer to their
+tool reference (tool = palette entry), and the projection resolves each
+placement through its palette type to sprites + gradients: tiles,
+decoration pieces (footprint split + layers), entity sprite stacks,
+ground items (bag sprite), and the `!`/`=` markers all render via the
+existing drawable builders. The same placement-through-reference
+structure is what save reads to generate the mission files.
 
 **Active-tool model (fully modal).** The active tool is always exactly one
 of: {selection, tile-paint, enemy-type-X, decoration-type-X,
@@ -1907,7 +1953,8 @@ asserts palette + player_def + instantiated entities). `beginnings` ships a
 **Event structs DEFINED, handlers PENDING.** Every edit-verb event struct
 exists in events.zig (`editor_add_level` / `editor_delete_level` /
 `editor_set_tile` / `editor_set_level_name` / `editor_set_level_color_wheel`
-/ `editor_set_level_custom_theme` / `editor_set_mission_name` /
+/ `editor_set_level_custom_theme` (superseded by the gradient-override
+events — see Level theme below) / `editor_set_mission_name` /
 `editor_set_player_start` / `editor_set_level_end` / `editor_add_entity_type`
 / `editor_add_decoration_type` / `editor_add_item_type` /
 `editor_delete_type` / `editor_place_entity` / `editor_place_decoration` /
@@ -1920,11 +1967,14 @@ traps. Wiring the handlers is part of the UI slice.
 
 **Pending:** editor UI/input — the layout + active-tool + selection model
 above, implemented as a vertical slice (static shell first: tabs + viewport +
-bottom bar + inspector rendering with real data, no interaction; then wire
-input per tool + the edit-verb handlers). Still-needed event structs:
-`editor_toggle_inspector` / `editor_set_tool`. Default level template
-(`data/default_level.txt`). Validation result + replay attachment (deferred
-with online services), editor autosave (nice-to-have).
+bottom bar + inspector + settings sidebar rendering with real data, no
+interaction; then wire input per tool + the edit-verb handlers). The
+viewport shell includes the editor drawable projection (see Editor viewport
+rendering above). Still-needed event structs: `editor_toggle_inspector` /
+`editor_set_tool` / the gradient-override setters (see Level theme above).
+Default level template (`data/default_level.txt`). Validation result +
+replay attachment (deferred with online services), editor autosave
+(nice-to-have).
 
 ## Decorations & Footprint
 

@@ -285,7 +285,7 @@ pub const ActiveColorTheme = struct {
 /// compatible). `lightest`/`darkest` stay from the global
 /// ColorThemeDefinitions: `lightest` is the tile-cursor color and the UI
 /// text-default; `darkest` tints 9-slice panel backgrounds. See DESIGN →
-/// Architecture → Level Editor → Editor UI layout (right metadata panel).
+/// Architecture → Level Editor → Level theme (gradient picking).
 pub const CustomColorTheme = struct {
     world_gradient: ColorGradient,
     enemy_gradient: ColorGradient,
