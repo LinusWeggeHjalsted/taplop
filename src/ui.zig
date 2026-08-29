@@ -5162,16 +5162,22 @@ pub fn buildOptionsMenu(
     // Where the exported save goes: on native, the timestamped save lands
     // in <persistent dir>/saves/ (the autosave update is a side effect); on
     // web it's offered as a browser download (no user-visible path).
-    const export_save_body = if (persistent_dir_path) |dir|
-        try std.fmt.allocPrint(allocator, "Saves to {s}/saves/", .{dir})
-    else
-        "Triggers a file download";
-    buttons[button_count] = .{
-        .label = "Export Save",
-        .action = .save_game,
-        .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(export_save_body))}) },
-    };
-    button_count += 1;
+    // Hidden in the editor — the save the player expects there is the
+    // MISSION being edited (a separate future slice), not the campaign
+    // save. `save_game` is button-only (no keybind), so hiding the button
+    // removes the path entirely.
+    if (current_screen != .editor) {
+        const export_save_body = if (persistent_dir_path) |dir|
+            try std.fmt.allocPrint(allocator, "Saves to {s}/saves/", .{dir})
+        else
+            "Triggers a file download";
+        buttons[button_count] = .{
+            .label = "Export Save",
+            .action = .save_game,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(export_save_body))}) },
+        };
+        button_count += 1;
+    }
 
     // Settings: opens the settings overlay on top of this one (drill-in).
     // Present in every context the options menu appears in (level + hub).
@@ -6571,6 +6577,18 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
             .button => |b| if (b.action != .save_game) {
                 try std.testing.expect(b.tooltip == null);
             },
+            else => {},
+        };
+    }
+
+    // Editor context: no Export Save button (the editor's save target is
+    // the mission being edited — a future slice). Continue + Settings +
+    // Exit to Main Menu remain.
+    {
+        var elements: UiElementList = .empty;
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, button_color, "/home/tester/.ziglop");
+        for (elements.items) |element| switch (element) {
+            .button => |b| try std.testing.expect(b.action != .save_game),
             else => {},
         };
     }
