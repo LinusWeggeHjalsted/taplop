@@ -259,11 +259,26 @@ pub fn view(
             camera_zoom,
         );
     } else if (current_state.screen == .editor) {
-        // Editor static shell — bottom tool palette first (top tabs /
-        // inspector / settings sidebar are later slices). The editor is
-        // non-null on this screen by invariant (open_editor sets it,
-        // close_editor transitions away).
+        // Editor top row: options + undo buttons in the same locations as
+        // levels/hubs (buildTopBar), then one level tab per mission level
+        // to their right. Built before the bottom bar so the bottom bar's
+        // hover-highlight pass wins overlaps, matching the level/hub order.
+        ui.buildTopBar(
+            &ui_elements,
+            frame_allocator,
+            ui.screenRect(),
+            active_theme,
+        ) catch @panic("failed to build top bar");
+        // The editor is non-null on this screen by invariant (open_editor
+        // sets it, close_editor transitions away).
         if (current_state.editor) |editor| {
+            ui.buildEditorLevelTabs(
+                &ui_elements,
+                frame_allocator,
+                font_metrics,
+                editor,
+                active_theme,
+            ) catch @panic("failed to build editor level tabs");
             ui.buildEditorBottomBar(
                 &ui_elements,
                 frame_allocator,

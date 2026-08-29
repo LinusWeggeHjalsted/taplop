@@ -861,6 +861,10 @@ pub const Button = struct {
     /// active tool). The `.select_editor_tool` action +
     /// `AnytimeInput.clicked_editor_tool` fold this into the handler.
     editor_tool: ?types.EditorToolId = null,
+    /// Editor level-tab index, if this button is a level tab (make that
+    /// level active). The `.select_editor_level` action +
+    /// `AnytimeInput.clicked_editor_level` fold this into the handler.
+    editor_level: ?u32 = null,
     blocks_input: bool = true,
 };
 
@@ -2955,6 +2959,76 @@ fn emitEditorToolCell(
     } });
 }
 
+/// Editor top row: level tabs, emitted to the RIGHT of the top bar's
+/// options + undo buttons (those come from `buildTopBar` — same locations
+/// as levels/hubs). One 128-high panel-backed button per level (the
+/// palette group-header visual class), labeled with the level's name or
+/// "Level N" if unnamed. The ACTIVE tab is highlighted (lightest edge
+/// outline — the same path as tool cells); clicking switches the active
+/// level (payload = level index → `.select_editor_level` →
+/// `player_set_editor_level`, which rides the undo timeline). See DESIGN →
+/// Architecture → Level Editor → Editor UI layout (tabs).
+pub fn buildEditorLevelTabs(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    editor: types.Editor,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const p = active_theme.player_gradient.colors;
+    const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+
+    // Tabs start right of the top bar's two cells (options + undo joined
+    // by ui_gap in buildTopBar's Row; one more gap separates the tabs).
+    var x = 2 * (slot_size + ui_gap);
+    // 128-high tabs, vertically centered in the top bar strip.
+    const y = (top_bar_height - editor_header_strip_height) / 2;
+
+    for (editor.levels, 0..) |level, index| {
+        const label = if (level.name.len > 0)
+            level.name
+        else
+            try std.fmt.allocPrint(allocator, "Level {d}", .{index + 1});
+        const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+        // Width = label + side padding, never narrower than the tab height
+        // (a square floor so short labels don't squish the panel).
+        const width = @max(label_width + 2 * ui_gap, editor_header_strip_height);
+        const cell: Rectangle = .{
+            .x = x,
+            .y = y,
+            .width = width,
+            .height = editor_header_strip_height,
+        };
+
+        try elements.append(allocator, .{ .nine_slice_panel = .{
+            .sprite_id = "ui/panel",
+            .screen_position = cell.position(),
+            .width = width,
+            .height = editor_header_strip_height,
+            .color = button_color,
+        } });
+        try elements.append(allocator, .{ .button = .{
+            .sprite_id = null,
+            .screen_position = cell.position(),
+            .width = width,
+            .height = editor_header_strip_height,
+            .action = .select_editor_level,
+            .editor_level = @intCast(index),
+            .highlighted = index == editor.active_level_index,
+            .tooltip = .{ .header = try spanRow(allocator, text(label)) },
+        } });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = label,
+            .screen_position = cell.placeCenter(label_width, editor_group_header_font_size).position(),
+            .font_size = editor_group_header_font_size,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+
+        x += width + ui_gap;
+    }
+}
+
 /// Editor bottom bar: the tool palette (static shell). Fixed tools first
 /// (Select, Tile), then three groups — Enemies, Decorations, Ground Items —
 /// each a header label, one slot per palette type, and an "add new" (+)
@@ -4386,6 +4460,70 @@ test "scaleToFit: aspect-preserved, centered, degenerate dims fall back to cell"
     // Unresolvable dims (a fresh type with no sprite yet) → the full cell.
     const degenerate = scaleToFit(cell, 0, 0);
     try std.testing.expectEqual(cell, degenerate);
+}
+
+test "buildEditorLevelTabs: one panel button per level, active highlighted, unnamed fallback" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const lightest: types.Color = .{ .r = 1, .g = 1, .b = 1 };
+    const player_one: types.Color = .{ .r = 30, .g = 30, .b = 30 };
+    const player_five: types.Color = .{ .r = 40, .g = 40, .b = 40 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = lightest,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{ black, player_one, black, black, black, player_five } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    const levels = [_]types.EditorLevel{
+        .{ .name = "The Crossing" },
+        .{}, // unnamed -> "Level 2"
+        .{}, // unnamed -> "Level 3"
+    };
+    const editor: types.Editor = .{
+        .levels = &levels,
+        .active_level_index = 1,
+    };
+
+    var elements: UiElementList = .empty;
+    try buildEditorLevelTabs(&elements, arena.allocator(), metrics, editor, theme);
+
+    // 3 tabs x (panel + spriteless button + label) = 9 elements.
+    try std.testing.expectEqual(@as(usize, 9), elements.items.len);
+
+    // Tabs sit right of the top bar's options + undo cells, 128 high,
+    // vertically centered in the 256-tall top bar strip.
+    const start_x = 2 * (slot_size + ui_gap);
+    const tab_y = (top_bar_height - editor_header_strip_height) / 2;
+    try std.testing.expectEqual(@as(i32, start_x), elements.items[0].nine_slice_panel.screen_position.x);
+    try std.testing.expectEqual(@as(i32, tab_y), elements.items[0].nine_slice_panel.screen_position.y);
+    try std.testing.expectEqual(@as(i32, 128), elements.items[0].nine_slice_panel.height);
+
+    // Per tab: the button carries the payload + action; only the ACTIVE
+    // tab (index 1) is highlighted. Labels: the level's name, else
+    // "Level N".
+    const expected_labels = [_][]const u8{ "The Crossing", "Level 2", "Level 3" };
+    var previous_x: i32 = start_x;
+    for (0..3) |tab| {
+        const button = elements.items[3 * tab + 1].button;
+        try std.testing.expectEqual(Action.select_editor_level, button.action);
+        try std.testing.expectEqual(@as(u32, @intCast(tab)), button.editor_level.?);
+        try std.testing.expectEqual(tab == 1, button.highlighted);
+        try std.testing.expect(button.sprite_id == null); // spriteless over the panel
+
+        const label = elements.items[3 * tab + 2].text_label;
+        try std.testing.expectEqualStrings(expected_labels[tab], label.text);
+        try std.testing.expect(!label.blocks_input);
+
+        // Tabs lay out left-to-right, advancing past each panel.
+        const panel_x = elements.items[3 * tab].nine_slice_panel.screen_position.x;
+        try std.testing.expect(panel_x >= previous_x);
+        previous_x = panel_x;
+    }
 }
 
 test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {

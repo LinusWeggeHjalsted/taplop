@@ -440,15 +440,19 @@ yet implemented. Remaining work:
   inspector + settings sidebar rendering with real data, no interaction),
   then wire input per tool + the edit-verb handlers. Landed so far:
   the bottom tool palette (static shell — fixed tools + palette groups +
-  plus cells + `Image.source_rectangle`) and palette window scrolling
+  plus cells + `Image.source_rectangle`), palette window scrolling
   (max 8 visible per group, wheel-over-group shifts the window — see
-  DONE.md). Still-needed event
+  DONE.md), the top row (options + undo buttons via the shared
+  `buildTopBar`, plus 128px level tabs that switch the active level via
+  `player_set_editor_level` — see DONE.md), and the viewport world scene.
+  Still-needed event
   structs: `editor_toggle_inspector` / `editor_set_tool` /
   gradient-override setters. Default level template
-  (`data/default_level.txt`). The `.editor` screen renders the bottom tool
-  palette + the viewport world scene (tiles, palette-resolved placements,
-  `!`/`=` markers; camera centered on the active level's player_start) —
-  reachable via the main-menu "Editor" button. Viewport INPUT (tile paint,
+  (`data/default_level.txt`). The `.editor` screen renders the top row +
+  bottom tool palette + the viewport world scene (tiles, palette-resolved
+  placements, `!`/`=` markers; camera centered on the active level's
+  player_start, right-drag pan) — reachable via the main-menu "Editor"
+  button. Viewport INPUT (tile paint,
   placement, selection) is the next slice.
 - **Collapsed editor palette groups — UNDECIDED visuals.** Groups collapse
   to... something that shows there's content to expand. Candidate: overlap

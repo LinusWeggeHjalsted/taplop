@@ -1021,6 +1021,14 @@ pub fn handleAnytimeInput(
                 const tool = anytime.clicked_editor_tool orelse return;
                 history.session.ui_state.editor_active_tool = tool;
             },
+            // Level-tab click: push the orchestrator (the EditorEvent owns
+            // the mutation; the switch rides the undo timeline) and drain.
+            .select_editor_level => {
+                const level_index = anytime.clicked_editor_level orelse return;
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_level = .{
+                    .level_index = level_index,
+                } });
+            },
             else => {},
         }
     }

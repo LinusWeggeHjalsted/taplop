@@ -6122,3 +6122,39 @@ blocking buttons); screen transitions clear the pan via the existing reset.
 `handleRightClickInspect` keeps its own level-only gate (no right-click
 consumer conflict on the editor screen). DESIGN → Platform Seam → Camera pan
 updated.
+
+### Editor top row: options/undo + level tabs
+
+The editor screen gained its top row. Options + undo buttons render in the
+SAME locations as levels/hubs — the editor branch of `view()` now calls the
+shared `ui.buildTopBar` (the escape chain already opens the options menu on
+any non-main-menu screen, and `player_exit_to_menu` gained an editor arm
+pushing `close_editor` — it owns the teardown AND the
+`transitionScreen(.main_menu)`, so no sibling `open_main_menu` is needed).
+`validatePlayerAction` accepts the editor screen for `player_exit_to_menu`.
+
+**Level tabs** (`ui.buildEditorLevelTabs`): one 128-high panel-backed
+button per level (`editor_header_strip_height` — the palette group-header
+visual class), laid out to the right of the undo button
+(`2 * (slot_size + ui_gap)`), vertically centered in the 256-tall top bar
+strip. Label = the level's `name` or "Level N" if unnamed; width = measured
+label + padding with a square floor (never narrower than 128). The ACTIVE
+tab carries `highlighted` (lightest edge outline — the same path as tool
+cells).
+
+**Click routing** follows the payload-carrying-button pattern:
+`Action.select_editor_level` + `Button.editor_level` → folded in main.zig's
+release dispatch into `AnytimeInput.clicked_editor_level` → the
+`.select_editor_level` arm pushes **`player_set_editor_level`** (new
+PlayerInputEvent orchestrator) via `pushPlayerActionAndDrain` → its handler
+pushes `EditorEvent.editor_set_active_level` (the existing inline handler
+sets `active_level_index`, range-guarded). Player input never pushes the
+EditorEvent directly (the replay whitelist convention — `isPlayerAction`
+accepts only PlayerInputEvents, so a directly-pushed editor event would
+fail replay seeding). `validatePlayerAction` arm: screen == .editor +
+editor non-null + index in range. Tab switches ride the undo timeline (the
+Editor is part of GameState) — undo after switching tabs walks back.
+
+Tests: ui (element structure, payloads, active-only highlight, unnamed
+fallback, layout position/height), new `src/handler_tests_editor.zig`
+(switch + undo revert; out-of-range index no-op).

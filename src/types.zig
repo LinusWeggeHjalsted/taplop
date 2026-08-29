@@ -148,6 +148,11 @@ pub const Action = enum {
     // EditorToolId rides in `AnytimeInput.clicked_editor_tool`. See DESIGN
     // → Architecture → Level Editor (active-tool model).
     select_editor_tool,
+    // An editor level-tab was clicked (make that level active). The level
+    // index rides in `AnytimeInput.clicked_editor_level`. Routed through
+    // `options_action` like the other payload-carrying editor clicks. See
+    // DESIGN → Architecture → Level Editor → Editor UI layout (tabs).
+    select_editor_level,
 };
 
 /// One per editable `Settings` scalar field. Drives the settings-screen

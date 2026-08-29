@@ -1102,8 +1102,21 @@ pub const GameStateHistory = struct {
                     }
                 },
                 .player_exit_to_menu => {
-                    if (self.current_state.screen != .level and self.current_state.screen != .hub) {
-                        @panic("replay validation: player_exit_to_menu outside level/hub screen");
+                    if (self.current_state.screen != .level and self.current_state.screen != .hub and
+                        self.current_state.screen != .editor)
+                    {
+                        @panic("replay validation: player_exit_to_menu outside level/hub/editor screen");
+                    }
+                },
+                .player_set_editor_level => |set| {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_set_editor_level outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_set_editor_level with no editor");
+                    };
+                    if (set.level_index >= editor.levels.len) {
+                        @panic("replay validation: player_set_editor_level index out of range");
                     }
                 },
                 .player_replay_mission => {

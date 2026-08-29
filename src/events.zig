@@ -508,6 +508,12 @@ pub const PlayerInputEvent = union(enum) {
     player_load_save: struct {
         save_path: []const u8,
     },
+    // Level-tab click in the editor: switch the active level. The handler
+    // pushes the EditorEvent; `active_level_index` lives on the Editor
+    // (GameState), so tab switches ride the undo timeline.
+    player_set_editor_level: struct {
+        level_index: u32,
+    },
 
     // --- Meta: exit/skip orchestrators ---
     // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;

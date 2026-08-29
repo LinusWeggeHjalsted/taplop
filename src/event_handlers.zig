@@ -768,6 +768,12 @@ fn handlePlayerInputEvent(
                     .{ .meta_event = .open_main_menu },
                     .{ .meta_event = .end_hub },
                 }, allocator);
+            } else if (current.screen == .editor) {
+                // close_editor owns the teardown AND the transition (its
+                // handler calls transitionScreen(.main_menu), which clears
+                // the editor via the screen-scope swap) — no sibling
+                // open_main_menu needed.
+                pushEvents(current, &.{.{ .meta_event = .close_editor }}, allocator);
             }
         },
         .player_replay_mission => {
@@ -782,6 +788,13 @@ fn handlePlayerInputEvent(
                 } } },
                 .{ .meta_event = .end_hub },
             }, allocator);
+        },
+        // Level-tab click: switch the editor's active level. Thin orchestrator
+        // — the EditorEvent owns the mutation (undo rides the timeline).
+        .player_set_editor_level => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_active_level = .{
+                .level_index = set.level_index,
+            } } }}, allocator);
         },
         .player_overwrite_clone => {
             // Replace the existing clone for this mission with the just-
