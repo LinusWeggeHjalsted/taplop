@@ -9,6 +9,8 @@
 const std = @import("std");
 const types = @import("types.zig");
 const parser = @import("parser.zig");
+const deep_copy = @import("deep_copy.zig");
+const lookups = @import("generated_lookups.zig");
 const file_source_mod = @import("file_source.zig");
 const sprite_metadata = @import("generated_sprite_metadata");
 
@@ -625,8 +627,9 @@ pub fn decorationLayersEqual(a: []const types.DecorationLayer, b: []const types.
 /// Build an Editor session from already-parsed mission/player/level sections.
 /// Pure (no file I/O) — the caller (open_editor handler) reads via
 /// history.readReconstructionFile so the reconstruction cache makes undo
-/// replay deterministic. Dedups the levels' inline entity/decoration
-/// definitions into a shared palette (entity_types / decoration_types).
+/// replay deterministic. Dedups the levels' inline entity/decoration/item
+/// definitions into a shared palette (entity_types / decoration_types /
+/// item_types).
 /// The result is reference-based (EditorLevel + placements); save flattens
 /// back to the existing inline format. Unused palette types are lost on
 /// editor close (accepted). See DESIGN → Architecture → Level Editor.
@@ -641,6 +644,7 @@ pub fn buildEditorMission(
 ) !types.Editor {
     var entity_types: std.ArrayList(types.EntityTypeDef) = .empty;
     var decoration_types: std.ArrayList(types.DecorationTypeDef) = .empty;
+    var item_types: std.ArrayList(types.ItemTypeDef) = .empty;
     var editor_levels: std.ArrayList(types.EditorLevel) = .empty;
 
     for (parsed_level_sections) |sections| {
@@ -704,6 +708,35 @@ pub fn buildEditorMission(
             }) catch @panic("failed to append decoration placement");
         }
 
+        // Ground item placements: one placement per item (level files author
+        // single-item stacks — one layout char per item; runtime drops can
+        // merge stacks, but those never round-trip through the editor).
+        // Dedup by full item equality (name + stats + type) into the shared
+        // item palette.
+        var item_placements: std.ArrayList(types.ItemPlacement) = .empty;
+        for (level.ground_items) |stack| {
+            for (stack.items) |item| {
+                var type_id: ?u32 = null;
+                for (item_types.items, 0..) |item_type, it_index| {
+                    if (deep_copy.deepEqual(types.Item, item_type.item, item)) {
+                        type_id = @intCast(it_index);
+                        break;
+                    }
+                }
+                if (type_id == null) {
+                    type_id = @intCast(item_types.items.len);
+                    item_types.append(allocator, .{
+                        .id = itemDisplayName(item, allocator),
+                        .item = item,
+                    }) catch @panic("failed to append item type");
+                }
+                item_placements.append(allocator, .{
+                    .type_id = type_id.?,
+                    .position = stack.position,
+                }) catch @panic("failed to append item placement");
+            }
+        }
+
         editor_levels.append(allocator, .{
             .name = level.name,
             .color_wheel_index = level.color_wheel_index,
@@ -712,6 +745,7 @@ pub fn buildEditorMission(
             .level_end = level.level_end,
             .entity_placements = placements.items,
             .decoration_placements = deco_placements.items,
+            .item_placements = item_placements.items,
         }) catch @panic("failed to append editor level");
     }
 
@@ -720,6 +754,7 @@ pub fn buildEditorMission(
         .levels = editor_levels.items,
         .entity_types = entity_types.items,
         .decoration_types = decoration_types.items,
+        .item_types = item_types.items,
         .player_def = .{ .id = "Player", .template = player_entity },
     };
 }
@@ -732,10 +767,34 @@ fn decorationFootprintEqual(a: []const types.Vector2, b: []const types.Vector2) 
     return true;
 }
 
+/// User-facing palette id for a ground-item type: the item's own name, or
+/// "<Skill> Tome" for skill tomes (which carry no name field — mirrors the
+/// item-tooltip naming in ui.zig).
+fn itemDisplayName(item: types.Item, allocator: std.mem.Allocator) []const u8 {
+    return switch (item) {
+        .weapon => |weapon| weapon.name,
+        .amulet => |amulet| amulet.name,
+        .coat => |coat| coat.name,
+        .gloves => |gloves| gloves.name,
+        .pants => |pants| pants.name,
+        .boots => |boots| boots.name,
+        .skill_tome => |tome| blk: {
+            const definition = lookups.getSkillDefinition(tome.skill) orelse
+                break :blk "Skill Tome";
+            break :blk std.fmt.allocPrint(
+                allocator,
+                "{s} Tome",
+                .{definition.name},
+            ) catch @panic("failed to format skill tome palette name");
+        },
+    };
+}
+
 /// Instantiate a concrete gameplay Level from an EditorLevel + the editor's
 /// palette + player_def. Entity 0 is the player (from player_def at
 /// player_start); each placement becomes an entity from its palette type at
-/// the placement's position. Runtime fields are reset (current_health =
+/// the placement's position; item placements regroup into ground-item stacks
+/// by position. Runtime fields are reset (current_health =
 /// max_health, is_active = false, momentum/stun/cooldowns/effects/inventory
 /// zeroed/empty). The gameplay engine runs on the result unmodified.
 pub fn instantiateEditorLevel(
@@ -774,13 +833,46 @@ pub fn instantiateEditorLevel(
         }) catch @panic("failed to append decoration");
     }
 
+    // Ground item stacks: regroup placements by position (first-seen order,
+    // items in placement order). One placement = one item; co-located
+    // placements share a stack (the editor UI can stack two item types on
+    // one tile).
+    var ground_items: std.ArrayList(types.GroundItems) = .empty;
+    for (editor_level.item_placements) |placement| {
+        const item = editor.item_types[placement.type_id].item;
+        var existing_stack: ?*types.GroundItems = null;
+        for (ground_items.items) |*stack| {
+            if (stack.position.x == placement.position.x and
+                stack.position.y == placement.position.y)
+            {
+                existing_stack = stack;
+                break;
+            }
+        }
+        if (existing_stack) |stack| {
+            const grown = allocator.realloc(
+                @constCast(stack.items),
+                stack.items.len + 1,
+            ) catch @panic("failed to grow ground item stack");
+            grown[grown.len - 1] = item;
+            stack.items = grown;
+        } else {
+            const items = allocator.alloc(types.Item, 1) catch @panic("failed to alloc ground item stack");
+            items[0] = item;
+            ground_items.append(allocator, .{
+                .position = placement.position,
+                .items = items,
+            }) catch @panic("failed to append ground item stack");
+        }
+    }
+
     return .{
         .name = editor_level.name,
         .color_wheel_index = editor_level.color_wheel_index,
         .level_tiles = editor_level.level_tiles,
         .entities = entities.items,
         .decorations = decorations.items,
-        .ground_items = &.{},
+        .ground_items = ground_items.items,
         .level_end = editor_level.level_end,
     };
 }
@@ -2262,6 +2354,45 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
     try std.testing.expectEqual(@as(i32, 1), s.footprint[0].y);
     try std.testing.expectEqual(@as(u32, 5), s.color_index);
     try std.testing.expectEqual(@as(usize, 0), s.layers.len);
+}
+
+test "instantiateEditorLevel regroups co-located item placements into one stack" {
+    // Level files author one item per stack, but the editor UI can place two
+    // item types on the same tile — instantiation must regroup co-located
+    // placements into a single multi-item stack (first-seen position order,
+    // items in placement order).
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const allocator = backing.allocator();
+
+    const item_types = [_]types.ItemTypeDef{
+        .{ .id = "Boots", .item = .{ .boots = .{ .name = "Boots", .speed_bonus = 1 } } },
+        .{ .id = "Spear", .item = .{ .weapon = .{ .name = "Spear", .weapon_type = .spear, .weapon_damage = 4 } } },
+    };
+    const placements = [_]types.ItemPlacement{
+        .{ .type_id = 0, .position = .{ .x = 2, .y = 3 } },
+        .{ .type_id = 1, .position = .{ .x = 2, .y = 3 } }, // co-located
+        .{ .type_id = 1, .position = .{ .x = 5, .y = 1 } },
+    };
+    const levels = [_]types.EditorLevel{.{
+        .item_placements = &placements,
+    }};
+    const editor = types.Editor{
+        .levels = &levels,
+        .item_types = &item_types,
+    };
+
+    const level = instantiateEditorLevel(editor, 0, allocator);
+
+    try std.testing.expectEqual(@as(usize, 2), level.ground_items.len);
+    // First-seen position order: (2,3) stack first with both items in
+    // placement order, then the (5,1) stack.
+    try std.testing.expectEqual(types.Vector2{ .x = 2, .y = 3 }, level.ground_items[0].position);
+    try std.testing.expectEqual(@as(usize, 2), level.ground_items[0].items.len);
+    try std.testing.expectEqualStrings("Boots", level.ground_items[0].items[0].boots.name);
+    try std.testing.expectEqualStrings("Spear", level.ground_items[0].items[1].weapon.name);
+    try std.testing.expectEqual(types.Vector2{ .x = 5, .y = 1 }, level.ground_items[1].position);
+    try std.testing.expectEqual(@as(usize, 1), level.ground_items[1].items.len);
 }
 
 test "boundedU32 clamps out-of-range gear stats and warns" {

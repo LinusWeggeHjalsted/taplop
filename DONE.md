@@ -6040,3 +6040,34 @@ screen's LEFT edge instead of bottom-centered: the content width changes
 as groups expand/collapse, and centering would slide the fixed Select/
 Tile tools around. Left-anchoring keeps them stable (same reasoning as
 the middle panels stacking from the left edge).
+
+### Editor load: ground items parsed into the item palette + placements
+
+`buildEditorMission` now parses each level's ground-item stacks (the Items
+section + layout chars, already parsed by `loadLevel`) into the reference
+model — closing the last gap in the editor's mission-load path. Entities +
+decorations already deduped into placements; items were dropped (`item_types`
+stayed empty, so the Ground Items palette group rendered nothing).
+
+- **Level files author one item per stack** (one layout char per item —
+  `loadLevel` allocates each stack with exactly 1 item), matching the
+  settled rule that files can't predefine multi-item stacks. Runtime
+  multi-item stacks (death drops merging, pickup leftovers) never
+  round-trip through the editor. The parse loop walks `stack.items` anyway
+  so the model stays total.
+- **Dedup**: full-item equality via `deep_copy.deepEqual(types.Item, …)` —
+  the shared comparison primitive, already handles the Item union
+  (inventory uses it in snapshots), auto-tracks new fields. Palette id via
+  new `itemDisplayName` (the item's `name`; skill tomes format "<Skill>
+  Tome" via `generated_lookups` — no cycle: the skills chain doesn't import
+  loaders).
+- **`instantiateEditorLevel`** regroups placements by position into
+  `GroundItems` stacks (first-seen position order, items in placement
+  order) — co-located placements share a stack (the editor UI can stack
+two item types on one tile), and playtests now carry the loot (was
+  `.ground_items = &.{}`).
+- **Tests**: editor round-trip test extended (beginnings → 2 mission-wide
+  item types: Comfortable Boots + Bamboo Spear; level 0 placement at the
+  'a' char (3,6); playtest level carries the boots stack); focused
+  `instantiateEditorLevel` test pins the co-located regroup (2 placements
+  same tile → one 2-item stack, first-seen order).

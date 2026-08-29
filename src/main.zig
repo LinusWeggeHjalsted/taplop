@@ -1339,6 +1339,17 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     try std.testing.expectEqual(@as(usize, 2), editor.entity_types.len); // two enemy types (Skeleton Warrior + Javelineer, mission-wide palette)
     try std.testing.expectEqual(@as(usize, 3), editor.levels[0].entity_placements.len);
     try std.testing.expectEqual(@as(u32, 0), editor.levels[0].entity_placements[0].type_id);
+    // Ground items: mission-wide item palette. beginnings level_1 authors one
+    // ground item (Comfortable Boots at 'a' = (3,6)), level_2 another
+    // (Bamboo Spear) — two distinct types; level 0 has one placement.
+    // Level files author one item per stack (one layout char per item), so
+    // one placement per stack here.
+    try std.testing.expectEqual(@as(usize, 2), editor.item_types.len);
+    try std.testing.expectEqualStrings("Comfortable Boots", editor.item_types[0].id);
+    try std.testing.expectEqualStrings("Bamboo Spear", editor.item_types[1].id);
+    try std.testing.expectEqual(@as(usize, 1), editor.levels[0].item_placements.len);
+    try std.testing.expectEqual(@as(u32, 0), editor.levels[0].item_placements[0].type_id);
+    try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 6 }, editor.levels[0].item_placements[0].position);
     try std.testing.expect(std.mem.eql(u8, "Player", editor.player_def.template.name));
     try std.testing.expect(std.mem.eql(u8, "player", editor.player_def.template.sprite));
 
@@ -1358,6 +1369,12 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     try std.testing.expect(std.mem.eql(u8, "skeleton_1", history.current_state.level.?.entities[1].sprite));
     try std.testing.expectEqual(types.EditorMode.playtest, history.current_state.editor.?.mode);
     try std.testing.expect(history.current_state.editor != null); // dormant, not cleared
+    // The instantiated level carries the ground-item placements as stacks:
+    // one boots stack at the 'a' position.
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.level.?.ground_items.len);
+    try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 6 }, history.current_state.level.?.ground_items[0].position);
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.level.?.ground_items[0].items.len);
+    try std.testing.expectEqualStrings("Comfortable Boots", history.current_state.level.?.ground_items[0].items[0].boots.name);
 
     // End the playtest (simulating the player completing the level — in live
     // play, end_level's guard pushes end_playtest; here we push it directly).
