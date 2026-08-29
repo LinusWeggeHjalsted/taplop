@@ -1340,7 +1340,11 @@ pub const RaylibBackend = struct {
             .fill_sprite => |fill| self.drawFillSprite(fill),
             .image => |image| {
                 const dest = referenceRectangle(image.screen_position, image.width, image.height);
-                self.drawSprite(image.sprite_id, dest, null, image.color, image.alpha);
+                const source: ?rl.Rectangle = if (image.source_rectangle) |rectangle|
+                    referenceRectangle(rectangle.position(), rectangle.width, rectangle.height)
+                else
+                    null;
+                self.drawSprite(image.sprite_id, dest, source, image.color, image.alpha);
                 if (image.highlighted) self.drawHighlightOutline(image.sprite_id, dest, highlight_color);
             },
             .solid_rect => |rect| {

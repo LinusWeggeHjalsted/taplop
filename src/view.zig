@@ -238,6 +238,21 @@ pub fn view(
             camera,
             camera_zoom,
         );
+    } else if (current_state.screen == .editor) {
+        // Editor static shell — bottom tool palette first (top tabs /
+        // inspector / settings sidebar are later slices). The editor is
+        // non-null on this screen by invariant (open_editor sets it,
+        // close_editor transitions away).
+        if (current_state.editor) |editor| {
+            ui.buildEditorBottomBar(
+                &ui_elements,
+                frame_allocator,
+                font_metrics,
+                ui.screenRect(),
+                editor,
+                active_theme,
+            ) catch @panic("failed to build editor bottom bar");
+        }
     } else if (current_state.screen == .main_menu) {
         // Continue is available when there is a game to resume: either
         // PlayerData is already populated (mid-session exit to menu) OR an
@@ -497,12 +512,17 @@ fn activeThemeFor(
     current_state: *const GameState,
     color_theme_definitions: types.ColorThemeDefinitions,
 ) types.ActiveColorTheme {
+    // In edit mode the editor screen has no live level/hub, so the theme
+    // follows the ACTIVE level tab's wheel index. (During playtest/validate
+    // the instantiated `current.level` exists and takes precedence above.)
     const color_wheel_index = if (current_state.level) |level|
         level.color_wheel_index
     else if (current_state.hub) |hub|
         hub.color_wheel_index
-    else
-        0;
+    else if (current_state.editor) |editor| blk: {
+        if (editor.levels.len == 0) break :blk 0;
+        break :blk editor.levels[@min(editor.active_level_index, editor.levels.len - 1)].color_wheel_index;
+    } else 0;
     return loaders.deriveActiveColorTheme(color_theme_definitions, color_wheel_index);
 }
 

@@ -894,6 +894,10 @@ pub const Image = struct {
     /// Tint alpha (0–255). Default fully opaque; overlays like the skill
     /// cooldown wash use 128 for 50% transparency.
     alpha: u8 = 255,
+    /// Region of the sprite to draw. Null means the full sprite. Used for
+    /// spritesheet frames (e.g. the editor Select tool's
+    /// `world/tile_highlight` frame 0).
+    source_rectangle: ?Rectangle = null,
     /// Renderer draws a programmatic edge highlight around the sprite's
     /// opaque pixels when set (e.g. the active turn-step indicator).
     highlighted: bool = false,
@@ -2754,6 +2758,244 @@ pub fn buildBottomBar(
     }
 }
 
+// ============================================================
+// Editor bottom bar (tool palette)
+// ============================================================
+
+/// All entity sprites share one 512x640 frame (view.zig `entity_frame_*`).
+/// Duplicated here because ui.zig can't import view.zig (view imports ui).
+const editor_entity_frame_width: i32 = 512;
+const editor_entity_frame_height: i32 = 640;
+
+/// `world/tile_highlight.png` spritesheet: 4 frames of 256x256 in a
+/// horizontal strip (frame N occupies x = N*256..N*256+256). The Select
+/// tool graphic is frame 0.
+const tile_highlight_frame_size: i32 = 256;
+
+/// Font size for the editor palette group headers ("Enemies", …).
+const editor_group_header_font_size: i32 = 64;
+
+/// Largest aspect-preserving rectangle that fits inside `cell`, centered.
+/// Non-positive sprite dimensions (an unresolvable/missing sprite) fall
+/// back to the full cell so the renderer's missing-art magenta still shows
+/// at cell size.
+fn scaleToFit(cell: Rectangle, sprite_width: i32, sprite_height: i32) Rectangle {
+    if (sprite_width <= 0 or sprite_height <= 0) return cell;
+    const scale = @min(
+        @as(f32, @floatFromInt(cell.width)) / @as(f32, @floatFromInt(sprite_width)),
+        @as(f32, @floatFromInt(cell.height)) / @as(f32, @floatFromInt(sprite_height)),
+    );
+    const fitted_width: i32 = @intFromFloat(@as(f32, @floatFromInt(sprite_width)) * scale);
+    const fitted_height: i32 = @intFromFloat(@as(f32, @floatFromInt(sprite_height)) * scale);
+    return cell.placeCenter(fitted_width, fitted_height);
+}
+
+/// Emit one editor tool cell: `ui/button_background` tinted as a button
+/// (player gradient index 5), with the tool's graphic scaled to fit
+/// (aspect-preserved, centered) on top. The background carries the tooltip
+/// + input blocking; the graphic passes hover through. Static shell — tool
+/// activation (active-tool state, click handling) is a later slice, so the
+/// background is an inert image rather than an actionable button.
+fn emitEditorToolCell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    graphic_sprite_id: []const u8,
+    graphic_source_rectangle: ?Rectangle,
+    graphic_width: i32,
+    graphic_height: i32,
+    graphic_color: Color,
+    button_color: Color,
+    tooltip_header: []const u8,
+) !void {
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = button_background_sprite_id,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .color = button_color,
+        .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
+    } });
+    const fitted = scaleToFit(cell, graphic_width, graphic_height);
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = graphic_sprite_id,
+        .screen_position = fitted.position(),
+        .width = fitted.width,
+        .height = fitted.height,
+        .color = graphic_color,
+        .source_rectangle = graphic_source_rectangle,
+        .blocks_input = false,
+    } });
+}
+
+/// Editor bottom bar: the tool palette (static shell). Fixed tools first
+/// (Select, Tile), then three groups — Enemies, Decorations, Ground Items —
+/// each a header label, one slot per palette type, and an "add new" (+)
+/// cell. Every tool renders the shared button background plus a
+/// distinguishing graphic: Select = `world/tile_highlight` frame 0, Tile =
+/// `world/tile`, enemies = entity base sprite (enemy gradient at the
+/// template's color_index), decorations = base sprite (world gradient at
+/// the type's color_index), ground items = the item icon (ground items
+/// always render as the shared ground bag in-world, so the palette shows
+/// the ITEM's icon for authoring distinction). Interaction (active-tool
+/// selection, group collapse, horizontal scrolling) is a later slice.
+/// See DESIGN → Architecture → Level Editor → Editor UI layout (tool
+/// palette).
+pub fn buildEditorBottomBar(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    editor: types.Editor,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const p = active_theme.player_gradient.colors;
+    const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const item_icon_color = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    const world = active_theme.world_gradient.colors;
+    const enemy = active_theme.enemy_gradient.colors;
+
+    const group_labels = [_][]const u8{ "Enemies", "Decorations", "Ground Items" };
+    const group_sizes = [3]usize{
+        editor.entity_types.len,
+        editor.decoration_types.len,
+        editor.item_types.len,
+    };
+
+    // Total content width: fixed tools + per group (header + type cells +
+    // one "+" cell), joined by ui_gap.
+    var header_widths: [group_labels.len]i32 = undefined;
+    var content_width: i32 = 2 * slot_size; // Select + Tile
+    var item_count: i32 = 2;
+    for (group_labels, group_sizes, 0..) |label, size, group_index| {
+        header_widths[group_index] =
+            font_metrics.measureSpanWidth(text(label), editor_group_header_font_size) + 2 * ui_gap;
+        content_width += header_widths[group_index] + @as(i32, @intCast(size + 1)) * slot_size;
+        item_count += @intCast(size + 2); // header + type cells + "+"
+    }
+    content_width += (item_count - 1) * ui_gap;
+
+    const bar = screen.placeBottomCenter(content_width, bottom_bar_height, 0);
+    var row = Row.init(bar.position(), bottom_bar_height, ui_gap);
+
+    // Fixed tools.
+    try emitEditorToolCell(
+        elements,
+        allocator,
+        row.next(slot_size),
+        "world/tile_highlight",
+        .{ .x = 0, .y = 0, .width = tile_highlight_frame_size, .height = tile_highlight_frame_size },
+        tile_highlight_frame_size,
+        tile_highlight_frame_size,
+        active_theme.lightest,
+        button_color,
+        "Select",
+    );
+    try emitEditorToolCell(
+        elements,
+        allocator,
+        row.next(slot_size),
+        "world/tile",
+        null,
+        tile_highlight_frame_size,
+        tile_highlight_frame_size,
+        world[@min(@as(u32, 1), types.gradient_color_count - 1)],
+        button_color,
+        "Tile paint",
+    );
+
+    // Palette groups.
+    for (group_labels, 0..) |label, group_index| {
+        const header_cell = row.next(header_widths[group_index]);
+        const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = label,
+            .screen_position = header_cell.placeCenter(label_width, editor_group_header_font_size).position(),
+            .font_size = editor_group_header_font_size,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+
+        switch (group_index) {
+            0 => for (editor.entity_types) |type_definition| {
+                const sprite_id = try std.fmt.allocPrint(
+                    allocator,
+                    "entities/{s}",
+                    .{type_definition.template.sprite},
+                );
+                const color_index = @min(type_definition.template.color_index, types.gradient_color_count - 1);
+                try emitEditorToolCell(
+                    elements,
+                    allocator,
+                    row.next(slot_size),
+                    sprite_id,
+                    null,
+                    editor_entity_frame_width,
+                    editor_entity_frame_height,
+                    enemy[color_index],
+                    button_color,
+                    type_definition.id,
+                );
+            },
+            1 => for (editor.decoration_types) |type_definition| {
+                const sprite_id = try std.fmt.allocPrint(
+                    allocator,
+                    "decorations/{s}",
+                    .{type_definition.sprite},
+                );
+                const color_index = @min(type_definition.color_index, types.gradient_color_count - 1);
+                try emitEditorToolCell(
+                    elements,
+                    allocator,
+                    row.next(slot_size),
+                    sprite_id,
+                    null,
+                    type_definition.pixel_dims.x,
+                    type_definition.pixel_dims.y,
+                    world[color_index],
+                    button_color,
+                    type_definition.id,
+                );
+            },
+            else => for (editor.item_types) |type_definition| {
+                try emitEditorToolCell(
+                    elements,
+                    allocator,
+                    row.next(slot_size),
+                    itemIconSpriteId(type_definition.item),
+                    null,
+                    inventory_slot_size,
+                    inventory_slot_size,
+                    item_icon_color,
+                    button_color,
+                    type_definition.id,
+                );
+            },
+        }
+
+        // "Add new" cell: shared button background + a "+" glyph.
+        const plus_cell = row.next(slot_size);
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = button_background_sprite_id,
+            .screen_position = plus_cell.position(),
+            .width = plus_cell.width,
+            .height = plus_cell.height,
+            .color = button_color,
+            .tooltip = .{ .header = try spanRow(allocator, text(
+                try std.fmt.allocPrint(allocator, "Add new {s} type", .{label}),
+            )) },
+        } });
+        const plus_width = font_metrics.measureSpanWidth(text("+"), editor_group_header_font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "+",
+            .screen_position = plus_cell.placeCenter(plus_width, editor_group_header_font_size).position(),
+            .font_size = editor_group_header_font_size,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+    }
+}
+
 /// Build the inventory panel into `bounds`: a 9-slice background, an 8×12
 /// flush grid of `ui/item_slot` cells tinted with player-gradient index 5,
 /// and a 128-wide material-count sidebar on the right. `bounds` is the
@@ -3894,6 +4136,147 @@ test "buildSkillsPanel: drag source suppresses the icon, keeps the slot ref" {
     try std.testing.expect(found_source_diamond);
     // Only the second skill's icon emits; the drag source's is suppressed.
     try std.testing.expectEqual(@as(usize, 1), image_count);
+}
+
+test "scaleToFit: aspect-preserved, centered, degenerate dims fall back to cell" {
+    const cell = Rectangle{ .x = 100, .y = 200, .width = 256, .height = 256 };
+
+    // Tall sprite (the 512x640 entity frame): height-limited → 204x256,
+    // centered horizontally.
+    const tall = scaleToFit(cell, 512, 640);
+    try std.testing.expectEqual(@as(i32, 204), tall.width);
+    try std.testing.expectEqual(@as(i32, 256), tall.height);
+    try std.testing.expectEqual(@as(i32, 100 + 26), tall.x);
+    try std.testing.expectEqual(@as(i32, 200), tall.y);
+
+    // Wide sprite (e.g. a 768x512 decoration): width-limited → 256x170.
+    const wide = scaleToFit(cell, 768, 512);
+    try std.testing.expectEqual(@as(i32, 256), wide.width);
+    try std.testing.expectEqual(@as(i32, 170), wide.height);
+
+    // Unresolvable dims (a fresh type with no sprite yet) → the full cell.
+    const degenerate = scaleToFit(cell, 0, 0);
+    try std.testing.expectEqual(cell, degenerate);
+}
+
+test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const lightest: types.Color = .{ .r = 1, .g = 1, .b = 1 };
+    const world_one: types.Color = .{ .r = 10, .g = 10, .b = 10 };
+    const enemy_two: types.Color = .{ .r = 20, .g = 20, .b = 20 };
+    const player_one: types.Color = .{ .r = 30, .g = 30, .b = 30 };
+    const player_five: types.Color = .{ .r = 40, .g = 40, .b = 40 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = lightest,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{ black, world_one, black, black, black, black } },
+        .enemy_gradient = .{ .colors = .{ black, black, enemy_two, black, black, black } },
+        .player_gradient = .{ .colors = .{ black, player_one, black, black, black, player_five } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    var entity_template: types.Entity = .{};
+    entity_template.sprite = "skeleton";
+    entity_template.color_index = 2;
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton Warrior", .template = entity_template },
+    };
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "Ruin", .sprite = "ruin_1", .pixel_dims = .{ .x = 512, .y = 512 } },
+    };
+    const item_types = [_]types.ItemTypeDef{
+        .{ .id = "Iron Sword", .item = .{ .weapon = .{} } },
+    };
+    const editor: types.Editor = .{
+        .entity_types = &entity_types,
+        .decoration_types = &decoration_types,
+        .item_types = &item_types,
+    };
+
+    var elements: UiElementList = .empty;
+    try buildEditorBottomBar(
+        &elements,
+        arena.allocator(),
+        metrics,
+        screenRect(),
+        editor,
+        theme,
+    );
+
+    // 2 fixed tools x (bg + graphic) + 3 groups x (header + type (bg +
+    // graphic) + plus (bg + glyph)) = 4 + 15.
+    try std.testing.expectEqual(@as(usize, 19), elements.items.len);
+
+    // Every graphic sits on a button_background cell at the bottom of the
+    // screen: 5 tool cells (2 fixed + 3 palette types) + 3 plus cells, all
+    // bottom_bar_height tall.
+    var background_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .image => |image| {
+            if (std.mem.eql(u8, image.sprite_id, button_background_sprite_id)) {
+                background_count += 1;
+                try std.testing.expectEqual(bottom_bar_height, image.height);
+                try std.testing.expectEqual(
+                    types.reference_height - bottom_bar_height,
+                    image.screen_position.y,
+                );
+            }
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 8), background_count);
+
+    // Fixed tools: Select uses tile_highlight frame 0 (a source rectangle,
+    // not the whole 1024-wide sheet); Tile uses world/tile tinted with the
+    // world gradient index 1.
+    var found_select_frame = false;
+    var found_tile = false;
+    var found_enemy = false;
+    var found_decoration = false;
+    var found_item = false;
+    for (elements.items) |element| switch (element) {
+        .image => |image| {
+            if (std.mem.eql(u8, image.sprite_id, "world/tile_highlight")) {
+                found_select_frame = image.source_rectangle != null;
+            } else if (std.mem.eql(u8, image.sprite_id, "world/tile")) {
+                found_tile = std.meta.eql(image.color, world_one);
+            } else if (std.mem.eql(u8, image.sprite_id, "entities/skeleton")) {
+                found_enemy = std.meta.eql(image.color, enemy_two) and
+                    image.width == 204 and image.height == 256;
+            } else if (std.mem.eql(u8, image.sprite_id, "decorations/ruin_1")) {
+                found_decoration = image.width == 256 and image.height == 256;
+            } else if (std.mem.eql(u8, image.sprite_id, "items/sword")) {
+                found_item = std.meta.eql(image.color, player_one) and
+                    image.width == 256 and image.height == 256;
+            }
+        },
+        else => {},
+    };
+    try std.testing.expect(found_select_frame);
+    try std.testing.expect(found_tile);
+    try std.testing.expect(found_enemy);
+    try std.testing.expect(found_decoration);
+    try std.testing.expect(found_item);
+
+    // Three group headers + three "+" glyphs, all non-blocking overlays.
+    var header_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| {
+            if (std.mem.eql(u8, label.text, "+") or
+                std.mem.eql(u8, label.text, "Enemies") or
+                std.mem.eql(u8, label.text, "Decorations") or
+                std.mem.eql(u8, label.text, "Ground Items"))
+            {
+                header_count += 1;
+                try std.testing.expect(!label.blocks_input);
+            }
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 6), header_count);
 }
 
 /// Top bar: options button flush in the top-left corner, then `ui_gap`,

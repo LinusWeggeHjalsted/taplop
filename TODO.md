@@ -438,12 +438,13 @@ yet implemented. Remaining work:
   and the editor drawable projection for the viewport). Build as a
   vertical slice — static shell first (tabs + viewport + bottom bar +
   inspector + settings sidebar rendering with real data, no interaction),
-  then wire input per tool + the edit-verb handlers. Still-needed event
-  structs: `editor_toggle_inspector` / `editor_set_tool` / gradient-
-  override setters. Default level template (`data/default_level.txt`).
-  Currently the `.editor` screen has no view or input handler — the
-  building blocks are reachable (main-menu "Editor" button) but the
-  screen is blank.
+  then wire input per tool + the edit-verb handlers. Landed so far:
+  the bottom tool palette (static shell — fixed tools + palette groups +
+  plus cells + `Image.source_rectangle`; see DONE.md). Still-needed event
+  structs: `editor_toggle_inspector` / `editor_set_tool` /
+  gradient-override setters. Default level template
+  (`data/default_level.txt`). The `.editor` screen currently renders only
+  the bottom bar — reachable via the main-menu "Editor" button.
 - Validation result + replay attachment: on successful validation, attach a
   saved mission replay to the custom mission (next save writes it into the
   custom mission dir) for re-validation before uploading to the online

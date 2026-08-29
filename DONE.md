@@ -5881,3 +5881,53 @@ to the new semantics (user undo/redo bindings win; merged set > 2 with the
 injected defaults). Test-ownership note: `loadSettings` CONSUMES the base's
 bindings (frees on replace, aliases otherwise) — tests free the merged
 result only.
+
+## Level editor UI
+
+### Editor bottom bar (tool palette, static shell)
+
+First slice of the editor UI vertical slice: the bottom tool palette
+renders on the `.editor` screen. `ui.buildEditorBottomBar` mirrors
+`buildBottomBar` (Row of `slot_size` cells, `placeBottomCenter`,
+`bottom_bar_height`): fixed tools first (Select, Tile), then three groups
+(Enemies, Decorations, Ground Items) — a header label, one cell per
+palette type, and an inert "+" add-new cell per group.
+
+Every tool cell = `ui/button_background` tinted player-gradient index 5
+(the button convention) + the tool's graphic scaled to fit
+(aspect-preserved, centered — `scaleToFit`; non-positive dims fall back
+to full cell so missing art still shows magenta at cell size):
+- Select: `world/tile_highlight` frame 0 via the new `Image.source_rectangle`
+  (the sheet is 1024×256, 4 frames; frame 0 = the leftmost 256×256).
+- Tile: `world/tile` tinted world-gradient index 1 (as tiles read in-game).
+- Enemy: `entities/{sprite}` tinted enemy-gradient at the template's
+  color_index; dims are the universal 512×640 entity frame.
+- Decoration: `decorations/{sprite}` tinted world-gradient at the type's
+  color_index; dims from `DecorationTypeDef.pixel_dims`.
+- Ground item: `itemIconSpriteId` tinted player-gradient index 1 (items
+  render as the shared ground bag in-world; the icon is for authoring
+  distinction).
+
+Interaction (active-tool state, group collapse, horizontal scroll, click
+handling) is deliberately NOT wired — tool cells are tooltip-carrying
+inert images, not buttons, since the active-tool model needs a payloadful
+input path (`editor_set_tool` + an input-struct field, the
+`clicked_save_row` pattern) that belongs to the input slice.
+
+Supporting seams: `ui.Image` gained `source_rectangle: ?Rectangle`
+(passed through the raylib backend's `.image` arm into `drawSprite`,
+which already supported sources); `view()` gained an `.editor` branch
+(editor non-null by invariant); `activeThemeFor` derives the theme from
+the ACTIVE level tab's `color_wheel_index` when no live level/hub exists
+(playtest/validate keep the instantiated level's theme — the level branch
+takes precedence).
+
+Zig 0.16 diagnostic gotcha hit here: `zig ast-check`'s "unused capture"
+error points at the LAST capture in a multi-object `for`, not the unused
+one — `size` was unused but `group_index` got the caret.
+
+Tests: `scaleToFit` (tall/wide/degenerate) + `buildEditorBottomBar`
+(element count, background cells at screen bottom, per-tool sprite +
+tint + fitted size, frame-0 source rectangle, headers + "+"
+non-blocking). Visual check pending a manual click-through (Editor
+button on the main menu, dev build).
