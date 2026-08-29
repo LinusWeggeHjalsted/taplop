@@ -2945,21 +2945,22 @@ pub fn buildEditorBottomBar(
         editor.item_types.len,
     };
 
-    // Total content width: fixed tools + per group (header + VISIBLE type
-    // cells + one "+" cell), joined by ui_gap.
-    var header_widths: [group_labels.len]i32 = undefined;
+    // Total content width: fixed tools + per group (VISIBLE type cells +
+    // one "+" cell), joined by ui_gap. Group headers sit ABOVE their group
+    // (left-aligned with its first cell), not in the row — same
+    // above-the-bar strip the in-game indicators (momentum, turn steps)
+    // use.
     var content_width: i32 = 2 * slot_size; // Select + Tile
     var item_count: i32 = 2;
-    for (group_labels, group_sizes, 0..) |label, size, group_index| {
-        header_widths[group_index] =
-            font_metrics.measureSpanWidth(text(label), editor_group_header_font_size) + 2 * ui_gap;
+    for (group_sizes) |size| {
         const visible: i32 = @intCast(@min(size, editor_palette_max_tools));
-        content_width += header_widths[group_index] + (visible + 1) * slot_size;
-        item_count += visible + 2; // header + type cells + "+"
+        content_width += (visible + 1) * slot_size;
+        item_count += visible + 1; // type cells + "+"
     }
     content_width += (item_count - 1) * ui_gap;
 
     const bar = screen.placeBottomCenter(content_width, bottom_bar_height, 0);
+    const header_y = bar.y - ui_gap - editor_group_header_font_size;
     var row = Row.init(bar.position(), bottom_bar_height, ui_gap);
 
     // Fixed tools.
@@ -2999,11 +3000,13 @@ pub fn buildEditorBottomBar(
         const first_visible: usize = @intCast(scroll_offsets[group_index]);
         const visible = @min(size, editor_palette_max_tools);
 
-        const header_cell = row.next(header_widths[group_index]);
-        const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+        // Group header: above the bar, left-aligned with the group's first
+        // cell. Non-blocking (the strip above the bar belongs to the world
+        // hit-test, same as the in-game indicators).
+        const group_left = bar.x + row.cursor_x;
         try elements.append(allocator, .{ .text_label = .{
             .text = label,
-            .screen_position = header_cell.placeCenter(label_width, editor_group_header_font_size).position(),
+            .screen_position = .{ .x = group_left, .y = header_y },
             .font_size = editor_group_header_font_size,
             .color = active_theme.lightest,
             .blocks_input = false,
@@ -4357,11 +4360,29 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     try std.testing.expect(found_item);
 
     // Three group headers + three "+" glyphs, all non-blocking overlays.
+    // Headers sit ABOVE the bar (the strip the in-game indicators use),
+    // left-aligned with their group's first cell; the "+" glyphs sit in
+    // the bar (centered on their cell).
     var header_count: usize = 0;
+    var enemies_header: ?types.ScreenPosition = null;
+    var first_enemy_cell: ?types.ScreenPosition = null;
+    const header_top: i32 = types.reference_height - bottom_bar_height - ui_gap - editor_group_header_font_size;
+    var enemy_cell_index: usize = 0;
     for (elements.items) |element| switch (element) {
+        .image => |image| {
+            if (std.mem.eql(u8, image.sprite_id, button_background_sprite_id) and
+                image.screen_position.y >= types.reference_height - bottom_bar_height)
+            {
+                // Cells emit in order: Select, Tile, enemy, enemy-plus, …
+                if (enemy_cell_index == 2) first_enemy_cell = image.screen_position;
+                enemy_cell_index += 1;
+            }
+        },
         .text_label => |label| {
-            if (std.mem.eql(u8, label.text, "+") or
-                std.mem.eql(u8, label.text, "Enemies") or
+            if (std.mem.eql(u8, label.text, "Enemies")) {
+                enemies_header = label.screen_position;
+                try std.testing.expect(!label.blocks_input);
+            } else if (std.mem.eql(u8, label.text, "+") or
                 std.mem.eql(u8, label.text, "Decorations") or
                 std.mem.eql(u8, label.text, "Ground Items"))
             {
@@ -4371,7 +4392,11 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
         },
         else => {},
     };
-    try std.testing.expectEqual(@as(usize, 6), header_count);
+    try std.testing.expectEqual(@as(usize, 5), header_count);
+    try std.testing.expect(enemies_header != null);
+    try std.testing.expect(first_enemy_cell != null);
+    try std.testing.expectEqual(header_top, enemies_header.?.y);
+    try std.testing.expectEqual(first_enemy_cell.?.x, enemies_header.?.x);
 }
 
 test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {

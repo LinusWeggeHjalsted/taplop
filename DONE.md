@@ -5957,3 +5957,13 @@ Tests: window clamp (12 decorations → offset 99 clamps to 4; 8 cells
 emitted; window shows types 4..11 — first absent, last present) +
 geometric detection (decoration cell → group 1, fixed tool → null,
 above the bar → null).
+
+### Editor palette headers moved above the bar
+
+Group headers no longer occupy a cell in the tool row — they sit in the
+strip ABOVE the bottom bar (the same strip the in-game indicators use:
+`bar.y - ui_gap - header_font_size`), left-aligned with their group's
+first cell. The row is pure cells now (fixed tools, then per group
+`min(size, 8)` type cells + "+"), which also simplifies the width math
+and the emission-order contract behind `editorPaletteGroupAt` (headers
+were never backgrounds, so detection is unchanged).
