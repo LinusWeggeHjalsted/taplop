@@ -6031,3 +6031,12 @@ the tool cells; header buttons are spriteless and contribute nothing.
 uniform pre-scale of a square source changed nothing (256×256 at 0.5 →
 scaleToFit scales 128 back up to 256). Fix: fit at native dims, then
 shrink the fitted rect by the multiplier and re-center.
+
+### Editor palette: collapsed by default + left-anchored bar
+
+`editor_palette_collapsed` defaults to all-true (the bar starts minimal
+— fixed tools + three headers), and the editor bar is flush against the
+screen's LEFT edge instead of bottom-centered: the content width changes
+as groups expand/collapse, and centering would slide the fixed Select/
+Tile tools around. Left-anchoring keeps them stable (same reasoning as
+the middle panels stacking from the left edge).

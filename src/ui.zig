@@ -3016,7 +3016,10 @@ pub fn buildEditorBottomBar(
     }
     content_width += (2 + group_labels.len - 1) * ui_gap;
 
-    const bar = screen.placeBottomCenter(content_width, bottom_bar_height, 0);
+    // The bar is flush against the screen's LEFT edge (not centered): the
+    // content width changes as groups expand/collapse, and centering would
+    // move the fixed tools — left-anchoring keeps Select/Tile stable.
+    const bar = screen.placeBottomLeft(content_width, bottom_bar_height, 0);
     const header_y = bar.y - ui_gap - editor_header_strip_height;
     var row = Row.init(bar.position(), bottom_bar_height, ui_gap);
 
