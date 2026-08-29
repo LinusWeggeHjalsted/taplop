@@ -113,11 +113,13 @@ pub const UiState = struct {
     /// undo timeline (same as `skills_scroll_offset`).
     editor_palette_scroll: [3]i32 = .{ 0, 0, 0 },
 
-    /// Editor palette group collapse state: false = expanded (default),
-    /// true = collapsed (header + "+" only, no type cells). Toggled by
-    /// clicking the group header button. Off the undo timeline (view-side
-    /// display state, like `editor_palette_scroll`).
-    editor_palette_collapsed: [3]bool = .{ false, false, false },
+    /// Editor palette group collapse state: false = expanded, true =
+    /// collapsed (header + "+" only, no type cells). Collapsed by DEFAULT
+    /// (all groups) — the bar starts minimal. Toggled by clicking the group
+    /// header button (accordion: expanding one collapses the others). Off
+    /// the undo timeline (view-side display state, like
+    /// `editor_palette_scroll`).
+    editor_palette_collapsed: [3]bool = .{ true, true, true },
 
     /// The active editor tool (palette selection). Default: the Select
     /// tool. Drives the selected-tool outline in the palette; the viewport
