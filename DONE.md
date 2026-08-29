@@ -6023,3 +6023,11 @@ onto the Editor via the `editor_set_tool` event when the edit-verb
 handlers land (TODO). The `editorPaletteGroupAt` emission-order contract
 updated again: bar-band `button_background` BUTTONS (was images) are
 the tool cells; header buttons are spriteless and contribute nothing.
+
+### Fix: tile tool icon scale was a no-op
+
+`graphic_scale` was applied to the sprite's SOURCE dims before
+`scaleToFit` — but scale-to-fit grows or shrinks to fill the cell, so a
+uniform pre-scale of a square source changed nothing (256×256 at 0.5 →
+scaleToFit scales 128 back up to 256). Fix: fit at native dims, then
+shrink the fitted rect by the multiplier and re-center.

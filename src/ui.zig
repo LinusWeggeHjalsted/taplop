@@ -2934,9 +2934,14 @@ fn emitEditorToolCell(
         .highlighted = std.meta.eql(tool, active_tool),
         .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
     } });
-    const scaled_width: i32 = @intFromFloat(@as(f32, @floatFromInt(graphic_width)) * graphic_scale);
-    const scaled_height: i32 = @intFromFloat(@as(f32, @floatFromInt(graphic_height)) * graphic_scale);
-    const fitted = scaleToFit(cell, scaled_width, scaled_height);
+    // Fit the graphic at native dims, then shrink the fitted rect by
+    // `graphic_scale`. (Scaling the INPUT dims is a no-op — scaleToFit
+    // grows or shrinks to fill the cell, so the aspect ratio erases any
+    // uniform pre-scale.)
+    const fitted_full = scaleToFit(cell, graphic_width, graphic_height);
+    const fitted_width: i32 = @intFromFloat(@as(f32, @floatFromInt(fitted_full.width)) * graphic_scale);
+    const fitted_height: i32 = @intFromFloat(@as(f32, @floatFromInt(fitted_full.height)) * graphic_scale);
+    const fitted = cell.placeCenter(fitted_width, fitted_height);
     try elements.append(allocator, .{ .image = .{
         .sprite_id = graphic_sprite_id,
         .screen_position = fitted.position(),
@@ -6428,3 +6433,5 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
         };
     }
 }
+
+
