@@ -476,10 +476,6 @@ pub const bottom_bar_height: i32 = 256;
 pub const slot_size: i32 = 256;
 /// Weapon-swap button — half a normal button, centered vertically.
 pub const swap_button_size: i32 = 128;
-/// Stagger offset for main-menu buttons: even-indexed buttons shift LEFT by
-/// this much, odd-indexed shift RIGHT — an alternating zigzag down the
-/// stack. Must stay < menu_button_width / 2 to keep buttons on-screen.
-pub const main_menu_button_stagger: i32 = 128;
 /// Main-menu button — wide stacked buttons on the title screen.
 pub const menu_button_width: i32 = 1024;
 pub const menu_button_font_size: i32 = 96;
@@ -4295,14 +4291,9 @@ pub fn buildMainMenu(
     } });
     const buttons_origin_y = origin.y + main_menu_title_gap + main_menu_title_font_size;
 
-    // Staggered stack: first button LEFT, second RIGHT, alternating — the
-    // zigzag is index-based on the RENDERED buttons (with Continue absent,
-    // New Game leads left).
     for (buttons[0..button_count], 0..) |menu_button, index| {
-        const ordinal: i32 = @intCast(index);
-        const stagger = if (@mod(ordinal, 2) == 0) -main_menu_button_stagger else main_menu_button_stagger;
         const cell: Rectangle = .{
-            .x = origin.x + stagger,
+            .x = origin.x,
             .y = buttons_origin_y + @as(i32, @intCast(index)) * (panel_button_height + ui_gap),
             .width = menu_button_width,
             .height = panel_button_height,
