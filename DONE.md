@@ -5810,12 +5810,14 @@ buttons have, so the class reads uniform). Everything else is unchanged
 
 ### Main-menu title ("taplop")
 
-`buildMainMenu` now emits a large "taplop" `text_label` centered at the top
-of the screen, above the (still screen-centered) button stack: measured
-width via the FontMetrics seam (`placeTopCenter`), 192px font (largest in
-the UI), theme lightest via the `default_tint` substitution, black outline
+`buildMainMenu` now emits a large "taplop" `text_label` above the button
+stack, with the title + buttons centered VERTICALLY TOGETHER as one block
+(one `placeCenter` over title gap + title height + stack height, so the
+block is screen-centered; the buttons no longer center independently).
+Title: measured width via the FontMetrics seam, 192px font (largest in the
+UI), theme lightest via the `default_tint` substitution, black outline
 (`outlined = true`) for readability over the background, non-blocking.
-Constants: `main_menu_title_font_size` (192) +
-`main_menu_title_top_margin` (96). Caveat noted at the constant: 192 is
-1.5× the 128px font atlas base size, so the title glyphs upscale (slightly
-soft); bumping `font_base_size` in the backend is the fix if it bothers.
+Constants: `main_menu_title_font_size` (192) + `main_menu_title_gap` (96).
+Caveat noted at the constant: 192 is 1.5× the 128px font atlas base size,
+so the title glyphs upscale (slightly soft); bumping `font_base_size` in
+the backend is the fix if it bothers.

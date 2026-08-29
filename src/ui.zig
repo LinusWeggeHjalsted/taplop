@@ -483,8 +483,8 @@ pub const menu_button_font_size: i32 = 96;
 /// the button stack. Larger than every other UI font size (atlas glyphs
 /// upscale 1.5× from the 128px base — accepted softness for a title).
 pub const main_menu_title_font_size: i32 = 192;
-/// Top margin for the main-menu title.
-pub const main_menu_title_top_margin: i32 = 96;
+/// Gap between the main-menu title band and the first button.
+pub const main_menu_title_gap: i32 = 96;
 /// Shared height for every `emitPanelButton` panel-backed button (main
 /// menu, mission end screens, error-popup dismiss, load-save browser,
 /// credits, settings). One tuning knob for the panel-button height class —
@@ -4270,29 +4270,32 @@ pub fn buildMainMenu(
     button_count += 1;
 
     const total_height = rowWidth(@intCast(button_count), panel_button_height, ui_gap);
-    // Top-left of the centered stack.
-    const origin = screen
-        .placeCenter(menu_button_width, total_height)
-        .position();
-
-    // Title: "taplop" centered horizontally (measured width) at the top of
-    // the screen, above the button stack. The stack stays screen-centered;
-    // with up to 7 buttons the stack top sits well below the title band.
+    // The title + button stack center together as one block: title band on
+    // top of the stack, both centered by one `placeCenter` over the combined
+    // height. Gap between title and first button = `main_menu_title_gap`.
     const title = "taplop";
     const title_width = font_metrics.measureSpanWidth(text(title), main_menu_title_font_size);
-    const title_box = screen.placeTopCenter(title_width, main_menu_title_font_size, main_menu_title_top_margin);
+    const block_height = main_menu_title_gap + main_menu_title_font_size + total_height;
+    const origin = screen
+        .placeCenter(menu_button_width, block_height)
+        .position();
+
     try elements.append(allocator, .{ .text_label = .{
         .text = title,
-        .screen_position = title_box.position(),
+        .screen_position = .{
+            .x = origin.x + @divTrunc(menu_button_width - title_width, 2),
+            .y = origin.y,
+        },
         .font_size = main_menu_title_font_size,
         .outlined = true,
         .blocks_input = false,
     } });
+    const buttons_origin_y = origin.y + main_menu_title_gap + main_menu_title_font_size;
 
     for (buttons[0..button_count], 0..) |menu_button, index| {
         const cell: Rectangle = .{
             .x = origin.x,
-            .y = origin.y + @as(i32, @intCast(index)) * (panel_button_height + ui_gap),
+            .y = buttons_origin_y + @as(i32, @intCast(index)) * (panel_button_height + ui_gap),
             .width = menu_button_width,
             .height = panel_button_height,
         };
