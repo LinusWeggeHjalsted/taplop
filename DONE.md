@@ -5820,3 +5820,12 @@ outline), non-blocking. Constants: `main_menu_title_font_size` (256) +
 `main_menu_title_gap` (96). Caveat: 256 is 2× the 128px font atlas base
 size, so the title glyphs upscale (slightly soft); bumping `font_base_size`
 in the backend is the fix if it bothers.
+
+### Main-menu staggered button stack
+
+Main-menu buttons zigzag: even-indexed buttons shift 128px LEFT,
+odd-indexed 128px RIGHT (index over the RENDERED list, so with Continue
+absent, New Game leads left). The title stays centered on the stack's
+central axis; the block (title + staggered stack) still centers vertically
+as one unit. Tunable: `main_menu_button_stagger` (constraint documented at
+the constant: < menu_button_width / 2).
