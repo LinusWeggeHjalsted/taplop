@@ -1455,8 +1455,10 @@ pub const RaylibBackend = struct {
         rl.drawTexturePro(texture, source orelse whole, destination, .{ .x = 0, .y = 0 }, 0, toPremultipliedColor(tint, alpha));
     }
 
-    /// 9-slice: the four corners are drawn 1:1 (at the source slice size), and
-    /// the edges + center are stretched to fill the remaining area.
+    /// 9-slice: every corner is drawn square (aspect-true 1:1) and the edges
+    /// + center stretch to fill — the rect math lives in the pure, tested
+    /// `ui.nineSlicePieces` (corners shrink proportionally on panels smaller
+    /// than two slices instead of being squashed).
     fn drawNineSlice(self: *RaylibBackend, panel: ui.NineSlicePanel, theme_darkest: types.Color) void {
         const texture = self.getTexture(panel.sprite_id) orelse {
             rl.drawRectangleRec(referenceRectangle(panel.screen_position, panel.width, panel.height), rl.Color.magenta);
@@ -1470,45 +1472,28 @@ pub const RaylibBackend = struct {
             toRaylibColor(theme_darkest, 255)
         else
             toRaylibColor(panel.color, 255);
-        const source_slice_width: f32 = @as(f32, @floatFromInt(texture.width)) / 3;
-        const source_slice_height: f32 = @as(f32, @floatFromInt(texture.height)) / 3;
 
-        const destination_x: f32 = @floatFromInt(panel.screen_position.x);
-        const destination_y: f32 = @floatFromInt(panel.screen_position.y);
-        const destination_width: f32 = @floatFromInt(panel.width);
-        const destination_height: f32 = @floatFromInt(panel.height);
-
-        // Corner size in reference pixels = source slice size (1:1), clamped so
-        // corners never overlap on a small panel.
-        const corner_width = @min(source_slice_width, destination_width / 2);
-        const corner_height = @min(source_slice_height, destination_height / 2);
-
-        const source_columns = [3]f32{ 0, source_slice_width, source_slice_width * 2 };
-        const source_widths = [3]f32{ source_slice_width, source_slice_width, source_slice_width };
-        const source_rows = [3]f32{ 0, source_slice_height, source_slice_height * 2 };
-        const source_heights = [3]f32{ source_slice_height, source_slice_height, source_slice_height };
-
-        const destination_columns = [3]f32{ destination_x, destination_x + corner_width, destination_x + destination_width - corner_width };
-        const destination_widths = [3]f32{ corner_width, destination_width - corner_width * 2, corner_width };
-        const destination_rows = [3]f32{ destination_y, destination_y + corner_height, destination_y + destination_height - corner_height };
-        const destination_heights = [3]f32{ corner_height, destination_height - corner_height * 2, corner_height };
-
-        for (0..3) |row| {
-            for (0..3) |column| {
-                const source = rl.Rectangle{
-                    .x = source_columns[column],
-                    .y = source_rows[row],
-                    .width = source_widths[column],
-                    .height = source_heights[row],
-                };
-                const destination = rl.Rectangle{
-                    .x = destination_columns[column],
-                    .y = destination_rows[row],
-                    .width = destination_widths[column],
-                    .height = destination_heights[row],
-                };
-                rl.drawTexturePro(texture, source, destination, .{ .x = 0, .y = 0 }, 0, tint);
-            }
+        const destination = types.Rectangle{
+            .x = panel.screen_position.x,
+            .y = panel.screen_position.y,
+            .width = panel.width,
+            .height = panel.height,
+        };
+        for (ui.nineSlicePieces(texture.width, texture.height, destination)) |piece| {
+            if (piece.destination.width <= 0 or piece.destination.height <= 0) continue;
+            const source = rl.Rectangle{
+                .x = @floatFromInt(piece.source.x),
+                .y = @floatFromInt(piece.source.y),
+                .width = @floatFromInt(piece.source.width),
+                .height = @floatFromInt(piece.source.height),
+            };
+            const piece_destination = rl.Rectangle{
+                .x = @floatFromInt(piece.destination.x),
+                .y = @floatFromInt(piece.destination.y),
+                .width = @floatFromInt(piece.destination.width),
+                .height = @floatFromInt(piece.destination.height),
+            };
+            rl.drawTexturePro(texture, source, piece_destination, .{ .x = 0, .y = 0 }, 0, tint);
         }
     }
 

@@ -92,8 +92,9 @@ Test by running `zig build run` and clicking through.
   - [x] Follow-up (separate slice): disk-SE outline for both outer + inner
         (smoother 45° corners; cached so the O((2t+1)²) cost is one-time per
         sprite).
-- **Cross-cutting polish** — 9-slice TILING
-  (currently stretched), `highlighted` edge outlines, missing art
+- **Cross-cutting polish** — 9-slice edge/center TILING
+  (corners are aspect-true — fixed, see DONE.md), `highlighted` edge
+  outlines, missing art
   (ui/icon_swap, ui/momentum draw magenta). (Real TTF
   font + glyph metrics DONE — see DONE.md.) Gear-tooltip comparison
   colors are full green/red placeholders — artist to pick softer shades
@@ -528,8 +529,10 @@ Logging follow-ups (open):
 Native + web builds DONE (history in DONE.md; seam in DESIGN → Platform Seam).
 Open:
 
-- 9-slice REFINEMENT: corners 1:1 but edges + center are STRETCHED, not
-  tiled. Spec wants edges/center TILED — revisit drawNineSlice.
+- 9-slice REFINEMENT: corners now render SQUARE 1:1 on any panel size
+  (fixed — see DONE.md); remaining gap is edges + center STRETCHED, not
+  tiled. Spec wants tiling — only matters once patterned panel art ships
+  (current ui/panel.png is a flat fill).
 - Draw offset support (decoration overhang; SpriteDrawable.draw_offset).
 - Programmatic edge highlight for highlighted Button/Image (shader outline of
   opaque pixels, or fallback highlight sprite) — currently ignored.

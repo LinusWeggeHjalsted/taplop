@@ -613,9 +613,8 @@ pub const Grid = struct {
 
 /// A 9-slice panel background. The source sprite is a 3x3 grid of equal
 /// slices (slice size = sprite dimension / 3); the renderer draws the four
-/// corners 1:1 and *tiles* the four edges and the center to fill (never
-/// stretching a slice). The slice thickness comes from the sprite itself,
-/// so there is no border field here.
+/// corners 1:1 and stretches the four edges + center to fill. The slice
+/// thickness comes from the sprite itself, so there is no border field here.
 pub const NineSlicePanel = struct {
     sprite_id: []const u8,
     screen_position: ScreenPosition,
@@ -625,6 +624,145 @@ pub const NineSlicePanel = struct {
     tooltip: ?Tooltip = null,
     blocks_input: bool = true,
 };
+
+/// One draw of a 9-slice: a source region (texture pixels) blitted into a
+/// destination region (reference pixels). Pure geometry — the renderer only
+/// forwards each pair to the GPU.
+pub const NineSlicePiece = struct {
+    source: Rectangle,
+    destination: Rectangle,
+};
+
+/// Compute the nine source/destination rect pairs that draw a 9-slice panel
+/// sprite over `destination`. All corners are drawn SQUARE (aspect-true 1:1):
+/// the corner size is `min(slice_width, slice_height, destination.width/2,
+/// destination.height/2)`, and both the source and destination rects are
+/// cropped to that size — a panel shorter than two slices gets proportionally
+/// smaller corners instead of squashed ones. Edges stretch along their run
+/// axis and keep the corner thickness across it; the center stretches in
+/// both axes. Pieces are row-major (top-left, top, top-right, left, center,
+/// right, bottom-left, bottom, bottom-right); degenerate pieces (zero size,
+/// only possible on a panel smaller than 2× the corner size) are returned
+/// with zero extents for the caller to skip.
+pub fn nineSlicePieces(
+    texture_width: i32,
+    texture_height: i32,
+    destination: Rectangle,
+) [9]NineSlicePiece {
+    const slice_width = @divTrunc(texture_width, 3);
+    const slice_height = @divTrunc(texture_height, 3);
+    const corner = @min(
+        @min(slice_width, slice_height),
+        @min(@divTrunc(destination.width, 2), @divTrunc(destination.height, 2)),
+    );
+
+    // The 3×3 grid of source/destination columns and rows. Corners occupy
+    // `corner` in both spaces; edge/center sources span between the corner
+    // regions of the texture, destinations between the corner regions of the
+    // panel.
+    const source_columns = [3]i32{ 0, corner, texture_width - corner };
+    const source_rows = [3]i32{ 0, corner, texture_height - corner };
+    const source_widths = [3]i32{ corner, texture_width - corner * 2, corner };
+    const source_heights = [3]i32{ corner, texture_height - corner * 2, corner };
+
+    const destination_columns = [3]i32{ destination.x, destination.x + corner, destination.x + destination.width - corner };
+    const destination_rows = [3]i32{ destination.y, destination.y + corner, destination.y + destination.height - corner };
+    const destination_widths = [3]i32{ corner, destination.width - corner * 2, corner };
+    const destination_heights = [3]i32{ corner, destination.height - corner * 2, corner };
+
+    var pieces: [9]NineSlicePiece = undefined;
+    var index: usize = 0;
+    for (0..3) |row| {
+        for (0..3) |column| {
+            pieces[index] = .{
+                .source = .{
+                    .x = source_columns[column],
+                    .y = source_rows[row],
+                    .width = source_widths[column],
+                    .height = source_heights[row],
+                },
+                .destination = .{
+                    .x = destination_columns[column],
+                    .y = destination_rows[row],
+                    .width = destination_widths[column],
+                    .height = destination_heights[row],
+                },
+            };
+            index += 1;
+        }
+    }
+    return pieces;
+}
+
+test "nineSlicePieces: large panel keeps full square slices" {
+    // ui/panel.png is 384×384 → 128px slices. A panel taller than two slices
+    // keeps all nine pieces at full size.
+    const pieces = nineSlicePieces(384, 384, .{ .x = 100, .y = 200, .width = 1024, .height = 512 });
+    // Top-left corner: 1:1, source at the texture origin.
+    try std.testing.expectEqual(Rectangle{ .x = 0, .y = 0, .width = 128, .height = 128 }, pieces[0].source);
+    try std.testing.expectEqual(Rectangle{ .x = 100, .y = 200, .width = 128, .height = 128 }, pieces[0].destination);
+    // Top-right corner: source hugs the texture's right edge, destination the
+    // panel's right edge.
+    try std.testing.expectEqual(Rectangle{ .x = 256, .y = 0, .width = 128, .height = 128 }, pieces[2].source);
+    try std.testing.expectEqual(Rectangle{ .x = 996, .y = 200, .width = 128, .height = 128 }, pieces[2].destination);
+    // Center: inner source region, stretched to the inner destination.
+    try std.testing.expectEqual(Rectangle{ .x = 128, .y = 128, .width = 128, .height = 128 }, pieces[4].source);
+    try std.testing.expectEqual(Rectangle{ .x = 228, .y = 328, .width = 768, .height = 256 }, pieces[4].destination);
+    // Top edge: 128-thick in both spaces, stretched along the run axis.
+    try std.testing.expectEqual(Rectangle{ .x = 128, .y = 0, .width = 128, .height = 128 }, pieces[1].source);
+    try std.testing.expectEqual(Rectangle{ .x = 228, .y = 200, .width = 768, .height = 128 }, pieces[1].destination);
+}
+
+test "nineSlicePieces: short panel shrinks corners square instead of squashing" {
+    // A 160px-tall panel is shorter than two 128px slices. The corners must
+    // come out SQUARE at 80×80 (the old renderer clamped only the height,
+    // drawing 128×80 squashed corners), with the source cropped to match.
+    const pieces = nineSlicePieces(384, 384, .{ .x = 0, .y = 0, .width = 512, .height = 160 });
+    try std.testing.expectEqual(Rectangle{ .x = 0, .y = 0, .width = 80, .height = 80 }, pieces[0].source);
+    try std.testing.expectEqual(Rectangle{ .x = 0, .y = 0, .width = 80, .height = 80 }, pieces[0].destination);
+    try std.testing.expectEqual(Rectangle{ .x = 432, .y = 0, .width = 80, .height = 80 }, pieces[2].destination);
+    // Top edge: 80-thick strip cropped from the 128px slice, stretched along
+    // the run axis only.
+    try std.testing.expectEqual(Rectangle{ .x = 80, .y = 0, .width = 224, .height = 80 }, pieces[1].source);
+    try std.testing.expectEqual(Rectangle{ .x = 80, .y = 0, .width = 352, .height = 80 }, pieces[1].destination);
+    // Center collapses to zero height (skipped by the renderer).
+    try std.testing.expectEqual(@as(i32, 0), pieces[4].destination.height);
+}
+
+test "nineSlicePieces: tiny panel clamps corners to half size" {
+    const pieces = nineSlicePieces(384, 384, .{ .x = 40, .y = 60, .width = 100, .height = 100 });
+    // Corner = min(128, 128, 50, 50) = 50 — everything shrinks uniformly.
+    try std.testing.expectEqual(Rectangle{ .x = 0, .y = 0, .width = 50, .height = 50 }, pieces[0].source);
+    try std.testing.expectEqual(Rectangle{ .x = 40, .y = 60, .width = 50, .height = 50 }, pieces[0].destination);
+    // Degenerate center: corners meet, nothing left to fill.
+    try std.testing.expectEqual(Rectangle{ .x = 90, .y = 110, .width = 0, .height = 0 }, pieces[4].destination);
+}
+
+test "nineSlicePieces: pieces tile the destination exactly" {
+    const destination = Rectangle{ .x = 37, .y = 53, .width = 777, .height = 333 };
+    const pieces = nineSlicePieces(384, 384, destination);
+    // Each row of destinations tiles the panel: shared y + height, widths
+    // summing to the panel width. Same check transposed for columns.
+    var covered_width: i32 = 0;
+    for (0..3) |column| {
+        const first_in_column = pieces[column];
+        var covered_height: i32 = 0;
+        for (0..3) |row| {
+            const piece = pieces[row * 3 + column];
+            try std.testing.expectEqual(first_in_column.destination.x, piece.destination.x);
+            try std.testing.expectEqual(first_in_column.destination.width, piece.destination.width);
+            covered_height += piece.destination.height;
+            // Sources stay inside the texture.
+            try std.testing.expect(piece.source.x >= 0);
+            try std.testing.expect(piece.source.y >= 0);
+            try std.testing.expect(piece.source.x + piece.source.width <= 384);
+            try std.testing.expect(piece.source.y + piece.source.height <= 384);
+        }
+        covered_width += first_in_column.destination.width;
+        try std.testing.expectEqual(destination.height, covered_height);
+    }
+    try std.testing.expectEqual(destination.width, covered_width);
+}
 
 /// A clickable slot (inventory cell, gear slot, skill bar slot).
 pub const Slot = struct {

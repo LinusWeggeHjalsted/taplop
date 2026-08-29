@@ -5718,3 +5718,33 @@ Supporting changes:
   overlay close, mission-fail exit (full cascade to the hub, asserting the
   recorded `player_exit_mission`), mission-complete dismiss (recorded on
   the timeline).
+
+## UI rendering
+
+### 9-slice corner aspect fix (square corners on short panels)
+
+`drawNineSlice` clamped the destination corner size PER-AXIS
+(`corner_width = min(slice, dest_w/2)`, `corner_height = min(slice, dest_h/2)`),
+so any panel shorter than two source slices got corners squashed along y —
+e.g. a 160px-tall `ui/panel` button (128px slices) drew 128×80 corners,
+visibly wider than tall. Panels at or above 2×slice height (main menu,
+1024×256) were exactly at the boundary and looked fine, which is why only
+short panels (panel-backed buttons, single-row tooltips) showed it.
+
+Fix: one square corner size `corner = min(slice_w, slice_h, dest_w/2,
+dest_h/2)`, with the SOURCE cropped to match in corners + edges, so nothing
+is ever drawn non-1:1 in the cross-axis; a short panel gets proportionally
+smaller corners instead of squashed ones. Degenerate pieces (zero-size
+center on a panel smaller than 2×corner) are skipped by the renderer.
+
+The rect math moved out of the backend into the pure, headless-tested
+`ui.nineSlicePieces(texture_width, texture_height, destination) ->
+[9]NineSlicePiece{source, destination}` (row-major grid; the bool-logic /
+testability convention — the renderer is a thin loop over the pairs). Four
+tests: full-size slices on a large panel, the 160px regression case
+(square 80×80 corners), tiny-panel clamp, and exact tiling of the
+destination + sources within texture bounds. Also corrected the
+`NineSlicePanel` doc comment, which claimed edges/center are TILED (they
+stretch; tiling is the deferred TODO refinement — only matters once
+patterned panel art ships, the current flat-fill art is identical either
+way).
