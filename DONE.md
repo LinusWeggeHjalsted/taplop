@@ -5823,8 +5823,8 @@ in the backend is the fix if it bothers.
 
 ### Main-menu staggered button stack
 
-Main-menu buttons zigzag: even-indexed buttons shift 64px LEFT,
-odd-indexed 64px RIGHT (index over the RENDERED list, so with Continue
+Main-menu buttons zigzag: even-indexed buttons shift 128px LEFT,
+odd-indexed 128px RIGHT (index over the RENDERED list, so with Continue
 absent, New Game leads left). The title stays centered on the stack's
 central axis; the block (title + staggered stack) still centers vertically
 as one unit. Tunable: `main_menu_button_stagger` (constraint documented at
