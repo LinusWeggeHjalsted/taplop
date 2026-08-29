@@ -58,7 +58,7 @@ pub const Action = enum {
     toggle_inventory,
     toggle_gear,
     toggle_skills,
-    toggle_enemy_inspect,
+    toggle_entity_inspect,
     toggle_world_map,
     confirm,
     cancel,
@@ -174,7 +174,7 @@ pub fn releaseSoundForAction(action: Action) ?SoundId {
     return switch (action) {
         .skip => .skip,
         .swap_weapons => .swap_skill,
-        .toggle_inventory, .toggle_gear, .toggle_skills, .toggle_enemy_inspect, .toggle_world_map, .toggle_options_menu => .menu,
+        .toggle_inventory, .toggle_gear, .toggle_skills, .toggle_entity_inspect, .toggle_world_map, .toggle_options_menu => .menu,
         // Undo/redo: reuses the menu sound (no dedicated sfx).
         .undo, .redo => .menu,
         .save_game => .menu,

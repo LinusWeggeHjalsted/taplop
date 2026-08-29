@@ -2,7 +2,7 @@
 //! button, text_label, fill_sprite, image, solid_rect), layout helpers (Rect
 //! algebra, `Row`/`Grid`, screen-space `i32` dims), and the panel/overlay
 //! builders (top bar, bottom bar, main menu, tooltips, skill tooltips, gear,
-//! inventory, skills, enemy inspect, mission complete/fail, options, load-save
+//! inventory, skills, entity inspect, mission complete/fail, options, load-save
 //! browser). `UiState` (open panels/overlays/drag/scroll) lives on
 //! `SessionState`, off the undo timeline. Buttons carry an `Action` so clicks
 //! feed the one input path. See DESIGN → UI Framework.
@@ -34,7 +34,7 @@ pub const MiddlePanelId = enum {
     inventory,
     gear,
     skills,
-    enemy_inspect,
+    entity_inspect,
 };
 
 pub const FullScreenOverlayId = enum {
@@ -92,7 +92,7 @@ pub const UiState = struct {
     /// other scrolls.
     load_save_scroll_offset: i32 = 0,
 
-    /// Which entity is being inspected (for enemy_inspect panel).
+    /// Which entity is being inspected (for entity inspect panel).
     inspected_entity_index: ?u32 = null,
 
     /// Middle section horizontal scroll offset (for when panels exceed width).
@@ -118,7 +118,7 @@ pub const UiState = struct {
     /// A right-press on a world entity tile awaiting click-vs-drag
     /// disambiguation (levels only). Cancels if the pointer moves beyond
     /// the drag threshold (became a camera pan); on a clean release toggles
-    /// the enemy_inspect panel on `inspected_entity_index`. See
+    /// the entity inspect panel on `inspected_entity_index`. See
     /// `handleRightClickInspect` in input_handlers.
     pending_right_click: ?PendingRightClick = null,
 
@@ -251,7 +251,7 @@ pub const PendingSlotPress = struct {
 /// A right-press on a world tile with an entity, awaiting click-vs-drag
 /// disambiguation (movement-threshold lifecycle). If the pointer stays
 /// within `drag_threshold_pixels` until release, the entity is inspected
-/// (toggle the enemy_inspect panel on `inspected_entity_index`). If it
+/// (toggle the entity inspect panel on `inspected_entity_index`). If it
 /// moves beyond the threshold first, this is cancelled — the press became
 /// a camera pan. See `handleRightClickInspect` in input_handlers.
 pub const PendingRightClick = struct {
@@ -526,8 +526,8 @@ pub const skills_panel_columns: i32 = 4;
 pub const skills_scrollbar_width: i32 = 12;
 /// Enemy-inspect panel width: the 4-wide skill grid (4 × `slot_size` +
 /// 2 × `ui_gap` side margins = 1056). The gear mirror + active-effects
-/// strip fit within this width. See `buildEnemyInspectPanel`.
-pub const enemy_inspect_panel_width: i32 = 4 * slot_size + 2 * ui_gap;
+/// strip fit within this width. See `buildEntityInspectPanel`.
+pub const entity_inspect_panel_width: i32 = 4 * slot_size + 2 * ui_gap;
 
 /// Default tint for UI elements. For sprites (Button/Slot/Image) this means
 /// "no tint" (pure white, show original art). For text it is the "unset"
@@ -3325,7 +3325,7 @@ pub fn buildGearPanel(
 ///   3. Gear mirror — weapons (main/off hand) top-left, amulet→coat→gloves→
 ///      pants→boots stacked below the main-hand, combat-stat column to the
 ///      right (flush under the off-hand). All 128×128 (`inventory_slot_size`).
-pub fn buildEnemyInspectPanel(
+pub fn buildEntityInspectPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
@@ -3347,7 +3347,7 @@ pub fn buildEnemyInspectPanel(
         .width = bounds.width,
         .height = bounds.height,
     } });
-    const content = try emitPanelHeader(elements, allocator, bounds, entity.name, .toggle_enemy_inspect);
+    const content = try emitPanelHeader(elements, allocator, bounds, entity.name, .toggle_entity_inspect);
 
     // Team gradient: player (team 0) vs enemy (team ≠ 0). Same fixed
     // indices the bottom bar + gear panel use, resolved against the team's
@@ -3528,9 +3528,15 @@ pub fn buildEnemyInspectPanel(
     const stats_x = col1_x;
     const stats_top = gear_top_y + gear_cell_size + ui_gap;
     const stat_line_height: i32 = gear_stat_font_size + 16;
+    // The inspect stat column leads with the entity's live combat state
+    // (current health, aggro range) before the effective gear stats — the
+    // player gear panel shares only the gear-stat tail.
+    const entity_stat_labels = [_][]const u8{ "Current Health", "Aggro Range" } ++ gear_stat_labels;
     const main_damage = if (entity.main_hand_weapon) |w| entity.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
     const off_damage = if (entity.off_hand_weapon) |w| entity.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
     const stat_values = [_]u32{
+        entity.current_health,
+        entity.aggro_range,
         main_damage,
         off_damage,
         entity.getEffectiveSpellDamage(),
@@ -3540,7 +3546,7 @@ pub fn buildEnemyInspectPanel(
         entity.getEffectiveSpeed(),
     };
     var stat_y = stats_top;
-    for (gear_stat_labels, stat_values) |label, value| {
+    for (entity_stat_labels, stat_values) |label, value| {
         const line = try std.fmt.allocPrint(allocator, "{s} {d}", .{ label, value });
         try elements.append(allocator, .{ .text_label = .{
             .text = line,
@@ -5199,7 +5205,7 @@ test "placeTooltip: shared edge — panel sits flush on the chosen side" {
 }
 
 // ───────────────────────── entity inspect panel ─────────────────────────
-// See `buildEnemyInspectPanel`. Read-only mirror of the player's skill bar +
+// See `buildEntityInspectPanel`. Read-only mirror of the player's skill bar +
 // active effects + gear, tinted with the inspected entity's team gradient.
 
 /// A minimal weapon-type table for inspect-panel tests: every weapon type
@@ -5211,7 +5217,7 @@ fn testWeaponTypeDefinitions() [weapon_type_count]WeaponTypeDefinition {
     return defs;
 }
 
-test "buildEnemyInspectPanel: player entity emits skill + gear slots, read-only" {
+test "buildEntityInspectPanel: player entity emits skill + gear slots, read-only" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -5237,18 +5243,18 @@ test "buildEnemyInspectPanel: player entity emits skill + gear slots, read-only"
     const bounds = Rectangle{
         .x = 0,
         .y = 0,
-        .width = enemy_inspect_panel_width,
+        .width = entity_inspect_panel_width,
         .height = middle_panel_height,
     };
     var elements: UiElementList = .empty;
-    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
+    try buildEntityInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
 
     // No .slot elements and no gameplay-clickable .button — everything is
     // read-only .image, except the panel-header close button (a .button
-    // carrying the toggle_enemy_inspect action).
+    // carrying the toggle_entity_inspect action).
     for (elements.items) |element| switch (element) {
         .slot => @panic("inspect panel emitted a draggable .slot"),
-        .button => |btn| if (btn.action != .toggle_enemy_inspect) {
+        .button => |btn| if (btn.action != .toggle_entity_inspect) {
             @panic("inspect panel emitted a clickable .button other than close");
         },
         else => {},
@@ -5267,7 +5273,7 @@ test "buildEnemyInspectPanel: player entity emits skill + gear slots, read-only"
     try std.testing.expect(found_skill_frame);
 }
 
-test "buildEnemyInspectPanel: enemy entity uses enemy gradient" {
+test "buildEntityInspectPanel: enemy entity uses enemy gradient" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -5287,29 +5293,53 @@ test "buildEnemyInspectPanel: enemy entity uses enemy gradient" {
     var entity: Entity = .{};
     entity.team = 1; // enemy
     entity.main_hand_weapon = .{ .weapon_type = .sword };
+    entity.current_health = 7;
+    entity.aggro_range = 5;
 
     const bounds = Rectangle{
         .x = 0,
         .y = 0,
-        .width = enemy_inspect_panel_width,
+        .width = entity_inspect_panel_width,
         .height = middle_panel_height,
     };
     var elements: UiElementList = .empty;
-    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
+    try buildEntityInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
 
     // Skill-bar frame tinted with the ENEMY gradient (team ≠ 0).
     var found_enemy_frame = false;
+    // The stat column LEADS with the entity's live combat state.
+    var found_current_health = false;
+    var found_aggro_range = false;
+    var stat_lines: usize = 0;
+    var first_stat_lines: [2][]const u8 = undefined;
     for (elements.items) |element| switch (element) {
         .image => |img| if (std.mem.eql(u8, img.sprite_id, "ui/skill_button")) {
             try std.testing.expectEqual(enemy_color, img.color);
             found_enemy_frame = true;
         },
+        .text_label => |label| {
+            // Stat lines live in the column flush under the off-hand (x =
+            // 16 + 128 + 16); the panel title shares the font size, so gate
+            // on position, not just text.
+            if (label.screen_position.x == ui_gap + inventory_slot_size + ui_gap and label.font_size == gear_stat_font_size) {
+                if (stat_lines < 2) first_stat_lines[stat_lines] = label.text;
+                stat_lines += 1;
+                if (std.mem.eql(u8, label.text, "Current Health 7")) found_current_health = true;
+                if (std.mem.eql(u8, label.text, "Aggro Range 5")) found_aggro_range = true;
+            }
+        },
         else => {},
     };
     try std.testing.expect(found_enemy_frame);
+    try std.testing.expect(found_current_health);
+    try std.testing.expect(found_aggro_range);
+    // The two live-state rows lead the column (before the gear stats).
+    try std.testing.expect(stat_lines == 9);
+    try std.testing.expectEqualStrings("Current Health 7", first_stat_lines[0]);
+    try std.testing.expectEqualStrings("Aggro Range 5", first_stat_lines[1]);
 }
 
-test "buildEnemyInspectPanel: cooldown overlay + number when skill on cooldown" {
+test "buildEntityInspectPanel: cooldown overlay + number when skill on cooldown" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -5333,11 +5363,11 @@ test "buildEnemyInspectPanel: cooldown overlay + number when skill on cooldown" 
     const bounds = Rectangle{
         .x = 0,
         .y = 0,
-        .width = enemy_inspect_panel_width,
+        .width = entity_inspect_panel_width,
         .height = middle_panel_height,
     };
     var elements: UiElementList = .empty;
-    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
+    try buildEntityInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
 
     // A cooldown overlay is a translucent (alpha 128) skill_button image on
     // top of the filled slot. Count them — exactly one skill is on cooldown.
@@ -5351,7 +5381,7 @@ test "buildEnemyInspectPanel: cooldown overlay + number when skill on cooldown" 
     try std.testing.expectEqual(@as(usize, 1), overlay_count);
 }
 
-test "buildEnemyInspectPanel: active effects emit 128px icons" {
+test "buildEntityInspectPanel: active effects emit 128px icons" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -5377,11 +5407,11 @@ test "buildEnemyInspectPanel: active effects emit 128px icons" {
     const bounds = Rectangle{
         .x = 0,
         .y = 0,
-        .width = enemy_inspect_panel_width,
+        .width = entity_inspect_panel_width,
         .height = middle_panel_height,
     };
     var elements: UiElementList = .empty;
-    try buildEnemyInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
+    try buildEntityInspectPanel(&elements, arena.allocator(), metrics, bounds, entity, &.{}, null, theme, &weapon_types);
 
     // Two effect icons at 128px, carrying tooltips.
     var effect_icon_count: usize = 0;

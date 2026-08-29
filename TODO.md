@@ -256,7 +256,7 @@ Open:
   order, scrollbar when overflow (wheel scrolls when the pointer is over a
   skills slot); drag refs emitted (drag-to-bar is a later slice). Sorting /
   grouping / search deferred. See DONE.md.
-- buildEnemyInspectPanel: entity stats, skill bar with cooldowns, active
+- buildEntityInspectPanel: entity stats, skill bar with cooldowns, active
   effects. DONE (right-click-to-inspect + read-only mirror of
   skills/effects/gear, team-gradient coloring — see DESIGN → UI Framework →
   Entity inspect).
@@ -783,7 +783,7 @@ Done items in DONE.md. Open:
   keeping in mind events can also originate from save/replay data.
 - Consider splitting processEvent handlers by scope (player/level/hub/meta)
   into separate files for readability once it grows further.
-- **Duplicated rendering recipes in `buildEnemyInspectPanel`.** The skill-
+- **Duplicated rendering recipes in `buildEntityInspectPanel`.** The skill-
   button visual (frame + icon + cooldown overlay + empty-diamond marker)
   and the gear-slot visual (slot frame + item icon + tooltip) are inlined
   in the inspect panel instead of reusing `emitSkillButton` /

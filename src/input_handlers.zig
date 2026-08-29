@@ -490,7 +490,7 @@ pub fn handleCameraPan(
 /// Right-click entity inspection (levels only). A right-press on a world
 /// tile with an entity records a pending right-click; movement beyond
 /// `drag_threshold_pixels` cancels it (the press became a camera pan); a
-/// clean release toggles the enemy_inspect panel on that entity (same
+/// clean release toggles the entity inspect panel on that entity (same
 /// entity → close, different → switch, none open → open). Suppressed over
 /// blocking UI (same occlusion check as the tile cursor + camera pan) so a
 /// right-click on a panel never inspects the world behind it. Hubs are
@@ -644,7 +644,7 @@ pub fn handleRightClickInspect(
             if (ui_state.inspected_entity_index) |current_inspected| {
                 if (current_inspected == press.entity_index) {
                     // Same entity — close the panel.
-                    ui_state.toggleMiddlePanel(.enemy_inspect);
+                    ui_state.toggleMiddlePanel(.entity_inspect);
                     ui_state.inspected_entity_index = null;
                 } else {
                     // Different entity — switch target.
@@ -653,7 +653,7 @@ pub fn handleRightClickInspect(
             } else {
                 // Not inspecting — open the panel.
                 ui_state.inspected_entity_index = press.entity_index;
-                ui_state.toggleMiddlePanel(.enemy_inspect);
+                ui_state.toggleMiddlePanel(.entity_inspect);
             }
         }
         ui_state.pending_right_click = null;
@@ -1082,9 +1082,9 @@ pub fn handleAnytimeInput(
             ui_state.toggleMiddlePanel(.skills);
         }
 
-        if (in_game.toggle_enemy_inspect) {
+        if (in_game.toggle_entity_inspect) {
             if (!history.replaying) history.session.queueSound(history.backing_allocator, .menu);
-            ui_state.toggleMiddlePanel(.enemy_inspect);
+            ui_state.toggleMiddlePanel(.entity_inspect);
             ui_state.inspected_entity_index = null;
         }
 

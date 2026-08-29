@@ -796,7 +796,7 @@ The error popup is more-modal still but never reaches the chain: the
 events their overlay buttons push (both routed through
 `pushPlayerActionAndDrain`), so Escape ≡ clicking the button — recorded
 player actions on the undo timeline. Middle panels (inventory/gear/skills/
-enemy inspect) are deliberately NOT in the chain: their per-panel toggles
+entity inspect) are deliberately NOT in the chain: their per-panel toggles
 (I/G/S) are the close path; revisit if playtesting asks for it.
 
 ## Error Handling
@@ -2263,7 +2263,7 @@ streamed at runtime but still downloaded).
 
 ### Entity inspect
 
-The enemy-inspect middle panel (`buildEnemyInspectPanel`, opened by right-
+The entity-inspect middle panel (`buildEntityInspectPanel`, opened by right-
 -clicking a world tile with an entity — levels only) is a READ-ONLY mirror of
 the player's skill bar + active effects + gear panel. It shares the middle-
 panel band + `middle_panel_height` with inventory/gear/skills; which entity
@@ -2287,7 +2287,10 @@ it shows is `UiState.inspected_entity_index`.
   `small_icon_size` (128) icons flowing left→right then down (max 8 columns,
   OMITTED entirely when the entity has no effects); then the gear mirror
   (weapons row + gear stack + combat-stat column, same layout as
-  `buildGearPanel`).
+  `buildGearPanel`). The stat column LEADS with the entity's live combat
+  state — `Current Health` (raw `current_health`) and `Aggro Range` (raw
+  `aggro_range`) — before the shared gear-stat tail; the player gear panel
+  shows only the gear stats.
 - **Effect icon source.** Active-effect icons in the UI (bottom-bar effects
   grid + entity-inspect panel) use the SKILL icon (`skills/<tag>`) when the
   effect shares a tag with a skill (EffectId and SkillId overlap: `reflect`,

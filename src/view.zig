@@ -204,7 +204,7 @@ pub fn view(
             drag_source,
         ) catch @panic("failed to build bottom bar");
 
-        // Middle panels (inventory / gear / skills / enemy inspect): stacked
+        // Middle panels (inventory / gear / skills / entity inspect): stacked
         // left-to-right, flush against the left edge of the screen, within the
         // band between the top and bottom bars. Each open panel with a builder
         // is placed at the current x cursor; `ui_gap` separates consecutive
@@ -614,8 +614,8 @@ fn buildMiddlePanels(
                 );
                 break :blk ui.skills_panel_width;
             },
-            // Builder pending — enemy inspect reserves no space.
-            .enemy_inspect => blk: {
+            // Builder pending — entity inspect reserves no space.
+            .entity_inspect => blk: {
                 const entity_index = session.ui_state.inspected_entity_index orelse continue;
                 const level = current_state.level orelse continue;
                 if (entity_index >= level.entities.len) continue;
@@ -623,24 +623,24 @@ fn buildMiddlePanels(
                 const bounds = Rectangle{
                     .x = cursor_x,
                     .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
-                    .width = ui.enemy_inspect_panel_width,
+                    .width = ui.entity_inspect_panel_width,
                     .height = ui.middle_panel_height,
                 };
-                try ui.buildEnemyInspectPanel(
+                try ui.buildEntityInspectPanel(
                     elements,
                     allocator,
                     font_metrics,
                     bounds,
                     entity,
                     current_state.player_data.learned_skills,
-                    // Compare the inspected enemy's gear against the
+                    // Compare the inspected entity's gear against the
                     // player's — unless the inspected entity IS the player
                     // (entity 0 in a level; inspect only opens in levels).
                     if (entity_index == 0) null else if (ui.playerEntity(current_state)) |player| ui.equippedGearFromEntity(player) else null,
                     active_theme,
                     weapon_type_definitions,
                 );
-                break :blk ui.enemy_inspect_panel_width;
+                break :blk ui.entity_inspect_panel_width;
             },
         };
         cursor_x += width + ui.ui_gap;

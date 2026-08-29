@@ -5748,3 +5748,25 @@ destination + sources within texture bounds. Also corrected the
 stretch; tiling is the deferred TODO refinement — only matters once
 patterned panel art ships, the current flat-fill art is identical either
 way).
+
+### Entity inspect: rename + live-state stat rows
+
+Renamed enemy-inspect → entity-inspect across the codebase — the panel has
+always been able to show ANY entity (right-click inspect works on the player
+and allied entities too), so the name was wrong. Mechanical rename, no
+behavior change: `Action.toggle_enemy_inspect` → `toggle_entity_inspect`
+(not a keybinding in any settings file, so no config compatibility concern),
+`InGameInput` field, `MiddlePanelId.enemy_inspect` → `entity_inspect`,
+`buildEnemyInspectPanel` → `buildEntityInspectPanel`,
+`enemy_inspect_panel_width` → `entity_inspect_panel_width`, doc comments +
+DESIGN/TODO pointers. DONE.md history entries left as-written (archive
+policy).
+
+The inspect panel's combat-stat column now LEADS with the entity's live
+combat state: `Current Health` (raw `entity.current_health`) and `Aggro
+Range` (raw `entity.aggro_range`), before the shared gear-stat tail. The
+player gear panel keeps its own label set untouched — aggro range is a
+monster property, meaningless in the player's gear panel. Layout note: the
+inspect stat column is now 9 rows (~144px taller); with 9+ active effects
+(displayed as 2+ icon rows) the column can extend past the panel bottom —
+read-only display, acceptable until the panel grows scrolling.
