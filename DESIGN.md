@@ -2291,6 +2291,12 @@ it shows is `UiState.inspected_entity_index`.
   state — `Current Health` (raw `current_health`) and `Aggro Range` (raw
   `aggro_range`) — before the shared gear-stat tail; the player gear panel
   shows only the gear stats.
+- **Aggro-range world outline.** While the panel is open, `view()` also
+  emits an `aggro_outline` tile overlay — the same Chebyshev square preview
+  as the skill-range outline (extent = `2*aggro_range + 1`, theme lightest,
+  8px thickness, drawn in full over gaps/edges), centered on the inspected
+  entity. The world-space companion of the panel's Aggro Range stat row;
+  levels only, pure over SessionState → replay-safe.
 - **Effect icon source.** Active-effect icons in the UI (bottom-bar effects
   grid + entity-inspect panel) use the SKILL icon (`skills/<tag>`) when the
   effect shares a tag with a skill (EffectId and SkillId overlap: `reflect`,

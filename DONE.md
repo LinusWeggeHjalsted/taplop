@@ -5770,3 +5770,24 @@ monster property, meaningless in the player's gear panel. Layout note: the
 inspect stat column is now 9 rows (~144px taller); with 9+ active effects
 (displayed as 2+ icon rows) the column can extend past the panel bottom —
 read-only display, acceptable until the panel grows scrolling.
+
+### Entity inspect: aggro-range world outline
+
+While the entity-inspect panel is open, `view()` emits an `aggro_outline`
+tile overlay around the inspected entity — a Chebyshev square of extent
+`2*aggro_range + 1` centered on the entity, exactly mirroring the
+skill-range/radius outline conventions (theme lightest, unified 8px
+thickness, drawn in full — may cross level edges/gaps, geometric not
+pathfinding). This is the first producer of the `aggro_outline` overlay
+type: the type + renderer arm existed since the outline family landed but
+nothing emitted it ("aggro outline still not emitted" in TODO).
+
+New `buildInspectedAggroOutline` (view.zig, called in the level branch
+beside `buildPreparedSkillRadiusOutline`), guarded on
+`UiState.isMiddlePanelOpen(.entity_inspect)` + `inspected_entity_index`
+valid (stale index after entity removal → no outline, no crash). New
+`UiState.isMiddlePanelOpen` helper — the read-side companion of
+`toggleMiddlePanel` (previously every consumer walked `open_middle_panels`
+by hand). Pure over SessionState + GameState reads → replay-safe by
+construction. Test: 4 cases (emitted square, panel closed, no inspected
+entity, stale index).

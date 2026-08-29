@@ -97,6 +97,7 @@ pub fn view(
         buildHighlightOverlays(&tile_overlays, frame_allocator, level.highlighted_tiles, active_theme, camera, camera_zoom, session.animation_clock, settings.animation_fps);
         buildCursorOverlay(&tile_overlays, frame_allocator, level.level_tiles, session, active_theme, camera, camera_zoom);
         buildPreparedSkillRadiusOutline(&tile_overlays, frame_allocator, level, session, active_theme, camera, camera_zoom);
+        buildInspectedAggroOutline(&tile_overlays, frame_allocator, level, session, active_theme, camera, camera_zoom);
         if (level.level_end) |end_position| {
             ground_entries.append(frame_allocator, .{
                 .sort_y = end_position.y,
@@ -1988,6 +1989,38 @@ fn buildPreparedSkillRadiusOutline(
     }) catch @panic("failed to append prepared-skill radius outline");
 }
 
+/// Aggro-range outline: while the entity-inspect panel is open, preview the
+/// inspected entity's detection range as a single square outline (Chebyshev
+/// ≤ aggro_range) centered on the entity — the world-space companion of the
+/// panel's "Aggro Range" stat row. Same shape as the skill-range outline
+/// (drawn in full, may extend past level edges / over gaps; theme lightest,
+/// unified 8px thickness). Levels only (inspect only opens in levels), any
+/// inspected entity including the player. Pure over SessionState + GameState
+/// reads → replay-safe by construction.
+fn buildInspectedAggroOutline(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    level: *const types.Level,
+    session: *const state.SessionState,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    if (!session.ui_state.isMiddlePanelOpen(.entity_inspect)) return;
+    const entity_index = session.ui_state.inspected_entity_index orelse return;
+    if (entity_index >= level.entities.len) return;
+    const entity = level.entities[entity_index];
+
+    const n: i32 = @intCast(entity.aggro_range);
+    const top_left = types.Vector2{ .x = entity.position.x - n, .y = entity.position.y - n };
+    list.append(allocator, .{
+        .screen_position = tileToScreen(top_left, camera, zoom),
+        .overlay_type = .aggro_outline,
+        .color = active_theme.lightest,
+        .extent = 2 * entity.aggro_range + 1,
+    }) catch @panic("failed to append inspected-entity aggro outline");
+}
+
 /// Append a checkerboard TileDrawable per tile. The two shades come from world
 /// gradient indices 1 and 3, chosen by (x + y) parity.
 fn buildTiles(
@@ -2222,6 +2255,76 @@ test "prepared skill radius outline: follows cursor while targeting" {
         var session = state.SessionState{};
         var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
         buildPreparedSkillRadiusOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
+    }
+}
+
+test "inspected entity aggro outline: square centered on the inspected entity" {
+    // While the entity-inspect panel is open, the inspected entity's aggro
+    // range draws as a Chebyshev square outline (extent = 2*aggro_range + 1)
+    // centered on the entity. No overlay when the panel is closed, no
+    // entity is inspected, or the index is stale (out of range).
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    const dummy_theme = types.ActiveColorTheme{
+        .lightest = .{ .r = 255, .g = 255, .b = 255 },
+        .darkest = .{ .r = 0, .g = 0, .b = 0 },
+        .world_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .enemy_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .player_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+    };
+    const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
+
+    var enemy: types.Entity = .{};
+    enemy.team = 1;
+    enemy.position = .{ .x = 5, .y = 5 };
+    enemy.aggro_range = 3;
+
+    // Case 1: panel open + entity 1 inspected -> aggro_outline, extent 7.
+    {
+        const state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{});
+        var session = state.SessionState{};
+        session.ui_state.toggleMiddlePanel(.entity_inspect);
+        session.ui_state.inspected_entity_index = 1;
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 1), overlays.items.len);
+        const ov = overlays.items[0];
+        try std.testing.expectEqual(types.TileOverlayType.aggro_outline, ov.overlay_type);
+        try std.testing.expectEqual(@as(u32, 7), ov.extent);
+        try std.testing.expectEqual(dummy_theme.lightest, ov.color);
+    }
+
+    // Case 2: panel closed -> no outline (even with an inspected index set).
+    {
+        const state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{});
+        var session = state.SessionState{};
+        session.ui_state.inspected_entity_index = 1;
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
+    }
+
+    // Case 3: panel open but no inspected entity -> no outline.
+    {
+        const state_ = test_harness.levelStateWithEntities(arena, &.{ .{}, enemy }, &.{});
+        var session = state.SessionState{};
+        session.ui_state.toggleMiddlePanel(.entity_inspect);
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
+        try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
+    }
+
+    // Case 4: stale index (entity died and the array shrank) -> no outline,
+    // no crash.
+    {
+        const state_ = test_harness.levelStateWithEntities(arena, &.{.{}}, &.{});
+        var session = state.SessionState{};
+        session.ui_state.toggleMiddlePanel(.entity_inspect);
+        session.ui_state.inspected_entity_index = 9;
+        var overlays: std.ArrayList(types.TileOverlayDrawable) = .empty;
+        buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
         try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
     }
 }

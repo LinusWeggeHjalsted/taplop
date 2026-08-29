@@ -184,8 +184,9 @@ Open / in-progress:
   range/radius outlines emitted on skill-slot hover (single bounding square,
   Chebyshev ≤ range else ≤ radius, extent = 2*N+1, theme lightest, unified
   8px thickness — see DONE.md). Radius outline also follows the tile cursor
-  while a targeting+radius skill is prepared (e.g. Flash Strike). aggro
-  outline still not emitted.
+  while a targeting+radius skill is prepared (e.g. Flash Strike). Aggro
+  outline emitted while the entity-inspect panel is open (square centered
+  on the inspected entity) — see DONE.md.
 - [x] GroundDrawable slice: entities + flag poles + decorations + ground
   items all rendered, unified ascending (y, x) y-sort across entities +
   decoration pieces + level-end/mission-start markers (DONE — see

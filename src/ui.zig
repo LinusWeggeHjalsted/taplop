@@ -155,6 +155,19 @@ pub const UiState = struct {
         }
     }
 
+    /// Whether `panel_id` is currently open. The read-side companion of
+    /// `toggleMiddlePanel` (view-side producers, e.g. the inspected-entity
+    /// aggro outline, need to know a panel is showing without walking the
+    /// slot array themselves).
+    pub fn isMiddlePanelOpen(self: *const UiState, panel_id: MiddlePanelId) bool {
+        for (self.open_middle_panels) |maybe_panel| {
+            if (maybe_panel) |open| {
+                if (open == panel_id) return true;
+            }
+        }
+        return false;
+    }
+
     pub fn toggleFullScreenOverlay(self: *UiState, overlay_id: FullScreenOverlayId) void {
         for (&self.open_full_screen_overlays) |*slot| {
             if (slot.*) |open| {
