@@ -440,11 +440,17 @@ yet implemented. Remaining work:
   inspector + settings sidebar rendering with real data, no interaction),
   then wire input per tool + the edit-verb handlers. Landed so far:
   the bottom tool palette (static shell — fixed tools + palette groups +
-  plus cells + `Image.source_rectangle`; see DONE.md). Still-needed event
+  plus cells + `Image.source_rectangle`) and palette window scrolling
+  (max 8 visible per group, wheel-over-group shifts the window — see
+  DONE.md). Still-needed event
   structs: `editor_toggle_inspector` / `editor_set_tool` /
   gradient-override setters. Default level template
   (`data/default_level.txt`). The `.editor` screen currently renders only
   the bottom bar — reachable via the main-menu "Editor" button.
+- **Collapsed editor palette groups — UNDECIDED visuals.** Groups collapse
+  to... something that shows there's content to expand. Candidate: overlap
+  the first few tools (peeking stack) so the group reads as expandable.
+  Decide when the collapse interaction slice lands.
 - Validation result + replay attachment: on successful validation, attach a
   saved mission replay to the custom mission (next save writes it into the
   custom mission dir) for re-validation before uploading to the online

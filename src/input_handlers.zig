@@ -1002,6 +1002,17 @@ pub fn handleAnytimeInput(
     if (history.session.ui_state.options_menu_open) return;
 
     if (anytime.scroll_delta != 0) {
+        // Editor palette group under the pointer, if any. Computed up front
+        // (the screen + editor gating lives here, not in the chain below).
+        // Geometric detection over the emitted tool cells — see
+        // `ui.editorPaletteGroupAt`.
+        const editor_palette_group: ?usize = if (history.current_state.screen == .editor)
+            if (history.current_state.editor) |editor|
+                ui.editorPaletteGroupAt(editor, ui_elements, pointer_position)
+            else
+                null
+        else
+            null;
         // Load-save browser open: the wheel scrolls the save list, one full
         // row per notch (whole-row ticks keep text placement identical at
         // every offset). The panel is a fullscreen modal, so any wheel input
@@ -1020,6 +1031,20 @@ pub fn handleAnytimeInput(
             if (history.session.ui_state.skills_scroll_offset < 0) {
                 history.session.ui_state.skills_scroll_offset = 0;
             }
+        } else if (editor_palette_group) |group_index| {
+            // Editor palette window scroll (horizontal): one wheel notch =
+            // one tool cell, wheel-up = earlier tools (matches the skills
+            // panel's wheel-up = earlier rows). Both bounds clamped here;
+            // the builder clamps in place too (authoritative).
+            const editor = history.current_state.editor.?;
+            const delta: i32 = @intFromFloat(anytime.scroll_delta);
+            const group_size = ui.editorPaletteGroupSize(editor, group_index);
+            const max_offset: i32 = @intCast(group_size -| ui.editor_palette_max_tools);
+            const scrolled: i32 = @min(
+                @max(history.session.ui_state.editor_palette_scroll[group_index] - delta, 0),
+                max_offset,
+            );
+            history.session.ui_state.editor_palette_scroll[group_index] = scrolled;
         } else {
             // Additive zoom in fixed steps, clamped to [min, max]. Additive
             // (not multiplicative) so one zoom-in followed by one zoom-out

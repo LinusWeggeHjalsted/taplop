@@ -1808,13 +1808,17 @@ layout + a left inspector + a right settings sidebar:
   prompts; the active tool determines what a viewport click does.
 - **Tool palette (bottom bar):** mirrors the in-game bottom bar's slot
   style. Fixed tools first ([Select] [Tile]), then three collapsible groups:
-  Enemies, Decorations, Ground Items. Each group is a horizontally
-  scrollable row of `slot_size` slots; each slot renders the type's full
-  sprite stack (base + layers, colored via the enemy gradient for enemies,
-  world gradient for decorations — same draw path as in-game). Each group
-  has an "add new" button (`+`) at its tail that creates a new empty type
-  via an `editor_add_*_type` event. Collapsed groups show just their header
-  (expand/collapse toggle). Hover tooltips on slots show the type's name.
+  Enemies, Decorations, Ground Items. Each group shows at most 8 type
+  cells (the visible window); scrolling the wheel with the pointer over a
+  group shifts its window left/right (one cell per notch; state on
+  `UiState.editor_palette_scroll`, clamped in the builder). Each slot
+  renders the type's graphic on the shared `ui/button_background`
+  (aspect-preserved, centered). Each group has an "add new" button (`+`)
+  at its tail that creates a new empty type via an `editor_add_*_type`
+  event; the `+` and the group header stay fixed while the window scrolls.
+  Collapsed-group visuals are UNDECIDED (open question: overlap the first
+  few tools so it's visible there's something to expand — see TODO).
+  Hover tooltips on slots show the type's name.
 - **Inspector (left bar):** shows TYPE fields for the currently-relevant
   type (see selection model). User-toggleable (button in the bottom bar,
   mirroring in-game panel toggles), open by default. Auto-opens on new

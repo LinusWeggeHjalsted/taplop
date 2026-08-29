@@ -251,6 +251,7 @@ pub fn view(
                 ui.screenRect(),
                 editor,
                 active_theme,
+                &session.ui_state.editor_palette_scroll,
             ) catch @panic("failed to build editor bottom bar");
         }
     } else if (current_state.screen == .main_menu) {

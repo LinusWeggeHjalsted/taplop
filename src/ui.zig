@@ -104,6 +104,15 @@ pub const UiState = struct {
     /// learned-skill count). Off the undo timeline like the other scrolls.
     skills_scroll_offset: i32 = 0,
 
+    /// Editor palette group scroll offsets, in TOOL CELLS — one wheel notch
+    /// = one cell. Index 0 = Enemies, 1 = Decorations, 2 = Ground Items.
+    /// A group shows at most `editor_palette_max_tools` type cells; scrolling
+    /// shifts the visible window left/right. Clamped in place by
+    /// `buildEditorBottomBar` (authoritative — it knows the group size) and
+    /// on write in the wheel handler. View-side transient state, off the
+    /// undo timeline (same as `skills_scroll_offset`).
+    editor_palette_scroll: [3]i32 = .{ 0, 0, 0 },
+
     /// Combat log scroll offset (for full combat log view).
     combat_log_scroll_offset: i32 = 0,
 
@@ -2775,6 +2784,76 @@ const tile_highlight_frame_size: i32 = 256;
 /// Font size for the editor palette group headers ("Enemies", …).
 const editor_group_header_font_size: i32 = 64;
 
+/// Maximum type cells a palette group shows at once. Groups with more
+/// types scroll horizontally (wheel over the group shifts the window;
+/// see `UiState.editor_palette_scroll`).
+pub const editor_palette_max_tools: usize = 8;
+
+/// A palette group's type count: 0 = Enemies, 1 = Decorations, 2 = Ground
+/// Items. Shared between the builder's window math and the wheel routing's
+/// emission-order segmentation.
+pub fn editorPaletteGroupSize(editor: types.Editor, group_index: usize) usize {
+    return switch (group_index) {
+        0 => editor.entity_types.len,
+        1 => editor.decoration_types.len,
+        else => editor.item_types.len,
+    };
+}
+
+/// Which editor palette group's tool cells contain `position`, if any.
+/// Tool cells carry no `SlotRef` (inert until tool selection is wired), so
+/// detection is geometric: on the editor screen the only
+/// `ui/button_background` images in the bottom-bar band are the tool cells,
+/// emitted in a deterministic order (2 fixed tools, then per group
+/// `min(size, max_tools)` type cells + one "+" cell). Segmenting that
+/// sequence maps a cell — and thus the pointer over it — to its group.
+/// Valid only on the editor screen; callers gate on it.
+pub fn editorPaletteGroupAt(
+    editor: types.Editor,
+    ui_elements: []const UiElement,
+    position: ScreenPosition,
+) ?usize {
+    if (position.y < types.reference_height - bottom_bar_height) return null;
+    var cell_index: usize = 0;
+    for (ui_elements) |element| switch (element) {
+        .image => |image| {
+            if (!std.mem.eql(u8, image.sprite_id, button_background_sprite_id)) continue;
+            if (image.screen_position.y < types.reference_height - bottom_bar_height) continue;
+            // Registered after the filters so non-tool images don't consume
+            // a cell index; fires on continue/return alike.
+            defer cell_index += 1;
+            const group = editorPaletteGroupOfCell(editor, cell_index) orelse continue;
+            const cell: Rectangle = .{
+                .x = image.screen_position.x,
+                .y = image.screen_position.y,
+                .width = image.width,
+                .height = image.height,
+            };
+            if (cell.contains(position)) return group;
+        },
+        else => {},
+    };
+    return null;
+}
+
+/// Map a flat tool-cell index (bottom-bar emission order) to its palette
+/// group. The first 2 cells are the fixed tools (Select, Tile); each group
+/// then contributes `min(size, max_tools)` type cells + its "+" cell.
+fn editorPaletteGroupOfCell(editor: types.Editor, cell_index: usize) ?usize {
+    var index = cell_index;
+    if (index < 2) return null;
+    index -= 2;
+    for (0..3) |group_index| {
+        const segment = @min(
+            editorPaletteGroupSize(editor, group_index),
+            editor_palette_max_tools,
+        ) + 1; // type cells + "+"
+        if (index < segment) return group_index;
+        index -= segment;
+    }
+    return null;
+}
+
 /// Largest aspect-preserving rectangle that fits inside `cell`, centered.
 /// Non-positive sprite dimensions (an unresolvable/missing sprite) fall
 /// back to the full cell so the renderer's missing-art magenta still shows
@@ -2838,9 +2917,12 @@ fn emitEditorToolCell(
 /// the type's color_index), ground items = the item icon (ground items
 /// always render as the shared ground bag in-world, so the palette shows
 /// the ITEM's icon for authoring distinction). Interaction (active-tool
-/// selection, group collapse, horizontal scrolling) is a later slice.
-/// See DESIGN → Architecture → Level Editor → Editor UI layout (tool
-/// palette).
+/// selection, group collapse, click handling) is a later slice. Horizontal
+/// scrolling: a group shows at most `editor_palette_max_tools` type cells;
+/// `scroll_offsets[group]` (clamped in place here to `[0, size - max]`) is
+/// the first visible cell, and the wheel scrolls the window while the
+/// pointer is over the group (see `editorPaletteGroupAt`). See DESIGN →
+/// Architecture → Level Editor → Editor UI layout (tool palette).
 pub fn buildEditorBottomBar(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -2848,6 +2930,7 @@ pub fn buildEditorBottomBar(
     screen: Rectangle,
     editor: types.Editor,
     active_theme: types.ActiveColorTheme,
+    scroll_offsets: *[3]i32,
 ) !void {
     const p = active_theme.player_gradient.colors;
     const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
@@ -2862,16 +2945,17 @@ pub fn buildEditorBottomBar(
         editor.item_types.len,
     };
 
-    // Total content width: fixed tools + per group (header + type cells +
-    // one "+" cell), joined by ui_gap.
+    // Total content width: fixed tools + per group (header + VISIBLE type
+    // cells + one "+" cell), joined by ui_gap.
     var header_widths: [group_labels.len]i32 = undefined;
     var content_width: i32 = 2 * slot_size; // Select + Tile
     var item_count: i32 = 2;
     for (group_labels, group_sizes, 0..) |label, size, group_index| {
         header_widths[group_index] =
             font_metrics.measureSpanWidth(text(label), editor_group_header_font_size) + 2 * ui_gap;
-        content_width += header_widths[group_index] + @as(i32, @intCast(size + 1)) * slot_size;
-        item_count += @intCast(size + 2); // header + type cells + "+"
+        const visible: i32 = @intCast(@min(size, editor_palette_max_tools));
+        content_width += header_widths[group_index] + (visible + 1) * slot_size;
+        item_count += visible + 2; // header + type cells + "+"
     }
     content_width += (item_count - 1) * ui_gap;
 
@@ -2904,8 +2988,17 @@ pub fn buildEditorBottomBar(
         "Tile paint",
     );
 
-    // Palette groups.
+    // Palette groups. Each emits its visible window: `visible` type cells
+    // starting at `first_visible`, then the "+" cell (always reachable).
     for (group_labels, 0..) |label, group_index| {
+        const size = group_sizes[group_index];
+        // Clamp the window offset in place (authoritative — the wheel
+        // handler also bounds-checks, but the builder owns the truth).
+        const max_offset: i32 = @intCast(size -| editor_palette_max_tools);
+        scroll_offsets[group_index] = @min(@max(scroll_offsets[group_index], 0), max_offset);
+        const first_visible: usize = @intCast(scroll_offsets[group_index]);
+        const visible = @min(size, editor_palette_max_tools);
+
         const header_cell = row.next(header_widths[group_index]);
         const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
         try elements.append(allocator, .{ .text_label = .{
@@ -2917,7 +3010,7 @@ pub fn buildEditorBottomBar(
         } });
 
         switch (group_index) {
-            0 => for (editor.entity_types) |type_definition| {
+            0 => for (editor.entity_types[first_visible .. first_visible + visible]) |type_definition| {
                 const sprite_id = try std.fmt.allocPrint(
                     allocator,
                     "entities/{s}",
@@ -2937,7 +3030,7 @@ pub fn buildEditorBottomBar(
                     type_definition.id,
                 );
             },
-            1 => for (editor.decoration_types) |type_definition| {
+            1 => for (editor.decoration_types[first_visible .. first_visible + visible]) |type_definition| {
                 const sprite_id = try std.fmt.allocPrint(
                     allocator,
                     "decorations/{s}",
@@ -2957,7 +3050,7 @@ pub fn buildEditorBottomBar(
                     type_definition.id,
                 );
             },
-            else => for (editor.item_types) |type_definition| {
+            else => for (editor.item_types[first_visible .. first_visible + visible]) |type_definition| {
                 try emitEditorToolCell(
                     elements,
                     allocator,
@@ -4197,6 +4290,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     };
 
     var elements: UiElementList = .empty;
+    var scroll_offsets: [3]i32 = .{ 0, 0, 0 };
     try buildEditorBottomBar(
         &elements,
         arena.allocator(),
@@ -4204,6 +4298,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
         screenRect(),
         editor,
         theme,
+        &scroll_offsets,
     );
 
     // 2 fixed tools x (bg + graphic) + 3 groups x (header + type (bg +
@@ -4277,6 +4372,158 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
         else => {},
     };
     try std.testing.expectEqual(@as(usize, 6), header_count);
+}
+
+test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = black,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // 12 decorations → window of 8, max offset 4. All others sized 1.
+    const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton" }};
+    var decoration_types: [12]types.DecorationTypeDef = undefined;
+    for (&decoration_types, 0..) |*type_definition, index| {
+        type_definition.* = .{
+            .id = try std.fmt.allocPrint(arena.allocator(), "Ruin {d}", .{index}),
+            .sprite = "ruin_1",
+            .pixel_dims = .{ .x = 512, .y = 512 },
+        };
+    }
+    const item_types = [_]types.ItemTypeDef{.{ .id = "Iron Sword" }};
+    const editor: types.Editor = .{
+        .entity_types = &entity_types,
+        .decoration_types = &decoration_types,
+        .item_types = &item_types,
+    };
+
+    var elements: UiElementList = .empty;
+    var scroll_offsets: [3]i32 = .{ 0, 99, 0 }; // over-scrolled → clamps to 4
+    try buildEditorBottomBar(
+        &elements,
+        arena.allocator(),
+        metrics,
+        screenRect(),
+        editor,
+        theme,
+        &scroll_offsets,
+    );
+
+    // The over-scrolled offset clamps to size - max = 12 - 8 = 4; negative
+    // would clamp to 0.
+    try std.testing.expectEqual(@as(i32, 4), scroll_offsets[1]);
+
+    // Count decoration tool cells: exactly 8 (the window). Tooltips live
+    // on the button_background image, which is emitted immediately BEFORE
+    // its graphic — pair them by position. The window starting at 4 shows
+    // types 4..11 — the FIRST type ("Ruin 0") is NOT among them, the LAST
+    // ("Ruin 11") is.
+    var decoration_cells: usize = 0;
+    var found_first = false;
+    var found_last = false;
+    var previous_tooltip: ?Tooltip = null;
+    for (elements.items) |element| switch (element) {
+        .image => |image| {
+            if (std.mem.eql(u8, image.sprite_id, "decorations/ruin_1")) {
+                decoration_cells += 1;
+                const tooltip = previous_tooltip.?; // bg precedes its graphic
+                const header = tooltip.header.?[0].text;
+                if (std.mem.eql(u8, header, "Ruin 0")) found_first = true;
+                if (std.mem.eql(u8, header, "Ruin 11")) found_last = true;
+            }
+            previous_tooltip = image.tooltip;
+        },
+        else => {
+            previous_tooltip = null;
+        },
+    };
+    try std.testing.expectEqual(@as(usize, 8), decoration_cells);
+    try std.testing.expect(!found_first);
+    try std.testing.expect(found_last);
+
+    // Group detection: pointer over a decoration cell maps to group 1
+    // (Decorations); over a fixed tool or above the bar maps to null.
+    const tool_backgrounds: usize = blk: {
+        var count: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .image => |image| if (std.mem.eql(
+                u8,
+                image.sprite_id,
+                button_background_sprite_id,
+            ) and image.screen_position.y >= types.reference_height - bottom_bar_height)
+            {
+                count += 1;
+            },
+            else => {},
+        };
+        break :blk count;
+    };
+    // 2 fixed + 1 enemy + 8 decorations + 1 item + 3 plus cells.
+    try std.testing.expectEqual(@as(usize, 15), tool_backgrounds);
+
+    // The 5th background cell (index 4) is the first decoration window
+    // cell — cells are emitted in order: Select, Tile, enemy, enemy-plus,
+    // decorations (8), decoration-plus, item, item-plus.
+    var cell_index: usize = 0;
+    var decoration_cell_center: ?types.ScreenPosition = null;
+    for (elements.items) |element| switch (element) {
+        .image => |image| {
+            if (!std.mem.eql(u8, image.sprite_id, button_background_sprite_id)) continue;
+            if (image.screen_position.y < types.reference_height - bottom_bar_height) continue;
+            defer cell_index += 1;
+            if (cell_index == 4) {
+                decoration_cell_center = .{
+                    .x = image.screen_position.x + @divTrunc(image.width, 2),
+                    .y = image.screen_position.y + @divTrunc(image.height, 2),
+                };
+            }
+        },
+        else => {},
+    };
+    try std.testing.expect(decoration_cell_center != null);
+    try std.testing.expectEqual(
+        @as(?usize, 1),
+        editorPaletteGroupAt(editor, elements.items, decoration_cell_center.?),
+    );
+    // Above the bar: null regardless of x.
+    try std.testing.expectEqual(
+        @as(?usize, null),
+        editorPaletteGroupAt(editor, elements.items, .{ .x = decoration_cell_center.?.x, .y = 0 }),
+    );
+    // Fixed tool (first cell): null — not a palette group.
+    var first_cell_center: ?types.ScreenPosition = null;
+    {
+        var index: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .image => |image| {
+                if (std.mem.eql(u8, image.sprite_id, button_background_sprite_id) and
+                    image.screen_position.y >= types.reference_height - bottom_bar_height)
+                {
+                    if (index == 0) {
+                        first_cell_center = .{
+                            .x = image.screen_position.x + @divTrunc(image.width, 2),
+                            .y = image.screen_position.y + @divTrunc(image.height, 2),
+                        };
+                    }
+                    index += 1;
+                }
+            },
+            else => {},
+        };
+    }
+    try std.testing.expect(first_cell_center != null);
+    try std.testing.expectEqual(
+        @as(?usize, null),
+        editorPaletteGroupAt(editor, elements.items, first_cell_center.?),
+    );
 }
 
 /// Top bar: options button flush in the top-left corner, then `ui_gap`,

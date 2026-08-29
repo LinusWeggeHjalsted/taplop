@@ -5931,3 +5931,29 @@ Tests: `scaleToFit` (tall/wide/degenerate) + `buildEditorBottomBar`
 tint + fitted size, frame-0 source rectangle, headers + "+"
 non-blocking). Visual check pending a manual click-through (Editor
 button on the main menu, dev build).
+
+### Editor tool palette scrolling (8-cell window)
+
+Editor palette groups clamp to 8 visible type cells
+(`editor_palette_max_tools`); groups with more types scroll horizontally —
+wheel over the group shifts the window one cell per notch (wheel-up =
+earlier tools, matching the skills panel's wheel-up = earlier rows).
+State: `UiState.editor_palette_scroll: [3]i32` (per group, off the undo
+timeline like `skills_scroll_offset`), clamped in place by the builder
+(authoritative) and on write in the wheel handler. The header and "+" cells
+stay fixed while the window scrolls.
+
+Wheel routing without refs: tool cells carry no `SlotRef` (inert until
+tool selection is wired), so `editorPaletteGroupAt` detects the group
+GEOMETRICALLY — on the editor screen the only `ui/button_background`
+images in the bottom-bar band are the tool cells, emitted in a
+deterministic order (2 fixed tools, then per group `min(size, 8)` type
+cells + one "+"). Segmenting that sequence maps the pointer to its group.
+The emission order is a contract between `buildEditorBottomBar` and
+`editorPaletteGroupAt` (both in ui.zig, adjacent); it will fold into real
+element identity when the tool-selection click wiring lands.
+
+Tests: window clamp (12 decorations → offset 99 clamps to 4; 8 cells
+emitted; window shows types 4..11 — first absent, last present) +
+geometric detection (decoration cell → group 1, fixed tool → null,
+above the bar → null).
