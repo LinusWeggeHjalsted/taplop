@@ -2979,10 +2979,10 @@ pub fn buildEditorLevelTabs(
     const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
 
     // Tabs start right of the top bar's two cells (options + undo joined
-    // by ui_gap in buildTopBar's Row; one more gap separates the tabs).
+    // by ui_gap in buildTopBar's Row; one more gap separates the tabs) and
+    // sit flush against the top of the screen.
     var x = 2 * (slot_size + ui_gap);
-    // 128-high tabs, vertically centered in the top bar strip.
-    const y = (top_bar_height - editor_header_strip_height) / 2;
+    const y: i32 = 0;
 
     for (editor.levels, 0..) |level, index| {
         const label = if (level.name.len > 0)
@@ -4496,11 +4496,10 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     try std.testing.expectEqual(@as(usize, 9), elements.items.len);
 
     // Tabs sit right of the top bar's options + undo cells, 128 high,
-    // vertically centered in the 256-tall top bar strip.
+    // flush against the top of the screen.
     const start_x = 2 * (slot_size + ui_gap);
-    const tab_y = (top_bar_height - editor_header_strip_height) / 2;
     try std.testing.expectEqual(@as(i32, start_x), elements.items[0].nine_slice_panel.screen_position.x);
-    try std.testing.expectEqual(@as(i32, tab_y), elements.items[0].nine_slice_panel.screen_position.y);
+    try std.testing.expectEqual(@as(i32, 0), elements.items[0].nine_slice_panel.screen_position.y);
     try std.testing.expectEqual(@as(i32, 128), elements.items[0].nine_slice_panel.height);
 
     // Per tab: the button carries the payload + action; only the ACTIVE
