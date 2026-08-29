@@ -5791,3 +5791,19 @@ valid (stale index after entity removal → no outline, no crash). New
 by hand). Pure over SessionState + GameState reads → replay-safe by
 construction. Test: 4 cases (emitted square, panel closed, no inspected
 entity, stale index).
+
+### Unified panel-button height constant
+
+The 13 `emitPanelButton` call sites drew their heights from five per-screen
+constants that were all 160 except the main-menu one (256):
+`menu_button_height`, `error_dismiss_button_height`,
+`load_save_button_height`, `credits_button_height`,
+`settings_button_height`. Replaced with one shared
+`ui.panel_button_height = 160` — a single tuning knob for the whole
+panel-button class. Widths stay per-screen (they carry per-screen meaning:
+Import label is long, Dismiss is compact, menu buttons are wide heroes).
+
+Visual change: main-menu + mission end-screen buttons shrink 256 → 160
+(their 96px font keeps the same 32px top/bottom glyph margin the secondary
+buttons have, so the class reads uniform). Everything else is unchanged
+(they were already 160).

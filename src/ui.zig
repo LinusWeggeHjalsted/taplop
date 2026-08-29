@@ -478,8 +478,12 @@ pub const slot_size: i32 = 256;
 pub const swap_button_size: i32 = 128;
 /// Main-menu button — wide stacked buttons on the title screen.
 pub const menu_button_width: i32 = 1024;
-pub const menu_button_height: i32 = 256;
 pub const menu_button_font_size: i32 = 96;
+/// Shared height for every `emitPanelButton` panel-backed button (main
+/// menu, mission end screens, error-popup dismiss, load-save browser,
+/// credits, settings). One tuning knob for the panel-button height class —
+/// per-screen heights proved to be five copies of the same number.
+pub const panel_button_height: i32 = 160;
 /// Secondary indicator icons above the bar (momentum, effects, turn steps).
 pub const small_icon_size: i32 = 128;
 /// Health globe sizes match the downscaled Unity art. The ball sits inside
@@ -1256,7 +1260,6 @@ pub const error_body_font_size: i32 = 56;
 pub const error_header_gap: i32 = 24; // gap below the "Error" header
 pub const error_button_gap: i32 = 32; // gap above the Dismiss button
 pub const error_dismiss_button_width: i32 = 512;
-pub const error_dismiss_button_height: i32 = 160;
 pub const error_dismiss_button_font_size: i32 = 64;
 /// One body text line's height — also the scroll-step unit (arrow keys scroll
 /// 3 lines at a time; see handleAnytimeInput). Kept in sync with
@@ -1338,7 +1341,7 @@ pub fn buildErrorPopup(
         error_header_gap +
         visible_body_height +
         error_button_gap +
-        error_dismiss_button_height;
+        panel_button_height;
 
     const panel_width = content_width + 2 * error_popup_padding;
     const panel_height = content_height + 2 * error_popup_padding;
@@ -1437,7 +1440,7 @@ pub fn buildErrorPopup(
         .x = panel_pos.x + @divTrunc(panel_width - error_dismiss_button_width, 2),
         .y = y,
         .width = error_dismiss_button_width,
-        .height = error_dismiss_button_height,
+        .height = panel_button_height,
     };
     try emitPanelButton(
         elements,
@@ -4062,7 +4065,7 @@ pub fn buildMissionComplete(
     // ── Bottom buttons: Replay Mission in the bottom-left corner, Continue
     //    in the bottom-right corner. Overwrite Clone (when offered) sits
     //    centered between them. ──
-    const buttons_row = screen.placeBottomCenter(menu_button_width, menu_button_height, ui_gap * 4);
+    const buttons_row = screen.placeBottomCenter(menu_button_width, panel_button_height, ui_gap * 4);
     const button_y = buttons_row.y;
     const margin = ui_gap * 4;
     // Replay Mission — bottom-left.
@@ -4070,18 +4073,18 @@ pub fn buildMissionComplete(
         .x = screen.x + margin,
         .y = button_y,
         .width = menu_button_width,
-        .height = menu_button_height,
+        .height = panel_button_height,
     }, "Replay Mission", menu_button_font_size, .replay_mission, button_color);
     // Continue — bottom-right.
     try emitPanelButton(elements, allocator, font_metrics, .{
         .x = screen.x + screen.width - margin - menu_button_width,
         .y = button_y,
         .width = menu_button_width,
-        .height = menu_button_height,
+        .height = panel_button_height,
     }, "Continue", menu_button_font_size, .continue_after_mission, button_color);
     // Overwrite Clone — centered (only when offered).
     if (info.overwrite_offered) {
-        const centered = screen.placeBottomCenter(menu_button_width, menu_button_height, ui_gap * 4);
+        const centered = screen.placeBottomCenter(menu_button_width, panel_button_height, ui_gap * 4);
         try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Clone", menu_button_font_size, .overwrite_clone, button_color);
     }
 }
@@ -4112,7 +4115,7 @@ pub fn buildMissionFail(
     const defeat_label = screen.placeCenter(defeat_label_width, defeat_font_size);
     // Place the label above the button stack, leaving room for the buttons
     // and a gap between the label and the stack.
-    const buttons_above: i32 = 2 * menu_button_height + ui_gap;
+    const buttons_above: i32 = 2 * panel_button_height + ui_gap;
     try elements.append(allocator, .{ .text_label = .{
         .text = "Defeat",
         .screen_position = .{
@@ -4129,7 +4132,7 @@ pub fn buildMissionFail(
         .{ .label = "Exit Mission", .action = .exit_mission },
     };
 
-    const total_height = rowWidth(@intCast(buttons.len), menu_button_height, ui_gap);
+    const total_height = rowWidth(@intCast(buttons.len), panel_button_height, ui_gap);
     const origin = screen
         .placeCenter(menu_button_width, total_height)
         .position();
@@ -4137,9 +4140,9 @@ pub fn buildMissionFail(
     for (buttons, 0..) |menu_button, index| {
         const cell: Rectangle = .{
             .x = origin.x,
-            .y = origin.y + @as(i32, @intCast(index)) * (menu_button_height + ui_gap),
+            .y = origin.y + @as(i32, @intCast(index)) * (panel_button_height + ui_gap),
             .width = menu_button_width,
-            .height = menu_button_height,
+            .height = panel_button_height,
         };
         try emitPanelButton(
             elements,
@@ -4204,7 +4207,7 @@ pub fn buildOptionsMenu(
     buttons[button_count] = .{ .label = "Exit to Main Menu", .action = .exit_to_menu };
     button_count += 1;
 
-    const total_height = rowWidth(@intCast(button_count), menu_button_height, ui_gap);
+    const total_height = rowWidth(@intCast(button_count), panel_button_height, ui_gap);
     const origin = screen
         .placeCenter(menu_button_width, total_height)
         .position();
@@ -4212,9 +4215,9 @@ pub fn buildOptionsMenu(
     for (buttons[0..button_count], 0..) |menu_button, index| {
         const cell: Rectangle = .{
             .x = origin.x,
-            .y = origin.y + @as(i32, @intCast(index)) * (menu_button_height + ui_gap),
+            .y = origin.y + @as(i32, @intCast(index)) * (panel_button_height + ui_gap),
             .width = menu_button_width,
-            .height = menu_button_height,
+            .height = panel_button_height,
         };
         try emitPanelButton(
             elements,
@@ -4260,7 +4263,7 @@ pub fn buildMainMenu(
     buttons[button_count] = .{ .label = "Credits", .action = .open_credits };
     button_count += 1;
 
-    const total_height = rowWidth(@intCast(button_count), menu_button_height, ui_gap);
+    const total_height = rowWidth(@intCast(button_count), panel_button_height, ui_gap);
     // Top-left of the centered stack.
     const origin = screen
         .placeCenter(menu_button_width, total_height)
@@ -4269,9 +4272,9 @@ pub fn buildMainMenu(
     for (buttons[0..button_count], 0..) |menu_button, index| {
         const cell: Rectangle = .{
             .x = origin.x,
-            .y = origin.y + @as(i32, @intCast(index)) * (menu_button_height + ui_gap),
+            .y = origin.y + @as(i32, @intCast(index)) * (panel_button_height + ui_gap),
             .width = menu_button_width,
-            .height = menu_button_height,
+            .height = panel_button_height,
         };
         try emitPanelButton(
             elements,
@@ -4302,7 +4305,6 @@ pub const load_save_scrollbar_gap: i32 = 16;
 /// Import/Back button size (bottom corners). Import label is long, so the
 /// buttons are wider than tall menu buttons but reuse the menu font.
 pub const load_save_button_width: i32 = 768;
-pub const load_save_button_height: i32 = 160;
 
 /// Build the load-save browser: a full-screen modal panel listing
 /// `save_files` (newest first — the slice arrives pre-sorted from
@@ -4347,7 +4349,7 @@ pub fn buildLoadSavePanel(
     // Rows region: from below the header to above the bottom buttons.
     const rows_y = header_y + lineHeight(load_save_header_font_size) + load_save_header_gap;
     const rows_bottom = screen.y + screen.height - load_save_padding -
-        load_save_button_height - load_save_button_gap;
+        panel_button_height - load_save_button_gap;
     const rows_height = rows_bottom - rows_y;
     const row_pitch = load_save_row_height + load_save_row_gap;
     const visible_rows: usize = @intCast(@max(0, @divTrunc(rows_height, row_pitch)));
@@ -4439,7 +4441,7 @@ pub fn buildLoadSavePanel(
     }
 
     // Bottom corners: Back (always) + Import (web only).
-    const button_y = screen.y + screen.height - load_save_padding - load_save_button_height;
+    const button_y = screen.y + screen.height - load_save_padding - panel_button_height;
     try emitPanelButton(
         elements,
         allocator,
@@ -4448,7 +4450,7 @@ pub fn buildLoadSavePanel(
             .x = content_x,
             .y = button_y,
             .width = load_save_button_width,
-            .height = load_save_button_height,
+            .height = panel_button_height,
         },
         "Back",
         menu_button_font_size,
@@ -4464,7 +4466,7 @@ pub fn buildLoadSavePanel(
                 .x = screen.x + screen.width - load_save_padding - load_save_button_width,
                 .y = button_y,
                 .width = load_save_button_width,
-                .height = load_save_button_height,
+                .height = panel_button_height,
             },
             "Import",
             menu_button_font_size,
@@ -4492,7 +4494,6 @@ pub const credits_button_gap: i32 = 48;
 /// Back button size (bottom-left). Matches the load-save Back button so the
 /// two main-menu overlays feel consistent.
 pub const credits_button_width: i32 = 768;
-pub const credits_button_height: i32 = 160;
 
 /// Build the credits screen: a full-screen modal panel with a centered
 /// "Credits" header, three person blocks (name in a larger font above their
@@ -4547,7 +4548,7 @@ pub fn buildCreditsPanel(
     // Vertically center the credit block in the space between the header
     // and the bottom buttons.
     const buttons_top = screen.y + screen.height - credits_padding -
-        credits_button_height - credits_button_gap;
+        panel_button_height - credits_button_gap;
     const block_y = header_y + lineHeight(credits_header_font_size) +
         @divTrunc(buttons_top - (header_y + lineHeight(credits_header_font_size)) - block_height, 2);
     for (credits, 0..) |credit, index| {
@@ -4574,7 +4575,7 @@ pub fn buildCreditsPanel(
     }
 
     // Back button, bottom-left.
-    const button_y = screen.y + screen.height - credits_padding - credits_button_height;
+    const button_y = screen.y + screen.height - credits_padding - panel_button_height;
     try emitPanelButton(
         elements,
         allocator,
@@ -4583,7 +4584,7 @@ pub fn buildCreditsPanel(
             .x = content_x,
             .y = button_y,
             .width = credits_button_width,
-            .height = credits_button_height,
+            .height = panel_button_height,
         },
         "Back",
         menu_button_font_size,
@@ -4605,7 +4606,6 @@ pub const settings_button_gap: i32 = 48;
 /// Back button size (bottom-left). Matches the load-save / credits Back
 /// buttons so the main-menu overlays feel consistent.
 pub const settings_button_width: i32 = 768;
-pub const settings_button_height: i32 = 160;
 /// Toggle button (On/Off) width — sits in the control area of a row.
 pub const settings_toggle_width: i32 = 400;
 /// Camera-zoom choice button width (one of 4).
@@ -4715,7 +4715,7 @@ pub fn buildSettingsPanel(
     const row_count: i32 = 11;
     const rows_total_height = rowWidth(row_count, settings_row_height, settings_row_gap);
     const buttons_top = screen.y + screen.height - settings_padding -
-        settings_button_height - settings_button_gap;
+        panel_button_height - settings_button_gap;
     const rows_y_start = header_y + lineHeight(settings_header_font_size) + settings_header_gap +
         @divTrunc(buttons_top - (header_y + lineHeight(settings_header_font_size) + settings_header_gap) - rows_total_height, 2);
 
@@ -4964,7 +4964,7 @@ pub fn buildSettingsPanel(
     }
 
     // Back button, bottom-left.
-    const button_y = screen.y + screen.height - settings_padding - settings_button_height;
+    const button_y = screen.y + screen.height - settings_padding - panel_button_height;
     try emitPanelButton(
         elements,
         allocator,
@@ -4973,7 +4973,7 @@ pub fn buildSettingsPanel(
             .x = content_x,
             .y = button_y,
             .width = settings_button_width,
-            .height = settings_button_height,
+            .height = panel_button_height,
         },
         "Back",
         menu_button_font_size,
