@@ -6071,3 +6071,40 @@ two item types on one tile), and playtests now carry the loot (was
   'a' char (3,6); playtest level carries the boots stack); focused
   `instantiateEditorLevel` test pins the co-located regroup (2 placements
   same tile → one 2-item stack, first-seen order).
+
+### Editor viewport scene (view projection)
+
+The `.editor` screen now renders the world scene, not just the tool palette.
+`view()` gained an editor world branch (after the level/hub branches — during
+playtest/validate the live `current.level` takes precedence) that projects
+the ACTIVE `EditorLevel` into the same drawable kinds the in-game view
+builds, without ever building a concrete `Level`. See DESIGN → Architecture
+→ Level Editor → Editor viewport rendering.
+
+- **`buildEditorScene` (view.zig):** tiles from `level_tiles`; the player
+  template standing at `player_start` (the `!` marker — you see the actual
+  `player_def` sprite at the spawn); entity placements resolved through
+  `entity_types` (shallow struct copies with the placement position, frame-
+  arena lifetime); decoration placements resolved through `decoration_types`
+  into `buildDecorationPieces` (footprint split + layers); ground-item bags
+  (`groundItemsDrawable`) grouped by position with count = co-located
+  placements; the level-end flag (`levelEndDrawable`, animated banner) as
+  the `=` marker. Health bars are hidden — runtime state, not definition
+  state (max health is inspector info).
+- **Camera: `playerPosition` editor arm** — in edit mode the camera centers
+  on the active level's `player_start` (the editor's "player position"
+  analog; level/hub take precedence during playtest). Pan + zoom apply
+  unchanged through the existing `computeCamera` seam, so right-drag pan +
+  the zoom setting work in the editor for free.
+- **`frame()` sprite_bounds editor arm (main.zig):** populates the backend-
+  derived opaque-art-bbox map from `player_def` + the entity palette types
+  (mission-wide — palette sizes are small, no per-active-level filtering).
+  Feeds health-bar-less overlays + the occlusion-inset rects, which now work
+  in the editor (entities behind decoration overhang get insets — same
+  `buildOcclusionInsets` pass over the unified ground entries).
+- **Tests:** view test drives the full `view()` on a synthetic editor state
+  (6 tiles, player + enemy placement + decoration + 2 co-located item
+  placements + level end) — asserts the camera centers on player_start, the
+  exact unified y-sort order of all 5 ground drawables, sprite ids resolved
+  through the palette, the co-located item bag grouping (ONE bag, count 2),
+  and null health bars.

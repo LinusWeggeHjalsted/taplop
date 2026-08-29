@@ -583,6 +583,25 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
                 sprite_bounds.put(frame_alloc, entity.sprite, bounds) catch
                     @panic("failed to populate sprite_bounds");
             }
+        } else if (history.current_state.editor) |*editor| {
+            // Edit mode: the player template + the entity palette types (the
+            // editor scene projects those sprites). Mission-wide palette
+            // sizes are small, so no per-active-level filtering.
+            if (editor.levels.len > 0) {
+                var templates: std.ArrayList(*const types.Entity) = .empty;
+                templates.append(frame_alloc, &editor.player_def.template) catch
+                    @panic("failed to collect editor entity templates");
+                for (editor.entity_types) |*type_definition| {
+                    templates.append(frame_alloc, &type_definition.template) catch
+                        @panic("failed to collect editor entity templates");
+                }
+                for (templates.items) |entity| {
+                    if (sprite_bounds.contains(entity.sprite)) continue;
+                    const bounds = backend.entitySpriteBounds(frame_alloc, entity.sprite);
+                    sprite_bounds.put(frame_alloc, entity.sprite, bounds) catch
+                        @panic("failed to populate sprite_bounds");
+                }
+            }
         }
         frame_state.previous_view_state = view_mod.view(
             &history.current_state,

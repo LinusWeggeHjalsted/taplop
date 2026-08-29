@@ -445,8 +445,11 @@ yet implemented. Remaining work:
   DONE.md). Still-needed event
   structs: `editor_toggle_inspector` / `editor_set_tool` /
   gradient-override setters. Default level template
-  (`data/default_level.txt`). The `.editor` screen currently renders only
-  the bottom bar — reachable via the main-menu "Editor" button.
+  (`data/default_level.txt`). The `.editor` screen renders the bottom tool
+  palette + the viewport world scene (tiles, palette-resolved placements,
+  `!`/`=` markers; camera centered on the active level's player_start) —
+  reachable via the main-menu "Editor" button. Viewport INPUT (tile paint,
+  placement, selection) is the next slice.
 - **Collapsed editor palette groups — UNDECIDED visuals.** Groups collapse
   to... something that shows there's content to expand. Candidate: overlap
   the first few tools (peeking stack) so the group reads as expandable.

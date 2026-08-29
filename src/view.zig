@@ -28,6 +28,7 @@ const Vector2 = types.Vector2;
 const Rectangle = types.Rectangle;
 const Entity = types.Entity;
 const Level = types.Level;
+const Editor = types.Editor;
 const WeaponTypeDefinition = types.WeaponTypeDefinition;
 const ColorThemeDefinitions = types.ColorThemeDefinitions;
 const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
@@ -147,6 +148,25 @@ pub fn view(
             for (pieces) |entry| ground_entries.append(frame_allocator, entry) catch
                 @panic("failed to append decoration piece entry");
         }
+    } else if (current_state.editor) |*editor| {
+        // Edit mode: project the active EditorLevel into the same drawable
+        // kinds the in-game view builds — no concrete Level exists. (During
+        // playtest/validate the live `current.level` takes precedence above.)
+        // See DESIGN → Architecture → Level Editor → Editor viewport
+        // rendering.
+        buildEditorScene(
+            &tiles,
+            &ground_entries,
+            frame_allocator,
+            editor,
+            active_theme,
+            settings.player_color_index,
+            camera,
+            camera_zoom,
+            render.sprite_bounds,
+            session.animation_clock,
+            settings.animation_fps,
+        );
     }
 
     // Unified y-sort (ascending sort_y, then sort_x) and extract into the
@@ -691,6 +711,14 @@ pub fn playerPosition(current_state: *const GameState) types.Vector2 {
         if (level.entities.len > 0) return level.entities[0].position;
     }
     if (current_state.hub) |hub| return hub.player.position;
+    // Edit mode: the active level's player start is the editor's "player
+    // position" analog, so the camera centers there (pan + zoom apply as
+    // usual). Playtest/validate keep the live level, which takes precedence
+    // above.
+    if (current_state.editor) |editor| {
+        if (editor.levels.len == 0) return .{ .x = 0, .y = 0 };
+        return editor.levels[@min(editor.active_level_index, editor.levels.len - 1)].player_start;
+    }
     return .{ .x = 0, .y = 0 };
 }
 
@@ -2047,6 +2075,97 @@ fn buildInspectedAggroOutline(
 
 /// Append a checkerboard TileDrawable per tile. The two shades come from world
 /// gradient indices 1 and 3, chosen by (x + y) parity.
+/// Editor viewport scene: project the ACTIVE EditorLevel into tiles + ground
+/// entries via the existing drawable builders. The player template stands at
+/// `player_start` (the '!' marker); entity/decoration/item placements resolve
+/// through their palette types to sprites + gradients; the level-end flag is
+/// the '=' marker. Health bars are hidden — runtime state, not definition
+/// state (max health shows in the inspector instead). Ground-item bags group
+/// co-located placements into one drawable with the placement count.
+fn buildEditorScene(
+    tiles: *std.ArrayList(types.TileDrawable),
+    ground_entries: *std.ArrayList(GroundEntry),
+    allocator: std.mem.Allocator,
+    editor: *const Editor,
+    active_theme: types.ActiveColorTheme,
+    player_color_index: u32,
+    camera: types.Camera,
+    camera_zoom: f32,
+    sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds),
+    animation_clock: u64,
+    animation_fps: u32,
+) void {
+    if (editor.levels.len == 0) return;
+    const editor_level = editor.levels[@min(editor.active_level_index, editor.levels.len - 1)];
+
+    buildTiles(tiles, allocator, editor_level.level_tiles, active_theme, camera, camera_zoom);
+
+    if (editor_level.level_end) |end_position| {
+        ground_entries.append(allocator, .{
+            .sort_y = end_position.y,
+            .sort_x = end_position.x,
+            .drawable = .{ .level_end = levelEndDrawable(end_position, active_theme, camera, camera_zoom, animation_clock, animation_fps) },
+        }) catch @panic("failed to append editor level-end entry");
+    }
+
+    // Entities: the player template plus one per placement, resolved through
+    // the entity palette. Shallow struct copies with the placement position
+    // (borrowed strings — rendering only, frame-arena lifetime).
+    {
+        const entity_count = 1 + editor_level.entity_placements.len;
+        const entities = allocator.alloc(Entity, entity_count) catch
+            @panic("failed to alloc editor entity instances");
+        entities[0] = editor.player_def.template;
+        entities[0].position = editor_level.player_start;
+        for (editor_level.entity_placements, 0..) |placement, index| {
+            entities[index + 1] = editor.entity_types[placement.type_id].template;
+            entities[index + 1].position = placement.position;
+        }
+        const entity_ptrs = allocator.alloc(*const Entity, entity_count) catch
+            @panic("failed to alloc editor entity pointer slice");
+        for (entities, 0..) |*entity, index| entity_ptrs[index] = entity;
+        collectEntityEntries(ground_entries, allocator, entity_ptrs, active_theme, player_color_index, camera, camera_zoom, sprite_bounds, false);
+    }
+
+    // Decorations: resolve each placement through its palette type (same
+    // shape as instantiateEditorLevel's concrete decorations).
+    for (editor_level.decoration_placements) |placement| {
+        const type_definition = editor.decoration_types[placement.type_id];
+        const pieces = buildDecorationPieces(.{
+            .name = type_definition.sprite,
+            .position = placement.position,
+            .footprint = type_definition.footprint,
+            .pixel_dims = type_definition.pixel_dims,
+            .color_index = type_definition.color_index,
+            .layers = type_definition.layers,
+        }, active_theme, camera, camera_zoom, allocator);
+        for (pieces) |entry| ground_entries.append(allocator, entry) catch
+            @panic("failed to append editor decoration piece entry");
+    }
+
+    // Ground items: one bag per position; the count is the number of
+    // co-located placements (one item each — level files author single-item
+    // stacks; the editor UI can stack placements on one tile).
+    for (editor_level.item_placements, 0..) |placement, index| {
+        var first_at_position = true;
+        var item_count: u32 = 0;
+        for (editor_level.item_placements, 0..) |other, other_index| {
+            if (other.position.x == placement.position.x and
+                other.position.y == placement.position.y)
+            {
+                if (other_index < index) first_at_position = false;
+                item_count += 1;
+            }
+        }
+        if (!first_at_position) continue;
+        ground_entries.append(allocator, .{
+            .sort_y = placement.position.y,
+            .sort_x = placement.position.x,
+            .drawable = .{ .ground_items = groundItemsDrawable(placement.position, item_count, active_theme, camera, camera_zoom) },
+        }) catch @panic("failed to append editor ground-items entry");
+    }
+}
+
 fn buildTiles(
     list: *std.ArrayList(types.TileDrawable),
     allocator: std.mem.Allocator,
@@ -2351,4 +2470,134 @@ test "inspected entity aggro outline: square centered on the inspected entity" {
         buildInspectedAggroOutline(&overlays, arena, &state_.level.?, &session, dummy_theme, camera, 1.0);
         try std.testing.expectEqual(@as(usize, 0), overlays.items.len);
     }
+}
+
+test "editor scene: viewport projects tiles, placements, and markers" {
+    // The editor world branch (edit mode): no concrete Level exists, so the
+    // active EditorLevel is projected into the same drawables the in-game
+    // view builds — tiles, the player template at player_start (the '!'),
+    // palette-resolved entity/decoration/item placements, the level-end flag
+    // ('='), and no health bars. Ground-item bags group co-located
+    // placements (count = placements at the position).
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{
+            .name = "Skeleton",
+            .sprite = "skeleton_1",
+            .team = 1,
+            .max_health = 20,
+            .current_health = 20,
+        },
+    }};
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 3, .y = 1 },
+    }};
+    const footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "stone_2",
+        .sprite = "stone_2",
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 256, .y = 256 },
+    }};
+    const decoration_placements = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 4, .y = 0 },
+    }};
+    const item_types = [_]types.ItemTypeDef{.{
+        .id = "Boots",
+        .item = .{ .boots = .{ .name = "Boots" } },
+    }};
+    const item_placements = [_]types.ItemPlacement{
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 2 } },
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 2 } }, // co-located
+    };
+    const level_tiles = [_]types.Vector2{
+        .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
+        .{ .x = 3, .y = 1 }, .{ .x = 1, .y = 2 }, .{ .x = 4, .y = 2 },
+    };
+    const levels = [_]types.EditorLevel{.{
+        .name = "Test Level",
+        .level_tiles = &level_tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 4, .y = 2 },
+        .entity_placements = &entity_placements,
+        .decoration_placements = &decoration_placements,
+        .item_placements = &item_placements,
+    }};
+    const editor = types.Editor{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .decoration_types = &decoration_types,
+        .item_types = &item_types,
+        .player_def = .{
+            .id = "Player",
+            .template = .{
+                .name = "Player",
+                .sprite = "player",
+                .team = 0,
+                .max_health = 10,
+                .current_health = 10,
+            },
+        },
+    };
+    const state_ = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = editor,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    var session = state.SessionState{};
+
+    // The camera centers on the active level's player_start (the editor's
+    // "player position" analog): (0,0) -> world-pixel center (128, 128).
+    const camera = computeCamera(&state_, 1.0, null);
+    try std.testing.expectEqual(@as(i32, 128), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 128), camera.position.y);
+
+    const view_state = view(
+        &state_,
+        &session,
+        .{ .input_bindings = &.{} },
+        harness.color_theme_definitions,
+        &harness.weapon_type_definitions,
+        .{
+            .camera = camera,
+            .camera_zoom = 1.0,
+            .event_history = &.{},
+            .level_start_index = null,
+            .current_event_index = 0,
+            .frame_allocator = arena,
+            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .sprite_bounds = .{},
+        },
+    );
+
+    try std.testing.expectEqual(@as(usize, 6), view_state.tiles.len);
+
+    // Ground drawables, unified (sort_y, sort_x) ascending: player (0,0),
+    // decoration piece (0,4), enemy (1,3), item bag (2,1), flag (2,4).
+    // The two co-located item placements group into ONE bag with count 2.
+    try std.testing.expectEqual(@as(usize, 5), view_state.ground_drawables.len);
+    const drawables = view_state.ground_drawables;
+
+    try std.testing.expect(std.mem.eql(u8, "entities/player", drawables[0].entity.base_sprite.sprite_id));
+    try std.testing.expect(drawables[0].entity.health_bar == null); // no health bars in the editor
+    try std.testing.expect(std.mem.eql(u8, "decorations/stone_2", drawables[1].decoration_piece.sprite_id));
+    try std.testing.expect(std.mem.eql(u8, "entities/skeleton_1", drawables[2].entity.base_sprite.sprite_id));
+    try std.testing.expect(drawables[2].entity.health_bar == null);
+    try std.testing.expect(std.mem.eql(u8, "world/ground_items", drawables[3].ground_items.sprite_id));
+    try std.testing.expectEqual(@as(u32, 2), drawables[3].ground_items.item_count);
+    try std.testing.expect(std.mem.eql(u8, "world/flag_pole", drawables[4].level_end.sprite_id));
 }
