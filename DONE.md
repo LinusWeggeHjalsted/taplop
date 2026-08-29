@@ -5967,3 +5967,28 @@ first cell. The row is pure cells now (fixed tools, then per group
 `min(size, 8)` type cells + "+"), which also simplifies the width math
 and the emission-order contract behind `editorPaletteGroupAt` (headers
 were never backgrounds, so detection is unchanged).
+
+### Editor palette group collapse + header/plus restyle
+
+Group headers became interactive: a 128-high panel-backed button
+(`ui/panel` 9-slice + spriteless Button + centered label) in the strip
+above the bar, left-aligned with its group. Clicking toggles
+collapse/expand. Payload routing follows the settings-button pattern:
+`Action.toggle_editor_palette_group` routes through `options_action`,
+the group index rides in `Button.editor_group` → folded in main.zig's
+release dispatch into `AnytimeInput.clicked_editor_group` (same-frame
+payload), and the handler flips
+`UiState.editor_palette_collapsed[group]` (view-side state, off the
+undo timeline).
+
+The per-group "+" moved out of the tool row into the header strip:
+128x128, rightmost over the group (right-aligned with the group's row
+extent, clamped to not overlap the header on narrow groups). Still an
+inert tooltip image — add-new needs the edit-verb handlers.
+
+Collapsed groups emit no type cells and reserve a row footprint equal
+to their header + "+" extent, so headers never overlap; expanded
+groups' footprint is their visible cells. The emission-order contract
+behind `editorPaletteGroupAt` updated: bar-band backgrounds are now 2
+fixed tools + per EXPANDED group `min(size, 8)` cells (collapsed groups
+and the relocated pluses contribute none).

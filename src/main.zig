@@ -134,6 +134,12 @@ fn update(
                         if (button.setting_ref) |sref| {
                             player_input.anytime.clicked_setting = sref;
                         }
+                        // Editor palette group headers: the group index
+                        // rides in `anytime.clicked_editor_group` alongside
+                        // the `.toggle_editor_palette_group` action.
+                        if (button.editor_group) |group_index| {
+                            player_input.anytime.clicked_editor_group = group_index;
+                        }
                         // Release sound: generic button-up for actions without a
                         // specific sound. Actions WITH a specific sound (skip,
                         // swap_weapons, panel toggles) get their sound from the

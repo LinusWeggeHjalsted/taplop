@@ -138,6 +138,12 @@ pub const Action = enum {
     // field + which value) rides in `AnytimeInput.clicked_setting`. See
     // DESIGN → UI Framework → Settings screen.
     change_setting,
+    // An editor palette group header was clicked (expand/collapse the
+    // group). The group index rides in `AnytimeInput.clicked_editor_group`.
+    // Routed through `options_action` so one handler serves it regardless
+    // of screen state. See DESIGN → Architecture → Level Editor → Editor
+    // UI layout (tool palette).
+    toggle_editor_palette_group,
 };
 
 /// One per editable `Settings` scalar field. Drives the settings-screen

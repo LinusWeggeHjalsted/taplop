@@ -994,6 +994,16 @@ pub fn handleAnytimeInput(
                 if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
                 markSettingsDirty(history);
             },
+            // Editor palette group header (expand/collapse). The group
+            // index rode in `anytime.clicked_editor_group`. View-side
+            // display state — a direct UiState write, off the undo timeline
+            // (same class as the panel-toggle flags).
+            .toggle_editor_palette_group => {
+                const group_index = anytime.clicked_editor_group orelse return;
+                if (group_index >= 3) return;
+                history.session.ui_state.editor_palette_collapsed[group_index] =
+                    !history.session.ui_state.editor_palette_collapsed[group_index];
+            },
             else => {},
         }
     }
@@ -1008,7 +1018,12 @@ pub fn handleAnytimeInput(
         // `ui.editorPaletteGroupAt`.
         const editor_palette_group: ?usize = if (history.current_state.screen == .editor)
             if (history.current_state.editor) |editor|
-                ui.editorPaletteGroupAt(editor, ui_elements, pointer_position)
+                ui.editorPaletteGroupAt(
+                    editor,
+                    history.session.ui_state.editor_palette_collapsed,
+                    ui_elements,
+                    pointer_position,
+                )
             else
                 null
         else
