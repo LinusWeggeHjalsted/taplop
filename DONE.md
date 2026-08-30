@@ -6584,3 +6584,59 @@ Tests: the click test rewritten for toggles (group on/off/on, singleton
 toggle, decoration toggle, empty ground), handler +3 (prune + remap
 keeps entries pointing at the same placements; selected tile + decoration
 prunes; the decoration-placement cascade erases a selected tile).
+
+### Editor no-op click gate + click planners (DONE)
+
+**The problem.** Every editor click fired its `player_input_event`
+orchestrator unconditionally; when the click would change nothing (tile
+paint on an existing tile, place on the '!' / '=', same-type retype with
+nothing to clear, right-click delete on empty ground) the handler returned
+early but the event was already recorded — `current_event_index` advanced
+and `maybeRecordIdlePoint` marked a new idle point whose before/after
+states were identical. Undo consumed a step and nothing visibly changed
+(polluted undo history); a future replay viewer would step through dead
+points too.
+
+**The fix: pure per-tool planners shared by handler + input.** Each click's
+sub-event list is computed by a pure `pub fn planEditor*Actions` in
+event_handlers.zig (`TilePaint` / `EntityPlacement` /
+`DecorationPlacement` / `ItemPlacement` / `Delete` — plus the private
+`activeEditorLevel` guard helper and `singleEditorDeletePlan` for the
+delete cascade's early-return arms). The five `processEvent` handler arms
+became thin wrappers (`pushEvents(plan)` — `pushEvents` no-ops an empty
+plan, the defensive path for crafted or pre-change logs that contain a
+redundant click). The input layer (`handleIdleInput`'s editor branch +
+`handleRightClickEditorDelete`'s release arm) computes the same plan and
+fires the player action only when it is nonempty — a no-op click never
+reaches the event log. Single source of truth on both sides (no
+duplicated no-op conditions to drift); no TOCTOU because idle input and
+the drain run against unmutated state in the same frame. This is the same
+convention as `isPlayerMoveLegal` (AGENTS → Testing discipline: the
+decision logic lives in one directly-testable pure helper; fire site and
+handler are thin over it). Design: DESIGN → Level Editor → Active-tool
+model ("No-op clicks never fire").
+
+**Exact-duplicate decoration placements no-op.** Placing a decoration
+where an identical placement (same type + same anchor → identical
+footprint) already exists previously pushed `editor_place_decoration` —
+an invisible duplicate stacking into the saved mission (right-click
+delete removes all covering duplicates at once, so it self-healed
+visually, but the file carried the dup). The decoration planner now
+treats the duplicate as already satisfying the placement: no place, and
+the duplicate is excluded from the overlap deletes; other overlapping
+decorations still get deleted, so a duplicate-plus-overlap click cleans
+up the overlap without churning the duplicate (net final state identical
+to the old delete-and-replace, minus the redundant events).
+
+Tests: planner unit tests pinning every no-op condition at the plan level
+(paint-on-existing-tile, entity/item on '!' / '=', same-type occupant +
+present tile, same-type occupant + missing tile still placing the tile,
+delete on '!' / '=' / empty ground, decoration exact-duplicate empty +
+different-type-same-anchor replacing); handler tests for the duplicate
+rule (pure no-op; duplicate kept + overlapping other deleted); input-gate
+tests (a no-op tool click and a no-op right-click push nothing, positive
+controls fire). The pre-existing
+`handleRightClickEditorDelete: clean click fires…` gesture test was
+retargeted — it pressed on the player-start tile of an empty level, which
+is now (correctly) a no-op; its "fires" case now targets a bare tile and
+processes both the action and its sub-event. All 365 tests pass.

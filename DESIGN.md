@@ -1899,6 +1899,19 @@ right-drag stays the camera pan (movement-threshold disambiguation, the
 `PendingRightClick` gesture state shared with the level-screen inspect).
 Progressive delete: clicking an occupied tile removes the occupant first,
 the tile goes on the next click.
+
+**No-op clicks never fire.** Each tool's click effect is computed by a pure
+planner (`planEditor*Actions` in event_handlers.zig — one per tool, plus
+`planEditorDeleteActions` for the right-click) from the live editor state:
+the handler pushes the plan, and the input layer fires the player action
+only when the plan is nonempty. A click that would change nothing (paint
+on an existing tile, place on the '!' / '=', a same-type retype with
+nothing to clear, delete on empty ground) therefore never reaches the
+event log — no undo step, no replay step. The planners are the single
+source of truth for both sides (no duplicated no-op conditions to drift)
+and directly unit-testable; the handlers keep the empty-plan return as the
+defensive path for crafted or pre-change session logs (they replay
+gracefully — a redundant event in a log is harmless, it just plans empty).
 - **Selection tool (plain click LANDED):** a click TOGGLES its group in
   the selection set (heterogeneous `Selectable` set — see below; a
   click's group is everything that toggles together: the tile INCLUDING
@@ -1959,7 +1972,11 @@ the tile goes on the next click.
   TILE-FREE, so covered tiles are ERASED rather than placed. The '!' / '='
   under ANY footprint tile → no-op; tiles under footprint tiles → erased
   along with the entities / ground items standing on them; other
-  decorations whose footprints overlap ANY footprint tile → deleted;
+  decorations whose footprints overlap ANY footprint tile → deleted; an
+  EXACT DUPLICATE (same type at the same anchor → identical footprint)
+  already satisfies the placement — the plan skips the place and the
+  duplicate's own delete, so no duplicate ever stacks (the other overlap
+  deletes still fire);
   then the placement lands. `editor_place_decoration` enforces footprint
   exclusivity (panic if any covered world tile carries a level tile, an
   entity/item placement, or another decoration's footprint at place time

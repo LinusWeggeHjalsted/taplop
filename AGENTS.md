@@ -303,7 +303,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (`Harness.init` + `newHistory` + `runToIdle`); test build only.
 - `src/event_handlers.zig` — `processEvent` (the one-event dispatch + all
   handler arms) and handler-internal helpers (entity accessors, gear mutators,
-  move-highlight refresh, prepared-skill cancel, AI min-range, tile tiebreak).
+  move-highlight refresh, prepared-skill cancel, AI min-range, tile tiebreak)
+  + the pure editor click planners (`planEditor*Actions`) shared with the
+  input-side no-op gate.
   Also the event-pushing utilities (`pushEvents`/`pushPlayerSkillUse`) shared
   with the input handlers. (The round-trip reconstruction test lives in
   `main.zig`.)

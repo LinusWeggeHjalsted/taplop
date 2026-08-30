@@ -688,13 +688,15 @@ fn clearPendingRightClick(
 /// Editor-screen right-click: the TOOL-INDEPENDENT delete. One clean
 /// click deletes ONE thing at the pressed tile — priority: enemy / ground
 /// item occupant, then covering decoration, then the bare tile; the '!' /
-/// '=' and empty ground are no-ops. All of that policy lives in the pushed
-/// `player_delete_editor_at` handler (state-computed); this handler only
-/// owns the gesture. Same movement-threshold lifecycle as the inspect
-/// right-click: a right-drag pans the camera (handleCameraPan) and cancels
-/// the pending; a clean release fires the delete. The pressed tile is
-/// recorded at PRESS (a clean click acts on what was under the pointer
-/// when the button went down).
+/// '=' and empty ground are no-ops. All of that policy lives in the shared
+/// planner (`planEditorDeleteActions` — the pushed handler consumes the
+/// same plan); this handler owns the gesture + the no-op gate (a click
+/// whose plan is empty never fires, so it can't become an undo/replay
+/// step). Same movement-threshold lifecycle as the inspect right-click: a
+/// right-drag pans the camera (handleCameraPan) and cancels the pending; a
+/// clean release fires the delete. The pressed tile is recorded at PRESS
+/// (a clean click acts on what was under the pointer when the button went
+/// down).
 pub fn handleRightClickEditorDelete(
     history: *GameStateHistory,
     pointer: input.PointerInput,
@@ -753,9 +755,17 @@ pub fn handleRightClickEditorDelete(
         if (ui_state.pending_right_click) |press| {
             switch (press) {
                 .editor_delete => |pending| {
-                    event_handlers.pushPlayerAction(current, .{ .player_delete_editor_at = .{
-                        .position = pending.position,
-                    } }, history.current_arena.allocator());
+                    // No-op gate: empty ground / the '!' / '=' never fire
+                    // (see planEditorDeleteActions).
+                    if (current.editor) |*editor| {
+                        const arena = history.current_arena.allocator();
+                        const plan = event_handlers.planEditorDeleteActions(editor, pending.position, arena);
+                        if (plan.len > 0) {
+                            event_handlers.pushPlayerAction(current, .{ .player_delete_editor_at = .{
+                                .position = pending.position,
+                            } }, arena);
+                        }
+                    }
                 },
                 else => {},
             }
@@ -1498,25 +1508,51 @@ pub fn handleIdleInput(
     // the top of handleIdleInput, so the keyboard path acts at the tile
     // cursor too. Landed tools: tile paint + enemy + decoration + ground
     // item placement + selection; all tools have viewport input now.
+    // No-op gate: a click whose plan is empty never fires the player
+    // action — it would land in the event log as an undo/replay step that
+    // changes nothing (see the planEditor*Actions planners / DESIGN →
+    // Level Editor → Active-tool model).
     if (current.screen == .editor) {
         if (idle.tile_clicked) |clicked_position| {
-            switch (history.session.ui_state.editor_active_tool) {
-                .tile => event_handlers.pushPlayerAction(current, .{ .player_paint_editor_tile = .{
-                    .position = clicked_position,
-                } }, allocator),
-                .entity_type => |type_id| event_handlers.pushPlayerAction(current, .{ .player_place_editor_entity = .{
-                    .type_id = type_id,
-                    .position = clicked_position,
-                } }, allocator),
-                .decoration_type => |type_id| event_handlers.pushPlayerAction(current, .{ .player_place_editor_decoration = .{
-                    .type_id = type_id,
-                    .position = clicked_position,
-                } }, allocator),
-                .item_type => |type_id| event_handlers.pushPlayerAction(current, .{ .player_place_editor_item = .{
-                    .type_id = type_id,
-                    .position = clicked_position,
-                } }, allocator),
-                .select => selectAtEditorPosition(history, clicked_position),
+            if (current.editor) |*editor| {
+                switch (history.session.ui_state.editor_active_tool) {
+                    .tile => {
+                        const plan = event_handlers.planEditorTilePaintActions(editor, clicked_position, allocator);
+                        if (plan.len > 0) {
+                            event_handlers.pushPlayerAction(current, .{ .player_paint_editor_tile = .{
+                                .position = clicked_position,
+                            } }, allocator);
+                        }
+                    },
+                    .entity_type => |type_id| {
+                        const plan = event_handlers.planEditorEntityPlacementActions(editor, type_id, clicked_position, allocator);
+                        if (plan.len > 0) {
+                            event_handlers.pushPlayerAction(current, .{ .player_place_editor_entity = .{
+                                .type_id = type_id,
+                                .position = clicked_position,
+                            } }, allocator);
+                        }
+                    },
+                    .decoration_type => |type_id| {
+                        const plan = event_handlers.planEditorDecorationPlacementActions(editor, type_id, clicked_position, allocator);
+                        if (plan.len > 0) {
+                            event_handlers.pushPlayerAction(current, .{ .player_place_editor_decoration = .{
+                                .type_id = type_id,
+                                .position = clicked_position,
+                            } }, allocator);
+                        }
+                    },
+                    .item_type => |type_id| {
+                        const plan = event_handlers.planEditorItemPlacementActions(editor, type_id, clicked_position, allocator);
+                        if (plan.len > 0) {
+                            event_handlers.pushPlayerAction(current, .{ .player_place_editor_item = .{
+                                .type_id = type_id,
+                                .position = clicked_position,
+                            } }, allocator);
+                        }
+                    },
+                    .select => selectAtEditorPosition(history, clicked_position),
+                }
             }
         }
         return;
@@ -2161,7 +2197,8 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
     defer backing.deinit();
     var harness = @import("test_harness.zig").Harness.init(backing.allocator());
 
-    const levels = [_]types.EditorLevel{.{}};
+    const delete_tiles = [_]types.Vector2{.{ .x = 1, .y = 0 }};
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &delete_tiles }};
     var history = harness.newHistory(.{
         .screen = .editor,
         .event_stack = &.{},
@@ -2180,12 +2217,15 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
     const camera = types.Camera{ .position = .{ .x = 128, .y = 128 } };
     const viewport = input.ViewportSize{ .width = 3840, .height = 2160 };
     const center = types.ScreenPosition{ .x = 1920, .y = 1080 };
+    // One tile right of center → tile (1,0), a bare deletable tile (the
+    // plan is nonempty; the input gate no-ops empty ground).
+    const over_tile = types.ScreenPosition{ .x = center.x + 256, .y = center.y };
 
-    // Clean press + release at the center → the delete event is pushed
-    // (targeting the pressed tile (0,0)).
+    // Clean press + release over the tile → the delete event is pushed
+    // (targeting the pressed tile (1,0)).
     handleRightClickEditorDelete(
         &history,
-        .{ .right_pressed = true, .position = center },
+        .{ .right_pressed = true, .position = over_tile },
         &.{},
         camera,
         1.0,
@@ -2194,7 +2234,7 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
     try std.testing.expect(history.session.ui_state.pending_right_click != null);
     handleRightClickEditorDelete(
         &history,
-        .{ .right_released = true, .position = center },
+        .{ .right_released = true, .position = over_tile },
         &.{},
         camera,
         1.0,
@@ -2202,12 +2242,15 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
     );
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try std.testing.expectEqual(
-        types.Vector2{ .x = 0, .y = 0 },
+        types.Vector2{ .x = 1, .y = 0 },
         history.current_state.event_stack[0].player_input_event.player_delete_editor_at.position,
     );
     try std.testing.expect(history.session.ui_state.pending_right_click == null);
 
-    // Process it (no-op on empty ground — nothing pushed as sub-events).
+    // Process it: the player action's handler pushes the tile-erase
+    // sub-event; processing that empties the stack.
+    @import("event_handlers.zig").processEvent(&history);
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     @import("event_handlers.zig").processEvent(&history);
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 

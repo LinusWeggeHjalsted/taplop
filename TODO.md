@@ -477,6 +477,12 @@ yet implemented. Remaining work:
   (shift-click add-vs-replace distinction, marquee, and the selection
   OPERATIONS — move / delete, the reason selection exists). All tools
   have left-click input + cursor previews + the right-click delete.
+  No-op clicks never fire: each tool's effect is computed by a pure
+  planner (`planEditor*Actions`, event_handlers.zig) shared by the
+  handler + the input layer, and an empty plan means no player action
+  (no undo/replay pollution); exact-duplicate decoration placements
+  (same type + anchor) no-op too. See DESIGN → Level Editor →
+  Active-tool model; history in DONE.md.
 - **Hook up the add-level "+" (top bar, right of the level tabs).** The
   square panel cell renders (inert, tooltip "Add level"); wiring it is a
   `player_add_editor_level` orchestrator + the `editor_add_level` handler

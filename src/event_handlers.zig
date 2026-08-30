@@ -10,7 +10,9 @@
 //! Handler-internal helpers (entity accessors, gear mutators, move-highlight
 //! refresh, prepared-skill cancel, AI min-range, tile tiebreak) live here too,
 //! alongside the event-pushing utilities (`pushEvents`/`pushPlayerSkillUse`)
-//! shared with the input handlers.
+//! shared with the input handlers, and the pure editor click planners
+//! (`planEditor*Actions`) shared by the editor handlers and the input-side
+//! no-op gate (see DESIGN → Level Editor → Active-tool model).
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -1139,409 +1141,42 @@ fn handlePlayerInputEvent(
                 .level_index = set.level_index,
             } } }}, allocator);
         },
-        // Tile-paint click (tile tool active): one click = one tile. The
-        // effect is computed from state — no-op when a tile is already there
-        // (entities / items / the '!' / '=' sit ON tiles, so they never
-        // block a paint); every decoration whose footprint covers the
-        // position is deleted first (replace, not block — see DESIGN →
-        // Decorations & Footprint → Placement invariant). Pushes are
-        // LIFO-drained, so this array (set_tile first, deletes in ascending
-        // placement order) processes the deletes in DESCENDING order —
-        // required for index-stable removal, since deleting a lower index
-        // first would shift the pending higher ones — and the tile lands
-        // last. All sub-events land between two idle points, so one undo
-        // reverts the whole click.
+        // Tile-paint click: thin over the shared planner (the input layer
+        // fires only nonempty plans — see planEditorTilePaintActions).
         .player_paint_editor_tile => |paint| {
             if (current.editor) |*editor| {
-                if (editor.levels.len == 0) return;
-                const level_index = editor.active_level_index;
-                if (level_index >= editor.levels.len) return;
-                const level = &editor.levels[level_index];
-                for (level.level_tiles) |tile| {
-                    if (tile.x == paint.position.x and tile.y == paint.position.y) return;
-                }
-                var pushes: std.ArrayList(Event) = .empty;
-                pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
-                    .level_index = @intCast(level_index),
-                    .position = paint.position,
-                    .is_floor = true,
-                } } }) catch @panic("failed to allocate editor paint events");
-                for (level.decoration_placements, 0..) |placement, placement_index| {
-                    const type_definition = editor.decoration_types[placement.type_id];
-                    if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, paint.position, allocator)) {
-                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
-                            .level_index = @intCast(level_index),
-                            .placement_index = @intCast(placement_index),
-                        } } }) catch @panic("failed to allocate editor paint events");
-                    }
-                }
-                pushEvents(current, pushes.items, allocator);
+                pushEvents(current, planEditorTilePaintActions(editor, paint.position, allocator), allocator);
             }
         },
-        // Enemy-tool click: place the palette entity type at the clicked
-        // tile, replacing whatever occupies it. Occupant semantics (see
-        // DESIGN → Level Editor → Active-tool model, placement tools):
-        // player start / level end → no-op (never overwritten); covering
-        // decorations → deleted; missing tile → placed; co-located ground
-        // item → deleted; existing enemy → RETYPED in place
-        // (`editor_set_entity_placement_type`, not delete + re-place —
-        // stable identity); empty tile → placed. Pushes are LIFO-drained:
-        // the array below is the REVERSE of the processing order, and the
-        // per-kind delete lists are pushed ascending so they process
-        // descending (index-stable removal). All sub-events share one idle
-        // point — one undo reverts the whole click. The one-thing-per-tile
-        // invariant is enforced at `editor_place_entity` (panic on an
-        // occupied tile) — the deletes above run first, so the place lands
-        // on a cleared tile.
+        // Enemy-tool click: thin over the shared planner (the input layer
+        // fires only nonempty plans — see planEditorEntityPlacementActions).
         .player_place_editor_entity => |place| {
             if (current.editor) |*editor| {
-                if (editor.levels.len == 0) return;
-                const level_index = editor.active_level_index;
-                if (level_index >= editor.levels.len) return;
-                const level = &editor.levels[level_index];
-
-                // The '!' and '=' are singletons, movable never deletable —
-                // an enemy never overwrites them.
-                if (level.player_start.x == place.position.x and
-                    level.player_start.y == place.position.y) return;
-                if (level.level_end) |level_end_position| {
-                    if (level_end_position.x == place.position.x and
-                        level_end_position.y == place.position.y) return;
-                }
-
-                // Is a tile already there (the enemy stands ON a tile — a
-                // missing one is placed as part of the click)?
-                var tile_present = false;
-                for (level.level_tiles) |tile| {
-                    if (tile.x == place.position.x and tile.y == place.position.y) {
-                        tile_present = true;
-                        break;
-                    }
-                }
-
-                // Co-located entity placement, if any (invariant: at most
-                // one — the loop degrades gracefully if that's ever
-                // violated).
-                var occupant_index: ?usize = null;
-                for (level.entity_placements, 0..) |placement, placement_index| {
-                    if (placement.position.x == place.position.x and
-                        placement.position.y == place.position.y)
-                    {
-                        occupant_index = placement_index;
-                        break;
-                    }
-                }
-
-                var pushes: std.ArrayList(Event) = .empty;
-                if (occupant_index == null) {
-                    pushes.append(allocator, .{ .editor_event = .{ .editor_place_entity = .{
-                        .level_index = @intCast(level_index),
-                        .type_id = place.type_id,
-                        .position = place.position,
-                    } } }) catch @panic("failed to allocate editor place events");
-                } else if (level.entity_placements[occupant_index.?].type_id != place.type_id) {
-                    // Same type already there — nothing to do (no no-op
-                    // undo step).
-                    pushes.append(allocator, .{ .editor_event = .{ .editor_set_entity_placement_type = .{
-                        .level_index = @intCast(level_index),
-                        .placement_index = @intCast(occupant_index.?),
-                        .type_id = place.type_id,
-                    } } }) catch @panic("failed to allocate editor place events");
-                }
-                if (!tile_present) {
-                    pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
-                        .level_index = @intCast(level_index),
-                        .position = place.position,
-                        .is_floor = true,
-                    } } }) catch @panic("failed to allocate editor place events");
-                }
-                for (level.item_placements, 0..) |placement, placement_index| {
-                    if (placement.position.x == place.position.x and
-                        placement.position.y == place.position.y)
-                    {
-                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_item_placement = .{
-                            .level_index = @intCast(level_index),
-                            .placement_index = @intCast(placement_index),
-                        } } }) catch @panic("failed to allocate editor place events");
-                    }
-                }
-                for (level.decoration_placements, 0..) |placement, placement_index| {
-                    const type_definition = editor.decoration_types[placement.type_id];
-                    if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, place.position, allocator)) {
-                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
-                            .level_index = @intCast(level_index),
-                            .placement_index = @intCast(placement_index),
-                        } } }) catch @panic("failed to allocate editor place events");
-                    }
-                }
-                pushEvents(current, pushes.items, allocator);
+                pushEvents(current, planEditorEntityPlacementActions(editor, place.type_id, place.position, allocator), allocator);
             }
         },
-        // Decoration-tool click: place the palette decoration with its
-        // ANCHOR tile (bottom-most-then-left-most footprint tile) at the
-        // clicked position, replacing whatever occupies the footprint's
-        // world tiles. The INVERSE of the tile/enemy placements — a
-        // decoration's footprint tiles are TILE-FREE, so covered tiles are
-        // ERASED rather than placed: the '!' / '=' under ANY footprint tile
-        // → no-op (never overwritten); tiles under footprint tiles →
-        // erased, along with the entities / ground items standing on them;
-        // other decorations whose footprints overlap ANY footprint tile →
-        // deleted; then the placement lands (`editor_place_decoration`
-        // enforces footprint-tile exclusivity). Pushes are LIFO-drained:
-        // the array is the REVERSE of processing order, and each delete
-        // list is pushed ascending so it processes descending
-        // (index-stable). All sub-events share one idle point — one undo
-        // reverts the whole click.
+        // Decoration-tool click: thin over the shared planner (the input
+        // layer fires only nonempty plans — see
+        // planEditorDecorationPlacementActions).
         .player_place_editor_decoration => |place| {
             if (current.editor) |*editor| {
-                if (editor.levels.len == 0) return;
-                const level_index = editor.active_level_index;
-                if (level_index >= editor.levels.len) return;
-                if (place.type_id >= editor.decoration_types.len) return;
-                const type_definition = editor.decoration_types[place.type_id];
-                const footprint_tiles = loaders.decorationFootprintWorldTiles(
-                    type_definition.footprint,
-                    place.position,
-                    allocator,
-                );
-                if (footprint_tiles.len == 0) return;
-                const level = &editor.levels[level_index];
-
-                // The '!' / '=' under any footprint tile → never overwritten.
-                for (footprint_tiles) |tile| {
-                    if (tile.x == level.player_start.x and tile.y == level.player_start.y) return;
-                    if (level.level_end) |level_end_position| {
-                        if (tile.x == level_end_position.x and tile.y == level_end_position.y) return;
-                    }
-                }
-
-                var pushes: std.ArrayList(Event) = .empty;
-                pushes.append(allocator, .{ .editor_event = .{ .editor_place_decoration = .{
-                    .level_index = @intCast(level_index),
-                    .type_id = place.type_id,
-                    .position = place.position,
-                } } }) catch @panic("failed to allocate editor place events");
-                // Erase every covered tile that has one.
-                for (footprint_tiles) |tile| {
-                    if (functions.tileListContains(level.level_tiles, tile)) {
-                        pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
-                            .level_index = @intCast(level_index),
-                            .position = tile,
-                            .is_floor = false,
-                        } } }) catch @panic("failed to allocate editor place events");
-                    }
-                }
-                // Entities + items standing on covered tiles (they sit ON
-                // tiles, so this fires for covered tiles that had one —
-                // looping all footprint tiles is robust either way).
-                for (level.entity_placements, 0..) |placement, placement_index| {
-                    if (functions.tileListContains(footprint_tiles, placement.position)) {
-                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_entity_placement = .{
-                            .level_index = @intCast(level_index),
-                            .placement_index = @intCast(placement_index),
-                        } } }) catch @panic("failed to allocate editor place events");
-                    }
-                }
-                for (level.item_placements, 0..) |placement, placement_index| {
-                    if (functions.tileListContains(footprint_tiles, placement.position)) {
-                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_item_placement = .{
-                            .level_index = @intCast(level_index),
-                            .placement_index = @intCast(placement_index),
-                        } } }) catch @panic("failed to allocate editor place events");
-                    }
-                }
-                // Overlapping other decorations: an existing footprint
-                // covering any of the new footprint's world tiles (set
-                // intersection — checking this direction is complete).
-                for (level.decoration_placements, 0..) |placement, placement_index| {
-                    const other_definition = editor.decoration_types[placement.type_id];
-                    var overlaps = false;
-                    for (footprint_tiles) |tile| {
-                        if (loaders.decorationFootprintCovers(other_definition.footprint, placement.position, tile, allocator)) {
-                            overlaps = true;
-                            break;
-                        }
-                    }
-                    if (overlaps) {
-                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
-                            .level_index = @intCast(level_index),
-                            .placement_index = @intCast(placement_index),
-                        } } }) catch @panic("failed to allocate editor place events");
-                    }
-                }
-                pushEvents(current, pushes.items, allocator);
+                pushEvents(current, planEditorDecorationPlacementActions(editor, place.type_id, place.position, allocator), allocator);
             }
         },
-        // Ground-item-tool click: place the palette item type at the
-        // clicked tile — the same occupant replacement as the enemy tool,
-        // with the roles swapped for the two placement kinds: an existing
-        // ground item is RETYPED in place (`editor_set_item_placement_type`)
-        // and an enemy on the tile is DELETED (the item can't coexist with
-        // it). The '!' / '=' → no-op; covering decorations → deleted; a
-        // missing tile → placed (the item sits ON a tile). Pushes are
-        // LIFO-drained: the array is the REVERSE of processing order, and
-        // each delete list is pushed ascending so it processes descending
-        // (index-stable). All sub-events share one idle point — one undo
-        // reverts the whole click.
+        // Ground-item-tool click: thin over the shared planner (the input
+        // layer fires only nonempty plans — see
+        // planEditorItemPlacementActions).
         .player_place_editor_item => |place| {
             if (current.editor) |*editor| {
-                if (editor.levels.len == 0) return;
-                const level_index = editor.active_level_index;
-                if (level_index >= editor.levels.len) return;
-                if (place.type_id >= editor.item_types.len) return;
-                const level = &editor.levels[level_index];
-
-                // The '!' and '=' are singletons, movable never deletable —
-                // a ground item never overwrites them.
-                if (level.player_start.x == place.position.x and
-                    level.player_start.y == place.position.y) return;
-                if (level.level_end) |level_end_position| {
-                    if (level_end_position.x == place.position.x and
-                        level_end_position.y == place.position.y) return;
-                }
-
-                var tile_present = false;
-                for (level.level_tiles) |tile| {
-                    if (tile.x == place.position.x and tile.y == place.position.y) {
-                        tile_present = true;
-                        break;
-                    }
-                }
-
-                // Co-located item placement, if any (invariant: at most
-                // one — the loop degrades gracefully if that's ever
-                // violated).
-                var occupant_index: ?usize = null;
-                for (level.item_placements, 0..) |placement, placement_index| {
-                    if (placement.position.x == place.position.x and
-                        placement.position.y == place.position.y)
-                    {
-                        occupant_index = placement_index;
-                        break;
-                    }
-                }
-
-                var pushes: std.ArrayList(Event) = .empty;
-                if (occupant_index == null) {
-                    pushes.append(allocator, .{ .editor_event = .{ .editor_place_item = .{
-                        .level_index = @intCast(level_index),
-                        .type_id = place.type_id,
-                        .position = place.position,
-                    } } }) catch @panic("failed to allocate editor place events");
-                } else if (level.item_placements[occupant_index.?].type_id != place.type_id) {
-                    // Same type already there — nothing to do (no no-op
-                    // undo step).
-                    pushes.append(allocator, .{ .editor_event = .{ .editor_set_item_placement_type = .{
-                        .level_index = @intCast(level_index),
-                        .placement_index = @intCast(occupant_index.?),
-                        .type_id = place.type_id,
-                    } } }) catch @panic("failed to allocate editor place events");
-                }
-                if (!tile_present) {
-                    pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
-                        .level_index = @intCast(level_index),
-                        .position = place.position,
-                        .is_floor = true,
-                    } } }) catch @panic("failed to allocate editor place events");
-                }
-                // An enemy on the tile is deleted (an item can't coexist
-                // with it — one thing per placed tile).
-                for (level.entity_placements, 0..) |placement, placement_index| {
-                    if (placement.position.x == place.position.x and
-                        placement.position.y == place.position.y)
-                    {
-                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_entity_placement = .{
-                            .level_index = @intCast(level_index),
-                            .placement_index = @intCast(placement_index),
-                        } } }) catch @panic("failed to allocate editor place events");
-                    }
-                }
-                for (level.decoration_placements, 0..) |placement, placement_index| {
-                    const type_definition = editor.decoration_types[placement.type_id];
-                    if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, place.position, allocator)) {
-                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
-                            .level_index = @intCast(level_index),
-                            .placement_index = @intCast(placement_index),
-                        } } }) catch @panic("failed to allocate editor place events");
-                    }
-                }
-                pushEvents(current, pushes.items, allocator);
+                pushEvents(current, planEditorItemPlacementActions(editor, place.type_id, place.position, allocator), allocator);
             }
         },
-        // Editor right-click: the tool-independent delete — ONE thing per
-        // click, priority: enemy / ground-item occupant (at most one by
-        // the one-thing-per-tile invariant; an entity wins if both are
-        // somehow present), then covering decoration(s) (all of them —
-        // consistent with every other editor flow; overlapping footprints
-        // are a degenerate hand-authored case), then the bare tile. The
-        // '!' / '=' are never deleted (checked first — they sit ON tiles,
-        // so the bare-tile erase must not fire under them), and empty
-        // ground is a no-op. One delete = one undo step by construction.
+        // Editor right-click delete: thin over the shared planner (the
+        // input layer fires only nonempty plans — see
+        // planEditorDeleteActions).
         .player_delete_editor_at => |delete| {
             if (current.editor) |*editor| {
-                if (editor.levels.len == 0) return;
-                const level_index = editor.active_level_index;
-                if (level_index >= editor.levels.len) return;
-                const level = &editor.levels[level_index];
-
-                // The '!' / '=' are singletons, movable never deletable —
-                // and their tiles survive too.
-                if (level.player_start.x == delete.position.x and
-                    level.player_start.y == delete.position.y) return;
-                if (level.level_end) |level_end_position| {
-                    if (level_end_position.x == delete.position.x and
-                        level_end_position.y == delete.position.y) return;
-                }
-
-                // Occupant first (progressive delete: the item/enemy goes,
-                // the tile survives for the next click).
-                for (level.entity_placements, 0..) |placement, placement_index| {
-                    if (placement.position.x == delete.position.x and
-                        placement.position.y == delete.position.y)
-                    {
-                        pushEvents(current, &.{.{ .editor_event = .{ .editor_delete_entity_placement = .{
-                            .level_index = @intCast(level_index),
-                            .placement_index = @intCast(placement_index),
-                        } } }}, allocator);
-                        return;
-                    }
-                }
-                for (level.item_placements, 0..) |placement, placement_index| {
-                    if (placement.position.x == delete.position.x and
-                        placement.position.y == delete.position.y)
-                    {
-                        pushEvents(current, &.{.{ .editor_event = .{ .editor_delete_item_placement = .{
-                            .level_index = @intCast(level_index),
-                            .placement_index = @intCast(placement_index),
-                        } } }}, allocator);
-                        return;
-                    }
-                }
-                // Covering decoration(s).
-                var covering: std.ArrayList(Event) = .empty;
-                for (level.decoration_placements, 0..) |placement, placement_index| {
-                    const type_definition = editor.decoration_types[placement.type_id];
-                    if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, delete.position, allocator)) {
-                        covering.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
-                            .level_index = @intCast(level_index),
-                            .placement_index = @intCast(placement_index),
-                        } } }) catch @panic("failed to allocate editor delete events");
-                    }
-                }
-                if (covering.items.len > 0) {
-                    // Ascending array → descending processing (index-stable).
-                    pushEvents(current, covering.items, allocator);
-                    return;
-                }
-                // Bare tile.
-                if (functions.tileListContains(level.level_tiles, delete.position)) {
-                    pushEvents(current, &.{.{ .editor_event = .{ .editor_set_tile = .{
-                        .level_index = @intCast(level_index),
-                        .position = delete.position,
-                        .is_floor = false,
-                    } } }}, allocator);
-                }
-                // Nothing there — no-op.
+                pushEvents(current, planEditorDeleteActions(editor, delete.position, allocator), allocator);
             }
         },
         .player_overwrite_clone => {
@@ -1847,6 +1482,450 @@ pub fn isSkillLearned(learned_skills: []const types.SkillId, skill_id: types.Ski
         if (learned == skill_id) return true;
     }
     return false;
+}
+
+/// The active level, or null when the editor has no levels or the active
+/// index is out of range — the click planners no-op on null (defensive:
+/// live input can't produce it, crafted session logs can).
+fn activeEditorLevel(editor: *const types.Editor) ?*const types.EditorLevel {
+    if (editor.levels.len == 0) return null;
+    if (editor.active_level_index >= editor.levels.len) return null;
+    return &editor.levels[editor.active_level_index];
+}
+
+/// Pure planners for the editor click orchestrators (tile paint, the three
+/// placement tools, the right-click delete). Each computes the sub-event list
+/// its click would push from the live editor state: the handler pushes the
+/// plan, and the input layer fires the player action only when the plan is
+/// nonempty — a click that would change nothing never reaches the event log,
+/// so it can't create an undo or replay step (see DESIGN → Level Editor →
+/// Active-tool model). One planner per tool is the single source of truth for
+/// both sides (no duplicated no-op conditions to drift); the handlers keep
+/// the empty-plan return as the defensive path for crafted or pre-change
+/// session logs. Directly unit-testable (the AGENTS → Testing discipline
+/// bool-helper convention).
+///
+/// Tile-paint click (tile tool active): one click = one tile. The effect is
+/// computed from state — no-op (empty plan) when a tile is already there
+/// (entities / items / the '!' / '=' sit ON tiles, so they never block a
+/// paint); every decoration whose footprint covers the position is deleted
+/// first (replace, not block — see DESIGN → Decorations & Footprint →
+/// Placement invariant). The array is ordered for LIFO draining (set_tile
+/// first, deletes in ascending placement order → the deletes process in
+/// DESCENDING order — required for index-stable removal, since deleting a
+/// lower index first would shift the pending higher ones — and the tile
+/// lands last). All sub-events land between two idle points, so one undo
+/// reverts the whole click.
+pub fn planEditorTilePaintActions(
+    editor: *const types.Editor,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+    for (level.level_tiles) |tile| {
+        if (tile.x == position.x and tile.y == position.y) return &.{};
+    }
+    var pushes: std.ArrayList(Event) = .empty;
+    pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
+        .level_index = @intCast(editor.active_level_index),
+        .position = position,
+        .is_floor = true,
+    } } }) catch @panic("failed to allocate editor paint plan");
+    for (level.decoration_placements, 0..) |placement, placement_index| {
+        const type_definition = editor.decoration_types[placement.type_id];
+        if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
+                .level_index = @intCast(editor.active_level_index),
+                .placement_index = @intCast(placement_index),
+            } } }) catch @panic("failed to allocate editor paint plan");
+        }
+    }
+    return pushes.items;
+}
+
+/// Enemy-tool click: place the palette entity type at the clicked tile,
+/// replacing whatever occupies it. Occupant semantics (see DESIGN → Level
+/// Editor → Active-tool model, placement tools): player start / level end →
+/// no-op (never overwritten); covering decorations → deleted; missing tile
+/// → placed; co-located ground item → deleted; existing enemy → RETYPED in
+/// place (`editor_set_entity_placement_type`, not delete + re-place — stable
+/// identity); same type already there → nothing to do (the plan is empty
+/// only when the tile is also present and nothing needs clearing). The
+/// array is ordered for LIFO draining (the REVERSE of processing order; the
+/// per-kind delete lists ascend so they process descending — index-stable
+/// removal). All sub-events share one idle point — one undo reverts the
+/// whole click. The one-thing-per-tile invariant is enforced at
+/// `editor_place_entity` (panic on an occupied tile) — the deletes above run
+/// first, so the place lands on a cleared tile.
+pub fn planEditorEntityPlacementActions(
+    editor: *const types.Editor,
+    type_id: u32,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    if (type_id >= editor.entity_types.len) return &.{};
+    const level = activeEditorLevel(editor) orelse return &.{};
+
+    // The '!' and '=' are singletons, movable never deletable — an enemy
+    // never overwrites them.
+    if (level.player_start.x == position.x and level.player_start.y == position.y) return &.{};
+    if (level.level_end) |level_end_position| {
+        if (level_end_position.x == position.x and level_end_position.y == position.y) return &.{};
+    }
+
+    // Is a tile already there (the enemy stands ON a tile — a missing one
+    // is placed as part of the click)?
+    var tile_present = false;
+    for (level.level_tiles) |tile| {
+        if (tile.x == position.x and tile.y == position.y) {
+            tile_present = true;
+            break;
+        }
+    }
+
+    // Co-located entity placement, if any (invariant: at most one — the
+    // loop degrades gracefully if that's ever violated).
+    var occupant_index: ?usize = null;
+    for (level.entity_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and
+            placement.position.y == position.y)
+        {
+            occupant_index = placement_index;
+            break;
+        }
+    }
+
+    var pushes: std.ArrayList(Event) = .empty;
+    if (occupant_index == null) {
+        pushes.append(allocator, .{ .editor_event = .{ .editor_place_entity = .{
+            .level_index = @intCast(editor.active_level_index),
+            .type_id = type_id,
+            .position = position,
+        } } }) catch @panic("failed to allocate editor place plan");
+    } else if (level.entity_placements[occupant_index.?].type_id != type_id) {
+        // Same type already there — no branch taken (nothing to do).
+        pushes.append(allocator, .{ .editor_event = .{ .editor_set_entity_placement_type = .{
+            .level_index = @intCast(editor.active_level_index),
+            .placement_index = @intCast(occupant_index.?),
+            .type_id = type_id,
+        } } }) catch @panic("failed to allocate editor place plan");
+    }
+    if (!tile_present) {
+        pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
+            .level_index = @intCast(editor.active_level_index),
+            .position = position,
+            .is_floor = true,
+        } } }) catch @panic("failed to allocate editor place plan");
+    }
+    for (level.item_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and
+            placement.position.y == position.y)
+        {
+            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_item_placement = .{
+                .level_index = @intCast(editor.active_level_index),
+                .placement_index = @intCast(placement_index),
+            } } }) catch @panic("failed to allocate editor place plan");
+        }
+    }
+    for (level.decoration_placements, 0..) |placement, placement_index| {
+        const type_definition = editor.decoration_types[placement.type_id];
+        if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
+                .level_index = @intCast(editor.active_level_index),
+                .placement_index = @intCast(placement_index),
+            } } }) catch @panic("failed to allocate editor place plan");
+        }
+    }
+    return pushes.items;
+}
+
+/// Decoration-tool click: place the palette decoration with its ANCHOR tile
+/// (bottom-most-then-left-most footprint tile) at the clicked position,
+/// replacing whatever occupies the footprint's world tiles. The INVERSE of
+/// the tile/enemy placements — a decoration's footprint tiles are TILE-FREE,
+/// so covered tiles are ERASED rather than placed: the '!' / '=' under ANY
+/// footprint tile → no-op (never overwritten); an EXACT DUPLICATE (same type
+/// at the same anchor → identical footprint) already satisfies the
+/// placement — the plan skips the place and the duplicate's own delete, so
+/// no duplicate ever stacks (other overlapping decorations still get
+/// deleted); tiles under footprint tiles → erased, along with the entities /
+/// ground items standing on them; other decorations whose footprints overlap
+/// ANY footprint tile → deleted; then the placement lands
+/// (`editor_place_decoration` enforces footprint-tile exclusivity). The
+/// array is ordered for LIFO draining (the REVERSE of processing order; each
+/// delete list ascends so it processes descending — index-stable). All
+/// sub-events share one idle point — one undo reverts the whole click.
+pub fn planEditorDecorationPlacementActions(
+    editor: *const types.Editor,
+    type_id: u32,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    if (type_id >= editor.decoration_types.len) return &.{};
+    const type_definition = editor.decoration_types[type_id];
+    const footprint_tiles = loaders.decorationFootprintWorldTiles(
+        type_definition.footprint,
+        position,
+        allocator,
+    );
+    if (footprint_tiles.len == 0) return &.{};
+    const level = activeEditorLevel(editor) orelse return &.{};
+
+    // The '!' / '=' under any footprint tile → never overwritten.
+    for (footprint_tiles) |tile| {
+        if (tile.x == level.player_start.x and tile.y == level.player_start.y) return &.{};
+        if (level.level_end) |level_end_position| {
+            if (tile.x == level_end_position.x and tile.y == level_end_position.y) return &.{};
+        }
+    }
+
+    // An exact duplicate (same type at the same anchor) already satisfies
+    // the placement — skip the place and the duplicate's own delete; the
+    // other arms below still fire (overlap cleanup, tile erasure).
+    var duplicate_present = false;
+    for (level.decoration_placements) |placement| {
+        if (placement.type_id == type_id and
+            placement.position.x == position.x and
+            placement.position.y == position.y)
+        {
+            duplicate_present = true;
+            break;
+        }
+    }
+
+    var pushes: std.ArrayList(Event) = .empty;
+    if (!duplicate_present) {
+        pushes.append(allocator, .{ .editor_event = .{ .editor_place_decoration = .{
+            .level_index = @intCast(editor.active_level_index),
+            .type_id = type_id,
+            .position = position,
+        } } }) catch @panic("failed to allocate editor place plan");
+    }
+    // Erase every covered tile that has one.
+    for (footprint_tiles) |tile| {
+        if (functions.tileListContains(level.level_tiles, tile)) {
+            pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
+                .level_index = @intCast(editor.active_level_index),
+                .position = tile,
+                .is_floor = false,
+            } } }) catch @panic("failed to allocate editor place plan");
+        }
+    }
+    // Entities + items standing on covered tiles (they sit ON tiles, so
+    // this fires for covered tiles that had one — looping all footprint
+    // tiles is robust either way).
+    for (level.entity_placements, 0..) |placement, placement_index| {
+        if (functions.tileListContains(footprint_tiles, placement.position)) {
+            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_entity_placement = .{
+                .level_index = @intCast(editor.active_level_index),
+                .placement_index = @intCast(placement_index),
+            } } }) catch @panic("failed to allocate editor place plan");
+        }
+    }
+    for (level.item_placements, 0..) |placement, placement_index| {
+        if (functions.tileListContains(footprint_tiles, placement.position)) {
+            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_item_placement = .{
+                .level_index = @intCast(editor.active_level_index),
+                .placement_index = @intCast(placement_index),
+            } } }) catch @panic("failed to allocate editor place plan");
+        }
+    }
+    // Overlapping other decorations: an existing footprint covering any of
+    // the new footprint's world tiles (set intersection — checking this
+    // direction is complete). The exact duplicate is skipped (it IS the
+    // placement being satisfied).
+    for (level.decoration_placements, 0..) |placement, placement_index| {
+        if (duplicate_present and
+            placement.type_id == type_id and
+            placement.position.x == position.x and
+            placement.position.y == position.y) continue;
+        const other_definition = editor.decoration_types[placement.type_id];
+        var overlaps = false;
+        for (footprint_tiles) |tile| {
+            if (loaders.decorationFootprintCovers(other_definition.footprint, placement.position, tile, allocator)) {
+                overlaps = true;
+                break;
+            }
+        }
+        if (overlaps) {
+            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
+                .level_index = @intCast(editor.active_level_index),
+                .placement_index = @intCast(placement_index),
+            } } }) catch @panic("failed to allocate editor place plan");
+        }
+    }
+    return pushes.items;
+}
+
+/// Ground-item-tool click: place the palette item type at the clicked tile
+/// — the same occupant replacement as the enemy tool, with the roles swapped
+/// for the two placement kinds: an existing ground item is RETYPED in place
+/// (`editor_set_item_placement_type`) and an enemy on the tile is DELETED
+/// (the item can't coexist with it). The '!' / '=' → no-op; covering
+/// decorations → deleted; a missing tile → placed (the item sits ON a
+/// tile). The array is ordered for LIFO draining (the REVERSE of processing
+/// order; each delete list ascends so it processes descending — index-
+/// stable). All sub-events share one idle point — one undo reverts the
+/// whole click.
+pub fn planEditorItemPlacementActions(
+    editor: *const types.Editor,
+    type_id: u32,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    if (type_id >= editor.item_types.len) return &.{};
+    const level = activeEditorLevel(editor) orelse return &.{};
+
+    // The '!' and '=' are singletons, movable never deletable — a ground
+    // item never overwrites them.
+    if (level.player_start.x == position.x and level.player_start.y == position.y) return &.{};
+    if (level.level_end) |level_end_position| {
+        if (level_end_position.x == position.x and level_end_position.y == position.y) return &.{};
+    }
+
+    var tile_present = false;
+    for (level.level_tiles) |tile| {
+        if (tile.x == position.x and tile.y == position.y) {
+            tile_present = true;
+            break;
+        }
+    }
+
+    // Co-located item placement, if any (invariant: at most one — the loop
+    // degrades gracefully if that's ever violated).
+    var occupant_index: ?usize = null;
+    for (level.item_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and
+            placement.position.y == position.y)
+        {
+            occupant_index = placement_index;
+            break;
+        }
+    }
+
+    var pushes: std.ArrayList(Event) = .empty;
+    if (occupant_index == null) {
+        pushes.append(allocator, .{ .editor_event = .{ .editor_place_item = .{
+            .level_index = @intCast(editor.active_level_index),
+            .type_id = type_id,
+            .position = position,
+        } } }) catch @panic("failed to allocate editor place plan");
+    } else if (level.item_placements[occupant_index.?].type_id != type_id) {
+        // Same type already there — no branch taken (nothing to do).
+        pushes.append(allocator, .{ .editor_event = .{ .editor_set_item_placement_type = .{
+            .level_index = @intCast(editor.active_level_index),
+            .placement_index = @intCast(occupant_index.?),
+            .type_id = type_id,
+        } } }) catch @panic("failed to allocate editor place plan");
+    }
+    if (!tile_present) {
+        pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
+            .level_index = @intCast(editor.active_level_index),
+            .position = position,
+            .is_floor = true,
+        } } }) catch @panic("failed to allocate editor place plan");
+    }
+    // An enemy on the tile is deleted (an item can't coexist with it — one
+    // thing per placed tile).
+    for (level.entity_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and
+            placement.position.y == position.y)
+        {
+            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_entity_placement = .{
+                .level_index = @intCast(editor.active_level_index),
+                .placement_index = @intCast(placement_index),
+            } } }) catch @panic("failed to allocate editor place plan");
+        }
+    }
+    for (level.decoration_placements, 0..) |placement, placement_index| {
+        const type_definition = editor.decoration_types[placement.type_id];
+        if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+            pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
+                .level_index = @intCast(editor.active_level_index),
+                .placement_index = @intCast(placement_index),
+            } } }) catch @panic("failed to allocate editor place plan");
+        }
+    }
+    return pushes.items;
+}
+
+/// One-event plan for the delete cascade's early-return arms.
+fn singleEditorDeletePlan(
+    editor_event: events.EditorEvent,
+    allocator: std.mem.Allocator,
+) []const Event {
+    return allocator.dupe(Event, &.{.{ .editor_event = editor_event }}) catch
+        @panic("failed to allocate editor delete plan");
+}
+
+/// Editor right-click: the tool-independent delete — ONE thing per click,
+/// priority: enemy / ground-item occupant (at most one by the one-thing-per-
+/// tile invariant; an entity wins if both are somehow present), then
+/// covering decoration(s) (all of them — consistent with every other editor
+/// flow; overlapping footprints are a degenerate hand-authored case), then
+/// the bare tile. The '!' / '=' are never deleted (checked first — they sit
+/// ON tiles, so the bare-tile erase must not fire under them), and empty
+/// ground is a no-op (empty plan). One delete = one undo step by
+/// construction.
+pub fn planEditorDeleteActions(
+    editor: *const types.Editor,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+
+    // The '!' / '=' are singletons, movable never deletable — and their
+    // tiles survive too.
+    if (level.player_start.x == position.x and level.player_start.y == position.y) return &.{};
+    if (level.level_end) |level_end_position| {
+        if (level_end_position.x == position.x and level_end_position.y == position.y) return &.{};
+    }
+
+    // Occupant first (progressive delete: the item/enemy goes, the tile
+    // survives for the next click).
+    for (level.entity_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and
+            placement.position.y == position.y)
+        {
+            return singleEditorDeletePlan(.{ .editor_delete_entity_placement = .{
+                .level_index = @intCast(editor.active_level_index),
+                .placement_index = @intCast(placement_index),
+            } }, allocator);
+        }
+    }
+    for (level.item_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and
+            placement.position.y == position.y)
+        {
+            return singleEditorDeletePlan(.{ .editor_delete_item_placement = .{
+                .level_index = @intCast(editor.active_level_index),
+                .placement_index = @intCast(placement_index),
+            } }, allocator);
+        }
+    }
+    // Covering decoration(s): ascending array → descending processing
+    // (index-stable).
+    var covering: std.ArrayList(Event) = .empty;
+    for (level.decoration_placements, 0..) |placement, placement_index| {
+        const type_definition = editor.decoration_types[placement.type_id];
+        if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+            covering.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
+                .level_index = @intCast(editor.active_level_index),
+                .placement_index = @intCast(placement_index),
+            } } }) catch @panic("failed to allocate editor delete plan");
+        }
+    }
+    if (covering.items.len > 0) return covering.items;
+    // Bare tile.
+    if (functions.tileListContains(level.level_tiles, position)) {
+        return singleEditorDeletePlan(.{ .editor_set_tile = .{
+            .level_index = @intCast(editor.active_level_index),
+            .position = position,
+            .is_floor = false,
+        } }, allocator);
+    }
+    // Nothing there — no-op.
+    return &.{};
 }
 
 /// Process a single event from the stack. Applies the event to the current

@@ -1,15 +1,18 @@
 //! Editor handler tests. Covers the editor input path — level-tab clicks
 //! (`player_set_editor_level` → `editor_set_active_level`), which ride the
-//! undo timeline like every GameState mutation. The framing-event round
-//! trip (open → playtest → end → close against the real beginnings
-//! mission) lives in main.zig. See DESIGN → Architecture → Level Editor.
+//! undo timeline like every GameState mutation, plus the pure click
+//! planners and the input-side no-op gate. The framing-event round trip
+//! (open → playtest → end → close against the real beginnings mission)
+//! lives in main.zig. See DESIGN → Architecture → Level Editor.
 
 const std = @import("std");
 const testing = std.testing;
 const types = @import("types.zig");
 const events = @import("events.zig");
 const state = @import("state.zig");
+const input = @import("input.zig");
 const event_handlers = @import("event_handlers.zig");
+const input_handlers = @import("input_handlers.zig");
 const test_harness = @import("test_harness.zig");
 
 const Harness = test_harness.Harness;
@@ -1353,4 +1356,297 @@ test "player_place_editor_decoration: cascaded tile erases prune selected tiles"
     // The covered tile (5,5) was erased + pruned; the clear tile survives.
     try testing.expectEqual(@as(usize, 1), selection.items.len);
     try testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, selection.items[0].tile);
+}
+
+// --- Editor click planners (pure, directly tested) -------------------------
+// The planners are the single source of truth for a click's effect: the
+// handler pushes the plan, the input layer fires only nonempty plans (a
+// no-op click never reaches the event log — no undo/replay step). These
+// tests pin the no-op conditions at the plan level; the handler tests above
+// cover the pushed-plan behavior end to end.
+
+test "planEditorTilePaintActions: existing tile with no covering decoration is an empty plan" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+
+    const tiles = [_]types.Vector2{.{ .x = 1, .y = 1 }};
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
+    const editor = types.Editor{ .levels = &levels };
+
+    try testing.expectEqual(
+        @as(usize, 0),
+        event_handlers.planEditorTilePaintActions(&editor, .{ .x = 1, .y = 1 }, backing.allocator()).len,
+    );
+    // Empty ground plans the paint.
+    try testing.expectEqual(
+        @as(usize, 1),
+        event_handlers.planEditorTilePaintActions(&editor, .{ .x = 2, .y = 1 }, backing.allocator()).len,
+    );
+}
+
+test "planEditorEntityPlacementActions: no-op conditions are empty plans" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+
+    // Same-type enemy on a present tile, nothing else to clear.
+    const tiles = [_]types.Vector2{.{ .x = 2, .y = 2 }};
+    const placements = [_]types.EntityPlacement{.{
+        .type_id = 1,
+        .position = .{ .x = 2, .y = 2 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .entity_placements = &placements,
+    }};
+    const editor = placementTestEditor(&levels);
+
+    try testing.expectEqual(
+        @as(usize, 0),
+        event_handlers.planEditorEntityPlacementActions(&editor, 1, .{ .x = 2, .y = 2 }, backing.allocator()).len,
+    );
+    // The '!' and '=' are never overwritten.
+    const marker_levels = [_]types.EditorLevel{.{
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 4, .y = 4 },
+    }};
+    const marker_editor = placementTestEditor(&marker_levels);
+    try testing.expectEqual(
+        @as(usize, 0),
+        event_handlers.planEditorEntityPlacementActions(&marker_editor, 0, .{ .x = 0, .y = 0 }, backing.allocator()).len,
+    );
+    try testing.expectEqual(
+        @as(usize, 0),
+        event_handlers.planEditorEntityPlacementActions(&marker_editor, 0, .{ .x = 4, .y = 4 }, backing.allocator()).len,
+    );
+}
+
+test "planEditorEntityPlacementActions: same-type occupant on a missing tile still places the tile" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+
+    // Same-type enemy but NO tile under it — the click is not a no-op (the
+    // tile is placed as part of it).
+    const placements = [_]types.EntityPlacement{.{
+        .type_id = 1,
+        .position = .{ .x = 2, .y = 2 },
+    }};
+    const levels = [_]types.EditorLevel{.{ .entity_placements = &placements }};
+    const editor = placementTestEditor(&levels);
+
+    const plan = event_handlers.planEditorEntityPlacementActions(
+        &editor,
+        1,
+        .{ .x = 2, .y = 2 },
+        backing.allocator(),
+    );
+    try testing.expectEqual(@as(usize, 1), plan.len);
+    try testing.expect(plan[0].editor_event.editor_set_tile.is_floor);
+}
+
+test "planEditorItemPlacementActions: same-type item on a present tile is an empty plan" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+
+    const tiles = [_]types.Vector2{.{ .x = 2, .y = 2 }};
+    const placements = [_]types.ItemPlacement{.{
+        .type_id = 1,
+        .position = .{ .x = 2, .y = 2 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .item_placements = &placements,
+    }};
+    const editor = itemTestEditor(&levels);
+
+    try testing.expectEqual(
+        @as(usize, 0),
+        event_handlers.planEditorItemPlacementActions(&editor, 1, .{ .x = 2, .y = 2 }, backing.allocator()).len,
+    );
+}
+
+test "planEditorDecorationPlacementActions: exact duplicate is an empty plan" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+
+    // The same wide decoration at the same anchor — the placement is
+    // already satisfied, nothing else to change.
+    const existing = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 5, .y = 5 },
+    }};
+    const levels = [_]types.EditorLevel{.{ .decoration_placements = &existing }};
+    const editor = decorationTestEditor(&levels);
+
+    try testing.expectEqual(
+        @as(usize, 0),
+        event_handlers.planEditorDecorationPlacementActions(&editor, 0, .{ .x = 5, .y = 5 }, backing.allocator()).len,
+    );
+    // A different type at the same anchor still replaces (delete + place).
+    try testing.expectEqual(
+        @as(usize, 2),
+        event_handlers.planEditorDecorationPlacementActions(&editor, 1, .{ .x = 5, .y = 5 }, backing.allocator()).len,
+    );
+}
+
+test "player_place_editor_decoration: exact duplicate click is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const existing = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 5, .y = 5 },
+    }};
+    const levels = [_]types.EditorLevel{.{ .decoration_placements = &existing }};
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
+            .type_id = 0,
+            .position = .{ .x = 5, .y = 5 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // No duplicate stacked — the one placement is the original.
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.decoration_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 5, .y = 5 }, level.decoration_placements[0].position);
+}
+
+test "player_place_editor_decoration: duplicate kept, other overlapping decoration deleted" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The exact duplicate (wide, type 0, anchor (7,7)) plus a single-tile
+    // decoration (type 1) overlapping its anchor tile, plus a clear single
+    // elsewhere.
+    const existing = [_]types.DecorationPlacement{
+        .{ .type_id = 0, .position = .{ .x = 7, .y = 7 } },
+        .{ .type_id = 1, .position = .{ .x = 8, .y = 7 } },
+        .{ .type_id = 1, .position = .{ .x = 0, .y = 9 } },
+    };
+    const levels = [_]types.EditorLevel{.{ .decoration_placements = &existing }};
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
+            .type_id = 0,
+            .position = .{ .x = 7, .y = 7 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The overlapping single is gone; the duplicate survives as the one
+    // wide placement; the clear single is untouched.
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 2), level.decoration_placements.len);
+    try testing.expectEqual(@as(u32, 0), level.decoration_placements[0].type_id);
+    try testing.expectEqual(types.Vector2{ .x = 7, .y = 7 }, level.decoration_placements[0].position);
+    try testing.expectEqual(@as(u32, 1), level.decoration_placements[1].type_id);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 9 }, level.decoration_placements[1].position);
+}
+
+test "planEditorDeleteActions: '!' / '=' / empty ground are empty plans" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+
+    const levels = [_]types.EditorLevel{.{
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 4, .y = 4 },
+    }};
+    const editor = types.Editor{ .levels = &levels };
+
+    try testing.expectEqual(
+        @as(usize, 0),
+        event_handlers.planEditorDeleteActions(&editor, .{ .x = 0, .y = 0 }, backing.allocator()).len,
+    );
+    try testing.expectEqual(
+        @as(usize, 0),
+        event_handlers.planEditorDeleteActions(&editor, .{ .x = 4, .y = 4 }, backing.allocator()).len,
+    );
+    try testing.expectEqual(
+        @as(usize, 0),
+        event_handlers.planEditorDeleteActions(&editor, .{ .x = 9, .y = 9 }, backing.allocator()).len,
+    );
+}
+
+// --- Input-side no-op gate --------------------------------------------------
+// A click whose plan is empty must never fire the player action — a fired
+// no-op lands in the event log and becomes an undo/replay step that
+// changes nothing (the pollution this gate exists to prevent).
+
+test "editor tool click with an empty plan fires no event" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Tile tool on an existing tile (no covering decoration) → empty plan.
+    const tiles = [_]types.Vector2{.{ .x = 1, .y = 1 }};
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
+    var history = harness.newHistory(editorStateWith(.{ .levels = &levels }));
+    runToIdle(&history);
+    history.session.ui_state.editor_active_tool = .tile;
+
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Positive control: empty ground fires the paint.
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, .{});
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+}
+
+test "editor right-click delete with an empty plan fires no event" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Empty level: a right-click at (5,5) has nothing to delete.
+    const empty_levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{ .levels = &empty_levels }));
+    runToIdle(&history);
+    history.session.ui_state.pending_right_click = .{ .editor_delete = .{
+        .position = .{ .x = 5, .y = 5 },
+        .press_position = .{ .x = 100, .y = 100 },
+    } };
+
+    const pointer = input.PointerInput{ .right_released = true };
+    input_handlers.handleRightClickEditorDelete(
+        &history,
+        pointer,
+        &.{},
+        .{ .position = .{ .x = 0, .y = 0 } },
+        1.0,
+        .{ .width = 1280, .height = 720 },
+    );
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    // The pending gesture is consumed either way.
+    try testing.expect(history.session.ui_state.pending_right_click == null);
+
+    // Positive control: a bare tile at the pressed position fires.
+    const tiles = [_]types.Vector2{.{ .x = 5, .y = 5 }};
+    const tiled_levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
+    var tiled_history = harness.newHistory(editorStateWith(.{ .levels = &tiled_levels }));
+    runToIdle(&tiled_history);
+    tiled_history.session.ui_state.pending_right_click = .{ .editor_delete = .{
+        .position = .{ .x = 5, .y = 5 },
+        .press_position = .{ .x = 100, .y = 100 },
+    } };
+
+    input_handlers.handleRightClickEditorDelete(
+        &tiled_history,
+        pointer,
+        &.{},
+        .{ .position = .{ .x = 0, .y = 0 } },
+        1.0,
+        .{ .width = 1280, .height = 720 },
+    );
+    try testing.expectEqual(@as(usize, 1), tiled_history.current_state.event_stack.len);
 }
