@@ -7611,3 +7611,13 @@ Six adjustments before the utility-skill picker:
   caret, 128-alpha selection) — the theme-lightest accents the backend
   previously used would have vanished on the light frame. Platform seam
   touched → web compile-checked (WEB OK).
+
+### Inspector section-break spacers (author feedback, round 3)
+
+One blank row unit before every section header except the first (a
+`spacer` entry kind, rendered as nothing) — the section break now reads
+as a break instead of an adjacent differently-styled strip. The spacer
+rides the unit grid, so scrolling stays line-aligned. Total content: 45
+→ 49 units (max scroll 39). Test windows recomputed (the failures were
+all expectation arithmetic — the Stats/Gear headers landing in or out of
+windows by one unit).

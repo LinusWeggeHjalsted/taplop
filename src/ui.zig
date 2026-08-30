@@ -1255,12 +1255,12 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
     };
 
     // Scroll 10 — the Stats section's four numeric fields are the window
-    // (with the Weapons header at the tail): decimal-formatted values.
+    // (the section-break spacer fills the tail): decimal-formatted values.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 10 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Max health", "Defense", "Speed", "Aggro range", "Weapons" });
+        try expectInspectorLabels(&elements, &.{ "Stats", "Max health", "Defense", "Speed", "Aggro range" });
         try std.testing.expectEqualStrings("20", findTextField(&elements, .{ .entity_stat = .max_health }).?.text);
         try std.testing.expectEqualStrings("0", findTextField(&elements, .{ .entity_stat = .defense }).?.text);
         try std.testing.expectEqualStrings("1", findTextField(&elements, .{ .entity_stat = .speed }).?.text);
@@ -1354,14 +1354,14 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // Units: Identity 9, Stats 9 (18), Weapons header 18. Scroll 18 shows:
-    // the Weapons header, Main hand (equipped: type row + Delete + Name +
-    // Damage), Off hand (empty: type row, no Delete), the Gear header.
+    // Units: Identity 9 + spacer, Stats 9 + spacer → Weapons header at 20.
+    // Scroll 20 shows: the Weapons header, Main hand (equipped: type row +
+    // Delete + its fields), Off hand (empty: type row, no Delete).
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 18 };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 20 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Weapons", "Main hand", "Delete", "Main hand name", "Main hand damage", "Off hand", "Gear" });
+        try expectInspectorLabels(&elements, &.{ "Weapons", "Main hand", "Delete", "Main hand name", "Main hand damage", "Off hand" });
 
         // The equipped weapon's fields carry its values.
         try std.testing.expectEqualStrings(
@@ -1399,14 +1399,14 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         try std.testing.expectEqual(@as(usize, 1), deletes);
     }
 
-    // The Gear section's items (scroll 28 — the window opens past the
-    // Gear header at 27): coat equipped → Delete + its three fields;
-    // amulet empty → Add, no fields.
+    // The Gear section's items (scroll 30 — the window opens at the Gear
+    // header): coat equipped → Delete + its fields; amulet empty → Add.
+    // The coat's defense field doesn't fully fit the window.
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 28 };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 30 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Amulet", "Add", "Coat", "Delete", "Coat name", "Coat health bonus", "Coat defense bonus" });
+        try expectInspectorLabels(&elements, &.{ "Gear", "Amulet", "Add", "Coat", "Delete", "Coat name", "Coat health bonus" });
 
         var adds: usize = 0;
         var coat_deletes: usize = 0;
@@ -4234,6 +4234,9 @@ const EditorInspectorControl = union(enum) {
 /// sub-field rows after its slot row).
 const EditorInspectorEntry = union(enum) {
     section: []const u8,
+    /// One blank unit before every section header except the first — the
+    /// section break reads as a break, not just a different strip.
+    spacer: void,
     field: struct {
         label: []const u8,
         control: EditorInspectorControl,
@@ -4250,7 +4253,7 @@ const EditorInspectorEntry = union(enum) {
 /// is two (the label line above the control line).
 fn editorInspectorEntryUnits(entry: EditorInspectorEntry) i32 {
     return switch (entry) {
-        .section => 1,
+        .section, .spacer => 1,
         .field, .weapon_slot, .gear_slot => 2,
     };
 }
@@ -4302,6 +4305,7 @@ fn editorInspectorEntityEntries(
         .{ .field = .{ .label = "Sprite", .control = .{ .text = .entity_sprite } } },
         .{ .field = .{ .label = "Color", .control = .swatches } },
         .{ .field = .{ .label = "Displays weapons", .control = .toggle } },
+        .spacer,
         .{ .section = "Stats" },
         .{ .field = .{ .label = "Max health", .control = .{ .text = .{ .entity_stat = .max_health } } } },
         .{ .field = .{ .label = "Defense", .control = .{ .text = .{ .entity_stat = .defense } } } },
@@ -4317,6 +4321,7 @@ fn editorInspectorEntityEntries(
     }.check;
 
     // Weapons: each hand's slot row + the equipped weapon's fields.
+    try entries.append(allocator, .spacer);
     try entries.append(allocator, .{ .section = "Weapons" });
     for ([_]types.GearSlot{ .main_hand, .off_hand }) |hand| {
         try entries.append(allocator, .{ .weapon_slot = hand });
@@ -4336,6 +4341,7 @@ fn editorInspectorEntityEntries(
     }
 
     // Gear: each slot's row + the equipped item's fields.
+    try entries.append(allocator, .spacer);
     try entries.append(allocator, .{ .section = "Gear" });
     for ([_]types.GearSlot{ .amulet, .coat, .gloves, .pants, .boots }) |slot| {
         try entries.append(allocator, .{ .gear_slot = slot });
@@ -4355,6 +4361,7 @@ fn editorInspectorEntityEntries(
     }
 
     // Utility skills: fixed until the picker slice (slot_4..slot_8).
+    try entries.append(allocator, .spacer);
     try entries.append(allocator, .{ .section = "Utility skills" });
     for ([_][]const u8{ "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8" }) |label| {
         try entries.append(allocator, .{ .field = .{ .label = label, .control = .none } });
@@ -4438,6 +4445,8 @@ fn buildEditorInspectorContent(
             .height = units * editor_inspector_row_height,
         };
         switch (entry) {
+            // A blank unit — the section-break gap.
+            .spacer => {},
             // Section header: a panel-backed strip (the group-header visual
             // class), label left-padded + vertically centered.
             .section => |label| {
@@ -6574,23 +6583,23 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
     try std.testing.expectEqual(@as(i32, 10), visible_rows);
 
     // Scroll 0: units 0..10 — Identity, Name, Sprite, Color, Displays
-    // weapons, Stats (Max health starts at 10 + needs 2 units → skipped).
+    // weapons, then the section-break spacer (the Stats header starts at
+    // 10 and needs the spacer's unit too → next window).
     // Elements: toggle 3 + bg 1 + Identity 2 + Name 2 + Sprite 2 + Color
     // (label + 6 swatch fills + 6 swatch buttons = 13) + Displays weapons
-    // (label + panel + button + value label = 4) + Stats 2 + scrollbar 2
-    // = 31.
+    // (label + panel + button + value label = 4) + scrollbar 2 = 29.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 31), elements.items.len);
-        try expectInspectorLabels(&elements, &.{ "Identity", "Name", "Sprite", "Color", "Displays weapons", "true", "Stats" });
+        try std.testing.expectEqual(@as(usize, 29), elements.items.len);
+        try expectInspectorLabels(&elements, &.{ "Identity", "Name", "Sprite", "Color", "Displays weapons", "true" });
         // 6 swatch fills + the 2 scrollbar rects.
         try std.testing.expectEqual(@as(usize, 8), countSolidRects(&elements));
     }
 
-    // Scroll 3: the window starts at the Sprite entry (unit 3); Defense
-    // (units 12..14) doesn't fully fit and is skipped.
+    // Scroll 3: the window opens at Sprite and runs through the spacer +
+    // the Stats header + Max health (Defense doesn't fully fit).
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 3 };
@@ -6598,13 +6607,13 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         try expectInspectorLabels(&elements, &.{ "Sprite", "Color", "Displays weapons", "true", "Stats", "Max health" });
     }
 
-    // Out-of-range scroll clamps to max (45 − 10 = 35): the window is the
-    // five utility slots.
+    // Out-of-range scroll clamps to max (49 − 10 = 39, the four spacers
+    // included): the window is the five utility slots.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 999 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 35), ui_state.editor_inspector_scroll);
+        try std.testing.expectEqual(@as(i32, 39), ui_state.editor_inspector_scroll);
         try expectInspectorLabels(&elements, &.{ "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8" });
     }
 
