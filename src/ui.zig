@@ -4452,7 +4452,9 @@ fn buildEditorInspectorContent(
     if (scroll_offset.* < 0) scroll_offset.* = 0;
     if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
 
-    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    // The inspector edits an ENEMY type — enemy gradient throughout
+    // (matching the entity-inspect panel's team-gradient coloring).
+    const button_color = active_theme.enemy_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const text_edit: ?*const TextEditState =
         if (ui_state.text_edit != null) &ui_state.text_edit.? else null;
 
@@ -4746,7 +4748,7 @@ fn emitInspectorToggle(
 ) !void {
     if (type_index >= editor.entity_types.len) return;
     const current = editor.entity_types[type_index].template.displays_weapons;
-    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const button_color = active_theme.enemy_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const label: []const u8 = if (current) "true" else "false";
     // Half the panel width — full-width reads as a section header; the
     // value vocabulary ("true"/"false") carries the state, no highlight.
@@ -4815,8 +4817,8 @@ fn emitInspectorWeaponSlot(
     control_rect: Rectangle,
     active_theme: types.ActiveColorTheme,
 ) !void {
-    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
-    const item_icon_color = active_theme.player_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    const button_color = active_theme.enemy_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const item_icon_color = active_theme.enemy_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)];
     const equipped_weapon: ?types.Weapon = if (type_index < editor.entity_types.len)
         switch (hand) {
             .main_hand => editor.entity_types[type_index].template.main_hand_weapon,
@@ -4904,7 +4906,7 @@ fn emitInspectorGearSlot(
     control_rect: Rectangle,
     active_theme: types.ActiveColorTheme,
 ) !void {
-    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const button_color = active_theme.enemy_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const occupied = type_index < editor.entity_types.len and
         editor.entity_types[type_index].template.gearSlotItem(slot) != null;
     const label: []const u8 = if (occupied) "Delete" else "Add";
@@ -4980,16 +4982,54 @@ fn emitInspectorSkillSlot(
     control_rect: Rectangle,
     active_theme: types.ActiveColorTheme,
 ) !void {
-    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
-    var label: []const u8 = "None";
+    // The enemy gradient + the entity-inspect skill coloring (frame 3,
+    // icon 1).
+    const enemy = active_theme.enemy_gradient.colors;
+    const skill_frame_color = enemy[@min(@as(u32, 3), types.gradient_color_count - 1)];
+    const skill_icon_color = enemy[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    const button_color = enemy[@min(@as(u32, 5), types.gradient_color_count - 1)];
+
+    var current: ?types.SkillId = null;
     if (type_index < editor.entity_types.len and slot_index < types.utility_skill_count) {
-        if (editor.entity_types[type_index].template.equipped_utility_skills[slot_index]) |skill_id| {
-            if (lookups.getSkillDefinition(skill_id)) |definition| {
-                label = definition.name;
-            }
-        }
+        current = editor.entity_types[type_index].template.equipped_utility_skills[slot_index];
     }
-    // Half the control width (the full-width-vs-section-header convention).
+
+    if (current) |skill_id| {
+        // Occupied: the actual SKILL (frame + full-size icon, the
+        // entity-inspect skill-button look) — the tooltip carries the
+        // name. Square, the control line's height.
+        const rect: Rectangle = .{
+            .x = control_rect.x,
+            .y = control_rect.y,
+            .width = control_rect.height,
+            .height = control_rect.height,
+        };
+        const tooltip: ?Tooltip = if (lookups.getSkillDefinition(skill_id)) |definition|
+            try buildSkillTooltip(allocator, definition)
+        else
+            null;
+        try elements.append(allocator, .{ .button = .{
+            .sprite_id = "ui/skill_button",
+            .screen_position = rect.position(),
+            .width = rect.width,
+            .height = rect.height,
+            .action = .open_editor_skill_picker,
+            .editor_utility_slot = slot_index,
+            .color = skill_frame_color,
+            .tooltip = tooltip,
+        } });
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = skillIconSpriteId(skill_id),
+            .screen_position = rect.position(),
+            .width = rect.width,
+            .height = rect.height,
+            .color = skill_icon_color,
+            .blocks_input = false,
+        } });
+        return;
+    }
+
+    // Empty: the "None" text button (half width, the convention).
     const rect: Rectangle = .{
         .x = control_rect.x,
         .y = control_rect.y,
@@ -5009,11 +5049,11 @@ fn emitInspectorSkillSlot(
         .height = rect.height,
         .action = .open_editor_skill_picker,
         .editor_utility_slot = slot_index,
-        .tooltip = .{ .header = try spanRow(allocator, text(label)) },
+        .tooltip = .{ .header = try spanRow(allocator, text("None")) },
     } });
-    const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+    const label_width = font_metrics.measureSpanWidth(text("None"), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
-        .text = label,
+        .text = "None",
         .screen_position = rect
             .placeCenter(label_width, editor_group_header_font_size)
             .position(),
@@ -5067,13 +5107,19 @@ pub fn buildEditorSkillPicker(
     const title = try std.fmt.allocPrint(allocator, "Assign Slot {d}", .{slot_index + 4});
     const content = try emitPanelHeader(elements, allocator, bounds, title, .close_editor_picker);
 
-    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    // The entity-inspect panel's skill coloring convention: frame at the
+    // team gradient's index 3, icon at index 1 — the enemy gradient here
+    // (the picker edits an enemy type).
+    const enemy = active_theme.enemy_gradient.colors;
+    const skill_frame_color = enemy[@min(@as(u32, 3), types.gradient_color_count - 1)];
+    const skill_icon_color = enemy[@min(@as(u32, 1), types.gradient_color_count - 1)];
     const grid_origin: ScreenPosition = .{
         .x = content.x + ui_gap,
         .y = content.y + ui_gap,
     };
 
-    // Cell 0: the None option (clears the slot) — no editor_skill payload.
+    // Cell 0: the None option (clears the slot) — no editor_skill payload;
+    // the one cell that carries a text label.
     try emitPickerSkillCell(
         elements,
         allocator,
@@ -5083,10 +5129,13 @@ pub fn buildEditorSkillPicker(
         "None",
         "ui/skill_slot_empty",
         current == null,
-        button_color,
+        skill_frame_color,
+        skill_icon_color,
         active_theme.lightest,
     );
-    // One cell per utility skill, in enum order (index + 1: cell 0 is None).
+    // One cell per utility skill, in enum order (index + 1: cell 0 is
+    // None). Icon-only — the icon is the identity at full cell size; the
+    // tooltip carries the name.
     for (utility_skills.utility_skill_ids, 0..) |skill_id, index| {
         const definition = lookups.getSkillDefinition(skill_id) orelse continue;
         const column: i32 = @intCast((index + 1) % @as(usize, @intCast(columns)));
@@ -5106,15 +5155,17 @@ pub fn buildEditorSkillPicker(
             definition.name,
             "ui/skill_button",
             current == skill_id,
-            button_color,
+            skill_frame_color,
+            skill_icon_color,
             active_theme.lightest,
         );
     }
 }
 
 /// One picker cell: the frame button (carrying the pick; null skill_id =
-/// the None cell) + the skill icon centered + the name label at the
-/// bottom.
+/// the None cell) + the skill icon at FULL cell size. Real skills are
+/// icon-only (the tooltip carries the name); the None cell keeps its text
+/// label.
 fn emitPickerSkillCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -5124,7 +5175,8 @@ fn emitPickerSkillCell(
     label: []const u8,
     frame_sprite_id: []const u8,
     highlighted: bool,
-    button_color: Color,
+    frame_color: Color,
+    icon_color: Color,
     label_color: Color,
 ) !void {
     const tooltip: ?Tooltip = if (skill_id) |some_id|
@@ -5141,32 +5193,33 @@ fn emitPickerSkillCell(
         .height = cell_rect.height,
         .action = .select_editor_utility_skill,
         .editor_skill = skill_id,
-        .color = button_color,
+        .color = frame_color,
         .highlighted = highlighted,
         .tooltip = tooltip,
     } });
     if (skill_id) |some_id| {
-        const icon_rect = cell_rect.placeCenter(@divFloor(cell_rect.width, 2), @divFloor(cell_rect.height, 2));
+        // Full cell size — the icon is the identity.
         try elements.append(allocator, .{ .image = .{
             .sprite_id = skillIconSpriteId(some_id),
-            .screen_position = icon_rect.position(),
-            .width = icon_rect.width,
-            .height = icon_rect.height,
+            .screen_position = cell_rect.position(),
+            .width = cell_rect.width,
+            .height = cell_rect.height,
+            .color = icon_color,
+            .blocks_input = false,
+        } });
+    } else {
+        const font_size: i32 = 48;
+        const label_width = font_metrics.measureSpanWidth(text(label), font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = label,
+            .screen_position = cell_rect
+                .placeBottomCenter(label_width, font_size, ui_gap)
+                .position(),
+            .font_size = font_size,
+            .color = label_color,
             .blocks_input = false,
         } });
     }
-    // Name label near the bottom, under the icon.
-    const font_size: i32 = 48;
-    const label_width = font_metrics.measureSpanWidth(text(label), font_size);
-    try elements.append(allocator, .{ .text_label = .{
-        .text = label,
-        .screen_position = cell_rect
-            .placeBottomCenter(label_width, font_size, ui_gap)
-            .position(),
-        .font_size = font_size,
-        .color = label_color,
-        .blocks_input = false,
-    } });
 }
 
 /// M2 press arbitration for a focused text field (see DESIGN → UI
@@ -9143,14 +9196,15 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
     var elements: UiElementList = .empty;
     try buildEditorSkillPicker(&elements, arena.allocator(), metrics, editor, .{ .utility_skill_slot = 1 }, theme);
 
-    // Panel + header label + close + None (button+label) + 7 × (button +
-    // icon + label) = 26. No weapon-skill cells (the flat policy list).
-    try std.testing.expectEqual(@as(usize, 26), elements.items.len);
+    // Panel + header label + close + None (button + label) + 7 ×
+    // (button + full-size icon) = 19 — real skills are icon-only.
+    try std.testing.expectEqual(@as(usize, 19), elements.items.len);
 
     var picker_buttons: usize = 0;
     var highlighted_skill: ?types.SkillId = null;
     var none_highlighted = false;
     var saw_blink_cell = false;
+    var saw_header = false;
     for (elements.items) |element| switch (element) {
         .button => |button| if (button.action == .select_editor_utility_skill) {
             picker_buttons += 1;
@@ -9162,7 +9216,7 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
             if (button.editor_skill == .blink) saw_blink_cell = true;
         },
         .text_label => |label| {
-            if (std.mem.eql(u8, label.text, "Assign Slot 5")) saw_blink_cell = saw_blink_cell;
+            if (std.mem.eql(u8, label.text, "Assign Slot 5")) saw_header = true;
         },
         else => {},
     };
@@ -9170,6 +9224,7 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
     try std.testing.expectEqual(types.SkillId.blink, highlighted_skill.?);
     try std.testing.expect(!none_highlighted);
     try std.testing.expect(saw_blink_cell);
+    try std.testing.expect(saw_header);
     // No weapon-skill payload anywhere.
     for (elements.items) |element| switch (element) {
         .button => |button| try std.testing.expect(

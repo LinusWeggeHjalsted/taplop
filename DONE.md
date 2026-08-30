@@ -7701,3 +7701,28 @@ assigns + closes + one undo → same-value no-op → None clears → close
 button). The picker arm commits inside handleAnytimeInput — the NORMAL
 path (update()'s recording covers it live) — so directly-driven tests
 need runToIdle, unlike the frame-level text-commit case.
+
+### Picker + inspector overhaul (author feedback)
+
+- **Full modality fixed** — the picker previously leaked the idle/viewport
+  path: enemy placement still fired under it (my anytime gate covered
+  button actions only — hence the tell "can place an enemy but can't
+  collapse a palette group"). The picker now joins the options-menu gate
+  in main.update() (after handleAnytimeInput — which runs the picker's
+  own arms — before the idle/drag/viewport path): everything is blocked
+  while it's open.
+- **Picker cells**: real skills are ICON-ONLY at full cell size (the icon
+  is the identity; the tooltip carries the name); the None cell keeps its
+  text label. Coloring follows the entity-inspect panel's skill
+  convention on the ENEMY gradient: frame index 3, icon index 1.
+- **The inspector slot rows**: an occupied slot shows the actual skill
+  (square skill-button cell, frame enemy[3] + full icon enemy[1], skill
+  tooltip — the entity-inspect look); an empty slot keeps the half-width
+  "None" text button.
+- **The whole inspector now uses the enemy gradient** (it edits enemy
+  types — the entity-inspect team-gradient reasoning): section headers,
+  the top-left toggle, weapon cells (+ their item icons), the
+  displays-weapons toggle, gear Add/Delete, and the skill slots all
+  switched from the player gradient. Unchanged by design: the swatch row
+  (already enemy-gradient fills), text fields (lightest/black), and the
+  darkest background panel.
