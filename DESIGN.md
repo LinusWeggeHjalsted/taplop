@@ -1859,7 +1859,9 @@ layout + a left inspector + a right settings sidebar:
   it. (Unifying the in-game panel toggles onto this GameState convention
   is a tracked TODO.) The background panel (width 1024, a placeholder
   until the field layout settles) spans from below the button down to
-  the palette groups' header strip. Auto-opens on new
+  one `ui_gap` above the palette groups' header strip (the bottom bar is
+  flush left, so an expanded group's header x-range overlaps the panel —
+  the gap keeps them visually separate). Auto-opens on new
   enemy/decoration/item creation (an empty type isn't useful until
   populated). Field editing is inline within the inspector: skill
   assignment, gear equip, stat fields, footprint editing (decorations),

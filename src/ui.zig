@@ -3108,12 +3108,13 @@ pub const editor_inspector_width: i32 = 1024;
 /// visual class: panel-backed, `editor_header_strip_height` tall, label +
 /// side padding wide), and — when open — a background panel underneath it
 /// that will host the active tool's field editors (later slices; empty for
-/// now). The panel spans from below the button down to the expanded palette
-/// groups' header strip (those headers sit `ui_gap` + one strip above the
-/// bottom bar; stopping short of the strip keeps them off the inspector
-/// background). The open flag lives on the Editor (GameState) — the toggle
-/// rides the undo timeline via `editor_toggle_inspector`. See DESIGN →
-/// Architecture → Level Editor → Editor UI layout (inspector).
+/// now). The panel spans from below the button down to one `ui_gap` above
+/// the expanded palette groups' header strip (those headers sit `ui_gap` +
+/// one strip above the bottom bar; the extra gap keeps the panel from
+/// sitting flush against them — their x range overlaps the panel since the
+/// bottom bar is flush left). The open flag lives on the Editor (GameState)
+/// — the toggle rides the undo timeline via `editor_toggle_inspector`.
+/// See DESIGN → Architecture → Level Editor → Editor UI layout (inspector).
 pub fn buildEditorInspectorPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -3158,13 +3159,14 @@ pub fn buildEditorInspectorPanel(
         .blocks_input = false,
     } });
 
-    // Background panel (when open): from below the button to the expanded
-    // palette groups' header strip. Theme darkest — the background-panel
-    // class (button panels tint gradient[5] to read as buttons against it).
+    // Background panel (when open): from below the button to one ui_gap
+    // above the expanded palette groups' header strip. Theme darkest —
+    // the background-panel class (button panels tint gradient[5] to read
+    // as buttons against it).
     if (inspector_open) {
         const panel_top = button_cell.y + button_cell.height + ui_gap;
         const panel_bottom = types.reference_height -
-            bottom_bar_height - ui_gap - editor_header_strip_height;
+            bottom_bar_height - 2 * ui_gap - editor_header_strip_height;
         try elements.append(allocator, .{ .nine_slice_panel = .{
             .sprite_id = "ui/panel",
             .screen_position = .{ .x = 0, .y = panel_top },
@@ -4742,18 +4744,20 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
         try std.testing.expectEqual(@as(usize, 4), elements.items.len);
         try expectInspectorToggleShape(&elements, true);
 
-        // The background panel: flush left, below the button, down to the
-        // expanded palette groups' header strip, tinted darkest (the
-        // background-panel class — button panels tint gradient[5]).
+        // The background panel: flush left, below the button, down to one
+        // ui_gap above the expanded palette groups' header strip, tinted
+        // darkest (the background-panel class — button panels tint
+        // gradient[5]).
         const panel = elements.items[3].nine_slice_panel;
         try std.testing.expectEqualStrings("ui/panel", panel.sprite_id);
         try std.testing.expectEqual(@as(i32, 0), panel.screen_position.x);
         try std.testing.expectEqual(top_bar_height + ui_gap + editor_header_strip_height + ui_gap, panel.screen_position.y);
         try std.testing.expectEqual(editor_inspector_width, panel.width);
-        try std.testing.expectEqual(
-            types.reference_height - bottom_bar_height - ui_gap - editor_header_strip_height,
-            panel.screen_position.y + panel.height,
-        );
+        // The expanded header strip's top (buildEditorBottomBar's
+        // `bar.y - ui_gap - editor_header_strip_height`) sits one ui_gap
+        // below the panel's bottom.
+        const expanded_header_top = types.reference_height - bottom_bar_height - ui_gap - editor_header_strip_height;
+        try std.testing.expectEqual(expanded_header_top - ui_gap, panel.screen_position.y + panel.height);
         try std.testing.expectEqual(theme.darkest, panel.color);
         try std.testing.expect(panel.blocks_input);
     }
