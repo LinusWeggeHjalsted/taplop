@@ -624,7 +624,10 @@ pub const PlayerInputEvent = union(enum) {
     // worklist. The delete phase does NOT sweep occupants of selected
     // tiles (unlike the Delete key): an unselected occupant pins its tile
     // — the tile stays underneath it and the moved tile lands at the
-    // target instead. Things whose target overlaps the '!' / '=' plan
+    // target instead. A selected MARKER takes its old ground with it (the
+    // tile it stood on is erased — nothing hosts it there anymore; the
+    // Delete key keeps marker tiles because the marker isn't moving
+    // there). Things whose target overlaps the '!' / '=' plan
     // empty and are deleted fully. After the move the selection is
     // CLEARED (nothing reselected). One undo step reverts the whole move.
     player_move_editor_selection: struct {

@@ -2539,8 +2539,39 @@ fn planSelectionDelete(
             .entity_placement => |index| appendIndexIfNew(&entity_indices, index, allocator),
             .ground_item_placement => |index| appendIndexIfNew(&item_indices, index, allocator),
             .decoration_placement => |index| appendIndexIfNew(&decoration_indices, index, allocator),
-            // Never deletable — movable only.
-            .player_start, .level_end => {},
+            .player_start, .level_end => {
+                // The Delete key never touches markers — and their tiles
+                // stay (the marker isn't going anywhere; see the tile arm's
+                // protection below). A MOVE takes the selected marker's
+                // ground with it: nothing hosts the marker at the old
+                // position anymore, so the tile is erased like any other
+                // selected tile (the place phase ensures a tile under the
+                // new position).
+                if (mode == .delete_key) continue;
+                const marker_position: Vector2 = if (selected == .player_start)
+                    level.player_start
+                else
+                    (level.level_end orelse continue);
+                if (!functions.tileListContains(level.level_tiles, marker_position)) continue;
+                // The OTHER marker still standing on the same tile keeps
+                // its ground (both markers selected → both moving →
+                // neither remains; the marker's own tile arm protection
+                // already skipped this erase, so no duplicate).
+                if (selected == .player_start) {
+                    if (level.level_end) |level_end_position| {
+                        if (level_end_position.x == marker_position.x and level_end_position.y == marker_position.y and
+                            !selectionContains(editor.selection, .level_end)) continue;
+                    }
+                } else {
+                    if (level.player_start.x == marker_position.x and level.player_start.y == marker_position.y and
+                        !selectionContains(editor.selection, .player_start)) continue;
+                }
+                // An unselected occupant pins its ground (defensive — the
+                // placement rules never put anything on a marker tile).
+                if (selectionMoveOccupantPinsTile(level, editor.selection, marker_position)) continue;
+                tile_positions.append(allocator, marker_position) catch
+                    @panic("failed to allocate editor selection delete plan");
+            },
             .tile => |position| {
                 // Marker tiles survive (the '!' / '=' need their ground),
                 // and so do stale entries (the tile is already gone).
@@ -2552,24 +2583,7 @@ fn planSelectionDelete(
                 // A move keeps the ground under an UNSELECTED occupant
                 // (the occupant stays, the moved tile lands at its target
                 // instead — nothing is swept).
-                if (mode == .selection_move) {
-                    var pinned = false;
-                    for (level.entity_placements, 0..) |placement, placement_index| {
-                        if (placement.position.x == position.x and placement.position.y == position.y and
-                            !selectionContains(editor.selection, .{ .entity_placement = @intCast(placement_index) }))
-                        {
-                            pinned = true;
-                        }
-                    }
-                    for (level.item_placements, 0..) |placement, placement_index| {
-                        if (placement.position.x == position.x and placement.position.y == position.y and
-                            !selectionContains(editor.selection, .{ .ground_item_placement = @intCast(placement_index) }))
-                        {
-                            pinned = true;
-                        }
-                    }
-                    if (pinned) continue;
-                }
+                if (mode == .selection_move and selectionMoveOccupantPinsTile(level, editor.selection, position)) continue;
                 tile_positions.append(allocator, position) catch
                     @panic("failed to allocate editor selection delete plan");
                 // Delete-key mode sweeps the occupant (at most one — one
@@ -2611,6 +2625,27 @@ fn planSelectionDelete(
     // LIFO: reverse so processing + log order = plan order.
     std.mem.reverse(Event, plan.items);
     return plan.items;
+}
+
+/// In a selection move, an UNSELECTED occupant standing on `position`
+/// PINS its ground — the tile stays underneath it and the moved thing
+/// lands at its target instead (only selected things are backed up +
+/// moved). The tools never place anything on a marker tile, so the marker
+/// arm's use is defensive for crafted states.
+fn selectionMoveOccupantPinsTile(
+    level: *const types.EditorLevel,
+    selection: []const types.Selectable,
+    position: Vector2,
+) bool {
+    for (level.entity_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and placement.position.y == position.y and
+            !selectionContains(selection, .{ .entity_placement = @intCast(placement_index) })) return true;
+    }
+    for (level.item_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and placement.position.y == position.y and
+            !selectionContains(selection, .{ .ground_item_placement = @intCast(placement_index) })) return true;
+    }
+    return false;
 }
 
 /// Append `index` unless already collected (a crafted log can carry

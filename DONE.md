@@ -7057,3 +7057,32 @@ level never has a tile under a decoration footprint (a selected decoration
 never has a selected tile beneath it — the conflict can't arise), and a
 stale re-seeded selection must reference things that still exist after a
 prior move deleted them. All 392 tests pass.
+
+### Selection move fix: a moved marker takes its ground with it
+
+**The report.** Selecting the '!' / '=' and moving it left the old tile
+behind. The user's hypothesis (the tile entry moving "before" the marker
+and failing) pointed at the right area — the actual mechanism was one step
+earlier, in the CLEAR phase: `planSelectionDelete`'s marker-tile protection
+("the '!' / '=' need their ground") applied unconditionally, a rule built
+for the DELETE key where the marker STAYS. In a move the marker LEAVES —
+nothing hosts the old position anymore, so protecting its tile just strands
+a orphaned tile there. (The click-select shape made it visible: a plain
+click on a marker selects the singleton only — no tile entry — so nothing
+else in the plan touched the old tile at all.)
+
+**The fix.** In `selection_move` mode, a selected marker entry now erases
+the tile it stands on — subject to the same guards as any erase: the tile
+must exist, the OTHER marker must not be staying on it (both selected →
+both moving → neither remains), and an unselected occupant pins it
+(defensive — the tools never place on marker tiles). The delete-key mode is
+untouched (markers + their tiles still survive Delete). The tile arm's
+marker-tile protection and the marker arm's erase are disjoint by position
+(marker positions vs non-marker positions), so no duplicate erases; the
+extracted `selectionMoveOccupantPinsTile` helper now serves both the tile
+arm and the marker arm (was inline in the tile arm).
+
+Regression tests: the exact repro (singleton-selected '!' on a real tile →
+moved → old tile GONE, target tile ensured, one undo restores both) + the
+marquee shape (tile + marker both selected — the tile entry is skipped by
+the protection, the marker entry drives the single erase). All 393 pass.

@@ -2014,7 +2014,10 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   decoration or interact via index shifts), and the exhausted link CLEARS
   the selection (a move deselects — nothing is reselected). A moved
   marker sets its coordinate via `editor_set_player_start` /
-  `editor_set_level_end` with a tile ensured under the new position; a
+  `editor_set_level_end`, takes its OLD ground with it (the clear phase
+  erases the tile it stood on — nothing hosts it there anymore; the
+  Delete key's marker-tile protection applies only when the marker isn't
+  moving), and a tile is ensured under the new position; a
   thing whose target overlaps a marker plans empty and is deleted fully.
   One undo step reverts the whole move. The selection operations are
   complete.

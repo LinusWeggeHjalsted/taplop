@@ -2244,3 +2244,70 @@ test "player_move_editor_selection: chained placement handles targets sharing a 
     try testing.expect(hasTile(level, .{ .x = 5, .y = 4 }));
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
 }
+
+test "player_move_editor_selection: a moved marker takes its ground with it" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The user-report repro: the '!' stands on a real tile at (0,0); a
+    // plain click selects just the singleton (no tile entry — the click
+    // group for a marker is the marker alone). Moving it must erase the
+    // old tile (nothing hosts the marker there anymore) and ensure a tile
+    // at the new position — NOT leave the old tile behind.
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 5, .y = 5 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 5, .y = 5 },
+    }};
+    var history = harness.newHistory(editorStateWith(moveTestEditor(&levels)));
+    // Click-select shape: the singleton only.
+    const seeded_selection = [_]types.Selectable{.player_start};
+    history.current_state.editor.?.selection = &seeded_selection;
+    runToIdle(&history);
+
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_move_editor_selection = .{ .delta = .{ .x = 2, .y = 1 } } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    {
+        const level = history.current_state.editor.?.levels[0];
+        try testing.expectEqual(types.Vector2{ .x = 2, .y = 1 }, level.player_start);
+        try testing.expect(!hasTile(level, .{ .x = 0, .y = 0 }));
+        try testing.expect(hasTile(level, .{ .x = 2, .y = 1 }));
+        // The '=' and its tile are untouched.
+        try testing.expectEqual(types.Vector2{ .x = 5, .y = 5 }, level.level_end.?);
+        try testing.expect(hasTile(level, .{ .x = 5, .y = 5 }));
+        try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+    }
+
+    // One undo reverts the move AND the old tile.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const level = history.current_state.editor.?.levels[0];
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.player_start);
+        try testing.expect(hasTile(level, .{ .x = 0, .y = 0 }));
+        try testing.expect(!hasTile(level, .{ .x = 2, .y = 1 }));
+    }
+
+    // The marquee shape (tile + marker BOTH selected) moves the same way —
+    // the tile entry is protected by the marker-tile rule, and the marker
+    // entry drives the erase exactly once.
+    history.current_state.editor.?.selection = &seeded_selection;
+    const with_tile = [_]types.Selectable{ .{ .tile = .{ .x = 0, .y = 0 } }, .player_start };
+    history.current_state.editor.?.selection = &with_tile;
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_move_editor_selection = .{ .delta = .{ .x = 0, .y = 2 } } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 2 }, level.player_start);
+    try testing.expect(!hasTile(level, .{ .x = 0, .y = 0 }));
+    try testing.expect(hasTile(level, .{ .x = 0, .y = 2 }));
+}
