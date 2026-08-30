@@ -123,12 +123,12 @@ pub const UiState = struct {
     /// undo timeline (same as `skills_scroll_offset`).
     editor_palette_scroll: [3]i32 = .{ 0, 0, 0 },
 
-    /// Editor inspector content scroll offset, in ROWS — one wheel notch =
-    /// one row pitch (the skills/load-save whole-row convention, so text
-    /// placement is identical at every offset). Clamped in place by the
-    /// inspector content builder (authoritative — it knows the content
-    /// height) and on write in the wheel handler. Off the undo timeline
-    /// like the other scrolls.
+    /// Editor inspector content scroll offset, in ROW UNITS (the 128px
+    /// pitch — a section header is one unit, a field entry two) — one wheel
+    /// notch = one unit (the whole-row convention keeps every line on the
+    /// grid at any offset). Clamped in place by the inspector content
+    /// builder (authoritative — it knows the content height) and on write
+    /// in the wheel handler. Off the undo timeline like the other scrolls.
     editor_inspector_scroll: i32 = 0,
 
     /// Editor palette group collapse state: false = expanded, true =
@@ -1141,9 +1141,10 @@ test "emitInspectorTextField via the content builder: current value unfocused, b
             types.TextFieldRef{ .id = .entity_name, .target = .{ .entity_type = 0 } },
             name_field.ref,
         );
-        // The control column: right of the label column, inside the row.
+        // The control line: full content width, flush with the content
+        // region's left edge (the label sits on its own line above).
         try std.testing.expectEqual(
-            editorInspectorPanelRect().x + ui_gap + editor_inspector_label_width + ui_gap,
+            editorInspectorPanelRect().x + ui_gap,
             name_field.screen_position.x,
         );
         const sprite_field = findTextField(&elements, .entity_sprite).?;
@@ -3919,14 +3920,10 @@ pub fn buildEditorInspectorPanel(
     }
 }
 
-/// Inspector content row pitch — one field row or section header is 128
-/// high (the editor strip-height class; a 64px label with padding).
+/// Inspector content row pitch — the 128px UNIT: a section header is one
+/// unit; a field entry is TWO (the label line above, the editable value
+/// below — one thing per line, full width).
 pub const editor_inspector_row_height: i32 = editor_header_strip_height;
-
-/// Fixed label-column width for field rows; the control column fills the
-/// remaining content width. Wide enough for the longest field label at the
-/// header font size.
-pub const editor_inspector_label_width: i32 = 384;
 
 /// Inspector scrollbar track width, centered in the panel's right `ui_gap`
 /// margin (the skills-panel precedent).
@@ -3950,9 +3947,9 @@ const EditorInspectorControl = union(enum) {
     text: types.TextFieldId,
 };
 
-/// One line of inspector content: a section header, or a field row (label
-/// + control) — per the coupling contract in DESIGN → Architecture →
-/// Level Editor → Editor UI layout → Inspector fields.
+/// One line of inspector content: a section header, or a field entry (label
+/// line + control line) — per the coupling contract in DESIGN → Architecture
+/// → Level Editor → Editor UI layout → Inspector fields.
 const EditorInspectorEntry = union(enum) {
     section: []const u8,
     field: struct {
@@ -3960,6 +3957,15 @@ const EditorInspectorEntry = union(enum) {
         control: EditorInspectorControl,
     },
 };
+
+/// Row units an entry occupies: a section header is one; a field entry is
+/// two (the label line above the editable value).
+fn editorInspectorEntryUnits(entry: EditorInspectorEntry) i32 {
+    return switch (entry) {
+        .section => 1,
+        .field => 2,
+    };
+}
 
 /// The enemy-type inspector's full content plan: five sections over every
 /// field `parseEntityDefinition` reads (the coupling contract — anything
@@ -4037,27 +4043,38 @@ fn buildEditorInspectorContent(
     };
 
     const entries = editorInspectorEntityEntries();
-    const total_rows: i32 = @intCast(entries.len);
-    const max_scroll_row = @max(@as(i32, 0), total_rows - visible_rows);
+    // Unit math: a section header is 1 row unit, a field entry 2 (label
+    // line + control line). Scroll + windowing are in units, so every line
+    // stays on the 128px grid at any offset.
+    var total_units: i32 = 0;
+    for (entries) |entry| total_units += editorInspectorEntryUnits(entry);
+    const max_scroll_row = @max(@as(i32, 0), total_units - visible_rows);
     if (scroll_offset.* < 0) scroll_offset.* = 0;
     if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
-    const first_row: usize = @intCast(scroll_offset.*);
 
     const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const text_edit: ?*const TextEditState =
         if (ui_state.text_edit != null) &ui_state.text_edit.? else null;
-    var view_row: i32 = 0;
-    while (view_row < visible_rows) : (view_row += 1) {
-        const index = first_row + @as(usize, @intCast(view_row));
-        if (index >= entries.len) break;
+
+    // Windowed emission (the skills-panel model, variable-height entries):
+    // an entry is emitted only when it FULLY fits the visible window —
+    // partially-visible entries are skipped (nothing half-draws or
+    // overflows the panel; the scrollbar thumb conveys the position).
+    var start_unit: i32 = 0;
+    var index: usize = 0;
+    while (index < entries.len and start_unit < scroll_offset.* + visible_rows) : (index += 1) {
+        const entry = entries[index];
+        const units = editorInspectorEntryUnits(entry);
+        defer start_unit += units;
+        if (start_unit < scroll_offset.* or
+            start_unit + units > scroll_offset.* + visible_rows) continue;
         const cell: Rectangle = .{
             .x = content.x,
-            .y = content.y + view_row * editor_inspector_row_height,
+            .y = content.y + (start_unit - scroll_offset.*) * editor_inspector_row_height,
             .width = content.width,
-            .height = editor_inspector_row_height,
+            .height = units * editor_inspector_row_height,
         };
-        const text_y = cell.y + @divFloor(cell.height - editor_group_header_font_size, 2);
-        switch (entries[index]) {
+        switch (entry) {
             // Section header: a panel-backed strip (the group-header visual
             // class), label left-padded + vertically centered.
             .section => |label| {
@@ -4070,22 +4087,34 @@ fn buildEditorInspectorContent(
                 } });
                 try elements.append(allocator, .{ .text_label = .{
                     .text = label,
-                    .screen_position = .{ .x = cell.x + ui_gap, .y = text_y },
+                    .screen_position = .{
+                        .x = cell.x + ui_gap,
+                        .y = cell.y + @divFloor(cell.height - editor_group_header_font_size, 2),
+                    },
                     .font_size = editor_group_header_font_size,
                     .color = active_theme.lightest,
                     .blocks_input = false,
                 } });
             },
-            // Field row: the label in the label column + the row's control
-            // in the control column (label-only until its slice lands).
+            // Field entry (two lines): the label line on top, the editable
+            // value below it — full content width, one thing per line.
             .field => |row| {
                 try elements.append(allocator, .{ .text_label = .{
                     .text = row.label,
-                    .screen_position = .{ .x = cell.x, .y = text_y },
+                    .screen_position = .{
+                        .x = cell.x,
+                        .y = cell.y + @divFloor(editor_inspector_row_height - editor_group_header_font_size, 2),
+                    },
                     .font_size = editor_group_header_font_size,
                     .color = active_theme.lightest,
                     .blocks_input = false,
                 } });
+                const control_rect: Rectangle = .{
+                    .x = cell.x,
+                    .y = cell.y + editor_inspector_row_height + ui_gap,
+                    .width = cell.width,
+                    .height = editor_inspector_row_height - 2 * ui_gap,
+                };
                 switch (row.control) {
                     .none => {},
                     .text => |field_id| try emitInspectorTextField(
@@ -4095,7 +4124,7 @@ fn buildEditorInspectorContent(
                         text_edit,
                         editor,
                         type_index,
-                        cell,
+                        control_rect,
                         field_id,
                         active_theme,
                     ),
@@ -4105,8 +4134,9 @@ fn buildEditorInspectorContent(
     }
 
     // Scrollbar (only when the content overflows): track + proportional
-    // thumb in the right `ui_gap` margin — the skills-panel geometry.
-    if (total_rows > visible_rows) {
+    // thumb in the right `ui_gap` margin — the skills-panel geometry,
+    // measured in row units.
+    if (total_units > visible_rows) {
         const track_x = panel.x + panel.width - ui_gap +
             @divFloor(ui_gap - editor_inspector_scrollbar_width, 2);
         const track_y = content.y;
@@ -4119,7 +4149,7 @@ fn buildEditorInspectorContent(
         } });
         const thumb_height = @max(
             @as(i32, 40),
-            @divTrunc(track_height * visible_rows, total_rows),
+            @divTrunc(track_height * visible_rows, total_units),
         );
         const thumb_y = track_y +
             @divTrunc(scroll_offset.* * (track_height - thumb_height), max_scroll_row);
@@ -4162,17 +4192,12 @@ fn emitInspectorTextField(
     text_edit: ?*const TextEditState,
     editor: types.Editor,
     type_index: u32,
-    row: Rectangle,
+    control_rect: Rectangle,
     field_id: types.TextFieldId,
     active_theme: types.ActiveColorTheme,
 ) !void {
     const ref: types.TextFieldRef = .{ .id = field_id, .target = .{ .entity_type = type_index } };
-    const field_rect: Rectangle = .{
-        .x = row.x + editor_inspector_label_width + ui_gap,
-        .y = row.y + ui_gap,
-        .width = row.width - editor_inspector_label_width - 2 * ui_gap,
-        .height = row.height - 2 * ui_gap,
-    };
+    const field_rect = control_rect;
     const font_size = editor_group_header_font_size;
     var field: TextFieldUi = .{
         .screen_position = field_rect.position(),
@@ -5860,42 +5885,45 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // 25 entries (5 sections + 20 fields); the panel fits 10 rows
-    // ((1328 − 2×16) / 128 = 10), so 15 rows scroll + the scrollbar shows.
+    // 45 row units (5 sections × 1 + 20 field entries × 2 — label line +
+    // control line); the panel fits 10 units, so 35 units scroll + the
+    // scrollbar shows.
     const visible_rows = @divFloor(
         editorInspectorPanelRect().height - 2 * ui_gap,
         editor_inspector_row_height,
     );
     try std.testing.expectEqual(@as(i32, 10), visible_rows);
 
-    // Scroll 0: the first 10 entries — Identity + 4 fields + Stats + 4
-    // stat fields (2 sections × 2 elements + 8 fields + scrollbar 2).
+    // Scroll 0: units 0..10 — Identity, Name, Sprite, Color, Displays
+    // weapons, Stats (Max health starts at 10 + needs 2 units → skipped).
+    // Elements: toggle 3 + bg 1 + Identity 2 + Name 2 (label + field) +
+    // Sprite 2 + Color 1 + Displays 1 + Stats 2 + scrollbar 2 = 16.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        // 18 layout elements + the Name + Sprite text fields = 20.
-        try std.testing.expectEqual(@as(usize, 20), elements.items.len);
-        try expectInspectorLabels(&elements, &.{ "Identity", "Name", "Sprite", "Color", "Displays weapons", "Stats", "Max health", "Defense", "Speed", "Aggro range" });
+        try std.testing.expectEqual(@as(usize, 16), elements.items.len);
+        try expectInspectorLabels(&elements, &.{ "Identity", "Name", "Sprite", "Color", "Displays weapons", "Stats" });
         try std.testing.expectEqual(@as(usize, 2), countSolidRects(&elements));
     }
 
-    // Scroll 3: the window starts at entry 3 ("Color").
+    // Scroll 3: the window starts at the Sprite entry (unit 3); Defense
+    // (units 12..14) doesn't fully fit and is skipped.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 3 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Color", "Displays weapons", "Stats", "Max health", "Defense", "Speed", "Aggro range", "Weapons", "Main hand", "Off hand" });
+        try expectInspectorLabels(&elements, &.{ "Sprite", "Color", "Displays weapons", "Stats", "Max health" });
     }
 
-    // Out-of-range scroll clamps to max (25 − 10 = 15): the window starts
-    // at "Coat" and runs to the last slot.
+    // Out-of-range scroll clamps to max (45 − 10 = 35): the window is the
+    // five utility slots.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 999 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 15), ui_state.editor_inspector_scroll);
-        try expectInspectorLabels(&elements, &.{ "Coat", "Gloves", "Pants", "Boots", "Utility skills", "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8" });
+        try std.testing.expectEqual(@as(i32, 35), ui_state.editor_inspector_scroll);
+        try expectInspectorLabels(&elements, &.{ "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8" });
     }
 
     // Negative scroll clamps to 0.

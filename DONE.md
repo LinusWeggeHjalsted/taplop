@@ -7396,3 +7396,19 @@ right; "focus unchanged" was the wrong mental model.
 Backend render arm = platform seam → web build compile-checked (WEB OK).
 Runtime eyeball pending (the caret/selection draws are new) — next
 `scripts/web.sh emrun` or native run should confirm the fields render.
+
+### Inspector layout — label line above the editable value (DONE)
+
+Layout revision per author feedback: a field entry is now TWO row units —
+the label ("header") on its own line, the editable value full-width BELOW
+it (Name's text field sits under the word "Name"). Section headers stay
+one unit. The old single-line label-left/control-right column layout
+(`editor_inspector_label_width`) is gone — one thing per line reads
+better at this width.
+
+Windowing + scrolling reworked for variable-height entries: scroll and
+the window are in 128px row UNITS (section = 1, field = 2; 45 units total
+vs 10 visible), and an entry is emitted only when it FULLY fits the
+window (partially-visible entries are skipped — same no-half-drawing
+rule, now per-entry instead of per-row). The scrollbar thumb is
+proportional over units. Wheel notch = one unit.
