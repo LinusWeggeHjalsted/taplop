@@ -1198,17 +1198,19 @@ pub fn handleAnytimeInput(
                 }
             },
             // Editor tool cell click (make it the active tool). The
-            // EditorToolId rode in `anytime.clicked_editor_tool`. View-side
-            // display state for now; migrates onto the Editor via
-            // `editor_set_tool` when the edit-verb handlers land. Changing
-            // to a DIFFERENT tool clears the select-tool selection (the
-            // selection belongs to the select workflow); re-selecting the
-            // active tool changes nothing.
+            // EditorToolId rode in `anytime.clicked_editor_tool`. Push the
+            // orchestrator and drain (same as level tabs): the tool pointer
+            // lives on the Editor (GameState), so the switch — and the
+            // selection clear it carries — rides the undo timeline
+            // (`editor_set_tool`). Re-selecting the active tool changes
+            // nothing (no event, no undo step).
             .select_editor_tool => {
                 const tool = anytime.clicked_editor_tool orelse return;
-                if (std.meta.eql(tool, history.session.ui_state.editor_active_tool)) return;
-                history.session.ui_state.editor_active_tool = tool;
-                history.session.ui_state.editor_selection.clearRetainingCapacity();
+                if (current.editor == null) return;
+                if (std.meta.eql(tool, current.editor.?.active_tool)) return;
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_tool = .{
+                    .tool = tool,
+                } });
             },
             // Level-tab click: push the orchestrator (the EditorEvent owns
             // the mutation; the switch rides the undo timeline) and drain.
@@ -1605,7 +1607,7 @@ pub fn handleIdleInput(
     if (current.screen == .editor) {
         if (idle.tile_clicked) |clicked_position| {
             if (current.editor) |*editor| {
-                switch (history.session.ui_state.editor_active_tool) {
+                switch (editor.active_tool) {
                     .tile => {
                         const plan = event_handlers.planEditorTilePaintActions(editor, clicked_position, allocator);
                         if (plan.len > 0) {
@@ -2219,7 +2221,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
 
     // Mouse owns the cursor when it moved — at a position with NO tile
     // (paint semantics: any tile position is a legal target).
-    history.session.ui_state.editor_active_tool = .tile;
+    history.current_state.editor.?.active_tool = .tile;
     resolveTileCursor(
         &history,
         .{ .anytime = .{ .in_game = .{
@@ -2250,7 +2252,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
 
     // Arrow nudge with a null cursor snaps to player_start first, then
     // nudges — no clamp-to-real-tile (empty space is a legal paint target).
-    history.session.ui_state.editor_active_tool = .tile;
+    history.current_state.editor.?.active_tool = .tile;
     resolveTileCursor(
         &history,
         .{ .anytime = .{ .in_game = .{
@@ -2264,7 +2266,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
     // The select tool resolves the tile cursor as well (its outline
     // previews what a click would select — a covering decoration's
     // footprint region, else the single tile).
-    history.session.ui_state.editor_active_tool = .select;
+    history.current_state.editor.?.active_tool = .select;
     resolveTileCursor(
         &history,
         .{ .anytime = .{ .in_game = .{
@@ -2277,7 +2279,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
 
     // The enemy tool is a tile-cursor tool too (same semantics — any
     // position is a legal place target).
-    history.session.ui_state.editor_active_tool = .{ .entity_type = 0 };
+    history.current_state.editor.?.active_tool = .{ .entity_type = 0 };
     resolveTileCursor(
         &history,
         .{ .anytime = .{ .in_game = .{
@@ -2290,7 +2292,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
 
     // The decoration tool as well — the cursor tile is the placement
     // ANCHOR tile (the view draws the footprint region outline around it).
-    history.session.ui_state.editor_active_tool = .{ .decoration_type = 0 };
+    history.current_state.editor.?.active_tool = .{ .decoration_type = 0 };
     resolveTileCursor(
         &history,
         .{ .anytime = .{ .in_game = .{
@@ -2302,7 +2304,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
     try std.testing.expectEqual(types.Vector2{ .x = 7, .y = 7 }, history.session.tile_cursor.?);
 
     // The ground-item tool too (single-tile outline, like tile/enemy).
-    history.session.ui_state.editor_active_tool = .{ .item_type = 0 };
+    history.current_state.editor.?.active_tool = .{ .item_type = 0 };
     resolveTileCursor(
         &history,
         .{ .anytime = .{ .in_game = .{
@@ -2516,7 +2518,7 @@ test "selectAtEditorPosition: click toggles the tile + occupants group, singleto
     try std.testing.expectEqual(@as(usize, 4), selection.items.len);
 }
 
-test "select_editor_tool: changing tools clears the selection, re-selecting keeps it" {
+test "select_editor_tool: changing tools clears the selection, re-selecting keeps it, undo reverts the tool" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     var harness = @import("test_harness.zig").Harness.init(backing.allocator());
@@ -2534,26 +2536,36 @@ test "select_editor_tool: changing tools clears the selection, re-selecting keep
         .level = null,
         .hub = null,
     });
-    history.session.ui_state.editor_active_tool = .select;
+    @import("test_harness.zig").runToIdle(&history);
+    history.current_state.editor.?.active_tool = .select;
     try history.session.ui_state.editor_selection.append(
         history.backing_allocator,
         .{ .tile = .{ .x = 1, .y = 1 } },
     );
 
-    // Re-selecting the ACTIVE tool changes nothing.
+    // Re-selecting the ACTIVE tool changes nothing (no event fired).
     handleAnytimeInput(&history, .{
         .options_action = .select_editor_tool,
         .clicked_editor_tool = .select,
     }, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(usize, 1), history.session.ui_state.editor_selection.items.len);
 
-    // Changing to a different tool clears the selection.
+    // Changing to a different tool clears the selection (the clear rides
+    // the editor_set_tool event, so it is atomic with the switch).
     handleAnytimeInput(&history, .{
         .options_action = .select_editor_tool,
         .clicked_editor_tool = .tile,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try std.testing.expectEqual(types.EditorToolId.tile, history.session.ui_state.editor_active_tool);
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(types.EditorToolId.tile, history.current_state.editor.?.active_tool);
     try std.testing.expectEqual(@as(usize, 0), history.session.ui_state.editor_selection.items.len);
+
+    // The tool pointer rides the undo timeline — undo walks back to the
+    // select tool. (The selection clear is UiState in this slice — it is
+    // NOT restored by undo yet; that lands when the selection migrates
+    // onto the Editor.)
+    try std.testing.expect(history.undo(event_handlers.processEvent));
+    try std.testing.expectEqual(types.EditorToolId.select, history.current_state.editor.?.active_tool);
 }
 
 // --- Prepared-skill toggle (same-slot re-activation) ------------------------

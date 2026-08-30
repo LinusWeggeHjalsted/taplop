@@ -846,10 +846,12 @@ pub const EditorMode = enum {
     validate, // UI/input = gameplay, forced full-mission; editor dormant
 };
 
-/// The active editor tool (the palette selection). View-side display
-/// state for now (`UiState.editor_active_tool`); migrates onto the Editor
-/// + `editor_set_tool` event when the edit-verb handlers land. Indices are
-/// into the corresponding Editor palette arrays.
+/// The active editor tool (the palette selection) — what a viewport click
+/// does (see DESIGN → Architecture → Level Editor → Active-tool model).
+/// Lives on the Editor (GameState, undo timeline): any event whose effect
+/// depends on it (the click orchestrators) must read it from reconstructable
+/// state, and undo/redo of a tool switch restores what the author had
+/// active. Indices are into the corresponding Editor palette arrays.
 pub const EditorToolId = union(enum) {
     select: void,
     tile: void,
@@ -895,6 +897,11 @@ pub const Editor = struct {
     // players picking up a custom mission can see the author's loadout).
     player_def: EntityTypeDef = .{},
     active_level_index: usize = 0, // which tab is open
+    /// The currently active tool (see `EditorToolId`). Set only via the
+    /// `editor_set_tool` event; invariant: the select tool's selection is
+    /// nonempty only while this is `.select` (a tool switch away from
+    /// select clears it in the same event).
+    active_tool: EditorToolId = .select,
     mode: EditorMode = .edit,
 };
 

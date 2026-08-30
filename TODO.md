@@ -469,9 +469,12 @@ yet implemented. Remaining work:
   no-ops; clean-click-vs-pan disambiguation — see DONE.md), and the SELECT
   TOOL's plain-click selection (`types.Selectable` set on UiState, lightest-
   color region outlines, hover preview, cleared on tool change — see
-  DONE.md).
+  DONE.md), and the ACTIVE TOOL pointer onto the Editor
+  (`Editor.active_tool` + `player_set_editor_tool`/`editor_set_tool` —
+  tool switches + their selection clear ride the undo timeline; the
+  selection itself migrates onto the Editor in the next slice).
   Deferred: drag-painting. Still-needed event
-  structs: `editor_toggle_inspector` / `editor_set_tool` /
+  structs: `editor_toggle_inspector` /
   gradient-override setters. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved

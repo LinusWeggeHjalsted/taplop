@@ -1119,6 +1119,26 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_set_editor_level index out of range");
                     }
                 },
+                // Structural legality: screen + editor + the tool's palette
+                // index in range (the live path gates on the rendered palette
+                // cells; a hand-crafted log could name a nonexistent type).
+                .player_set_editor_tool => |set| {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_set_editor_tool outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_set_editor_tool with no editor");
+                    };
+                    const tool_valid = switch (set.tool) {
+                        .select, .tile => true,
+                        .entity_type => |type_id| type_id < editor.entity_types.len,
+                        .decoration_type => |type_id| type_id < editor.decoration_types.len,
+                        .item_type => |type_id| type_id < editor.item_types.len,
+                    };
+                    if (!tool_valid) {
+                        @panic("replay validation: player_set_editor_tool type id out of range");
+                    }
+                },
                 // Structural legality only: screen + editor + a level to
                 // paint on. The position is unrestricted (any tile
                 // coordinate is a legal paint target — the handler no-ops

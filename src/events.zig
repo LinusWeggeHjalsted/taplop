@@ -154,6 +154,15 @@ pub const EditorEvent = union(enum) {
     // so undo/redo works by construction. See DESIGN → Architecture → Level
     // Editor → Editor UI layout for the full design.
 
+    // ── Active tool ──
+    // Switch the active tool (a palette cell click). The select tool's
+    // selection is cleared in the same event whenever the new tool is not
+    // `.select` (invariant: selection nonempty ⇔ active tool is select),
+    // so a tool switch + its selection clear revert together on undo.
+    editor_set_tool: struct {
+        tool: types.EditorToolId,
+    },
+
     // ── Level management ──
     // Switch the active level tab. Pure state on editor.active_level_index.
     editor_set_active_level: struct {
@@ -531,6 +540,14 @@ pub const PlayerInputEvent = union(enum) {
     // (GameState), so tab switches ride the undo timeline.
     player_set_editor_level: struct {
         level_index: u32,
+    },
+    // Editor palette tool-cell click: make the clicked tool active. The
+    // handler pushes `editor_set_tool`; the tool pointer lives on the
+    // Editor (GameState), so tool switches ride the undo timeline and any
+    // event whose effect depends on the active tool can read it from
+    // reconstructable state.
+    player_set_editor_tool: struct {
+        tool: types.EditorToolId,
     },
     // Tile-paint click in the editor viewport (tile tool active): one click
     // = one tile. The handler computes the effect from state — no-op when a

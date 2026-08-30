@@ -480,6 +480,11 @@ test "writeEventLog serializes representative event shapes" {
             .total_turns = 7,
             .total_materials = .{ .wood = 1, .metal = 2, .leather = 3, .cloth = 4, .knowledge = 5 },
         } } },
+        // nested tagged union payload: void tag (EditorToolId.select) and
+        // index tag (EditorToolId.entity_type 2)
+        .{ .editor_event = .{ .editor_set_tool = .{ .tool = .select } } },
+        .{ .editor_event = .{ .editor_set_tool = .{ .tool = .{ .entity_type = 2 } } } },
+        .{ .player_input_event = .{ .player_set_editor_tool = .{ .tool = .tile } } },
     };
 
     const output = try writeEventLog(&history, "20260815_143022", allocator);
@@ -504,6 +509,12 @@ test "writeEventLog serializes representative event shapes" {
     // Null optional omits its line: exactly one "target " across both use_skills.
     try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "\ntarget "));
 
+    // Nested tagged-union payload: `<tag> <payload-fields...>` (void tags
+    // carry no payload fields).
+    try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_set_tool\ntool select\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_set_tool\ntool entity_type 2\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_tool\ntool tile\n") != null);
+
     // The output round-trips through the generic config parser structurally:
     // Metadata + EventLog sections, with one entry group per event.
     const sections = try parseConfigFile(output, allocator);
@@ -519,5 +530,19 @@ test "writeEventLog serializes representative event shapes" {
     try std.testing.expectEqualStrings("0", sections[1].entry_groups[0].pairs[0].value);
     try std.testing.expectEqualStrings("event", sections[1].entry_groups[0].pairs[1].key);
     try std.testing.expectEqualStrings("meta_event open_main_menu", sections[1].entry_groups[0].pairs[1].value);
+
+    // The union-payload events round-trip through loadEventLog with their
+    // tags + payloads intact (write → parse → load → expectEqualDeep). The
+    // loaded log lives in an arena (no per-event free helper exists —
+    // callers are arena-backed; leak-checked loading is the pending
+    // exhaustive round-trip TODO's job).
+    {
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const log = try loadEventLog(sections, arena.allocator());
+        try std.testing.expectEqualDeep(history[history.len - 3], log.events[log.events.len - 3]);
+        try std.testing.expectEqualDeep(history[history.len - 2], log.events[log.events.len - 2]);
+        try std.testing.expectEqualDeep(history[history.len - 1], log.events[log.events.len - 1]);
+    }
 }
 

@@ -1593,7 +1593,7 @@ test "editor tool click with an empty plan fires no event" {
     const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
     var history = harness.newHistory(editorStateWith(.{ .levels = &levels }));
     runToIdle(&history);
-    history.session.ui_state.editor_active_tool = .tile;
+    history.current_state.editor.?.active_tool = .tile;
 
     input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);

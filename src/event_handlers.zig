@@ -281,6 +281,24 @@ fn handleEditorEvent(
 ) void {
     const editor = &(current.editor orelse @panic("editor event with no editor"));
     switch (event) {
+        .editor_set_tool => |set| {
+            // Defensive against crafted logs: a tool index outside its
+            // palette is ignored (same posture as editor_set_active_level's
+            // range check — validatePlayerAction rejects it at the replay
+            // seam, the live path can't produce it).
+            const tool_valid = switch (set.tool) {
+                .select, .tile => true,
+                .entity_type => |type_id| type_id < editor.entity_types.len,
+                .decoration_type => |type_id| type_id < editor.decoration_types.len,
+                .item_type => |type_id| type_id < editor.item_types.len,
+            };
+            if (!tool_valid) return;
+            editor.active_tool = set.tool;
+            // Invariant: selection nonempty ⇔ active tool is select — a
+            // switch away from the select tool takes the selection with it
+            // (same event, so one undo step reverts both).
+            if (set.tool != .select) selection.clearRetainingCapacity();
+        },
         .editor_set_tile => |set| {
             if (set.level_index >= editor.levels.len) {
                 @panic("editor_set_tile: level index out of range");
@@ -1176,6 +1194,13 @@ fn handlePlayerInputEvent(
         .player_set_editor_level => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_active_level = .{
                 .level_index = set.level_index,
+            } } }}, allocator);
+        },
+        // Tool-cell click: push the machinery event (the tool pointer + the
+        // selection clear live on the undo timeline together).
+        .player_set_editor_tool => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_tool = .{
+                .tool = set.tool,
             } } }}, allocator);
         },
         // Tile-paint click: thin over the shared planner (the input layer

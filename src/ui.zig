@@ -121,13 +121,6 @@ pub const UiState = struct {
     /// `editor_palette_scroll`).
     editor_palette_collapsed: [3]bool = .{ true, true, true },
 
-    /// The active editor tool (palette selection). Default: the Select
-    /// tool. Drives the selected-tool outline in the palette + what a
-    /// viewport click does (see input_handlers' editor arms). Off the undo
-    /// timeline (view-side, like the collapse + scroll state); migrates
-    /// onto the Editor via `editor_set_tool` when the event lands.
-    editor_active_tool: types.EditorToolId = .select,
-
     /// The select tool's selection set (see `types.Selectable`). Mutated
     /// directly by the input handlers (a UI affordance, not a mission
     /// edit — off the undo timeline, replay-safe by construction) via the

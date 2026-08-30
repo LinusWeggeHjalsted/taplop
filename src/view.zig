@@ -313,7 +313,7 @@ pub fn view(
                 active_theme,
                 &session.ui_state.editor_palette_scroll,
                 &session.ui_state.editor_palette_collapsed,
-                session.ui_state.editor_active_tool,
+                editor.active_tool,
             ) catch @panic("failed to build editor bottom bar");
         }
     } else if (current_state.screen == .main_menu) {
@@ -2023,7 +2023,7 @@ fn buildEditorCursorOverlay(
     camera: types.Camera,
     zoom: f32,
 ) void {
-    const tool = session.ui_state.editor_active_tool;
+    const tool = editor.active_tool;
     const cursor = session.tile_cursor orelse return;
 
     if (tool == .decoration_type) {
@@ -2837,7 +2837,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
         .level_tiles = &.{}, // no tiles — the outline must still draw
         .player_start = .{ .x = 0, .y = 0 },
     }};
-    const state_ = GameState{
+    var state_ = GameState{
         .screen = .editor,
         .event_stack = &.{},
         .player_data = .{},
@@ -2850,7 +2850,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
         .hub = null,
     };
     var session = state.SessionState{};
-    session.ui_state.editor_active_tool = .tile;
+    state_.editor.?.active_tool = .tile;
     session.tile_cursor = .{ .x = 2, .y = 1 };
 
     const camera = computeCamera(&state_, 1.0, null);
@@ -2884,7 +2884,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
     // preview — a covering decoration's footprint region, else the tile);
     // an enemy tool does (same overlay — its click target is a tile
     // position too).
-    session.ui_state.editor_active_tool = .select;
+    state_.editor.?.active_tool = .select;
     const view_state_select = view(
         &state_,
         &session,
@@ -2905,7 +2905,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
     try std.testing.expectEqual(@as(usize, 1), view_state_select.tile_overlays.len);
     try std.testing.expectEqual(types.TileOverlayType.cursor, view_state_select.tile_overlays[0].overlay_type);
 
-    session.ui_state.editor_active_tool = .{ .entity_type = 0 };
+    state_.editor.?.active_tool = .{ .entity_type = 0 };
     const view_state_entity = view(
         &state_,
         &session,
@@ -2927,7 +2927,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
     try std.testing.expectEqual(types.TileOverlayType.cursor, view_state_entity.tile_overlays[0].overlay_type);
 
     // The ground-item tool draws the same single-tile outline.
-    session.ui_state.editor_active_tool = .{ .item_type = 0 };
+    state_.editor.?.active_tool = .{ .item_type = 0 };
     const view_state_item = view(
         &state_,
         &session,
@@ -2968,7 +2968,7 @@ test "editor cursor overlay: decoration tool outlines the footprint region conti
         .pixel_dims = .{ .x = 512, .y = 256 },
     }};
     const levels = [_]types.EditorLevel{.{ .player_start = .{ .x = 0, .y = 0 } }};
-    const state_ = GameState{
+    var state_ = GameState{
         .screen = .editor,
         .event_stack = &.{},
         .player_data = .{},
@@ -2981,7 +2981,7 @@ test "editor cursor overlay: decoration tool outlines the footprint region conti
         .hub = null,
     };
     var session = state.SessionState{};
-    session.ui_state.editor_active_tool = .{ .decoration_type = 0 };
+    state_.editor.?.active_tool = .{ .decoration_type = 0 };
     session.tile_cursor = .{ .x = 2, .y = 1 }; // the anchor tile
 
     const camera = computeCamera(&state_, 1.0, null);
@@ -3054,7 +3054,7 @@ test "editor select tool: hover previews the covering decoration's footprint, el
         .player_start = .{ .x = 0, .y = 0 },
         .decoration_placements = &decoration_placements,
     }};
-    const state_ = GameState{
+    var state_ = GameState{
         .screen = .editor,
         .event_stack = &.{},
         .player_data = .{},
@@ -3067,7 +3067,7 @@ test "editor select tool: hover previews the covering decoration's footprint, el
         .hub = null,
     };
     var session = state.SessionState{};
-    session.ui_state.editor_active_tool = .select;
+    state_.editor.?.active_tool = .select;
 
     const camera = computeCamera(&state_, 1.0, null);
     const runView = struct {
@@ -3145,7 +3145,7 @@ test "editor selection overlay: lightest-color outlines around all selected regi
         .entity_placements = &entity_placements,
         .decoration_placements = &decoration_placements,
     }};
-    const state_ = GameState{
+    var state_ = GameState{
         .screen = .editor,
         .event_stack = &.{},
         .player_data = .{},
@@ -3165,7 +3165,7 @@ test "editor selection overlay: lightest-color outlines around all selected regi
     // A tile (with its enemy), the player start, the level end, and the
     // 2-wide decoration — the union of everything selectable. Cursor null
     // so only the selection overlays emit.
-    session.ui_state.editor_active_tool = .select;
+    state_.editor.?.active_tool = .select;
     try session.ui_state.editor_selection.append(arena, .{ .tile = .{ .x = 1, .y = 1 } });
     try session.ui_state.editor_selection.append(arena, .{ .entity_placement = 0 });
     try session.ui_state.editor_selection.append(arena, .player_start);

@@ -6764,3 +6764,42 @@ diagonal same-multiple alignment, behind-origin and origin-tile exclusion,
 zero direction) + a `resolveTileCursor` behavior test (cross right over a
 gap, stay at the edge, cross back left). DESIGN → Input's tile-cursor
 bullet carries the rule.
+
+### Editor tool pointer onto the Editor (selection-undoability slice 1)
+
+**Why.** The select tool's selection is about to become undoable
+GameState (so group-move events can depend on it replay-safely and
+undo/redo shows what was selected at the time). The active tool pointer
+was the same kind of state living the same wrong place: on `UiState`
+(off the undo timeline), so a tool switch's selection clear could not ride
+the timeline either. Migrating the tool FIRST keeps every intermediate
+commit coherent — once the selection lands on GameState, the clear rides
+the `editor_set_tool` event from day one instead of being a temporary
+off-timeline write. Design discussion (granular select/deselect events,
+per-click undo steps accepted): session log, this entry's siblings.
+
+**What landed.** `Editor.active_tool: EditorToolId` (GameState, deepCopy-
+snapshot territory) set only via the `player_set_editor_tool` →
+`editor_set_tool` event pair; `UiState.editor_active_tool` deleted.
+`validatePlayerAction` arm (screen + editor + palette-index range; the
+handler defensively ignores an out-of-range tool the same way
+`editor_set_active_level` ignores a bad index). The tool-cell click in
+`handleAnytimeInput` reroutes from a direct UiState write to
+`pushPlayerActionAndDrain` (level-tab pattern). Invariant now stated in
+events.zig + types.zig: selection nonempty ⇔ active tool is select — the
+handler clears the UiState selection (still UiState this slice) inside
+the same event, so a tool switch + its clear revert together on undo.
+Session-log round-trip: the `EditorToolId` nested tagged-union payload
+(void + u32 tags) is covered in session_log.zig's shapes test with a
+write → parse → load → expectEqualDeep tail (loaded log in an arena — no
+per-event free helper exists; leak-checked loading is the pending
+exhaustive round-trip TODO).
+
+Intermediate state (one slice only): the selection is still on UiState,
+so undo restores the TOOL but not a cleared selection. The next slice
+(selection onto the Editor) closes this — its undo test asserts the
+selection restoration.
+
+Tests: the tool-change test in input_handlers.zig now drives the full
+input → event → handler path and asserts undo reverts the tool; the
+planner/cursor/view tests read `editor.?.active_tool`. All tests pass.

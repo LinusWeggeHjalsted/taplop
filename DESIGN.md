@@ -1910,7 +1910,12 @@ structure is what save reads to generate the mission files.
 **Active-tool model (left clicks fully modal; right-click is the tool-
 independent delete).** The active tool is always exactly one
 of: {selection, tile-paint, enemy-type-X, decoration-type-X,
-ground-item-type-X}. Selecting a palette slot sets the active tool to that
+ground-item-type-X}. The tool pointer lives on the Editor
+(`Editor.active_tool`, GameState) and is set only via the
+`player_set_editor_tool` → `editor_set_tool` event pair — tool switches
+ride the undo timeline, and any event whose effect depends on the active
+tool (the click orchestrators) can read it from reconstructable state.
+Selecting a palette slot sets the active tool to that
 type and the inspector shows that type's fields. A viewport LEFT click's
 effect is determined by the active tool. A RIGHT click is the same
 delete regardless of tool (`player_delete_editor_at`): one clean click
@@ -1953,7 +1958,10 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   and a tile erased by any flow (right-click, decoration placement) leaves
   the selection with it.
   Deferred: shift-click / marquee / selection operations (move / delete).
-  Placing does NOT happen in selection mode.
+  Placing does NOT happen in selection mode. The tool-switch clear rides
+  the `editor_set_tool` event (invariant: selection nonempty ⇔ active tool
+  is select), so one undo step reverts a tool switch together with its
+  selection clear.
 - **Tile-paint tool:** one click = one tile (`player_paint_editor_tile`,
   LANDED). A click on empty space paints a floor tile; a click where a
   tile already exists is a no-op (entities / items / the `!` / `=` sit ON
@@ -2098,7 +2106,10 @@ left-click input; the tool-independent right-click delete
 (`player_delete_editor_at` + the `PendingRightClick` gesture union) landed
 after it. The select tool's plain-click selection landed last
 (`types.Selectable` + `UiState.editor_selection` + white selection
-outlines + the hover preview). Remaining viewport input: selection
+outlines + the hover preview). The active tool pointer migrated onto the
+Editor (`Editor.active_tool` + `player_set_editor_tool` /
+`editor_set_tool`): tool switches — and the selection clear they carry —
+ride the undo timeline. Remaining viewport input: selection
 operations (move / delete / shift-click / marquee) + drag-painting.
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
@@ -2126,7 +2137,7 @@ bottom bar + inspector + settings sidebar rendering with real data, no
 interaction; then wire input per tool + the edit-verb handlers). The
 viewport shell includes the editor drawable projection (see Editor viewport
 rendering above). Still-needed event structs: `editor_toggle_inspector` /
-`editor_set_tool` / the gradient-override setters (see Level theme above).
+the gradient-override setters (see Level theme above).
 Default level template (`data/default_level.txt`). Validation result +
 replay attachment (deferred with online services), editor autosave
 (nice-to-have).
