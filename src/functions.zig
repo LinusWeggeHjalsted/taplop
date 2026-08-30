@@ -1,8 +1,9 @@
 //! Pure gameplay helpers: A* pathfinding (`shortestPath`, Chebyshev +
 //! Manhattan heuristic, entity blocking), tile reachability, distance metrics,
-//! the signed-delta saturation clamp (`applySignedDelta`), salvage-value
-//! computation from `data/salvage.txt`, and world-map graph layout. All
-//! integer gameplay logic; no floats, no I/O.
+//! the tile-list ray search (`nearestTileAlongDirection`), the signed-delta
+//! saturation clamp (`applySignedDelta`), salvage-value computation from
+//! `data/salvage.txt`, and world-map graph layout. All integer gameplay
+//! logic; no floats, no I/O.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -213,6 +214,50 @@ pub fn tileListContains(tiles: []const Vector2, position: Vector2) bool {
         if (tile.x == position.x and tile.y == position.y) return true;
     }
     return false;
+}
+
+/// The nearest tile strictly beyond `origin` along `direction` (each axis
+/// -1/0/1, not both zero) — the first tile on the ray origin + k·direction
+/// for k ≥ 1 — or null when no tile lies in that direction. A tile
+/// qualifies when its offset from `origin` is the SAME positive integer
+/// multiple of `direction` on both axes; the smallest multiple wins. Used
+/// by the tile-cursor nudge to CROSS GAPS (keyboard navigation reaches
+/// disconnected tile groups instead of stopping at the edge) — see
+/// DESIGN → Input.
+pub fn nearestTileAlongDirection(
+    tiles: []const Vector2,
+    origin: Vector2,
+    direction: Vector2,
+) ?Vector2 {
+    if (direction.x == 0 and direction.y == 0) return null;
+    var nearest: ?Vector2 = null;
+    var nearest_steps: i32 = std.math.maxInt(i32);
+    for (tiles) |tile| {
+        const offset_x = tile.x - origin.x;
+        const offset_y = tile.y - origin.y;
+        // 0 doubles as "not on the ray": a valid step count is always ≥ 1,
+        // so a zero/negative or misaligned offset is rejected by the
+        // steps > 0 filter below.
+        const steps: i32 = if (direction.x != 0 and direction.y != 0) blk: {
+            if (@rem(offset_x, direction.x) != 0) break :blk 0;
+            if (@rem(offset_y, direction.y) != 0) break :blk 0;
+            const steps_x = @divTrunc(offset_x, direction.x);
+            const steps_y = @divTrunc(offset_y, direction.y);
+            if (steps_x != steps_y) break :blk 0;
+            break :blk steps_x;
+        } else if (direction.x != 0) blk: {
+            if (offset_y != 0) break :blk 0;
+            break :blk @divTrunc(offset_x, direction.x);
+        } else blk: {
+            if (offset_x != 0) break :blk 0;
+            break :blk @divTrunc(offset_y, direction.y);
+        };
+        if (steps > 0 and steps < nearest_steps) {
+            nearest_steps = steps;
+            nearest = tile;
+        }
+    }
+    return nearest;
 }
 
 /// Apply a signed delta to an unsigned scalar, saturating at 0 (never wraps).
@@ -574,4 +619,63 @@ test "computeSalvageValue skill tome" {
     const result = computeSalvageValue(tome_item, definitions);
     try std.testing.expectEqual(@as(u32, 5), result.knowledge);
     try std.testing.expectEqual(@as(u32, 0), result.wood);
+}
+
+// ───────────────────────── nearestTileAlongDirection ─────────────────────────
+
+test "nearestTileAlongDirection: orthogonal gap jump picks the first tile on the ray" {
+    const tiles = [_]Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 5, .y = 0 } };
+    // Right from (1,0): (2,0) is empty — the ray continues to (5,0).
+    try std.testing.expectEqual(
+        Vector2{ .x = 5, .y = 0 },
+        nearestTileAlongDirection(&tiles, .{ .x = 1, .y = 0 }, .{ .x = 1, .y = 0 }).?,
+    );
+    // Left from (1,0): the adjacent tile.
+    try std.testing.expectEqual(
+        Vector2{ .x = 0, .y = 0 },
+        nearestTileAlongDirection(&tiles, .{ .x = 1, .y = 0 }, .{ .x = -1, .y = 0 }).?,
+    );
+    // Up from (1,0): no tile in that column above — null.
+    try std.testing.expectEqual(
+        @as(?Vector2, null),
+        nearestTileAlongDirection(&tiles, .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 }),
+    );
+}
+
+test "nearestTileAlongDirection: diagonal ray needs the same multiple on both axes" {
+    const tiles = [_]Vector2{
+        .{ .x = 2, .y = 2 },
+        .{ .x = 3, .y = 3 },
+        .{ .x = 3, .y = 4 }, // off the diagonal ray — ignored
+    };
+    try std.testing.expectEqual(
+        Vector2{ .x = 2, .y = 2 },
+        nearestTileAlongDirection(&tiles, .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 1 }).?,
+    );
+    // Anti-diagonal from (3,4) down-left: (2,2) is not on it, (3,3) is not
+    // either — nothing → null.
+    try std.testing.expectEqual(
+        @as(?Vector2, null),
+        nearestTileAlongDirection(&tiles, .{ .x = 3, .y = 4 }, .{ .x = -1, .y = -1 }),
+    );
+}
+
+test "nearestTileAlongDirection: tiles behind the origin and the origin itself are ignored" {
+    const tiles = [_]Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 5, .y = 0 } };
+    // Right from (2,0): (0,0) is behind, (2,0) is the origin — (5,0) wins.
+    try std.testing.expectEqual(
+        Vector2{ .x = 5, .y = 0 },
+        nearestTileAlongDirection(&tiles, .{ .x = 2, .y = 0 }, .{ .x = 1, .y = 0 }).?,
+    );
+    // The origin is the ONLY tile → null (a step count of 0 is never valid).
+    const lone = [_]Vector2{.{ .x = 2, .y = 0 }};
+    try std.testing.expectEqual(
+        @as(?Vector2, null),
+        nearestTileAlongDirection(&lone, .{ .x = 2, .y = 0 }, .{ .x = 1, .y = 0 }),
+    );
+    // A zero direction never finds anything.
+    try std.testing.expectEqual(
+        @as(?Vector2, null),
+        nearestTileAlongDirection(&tiles, .{ .x = 2, .y = 0 }, .{ .x = 0, .y = 0 }),
+    );
 }

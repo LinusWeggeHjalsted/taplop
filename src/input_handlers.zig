@@ -23,6 +23,7 @@ const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
 const event_handlers = @import("event_handlers.zig");
+const functions = @import("functions.zig");
 const view_mod = @import("view.zig");
 const build_info = @import("build_info");
 
@@ -1831,10 +1832,12 @@ pub fn handleIdleInput(
 /// mouse, but is cleared when the pointer is over a blocking UI element (so
 /// panels/buttons don't leave a world-cursor ghost) or over a non-tile. When
 /// the mouse didn't move, arrow keys nudge the cursor one tile; if the cursor
-/// is null, it snaps to the player's tile first. Runs in a level/hub (needs
-/// world tiles + the player position); the editor screen has its own arm
-/// with paint semantics (`resolveEditorTileCursor` — no tile-membership
-/// check, no nudge clamp).
+/// is null, it snaps to the player's tile first. A nudge onto empty space
+/// CROSSES THE GAP: the cursor jumps to the first tile on the ray in the
+/// nudge direction (no tile in that direction → it stays). Runs in a
+/// level/hub (needs world tiles + the player position); the editor screen
+/// has its own arm with paint semantics (`resolveEditorTileCursor` — no
+/// tile-membership check, no nudge clamp, always one step).
 pub fn resolveTileCursor(
     history: *GameStateHistory,
     player_input: PlayerInput,
@@ -1892,7 +1895,7 @@ pub fn resolveTileCursor(
     if (!nudge_up and !nudge_down and !nudge_left and !nudge_right) return;
 
     // Snap to the player's tile if the cursor is null.
-    var cursor = history.session.tile_cursor orelse blk: {
+    const origin = history.session.tile_cursor orelse blk: {
         const player_pos = if (current.level) |*level|
             level.entities[0].position
         else if (current.hub) |*hub|
@@ -1904,16 +1907,23 @@ pub fn resolveTileCursor(
 
     // Nudge by the held-key direction (each axis independently; diagonals
     // work via two held keys, opposite keys cancel).
-    cursor.x += in_game.cursor_direction.x;
-    cursor.y += in_game.cursor_direction.y;
+    const nudged = types.Vector2{
+        .x = origin.x + in_game.cursor_direction.x,
+        .y = origin.y + in_game.cursor_direction.y,
+    };
 
-    // Clamp to a real tile — if the nudged position isn't a world tile, leave
-    // the cursor where it was (don't follow the cursor off the map).
+    // If the nudged position is a world tile, move there. Otherwise CROSS
+    // THE GAP: jump to the first tile on the ray in the nudge direction
+    // (keyboard navigation reaches disconnected tile groups instead of
+    // stopping at the edge). No tile in that direction at all → stay.
     for (world_tiles) |tile| {
-        if (tile.x == cursor.x and tile.y == cursor.y) {
-            history.session.tile_cursor = cursor;
+        if (tile.x == nudged.x and tile.y == nudged.y) {
+            history.session.tile_cursor = nudged;
             return;
         }
+    }
+    if (functions.nearestTileAlongDirection(world_tiles, origin, in_game.cursor_direction)) |target| {
+        history.session.tile_cursor = target;
     }
 }
 /// Editor arm of the tile-cursor resolution. The cursor follows the mouse
@@ -2841,4 +2851,56 @@ test "swap_weapons with both hands empty fires nothing" {
     handleAnytimeInput(&history, .{ .in_game = .{ .swap_weapons = true } }, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try std.testing.expect(history.current_state.event_stack[0].player_input_event == .swap_hands);
+}
+
+test "resolveTileCursor: nudge onto a gap jumps to the first tile in the direction" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    // A row with a gap: (0,0), (1,0), then nothing until (5,0). The player
+    // stands on (0,0).
+    const entities = [_]types.Entity{.{ .name = "Player", .team = 0, .position = .{ .x = 0, .y = 0 } }};
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 5, .y = 0 } };
+    var history = harness.newHistory(@import("test_harness.zig").levelStateWithEntities(
+        backing.allocator(),
+        &entities,
+        &tiles,
+    ));
+    @import("test_harness.zig").runToIdle(&history);
+    history.session.tile_cursor = .{ .x = 1, .y = 0 };
+
+    // Right from (1,0): (2,0) is empty — the cursor crosses the gap to
+    // (5,0) instead of stopping.
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .move_cursor_right = true,
+            .cursor_direction = .{ .x = 1, .y = 0 },
+        } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 5, .y = 0 }, history.session.tile_cursor.?);
+
+    // Right from (5,0): no tile in that direction at all — the cursor stays.
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .move_cursor_right = true,
+            .cursor_direction = .{ .x = 1, .y = 0 },
+        } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 5, .y = 0 }, history.session.tile_cursor.?);
+
+    // Left from (5,0): back across the gap to the adjacent (1,0) on the ray.
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .move_cursor_left = true,
+            .cursor_direction = .{ .x = -1, .y = 0 },
+        } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.session.tile_cursor.?);
 }

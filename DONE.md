@@ -6739,3 +6739,28 @@ controls fire). The pre-existing
 retargeted — it pressed on the player-start tile of an empty level, which
 is now (correctly) a no-op; its "fires" case now targets a bare tile and
 processes both the action and its sub-event. All 365 tests pass.
+
+### Tile-cursor gap crossing (DONE)
+
+**The behavior.** In levels/hubs, arrow-key cursor nudging used to stop at
+gaps: a nudge onto empty space left the cursor where it was, so disconnected
+tile groups were unreachable by keyboard. Now the nudge crosses the gap —
+the cursor jumps to the FIRST tile on the ray in the nudge direction
+(`functions.nearestTileAlongDirection`: a tile qualifies when its offset
+from the origin is the same positive integer multiple of the direction on
+both axes; smallest multiple wins; single O(n) pass over the tile list).
+Diagonals follow the combined diagonal ray (per the design discussion —
+a staircase edge where the pure diagonal finds nothing simply doesn't move,
+the player presses a single-axis key instead; per-axis fallback was
+rejected as surprising L-shaped teleports). No tile in the direction at all
+→ the cursor stays. The editor cursor is unchanged — it always moves one
+step with no clamp (acting over empty space is the point there).
+
+Implementation: `nearestTileAlongDirection` (functions.zig, pure +
+unit-tested), `resolveTileCursor`'s level/hub nudge arm (fast path: the
+nudged position is a tile → move there; else ray search from the
+PRE-nudge origin). Tests: helper unit tests (orthogonal gap jump,
+diagonal same-multiple alignment, behind-origin and origin-tile exclusion,
+zero direction) + a `resolveTileCursor` behavior test (cross right over a
+gap, stay at the edge, cross back left). DESIGN → Input's tile-cursor
+bullet carries the rule.

@@ -479,7 +479,12 @@ gameplay — not in snapshots, not touched by replay.
   prepare-time is never needed for reconstruction, so it's safe off GameState.
   Resolved per-frame in `update()` (`resolveTileCursor`): mouse-move drives it
   (with UI occlusion + tile validity), arrow keys nudge when the mouse is idle
-  (snapping to the player tile if null). Re-activating the slot of an
+  (snapping to the player tile if null). A nudge onto empty space CROSSES THE
+  GAP: the cursor jumps to the first tile on the ray in the nudge direction
+  (`nearestTileAlongDirection` — diagonals follow the combined diagonal ray;
+  no tile in that direction → the cursor stays). The editor cursor always
+  moves one step with no tile-membership clamp — acting over empty space is
+  the point there. Re-activating the slot of an
   already-prepared skill toggles the preparation OFF (`resolveSkillSlotAction`
   → `player_cancel_skill`); the auto-target hit still takes precedence and
   fires — a same-slot press never resolves to a recorded no-op.
