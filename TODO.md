@@ -850,6 +850,15 @@ Already total (no action): A* comparePathNodes (f→x→y); entity draw sort
 
 Done items in DONE.md. Open:
 
+- **Frame-level player actions — keep the exception list closed.** Exactly
+  one exists (the text-field keyboard resolution; see DESIGN → Architecture
+  → "Frame-level player actions" for the contract it breaks + the
+  obligations it carries). If a SECOND once-per-frame action ever lands,
+  extract a shared push-and-record helper (push + drain +
+  maybeRecordIdlePoint) so the idle-point step can't be forgotten — and
+  treat any new frame-level action with suspicion: it must PROVE it can't
+  run inside update().
+
 - **Unify the panel-toggle convention into GameState.** The in-game middle
   panel toggles (inventory/gear/skills/entity-inspect, hub + level
   screens) are direct `UiState` writes — off the undo timeline — while the

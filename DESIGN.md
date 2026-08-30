@@ -1554,6 +1554,30 @@ So a clone is a permanent, compounding material factory keyed by mission.
   stream, so they must funnel through a single orchestrator. Bonus: undo
   granularity matches a single click/key. Orchestrators carry only the
   player's intent; all mutation is in the verbs they push.
+- **Frame-level player actions (a RESTRICTED exception — do not extend
+  casually).** The convention above rests on a contract the undo system
+  depends on: EVERY player action is initiated from inside `update()`
+  (handleIdleInput / handleAnytimeInput), so frame()'s two idle-point
+  detectors (the drain loop's stack-emptied check + the idle update's
+  `events_processed` check) always notice the drain finish and record the
+  undo stop. The ONE case that may break this contract: an action that
+  must resolve EXACTLY ONCE PER FRAME regardless of drain state — because
+  `update()` re-runs per drain iteration with the same `PlayerInput` copy,
+  an action initiated there multi-fires during a drain. Such an action is
+  initiated in `frame()` before the drain (today exactly one exists: the
+  text-field keyboard resolution — Enter/Escape — via
+  `resolveTextEditOutcome`; see UI Framework → Text input widget). It
+  STILL goes through the normal event pair (player wrapper → machinery
+  event, `pushPlayerActionAndDrain` — never a direct GameState mutation)
+  AND must record its own idle point with the action
+  (`maybeRecordIdlePoint(true)` after the drain — its guards make that
+  idempotent at every call site; without it, undo steps past the action
+  and discards it from the future timeline — the bug this rule was
+  written after). Adding another frame-level action requires the same
+  once-per-frame proof AND the same recording; if it can run inside
+  update() instead, it MUST. If a second one ever lands, extract a
+  shared push-and-record helper so the idle-point step can't be forgotten
+  (tracked in TODO → Tech Debt).
 - **A player action that would change nothing never fires.** Every recorded
   player action creates an idle point; one that no-ops leaves an undo step
   (and a future replay step) that visibly does nothing. The input layer
@@ -2810,7 +2834,11 @@ freeform-integer entry). Design:
   insert, Backspace/Delete/arrows edit, shift+arrows select.
 - **Resolution semantics (M2 + commit-on-dismiss):** Enter or the
   field's OK button COMMITS (validate/clamp, push the field's wrapper
-  event, clear focus); Escape DISCARDS. A click on another INSPECTOR
+  event, clear focus); Escape DISCARDS. The keyboard outcome resolves
+  ONCE PER FRAME from `main.frame()` before the drain — a frame-level
+  player action under the restricted exception in DESIGN → Architecture
+  ("Frame-level player actions"), which also carries the obligation to
+  record its own idle point. A click on another INSPECTOR
   control commits the old field and the click proceeds normally
   (one-click field switching). A click ANYWHERE ELSE (viewport, undo,
   tabs, palette) commits the old field and is CONSUMED as pure
