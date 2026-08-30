@@ -463,7 +463,8 @@ yet implemented. Remaining work:
   button. Remaining viewport INPUT: erase gesture, drag-paint, decoration
   + item placement tools (mirror the enemy tool's occupant-replacement
   orchestrator), selection tool (click / shift-click / marquee),
-  cursor-follow for placement tools (currently tile-tool only).
+  cursor-follow for the item tools + a footprint-shaped preview for the
+  decoration tool (tile + enemy tools share the tile cursor today).
 - **Right-click in the editor viewport — gesture split still to pick.**
   Right-drag pans the camera; a future right-click is the natural erase
   gesture for the tile tool (drag-paint being deferred removes the

@@ -167,8 +167,9 @@ pub fn view(
             session.animation_clock,
             settings.animation_fps,
         );
-        // Tile-tool cursor: outline at the cursor (unconditional — paints
-        // target empty space too). See buildEditorCursorOverlay.
+        // Tile-cursor overlay: outline at the cursor (unconditional —
+        // paints/placements target empty space too). See
+        // buildEditorCursorOverlay.
         buildEditorCursorOverlay(
             &tile_overlays,
             frame_allocator,
@@ -1988,13 +1989,14 @@ fn buildCursorOverlay(
     }
 }
 
-/// Editor tile-tool cursor: an outline at the cursor position, drawn
+/// Editor tile-cursor overlay: an outline at the cursor position, drawn
 /// UNCONDITIONALLY (no tile-membership check) — any tile position is a
-/// legal paint target, so the outline over empty space is the affordance
-/// that you can place a tile there (unlike levels/hubs, which only cursor
-/// over real tiles). Gated on the tile tool; other tools have no cursor
-/// yet. Same replay-safe shape as `buildCursorOverlay` (pure over
-/// SessionState).
+/// legal paint/place target, so the outline over empty space is the
+/// affordance that a tile can go there (unlike levels/hubs, which only
+/// cursor over real tiles). Gated on the tile-cursor tools
+/// (`EditorToolId.showsTileCursor` — tile + enemy tools today); other
+/// tools have no cursor yet. Same replay-safe shape as
+/// `buildCursorOverlay` (pure over SessionState).
 fn buildEditorCursorOverlay(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
@@ -2003,7 +2005,7 @@ fn buildEditorCursorOverlay(
     camera: types.Camera,
     zoom: f32,
 ) void {
-    if (session.ui_state.editor_active_tool != .tile) return;
+    if (!session.ui_state.editor_active_tool.showsTileCursor()) return;
     const cursor = session.tile_cursor orelse return;
     list.append(allocator, .{
         .screen_position = tileToScreen(cursor, camera, zoom),
@@ -2707,7 +2709,8 @@ test "editor cursor overlay: tile tool outlines the cursor, other tools don't" {
         overlay.screen_position,
     );
 
-    // A non-tile tool draws no cursor.
+    // A non-tile-cursor tool draws no cursor; an enemy tool does (same
+    // overlay — its click target is a tile position too).
     session.ui_state.editor_active_tool = .select;
     const view_state_select = view(
         &state_,
@@ -2727,4 +2730,25 @@ test "editor cursor overlay: tile tool outlines the cursor, other tools don't" {
         },
     );
     try std.testing.expectEqual(@as(usize, 0), view_state_select.tile_overlays.len);
+
+    session.ui_state.editor_active_tool = .{ .entity_type = 0 };
+    const view_state_entity = view(
+        &state_,
+        &session,
+        .{ .input_bindings = &.{} },
+        harness.color_theme_definitions,
+        &harness.weapon_type_definitions,
+        .{
+            .camera = camera,
+            .camera_zoom = 1.0,
+            .event_history = &.{},
+            .level_start_index = null,
+            .current_event_index = 0,
+            .frame_allocator = arena,
+            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .sprite_bounds = .{},
+        },
+    );
+    try std.testing.expectEqual(@as(usize, 1), view_state_entity.tile_overlays.len);
+    try std.testing.expectEqual(types.TileOverlayType.cursor, view_state_entity.tile_overlays[0].overlay_type);
 }

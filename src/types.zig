@@ -856,6 +856,20 @@ pub const EditorToolId = union(enum) {
     entity_type: u32,
     decoration_type: u32,
     item_type: u32,
+
+    /// Does this tool show the single-tile cursor (mouse-follow + arrow
+    /// nudge + the view's outline overlay)? True for the tools whose click
+    /// target is one tile position: tile paint + entity placement. The
+    /// decoration tool wants a footprint-shaped preview instead; the item
+    /// tools join when they land; selection has its own affordances.
+    /// Shared by the cursor resolution (input_handlers) and the overlay
+    /// emission (view) so the two gates can't drift.
+    pub fn showsTileCursor(self: EditorToolId) bool {
+        return switch (self) {
+            .tile, .entity_type => true,
+            else => false,
+        };
+    }
 };
 
 pub const Editor = struct {

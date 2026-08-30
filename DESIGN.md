@@ -1899,10 +1899,11 @@ is determined by the active tool:
   tiles, so they never block a paint); a click covered by a decoration
   footprint REPLACES the decoration — every covering placement is deleted,
   then the tile is placed (the click's delete + place sub-events share one
-  idle point, so one undo reverts the whole click). While the tile tool is
-  active the tile cursor draws its outline at the cursor position
-  unconditionally (over empty space too — the affordance that a tile can
-  go there; arrow keys nudge it without the level/hub clamp-to-real-tile).
+  idle point, so one undo reverts the whole click). While a tile-cursor
+  tool is active (tile + enemy tools — `EditorToolId.showsTileCursor`) the
+  tile cursor draws its outline at the cursor position
+  unconditionally (over empty space too — the affordance that a click can
+  act there; arrow keys nudge it without the level/hub clamp-to-real-tile).
   Deferred: right-click erase and drag-painting (one `editor_set_tile` per
   cell crossed). Does not modify the selection set.
 - **Placement tools (enemy/decoration/item type):** click places one
@@ -1918,7 +1919,8 @@ is determined by the active tool:
   **One thing per placed tile is an invariant** — `editor_place_entity`
   panics on an occupied tile (the orchestrator clears occupants first);
   the decoration/item placement events get the same guard when they land,
-  and future move/drag handlers must preserve it. Placing does NOT select
+  and future move/drag handlers must preserve it. The enemy tool shares
+  the tile cursor (see the tile-paint tool above). Placing does NOT select
   the placed instance — you switch to the selection tool to select.
   (Auto-select-after-place is deliberately NOT the model; keeps tool
   responsibilities disjoint.)

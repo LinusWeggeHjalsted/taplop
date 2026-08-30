@@ -1578,9 +1578,10 @@ pub fn resolveTileCursor(
 ) void {
     const current = &history.current_state;
 
-    // Editor edit mode: the tile tool's cursor — its own semantics (any tile
-    // position is a legal paint target, so no tile-membership check and no
-    // nudge clamp). Other tools have no tile cursor yet.
+    // Editor edit mode: the tile-cursor tools' cursor — its own semantics
+    // (any tile position is a legal paint/place target, so no
+    // tile-membership check and no nudge clamp). Other tools have no tile
+    // cursor yet.
     if (current.screen == .editor) {
         resolveEditorTileCursor(history, player_input, ui_elements);
         return;
@@ -1651,19 +1652,20 @@ pub fn resolveTileCursor(
         }
     }
 }
-/// Editor arm of the tile-cursor resolution (tile tool active — see
-/// `resolveTileCursor`). The cursor follows the mouse to ANY tile position
-/// (cleared over blocking UI, like levels/hubs); arrow keys nudge freely —
-/// there is no clamp-to-real-tile because painting over empty space is the
-/// point. A null cursor snaps to the active level's player_start (the '!',
-/// the editor's player-position analog).
+/// Editor arm of the tile-cursor resolution (a tile-cursor tool active —
+/// see `EditorToolId.showsTileCursor`). The cursor follows the mouse to
+/// ANY tile position (cleared over blocking UI, like levels/hubs); arrow
+/// keys nudge freely — there is no clamp-to-real-tile because
+/// painting/placing over empty space is the point. A null cursor snaps to
+/// the active level's player_start (the '!', the editor's player-position
+/// analog).
 fn resolveEditorTileCursor(
     history: *GameStateHistory,
     player_input: PlayerInput,
     ui_elements: []const ui.UiElement,
 ) void {
     const current = &history.current_state;
-    if (history.session.ui_state.editor_active_tool != .tile) {
+    if (!history.session.ui_state.editor_active_tool.showsTileCursor()) {
         history.session.tile_cursor = null;
         return;
     }
@@ -1848,7 +1850,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
     );
     try std.testing.expectEqual(@as(?types.Vector2, null), history.session.tile_cursor);
 
-    // Non-tile tools have no cursor.
+    // Non-tile-cursor tools have no cursor.
     history.session.ui_state.editor_active_tool = .select;
     resolveTileCursor(
         &history,
@@ -1872,4 +1874,17 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
         &.{},
     );
     try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 3 }, history.session.tile_cursor.?);
+
+    // The enemy tool is a tile-cursor tool too (same semantics — any
+    // position is a legal place target).
+    history.session.ui_state.editor_active_tool = .{ .entity_type = 0 };
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 8, .y = 8 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 8, .y = 8 }, history.session.tile_cursor.?);
 }

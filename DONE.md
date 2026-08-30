@@ -6319,3 +6319,21 @@ place; decoration + missing tile + one-undo reverts all three; player
 start / level end no-ops; retype in place + same-type no-op; ground item
 deleted + enemy placed; direct retype + item-delete arms) with a shared
 two-type palette fixture (`placementTestEditor`).
+
+### Editor: tile cursor extended to the enemy tools
+
+The enemy placement tools now show the same tile cursor outline as the
+tile tool (mouse-follow to any position, unclamped arrow nudge, snap to
+player_start, outline drawn over empty space). The gate moved from a
+hardcoded `!= .tile` check (duplicated at the resolution site in
+input_handlers and the overlay site in view) to one shared predicate,
+`EditorToolId.showsTileCursor` (types.zig, beside the union it describes)
+— the two gates can't drift, and the next tool joins by editing one
+switch arm. Decoration tools are deliberately excluded (they'll want a
+footprint-shaped preview, not a single-tile outline); item tools join
+when they land; selection has its own affordances.
+
+Tests: the cursor-resolution test gained an enemy-tool mouse-follow case
+(after the nudge case — leaving the cursor set mid-test broke the
+snap-from-null assertion ordering), and the view overlay test gained an
+enemy-tool overlay case.
