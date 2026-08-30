@@ -1388,8 +1388,8 @@ pub fn handleIdleInput(
     // consumed clicks over blocking UI (palette, tabs), so a surviving
     // tile_clicked is a viewport click. Enter folds into tile_clicked at
     // the top of handleIdleInput, so the keyboard path acts at the tile
-    // cursor too. Landed tools: tile paint + enemy placement; the
-    // decoration / item / selection tools land in later slices.
+    // cursor too. Landed tools: tile paint + enemy + decoration placement;
+    // the item / selection tools land in later slices.
     if (current.screen == .editor) {
         if (idle.tile_clicked) |clicked_position| {
             switch (history.session.ui_state.editor_active_tool) {
@@ -1400,7 +1400,11 @@ pub fn handleIdleInput(
                     .type_id = type_id,
                     .position = clicked_position,
                 } }, allocator),
-                .select, .decoration_type, .item_type => {},
+                .decoration_type => |type_id| event_handlers.pushPlayerAction(current, .{ .player_place_editor_decoration = .{
+                    .type_id = type_id,
+                    .position = clicked_position,
+                } }, allocator),
+                .select, .item_type => {},
             }
         }
         return;
@@ -1579,7 +1583,7 @@ pub fn resolveTileCursor(
     const current = &history.current_state;
 
     // Editor edit mode: the tile-cursor tools' cursor — its own semantics
-    // (any tile position is a legal paint/place target, so no
+    // (any tile position is a legal paint/place/anchor target, so no
     // tile-membership check and no nudge clamp). Other tools have no tile
     // cursor yet.
     if (current.screen == .editor) {
@@ -1653,19 +1657,20 @@ pub fn resolveTileCursor(
     }
 }
 /// Editor arm of the tile-cursor resolution (a tile-cursor tool active —
-/// see `EditorToolId.showsTileCursor`). The cursor follows the mouse to
+/// see `EditorToolId.usesTileCursor`). The cursor follows the mouse to
 /// ANY tile position (cleared over blocking UI, like levels/hubs); arrow
 /// keys nudge freely — there is no clamp-to-real-tile because
 /// painting/placing over empty space is the point. A null cursor snaps to
 /// the active level's player_start (the '!', the editor's player-position
-/// analog).
+/// analog). For the decoration tool the cursor tile is the placement
+/// ANCHOR tile (the view renders the footprint region outline around it).
 fn resolveEditorTileCursor(
     history: *GameStateHistory,
     player_input: PlayerInput,
     ui_elements: []const ui.UiElement,
 ) void {
     const current = &history.current_state;
-    if (!history.session.ui_state.editor_active_tool.showsTileCursor()) {
+    if (!history.session.ui_state.editor_active_tool.usesTileCursor()) {
         history.session.tile_cursor = null;
         return;
     }
@@ -1887,4 +1892,17 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
         &.{},
     );
     try std.testing.expectEqual(types.Vector2{ .x = 8, .y = 8 }, history.session.tile_cursor.?);
+
+    // The decoration tool as well — the cursor tile is the placement
+    // ANCHOR tile (the view draws the footprint region outline around it).
+    history.session.ui_state.editor_active_tool = .{ .decoration_type = 0 };
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 7, .y = 7 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 7, .y = 7 }, history.session.tile_cursor.?);
 }

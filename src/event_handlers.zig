@@ -379,6 +379,84 @@ fn handleEditorEvent(
             );
             level.item_placements = placements;
         },
+        .editor_delete_entity_placement => |delete| {
+            if (delete.level_index >= editor.levels.len) {
+                @panic("editor_delete_entity_placement: level index out of range");
+            }
+            const level = &@constCast(editor.levels)[delete.level_index];
+            if (delete.placement_index >= level.entity_placements.len) {
+                @panic("editor_delete_entity_placement: placement index out of range");
+            }
+            var placements = allocator.alloc(
+                types.EntityPlacement,
+                level.entity_placements.len - 1,
+            ) catch @panic("failed to allocate entity placements");
+            // Order-preserving removal (indices are the identity the
+            // move/delete/retype events address).
+            @memcpy(
+                placements[0..delete.placement_index],
+                level.entity_placements[0..delete.placement_index],
+            );
+            @memcpy(
+                placements[delete.placement_index..],
+                level.entity_placements[delete.placement_index + 1 ..],
+            );
+            level.entity_placements = placements;
+        },
+        .editor_place_decoration => |place| {
+            if (place.level_index >= editor.levels.len) {
+                @panic("editor_place_decoration: level index out of range");
+            }
+            if (place.type_id >= editor.decoration_types.len) {
+                @panic("editor_place_decoration: type id out of range");
+            }
+            const level = &@constCast(editor.levels)[place.level_index];
+            const footprint_tiles = loaders.decorationFootprintWorldTiles(
+                editor.decoration_types[place.type_id].footprint,
+                place.position,
+                allocator,
+            );
+            // A decoration's footprint tiles are EXCLUSIVE — no level tile,
+            // no entity / item placement, no other decoration's footprint
+            // under any of them (the parse-time placement invariant, now
+            // enforced at the placement event; the click orchestrator
+            // clears occupants first, so reaching here occupied is a logic
+            // bug — fail fast). See DESIGN → Decorations & Footprint →
+            // Placement invariant.
+            for (footprint_tiles) |tile| {
+                if (functions.tileListContains(level.level_tiles, tile)) {
+                    @panic("editor_place_decoration onto a tile");
+                }
+                for (level.entity_placements) |placement| {
+                    if (placement.position.x == tile.x and placement.position.y == tile.y) {
+                        @panic("editor_place_decoration onto an entity placement");
+                    }
+                }
+                for (level.item_placements) |placement| {
+                    if (placement.position.x == tile.x and placement.position.y == tile.y) {
+                        @panic("editor_place_decoration onto an item placement");
+                    }
+                }
+            }
+            for (level.decoration_placements) |placement| {
+                const other_definition = editor.decoration_types[placement.type_id];
+                for (footprint_tiles) |tile| {
+                    if (decorationFootprintCovers(other_definition.footprint, placement.position, tile, allocator)) {
+                        @panic("editor_place_decoration onto another decoration's footprint");
+                    }
+                }
+            }
+            var placements = allocator.alloc(
+                types.DecorationPlacement,
+                level.decoration_placements.len + 1,
+            ) catch @panic("failed to allocate decoration placements");
+            @memcpy(placements[0..level.decoration_placements.len], level.decoration_placements);
+            placements[level.decoration_placements.len] = .{
+                .type_id = place.type_id,
+                .position = place.position,
+            };
+            level.decoration_placements = placements;
+        },
         else => @panic("editor event handler not implemented"),
     }
 }
@@ -423,23 +501,17 @@ fn setLevelTile(
     return tiles;
 }
 
-/// Does a decoration placement's footprint cover `world_tile`? The footprint
-/// is sprite-grid coords; the anchor (bottom-most-then-left-most footprint
-/// tile — see DESIGN → Decorations & Footprint) sits at the placement's
-/// position, so a footprint tile's world position is
-/// `placement.position + (fp - anchor)`. An empty footprint reserves nothing
-/// (the loader rejects those at parse, so this is defensive only).
+/// Does a decoration placement's footprint cover `world_tile`? Thin
+/// wrapper over `loaders.decorationFootprintWorldTiles` (the single
+/// source of the anchor-translation formula). An empty footprint reserves
+/// nothing (the loader rejects those at parse, so this is defensive only).
 fn decorationFootprintCovers(
     footprint: []const Vector2,
     placement_position: Vector2,
     world_tile: Vector2,
+    allocator: std.mem.Allocator,
 ) bool {
-    const anchor = loaders.decorationAnchor(footprint) orelse return false;
-    for (footprint) |fp| {
-        const covered = Vector2{
-            .x = placement_position.x + (fp.x - anchor.x),
-            .y = placement_position.y + (fp.y - anchor.y),
-        };
+    for (loaders.decorationFootprintWorldTiles(footprint, placement_position, allocator)) |covered| {
         if (covered.x == world_tile.x and covered.y == world_tile.y) return true;
     }
     return false;
@@ -992,7 +1064,7 @@ fn handlePlayerInputEvent(
                 } } }) catch @panic("failed to allocate editor paint events");
                 for (level.decoration_placements, 0..) |placement, placement_index| {
                     const type_definition = editor.decoration_types[placement.type_id];
-                    if (decorationFootprintCovers(type_definition.footprint, placement.position, paint.position)) {
+                    if (decorationFootprintCovers(type_definition.footprint, placement.position, paint.position, allocator)) {
                         pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
                             .level_index = @intCast(level_index),
                             .placement_index = @intCast(placement_index),
@@ -1091,7 +1163,102 @@ fn handlePlayerInputEvent(
                 }
                 for (level.decoration_placements, 0..) |placement, placement_index| {
                     const type_definition = editor.decoration_types[placement.type_id];
-                    if (decorationFootprintCovers(type_definition.footprint, placement.position, place.position)) {
+                    if (decorationFootprintCovers(type_definition.footprint, placement.position, place.position, allocator)) {
+                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
+                            .level_index = @intCast(level_index),
+                            .placement_index = @intCast(placement_index),
+                        } } }) catch @panic("failed to allocate editor place events");
+                    }
+                }
+                pushEvents(current, pushes.items, allocator);
+            }
+        },
+        // Decoration-tool click: place the palette decoration with its
+        // ANCHOR tile (bottom-most-then-left-most footprint tile) at the
+        // clicked position, replacing whatever occupies the footprint's
+        // world tiles. The INVERSE of the tile/enemy placements — a
+        // decoration's footprint tiles are TILE-FREE, so covered tiles are
+        // ERASED rather than placed: the '!' / '=' under ANY footprint tile
+        // → no-op (never overwritten); tiles under footprint tiles →
+        // erased, along with the entities / ground items standing on them;
+        // other decorations whose footprints overlap ANY footprint tile →
+        // deleted; then the placement lands (`editor_place_decoration`
+        // enforces footprint-tile exclusivity). Pushes are LIFO-drained:
+        // the array is the REVERSE of processing order, and each delete
+        // list is pushed ascending so it processes descending
+        // (index-stable). All sub-events share one idle point — one undo
+        // reverts the whole click.
+        .player_place_editor_decoration => |place| {
+            if (current.editor) |*editor| {
+                if (editor.levels.len == 0) return;
+                const level_index = editor.active_level_index;
+                if (level_index >= editor.levels.len) return;
+                if (place.type_id >= editor.decoration_types.len) return;
+                const type_definition = editor.decoration_types[place.type_id];
+                const footprint_tiles = loaders.decorationFootprintWorldTiles(
+                    type_definition.footprint,
+                    place.position,
+                    allocator,
+                );
+                if (footprint_tiles.len == 0) return;
+                const level = &editor.levels[level_index];
+
+                // The '!' / '=' under any footprint tile → never overwritten.
+                for (footprint_tiles) |tile| {
+                    if (tile.x == level.player_start.x and tile.y == level.player_start.y) return;
+                    if (level.level_end) |level_end_position| {
+                        if (tile.x == level_end_position.x and tile.y == level_end_position.y) return;
+                    }
+                }
+
+                var pushes: std.ArrayList(Event) = .empty;
+                pushes.append(allocator, .{ .editor_event = .{ .editor_place_decoration = .{
+                    .level_index = @intCast(level_index),
+                    .type_id = place.type_id,
+                    .position = place.position,
+                } } }) catch @panic("failed to allocate editor place events");
+                // Erase every covered tile that has one.
+                for (footprint_tiles) |tile| {
+                    if (functions.tileListContains(level.level_tiles, tile)) {
+                        pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
+                            .level_index = @intCast(level_index),
+                            .position = tile,
+                            .is_floor = false,
+                        } } }) catch @panic("failed to allocate editor place events");
+                    }
+                }
+                // Entities + items standing on covered tiles (they sit ON
+                // tiles, so this fires for covered tiles that had one —
+                // looping all footprint tiles is robust either way).
+                for (level.entity_placements, 0..) |placement, placement_index| {
+                    if (functions.tileListContains(footprint_tiles, placement.position)) {
+                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_entity_placement = .{
+                            .level_index = @intCast(level_index),
+                            .placement_index = @intCast(placement_index),
+                        } } }) catch @panic("failed to allocate editor place events");
+                    }
+                }
+                for (level.item_placements, 0..) |placement, placement_index| {
+                    if (functions.tileListContains(footprint_tiles, placement.position)) {
+                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_item_placement = .{
+                            .level_index = @intCast(level_index),
+                            .placement_index = @intCast(placement_index),
+                        } } }) catch @panic("failed to allocate editor place events");
+                    }
+                }
+                // Overlapping other decorations: an existing footprint
+                // covering any of the new footprint's world tiles (set
+                // intersection — checking this direction is complete).
+                for (level.decoration_placements, 0..) |placement, placement_index| {
+                    const other_definition = editor.decoration_types[placement.type_id];
+                    var overlaps = false;
+                    for (footprint_tiles) |tile| {
+                        if (decorationFootprintCovers(other_definition.footprint, placement.position, tile, allocator)) {
+                            overlaps = true;
+                            break;
+                        }
+                    }
+                    if (overlaps) {
                         pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
                             .level_index = @intCast(level_index),
                             .placement_index = @intCast(placement_index),

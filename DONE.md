@@ -6337,3 +6337,68 @@ Tests: the cursor-resolution test gained an enemy-tool mouse-follow case
 (after the nudge case — leaving the cursor set mid-test broke the
 snap-from-null assertion ordering), and the view overlay test gained an
 enemy-tool overlay case.
+
+### Editor viewport input slice 3 — decoration-tool placement + footprint region preview
+
+Clicking with a DECORATION palette tool active places that type with its
+ANCHOR tile (bottom-most-then-left-most footprint tile) at the clicked
+position — the INVERSE occupant replacement of the enemy tool: a
+decoration's footprint tiles are TILE-FREE, so covered tiles are ERASED
+rather than placed. Left click only; the item tools mirror the enemy
+orchestrator later.
+
+**Occupant semantics** (computed from state in the
+`player_place_editor_decoration { type_id, position }` orchestrator):
+- '!' / '=' under ANY footprint tile → no-op (checked via the non-anchor
+  tiles too — a 2-wide footprint can cover the player start with its
+  right tile while the anchor sits free).
+- tiles under footprint tiles → erased (`editor_set_tile` is_floor=false),
+  along with the entities / ground items standing on them
+  (`editor_delete_entity_placement` — arm added — +
+  `editor_delete_item_placement`).
+- other decorations whose footprints overlap ANY footprint tile → deleted
+  (set intersection; checking "existing covers any new tile" is complete).
+- then `editor_place_decoration` lands.
+
+**Footprint exclusivity invariant** (extends one-thing-per-tile):
+`editor_place_decoration` panics if any covered world tile carries a level
+tile, an entity/item placement, or another decoration's footprint at
+place time — the orchestrator clears occupants first, so a violation is a
+logic bug (fail-fast). DESIGN → Decorations & Footprint → Placement
+invariant updated: BOTH directions replace (tile-over-footprint deletes
+the decoration; decoration-over-tile erases the tiles) — the old
+"blocks placing a decoration onto a tile" text is superseded.
+
+**Footprint region preview.** `region_edge`, a new `TileOverlayType`: one
+overlay per BOUNDARY edge of the footprint region (a tile side whose
+neighbor is outside the region), carrying which edge via the new
+`TileOverlayDrawable.edge` field. The backend strokes each as a thin
+filled bar (outline_thickness, offset half a thickness outward to center
+on the boundary like the square outlines); bars span the full tile side,
+so adjacent segments join seamlessly and ANY region shape — L-shapes,
+disjoint footprints — renders as one closed outline. The preview anchors
+so the decoration's ANCHOR tile sits at the cursor ("the rest extends
+away from the pointer"): since the anchor is bottom-most-then-left-most,
+the region always extends up/right of the cursor tile.
+`showsTileCursor` renamed `usesTileCursor` (the decoration tool resolves
+the tile cursor like the others — it just renders the footprint outline
+instead of the single-tile one; the item tools join later).
+
+**Single source of the anchor math:** new
+`loaders.decorationFootprintWorldTiles` (sprite-grid footprint → world
+tiles with the anchor at a position); `validateDecorationFootprint`
+(parse path) and `event_handlers.decorationFootprintCovers` (editor
+orchestrators) now delegate to it instead of carrying three inline copies
+of the formula. The helper allocates (linear lists, small), and
+`validateDecorationFootprint` frees — the loaders tests run under
+`testing.allocator` (self-owned loaders) and caught the missing free.
+Also `functions.tileListContains` (flat position-list membership — the
+editor's tile/placement lists are linear scans), shared by
+event_handlers + view instead of two private copies.
+
+Tests: handler +5 (empty-ground place at anchor; '!' / '=' no-op via the
+non-anchor footprint tile; covered tiles + entity + item cleared with
+one-undo reverting all; overlapping decoration deleted + survivor order;
+direct `editor_delete_entity_placement`), view +1 (2-wide footprint → 6
+boundary edges, no interior edge between region tiles, left edge at the
+anchor tile), cursor-resolution test + decoration-tool case.

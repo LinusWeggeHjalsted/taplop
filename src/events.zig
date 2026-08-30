@@ -547,6 +547,20 @@ pub const PlayerInputEvent = union(enum) {
         type_id: u32,
         position: Vector2,
     },
+    // Decoration-tool click: place the palette decoration type with its
+    // ANCHOR tile (bottom-most-then-left-most footprint tile) at the
+    // clicked position. The handler computes occupant replacement (see
+    // DESIGN → Level Editor → Active-tool model, placement tools): the
+    // '!' / '=' under ANY footprint tile → no-op; tiles under footprint
+    // tiles are erased along with anything standing on them (entities /
+    // ground items); other decorations whose footprints overlap are
+    // deleted; then the decoration is placed. `type_id` rides in the
+    // payload (handlers can't read UiState — replay doesn't reconstruct
+    // it). The item tools land as their own slice.
+    player_place_editor_decoration: struct {
+        type_id: u32,
+        position: Vector2,
+    },
 
     // --- Meta: exit/skip orchestrators ---
     // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;

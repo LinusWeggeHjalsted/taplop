@@ -1900,10 +1900,14 @@ is determined by the active tool:
   footprint REPLACES the decoration — every covering placement is deleted,
   then the tile is placed (the click's delete + place sub-events share one
   idle point, so one undo reverts the whole click). While a tile-cursor
-  tool is active (tile + enemy tools — `EditorToolId.showsTileCursor`) the
-  tile cursor draws its outline at the cursor position
-  unconditionally (over empty space too — the affordance that a click can
-  act there; arrow keys nudge it without the level/hub clamp-to-real-tile).
+  tool is active (tile + enemy + decoration tools —
+  `EditorToolId.usesTileCursor`) the tile cursor draws its outline at the
+  cursor position unconditionally (over empty space too — the affordance
+  that a click can act there; arrow keys nudge it without the level/hub
+  clamp-to-real-tile); the decoration tool renders a CONTINUOUS outline
+  around the whole footprint region instead (one `region_edge` overlay
+  per boundary edge — any footprint shape reads as one closed outline),
+  anchored so the decoration's ANCHOR tile sits at the cursor.
   Deferred: right-click erase and drag-painting (one `editor_set_tile` per
   cell crossed). Does not modify the selection set.
 - **Placement tools (enemy/decoration/item type):** click places one
@@ -1924,6 +1928,17 @@ is determined by the active tool:
   the placed instance — you switch to the selection tool to select.
   (Auto-select-after-place is deliberately NOT the model; keeps tool
   responsibilities disjoint.)
+- **Decoration tool (landed, `player_place_editor_decoration`):** the
+  INVERSE occupant replacement — a decoration's footprint tiles are
+  TILE-FREE, so covered tiles are ERASED rather than placed. The '!' / '='
+  under ANY footprint tile → no-op; tiles under footprint tiles → erased
+  along with the entities / ground items standing on them; other
+  decorations whose footprints overlap ANY footprint tile → deleted;
+  then the placement lands. `editor_place_decoration` enforces footprint
+  exclusivity (panic if any covered world tile carries a level tile, an
+  entity/item placement, or another decoration's footprint at place time
+  — the click orchestrator clears occupants first). The preview is the
+  footprint region outline (see the tile-paint tool above).
 
 **Selection model (`Selectable` union).** The viewport can contain
 heterogeneous selectable things; multi-select is a REQUIRED feature
@@ -1993,7 +2008,11 @@ wiring is a TODO). Enemy-tool clicks landed (see Placement tools above):
 `player_place_editor_entity` + the `editor_place_entity` /
 `editor_delete_item_placement` / `editor_set_entity_placement_type`
 handler arms, and `handleIdleInput`'s editor arm is now a tool switch (tile
-paint + enemy placement wired).
+paint + enemy placement wired). Decoration-tool clicks + the footprint
+region-outline preview landed too (`player_place_editor_decoration` +
+`editor_place_decoration` / `editor_delete_entity_placement` arms, the
+`region_edge` overlay type, `loaders.decorationFootprintWorldTiles` as the
+single source of the anchor-translation formula).
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
 struct exists in events.zig (`editor_add_level` / `editor_delete_level` /
@@ -2007,9 +2026,9 @@ events — see Level theme below) / `editor_set_mission_name` /
 / `editor_set_entity_*` (20+ field setters) / `editor_set_decoration_*` /
 `editor_set_item_*` / `editor_add_*_layer` / `editor_remove_*_layer` /
 `editor_set_*_layer`). `handleEditorEvent` implements the arms the landed UI
-slices need (`editor_set_tile` both directions, `editor_delete_decoration_placement`,
-`editor_place_entity`, `editor_set_entity_placement_type`,
-`editor_delete_item_placement`); the rest still `@panic` so an unhooked edit verb
+slices need (`editor_set_tile` both directions, the `editor_delete_*_placement`
+trio, `editor_place_entity`, `editor_place_decoration`,
+`editor_set_entity_placement_type`); the rest still `@panic` so an unhooked edit verb
 fails fast rather than silently no-op'ing. Remaining handlers land with
 their UI slices.
 
@@ -2081,11 +2100,16 @@ with a footprint-covered world tile.
 
 **Placement invariant (parse + editor).** A world tile under a decoration's
 footprint must NOT also be a level/hub tile — decorations sit on top of tiles
-only via non-footprinted overhang. The parser rejects this at load; the editor
-blocks placing a decoration whose footprint overlaps an existing tile, and
-painting a tile over a footprint REPLACES the covering decoration(s) first
-(the delete + place share one idle point — see the tile-paint tool above),
-restoring the invariant.
+only via non-footprinted overhang. The parser rejects this at load. In the
+editor both directions REPLACE rather than block: painting a tile over a
+footprint deletes the covering decoration(s) first, and placing a decoration
+erases the covered tiles along with anything standing on them (plus any
+overlapping decorations) — each click's sub-events share one idle point, so
+one undo reverts the whole click (see the tile-paint + decoration tools in
+DESIGN → Architecture → Level Editor → Active-tool model). A decoration's
+footprint tiles are also exclusive of each other (no footprint stacking):
+`editor_place_decoration` panics if any covered world tile carries a level
+tile, an entity/item placement, or another decoration's footprint.
 
 **Rendering: split per bbox tile, sort by assigned footprint y.** The sprite
 is split into one `DecorationPieceDrawable` per **bbox** tile (9 for the tree:

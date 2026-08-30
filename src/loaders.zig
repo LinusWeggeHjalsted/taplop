@@ -921,6 +921,30 @@ pub fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
     return anchor;
 }
 
+/// The world tiles a decoration placement reserves: the footprint's
+/// sprite-grid coords translated so the ANCHOR tile (bottom-most-then-
+/// left-most) sits at `anchor_position` (the placement's position). The
+/// single source of this formula — the parse-time invariant check, the
+/// editor placement orchestrators, and the footprint preview all read it.
+/// An empty footprint reserves nothing (the loader rejects those at parse;
+/// callers treat empty as "covers nothing").
+pub fn decorationFootprintWorldTiles(
+    footprint: []const types.Vector2,
+    anchor_position: types.Vector2,
+    allocator: std.mem.Allocator,
+) []const types.Vector2 {
+    const anchor = decorationAnchor(footprint) orelse return &.{};
+    const tiles = allocator.alloc(types.Vector2, footprint.len) catch
+        @panic("failed to allocate footprint world tiles");
+    for (footprint, 0..) |fp, index| {
+        tiles[index] = .{
+            .x = anchor_position.x + (fp.x - anchor.x),
+            .y = anchor_position.y + (fp.y - anchor.y),
+        };
+    }
+    return tiles;
+}
+
 /// Validate a decoration's footprint against its sprite bbox and the level/hub
 /// tile set. Panics on violation (fail fast — see DESIGN → Error Handling):
 ///   - empty footprint (no anchor, no reserved tiles)
@@ -929,24 +953,24 @@ pub fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
 fn validateDecorationFootprint(
     decoration: types.Decoration,
     tile_set: *const std.AutoHashMap(types.Vector2, void),
+    allocator: std.mem.Allocator,
 ) void {
     if (decoration.footprint.len == 0) {
         @panic("decoration has no footprint tiles");
     }
     const tiles_w: i32 = @divTrunc(decoration.pixel_dims.x, 256);
     const tiles_h: i32 = @divTrunc(decoration.pixel_dims.y, 256);
-    const anchor = decorationAnchor(decoration.footprint) orelse
-        @panic("decoration has no footprint anchor");
     for (decoration.footprint) |fp_grid| {
         // Footprint must be within the sprite bbox.
         if (fp_grid.x < 0 or fp_grid.x >= tiles_w or fp_grid.y < 0 or fp_grid.y >= tiles_h) {
             @panic("decoration footprint tile is outside the sprite bbox");
         }
-        // World footprint tile = anchor world pos + (fp_grid - anchor_grid).
-        const world_tile = types.Vector2{
-            .x = decoration.position.x + (fp_grid.x - anchor.x),
-            .y = decoration.position.y + (fp_grid.y - anchor.y),
-        };
+    }
+    // World footprint tile = anchor world pos + (fp_grid - anchor_grid) —
+    // see decorationFootprintWorldTiles.
+    const world_tiles = decorationFootprintWorldTiles(decoration.footprint, decoration.position, allocator);
+    defer allocator.free(world_tiles);
+    for (world_tiles) |world_tile| {
         if (tile_set.contains(world_tile)) {
             @panic("decoration footprint overlaps a level/hub tile");
         }
@@ -1494,7 +1518,7 @@ pub fn loadLevel(
         tile_set.put(tile, {}) catch @panic("failed to insert tile into set");
     }
     for (decoration_list.items) |decoration| {
-        validateDecorationFootprint(decoration, &tile_set);
+        validateDecorationFootprint(decoration, &tile_set, allocator);
     }
 
     level.level_tiles = try tile_positions.toOwnedSlice(allocator);
@@ -1627,7 +1651,7 @@ pub fn loadHub(
         tile_set.put(tile, {}) catch @panic("failed to insert tile into set");
     }
     for (decoration_list.items) |decoration| {
-        validateDecorationFootprint(decoration, &tile_set);
+        validateDecorationFootprint(decoration, &tile_set, allocator);
     }
 
     hub.hub_tiles = try tile_positions.toOwnedSlice(allocator);

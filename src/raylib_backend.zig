@@ -1105,6 +1105,44 @@ pub const RaylibBackend = struct {
             .range_outline, .radius_outline, .aggro_outline => {
                 rl.drawRectangleLinesEx(rectangle, line_width, toRaylibColor(overlay.color, 255));
             },
+            .region_edge => {
+                // One stroke segment of a tile-region outline (the editor
+                // decoration footprint preview): a thin filled bar along
+                // the chosen side of the 1-tile square, offset half a
+                // thickness outward so it centers on the region boundary
+                // like the square outlines above. Bars span the full tile
+                // side, so adjacent segments join seamlessly (corners
+                // included) and any region shape renders as one closed
+                // outline.
+                const half = line_width / 2;
+                const bar = switch (overlay.edge) {
+                    .top => rl.Rectangle{
+                        .x = rectangle.x,
+                        .y = rectangle.y - half,
+                        .width = rectangle.width,
+                        .height = line_width,
+                    },
+                    .bottom => rl.Rectangle{
+                        .x = rectangle.x,
+                        .y = rectangle.y + rectangle.height - half,
+                        .width = rectangle.width,
+                        .height = line_width,
+                    },
+                    .left => rl.Rectangle{
+                        .x = rectangle.x - half,
+                        .y = rectangle.y,
+                        .width = line_width,
+                        .height = rectangle.height,
+                    },
+                    .right => rl.Rectangle{
+                        .x = rectangle.x + rectangle.width - half,
+                        .y = rectangle.y,
+                        .width = line_width,
+                        .height = rectangle.height,
+                    },
+                };
+                rl.drawRectangleRec(bar, toRaylibColor(overlay.color, 255));
+            },
         }
     }
 

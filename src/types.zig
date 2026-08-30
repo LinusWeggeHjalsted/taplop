@@ -857,16 +857,18 @@ pub const EditorToolId = union(enum) {
     decoration_type: u32,
     item_type: u32,
 
-    /// Does this tool show the single-tile cursor (mouse-follow + arrow
-    /// nudge + the view's outline overlay)? True for the tools whose click
-    /// target is one tile position: tile paint + entity placement. The
-    /// decoration tool wants a footprint-shaped preview instead; the item
-    /// tools join when they land; selection has its own affordances.
-    /// Shared by the cursor resolution (input_handlers) and the overlay
-    /// emission (view) so the two gates can't drift.
-    pub fn showsTileCursor(self: EditorToolId) bool {
+    /// Does this tool resolve its click target through the tile cursor
+    /// (mouse-follow + arrow nudge + the view's outline overlay)? True for
+    /// the tools whose click target is a tile position: tile paint, entity
+    /// placement (single-tile outline), and decoration placement (the
+    /// cursor tile is the decoration's ANCHOR tile — the view renders the
+    /// whole footprint region outline around it). The item tools join when
+    /// they land; selection has its own affordances. Shared by the cursor
+    /// resolution (input_handlers) and the overlay emission (view) so the
+    /// two gates can't drift.
+    pub fn usesTileCursor(self: EditorToolId) bool {
         return switch (self) {
-            .tile, .entity_type => true,
+            .tile, .entity_type, .decoration_type => true,
             else => false,
         };
     }
@@ -1168,18 +1170,32 @@ pub const TileOverlayType = enum {
     radius_outline,
     aggro_outline,
     cursor,
+    /// One edge segment of an arbitrary tile-region outline (the editor
+    /// decoration footprint preview): the drawable's 1-tile square is a
+    /// region tile and `edge` says which of its sides to stroke. The
+    /// producer emits one segment per boundary edge (a side whose
+    /// neighbor is outside the region), so any region shape — L-shapes,
+    /// disjoint regions — renders as a continuous outline.
+    region_edge,
 };
+
+/// Which side of a `region_edge` overlay's tile square gets stroked.
+pub const TileOverlayEdge = enum { top, bottom, left, right };
 
 pub const TileOverlayDrawable = struct {
     screen_position: ScreenPosition,
     overlay_type: TileOverlayType,
     color: Color,
-    /// Square side in tiles. 1 for per-tile overlays (highlight, cursor);
-    /// the range/radius outline spans `extent` tiles centered on the player.
+    /// Square side in tiles. 1 for per-tile overlays (highlight, cursor,
+    /// region_edge); the range/radius outline spans `extent` tiles centered
+    /// on the player.
     extent: u32 = 1,
     /// Source rectangle into the overlay sprite (for sprite-based overlays
     /// like the animated tile highlight). Null for primitive overlays.
     source_rectangle: ?Rectangle = null,
+    /// Which side of the tile square a `region_edge` overlay strokes.
+    /// Unused by the other overlay types.
+    edge: TileOverlayEdge = .top,
 };
 
 // -- Layer 3: Ground drawables --

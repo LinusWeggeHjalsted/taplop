@@ -204,6 +204,17 @@ pub fn chebyshevDistance(a: Vector2, b: Vector2) i32 {
     return @max(dx, dy);
 }
 
+/// Does the tile-position list contain `position`? Editor levels keep
+/// their tiles as a flat position list (no set), and the lists are small —
+/// a linear scan. Shared by the editor placement orchestrators
+/// (event_handlers) and the footprint preview (view).
+pub fn tileListContains(tiles: []const Vector2, position: Vector2) bool {
+    for (tiles) |tile| {
+        if (tile.x == position.x and tile.y == position.y) return true;
+    }
+    return false;
+}
+
 /// Apply a signed delta to an unsigned scalar, saturating at 0 (never wraps).
 /// Shared by the change_momentum / change_cooldown event handlers so the
 /// clamping is defined and tested in one place.

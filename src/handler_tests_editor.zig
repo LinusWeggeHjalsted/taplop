@@ -644,3 +644,196 @@ test "editor_delete_item_placement: removes the placement, order preserved" {
     try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.item_placements[0].position);
     try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, level.item_placements[1].position);
 }
+
+/// A 2-wide footprint {(0,0),(1,0)} anchored at (0,0): a placement at P
+/// covers P and P+(1,0).
+const two_wide_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+const single_footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+
+fn decorationTestEditor(levels: []const types.EditorLevel) types.Editor {
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "wide", .sprite = "ruin_1", .footprint = &two_wide_footprint, .pixel_dims = .{ .x = 512, .y = 256 } },
+        .{ .id = "single", .sprite = "stone_2", .footprint = &single_footprint, .pixel_dims = .{ .x = 256, .y = 256 } },
+    };
+    return .{ .levels = levels, .decoration_types = &decoration_types };
+}
+
+test "player_place_editor_decoration: empty ground → placement at the anchor position" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
+            .type_id = 0,
+            .position = .{ .x = 5, .y = 5 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.decoration_placements.len);
+    try testing.expectEqual(@as(u32, 0), level.decoration_placements[0].type_id);
+    try testing.expectEqual(types.Vector2{ .x = 5, .y = 5 }, level.decoration_placements[0].position);
+}
+
+test "player_place_editor_decoration: player start or level end under ANY footprint tile is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The wide footprint covers (x, y) and (x+1, y): placing at (-1, 0)
+    // covers the player start (0, 0) via the NON-anchor tile; placing at
+    // (3, 4) covers the level end (4, 4) the same way.
+    const levels = [_]types.EditorLevel{.{
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 4, .y = 4 },
+    }};
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    for ([_]types.Vector2{ .{ .x = -1, .y = 0 }, .{ .x = 3, .y = 4 } }) |position| {
+        event_handlers.pushEvents(
+            &history.current_state,
+            &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
+                .type_id = 0,
+                .position = position,
+            } } }},
+            history.current_arena.allocator(),
+        );
+        runToIdle(&history);
+    }
+
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.levels[0].decoration_placements.len);
+}
+
+test "player_place_editor_decoration: covered tiles + occupants are cleared, one undo reverts" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Tiles under BOTH footprint tiles, an entity standing on one, a ground
+    // item on the other, plus an untouched tile + item elsewhere.
+    const tiles = [_]types.Vector2{ .{ .x = 5, .y = 5 }, .{ .x = 6, .y = 5 }, .{ .x = 9, .y = 9 } };
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } },
+    };
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 5, .y = 5 },
+    }};
+    const item_placements = [_]types.ItemPlacement{
+        .{ .type_id = 0, .position = .{ .x = 6, .y = 5 } }, // on a covered tile
+        .{ .type_id = 0, .position = .{ .x = 9, .y = 9 } }, // untouched
+    };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .entity_placements = &entity_placements,
+        .item_placements = &item_placements,
+    }};
+    var editor = decorationTestEditor(&levels);
+    editor.entity_types = &entity_types;
+    var history = harness.newHistory(editorStateWith(editor));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
+            .type_id = 0,
+            .position = .{ .x = 5, .y = 5 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.decoration_placements.len);
+    try testing.expect(!hasTile(level, .{ .x = 5, .y = 5 }));
+    try testing.expect(!hasTile(level, .{ .x = 6, .y = 5 }));
+    try testing.expect(hasTile(level, .{ .x = 9, .y = 9 }));
+    try testing.expectEqual(@as(usize, 0), level.entity_placements.len);
+    try testing.expectEqual(@as(usize, 1), level.item_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, level.item_placements[0].position);
+
+    // One click = one idle point: a single undo restores both tiles, the
+    // entity, the item, and removes the decoration.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    const reverted = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 0), reverted.decoration_placements.len);
+    try testing.expect(hasTile(reverted, .{ .x = 5, .y = 5 }));
+    try testing.expect(hasTile(reverted, .{ .x = 6, .y = 5 }));
+    try testing.expectEqual(@as(usize, 1), reverted.entity_placements.len);
+    try testing.expectEqual(@as(usize, 2), reverted.item_placements.len);
+}
+
+test "player_place_editor_decoration: overlapping other decorations are deleted" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Existing single-tile decorations at (7,7) — overlaps the new wide
+    // footprint's anchor tile — and (0,9), clear of it.
+    const existing_placements = [_]types.DecorationPlacement{
+        .{ .type_id = 1, .position = .{ .x = 7, .y = 7 } },
+        .{ .type_id = 1, .position = .{ .x = 0, .y = 9 } },
+    };
+    const levels = [_]types.EditorLevel{.{
+        .decoration_placements = &existing_placements,
+    }};
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
+            .type_id = 0,
+            .position = .{ .x = 7, .y = 7 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 2), level.decoration_placements.len);
+    // The survivor is the non-overlapping single at (0,9); the new wide
+    // decoration is appended after it.
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 9 }, level.decoration_placements[0].position);
+    try testing.expectEqual(@as(u32, 0), level.decoration_placements[1].type_id);
+    try testing.expectEqual(types.Vector2{ .x = 7, .y = 7 }, level.decoration_placements[1].position);
+}
+
+test "editor_delete_entity_placement: removes the placement, order preserved" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_placements = [_]types.EntityPlacement{
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 1 } },
+        .{ .type_id = 0, .position = .{ .x = 2, .y = 2 } },
+    };
+    const levels = [_]types.EditorLevel{.{ .entity_placements = &entity_placements }};
+    var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_delete_entity_placement = .{
+            .level_index = 0,
+            .placement_index = 1,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 2), level.entity_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.entity_placements[0].position);
+    try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, level.entity_placements[1].position);
+}
