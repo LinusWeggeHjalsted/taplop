@@ -510,6 +510,184 @@ pub const FontMetrics = struct {
     }
 };
 
+/// Text-buffer capacity for one editable field. Level-format strings
+/// (names, sprite ids) are short; 128 covers them with headroom.
+const text_field_capacity: usize = 128;
+
+/// The pure core of the text input widget (see DESIGN → UI Framework →
+/// Text input widget): a fixed-capacity UTF-8 buffer with a byte-index
+/// caret and a selection anchor. All editing is pure methods over the
+/// struct, unit-tested without raylib; the input-routing layer (which
+/// knows the field kind, e.g. digits-only filtering) calls these, and
+/// `view()` renders the caret/selection from the indices. Caret and
+/// anchor always sit on CODEPOINT boundaries — never mid-multibyte.
+const TextField = struct {
+    buffer: [text_field_capacity]u8 = @splat(0),
+    length: usize = 0,
+    /// Caret byte index, 0..length, on a codepoint boundary.
+    caret: usize = 0,
+    /// Selection anchor byte index (the other end is the caret); null =
+    /// no selection. The rendered/edited selection is min/max of the two.
+    selection_anchor: ?usize = null,
+
+    fn currentText(self: *const TextField) []const u8 {
+        return self.buffer[0..self.length];
+    }
+
+    /// The selection as an ordered byte range, or null when empty. An
+    /// anchor equal to the caret is NO selection (a collapsed anchor is
+    /// cleared by moveCaretTo's non-select path anyway; this guards the
+    /// degenerate case).
+    fn selectionRange(self: *const TextField) ?struct { start: usize, end: usize } {
+        const anchor = self.selection_anchor orelse return null;
+        if (anchor == self.caret) return null;
+        return .{ .start = @min(anchor, self.caret), .end = @max(anchor, self.caret) };
+    }
+
+    /// Seed the buffer with a starting value (focus loads the field's
+    /// current value so editing starts from it). Truncates to capacity.
+    /// Caret at the end, no selection — the common edit-from-value start.
+    fn loadValue(self: *TextField, value: []const u8) void {
+        const accepted = @min(value.len, text_field_capacity);
+        @memcpy(self.buffer[0..accepted], value[0..accepted]);
+        self.length = accepted;
+        self.caret = accepted;
+        self.selection_anchor = null;
+    }
+
+    /// Replace the selection (or insert at the caret when none) with
+    /// `new_text`, truncated to what the capacity allows. Always collapses
+    /// the selection and leaves the caret after the accepted text.
+    fn insertText(self: *TextField, new_text: []const u8) void {
+        const range = self.selectionRange();
+        const start: usize = if (range) |selection| selection.start else self.caret;
+        const removed: usize = if (range) |selection| selection.end - selection.start else 0;
+        const available = text_field_capacity - self.length + removed;
+        const accepted = @min(new_text.len, available);
+        // Shift the tail to its post-insert position, then fill the gap.
+        const tail_start = start + removed;
+        const tail_length = self.length - tail_start;
+        std.mem.copyForwards(
+            u8,
+            self.buffer[start + accepted .. start + accepted + tail_length],
+            self.buffer[tail_start .. tail_start + tail_length],
+        );
+        @memcpy(self.buffer[start .. start + accepted], new_text[0..accepted]);
+        self.length = self.length - removed + accepted;
+        self.caret = start + accepted;
+        self.selection_anchor = null;
+    }
+
+    /// Delete the selection, or the codepoint before the caret
+    /// (backspace). No-op at the start of the buffer with no selection.
+    fn deleteBackward(self: *TextField) void {
+        if (self.selectionRange()) |selection| {
+            self.deleteRange(selection.start, selection.end);
+            return;
+        }
+        if (self.caret == 0) return;
+        const start = codepointStartBefore(self.currentText(), self.caret);
+        self.deleteRange(start, self.caret);
+    }
+
+    /// Delete the selection, or the codepoint after the caret (delete
+    /// key). No-op at the end of the buffer with no selection.
+    fn deleteForward(self: *TextField) void {
+        if (self.selectionRange()) |selection| {
+            self.deleteRange(selection.start, selection.end);
+            return;
+        }
+        if (self.caret >= self.length) return;
+        const end = codepointEndAfter(self.currentText(), self.caret);
+        self.deleteRange(self.caret, end);
+    }
+
+    /// Move the caret to `index` (clamped into the buffer; mid-codepoint
+    /// indices round FORWARD to the next boundary). `select` is the one
+    /// primitive for every movement: false = a plain move that clears the
+    /// selection (a click repositions the caret); true = a selection move
+    /// that plants the anchor at the OLD caret first if none is set
+    /// (shift+arrow, drag-select).
+    fn moveCaretTo(self: *TextField, index: usize, select: bool) void {
+        var target = @min(index, self.length);
+        while (target < self.length and isContinuationByte(self.buffer[target])) target += 1;
+        if (select) {
+            if (self.selection_anchor == null) self.selection_anchor = self.caret;
+        } else {
+            self.selection_anchor = null;
+        }
+        self.caret = target;
+    }
+
+    /// Caret one codepoint left (shift = extend the selection).
+    fn moveCaretLeft(self: *TextField, select: bool) void {
+        self.moveCaretTo(codepointStartBefore(self.currentText(), self.caret), select);
+    }
+
+    /// Caret one codepoint right (shift = extend the selection).
+    fn moveCaretRight(self: *TextField, select: bool) void {
+        self.moveCaretTo(codepointEndAfter(self.currentText(), self.caret), select);
+    }
+
+    fn deleteRange(self: *TextField, start: usize, end: usize) void {
+        std.debug.assert(start <= end and end <= self.length);
+        const removed = end - start;
+        const tail_length = self.length - end;
+        std.mem.copyForwards(
+            u8,
+            self.buffer[start .. start + tail_length],
+            self.buffer[end .. end + tail_length],
+        );
+        self.length -= removed;
+        self.caret = start;
+        self.selection_anchor = null;
+    }
+
+    /// Byte index of the codepoint boundary the click x lands on: the
+    /// first codepoint whose measured END exceeds `x` (clicking inside a
+    /// glyph positions before it), or `length` when x is past the end.
+    /// Pure — the routing layer calls it with the field's measured text
+    /// x-origin subtracted.
+    fn caretIndexAtX(
+        field_text: []const u8,
+        metrics: FontMetrics,
+        font_size: i32,
+        x: i32,
+    ) usize {
+        var index: usize = 0;
+        var width_so_far: i32 = 0;
+        while (index < field_text.len) {
+            const end = codepointEndAfter(field_text, index);
+            width_so_far += metrics.measureSpanWidth(text(field_text[index..end]), font_size);
+            if (width_so_far > x) return index;
+            index = end;
+        }
+        return field_text.len;
+    }
+};
+
+fn isContinuationByte(byte: u8) bool {
+    return byte & 0b11000000 == 0b10000000;
+}
+
+/// Byte index of the start of the codepoint BEFORE `index` (the lead
+/// byte of the char the caret sits after). `index` is a boundary; at the
+/// buffer start there is no preceding codepoint, so 0 returns 0 (a
+/// move-left at the start becomes a no-op).
+fn codepointStartBefore(field_text: []const u8, index: usize) usize {
+    var start = index;
+    while (start > 0 and isContinuationByte(field_text[start - 1])) start -= 1;
+    if (start == 0) return 0;
+    return start - 1;
+}
+
+/// Byte index just past the codepoint AT `index`. `index` is a boundary.
+fn codepointEndAfter(field_text: []const u8, index: usize) usize {
+    var end = index + 1;
+    while (end < field_text.len and isContinuationByte(field_text[end])) end += 1;
+    return end;
+}
+
 /// Baseline-to-baseline height for one line at `font_size`, in reference
 /// pixels. A layout factor (1.2em leading), not font data — raylib doesn't
 /// expose hhea/OS·2 line metrics, so this stays a free function independent
@@ -538,6 +716,177 @@ test "measurement seam: row width sums spans, bold equals plain" {
     try std.testing.expectEqual(metrics.measureSpanWidth(text("abcd"), font_size), metrics.measureRowWidth(row, font_size));
     // Line height exceeds the font size (leading).
     try std.testing.expect(lineHeight(font_size) > font_size);
+}
+
+test "TextField: loadValue seeds caret-at-end, insert appends, capacity truncates" {
+    var field: TextField = .{};
+    field.loadValue("Skeleton");
+    try std.testing.expectEqualStrings("Skeleton", field.currentText());
+    try std.testing.expectEqual(@as(usize, 8), field.caret);
+    try std.testing.expect(field.selection_anchor == null);
+
+    // Insert with no selection appends at the caret.
+    field.insertText(" Warrior");
+    try std.testing.expectEqualStrings("Skeleton Warrior", field.currentText());
+    try std.testing.expectEqual(@as(usize, 16), field.caret);
+
+    // loadValue truncates to capacity.
+    var long: TextField = .{};
+    long.loadValue("x" ** 200);
+    try std.testing.expectEqual(@as(usize, text_field_capacity), long.length);
+    try std.testing.expectEqualStrings("x" ** text_field_capacity, long.currentText());
+
+    // Insert past capacity truncates the INSERTED text (keeps the buffer
+    // full rather than dropping the tail).
+    long.insertText("abc");
+    try std.testing.expectEqual(@as(usize, text_field_capacity), long.length);
+    try std.testing.expectEqualStrings("x" ** text_field_capacity, long.currentText());
+}
+
+test "TextField: deleteBackward and deleteForward, with and without selection" {
+    var field: TextField = .{};
+    field.loadValue("Wolf");
+
+    // Backspace at the end removes one char; caret follows.
+    field.deleteBackward();
+    try std.testing.expectEqualStrings("Wol", field.currentText());
+    try std.testing.expectEqual(@as(usize, 3), field.caret);
+
+    // Backspace at the start is a no-op.
+    field.moveCaretTo(0, false);
+    field.deleteBackward();
+    try std.testing.expectEqualStrings("Wol", field.currentText());
+
+    // Delete forward removes the char after the caret; at the end a no-op.
+    field.deleteForward();
+    try std.testing.expectEqualStrings("ol", field.currentText());
+    field.moveCaretTo(field.length, false);
+    field.deleteForward();
+    try std.testing.expectEqualStrings("ol", field.currentText());
+
+    // Deleting WITH a selection removes exactly the selection, whichever
+    // direction the delete key came from.
+    field.loadValue("Skeleton Warrior");
+    field.moveCaretTo(9, false); // caret at 'W'
+    field.moveCaretLeft(true); // shift+left: select the space before 'W'
+    field.deleteForward();
+    try std.testing.expectEqualStrings("SkeletonWarrior", field.currentText());
+}
+
+test "TextField: moveCaretTo select/clear primitive drives every movement" {
+    var field: TextField = .{};
+    field.loadValue("abcd");
+
+    // Plain move clears any selection; the click case.
+    field.moveCaretTo(2, false);
+    try std.testing.expectEqual(@as(usize, 2), field.caret);
+    try std.testing.expect(field.selection_anchor == null);
+
+    // Select-move plants the anchor at the OLD caret (shift+arrow,
+    // drag-select share this).
+    field.moveCaretLeft(true);
+    try std.testing.expectEqual(@as(usize, 1), field.caret);
+    try std.testing.expectEqual(@as(usize, 2), field.selection_anchor.?);
+    const selection = field.selectionRange().?;
+    try std.testing.expectEqual(@as(usize, 1), selection.start);
+    try std.testing.expectEqual(@as(usize, 2), selection.end);
+
+    // Extending past the anchor flips the range's direction, not its ends.
+    field.moveCaretLeft(true);
+    const extended = field.selectionRange().?;
+    try std.testing.expectEqual(@as(usize, 0), extended.start);
+    try std.testing.expectEqual(@as(usize, 2), extended.end);
+
+    // A non-select move collapses the selection.
+    field.moveCaretTo(3, false);
+    try std.testing.expect(field.selectionRange() == null);
+
+    // Bounds clamp; mid-codepoint rounds forward (covered with multibyte
+    // below); out-of-range indexes clamp to the buffer ends.
+    field.moveCaretTo(99, false);
+    try std.testing.expectEqual(field.length, field.caret);
+    field.moveCaretTo(0, false);
+    // Anchor == caret is no selection (the degenerate guard).
+    field.selection_anchor = field.caret;
+    try std.testing.expect(field.selectionRange() == null);
+}
+
+test "TextField: insert replaces the selection (both anchor directions)" {
+    var field: TextField = .{};
+    field.loadValue("Skeleton Warrior");
+
+    // Select forward from 8 to 16 (" Warrior"), then type over it.
+    field.moveCaretTo(8, false);
+    field.moveCaretTo(16, true);
+    field.insertText(" Knight");
+    try std.testing.expectEqualStrings("Skeleton Knight", field.currentText());
+    try std.testing.expectEqual(@as(usize, 15), field.caret);
+
+    // Select backward (anchor at 15, caret at 8) — same replaced range.
+    field.moveCaretTo(15, false);
+    field.moveCaretTo(8, true);
+    try std.testing.expectEqual(@as(usize, 8), field.selectionRange().?.start);
+    field.insertText("Goblin");
+    try std.testing.expectEqualStrings("SkeletonGoblin", field.currentText());
+    try std.testing.expectEqual(@as(usize, 14), field.caret);
+    try std.testing.expect(field.selection_anchor == null);
+}
+
+test "TextField: caret navigation is codepoint-aware (UTF-8)" {
+    // "é" = 0xC3 0xA9 (2 bytes), "z" = 1 byte: a 5-byte buffer holding
+    // 3 codepoints.
+    var field: TextField = .{};
+    field.loadValue("\u{00E9}z\u{00E9}");
+    try std.testing.expectEqual(@as(usize, 5), field.length);
+
+    // Left from the end steps one CODEPOINT at a time: 5 -> 3 (start of
+    // the trailing é) -> 2 (the single-byte 'z').
+    field.moveCaretLeft(false);
+    try std.testing.expectEqual(@as(usize, 3), field.caret);
+    field.moveCaretLeft(false);
+    try std.testing.expectEqual(@as(usize, 2), field.caret);
+
+    // Right steps over the full sequence again.
+    field.moveCaretRight(false);
+    try std.testing.expectEqual(@as(usize, 3), field.caret);
+
+    // Backspace removes the whole codepoint before the caret (the 'z').
+    field.deleteBackward();
+    try std.testing.expectEqualStrings("\u{00E9}\u{00E9}", field.currentText());
+    try std.testing.expectEqual(@as(usize, 2), field.caret);
+
+    // Delete-forward removes the whole codepoint after the caret (the
+    // trailing é).
+    field.deleteForward();
+    try std.testing.expectEqualStrings("\u{00E9}", field.currentText());
+
+    // A mid-codepoint index rounds FORWARD to the next boundary (so a
+    // stray 1 inside the first sequence is boundary 3, not 1).
+    field.loadValue("\u{00E9}\u{00E9}");
+    field.moveCaretTo(1, false);
+    try std.testing.expectEqual(@as(usize, 2), field.caret);
+}
+
+test "TextField: caretIndexAtX maps a click x to a boundary" {
+    // Synthetic metrics (the measurement-seam convention above): each
+    // ASCII glyph measures 55px at font_size 100.
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const field_text = "abcd";
+
+    // Clicking inside the first glyph (x < 55) positions before it; each
+    // 55px step lands before the next glyph.
+    try std.testing.expectEqual(@as(usize, 0), TextField.caretIndexAtX(field_text, metrics, 100, 0));
+    try std.testing.expectEqual(@as(usize, 0), TextField.caretIndexAtX(field_text, metrics, 100, 54));
+    try std.testing.expectEqual(@as(usize, 1), TextField.caretIndexAtX(field_text, metrics, 100, 55));
+    try std.testing.expectEqual(@as(usize, 2), TextField.caretIndexAtX(field_text, metrics, 100, 110));
+    try std.testing.expectEqual(@as(usize, 3), TextField.caretIndexAtX(field_text, metrics, 100, 165));
+    // Past the end = the end.
+    try std.testing.expectEqual(@as(usize, 4), TextField.caretIndexAtX(field_text, metrics, 100, 500));
+
+    // Multibyte: the fallback width (0.5em + spacing = 55 at size 100 —
+    // same as an ASCII glyph here) keeps boundaries whole.
+    try std.testing.expectEqual(@as(usize, 0), TextField.caretIndexAtX("\u{00E9}z", metrics, 100, 50));
+    try std.testing.expectEqual(@as(usize, 2), TextField.caretIndexAtX("\u{00E9}z", metrics, 100, 56));
 }
 
 

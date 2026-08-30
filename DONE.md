@@ -7185,3 +7185,52 @@ fires once, all 9 present, undo restores the partial — note the test
 seeds the selection BEFORE `runToIdle` so the idle-point snapshot
 captures it); no-op cases (tile tool active; everything already
 selected). 398 tests pass.
+
+### Inspector field editor — design settled + text input core (DONE, part 1 of slice 1)
+
+**Design settled** (recorded in DESIGN → Architecture → Level Editor →
+Editor UI layout → "Inspector fields (enemy types — settled)" + DESIGN →
+UI Framework → Text input widget): the parser is the coupling contract
+(every `parseEntityDefinition` key ↔ exactly one inspector control,
+bounds single-sourced from the loaders `max_*` constants); thin
+PlayerInputEvent wrappers per field verb → the existing
+`editor_set_entity_*` events; base stats UNBOUNDED by design (gear bounds
+exist for player-pickup balance — enemies are allowed to be unbalanced,
+validation guarantees completability); momentum NOT authorable
+(`editor_set_entity_momentum` to be removed — transient combat stat);
+weapon types as an INLINE row (create-on-pick-while-null / retype /
+delete) rather than the centered picker (the picker's first consumer is
+the 25-skill utility picker); color_index as an inline swatch row; sprite
+id as a plain text field in v1 (the sprite picker later, with resolution
+prioritizing mission-folder .pngs); text-field focus semantics M2 +
+commit-on-dismiss (Enter/OK commit, Escape discards, click a sibling
+inspector control = commit + proceed, click elsewhere = commit +
+consumed — Undo-while-focused eats the click so the next click undoes
+the just-committed value).
+
+**Text input core landed:** `TextField` (ui.zig, beside FontMetrics) —
+a fixed 128-byte UTF-8 buffer with byte-index caret + selection anchor.
+Pure methods only: `loadValue` (seed from the field's current value),
+`insertText` (replaces the selection, truncates to capacity),
+`deleteBackward`/`deleteForward` (selection or one codepoint),
+`moveCaretTo(index, select)` — the ONE movement primitive (false = plain
+move clearing the selection, i.e. a click; true = plant-the-anchor
+selection move, i.e. shift+arrow / drag), `moveCaretLeft/Right`,
+`selectionRange` (min/max, anchor==caret is no selection), and
+`caretIndexAtX` (pure click-x → boundary mapping via FontMetrics —
+multibyte uses the same 0.5em fallback the measurement seam uses). All
+indices are codepoint boundaries: `codepointStartBefore` (returns 0 at
+the buffer start — a move-left there no-ops) / `codepointEndAfter` /
+mid-index rounds FORWARD. Character filtering (digits-only for numeric
+fields) is deliberately NOT core — the routing layer knows the field
+kind and filters before insert. Six unit tests cover capacity
+truncation, both delete directions with/without selection, the movement
+primitive's select/clear/flip math, insert-replaces-selection in both
+anchor directions, UTF-8 navigation, and click-x mapping. 404 tests
+pass.
+
+One test-writing lesson worth keeping: the UTF-8 nav test's expected
+caret path was wrong on the first pass (byte-index arithmetic done in
+my head instead of walking the actual byte layout) — the CODE was
+right, the EXPECTATION was wrong. Self-referential asserts are only as
+good as the walk that derives them.
