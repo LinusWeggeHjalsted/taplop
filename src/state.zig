@@ -1173,6 +1173,23 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_place_editor_decoration type id out of range");
                     }
                 },
+                // Same shape: the paint checks + the item type in palette
+                // range. Position unrestricted (occupant no-op clicks are
+                // legal in a recorded session).
+                .player_place_editor_item => |place| {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_place_editor_item outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_place_editor_item with no editor");
+                    };
+                    if (editor.levels.len == 0) {
+                        @panic("replay validation: player_place_editor_item with no levels");
+                    }
+                    if (place.type_id >= editor.item_types.len) {
+                        @panic("replay validation: player_place_editor_item type id out of range");
+                    }
+                },
                 .player_replay_mission => {
                     if (self.current_state.last_completed_mission == null) {
                         @panic("replay validation: player_replay_mission with no completed mission");

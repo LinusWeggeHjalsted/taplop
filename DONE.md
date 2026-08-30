@@ -6402,3 +6402,36 @@ one-undo reverting all; overlapping decoration deleted + survivor order;
 direct `editor_delete_entity_placement`), view +1 (2-wide footprint → 6
 boundary edges, no interior edge between region tiles, left edge at the
 anchor tile), cursor-resolution test + decoration-tool case.
+
+### Editor viewport input slice 4 — ground-item-tool placement
+
+The last placement tool: clicking with a GROUND ITEM palette tool active
+places that item type at the clicked tile. It is the enemy tool's
+orchestrator with the two placement kinds' roles swapped —
+`player_place_editor_item { type_id, position }` computes:
+- '!' / '=' at the position → no-op (never overwritten).
+- covering decoration → deleted; missing tile → placed (the item sits ON
+  a tile).
+- enemy on the tile → DELETED (`editor_delete_entity_placement`, landed
+  with the decoration slice) — an item can't coexist with it.
+- existing ground item → RETYPED in place via the new
+  `editor_set_item_placement_type` (same identity-stability reasoning as
+  the entity retype; same type already there → nothing pushed).
+- otherwise → `editor_place_item` (append, carrying the same
+  one-thing-per-tile panic guard as `editor_place_entity`: entity or item
+  already on the tile = logic bug, fail fast).
+
+Cursor: the single-tile square outline, same as tile/enemy —
+`usesTileCursor` now flips to "everything but selection" (`.select` is the
+only excluded tool, so the switch lists it instead of the inclusions).
+`validatePlayerAction` arm mirrors the others (screen/editor/levels +
+type_id in the item palette range). `handleIdleInput`'s tool switch gained
+the `.item_type` arm — every placement tool now has left-click input;
+what's left for the viewport is selection, right-click erase, and
+drag-painting.
+
+Tests: handler +7 (missing tile → tile + item; empty tile → item;
+decoration → deleted + tile + item with one-undo revert; '!' / '='
+no-ops; enemy deleted + item placed; retype in place + same-type no-op;
+direct retype arm), view + item-tool single-tile overlay case,
+cursor-resolution + item-tool case.

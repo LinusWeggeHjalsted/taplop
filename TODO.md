@@ -456,7 +456,10 @@ yet implemented. Remaining work:
   (`player_place_editor_decoration`: the inverse replacement — covered
   tiles erased with their occupants, overlapping decorations deleted,
   '!' / '=' never overwritten; continuous footprint-region outline
-  preview — see DONE.md). Deferred: right-click erase,
+  preview — see DONE.md), and GROUND-ITEM PLACEMENT
+  (`player_place_editor_item`: enemy-tool shape with the placement
+  kinds' roles swapped — existing item retyped in place, enemy deleted —
+  single-tile cursor — see DONE.md). Deferred: right-click erase,
   drag-painting. Still-needed event
   structs: `editor_toggle_inspector` / `editor_set_tool` /
   gradient-override setters. Default level template
@@ -464,11 +467,10 @@ yet implemented. Remaining work:
   bottom tool palette + the viewport world scene (tiles, palette-resolved
   placements, `!`/`=` markers; camera centered on the active level's
   player_start, right-drag pan) — reachable via the main-menu "Editor"
-  button. Remaining viewport INPUT: erase gesture, drag-paint, item
-  placement tools (mirror the enemy tool's occupant-replacement
-  orchestrator), selection tool (click / shift-click / marquee),
-  cursor-follow for the item tools (tile / enemy / decoration tools have
-  their cursor previews today).
+  button. Remaining viewport INPUT: erase gesture, drag-paint, selection
+  tool (click / shift-click / marquee). Every placement tool (tile /
+  enemy / decoration / ground item) has left-click + cursor previews
+  today.
 - **Right-click in the editor viewport — gesture split still to pick.**
   Right-drag pans the camera; a future right-click is the natural erase
   gesture for the tile tool (drag-paint being deferred removes the

@@ -283,6 +283,15 @@ pub const EditorEvent = union(enum) {
         placement_index: u32,
         new_position: Vector2,
     },
+    // Retype an item placement to another palette type in place (the
+    // ground-item-tool click on an occupied tile): identity (index) and
+    // position stay stable — same reasoning as
+    // `editor_set_entity_placement_type`.
+    editor_set_item_placement_type: struct {
+        level_index: u32,
+        placement_index: u32,
+        type_id: u32,
+    },
 
     // ── Entity type editing (per-field, target covers entity_type | player_def) ──
     // Dedicated variants (not a generic field+value event) so the log reads
@@ -557,7 +566,28 @@ pub const PlayerInputEvent = union(enum) {
     // deleted; then the decoration is placed. `type_id` rides in the
     // payload (handlers can't read UiState — replay doesn't reconstruct
     // it). The item tools land as their own slice.
+    // Decoration-tool click: place the palette decoration type with its
+    // ANCHOR tile (bottom-most-then-left-most footprint tile) at the
+    // clicked position. The handler computes occupant replacement (see
+    // DESIGN → Level Editor → Active-tool model, placement tools): the
+    // '!' / '=' under ANY footprint tile → no-op; tiles under footprint
+    // tiles are erased along with anything standing on them (entities /
+    // ground items); other decorations whose footprints overlap are
+    // deleted; then the decoration is placed. `type_id` rides in the
+    // payload (handlers can't read UiState — replay doesn't reconstruct
+    // it).
     player_place_editor_decoration: struct {
+        type_id: u32,
+        position: Vector2,
+    },
+    // Ground-item-tool click: place the palette item type at the clicked
+    // tile. Same occupant-replacement shape as the enemy tool (see DESIGN →
+    // Architecture → Level Editor → Active-tool model, placement tools):
+    // missing tile → placed; covering decoration → deleted; '!' / '=' →
+    // no-op; enemy on the tile → deleted; existing ground item → RETYPED
+    // in place. `type_id` rides in the payload (handlers can't read
+    // UiState — replay doesn't reconstruct it).
+    player_place_editor_item: struct {
         type_id: u32,
         position: Vector2,
     },

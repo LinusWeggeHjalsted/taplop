@@ -859,17 +859,17 @@ pub const EditorToolId = union(enum) {
 
     /// Does this tool resolve its click target through the tile cursor
     /// (mouse-follow + arrow nudge + the view's outline overlay)? True for
-    /// the tools whose click target is a tile position: tile paint, entity
-    /// placement (single-tile outline), and decoration placement (the
-    /// cursor tile is the decoration's ANCHOR tile — the view renders the
-    /// whole footprint region outline around it). The item tools join when
-    /// they land; selection has its own affordances. Shared by the cursor
-    /// resolution (input_handlers) and the overlay emission (view) so the
-    /// two gates can't drift.
+    /// every tool whose click target is a tile position — tile paint,
+    /// entity + ground-item placement (single-tile outline), and decoration
+    /// placement (the cursor tile is the decoration's ANCHOR tile — the
+    /// view renders the whole footprint region outline around it). Only
+    /// selection is excluded (it has its own affordances). Shared by the
+    /// cursor resolution (input_handlers) and the overlay emission (view)
+    /// so the two gates can't drift.
     pub fn usesTileCursor(self: EditorToolId) bool {
         return switch (self) {
-            .tile, .entity_type, .decoration_type => true,
-            else => false,
+            .select => false,
+            else => true,
         };
     }
 };

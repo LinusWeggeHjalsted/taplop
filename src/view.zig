@@ -2001,9 +2001,9 @@ fn buildCursorOverlay(
 /// left-most footprint tile — the placement position) sits at the cursor:
 /// one `region_edge` segment per boundary edge (a side whose neighbor is
 /// outside the region), so any footprint shape renders as a closed outline.
-/// Gated on the tile-cursor tools (`EditorToolId.usesTileCursor`); the item
-/// tools join when they land; selection has its own affordances. Same
-/// replay-safe shape as `buildCursorOverlay` (pure over SessionState).
+/// Gated on the tile-cursor tools (`EditorToolId.usesTileCursor` —
+/// everything but selection; the selection tool has its own affordances).
+/// Same replay-safe shape as `buildCursorOverlay` (pure over SessionState).
 fn buildEditorCursorOverlay(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
@@ -2804,6 +2804,28 @@ test "editor cursor overlay: tile tool outlines the cursor, other tools don't" {
     );
     try std.testing.expectEqual(@as(usize, 1), view_state_entity.tile_overlays.len);
     try std.testing.expectEqual(types.TileOverlayType.cursor, view_state_entity.tile_overlays[0].overlay_type);
+
+    // The ground-item tool draws the same single-tile outline.
+    session.ui_state.editor_active_tool = .{ .item_type = 0 };
+    const view_state_item = view(
+        &state_,
+        &session,
+        .{ .input_bindings = &.{} },
+        harness.color_theme_definitions,
+        &harness.weapon_type_definitions,
+        .{
+            .camera = camera,
+            .camera_zoom = 1.0,
+            .event_history = &.{},
+            .level_start_index = null,
+            .current_event_index = 0,
+            .frame_allocator = arena,
+            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .sprite_bounds = .{},
+        },
+    );
+    try std.testing.expectEqual(@as(usize, 1), view_state_item.tile_overlays.len);
+    try std.testing.expectEqual(types.TileOverlayType.cursor, view_state_item.tile_overlays[0].overlay_type);
 }
 
 test "editor cursor overlay: decoration tool outlines the footprint region continuously" {

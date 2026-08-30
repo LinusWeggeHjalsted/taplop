@@ -1388,8 +1388,8 @@ pub fn handleIdleInput(
     // consumed clicks over blocking UI (palette, tabs), so a surviving
     // tile_clicked is a viewport click. Enter folds into tile_clicked at
     // the top of handleIdleInput, so the keyboard path acts at the tile
-    // cursor too. Landed tools: tile paint + enemy + decoration placement;
-    // the item / selection tools land in later slices.
+    // cursor too. Landed tools: tile paint + enemy + decoration + ground
+    // item placement; the selection tool lands in a later slice.
     if (current.screen == .editor) {
         if (idle.tile_clicked) |clicked_position| {
             switch (history.session.ui_state.editor_active_tool) {
@@ -1404,7 +1404,11 @@ pub fn handleIdleInput(
                     .type_id = type_id,
                     .position = clicked_position,
                 } }, allocator),
-                .select, .item_type => {},
+                .item_type => |type_id| event_handlers.pushPlayerAction(current, .{ .player_place_editor_item = .{
+                    .type_id = type_id,
+                    .position = clicked_position,
+                } }, allocator),
+                .select => {},
             }
         }
         return;
@@ -1584,8 +1588,8 @@ pub fn resolveTileCursor(
 
     // Editor edit mode: the tile-cursor tools' cursor — its own semantics
     // (any tile position is a legal paint/place/anchor target, so no
-    // tile-membership check and no nudge clamp). Other tools have no tile
-    // cursor yet.
+    // tile-membership check and no nudge clamp). Only the selection tool
+    // has no tile cursor.
     if (current.screen == .editor) {
         resolveEditorTileCursor(history, player_input, ui_elements);
         return;
@@ -1905,4 +1909,16 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
         &.{},
     );
     try std.testing.expectEqual(types.Vector2{ .x = 7, .y = 7 }, history.session.tile_cursor.?);
+
+    // The ground-item tool too (single-tile outline, like tile/enemy).
+    history.session.ui_state.editor_active_tool = .{ .item_type = 0 };
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 6, .y = 6 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 6, .y = 6 }, history.session.tile_cursor.?);
 }

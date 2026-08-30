@@ -1900,7 +1900,7 @@ is determined by the active tool:
   footprint REPLACES the decoration — every covering placement is deleted,
   then the tile is placed (the click's delete + place sub-events share one
   idle point, so one undo reverts the whole click). While a tile-cursor
-  tool is active (tile + enemy + decoration tools —
+  tool is active (tile + enemy + decoration + ground-item tools —
   `EditorToolId.usesTileCursor`) the tile cursor draws its outline at the
   cursor position unconditionally (over empty space too — the affordance
   that a click can act there; arrow keys nudge it without the level/hub
@@ -1921,13 +1921,12 @@ is determined by the active tool:
   + position stay stable, preferred over delete + re-place; same type
   already there → nothing to do); empty tile → `editor_place_entity`.
   **One thing per placed tile is an invariant** — `editor_place_entity`
-  panics on an occupied tile (the orchestrator clears occupants first);
-  the decoration/item placement events get the same guard when they land,
-  and future move/drag handlers must preserve it. The enemy tool shares
-  the tile cursor (see the tile-paint tool above). Placing does NOT select
-  the placed instance — you switch to the selection tool to select.
-  (Auto-select-after-place is deliberately NOT the model; keeps tool
-  responsibilities disjoint.)
+  and `editor_place_item` panic on an occupied tile (the orchestrator
+  clears occupants first); future move/drag handlers must preserve it.
+  The enemy + ground-item tools share the single-tile cursor (see the
+  tile-paint tool above). Placing does NOT select the placed instance —
+  you switch to the selection tool to select. (Auto-select-after-place is
+  deliberately NOT the model; keeps tool responsibilities disjoint.)
 - **Decoration tool (landed, `player_place_editor_decoration`):** the
   INVERSE occupant replacement — a decoration's footprint tiles are
   TILE-FREE, so covered tiles are ERASED rather than placed. The '!' / '='
@@ -1939,6 +1938,14 @@ is determined by the active tool:
   entity/item placement, or another decoration's footprint at place time
   — the click orchestrator clears occupants first). The preview is the
   footprint region outline (see the tile-paint tool above).
+- **Ground-item tool (landed, `player_place_editor_item`):** the enemy
+  tool's occupant replacement with the two placement kinds' roles
+  swapped — an existing ground item is RETYPED in place
+  (`editor_set_item_placement_type`), while an enemy on the tile is
+  DELETED (an item can't coexist with it). Otherwise identical: '!' / '='
+  → no-op; covering decoration → deleted; missing tile → placed;
+  `editor_place_item` carries the same one-thing-per-tile guard. Single-
+  tile cursor outline.
 
 **Selection model (`Selectable` union).** The viewport can contain
 heterogeneous selectable things; multi-select is a REQUIRED feature
@@ -2012,7 +2019,11 @@ paint + enemy placement wired). Decoration-tool clicks + the footprint
 region-outline preview landed too (`player_place_editor_decoration` +
 `editor_place_decoration` / `editor_delete_entity_placement` arms, the
 `region_edge` overlay type, `loaders.decorationFootprintWorldTiles` as the
-single source of the anchor-translation formula).
+single source of the anchor-translation formula). Ground-item-tool clicks
+landed last (`player_place_editor_item` + `editor_place_item` /
+`editor_set_item_placement_type` arms) — every placement tool now has
+left-click input; remaining viewport input is selection, erase, and
+single-tile drag-painting.
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
 struct exists in events.zig (`editor_add_level` / `editor_delete_level` /
@@ -2027,8 +2038,9 @@ events — see Level theme below) / `editor_set_mission_name` /
 `editor_set_item_*` / `editor_add_*_layer` / `editor_remove_*_layer` /
 `editor_set_*_layer`). `handleEditorEvent` implements the arms the landed UI
 slices need (`editor_set_tile` both directions, the `editor_delete_*_placement`
-trio, `editor_place_entity`, `editor_place_decoration`,
-`editor_set_entity_placement_type`); the rest still `@panic` so an unhooked edit verb
+trio, `editor_place_entity` / `editor_place_decoration` /
+`editor_place_item`, `editor_set_entity_placement_type` /
+`editor_set_item_placement_type`); the rest still `@panic` so an unhooked edit verb
 fails fast rather than silently no-op'ing. Remaining handlers land with
 their UI slices.
 

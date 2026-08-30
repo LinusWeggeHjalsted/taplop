@@ -837,3 +837,255 @@ test "editor_delete_entity_placement: removes the placement, order preserved" {
     try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.entity_placements[0].position);
     try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, level.entity_placements[1].position);
 }
+
+/// Two palette item types for the ground-item placement tests — retyping
+/// needs a second type to switch to.
+fn itemTestEditor(levels: []const types.EditorLevel) types.Editor {
+    const item_types = [_]types.ItemTypeDef{
+        .{ .id = "Iron Sword", .item = .{ .weapon = .{} } },
+        .{ .id = "Boots", .item = .{ .boots = .{ .name = "Boots" } } },
+    };
+    return .{ .levels = levels, .item_types = &item_types };
+}
+
+test "player_place_editor_item: no tile → tile placed + item on top" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(itemTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_item = .{
+            .type_id = 0,
+            .position = .{ .x = 3, .y = 1 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expect(hasTile(level, .{ .x = 3, .y = 1 }));
+    try testing.expectEqual(@as(usize, 1), level.item_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 3, .y = 1 }, level.item_placements[0].position);
+}
+
+test "player_place_editor_item: empty tile → item placed on it" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{.{ .x = 2, .y = 2 }};
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
+    var history = harness.newHistory(editorStateWith(itemTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_item = .{
+            .type_id = 1,
+            .position = .{ .x = 2, .y = 2 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.level_tiles.len);
+    try testing.expectEqual(@as(usize, 1), level.item_placements.len);
+    try testing.expectEqual(@as(u32, 1), level.item_placements[0].type_id);
+}
+
+test "player_place_editor_item: decoration footprint → decoration deleted, tile + item placed, one undo reverts" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const existing_placements = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 1, .y = 0 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .decoration_placements = &existing_placements,
+    }};
+    var editor = itemTestEditor(&levels);
+    const decoration_editor = decorationTestEditor(&levels);
+    editor.decoration_types = decoration_editor.decoration_types;
+    var history = harness.newHistory(editorStateWith(editor));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_item = .{
+            .type_id = 0,
+            .position = .{ .x = 1, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 0), level.decoration_placements.len);
+    try testing.expect(hasTile(level, .{ .x = 1, .y = 0 }));
+    try testing.expectEqual(@as(usize, 1), level.item_placements.len);
+
+    try testing.expect(history.undo(event_handlers.processEvent));
+    const reverted = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), reverted.decoration_placements.len);
+    try testing.expect(!hasTile(reverted, .{ .x = 1, .y = 0 }));
+    try testing.expectEqual(@as(usize, 0), reverted.item_placements.len);
+}
+
+test "player_place_editor_item: player start and level end are no-ops" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 4, .y = 0 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 4, .y = 0 },
+    }};
+    var history = harness.newHistory(editorStateWith(itemTestEditor(&levels)));
+    runToIdle(&history);
+
+    for ([_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 4, .y = 0 } }) |position| {
+        event_handlers.pushEvents(
+            &history.current_state,
+            &.{.{ .player_input_event = .{ .player_place_editor_item = .{
+                .type_id = 0,
+                .position = position,
+            } } }},
+            history.current_arena.allocator(),
+        );
+        runToIdle(&history);
+    }
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 0), level.item_placements.len);
+    try testing.expectEqual(@as(usize, 2), level.level_tiles.len);
+}
+
+test "player_place_editor_item: enemy on the tile is deleted, item placed" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 2, .y = 0 }, .{ .x = 5, .y = 5 } };
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } },
+    };
+    const entity_placements = [_]types.EntityPlacement{
+        .{ .type_id = 0, .position = .{ .x = 2, .y = 0 } }, // deleted
+        .{ .type_id = 0, .position = .{ .x = 5, .y = 5 } }, // untouched
+    };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .entity_placements = &entity_placements,
+    }};
+    var editor = itemTestEditor(&levels);
+    editor.entity_types = &entity_types;
+    var history = harness.newHistory(editorStateWith(editor));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_item = .{
+            .type_id = 0,
+            .position = .{ .x = 2, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.entity_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 5, .y = 5 }, level.entity_placements[0].position);
+    try testing.expectEqual(@as(usize, 1), level.item_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, level.item_placements[0].position);
+}
+
+test "player_place_editor_item: existing item is retyped in place, same type is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{.{ .x = 1, .y = 1 }};
+    const item_placements = [_]types.ItemPlacement{.{
+        .type_id = 0, // Iron Sword
+        .position = .{ .x = 1, .y = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .item_placements = &item_placements,
+    }};
+    var history = harness.newHistory(editorStateWith(itemTestEditor(&levels)));
+    runToIdle(&history);
+
+    // Different type → retyped in place: same index, same position, new
+    // type_id, placement count unchanged.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_item = .{
+            .type_id = 1, // Boots
+            .position = .{ .x = 1, .y = 1 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    var level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.item_placements.len);
+    try testing.expectEqual(@as(u32, 1), level.item_placements[0].type_id);
+    try testing.expectEqual(types.Vector2{ .x = 1, .y = 1 }, level.item_placements[0].position);
+
+    // Same type again → nothing to do (no do-nothing undo step).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_item = .{
+            .type_id = 1,
+            .position = .{ .x = 1, .y = 1 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.item_placements.len);
+    try testing.expectEqual(@as(u32, 1), level.item_placements[0].type_id);
+}
+
+test "editor_set_item_placement_type: retypes without touching position or count" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const item_placements = [_]types.ItemPlacement{
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 0 } },
+    };
+    const levels = [_]types.EditorLevel{.{ .item_placements = &item_placements }};
+    var history = harness.newHistory(editorStateWith(itemTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_item_placement_type = .{
+            .level_index = 0,
+            .placement_index = 1,
+            .type_id = 1,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 2), level.item_placements.len);
+    try testing.expectEqual(@as(u32, 0), level.item_placements[0].type_id);
+    try testing.expectEqual(@as(u32, 1), level.item_placements[1].type_id);
+    try testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, level.item_placements[1].position);
+}
