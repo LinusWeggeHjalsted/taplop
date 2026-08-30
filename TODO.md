@@ -459,10 +459,12 @@ yet implemented. Remaining work:
   preview — see DONE.md), and GROUND-ITEM PLACEMENT
   (`player_place_editor_item`: enemy-tool shape with the placement
   kinds' roles swapped — existing item retyped in place, enemy deleted —
-  single-tile cursor — see DONE.md), and the TOOL-INDEPENDENT RIGHT-CLICK
+  single-tile cursor — see DONE.md), the TOOL-INDEPENDENT RIGHT-CLICK
   DELETE (`player_delete_editor_at`: one thing per click — occupant,
   then covering decoration, then the bare tile; '!' / '=' / empty ground
-  no-ops; clean-click-vs-pan disambiguation — see DONE.md).
+  no-ops; clean-click-vs-pan disambiguation — see DONE.md), and the SELECT
+  TOOL's plain-click selection (`types.Selectable` set on UiState, white
+  region outlines, hover preview, cleared on tool change — see DONE.md).
   Deferred: drag-painting. Still-needed event
   structs: `editor_toggle_inspector` / `editor_set_tool` /
   gradient-override setters. Default level template
@@ -470,9 +472,10 @@ yet implemented. Remaining work:
   bottom tool palette + the viewport world scene (tiles, palette-resolved
   placements, `!`/`=` markers; camera centered on the active level's
   player_start, right-drag pan) — reachable via the main-menu "Editor"
-  button. Remaining viewport INPUT: drag-paint, selection tool (click /
-  shift-click / marquee). Left-click placement (tile / enemy / decoration /
-  ground item) + cursor previews + the right-click delete all work today.
+  button. Remaining viewport INPUT: drag-paint + selection follow-ups
+  (shift-click add-vs-replace distinction, marquee, and the selection
+  OPERATIONS — move / delete, the reason selection exists). All tools
+  have left-click input + cursor previews + the right-click delete.
 - **Hook up the add-level "+" (top bar, right of the level tabs).** The
   square panel cell renders (inert, tooltip "Add level"); wiring it is a
   `player_add_editor_level` orchestrator + the `editor_add_level` handler

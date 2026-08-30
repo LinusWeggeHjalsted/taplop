@@ -16,6 +16,7 @@ const events = @import("events.zig");
 const state = @import("state.zig");
 const input = @import("input.zig");
 const parser = @import("parser.zig");
+const loaders = @import("loaders.zig");
 const writers = @import("writers.zig");
 const session_log = @import("session_log.zig");
 const lookups = @import("generated_lookups.zig");
@@ -1118,10 +1119,15 @@ pub fn handleAnytimeInput(
             // Editor tool cell click (make it the active tool). The
             // EditorToolId rode in `anytime.clicked_editor_tool`. View-side
             // display state for now; migrates onto the Editor via
-            // `editor_set_tool` when the edit-verb handlers land.
+            // `editor_set_tool` when the edit-verb handlers land. Changing
+            // to a DIFFERENT tool clears the select-tool selection (the
+            // selection belongs to the select workflow); re-selecting the
+            // active tool changes nothing.
             .select_editor_tool => {
                 const tool = anytime.clicked_editor_tool orelse return;
+                if (std.meta.eql(tool, history.session.ui_state.editor_active_tool)) return;
                 history.session.ui_state.editor_active_tool = tool;
+                history.session.ui_state.editor_selection.clearRetainingCapacity();
             },
             // Level-tab click: push the orchestrator (the EditorEvent owns
             // the mutation; the switch rides the undo timeline) and drain.
@@ -1491,7 +1497,7 @@ pub fn handleIdleInput(
     // tile_clicked is a viewport click. Enter folds into tile_clicked at
     // the top of handleIdleInput, so the keyboard path acts at the tile
     // cursor too. Landed tools: tile paint + enemy + decoration + ground
-    // item placement; the selection tool lands in a later slice.
+    // item placement + selection; all tools have viewport input now.
     if (current.screen == .editor) {
         if (idle.tile_clicked) |clicked_position| {
             switch (history.session.ui_state.editor_active_tool) {
@@ -1510,7 +1516,7 @@ pub fn handleIdleInput(
                     .type_id = type_id,
                     .position = clicked_position,
                 } }, allocator),
-                .select => {},
+                .select => selectAtEditorPosition(history, clicked_position),
             }
         }
         return;
@@ -1688,10 +1694,10 @@ pub fn resolveTileCursor(
 ) void {
     const current = &history.current_state;
 
-    // Editor edit mode: the tile-cursor tools' cursor — its own semantics
-    // (any tile position is a legal paint/place/anchor target, so no
-    // tile-membership check and no nudge clamp). Only the selection tool
-    // has no tile cursor.
+    // Editor edit mode: every tool resolves the tile cursor (paint / place
+    // / anchor / select target — the view branches per tool for the
+    // outline: single tile, footprint region, or the select tool's
+    // hovered-decoration preview).
     if (current.screen == .editor) {
         resolveEditorTileCursor(history, player_input, ui_elements);
         return;
@@ -1762,24 +1768,19 @@ pub fn resolveTileCursor(
         }
     }
 }
-/// Editor arm of the tile-cursor resolution (a tile-cursor tool active —
-/// see `EditorToolId.usesTileCursor`). The cursor follows the mouse to
-/// ANY tile position (cleared over blocking UI, like levels/hubs); arrow
-/// keys nudge freely — there is no clamp-to-real-tile because
-/// painting/placing over empty space is the point. A null cursor snaps to
-/// the active level's player_start (the '!', the editor's player-position
-/// analog). For the decoration tool the cursor tile is the placement
-/// ANCHOR tile (the view renders the footprint region outline around it).
+/// Editor arm of the tile-cursor resolution. The cursor follows the mouse
+/// to ANY tile position (cleared over blocking UI, like levels/hubs); arrow
+/// keys nudge freely — there is no clamp-to-real-tile because acting over
+/// empty space is the point. A null cursor snaps to the active level's
+/// player_start (the '!', the editor's player-position analog). What the
+/// cursor MEANS is per-tool (view renders the fitting outline); for the
+/// decoration tools the cursor tile is the placement ANCHOR tile.
 fn resolveEditorTileCursor(
     history: *GameStateHistory,
     player_input: PlayerInput,
     ui_elements: []const ui.UiElement,
 ) void {
     const current = &history.current_state;
-    if (!history.session.ui_state.editor_active_tool.usesTileCursor()) {
-        history.session.tile_cursor = null;
-        return;
-    }
 
     const in_game = player_input.anytime.in_game;
     if (in_game.mouse_moved_this_tick) {
@@ -1810,6 +1811,98 @@ fn resolveEditorTileCursor(
     cursor.x += in_game.cursor_direction.x;
     cursor.y += in_game.cursor_direction.y;
     history.session.tile_cursor = cursor;
+}
+
+/// Select-tool click: add the thing(s) at the clicked tile to the
+/// selection set (`UiState.editor_selection` — a UI affordance, not a
+/// mission edit, so a direct write off the undo timeline). What a click
+/// selects: the '!' / '=' singletons; a covering decoration (the FIRST —
+/// exactly what the hover preview shows); or the tile INCLUDING anything
+/// standing on it (entity / ground-item placements). Already-selected
+/// entries are skipped (a full no-op when nothing new); empty ground
+/// selects nothing. Placement entries can go stale when an edit removes a
+/// placement (right-click delete) — the render bounds-checks and skips
+/// them.
+fn selectAtEditorPosition(
+    history: *GameStateHistory,
+    position: types.Vector2,
+) void {
+    const current = &history.current_state;
+    const editor = &(current.editor orelse return);
+    if (editor.levels.len == 0) return;
+    const level_index = editor.active_level_index;
+    if (level_index >= editor.levels.len) return;
+    const level = &editor.levels[level_index];
+    const selection = &history.session.ui_state.editor_selection;
+    const allocator = history.backing_allocator;
+
+    // The '!' / '=' singletons — selectable (this is the only way they'll
+    // ever be moved), never deletable.
+    if (position.x == level.player_start.x and position.y == level.player_start.y) {
+        addSelectable(selection, .player_start, allocator);
+        return;
+    }
+    if (level.level_end) |level_end_position| {
+        if (position.x == level_end_position.x and position.y == level_end_position.y) {
+            addSelectable(selection, .level_end, allocator);
+            return;
+        }
+    }
+
+    // A covering decoration (the first — matching the hover preview).
+    for (level.decoration_placements, 0..) |placement, placement_index| {
+        const type_definition = editor.decoration_types[placement.type_id];
+        if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+            addSelectable(selection, .{ .decoration_placement = @intCast(placement_index) }, allocator);
+            return;
+        }
+    }
+
+    // The tile including anything standing on it. Empty ground (no tile,
+    // no occupants) selects nothing.
+    for (level.level_tiles) |tile| {
+        if (tile.x == position.x and tile.y == position.y) {
+            addSelectable(selection, .{ .tile = position }, allocator);
+            break;
+        }
+    }
+    for (level.entity_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and placement.position.y == position.y) {
+            addSelectable(selection, .{ .entity_placement = @intCast(placement_index) }, allocator);
+        }
+    }
+    for (level.item_placements, 0..) |placement, placement_index| {
+        if (placement.position.x == position.x and placement.position.y == position.y) {
+            addSelectable(selection, .{ .ground_item_placement = @intCast(placement_index) }, allocator);
+        }
+    }
+}
+
+/// Append `entry` to the selection set unless already present (selecting
+/// what's already selected is a no-op).
+fn addSelectable(
+    selection: *std.ArrayList(types.Selectable),
+    entry: types.Selectable,
+    allocator: std.mem.Allocator,
+) void {
+    for (selection.items) |existing| {
+        if (selectableEqual(existing, entry)) return;
+    }
+    selection.append(allocator, entry) catch @panic("failed to allocate editor selection");
+}
+
+/// Value equality over `Selectable` (tag + payload). Unions don't support
+/// `==` in Zig, so the comparison is spelled out.
+fn selectableEqual(a: types.Selectable, b: types.Selectable) bool {
+    return switch (a) {
+        .tile => |position| b == .tile and
+            b.tile.x == position.x and b.tile.y == position.y,
+        .entity_placement => |index| b == .entity_placement and b.entity_placement == index,
+        .decoration_placement => |index| b == .decoration_placement and b.decoration_placement == index,
+        .ground_item_placement => |index| b == .ground_item_placement and b.ground_item_placement == index,
+        .player_start => b == .player_start,
+        .level_end => b == .level_end,
+    };
 }
 
 test "dragToOrchestrator maps valid drags and blocks cross-domain drops" {
@@ -1961,18 +2054,6 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
     );
     try std.testing.expectEqual(@as(?types.Vector2, null), history.session.tile_cursor);
 
-    // Non-tile-cursor tools have no cursor.
-    history.session.ui_state.editor_active_tool = .select;
-    resolveTileCursor(
-        &history,
-        .{ .anytime = .{ .in_game = .{
-            .mouse_moved_this_tick = true,
-            .mouse_tile = .{ .x = 9, .y = 9 },
-        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
-        &.{},
-    );
-    try std.testing.expectEqual(@as(?types.Vector2, null), history.session.tile_cursor);
-
     // Arrow nudge with a null cursor snaps to player_start first, then
     // nudges — no clamp-to-real-tile (empty space is a legal paint target).
     history.session.ui_state.editor_active_tool = .tile;
@@ -1985,6 +2066,20 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
         &.{},
     );
     try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 3 }, history.session.tile_cursor.?);
+
+    // The select tool resolves the tile cursor as well (its outline
+    // previews what a click would select — a covering decoration's
+    // footprint region, else the single tile).
+    history.session.ui_state.editor_active_tool = .select;
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 9, .y = 9 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, history.session.tile_cursor.?);
 
     // The enemy tool is a tile-cursor tool too (same semantics — any
     // position is a legal place target).
@@ -2134,4 +2229,120 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
         viewport,
     );
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
+test "selectAtEditorPosition: click adds tile + occupants, singletons, decoration; no-ops" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "stone_2",
+        .sprite = "stone_2",
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 256, .y = 256 },
+    }};
+    const decoration_placements = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 7, .y = 7 },
+    }};
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 2 } };
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 1, .y = 1 },
+    }};
+    const item_placements = [_]types.ItemPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 1, .y = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 2, .y = 2 },
+        .entity_placements = &entity_placements,
+        .item_placements = &item_placements,
+        .decoration_placements = &decoration_placements,
+    }};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{
+            .levels = &levels,
+            .decoration_types = &decoration_types,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    const selection = &history.session.ui_state.editor_selection;
+
+    // A tile with an enemy + item on it: all three added in one click.
+    selectAtEditorPosition(&history, .{ .x = 1, .y = 1 });
+    try std.testing.expectEqual(@as(usize, 3), selection.items.len);
+    try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection.items[0]);
+    try std.testing.expectEqual(@as(u32, 0), selection.items[1].entity_placement);
+    try std.testing.expectEqual(@as(u32, 0), selection.items[2].ground_item_placement);
+
+    // Clicking the same tile again: everything already selected — no-op.
+    selectAtEditorPosition(&history, .{ .x = 1, .y = 1 });
+    try std.testing.expectEqual(@as(usize, 3), selection.items.len);
+
+    // The '!' and '=' singletons are selectable.
+    selectAtEditorPosition(&history, .{ .x = 0, .y = 0 });
+    try std.testing.expectEqual(types.Selectable.player_start, selection.items[3]);
+    selectAtEditorPosition(&history, .{ .x = 2, .y = 2 });
+    try std.testing.expectEqual(types.Selectable.level_end, selection.items[4]);
+
+    // The covering decoration (by index).
+    selectAtEditorPosition(&history, .{ .x = 7, .y = 7 });
+    try std.testing.expectEqual(@as(u32, 0), selection.items[5].decoration_placement);
+
+    // Empty ground: nothing to select.
+    selectAtEditorPosition(&history, .{ .x = 9, .y = 9 });
+    try std.testing.expectEqual(@as(usize, 6), selection.items.len);
+}
+
+test "select_editor_tool: changing tools clears the selection, re-selecting keeps it" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    history.session.ui_state.editor_active_tool = .select;
+    try history.session.ui_state.editor_selection.append(
+        history.backing_allocator,
+        .{ .tile = .{ .x = 1, .y = 1 } },
+    );
+
+    // Re-selecting the ACTIVE tool changes nothing.
+    handleAnytimeInput(&history, .{
+        .options_action = .select_editor_tool,
+        .clicked_editor_tool = .select,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try std.testing.expectEqual(@as(usize, 1), history.session.ui_state.editor_selection.items.len);
+
+    // Changing to a different tool clears the selection.
+    handleAnytimeInput(&history, .{
+        .options_action = .select_editor_tool,
+        .clicked_editor_tool = .tile,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try std.testing.expectEqual(types.EditorToolId.tile, history.session.ui_state.editor_active_tool);
+    try std.testing.expectEqual(@as(usize, 0), history.session.ui_state.editor_selection.items.len);
 }

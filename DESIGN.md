@@ -1899,8 +1899,17 @@ right-drag stays the camera pan (movement-threshold disambiguation, the
 `PendingRightClick` gesture state shared with the level-screen inspect).
 Progressive delete: clicking an occupied tile removes the occupant first,
 the tile goes on the next click.
-- **Selection tool:** click selects / shift-click adds to / drag-marquee
-  builds the selection set (heterogeneous `Selectable` set, see below).
+- **Selection tool (plain click LANDED):** a click ADDS to the selection
+  set (heterogeneous `Selectable` set — see below; a click on a tile
+  selects the tile INCLUDING the entity / ground item standing on it, a
+  covering decoration selects the decoration — the first, exactly what the
+  hover preview outlines — and the '!' / '=' are selectable since
+  selection is the only way they'll ever be moved). Already-selected
+  entries are skipped (a full no-op when nothing new); empty ground
+  selects nothing. The selection lives on UiState (off the undo timeline —
+  a UI affordance, not a mission edit) and renders as WHITE outlines
+  around every selected region; changing to a different tool clears it.
+  Deferred: shift-click / marquee / selection operations (move / delete).
   Placing does NOT happen in selection mode.
 - **Tile-paint tool:** one click = one tile (`player_paint_editor_tile`,
   LANDED). A click on empty space paints a floor tile; a click where a
@@ -1908,15 +1917,16 @@ the tile goes on the next click.
   tiles, so they never block a paint); a click covered by a decoration
   footprint REPLACES the decoration — every covering placement is deleted,
   then the tile is placed (the click's delete + place sub-events share one
-  idle point, so one undo reverts the whole click). While a tile-cursor
-  tool is active (tile + enemy + decoration + ground-item tools —
-  `EditorToolId.usesTileCursor`) the tile cursor draws its outline at the
+  idle point, so one undo reverts the whole click). EVERY tool resolves
+  the tile cursor and draws its outline at the
   cursor position unconditionally (over empty space too — the affordance
   that a click can act there; arrow keys nudge it without the level/hub
   clamp-to-real-tile); the decoration tool renders a CONTINUOUS outline
   around the whole footprint region instead (one `region_edge` overlay
   per boundary edge — any footprint shape reads as one closed outline),
-  anchored so the decoration's ANCHOR tile sits at the cursor.
+  anchored so the decoration's ANCHOR tile sits at the cursor, and the
+  select tool previews what a click would select (a covering
+  decoration's footprint region, else the single tile).
   Drag-painting (one `editor_set_tile` per
   cell crossed) is still deferred. Does not modify the selection set.
 - **Placement tools (enemy/decoration/item type):** click places one
@@ -1971,7 +1981,14 @@ Selectable = union(enum) {
 };
 ```
 
-The selection set is `[]Selectable`. **Inspector tool-type inference:** when
+The selection set is `[]Selectable` — LANDED as
+`UiState.editor_selection` (types.zig `Selectable`, placement indices are
+u32; a selection can go STALE when an edit removes a placement, so
+consumers bounds-check and skip — proper staleness handling lands with the
+selection-operations slice). The click resolution (see the selection tool
+above) is the landed hit-testing: '!' / '=' singletons, first covering
+decoration, else tile + occupants; the render-order priority below is the
+future selection-op refinement. **Inspector tool-type inference:** when
 the selection contains only placements (entity/decoration/item) that all
 share one `type_id`, the inspector switches to that palette tool and shows
 its type fields (editing the type updates all placements of it). When the
@@ -2033,7 +2050,10 @@ landed last (`player_place_editor_item` + `editor_place_item` /
 `editor_set_item_placement_type` arms) — every placement tool now has
 left-click input; the tool-independent right-click delete
 (`player_delete_editor_at` + the `PendingRightClick` gesture union) landed
-after it. Remaining viewport input: selection + drag-painting.
+after it. The select tool's plain-click selection landed last
+(`types.Selectable` + `UiState.editor_selection` + white selection
+outlines + the hover preview). Remaining viewport input: selection
+operations (move / delete / shift-click / marquee) + drag-painting.
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
 struct exists in events.zig (`editor_add_level` / `editor_delete_level` /

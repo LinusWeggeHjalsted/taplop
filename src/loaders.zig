@@ -945,6 +945,24 @@ pub fn decorationFootprintWorldTiles(
     return tiles;
 }
 
+/// Does a decoration placement's footprint cover `world_tile`? Thin
+/// wrapper over `decorationFootprintWorldTiles`. An empty footprint
+/// reserves nothing (the loader rejects those at parse, so this is
+/// defensive only). Shared by the editor placement/delete orchestrators
+/// (event_handlers) and the select tool's click resolution
+/// (input_handlers).
+pub fn decorationFootprintCovers(
+    footprint: []const types.Vector2,
+    placement_position: types.Vector2,
+    world_tile: types.Vector2,
+    allocator: std.mem.Allocator,
+) bool {
+    for (decorationFootprintWorldTiles(footprint, placement_position, allocator)) |covered| {
+        if (covered.x == world_tile.x and covered.y == world_tile.y) return true;
+    }
+    return false;
+}
+
 /// Validate a decoration's footprint against its sprite bbox and the level/hub
 /// tile set. Panics on violation (fail fast — see DESIGN → Error Handling):
 ///   - empty footprint (no anchor, no reserved tiles)

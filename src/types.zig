@@ -856,22 +856,25 @@ pub const EditorToolId = union(enum) {
     entity_type: u32,
     decoration_type: u32,
     item_type: u32,
+};
 
-    /// Does this tool resolve its click target through the tile cursor
-    /// (mouse-follow + arrow nudge + the view's outline overlay)? True for
-    /// every tool whose click target is a tile position — tile paint,
-    /// entity + ground-item placement (single-tile outline), and decoration
-    /// placement (the cursor tile is the decoration's ANCHOR tile — the
-    /// view renders the whole footprint region outline around it). Only
-    /// selection is excluded (it has its own affordances). Shared by the
-    /// cursor resolution (input_handlers) and the overlay emission (view)
-    /// so the two gates can't drift.
-    pub fn usesTileCursor(self: EditorToolId) bool {
-        return switch (self) {
-            .select => false,
-            else => true,
-        };
-    }
+/// One selectable thing in the editor viewport (the select tool's click
+/// target; see DESIGN → Architecture → Level Editor → Selection model).
+/// Placement entries address the ACTIVE level's placement lists by index
+/// — a selection can go stale when an edit removes/reorders placements
+/// (e.g. a right-click delete), so consumers bounds-check and skip stale
+/// entries. The selection set lives on UiState (off the undo timeline —
+/// selecting is a UI affordance, not a mission edit).
+pub const Selectable = union(enum) {
+    /// A floor tile at `position` (a paint/erase target).
+    tile: Vector2,
+    entity_placement: u32,
+    decoration_placement: u32,
+    ground_item_placement: u32,
+    /// The '!' — singleton, movable never deletable.
+    player_start: void,
+    /// The '=' — singleton, movable never deletable.
+    level_end: void,
 };
 
 pub const Editor = struct {

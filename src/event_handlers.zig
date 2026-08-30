@@ -441,7 +441,7 @@ fn handleEditorEvent(
             for (level.decoration_placements) |placement| {
                 const other_definition = editor.decoration_types[placement.type_id];
                 for (footprint_tiles) |tile| {
-                    if (decorationFootprintCovers(other_definition.footprint, placement.position, tile, allocator)) {
+                    if (loaders.decorationFootprintCovers(other_definition.footprint, placement.position, tile, allocator)) {
                         @panic("editor_place_decoration onto another decoration's footprint");
                     }
                 }
@@ -545,22 +545,6 @@ fn setLevelTile(
         }
     }
     return tiles;
-}
-
-/// Does a decoration placement's footprint cover `world_tile`? Thin
-/// wrapper over `loaders.decorationFootprintWorldTiles` (the single
-/// source of the anchor-translation formula). An empty footprint reserves
-/// nothing (the loader rejects those at parse, so this is defensive only).
-fn decorationFootprintCovers(
-    footprint: []const Vector2,
-    placement_position: Vector2,
-    world_tile: Vector2,
-    allocator: std.mem.Allocator,
-) bool {
-    for (loaders.decorationFootprintWorldTiles(footprint, placement_position, allocator)) |covered| {
-        if (covered.x == world_tile.x and covered.y == world_tile.y) return true;
-    }
-    return false;
 }
 
 fn tileBefore(a: Vector2, b: Vector2) bool {
@@ -1110,7 +1094,7 @@ fn handlePlayerInputEvent(
                 } } }) catch @panic("failed to allocate editor paint events");
                 for (level.decoration_placements, 0..) |placement, placement_index| {
                     const type_definition = editor.decoration_types[placement.type_id];
-                    if (decorationFootprintCovers(type_definition.footprint, placement.position, paint.position, allocator)) {
+                    if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, paint.position, allocator)) {
                         pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
                             .level_index = @intCast(level_index),
                             .placement_index = @intCast(placement_index),
@@ -1209,7 +1193,7 @@ fn handlePlayerInputEvent(
                 }
                 for (level.decoration_placements, 0..) |placement, placement_index| {
                     const type_definition = editor.decoration_types[placement.type_id];
-                    if (decorationFootprintCovers(type_definition.footprint, placement.position, place.position, allocator)) {
+                    if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, place.position, allocator)) {
                         pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
                             .level_index = @intCast(level_index),
                             .placement_index = @intCast(placement_index),
@@ -1299,7 +1283,7 @@ fn handlePlayerInputEvent(
                     const other_definition = editor.decoration_types[placement.type_id];
                     var overlaps = false;
                     for (footprint_tiles) |tile| {
-                        if (decorationFootprintCovers(other_definition.footprint, placement.position, tile, allocator)) {
+                        if (loaders.decorationFootprintCovers(other_definition.footprint, placement.position, tile, allocator)) {
                             overlaps = true;
                             break;
                         }
@@ -1400,7 +1384,7 @@ fn handlePlayerInputEvent(
                 }
                 for (level.decoration_placements, 0..) |placement, placement_index| {
                     const type_definition = editor.decoration_types[placement.type_id];
-                    if (decorationFootprintCovers(type_definition.footprint, placement.position, place.position, allocator)) {
+                    if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, place.position, allocator)) {
                         pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
                             .level_index = @intCast(level_index),
                             .placement_index = @intCast(placement_index),
@@ -1463,7 +1447,7 @@ fn handlePlayerInputEvent(
                 var covering: std.ArrayList(Event) = .empty;
                 for (level.decoration_placements, 0..) |placement, placement_index| {
                     const type_definition = editor.decoration_types[placement.type_id];
-                    if (decorationFootprintCovers(type_definition.footprint, placement.position, delete.position, allocator)) {
+                    if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, delete.position, allocator)) {
                         covering.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
                             .level_index = @intCast(level_index),
                             .placement_index = @intCast(placement_index),

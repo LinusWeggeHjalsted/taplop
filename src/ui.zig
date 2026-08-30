@@ -122,12 +122,20 @@ pub const UiState = struct {
     editor_palette_collapsed: [3]bool = .{ true, true, true },
 
     /// The active editor tool (palette selection). Default: the Select
-    /// tool. Drives the selected-tool outline in the palette; the viewport
-    /// consumption (what a viewport click does) lands with the edit-verb
-    /// handlers. Off the undo timeline (view-side, like the collapse +
-    /// scroll state); migrates onto the Editor via `editor_set_tool` when
-    /// the event lands.
+    /// tool. Drives the selected-tool outline in the palette + what a
+    /// viewport click does (see input_handlers' editor arms). Off the undo
+    /// timeline (view-side, like the collapse + scroll state); migrates
+    /// onto the Editor via `editor_set_tool` when the event lands.
     editor_active_tool: types.EditorToolId = .select,
+
+    /// The select tool's selection set (see `types.Selectable`). Mutated
+    /// directly by the input handlers (a UI affordance, not a mission
+    /// edit — off the undo timeline, replay-safe by construction) via the
+    /// session's backing allocator. Cleared when the active tool CHANGES
+    /// (and by the screen/world-transition UiState reset — editor close,
+    /// playtest enter/exit). Entries can go stale when an edit removes a
+    /// placement (right-click delete) — consumers bounds-check + skip.
+    editor_selection: std.ArrayList(types.Selectable) = .empty,
 
     /// Combat log scroll offset (for full combat log view).
     combat_log_scroll_offset: i32 = 0,

@@ -6478,3 +6478,60 @@ Tests: handler +2 covering all five rules (occupant-before-tile
 progression on one fixture; '!' / '=' tile survival; decoration delete),
 input +1 for the gesture lifecycle (clean click pushes targeting the
 pressed tile; drag-cancel; blocking-UI press no-ops).
+
+### Editor viewport input slice 6 — select tool: plain-click selection + white outlines
+
+The select tool's left click. `types.Selectable` (the union sketched in
+DESIGN → Level Editor → Selection model) is now real: tile /
+entity_placement / decoration_placement / ground_item_placement /
+player_start / level_end, with u32 placement indices.
+
+**Selection state lives on UiState** (`editor_selection`), not GameState:
+selecting is a UI affordance, not a mission edit — off the undo timeline,
+replay-safe by construction (same class as the active tool), mutated
+directly by the input handlers via the session's backing allocator. No
+new events (so no validatePlayerAction arms either). Cleared when the
+active tool CHANGES (re-selecting the active tool keeps it — std.meta.eql
+tool comparison, unions don't support ==), and by the existing
+screen/world-transition UiState reset (editor close, playtest
+enter/exit).
+
+**Click resolution** (`selectAtEditorPosition`, input_handlers): the '!'
+/ '=' singletons are selectable (selection is the only way they'll ever
+be moved — there is no placing/deleting them); a covering decoration
+selects the FIRST covering placement (exactly what the hover preview
+shows — preview ≡ click; the delete-all-covering convention is
+deliberately NOT used here so the preview never lies); otherwise the
+click selects the tile INCLUDING the entity / ground item standing on it
+(one click adds up to three Selectables). Already-selected entries are
+skipped (a full no-op when nothing new); empty ground selects nothing
+(there is no tile to select — the single-tile hover outline is the
+cursor, not a promise).
+
+**Rendering:** the selection draws WHITE outlines (explicit pure white,
+not theme lightest) around every selected region — a single-tile outline
+per tile / singleton / placement position (a tile + its occupant outline
+the same rect; opaque redraw is invisible, no dedup needed) and a
+continuous `region_edge` region outline per decoration placement. The
+edge-emission loop was extracted into `appendRegionOutline`, now shared
+by the decoration preview, the select hover preview, and the selection
+overlay. Stale entries (a selected placement later right-click-deleted —
+indices shift) are bounds-checked and skipped.
+
+**Cursor:** every tool now resolves the tile cursor — the
+`EditorToolId.usesTileCursor` predicate is deleted (it had excluded
+selection; with selection joining, it was `return true`). The select
+tool's outline previews the click: a covering decoration's footprint
+region, else the single tile.
+
+**Shared footprint check:** `decorationFootprintCovers` moved from
+event_handlers (private) to loaders (pub) — the select click resolution
+and the hover preview (input_handlers + view) need it alongside the
+orchestrators.
+
+Tests: input +2 (click resolution covering all cases incl. no-ops +
+tool-change clearing / same-tool retention), view +2 (select hover
+preview: footprint region over a decoration, single tile elsewhere;
+selection overlay: 4 white tile outlines + 6 region edges on a
+kitchen-sink selection), and the two existing cursor tests updated for
+select now resolving the cursor.

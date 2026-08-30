@@ -170,13 +170,24 @@ pub fn view(
         );
         // Tile-cursor overlay: outline at the cursor (unconditional —
         // paints/placements target empty space too); the decoration tool
-        // shows its footprint region outline. See buildEditorCursorOverlay.
+        // shows its footprint region outline, the select tool previews what
+        // a click would select. The select tool's selection set renders as
+        // WHITE outlines. See buildEditorCursorOverlay /
+        // buildEditorSelectionOverlay.
         buildEditorCursorOverlay(
             &tile_overlays,
             frame_allocator,
             editor,
             session,
             active_theme,
+            camera,
+            camera_zoom,
+        );
+        buildEditorSelectionOverlay(
+            &tile_overlays,
+            frame_allocator,
+            editor,
+            session,
             camera,
             camera_zoom,
         );
@@ -1991,19 +2002,17 @@ fn buildCursorOverlay(
     }
 }
 
-/// Editor tile-cursor overlay. The tile + enemy tools draw the single-tile
-/// outline at the cursor position, UNCONDITIONALLY (no tile-membership
-/// check) — any tile position is a legal paint/place target, so the
-/// outline over empty space is the affordance that a click can act there
-/// (unlike levels/hubs, which only cursor over real tiles). The decoration
-/// tool instead draws a CONTINUOUS outline around the type's footprint
-/// region, anchored so the decoration's ANCHOR tile (bottom-most-then-
-/// left-most footprint tile — the placement position) sits at the cursor:
-/// one `region_edge` segment per boundary edge (a side whose neighbor is
-/// outside the region), so any footprint shape renders as a closed outline.
-/// Gated on the tile-cursor tools (`EditorToolId.usesTileCursor` —
-/// everything but selection; the selection tool has its own affordances).
-/// Same replay-safe shape as `buildCursorOverlay` (pure over SessionState).
+/// Editor tile-cursor overlay, per tool: the tile / enemy / item tools
+/// draw the single-tile outline at the cursor position, UNCONDITIONALLY
+/// (no tile-membership check) — any tile position is a legal
+/// paint/place target, so the outline over empty space is the affordance
+/// that a click can act there (unlike levels/hubs, which only cursor over
+/// real tiles). The decoration tool draws a CONTINUOUS outline around the
+/// active type's footprint region, anchored so the ANCHOR tile sits at
+/// the cursor. The select tool shows what a click would select: a
+/// covering decoration's footprint region, else the single tile.
+/// Same replay-safe shape as `buildCursorOverlay` (pure over
+/// SessionState).
 fn buildEditorCursorOverlay(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
@@ -2014,7 +2023,6 @@ fn buildEditorCursorOverlay(
     zoom: f32,
 ) void {
     const tool = session.ui_state.editor_active_tool;
-    if (!tool.usesTileCursor()) return;
     const cursor = session.tile_cursor orelse return;
 
     if (tool == .decoration_type) {
@@ -2024,25 +2032,27 @@ fn buildEditorCursorOverlay(
             cursor,
             allocator,
         );
-        for (region_tiles) |tile| {
-            const screen_position = tileToScreen(tile, camera, zoom);
-            // A side is a boundary edge when the neighbor across it is
-            // outside the region. Screen y grows downward, so the neighbor
-            // at y-1 borders the tile's TOP edge.
-            if (!functions.tileListContains(region_tiles, .{ .x = tile.x, .y = tile.y - 1 })) {
-                appendRegionEdge(list, allocator, screen_position, .top, active_theme.lightest);
-            }
-            if (!functions.tileListContains(region_tiles, .{ .x = tile.x, .y = tile.y + 1 })) {
-                appendRegionEdge(list, allocator, screen_position, .bottom, active_theme.lightest);
-            }
-            if (!functions.tileListContains(region_tiles, .{ .x = tile.x - 1, .y = tile.y })) {
-                appendRegionEdge(list, allocator, screen_position, .left, active_theme.lightest);
-            }
-            if (!functions.tileListContains(region_tiles, .{ .x = tile.x + 1, .y = tile.y })) {
-                appendRegionEdge(list, allocator, screen_position, .right, active_theme.lightest);
+        appendRegionOutline(list, allocator, region_tiles, active_theme.lightest, camera, zoom);
+        return;
+    }
+
+    if (tool == .select) {
+        // Hover preview ≡ click: the FIRST covering decoration's footprint
+        // region, else the single tile (see selectAtEditorPosition).
+        if (selectEditorLevel(editor)) |level| {
+            for (level.decoration_placements) |placement| {
+                const type_definition = editor.decoration_types[placement.type_id];
+                if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, cursor, allocator)) {
+                    const region_tiles = loaders.decorationFootprintWorldTiles(
+                        type_definition.footprint,
+                        placement.position,
+                        allocator,
+                    );
+                    appendRegionOutline(list, allocator, region_tiles, active_theme.lightest, camera, zoom);
+                    return;
+                }
             }
         }
-        return;
     }
 
     list.append(allocator, .{
@@ -2050,6 +2060,110 @@ fn buildEditorCursorOverlay(
         .overlay_type = .cursor,
         .color = active_theme.lightest,
     }) catch @panic("failed to append editor cursor overlay");
+}
+
+/// The select tool's selection set, outlined in WHITE: a single-tile
+/// outline per tile / singleton / placement position, and a continuous
+/// region outline per decoration placement. Pure over SessionState + the
+/// editor (replay-safe). Stale placement entries (a selected placement
+/// later deleted — indices shift/go out of range) are skipped.
+fn buildEditorSelectionOverlay(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    editor: *const Editor,
+    session: *const state.SessionState,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    if (session.ui_state.editor_selection.items.len == 0) return;
+    const level = selectEditorLevel(editor) orelse return;
+    const white = types.Color{ .r = 1, .g = 1, .b = 1 };
+
+    for (session.ui_state.editor_selection.items) |selected| switch (selected) {
+        .tile => |position| appendSingleTileOutline(list, allocator, position, white, camera, zoom),
+        .player_start => appendSingleTileOutline(list, allocator, level.player_start, white, camera, zoom),
+        .level_end => {
+            if (level.level_end) |level_end_position| {
+                appendSingleTileOutline(list, allocator, level_end_position, white, camera, zoom);
+            }
+        },
+        .entity_placement => |placement_index| {
+            if (placement_index < level.entity_placements.len) {
+                appendSingleTileOutline(list, allocator, level.entity_placements[placement_index].position, white, camera, zoom);
+            }
+        },
+        .ground_item_placement => |placement_index| {
+            if (placement_index < level.item_placements.len) {
+                appendSingleTileOutline(list, allocator, level.item_placements[placement_index].position, white, camera, zoom);
+            }
+        },
+        .decoration_placement => |placement_index| {
+            if (placement_index < level.decoration_placements.len) {
+                const placement = level.decoration_placements[placement_index];
+                const type_definition = editor.decoration_types[placement.type_id];
+                const region_tiles = loaders.decorationFootprintWorldTiles(
+                    type_definition.footprint,
+                    placement.position,
+                    allocator,
+                );
+                appendRegionOutline(list, allocator, region_tiles, white, camera, zoom);
+            }
+        },
+    };
+}
+
+/// The active editor level (clamped), or null when there are no levels —
+/// the select tool's click + rendering resolution target.
+fn selectEditorLevel(editor: *const Editor) ?*const types.EditorLevel {
+    if (editor.levels.len == 0) return null;
+    return &editor.levels[@min(editor.active_level_index, editor.levels.len - 1)];
+}
+
+fn appendSingleTileOutline(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    position: Vector2,
+    color: types.Color,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    list.append(allocator, .{
+        .screen_position = tileToScreen(position, camera, zoom),
+        .overlay_type = .cursor,
+        .color = color,
+    }) catch @panic("failed to append editor selection outline");
+}
+
+/// One `region_edge` segment per boundary edge of `region_tiles` (a side
+/// whose neighbor is outside the region) — any region shape renders as a
+/// continuous closed outline. Shared by the decoration-tool preview, the
+/// select-tool hover preview, and the selection overlay.
+fn appendRegionOutline(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    region_tiles: []const Vector2,
+    color: types.Color,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    for (region_tiles) |tile| {
+        const screen_position = tileToScreen(tile, camera, zoom);
+        // A side is a boundary edge when the neighbor across it is
+        // outside the region. Screen y grows downward, so the neighbor
+        // at y-1 borders the tile's TOP edge.
+        if (!functions.tileListContains(region_tiles, .{ .x = tile.x, .y = tile.y - 1 })) {
+            appendRegionEdge(list, allocator, screen_position, .top, color);
+        }
+        if (!functions.tileListContains(region_tiles, .{ .x = tile.x, .y = tile.y + 1 })) {
+            appendRegionEdge(list, allocator, screen_position, .bottom, color);
+        }
+        if (!functions.tileListContains(region_tiles, .{ .x = tile.x - 1, .y = tile.y })) {
+            appendRegionEdge(list, allocator, screen_position, .left, color);
+        }
+        if (!functions.tileListContains(region_tiles, .{ .x = tile.x + 1, .y = tile.y })) {
+            appendRegionEdge(list, allocator, screen_position, .right, color);
+        }
+    }
 }
 
 fn appendRegionEdge(
@@ -2706,7 +2820,7 @@ test "editor scene: viewport projects tiles, placements, and markers" {
     try std.testing.expect(std.mem.eql(u8, "world/flag_pole", drawables[4].level_end.sprite_id));
 }
 
-test "editor cursor overlay: tile tool outlines the cursor, other tools don't" {
+test "editor cursor overlay: every tool outlines the cursor tile" {
     // The tile-tool cursor draws at the cursor position UNCONDITIONALLY —
     // over empty space too (the affordance that a tile can be placed
     // there), unlike the level/hub cursor which only draws on real tiles.
@@ -2762,8 +2876,10 @@ test "editor cursor overlay: tile tool outlines the cursor, other tools don't" {
         overlay.screen_position,
     );
 
-    // A non-tile-cursor tool draws no cursor; an enemy tool does (same
-    // overlay — its click target is a tile position too).
+    // The select tool draws the single-tile outline too (its hover
+    // preview — a covering decoration's footprint region, else the tile);
+    // an enemy tool does (same overlay — its click target is a tile
+    // position too).
     session.ui_state.editor_active_tool = .select;
     const view_state_select = view(
         &state_,
@@ -2782,7 +2898,8 @@ test "editor cursor overlay: tile tool outlines the cursor, other tools don't" {
             .sprite_bounds = .{},
         },
     );
-    try std.testing.expectEqual(@as(usize, 0), view_state_select.tile_overlays.len);
+    try std.testing.expectEqual(@as(usize, 1), view_state_select.tile_overlays.len);
+    try std.testing.expectEqual(types.TileOverlayType.cursor, view_state_select.tile_overlays[0].overlay_type);
 
     session.ui_state.editor_active_tool = .{ .entity_type = 0 };
     const view_state_entity = view(
@@ -2910,4 +3027,180 @@ test "editor cursor overlay: decoration tool outlines the footprint region conti
         tileToScreen(.{ .x = 2, .y = 1 }, camera, 1.0),
         left_edge_position.?,
     );
+}
+
+test "editor select tool: hover previews the covering decoration's footprint, else the tile" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    const footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "stone_2",
+        .sprite = "stone_2",
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 256, .y = 256 },
+    }};
+    const decoration_placements = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 4, .y = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .player_start = .{ .x = 0, .y = 0 },
+        .decoration_placements = &decoration_placements,
+    }};
+    const state_ = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels, .decoration_types = &decoration_types },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    var session = state.SessionState{};
+    session.ui_state.editor_active_tool = .select;
+
+    const camera = computeCamera(&state_, 1.0, null);
+    const runView = struct {
+        fn call(
+            state__: *const GameState,
+            session__: *state.SessionState,
+            arena__: std.mem.Allocator,
+            harness__: *test_harness.Harness,
+            camera__: types.Camera,
+        ) types.ViewState {
+            return view(
+                state__,
+                session__,
+                .{ .input_bindings = &.{} },
+                harness__.color_theme_definitions,
+                &harness__.weapon_type_definitions,
+                .{
+                    .camera = camera__,
+                    .camera_zoom = 1.0,
+                    .event_history = &.{},
+                    .level_start_index = null,
+                    .current_event_index = 0,
+                    .frame_allocator = arena__,
+                    .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+                    .sprite_bounds = .{},
+                },
+            );
+        }
+    }.call;
+
+    // Over the decoration's footprint tile: the region outline (a 1-tile
+    // footprint = 4 edges).
+    session.tile_cursor = .{ .x = 4, .y = 1 };
+    const over_decoration = runView(&state_, &session, arena, &harness, camera);
+    try std.testing.expectEqual(@as(usize, 4), over_decoration.tile_overlays.len);
+    for (over_decoration.tile_overlays) |overlay| {
+        try std.testing.expectEqual(types.TileOverlayType.region_edge, overlay.overlay_type);
+    }
+
+    // Anywhere else: the single-tile outline.
+    session.tile_cursor = .{ .x = 2, .y = 2 };
+    const over_ground = runView(&state_, &session, arena, &harness, camera);
+    try std.testing.expectEqual(@as(usize, 1), over_ground.tile_overlays.len);
+    try std.testing.expectEqual(types.TileOverlayType.cursor, over_ground.tile_overlays[0].overlay_type);
+}
+
+test "editor selection overlay: white outlines around all selected regions" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "ruin_1",
+        .sprite = "ruin_1",
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 512, .y = 256 },
+    }};
+    const decoration_placements = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 5, .y = 1 },
+    }};
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 1, .y = 1 },
+    }};
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 9, .y = 0 },
+        .entity_placements = &entity_placements,
+        .decoration_placements = &decoration_placements,
+    }};
+    const state_ = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{
+            .levels = &levels,
+            .entity_types = &entity_types,
+            .decoration_types = &decoration_types,
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    var session = state.SessionState{};
+    // A tile (with its enemy), the player start, the level end, and the
+    // 2-wide decoration — the union of everything selectable. Cursor null
+    // so only the selection overlays emit.
+    session.ui_state.editor_active_tool = .select;
+    try session.ui_state.editor_selection.append(arena, .{ .tile = .{ .x = 1, .y = 1 } });
+    try session.ui_state.editor_selection.append(arena, .{ .entity_placement = 0 });
+    try session.ui_state.editor_selection.append(arena, .player_start);
+    try session.ui_state.editor_selection.append(arena, .level_end);
+    try session.ui_state.editor_selection.append(arena, .{ .decoration_placement = 0 });
+
+    const camera = computeCamera(&state_, 1.0, null);
+    const view_state = view(
+        &state_,
+        &session,
+        .{ .input_bindings = &.{} },
+        harness.color_theme_definitions,
+        &harness.weapon_type_definitions,
+        .{
+            .camera = camera,
+            .camera_zoom = 1.0,
+            .event_history = &.{},
+            .level_start_index = null,
+            .current_event_index = 0,
+            .frame_allocator = arena,
+            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .sprite_bounds = .{},
+        },
+    );
+
+    const white = types.Color{ .r = 1, .g = 1, .b = 1 };
+    var tile_outlines: usize = 0;
+    var region_edges: usize = 0;
+    for (view_state.tile_overlays) |overlay| {
+        try std.testing.expect(std.meta.eql(white, overlay.color));
+        switch (overlay.overlay_type) {
+            .cursor => tile_outlines += 1,
+            .region_edge => region_edges += 1,
+            else => {},
+        }
+    }
+    // Single-tile outlines: the tile (1,1), the enemy on it (same rect —
+    // opaque redraw, invisible), the '!' (0,0), the '=' (9,0) = 4.
+    try std.testing.expectEqual(@as(usize, 4), tile_outlines);
+    // The 2-wide decoration's region = 6 boundary edges.
+    try std.testing.expectEqual(@as(usize, 6), region_edges);
 }
