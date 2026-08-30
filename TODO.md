@@ -465,10 +465,14 @@ yet implemented. Remaining work:
   conflict). Needs the movement-threshold disambiguation pattern (see
   `handleRightClickInspect`) so a pan release doesn't erase. Land with the
   erase slice.
-- **Collapsed editor palette groups — UNDECIDED visuals.** Groups collapse
-  to... something that shows there's content to expand. Candidate: overlap
-  the first few tools (peeking stack) so the group reads as expandable.
-  Decide when the collapse interaction slice lands.
+- **Hook up the add-level "+" (top bar, right of the level tabs).** The
+  square panel cell renders (inert, tooltip "Add level"); wiring it is a
+  `player_add_editor_level` orchestrator + the `editor_add_level` handler
+  (default template `data/default_level.txt` — which itself is still to
+  be written) + `validatePlayerAction` arm. Same pattern as
+  `player_set_editor_level`.
+- **Hook up the palette "+" cells (add-new type).** Same shape: click →
+  orchestrator → `editor_add_*_type` handler (currently panics).
 - Validation result + replay attachment: on successful validation, attach a
   saved mission replay to the custom mission (next save writes it into the
   custom mission dir) for re-validation before uploading to the online

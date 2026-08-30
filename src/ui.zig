@@ -2814,11 +2814,14 @@ const tile_highlight_frame_size: i32 = 256;
 /// Font size for the editor palette group headers ("Enemies", …).
 const editor_group_header_font_size: i32 = 64;
 
-/// Height of the group header strip above the bar: header buttons and the
-/// per-group "+" buttons are 128x128.
+/// Height of the group header buttons and the editor "+" cells: 128.
+/// Expanded groups' headers sit in a strip above the bar; collapsed
+/// groups' headers + "+" sit flush against the bottom of the screen
+/// (see `buildEditorBottomBar`).
 const editor_header_strip_height: i32 = 128;
 
-/// Side length of the per-group "+" (add-new) button in the header strip.
+/// Side length of the square ui/panel "+" cells (palette group add-new,
+/// level-tab add-level).
 const editor_plus_size: i32 = 128;
 
 /// Maximum type cells a palette group shows at once. Groups with more
@@ -2839,8 +2842,9 @@ pub fn editorPaletteGroupSize(editor: types.Editor, group_index: usize) usize {
 
 /// Which editor palette group's tool cells contain `position`, if any.
 /// Tool cells are Buttons whose sprite is `ui/button_background` (the
-/// header buttons are spriteless over panels; the "+" is an image in the
-/// strip above), so detection matches those in the bottom-bar band and
+/// header buttons are spriteless over panels and the "+" cells are
+/// panels — neither matches), so detection matches those in the
+/// bottom-bar band and
 /// segments the emission order: 2 fixed tools, then per EXPANDED group
 /// `min(size, max_tools)` type cells (collapsed groups contribute none).
 /// Valid only on the editor screen; callers gate on it.
@@ -2966,7 +2970,9 @@ fn emitEditorToolCell(
 /// "Level N" if unnamed. The ACTIVE tab is highlighted (lightest edge
 /// outline — the same path as tool cells); clicking switches the active
 /// level (payload = level index → `.select_editor_level` →
-/// `player_set_editor_level`, which rides the undo timeline). See DESIGN →
+/// `player_set_editor_level`, which rides the undo timeline). To the right
+/// of the last tab sits a square panel "+" (add level — inert until
+/// `editor_add_level`'s handler + click routing land). See DESIGN →
 /// Architecture → Level Editor → Editor UI layout (tabs).
 pub fn buildEditorLevelTabs(
     elements: *UiElementList,
@@ -3027,12 +3033,25 @@ pub fn buildEditorLevelTabs(
 
         x += width + ui_gap;
     }
+
+    // Add-level "+": square panel cell flush right of the last tab.
+    try emitEditorPlusCell(
+        elements,
+        allocator,
+        font_metrics,
+        .{ .x = x, .y = y, .width = editor_header_strip_height, .height = editor_header_strip_height },
+        button_color,
+        active_theme.lightest,
+        "Add level",
+    );
 }
 
-/// Editor bottom bar: the tool palette (static shell). Fixed tools first
+/// Editor bottom bar: the tool palette. Fixed tools first
 /// (Select, Tile), then three groups — Enemies, Decorations, Ground Items —
-/// each a header label, one slot per palette type, and an "add new" (+)
-/// cell. Every tool renders the shared button background plus a
+/// each a header toggle + a square panel "+" (add-new) cell + one slot per
+/// palette type. Expanded groups put their header + "+" in the strip above
+/// the bar; collapsed (or empty) groups put them flush against the bottom
+/// of the screen. Every tool renders the shared button background plus a
 /// distinguishing graphic: Select = `world/tile_highlight` frame 0, Tile =
 /// `world/tile`, enemies = entity base sprite (enemy gradient at the
 /// template's color_index), decorations = base sprite (world gradient at
@@ -3096,7 +3115,6 @@ pub fn buildEditorBottomBar(
     // content width changes as groups expand/collapse, and centering would
     // move the fixed tools — left-anchoring keeps Select/Tile stable.
     const bar = screen.placeBottomLeft(content_width, bottom_bar_height, 0);
-    const header_y = bar.y - ui_gap - editor_header_strip_height;
     var row = Row.init(bar.position(), bottom_bar_height, ui_gap);
 
     // Fixed tools. The tile graphic draws at half size (the tile art is
@@ -3133,12 +3151,21 @@ pub fn buildEditorBottomBar(
     );
 
     // Palette groups. Each group emits: a header toggle button + a "+"
-    // button in the strip above the bar, and its visible window of type
-    // cells in the row (none when collapsed).
+    // button (square ui/panel cells, same visual class as the level tabs)
+    // and its visible window of type cells in the row (none when
+    // collapsed). An EXPANDED group's header + "+" sit in the strip above
+    // the bar (labeling the cells below); a COLLAPSED (or empty) group has
+    // no cells to label, so they drop flush against the bottom of the
+    // screen instead of hovering above the bar — same condition the
+    // footprint math uses.
     for (group_labels, 0..) |label, group_index| {
         const size = group_sizes[group_index];
         const group_left = bar.x + row.cursor_x;
         const footprint = footprints[group_index];
+        const header_y: i32 = if (collapsed[group_index] or size == 0)
+            screen.bottom() - editor_header_strip_height
+        else
+            bar.y - ui_gap - editor_header_strip_height;
 
         // Header: panel-backed button (128 high), left-aligned with the
         // group. Clicking toggles collapse (payload = group index).
@@ -3176,34 +3203,25 @@ pub fn buildEditorBottomBar(
             .blocks_input = false,
         } });
 
-        // "+" (add-new): 128x128 in the header strip, flush against the
-        // header button's right edge (adjacent — reads as tied to the
-        // group). Inert until the edit-verb handlers land — tooltip-
-        // carrying image, like the tool cells.
-        const plus_x = group_left + header_width;
-        try elements.append(allocator, .{ .image = .{
-            .sprite_id = button_background_sprite_id,
-            .screen_position = .{ .x = plus_x, .y = header_y },
+        // "+" (add-new): square ui/panel cell flush against the header's
+        // right edge (adjacent — reads as tied to the group). Inert until
+        // the edit-verb handlers land — tooltip-carrying panel, like the
+        // level tabs.
+        const plus_cell: Rectangle = .{
+            .x = group_left + header_width,
+            .y = header_y,
             .width = editor_plus_size,
             .height = editor_plus_size,
-            .color = button_color,
-            .tooltip = .{ .header = try spanRow(allocator, text(
-                try std.fmt.allocPrint(allocator, "Add new {s} type", .{label}),
-            )) },
-        } });
-        const plus_width = font_metrics.measureSpanWidth(text("+"), editor_group_header_font_size);
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "+",
-            .screen_position = (Rectangle{
-                .x = plus_x,
-                .y = header_y,
-                .width = editor_plus_size,
-                .height = editor_plus_size,
-            }).placeCenter(plus_width, editor_group_header_font_size).position(),
-            .font_size = editor_group_header_font_size,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
+        };
+        try emitEditorPlusCell(
+            elements,
+            allocator,
+            font_metrics,
+            plus_cell,
+            button_color,
+            active_theme.lightest,
+            try std.fmt.allocPrint(allocator, "Add new {s} type", .{label}),
+        );
 
         // Type cells: the visible window (skipped entirely when collapsed).
         if (!collapsed[group_index] and size > 0) {
@@ -3297,6 +3315,37 @@ fn cellAt(bar_y: i32, group_left: i32, ordinal: usize) Rectangle {
         .width = slot_size,
         .height = bottom_bar_height,
     };
+}
+
+/// A square ui/panel "+" cell (the editor's add-new affordance — palette
+/// group pluses and the level-tab add-level plus). Inert until its edit
+/// verb lands: a tooltip-carrying panel + a non-blocking centered "+"
+/// glyph, same visual class as the level tabs. `cell` should be square.
+fn emitEditorPlusCell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell: Rectangle,
+    panel_color: Color,
+    text_color: Color,
+    tooltip_header: []const u8,
+) !void {
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .color = panel_color,
+        .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
+    } });
+    const plus_width = font_metrics.measureSpanWidth(text("+"), editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = "+",
+        .screen_position = cell.placeCenter(plus_width, editor_group_header_font_size).position(),
+        .font_size = editor_group_header_font_size,
+        .color = text_color,
+        .blocks_input = false,
+    } });
 }
 
 /// Build the inventory panel into `bounds`: a 9-slice background, an 8×12
@@ -4492,8 +4541,9 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     var elements: UiElementList = .empty;
     try buildEditorLevelTabs(&elements, arena.allocator(), metrics, editor, theme);
 
-    // 3 tabs x (panel + spriteless button + label) = 9 elements.
-    try std.testing.expectEqual(@as(usize, 9), elements.items.len);
+    // 3 tabs x (panel + spriteless button + label) + the add-level "+"
+    // (panel + glyph) = 11 elements.
+    try std.testing.expectEqual(@as(usize, 11), elements.items.len);
 
     // Tabs sit right of the top bar's options + undo cells, 128 high,
     // flush against the top of the screen.
@@ -4523,6 +4573,19 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
         try std.testing.expect(panel_x >= previous_x);
         previous_x = panel_x;
     }
+
+    // Add-level "+": square ui/panel cell to the right of the last tab,
+    // top-aligned with the tabs, carrying the tooltip. Inert (a panel, not
+    // a button — no action until `editor_add_level`'s handler lands).
+    const plus_panel = elements.items[9].nine_slice_panel;
+    try std.testing.expectEqualStrings("ui/panel", plus_panel.sprite_id);
+    try std.testing.expectEqual(@as(i32, 128), plus_panel.width);
+    try std.testing.expectEqual(@as(i32, 128), plus_panel.height);
+    try std.testing.expectEqual(@as(i32, 0), plus_panel.screen_position.y);
+    try std.testing.expect(plus_panel.screen_position.x > previous_x);
+    try std.testing.expect(plus_panel.tooltip != null);
+    try std.testing.expectEqualStrings("+", elements.items[10].text_label.text);
+    try std.testing.expect(!elements.items[10].text_label.blocks_input);
 }
 
 test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
@@ -4578,12 +4641,12 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     );
 
     // 2 fixed tools x (bg + graphic) + 3 groups x (header panel + button
-    // + label + plus (bg + glyph) + type (bg + graphic)) = 4 + 21.
+    // + label + plus (panel + glyph) + type (bg + graphic)) = 4 + 21.
     try std.testing.expectEqual(@as(usize, 25), elements.items.len);
 
-    // Every graphic sits on a button_background cell at the bottom of the
-    // screen: 5 tool cells (2 fixed + 3 palette types) — the "+" buttons
-    // moved to the header strip, out of the bar band.
+    // Every tool graphic sits on a button_background cell at the bottom of the
+    // screen: 5 tool cells (2 fixed + 3 palette types) — the "+" cells are
+    // square ui/panel cells in the header strip, out of the bar band.
     var background_count: usize = 0;
     for (elements.items) |element| switch (element) {
         .button => |button| {
@@ -4637,8 +4700,8 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
 
     // Three group headers + three "+" glyphs, all non-blocking overlays.
     // Headers sit ABOVE the bar (the strip the in-game indicators use),
-    // left-aligned with their group's first cell; the "+" glyphs sit in
-    // the bar (centered on their cell).
+    // left-aligned with their group's first cell; the "+" glyphs center on
+    // their square panel cells beside the headers.
     var header_count: usize = 0;
     var enemies_header: ?types.ScreenPosition = null;
     var enemies_header_button: ?types.ScreenPosition = null;
@@ -4682,6 +4745,116 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     );
     // The header BUTTON is left-aligned with the group's first cell.
     try std.testing.expectEqual(first_enemy_cell.?.x, enemies_header_button.?.x);
+}
+
+test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover above" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = black,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton" }};
+    const editor: types.Editor = .{ .entity_types = &entity_types };
+
+    var elements: UiElementList = .empty;
+    var scroll_offsets: [3]i32 = .{ 0, 0, 0 };
+    // Enemies (group 0) expanded; Decorations + Ground Items collapsed.
+    var collapsed: [3]bool = .{ false, true, true };
+    try buildEditorBottomBar(
+        &elements,
+        arena.allocator(),
+        metrics,
+        screenRect(),
+        editor,
+        theme,
+        &scroll_offsets,
+        &collapsed,
+        .select,
+    );
+
+    const flush_bottom_y = types.reference_height - editor_header_strip_height;
+    const hovering_y = types.reference_height - bottom_bar_height - ui_gap - editor_header_strip_height;
+
+    // Expanded group 0: header + "+" hover in the strip above the bar,
+    // and its type cell is in the bar band.
+    // Collapsed groups 1 + 2: header + "+" sit flush against the bottom
+    // of the screen, and emit no type cells.
+    var group_header_y: [3]?i32 = .{ null, null, null };
+    var plus_panels: usize = 0;
+    var bar_band_tool_cells: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| {
+            if (button.editor_group) |group_index| {
+                group_header_y[group_index] = button.screen_position.y;
+            }
+            if (button.sprite_id != null and
+                std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
+                button.screen_position.y >= types.reference_height - bottom_bar_height)
+            {
+                bar_band_tool_cells += 1;
+            }
+        },
+        .nine_slice_panel => |panel| {
+            // The three "+" cells: square ui/panel cells (their y is asserted
+            // via the paired "+" glyphs below).
+            if (panel.width == editor_plus_size and panel.height == editor_plus_size) {
+                plus_panels += 1;
+            }
+        },
+        else => {},
+    };
+
+    // Tool cells: 2 fixed + the 1 expanded enemy type (collapsed groups
+    // contribute none).
+    try std.testing.expectEqual(@as(usize, 3), bar_band_tool_cells);
+
+    try std.testing.expectEqual(hovering_y, group_header_y[0].?);
+    try std.testing.expectEqual(flush_bottom_y, group_header_y[1].?);
+    try std.testing.expectEqual(flush_bottom_y, group_header_y[2].?);
+
+    // The "+" panels pair with their group headers by adjacency: group 0's
+    // plus hovers, groups 1 + 2's sit flush bottom. Assert via the glyph
+    // labels' y instead of x bookkeeping (each "+" glyph centers on its
+    // panel).
+    var plus_glyph_ys: [3]i32 = undefined;
+    var plus_ys_found: usize = 0;
+    var decoration_header_x: ?i32 = null;
+    for (elements.items) |element| switch (element) {
+        .button => |button| {
+            if (button.editor_group == 1) decoration_header_x = button.screen_position.x;
+        },
+        .text_label => |label| {
+            if (std.mem.eql(u8, label.text, "+")) {
+                plus_glyph_ys[plus_ys_found] = label.screen_position.y;
+                plus_ys_found += 1;
+            }
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 3), plus_panels);
+    try std.testing.expectEqual(@as(usize, 3), plus_ys_found);
+    // Emission order is group order, so glyph 0 hovers, 1 + 2 flush bottom.
+    try std.testing.expectEqual(
+        hovering_y + @divTrunc(editor_header_strip_height - editor_group_header_font_size, 2),
+        plus_glyph_ys[0],
+    );
+    try std.testing.expectEqual(
+        flush_bottom_y + @divTrunc(editor_header_strip_height - editor_group_header_font_size, 2),
+        plus_glyph_ys[1],
+    );
+    try std.testing.expectEqual(
+        flush_bottom_y + @divTrunc(editor_header_strip_height - editor_group_header_font_size, 2),
+        plus_glyph_ys[2],
+    );
+    try std.testing.expect(decoration_header_x != null);
 }
 
 test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {

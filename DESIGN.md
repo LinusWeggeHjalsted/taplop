@@ -1818,8 +1818,11 @@ layout + a left inspector + a right settings sidebar:
   (aspect-preserved, centered). Each group has an "add new" button (`+`)
   at its tail that creates a new empty type via an `editor_add_*_type`
   event; the `+` and the group header stay fixed while the window scrolls.
-  Collapsed-group visuals are UNDECIDED (open question: overlap the first
-  few tools so it's visible there's something to expand — see TODO).
+  An EXPANDED group's header + `+` sit in the strip above the bar
+  (labeling the cells below); a COLLAPSED (or empty) group's header + `+`
+  drop flush against the bottom of the screen — visible content to
+  expand, not a floating orphan. The `+` cells (palette + the add-level
+  one below) are square `ui/panel` cells, the level-tab visual class.
   Hover tooltips on slots show the type's name.
 - **Inspector (left bar):** shows TYPE fields for the currently-relevant
   type (see selection model). User-toggleable (button in the bottom bar,
@@ -1967,7 +1970,12 @@ asserts palette + player_def + instantiated entities). `beginnings` ships a
 `player_paint_editor_tile` (orchestrator + replay-validation arm + idle-input
 consumption), the `editor_set_tile` / `editor_delete_decoration_placement`
 handlers, the tile-tool cursor resolution + overlay, and the editor screen
-runs handleIdleInput's editor arm (viewport clicks reach the world).
+runs handleIdleInput's editor arm (viewport clicks reach the world). Editor
+bar restyle: collapsed (or empty) groups sit flush against the bottom of the
+screen (expanded groups keep the hovering strip), and every editor `+`
+(palette add-new + the add-level cell right of the level tabs) is a square
+`ui/panel` cell; the add-level `+` renders inert (tooltip only — its event
+wiring is a TODO).
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
 struct exists in events.zig (`editor_add_level` / `editor_delete_level` /

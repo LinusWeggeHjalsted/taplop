@@ -6226,3 +6226,41 @@ coverage with index-stability; erase arm + delete-placement order), view
 test (unconditional overlay, non-tile tool suppressed), input test
 (mouse-follow, UI occlusion, non-tile tool null, nudge unclamped from
 player_start snap).
+
+### Editor bar restyle — collapsed groups flush bottom, square panel pluses
+
+Three visual changes to the editor chrome, all in `ui.zig`:
+
+**Collapsed groups sit flush bottom.** A palette group's header + "+" used
+to hover in the strip above the bar even when collapsed — a floating orphan
+with nothing to label. Now an EXPANDED group keeps the hovering strip
+(header labels the cells below it), while a COLLAPSED (or empty) group's
+header + "+" drop to `screen.bottom - editor_header_strip_height` — flush
+against the bottom of the screen, in the bar band's x range (which the row
+cursor already skips via the group's footprint). This also resolves the
+old "collapsed-group visuals UNDECIDED" open question: the flush-bottom
+header + "+" ARE the visible content-to-expand cue (no peeking-stack
+gadget needed) — the TODO item is gone. The drop condition is the same
+`collapsed or size == 0` the footprint math already used, so the header
+never overlaps the strip placement of expanded groups.
+
+**"+" cells are square ui/panel cells.** The palette add-new buttons were
+`ui/button_background` images; they're now `ui/panel` nine-slice cells
+(the level-tab visual class), 128×128, tooltip-carrying, still inert (the
+`editor_add_*_type` handlers aren't wired). Shared `emitEditorPlusCell`
+helper (panel + centered non-blocking "+" glyph).
+
+**Add-level "+" in the top bar.** `buildEditorLevelTabs` now emits a
+square `ui/panel` "+" to the right of the last level tab (top-aligned,
+`ui_gap` after), tooltip "Add level", inert — its wiring
+(`player_add_editor_level` orchestrator + `editor_add_level` handler +
+the default level template) is a TODO item.
+
+Wheel routing (`editorPaletteGroupAt`) is unaffected: it matches
+button_background tool cells only — headers are spriteless buttons and
+pluses are panels, neither matches (doc comment updated to say so).
+
+Tests: level-tabs test extended (11 elements, + panel square/top-aligned/
+tooltip/inert), new collapsed-layout test (expanded header hovers,
+collapsed headers + glyphs flush bottom, no type cells from collapsed
+groups, 3 square plus panels).
