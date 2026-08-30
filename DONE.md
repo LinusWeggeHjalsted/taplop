@@ -7579,3 +7579,21 @@ add + present no-op, weapon-hand add gate). Window-arithmetic slips in
 the test expectations (section headers start AT the boundary; the Add/
 Delete buttons carry their own labels into the label list) were the only
 failures — the code was right each time.
+
+### Inspector visual polish (author feedback round)
+
+Six adjustments before the utility-skill picker:
+- Weapon-type cells show the ITEM ICON (`items/<type>`, the inventory's
+  art, palette item-icon tint) instead of the entity weapon silhouette —
+  the author picks an item, not an overlay.
+- Item sub-field headers carry the slot: "Main hand name" / "Coat health
+  bonus" (stat labels became lowercase-first since they always follow
+  the slot name; never standalone).
+- The full-width buttons (displays-weapons toggle, gear Add/Delete) are
+  now HALF the control width — full-width read as section headers.
+- No highlight outline on the Inspector toggle while open, nor on the
+  displays-weapons toggle while true — the labels carry the state.
+- Field headers sit CLOSE to their fields: labels are bottom-flush
+  against the control line and the control inset halved
+  (`editor_inspector_control_gap` 8, shared `inspectorControlRect` /
+  `inspectorLabelY` helpers — the three entry arms can't drift).

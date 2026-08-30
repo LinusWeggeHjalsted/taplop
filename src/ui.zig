@@ -1310,7 +1310,13 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
             else => {},
         };
         try std.testing.expect(toggle_button != null);
-        try std.testing.expect(toggle_button.?.highlighted);
+        // Half the control width (full-width reads as a section header),
+        // and never highlighted (the true/false label carries the state).
+        try std.testing.expectEqual(
+            @divFloor(editorInspectorPanelRect().width - 2 * ui_gap, 2),
+            toggle_button.?.width,
+        );
+        try std.testing.expect(!toggle_button.?.highlighted);
         try std.testing.expect(saw_true_label);
     }
 }
@@ -1351,7 +1357,7 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 18 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Weapons", "Main hand", "Delete", "Name", "Damage", "Off hand", "Gear" });
+        try expectInspectorLabels(&elements, &.{ "Weapons", "Main hand", "Delete", "Main hand name", "Main hand damage", "Off hand", "Gear" });
 
         // The equipped weapon's fields carry its values.
         try std.testing.expectEqualStrings(
@@ -1396,7 +1402,7 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 28 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Amulet", "Add", "Coat", "Delete", "Name", "Health bonus", "Defense bonus" });
+        try expectInspectorLabels(&elements, &.{ "Amulet", "Add", "Coat", "Delete", "Coat name", "Coat health bonus", "Coat defense bonus" });
 
         var adds: usize = 0;
         var coat_deletes: usize = 0;
@@ -4124,7 +4130,6 @@ pub fn buildEditorInspectorPanel(
         .width = width,
         .height = editor_header_strip_height,
         .action = .toggle_editor_inspector,
-        .highlighted = inspector_open,
         .tooltip = .{ .header = try spanRow(allocator, text(label)) },
     } });
     try elements.append(allocator, .{ .text_label = .{
@@ -4167,6 +4172,29 @@ pub const editor_inspector_row_height: i32 = editor_header_strip_height;
 /// Inspector scrollbar track width, centered in the panel's right `ui_gap`
 /// margin (the skills-panel precedent).
 pub const editor_inspector_scrollbar_width: i32 = 12;
+
+/// Inset of a control line within its row unit. Halved from `ui_gap` so
+/// the label line sits CLOSE to its editable value (the header reads as
+/// belonging to the field, not floating).
+const editor_inspector_control_gap: i32 = @divFloor(ui_gap, 2);
+
+/// The control line's rect inside a two-unit entry cell: the lower row
+/// unit, inset by `editor_inspector_control_gap` (the label sits flush
+/// above it at the unit's bottom).
+fn inspectorControlRect(cell: Rectangle) Rectangle {
+    return .{
+        .x = cell.x,
+        .y = cell.y + editor_inspector_row_height + editor_inspector_control_gap,
+        .width = cell.width,
+        .height = editor_inspector_row_height - 2 * editor_inspector_control_gap,
+    };
+}
+
+/// The label line's y inside a two-unit entry cell: flush to the BOTTOM of
+/// the upper unit, directly above the control line.
+fn inspectorLabelY(cell: Rectangle) i32 {
+    return cell.y + editor_inspector_row_height - editor_group_header_font_size;
+}
 
 /// The entity type the inspector currently edits (the ACTIVE enemy tool),
 /// or null for every other tool — select/tile have no fields, and the
@@ -4234,14 +4262,16 @@ fn gearSlotStatSet(slot: types.GearSlot) []const types.ItemStatField {
 }
 
 fn itemStatLabel(stat: types.ItemStatField) []const u8 {
+    // Lowercase-first: the label always follows its slot's name ("Coat
+    // health bonus"), never standalone.
     return switch (stat) {
-        .weapon_damage => "Damage",
-        .spell_damage => "Spell damage",
-        .health_bonus => "Health bonus",
-        .defense_bonus => "Defense bonus",
-        .damage_bonus => "Damage bonus",
-        .pickup_radius_bonus => "Pickup radius",
-        .speed_bonus => "Speed bonus",
+        .weapon_damage => "damage",
+        .spell_damage => "spell damage",
+        .health_bonus => "health bonus",
+        .defense_bonus => "defense bonus",
+        .damage_bonus => "damage bonus",
+        .pickup_radius_bonus => "pickup radius",
+        .speed_bonus => "speed bonus",
     };
 }
 
@@ -4283,13 +4313,14 @@ fn editorInspectorEntityEntries(
     for ([_]types.GearSlot{ .main_hand, .off_hand }) |hand| {
         try entries.append(allocator, .{ .weapon_slot = hand });
         if (has_item(editor, type_index, hand)) {
+            const slot_label = types.gearSlotLabel(hand);
             try entries.append(allocator, .{ .field = .{
-                .label = "Name",
+                .label = try std.fmt.allocPrint(allocator, "{s} name", .{slot_label}),
                 .control = .{ .text = .{ .item_name = hand } },
             } });
             for (gearSlotStatSet(hand)) |stat| {
                 try entries.append(allocator, .{ .field = .{
-                    .label = itemStatLabel(stat),
+                    .label = try std.fmt.allocPrint(allocator, "{s} {s}", .{ slot_label, itemStatLabel(stat) }),
                     .control = .{ .text = .{ .item_stat = .{ .slot = hand, .stat = stat } } },
                 } });
             }
@@ -4301,13 +4332,14 @@ fn editorInspectorEntityEntries(
     for ([_]types.GearSlot{ .amulet, .coat, .gloves, .pants, .boots }) |slot| {
         try entries.append(allocator, .{ .gear_slot = slot });
         if (has_item(editor, type_index, slot)) {
+            const slot_label = types.gearSlotLabel(slot);
             try entries.append(allocator, .{ .field = .{
-                .label = "Name",
+                .label = try std.fmt.allocPrint(allocator, "{s} name", .{slot_label}),
                 .control = .{ .text = .{ .item_name = slot } },
             } });
             for (gearSlotStatSet(slot)) |stat| {
                 try entries.append(allocator, .{ .field = .{
-                    .label = itemStatLabel(stat),
+                    .label = try std.fmt.allocPrint(allocator, "{s} {s}", .{ slot_label, itemStatLabel(stat) }),
                     .control = .{ .text = .{ .item_stat = .{ .slot = slot, .stat = stat } } },
                 } });
             }
@@ -4424,20 +4456,12 @@ fn buildEditorInspectorContent(
             .field => |row| {
                 try elements.append(allocator, .{ .text_label = .{
                     .text = row.label,
-                    .screen_position = .{
-                        .x = cell.x,
-                        .y = cell.y + @divFloor(editor_inspector_row_height - editor_group_header_font_size, 2),
-                    },
+                    .screen_position = .{ .x = cell.x, .y = inspectorLabelY(cell) },
                     .font_size = editor_group_header_font_size,
                     .color = active_theme.lightest,
                     .blocks_input = false,
                 } });
-                const control_rect: Rectangle = .{
-                    .x = cell.x,
-                    .y = cell.y + editor_inspector_row_height + ui_gap,
-                    .width = cell.width,
-                    .height = editor_inspector_row_height - 2 * ui_gap,
-                };
+                const control_rect = inspectorControlRect(cell);
                 switch (row.control) {
                     .none => {},
                     .text => |field_id| try emitInspectorTextField(
@@ -4474,12 +4498,7 @@ fn buildEditorInspectorContent(
             // on pick while empty / retype in place) + Delete while equipped.
             .weapon_slot => |hand| {
                 try emitInspectorSlotLabel(elements, allocator, cell, types.gearSlotLabel(hand), active_theme);
-                const control_rect: Rectangle = .{
-                    .x = cell.x,
-                    .y = cell.y + editor_inspector_row_height + ui_gap,
-                    .width = cell.width,
-                    .height = editor_inspector_row_height - 2 * ui_gap,
-                };
+                const control_rect = inspectorControlRect(cell);
                 try emitInspectorWeaponSlot(
                     elements,
                     allocator,
@@ -4496,12 +4515,7 @@ fn buildEditorInspectorContent(
             // own rows.
             .gear_slot => |slot| {
                 try emitInspectorSlotLabel(elements, allocator, cell, types.gearSlotLabel(slot), active_theme);
-                const control_rect: Rectangle = .{
-                    .x = cell.x,
-                    .y = cell.y + editor_inspector_row_height + ui_gap,
-                    .width = cell.width,
-                    .height = editor_inspector_row_height - 2 * ui_gap,
-                };
+                const control_rect = inspectorControlRect(cell);
                 try emitInspectorGearSlot(
                     elements,
                     allocator,
@@ -4672,25 +4686,32 @@ fn emitInspectorToggle(
     const current = editor.entity_types[type_index].template.displays_weapons;
     const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const label: []const u8 = if (current) "true" else "false";
+    // Half the panel width — full-width reads as a section header; the
+    // value vocabulary ("true"/"false") carries the state, no highlight.
+    const rect: Rectangle = .{
+        .x = control_rect.x,
+        .y = control_rect.y,
+        .width = @divFloor(control_rect.width, 2),
+        .height = control_rect.height,
+    };
 
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
-        .screen_position = control_rect.position(),
-        .width = control_rect.width,
-        .height = control_rect.height,
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
         .color = button_color,
     } });
     try elements.append(allocator, .{ .button = .{
-        .screen_position = control_rect.position(),
-        .width = control_rect.width,
-        .height = control_rect.height,
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
         .action = .toggle_editor_entity_displays_weapons,
-        .highlighted = current,
     } });
     const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
         .text = label,
-        .screen_position = control_rect
+        .screen_position = rect
             .placeCenter(label_width, editor_group_header_font_size)
             .position(),
         .font_size = editor_group_header_font_size,
@@ -4709,10 +4730,7 @@ fn emitInspectorSlotLabel(
 ) !void {
     try elements.append(allocator, .{ .text_label = .{
         .text = label,
-        .screen_position = .{
-            .x = cell.x,
-            .y = cell.y + @divFloor(editor_inspector_row_height - editor_group_header_font_size, 2),
-        },
+        .screen_position = .{ .x = cell.x, .y = inspectorLabelY(cell) },
         .font_size = editor_group_header_font_size,
         .color = active_theme.lightest,
         .blocks_input = false,
@@ -4736,7 +4754,7 @@ fn emitInspectorWeaponSlot(
     active_theme: types.ActiveColorTheme,
 ) !void {
     const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
-    const weapon_color = active_theme.enemy_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    const item_icon_color = active_theme.player_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)];
     const equipped_weapon: ?types.Weapon = if (type_index < editor.entity_types.len)
         switch (hand) {
             .main_hand => editor.entity_types[type_index].template.main_hand_weapon,
@@ -4770,20 +4788,20 @@ fn emitInspectorWeaponSlot(
             .highlighted = highlighted,
             .tooltip = .{ .header = try spanRow(allocator, text(types.weaponTypeLabel(weapon_type))) },
         } });
-        // The silhouette (512x640 frame art, aspect-preserved into the
-        // cell; enemy tint — this is what the entity will wield).
+        // The item icon (the inventory's `items/<type>` art — the author
+        // picks an ITEM, not an entity overlay), palette item-icon tint.
         const sprite_id = try std.fmt.allocPrint(
             allocator,
-            "weapons/enemy_{s}",
+            "items/{s}",
             .{field.name},
         );
-        const fitted = scaleToFit(cell, editor_entity_frame_width, editor_entity_frame_height);
+        const fitted = scaleToFit(cell, inventory_slot_size, inventory_slot_size);
         try elements.append(allocator, .{ .image = .{
             .sprite_id = sprite_id,
             .screen_position = fitted.position(),
             .width = fitted.width,
             .height = fitted.height,
-            .color = weapon_color,
+            .color = item_icon_color,
             .blocks_input = false,
         } });
     }
@@ -4829,11 +4847,18 @@ fn emitInspectorGearSlot(
         editor.entity_types[type_index].template.gearSlotItem(slot) != null;
     const label: []const u8 = if (occupied) "Delete" else "Add";
     const action: types.Action = if (occupied) .delete_editor_item else .add_editor_item;
+    // Half the panel width — full-width reads as a section header.
+    const rect: Rectangle = .{
+        .x = control_rect.x,
+        .y = control_rect.y,
+        .width = @divFloor(control_rect.width, 2),
+        .height = control_rect.height,
+    };
     try emitInspectorSlotButton(
         elements,
         allocator,
         font_metrics,
-        control_rect,
+        rect,
         label,
         action,
         slot,
@@ -6461,7 +6486,7 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
         var ui_state: UiState = .{};
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try std.testing.expectEqual(@as(usize, 5), elements.items.len);
-        try expectInspectorToggleShape(&elements, true);
+        try expectInspectorToggleShape(&elements);
 
         // The background panel: flush left, below the button, down to one
         // ui_gap above the expanded palette groups' header strip, tinted
@@ -6499,7 +6524,7 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
         var ui_state: UiState = .{};
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, false, &ui_state);
         try std.testing.expectEqual(@as(usize, 3), elements.items.len);
-        try expectInspectorToggleShape(&elements, false);
+        try expectInspectorToggleShape(&elements);
     }
 }
 
@@ -6625,8 +6650,8 @@ fn countSolidRects(elements: *const UiElementList) usize {
 /// Shared shape checks for the inspector toggle button (the level-tab
 /// visual class): panel-backed cell flush left below the options button,
 /// 128 high, label + side padding wide, spriteless button carrying the
-/// action + tooltip, highlighted exactly while open.
-fn expectInspectorToggleShape(elements: *const UiElementList, inspector_open: bool) !void {
+/// action + tooltip. Never highlighted (the label carries the state).
+fn expectInspectorToggleShape(elements: *const UiElementList) !void {
     const panel = elements.items[0].nine_slice_panel;
     try std.testing.expectEqualStrings("ui/panel", panel.sprite_id);
     try std.testing.expectEqual(@as(i32, 0), panel.screen_position.x);
@@ -6636,7 +6661,7 @@ fn expectInspectorToggleShape(elements: *const UiElementList, inspector_open: bo
 
     const button = elements.items[1].button;
     try std.testing.expectEqual(Action.toggle_editor_inspector, button.action);
-    try std.testing.expectEqual(inspector_open, button.highlighted);
+    try std.testing.expect(!button.highlighted);
     try std.testing.expect(button.sprite_id == null);
     try std.testing.expect(button.tooltip != null);
 
