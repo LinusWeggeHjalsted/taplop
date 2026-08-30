@@ -282,12 +282,8 @@ fn update(
     // DESIGN → UI Framework → Settings screen.
     input_handlers.handleSliderDrag(history, player_input.pointer, ui_elements);
 
-    // Options menu pauses the game. The centered editor picker is fully
-    // modal too (handleAnytimeInput — which ran above, running the
-    // picker's own arms — gates the anytime actions; THIS gate blocks the
-    // idle/viewport path so e.g. enemy placement can't fire under it).
-    if (history.session.ui_state.options_menu_open or
-        history.session.ui_state.editor_picker != null) return;
+    // Options menu pauses the game.
+    if (history.session.ui_state.options_menu_open) return;
 
     // Recoverable error popup pauses the game (modal — same as options).
     // handleAnytimeInput already cleared it if `dismiss_error` fired this

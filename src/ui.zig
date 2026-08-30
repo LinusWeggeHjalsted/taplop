@@ -1467,6 +1467,10 @@ test "textEditPressProceeds: M2 region is the open inspector panel + its toggle"
     // Outside the panel → pure dismissal, even over other UI (Undo).
     try std.testing.expect(!textEditPressProceeds(true, outside_panel, .undo));
     try std.testing.expect(!textEditPressProceeds(true, over_viewport, null));
+    // Picker surfaces float OUTSIDE the panel rect but are the active
+    // interaction — the press proceeds (commit + pick in one click).
+    try std.testing.expect(textEditPressProceeds(true, outside_panel, .select_editor_utility_skill));
+    try std.testing.expect(textEditPressProceeds(true, outside_panel, .close_editor_picker));
 }
 
 
@@ -5237,6 +5241,11 @@ pub fn textEditPressProceeds(
 ) bool {
     if (pressed_button) |action| {
         if (action == .toggle_editor_inspector) return true;
+        // A picker surface (a skill cell or its close button): the picker
+        // is the ACTIVE interaction — commit the field and let the pick
+        // fire in the same click (it floats outside the inspector rect,
+        // so the region check below wouldn't cover it).
+        if (action == .select_editor_utility_skill or action == .close_editor_picker) return true;
     }
     if (!inspector_open) return false;
     return editorInspectorPanelRect().contains(position);

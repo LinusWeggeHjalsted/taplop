@@ -1938,9 +1938,16 @@ layout + a left inspector + a right settings sidebar:
     slot_4..8 (entity definitions AND player saves), a weapon-skill
     TOME is dropped entirely, and the player equip path gates the same
     way (src/utility_skills.zig is the single source). The picker is a
-    MODAL centered panel: None + one cell per eligible skill (flat,
-    enum order), the current pick highlighted, close button top-right;
-    while open, only the picker's own actions run.
+    DROPDOWN, not a modal: a centered floating panel (None + one cell
+    per eligible skill, flat enum order, the current pick highlighted,
+    close button top-right) that blocks input only where it physically
+    sits — everything around it stays live (placing enemies, undo,
+    other panels), and it stays open until a skill is picked or the
+    close button is pressed. The view is rebuilt per frame, so nothing
+    under it can go stale. One seam: a picker press while a text field
+    is focused counts as PROCEEDS in the M2 arbitration (the picker
+    floats outside the inspector rect) — the field commits and the pick
+    fires in the same click.
   - entity layers: deferred with the sprite picker (they share it).
 - **Settings sidebar (right bar):** mission + active-level settings.
   User-toggleable like the inspector, open by default. Mission settings:

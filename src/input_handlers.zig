@@ -1617,42 +1617,6 @@ pub fn handleAnytimeInput(
         _ = history.redo(&event_handlers.processEvent);
     }
 
-    // The centered editor picker is MODAL: while open, only its own
-    // actions run (its panel blocks the world element-wise; this gate
-    // blocks every other action + the scroll/idle input below — same
-    // shape as the options-menu gate, minus the drill-through).
-    if (history.session.ui_state.editor_picker != null) {
-        if (anytime.options_action) |picker_action| switch (picker_action) {
-            // A picker cell: assign to the picker's slot (the skill rode
-            // in `clicked_editor_skill`; no payload = the None cell) and
-            // close. Same-value picks (incl. None-on-empty) close without
-            // recording.
-            .select_editor_utility_skill => {
-                const target = history.session.ui_state.editor_picker.?;
-                const slot_index = switch (target) {
-                    .utility_skill_slot => |index| index,
-                };
-                history.session.ui_state.editor_picker = null;
-                if (history.current_state.editor == null) return;
-                const editor: *types.Editor = &history.current_state.editor.?;
-                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
-                const entity_target: types.EntityEditTarget = .{ .entity_type = type_index };
-                if (slot_index >= types.utility_skill_count) return;
-                const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
-                const picked = anytime.clicked_editor_skill;
-                if (template.equipped_utility_skills[slot_index] == picked) return;
-                pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_utility_skill = .{
-                    .target = entity_target,
-                    .slot_index = slot_index,
-                    .value = picked,
-                } });
-            },
-            .close_editor_picker => history.session.ui_state.editor_picker = null,
-            else => {},
-        };
-        return;
-    }
-
     if (anytime.dump_event_log) {
         dumpEventLog(history);
     }
@@ -1887,6 +1851,34 @@ pub fn handleAnytimeInput(
                 if (slot_index >= types.utility_skill_count) return;
                 history.session.ui_state.editor_picker = .{ .utility_skill_slot = slot_index };
             },
+            // A picker cell: assign to the picker's slot (the skill rode in
+            // `clicked_editor_skill`; no payload = the None cell) and close.
+            // The picker is a DROPDOWN, not a modal — everything else stays
+            // live while it's open (see DESIGN → Level Editor → Editor UI
+            // layout); this arm just no-ops when no picker is open.
+            // Same-value picks (incl. None-on-empty) close without recording.
+            .select_editor_utility_skill => {
+                const target = history.session.ui_state.editor_picker orelse return;
+                const slot_index = switch (target) {
+                    .utility_skill_slot => |index| index,
+                };
+                history.session.ui_state.editor_picker = null;
+                if (history.current_state.editor == null) return;
+                const editor: *types.Editor = &history.current_state.editor.?;
+                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
+                const entity_target: types.EntityEditTarget = .{ .entity_type = type_index };
+                if (slot_index >= types.utility_skill_count) return;
+                const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
+                const picked = anytime.clicked_editor_skill;
+                if (template.equipped_utility_skills[slot_index] == picked) return;
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_utility_skill = .{
+                    .target = entity_target,
+                    .slot_index = slot_index,
+                    .value = picked,
+                } });
+            },
+            // The picker's close button.
+            .close_editor_picker => history.session.ui_state.editor_picker = null,
             .delete_editor_item => {
                 const slot = anytime.clicked_editor_gear_slot orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;

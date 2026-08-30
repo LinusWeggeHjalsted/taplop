@@ -7726,3 +7726,32 @@ need runToIdle, unlike the frame-level text-commit case.
   switched from the player gradient. Unchanged by design: the swatch row
   (already enemy-gradient fills), text fields (lightest/black), and the
   darkest background panel.
+
+### The picker de-modaled — a dropdown, not a dialog (author feedback)
+
+The modal gates are gone (both the handleAnytimeInput special-case —
+its arms moved into the main options_action switch, guarded by "picker
+must be open" — and the update() idle gate). The picker now blocks
+input only where it physically sits (element-wise); everything around
+it stays live — placing enemies, collapsing palette groups, undo all
+work while it's open — and it stays open until a skill is picked or
+the close button is pressed (no outside-click dismiss).
+
+Why this is sound (and why the modal was overreach): the view is
+rebuilt per frame from live state, so nothing under the picker can go
+stale — its highlight follows undo/redo automatically; and the picker's
+target (the slot being assigned) is UiState that no other action
+invalidates. The options menu was the wrong template: it's modal
+because it PAUSES the game; the picker is a transient affordance.
+
+One real seam the dropdown exposed: a picker press while a text field
+is focused fell outside the inspector rect, so the M2 commit-on-press
+rule would eat the click (pick twice to fire).
+`textEditPressProceeds` now treats the picker's surfaces (a skill cell
+or its close button) as PROCEEDS — the field commits and the pick
+fires in the same click. Escape → options menu stacks ABOVE the picker
+(it builds after the screen branches), no special-casing.
+
+Tests: the interaction test's modal assertion flipped (the inspector
+toggle now fires under the picker AND the picker survives it); the M2
+test gained the picker-surface cases.

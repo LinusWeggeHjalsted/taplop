@@ -2994,7 +2994,7 @@ test "editor utility-skill commit: set/clear via the wrapper, weapon skills and 
     try testing.expect(!any_set);
 }
 
-test "skill picker interaction: open, assign, same-value no-op, None clears, modal gate" {
+test "skill picker interaction: open, assign, same-value no-op, None clears, dropdown stays live" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -3016,11 +3016,14 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, mod
     try testing.expect(history.session.ui_state.editor_picker != null);
     try testing.expectEqual(@as(u32, 0), history.session.ui_state.editor_picker.?.utility_skill_slot);
 
-    // While open, other actions are swallowed by the modal gate.
+    // The picker is a DROPDOWN, not a modal: other actions stay live
+    // while it's open (and it survives them).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_inspector,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expect(history.current_state.editor.?.inspector_open);
+    runToIdle(&history);
+    try testing.expect(!history.current_state.editor.?.inspector_open);
+    try testing.expect(history.session.ui_state.editor_picker != null);
 
     // Pick blink: assigned + the picker closes; one undo step.
     input_handlers.handleAnytimeInput(&history, .{
