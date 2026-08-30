@@ -518,15 +518,25 @@ yet implemented. Remaining work:
         the scrollbar (track + thumb in the right margin, only on
         overflow), `UiState.editor_inspector_scroll` + wheel routing over
         the open panel (one notch = one row; falls through when closed).
-  - [ ] **3 — scalar fields:** name + sprite id (text; sprite id is the
-        interim v1 until the picker), color_index swatch row,
-        displays_weapons toggle, base stats (numeric, UNBOUNDED — see
-        DESIGN) + wrappers/handlers/validation/tests + the field ELEMENT
-        (click-to-focus, click/drag caret positioning) and the
-        caret/selection render. Rides with this
-        slice: REMOVE `editor_set_entity_momentum` (momentum is a
-        transient combat stat, not authorable — level files never set
-        it).
+  - [~] **3 — scalar fields:**
+    - [x] **3a — text fields:** DONE — the `text_field` UiElement
+          (TextFieldUi: frame + display text + caret/selection render
+          data, ALL computed by the builder — the backend just draws),
+          focus-on-click (`SessionState.pressed_text_field` + the
+          press/release model; press on the focused field = caret
+          positioning at release with NO commit; any other press = M2
+          commit + proceed), `placeCaretFromClick` (metrics read off
+          `ViewState.font_metrics`), the Name + Sprite rows wired with
+          their commit paths (`player_set_editor_entity_sprite` →
+          `editor_set_entity_sprite` + validation). Mouse drag-select
+          WITHIN a field is a deferred refinement — shift+arrow selection
+          + click positioning cover v1.
+    - [ ] **3b — remaining scalars:** color_index swatch row,
+          displays_weapons toggle, base stat numeric fields (UNBOUNDED —
+          see DESIGN) + wrappers/handlers/validation/tests. Rides with
+          this slice: REMOVE `editor_set_entity_momentum` (momentum is a
+          transient combat stat, not authorable — level files never set
+          it).
   - [ ] **4 — gear + weapons:** nullable slots, weapon-type inline row
         (create-on-pick-while-null / retype-while-present / delete),
         gear Add/Delete, bounded numeric stat fields, name fields.

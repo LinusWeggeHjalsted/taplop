@@ -744,6 +744,10 @@ pub const PlayerInputEvent = union(enum) {
         target: EntityEditTarget,
         value: []const u8,
     },
+    player_set_editor_entity_sprite: struct {
+        target: EntityEditTarget,
+        value: []const u8,
+    },
 
     // --- Meta: exit/skip orchestrators ---
     // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;

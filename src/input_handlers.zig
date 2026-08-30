@@ -1233,20 +1233,51 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
     history.session.ui_state.text_edit = null;
 
     switch (field.id) {
-        .entity_name => {
+        .entity_name, .entity_sprite => {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
             const template = event_handlers.editorEntityTemplate(editor, field.target) orelse return;
+            const current_value = switch (field.id) {
+                .entity_name => template.name,
+                .entity_sprite => template.sprite,
+            };
             // Would-change gate: an unchanged value never records (no
             // dead undo step).
-            if (std.mem.eql(u8, template.name, value)) return;
+            if (std.mem.eql(u8, current_value, value)) return;
             history.session.queueSound(history.backing_allocator, .button_click_up);
-            pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_name = .{
-                .target = field.target,
-                .value = value,
-            } });
+            const action: events.PlayerInputEvent = switch (field.id) {
+                .entity_name => .{ .player_set_editor_entity_name = .{
+                    .target = field.target,
+                    .value = value,
+                } },
+                .entity_sprite => .{ .player_set_editor_entity_sprite = .{
+                    .target = field.target,
+                    .value = value,
+                } },
+            };
+            pushPlayerActionAndDrain(history, action);
         },
     }
+}
+
+/// Focus a text field (its element was clicked): read the field's current
+/// value from GameState and seed the edit buffer. Focusing records
+/// nothing — the COMMIT is the event.
+pub fn beginFocusedTextEdit(
+    history: *GameStateHistory,
+    field: types.TextFieldRef,
+) void {
+    var current_value: []const u8 = "";
+    if (history.current_state.editor != null) {
+        const editor: *types.Editor = &history.current_state.editor.?;
+        if (event_handlers.editorEntityTemplate(editor, field.target)) |template| {
+            current_value = switch (field.id) {
+                .entity_name => template.name,
+                .entity_sprite => template.sprite,
+            };
+        }
+    }
+    ui.beginTextEdit(&history.session.ui_state, field, current_value);
 }
 
 /// Queue the menu sound for an Escape keypress that does something (a

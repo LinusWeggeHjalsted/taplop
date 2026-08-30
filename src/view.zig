@@ -331,7 +331,7 @@ pub fn view(
                 editor,
                 active_theme,
                 editor.inspector_open,
-                &session.ui_state.editor_inspector_scroll,
+                &session.ui_state,
             ) catch @panic("failed to build editor inspector panel");
             ui.buildEditorBottomBar(
                 &ui_elements,
@@ -594,6 +594,7 @@ pub fn view(
         .occlusion_insets = occlusion_insets,
         .world_overlays = world_overlays,
         .ui_elements = ui_elements.items,
+        .font_metrics = font_metrics,
         .combat_log = projected_log,
     };
 }

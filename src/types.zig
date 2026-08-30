@@ -833,6 +833,7 @@ pub const EntityEditTarget = union(enum) {
 /// with the inspector slices.
 pub const TextFieldId = enum {
     entity_name,
+    entity_sprite,
 };
 
 /// Identity of one focused text field.
@@ -1561,6 +1562,11 @@ pub const ViewState = struct {
     /// `session.active_anims`; see DESIGN → Animation.
     world_overlays: []const WorldOverlayDrawable,
     ui_elements: []const @import("ui.zig").UiElement,
+    /// The font metrics the ui_elements were laid out with this frame. The
+    /// NEXT frame's input resolution reads it off `previous_view_state`
+    /// (e.g. mapping a text-field click x to a caret index) — the one
+    /// backend-derived value the input side needs.
+    font_metrics: @import("ui.zig").FontMetrics,
     /// Chronological combat-log projection of the current level's events up to
     /// the current position (empty outside a level). Built per-frame in the
     /// frame arena; the UI renders it (top-bar coarse recent + detailed log).

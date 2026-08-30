@@ -309,6 +309,10 @@ fn handleEditorEvent(
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.name = set.value;
         },
+        .editor_set_entity_sprite => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.sprite = set.value;
+        },
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
             // placement entries must address the active level's lists (a
@@ -1451,6 +1455,15 @@ fn handlePlayerInputEvent(
         // durable log arena).
         .player_set_editor_entity_name => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_name = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        // Inspector entity-sprite commit: same shape (the sprite id is a
+        // plain text field in v1 — the centered sprite picker replaces it
+        // later; see DESIGN → Level Editor → Editor UI layout).
+        .player_set_editor_entity_sprite => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_sprite = .{
                 .target = set.target,
                 .value = set.value,
             } } }}, allocator);

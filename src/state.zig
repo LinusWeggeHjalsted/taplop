@@ -244,6 +244,14 @@ pub const SessionState = struct {
     /// live-only, never replayed). See DESIGN → Audio / Input.
     pressed_button: ?types.Action = null,
 
+    /// The text field currently under a press (its `TextFieldRef`), for the
+    /// same press-then-release model as `pressed_button`: release over the
+    /// SAME field focuses it (or positions the caret when it is already
+    /// focused), drag-off cancels. Null when no field is pressed. Off the
+    /// undoable GameState, like `pressed_button`. See DESIGN → UI Framework
+    /// → Text input widget.
+    pressed_text_field: ?types.TextFieldRef = null,
+
     // A recoverable load failure (a corrupt/overridden config file, an
     // incompatible session log, etc.) surfaced to the player as a modal
     // popup. Set by the drain loop after a handler returns an error and
@@ -1166,6 +1174,23 @@ pub const GameStateHistory = struct {
                         .entity_type => |type_id| {
                             if (type_id >= editor.entity_types.len) {
                                 @panic("replay validation: player_set_editor_entity_name type id out of range");
+                            }
+                        },
+                        .player_def => {},
+                    }
+                },
+                // Same structural legality as the name commit.
+                .player_set_editor_entity_sprite => |set| {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_set_editor_entity_sprite outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_set_editor_entity_sprite with no editor");
+                    };
+                    switch (set.target) {
+                        .entity_type => |type_id| {
+                            if (type_id >= editor.entity_types.len) {
+                                @panic("replay validation: player_set_editor_entity_sprite type id out of range");
                             }
                         },
                         .player_def => {},

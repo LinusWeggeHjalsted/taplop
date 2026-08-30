@@ -57,6 +57,11 @@ const font_base_size: i32 = 128;
 /// `getInsetOutlineTexture`). Tune from in-game viewing.
 const outline_thickness: i32 = 8;
 
+/// Text-field caret bar thickness (reference px) — matches the unified
+/// outline thickness so the caret reads at the same visual weight as the
+/// world outlines.
+const caret_width: i32 = 8;
+
 /// Which side of the silhouette an outline mask sits on. OUTER = the band
 /// of transparent pixels within `thickness` of an opaque pixel (a halo
 /// outside the silhouette, used by highlighted UI). INNER = the morphological
@@ -1402,6 +1407,43 @@ pub const RaylibBackend = struct {
                 }
             },
             .text_label => |label| self.drawTextLabel(label, highlight_color),
+            .text_field => |field| {
+                // Frame (9-slice, builder-tinted), selection highlight
+                // UNDER the text, text, caret bar OVER it. The builder
+                // computed every coordinate — the backend just draws (see
+                // TextFieldUi).
+                self.drawNineSlice(.{
+                    .sprite_id = "ui/panel",
+                    .screen_position = field.screen_position,
+                    .width = field.width,
+                    .height = field.height,
+                    .color = field.frame_color,
+                }, theme_darkest);
+                if (field.selection) |selection| {
+                    const selection_rect = rl.Rectangle{
+                        .x = @as(f32, @floatFromInt(field.text_position.x + selection.x)),
+                        .y = @as(f32, @floatFromInt(field.text_position.y)),
+                        .width = @as(f32, @floatFromInt(selection.width)),
+                        .height = @as(f32, @floatFromInt(field.font_size)),
+                    };
+                    rl.drawRectangleRec(selection_rect, toRaylibColor(highlight_color, 128));
+                }
+                self.drawTextLabel(.{
+                    .text = field.text,
+                    .screen_position = field.text_position,
+                    .font_size = field.font_size,
+                    .blocks_input = false,
+                }, highlight_color);
+                if (field.caret) |caret| {
+                    const caret_rect = rl.Rectangle{
+                        .x = @as(f32, @floatFromInt(field.text_position.x + caret.x)),
+                        .y = @as(f32, @floatFromInt(field.text_position.y)),
+                        .width = @as(f32, @floatFromInt(caret_width)),
+                        .height = @as(f32, @floatFromInt(caret.height)),
+                    };
+                    rl.drawRectangleRec(caret_rect, toRaylibColor(highlight_color, 255));
+                }
+            },
             .fill_sprite => |fill| self.drawFillSprite(fill),
             .image => |image| {
                 const dest = referenceRectangle(image.screen_position, image.width, image.height);

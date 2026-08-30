@@ -2175,6 +2175,55 @@ test "text field commit: entity name end-to-end, no-op gate, cancel" {
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
+test "text field commit: entity sprite edits ride the same path (v1 text field, picker later)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } },
+    };
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+    }));
+    runToIdle(&history);
+
+    const no_keys: [0]?[]const u8 = .{};
+    const enter_pressed: [1]?[]const u8 = .{"Enter"};
+    const field: types.TextFieldRef = .{ .id = .entity_sprite, .target = .{ .entity_type = 0 } };
+
+    ui.beginTextEdit(&history.session.ui_state, field, "skeleton_1");
+    const outcome = ui.routeTextInput(
+        &history.session.ui_state.text_edit.?,
+        "_elite",
+        &enter_pressed,
+        &no_keys,
+        false,
+    );
+    try testing.expectEqual(types.TextEditOutcome.commit, outcome);
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    runToIdle(&history);
+
+    try testing.expectEqualStrings(
+        "skeleton_1_elite",
+        history.current_state.editor.?.entity_types[0].template.sprite,
+    );
+    try testing.expect(history.session.ui_state.text_edit == null);
+
+    // One undo reverts the sprite (name untouched).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqualStrings(
+        "skeleton_1",
+        history.current_state.editor.?.entity_types[0].template.sprite,
+    );
+    try testing.expectEqualStrings(
+        "Skeleton",
+        history.current_state.editor.?.entity_types[0].template.name,
+    );
+}
+
 test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

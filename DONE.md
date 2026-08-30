@@ -7337,3 +7337,62 @@ wheel routing (inside → ±1 row with top clamp; outside + closed →
 untouched). 410 pass. One more expectation-index slip caught by the test
 run (scroll 3 starts at entry 3 = "Color", not "Sprite" — comment
 arithmetic, code was right).
+
+### Inspector text fields — element, focus-on-click, caret render (DONE, slice 3a)
+
+The first live controls: the Name + Sprite rows are real text inputs,
+end-to-end (click → focus → type → Enter → event → undo). The sprite id
+is the settled v1 plain-text field (the centered picker replaces it in
+slice 6).
+
+**The element.** `text_field: TextFieldUi` — the builder computes ALL
+render data (it owns the metrics + the focused buffer): frame rect,
+display text (the current value, or the live buffer while THIS field is
+focused), caret bar + selection highlight geometry measured from the
+buffer. The backend arm just draws (9-slice frame → selection @128 alpha
+under the text → text → 8px caret). Element conventions: `blocks_input`
++ `tooltip` fields (tooltipOf/blocksInputOf's inline-else forces them),
+a `boundsOf` arm, and `ui.textFieldAt` (the hitTest pattern). Display
+text is duped into the frame allocator — element slices never point into
+UiState (the previous frame's elements are hit-tested a frame later,
+after the buffer has mutated).
+
+**Focus-on-click.** `SessionState.pressed_text_field` mirrors the
+pressed_button press/release model: release over the SAME field focuses
+it (`beginFocusedTextEdit`: reads the field's current value via the
+shared editorEntityTemplate + seeds the buffer) or, when it is already
+the focused field, positions the caret (`ui.placeCaretFromClick` —
+caretIndexAtX against the field's text origin, metrics read off
+`ViewState.font_metrics`, the one backend-derived value the input side
+needs; view() now sets it). Drag-off cancels. Press arbitration refined:
+pressing the FOCUSED field itself does NOT commit (caret click) — any
+other press commits first, then M2 proceeds/consumes. A field press
+tracks `pressed_text_field` and leaves `pressed_button` null (a field is
+not a button).
+
+**Sprite commit path.** `player_set_editor_entity_sprite` →
+`editor_set_entity_sprite` (the event already existed), same shape as
+the name: would-change gate, `editorEntityTemplate` shared resolution,
+validate arm (editor screen + editor + target in range).
+`commitFocusedTextEdit` now switches both string ids through one arm.
+`TextFieldId.entity_sprite` + the digits-filter map gained the case.
+
+**Tests (415 pass).** Builder: unfocused fields show current values
+(ref + control-column rect asserted); focused field shows the buffer +
+selection/caret geometry (expected values computed via the metrics' own
+measureSpanWidth — per-glyph arithmetic drifts because the accumulation
+truncates once at the end). placeCaretFromClick: click-x mapping +
+selection-clearing. Sprite commit: edit + undo, name untouched. NEW: a
+main.zig integration test drives the REAL press/release dispatch
+(update() with a synthetic previous_view_state): press tracks the field,
+release focuses with the seeded value, click-inside-focused-field moves
+the caret, pressing another field commits (unchanged → records nothing)
++ focuses it on release, and drag-off — which exposed a test-expectation
+bug worth remembering: the M2 commit fires on PRESS, so a drag-off after
+pressing a different field leaves NO field focused (the old one was
+committed by the press, the new one cancelled by the miss). The code was
+right; "focus unchanged" was the wrong mental model.
+
+Backend render arm = platform seam → web build compile-checked (WEB OK).
+Runtime eyeball pending (the caret/selection draws are new) — next
+`scripts/web.sh emrun` or native run should confirm the fields render.

@@ -107,22 +107,39 @@ fn update(
         // take the normal path below.
         var consumed_by_text_edit = false;
         if (history.session.ui_state.text_edit != null) {
-            input_handlers.commitFocusedTextEdit(history);
-            const inspector_open = if (history.current_state.editor) |editor|
-                editor.inspector_open
-            else
-                false;
-            const pressed_button = if (ui.buttonAt(ui_elements, pointer_position)) |button|
-                button.action
-            else
-                null;
-            consumed_by_text_edit = !ui.textEditPressProceeds(
-                inspector_open,
-                pointer_position,
-                pressed_button,
-            );
+            // Pressing the FOCUSED field itself does not commit — the press
+            // tracks for caret positioning at release. Any other press
+            // commits first, then the M2 proceed/consume split.
+            const pressed_field = ui.textFieldAt(ui_elements, pointer_position);
+            const pressing_focused_field = pressed_field != null and
+                std.meta.eql(pressed_field.?.ref, history.session.ui_state.text_edit.?.field);
+            if (!pressing_focused_field) {
+                input_handlers.commitFocusedTextEdit(history);
+                const inspector_open = if (history.current_state.editor) |editor|
+                    editor.inspector_open
+                else
+                    false;
+                const pressed_button = if (ui.buttonAt(ui_elements, pointer_position)) |button|
+                    button.action
+                else
+                    null;
+                consumed_by_text_edit = !ui.textEditPressProceeds(
+                    inspector_open,
+                    pointer_position,
+                    pressed_button,
+                );
+            }
         }
         if (consumed_by_text_edit) {
+            history.session.pressed_button = null;
+            history.session.pressed_text_field = null;
+            player_input.idle.tile_clicked = null;
+            player_input.idle.confirm = false;
+        } else if (ui.textFieldAt(ui_elements, pointer_position)) |field| {
+            // A text-field press: tracks like a button press (release over
+            // the SAME field focuses it / positions the caret; drag-off
+            // cancels). A field is not a button — pressed_button stays null.
+            history.session.pressed_text_field = field.ref;
             history.session.pressed_button = null;
             player_input.idle.tile_clicked = null;
             player_input.idle.confirm = false;
@@ -146,7 +163,31 @@ fn update(
         // source). `drag` still reflects the promoted state from the prior
         // move frame — `handleDrag` hasn't run yet this frame.
         if (history.session.ui_state.drag == null) {
-            if (history.session.pressed_button) |pressed_action| {
+            if (history.session.pressed_text_field) |pressed_ref| {
+                // Release over the SAME field that was pressed: focus it —
+                // or, when it is already the focused field, position the
+                // caret at the click x (measured with the metrics the field
+                // was laid out with, read off the previous view state).
+                // Drag-off cancels, same as buttons.
+                if (ui.textFieldAt(ui_elements, pointer_position)) |field| {
+                    if (std.meta.eql(field.ref, pressed_ref)) {
+                        const already_focused = history.session.ui_state.text_edit != null and
+                            std.meta.eql(history.session.ui_state.text_edit.?.field, pressed_ref);
+                        if (already_focused) {
+                            if (previous_view_state) |view_state| {
+                                ui.placeCaretFromClick(
+                                    &history.session.ui_state.text_edit.?,
+                                    field,
+                                    pointer_position.x,
+                                    view_state.font_metrics,
+                                );
+                            }
+                        } else {
+                            input_handlers.beginFocusedTextEdit(history, pressed_ref);
+                        }
+                    }
+                }
+            } else if (history.session.pressed_button) |pressed_action| {
                 // Fire only if the release is over the same button that was pressed.
                 if (ui.buttonAt(ui_elements, pointer_position)) |button| {
                     if (button.action == pressed_action) {
@@ -197,6 +238,7 @@ fn update(
             }
         }
         history.session.pressed_button = null;
+        history.session.pressed_text_field = null;
     }
 
     // Tile-cursor resolution: decide what tile (if any) the logical cursor is
@@ -2031,4 +2073,181 @@ test "maybeRecordIdlePoint: first idle point from empty idle_points (no out-of-b
     history.maybeRecordIdlePoint(true);
     try std.testing.expectEqual(@as(usize, 1), history.idle_points.items.len);
     try std.testing.expectEqual(history.current_event_index, history.idle_points.items[0]);
+}
+
+test "text field focus-on-click: press + release over a field focuses it; click inside repositions the caret" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton Warrior", .sprite = "skeleton_1", .team = 1 } },
+    };
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{
+            .levels = &levels,
+            .entity_types = &entity_types,
+            .active_tool = .{ .entity_type = 0 },
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    runToIdle(&history);
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
+    };
+    const metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // The previous frame's view: the inspector with its two text fields.
+    var elements: ui.UiElementList = .empty;
+    try ui.buildEditorInspectorPanel(
+        &elements,
+        arena,
+        metrics,
+        history.current_state.editor.?,
+        theme,
+        true,
+        &history.session.ui_state,
+    );
+    const view_state = types.ViewState{
+        .background_color = black,
+        .active_color_theme = theme,
+        .world_scale = 1.0,
+        .tiles = &.{},
+        .tile_overlays = &.{},
+        .ground_drawables = &.{},
+        .occlusion_insets = &.{},
+        .world_overlays = &.{},
+        .ui_elements = elements.items,
+        .font_metrics = metrics,
+        .combat_log = &.{},
+    };
+
+    var name_field: ?ui.TextFieldUi = null;
+    var sprite_field: ?ui.TextFieldUi = null;
+    for (elements.items) |element| switch (element) {
+        .text_field => |field| {
+            if (field.ref.id == .entity_name) name_field = field;
+            if (field.ref.id == .entity_sprite) sprite_field = field;
+        },
+        else => {},
+    };
+    const name_click = types.ScreenPosition{
+        .x = name_field.?.screen_position.x + 40,
+        .y = name_field.?.screen_position.y + 40,
+    };
+    const sprite_click = types.ScreenPosition{
+        .x = sprite_field.?.screen_position.x + 40,
+        .y = sprite_field.?.screen_position.y + 40,
+    };
+
+    const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const viewport = input.ViewportSize{ .width = 2560, .height = 2160 };
+
+    // Press over the Name field: tracked, not a button.
+    {
+        var player_input = input.PlayerInput{};
+        player_input.pointer.pressed = true;
+        player_input.pointer.position = name_click;
+        update(&history, player_input, view_state, 0, camera, 1.0, viewport);
+        try std.testing.expectEqual(
+            types.TextFieldRef{ .id = .entity_name, .target = .{ .entity_type = 0 } },
+            history.session.pressed_text_field.?,
+        );
+        try std.testing.expect(history.session.pressed_button == null);
+    }
+    // Release over the same field: focused, seeded with the current value.
+    {
+        var player_input = input.PlayerInput{};
+        player_input.pointer.released = true;
+        player_input.pointer.position = name_click;
+        update(&history, player_input, view_state, 0, camera, 1.0, viewport);
+        try std.testing.expect(history.session.ui_state.text_edit != null);
+        try std.testing.expectEqualStrings(
+            "Skeleton Warrior",
+            history.session.ui_state.text_edit.?.buffer.currentText(),
+        );
+        try std.testing.expect(history.session.pressed_text_field == null);
+    }
+
+    // Click INSIDE the focused field: the caret repositions (no commit, no
+    // refocus). At font 64 each glyph measures ~35px; 40px into the text
+    // lands inside the second glyph → caret at index 1.
+    {
+        var player_input = input.PlayerInput{};
+        player_input.pointer.pressed = true;
+        player_input.pointer.position = .{
+            .x = name_field.?.text_position.x + 40,
+            .y = name_click.y,
+        };
+        update(&history, player_input, view_state, 0, camera, 1.0, viewport);
+        player_input = .{};
+        player_input.pointer.released = true;
+        player_input.pointer.position = .{
+            .x = name_field.?.text_position.x + 40,
+            .y = name_click.y,
+        };
+        update(&history, player_input, view_state, 0, camera, 1.0, viewport);
+        try std.testing.expectEqual(@as(usize, 1), history.session.ui_state.text_edit.?.buffer.caret);
+        // Still the same focused field (a caret move, not a refocus).
+        try std.testing.expectEqual(
+            types.TextFieldRef{ .id = .entity_name, .target = .{ .entity_type = 0 } },
+            history.session.ui_state.text_edit.?.field,
+        );
+    }
+
+    // Press on the SPRITE field while the name field is focused: M2 commits
+    // the name (unchanged → records nothing) + the press proceeds; release
+    // focuses the sprite field, seeded with its current value.
+    {
+        var player_input = input.PlayerInput{};
+        player_input.pointer.pressed = true;
+        player_input.pointer.position = sprite_click;
+        update(&history, player_input, view_state, 0, camera, 1.0, viewport);
+        player_input = .{};
+        player_input.pointer.released = true;
+        player_input.pointer.position = sprite_click;
+        update(&history, player_input, view_state, 0, camera, 1.0, viewport);
+        try std.testing.expect(history.session.ui_state.text_edit != null);
+        try std.testing.expectEqual(
+            types.TextFieldRef{ .id = .entity_sprite, .target = .{ .entity_type = 0 } },
+            history.session.ui_state.text_edit.?.field,
+        );
+        try std.testing.expectEqualStrings(
+            "skeleton_1",
+            history.session.ui_state.text_edit.?.buffer.currentText(),
+        );
+        try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    }
+
+    // Drag-off: press on the name field, release far away. The PRESS
+    // already committed the sprite field (M2 — focus dropped); the missed
+    // release cancels the name focus too, so no field is focused.
+    {
+        var player_input = input.PlayerInput{};
+        player_input.pointer.pressed = true;
+        player_input.pointer.position = name_click;
+        update(&history, player_input, view_state, 0, camera, 1.0, viewport);
+        player_input = .{};
+        player_input.pointer.released = true;
+        player_input.pointer.position = .{ .x = 2400, .y = 2400 };
+        update(&history, player_input, view_state, 0, camera, 1.0, viewport);
+        try std.testing.expect(history.session.ui_state.text_edit == null);
+        try std.testing.expect(history.session.pressed_text_field == null);
+    }
 }

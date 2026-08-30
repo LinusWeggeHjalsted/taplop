@@ -800,8 +800,27 @@ fn textEditKey(text_edit: *TextEditState, key: []const u8, shift_held: bool) ?ty
 /// as it's typed). Numeric ids join here with their slices.
 fn textFieldIsNumeric(field_id: types.TextFieldId) bool {
     return switch (field_id) {
-        .entity_name => false,
+        .entity_name, .entity_sprite => false,
     };
+}
+
+/// Click inside the FOCUSED field: map the click x to a caret index
+/// (measured via the metrics) and move the caret there — a plain move,
+/// clearing the selection. Callers gate on the clicked element being the
+/// focused field. Drag-select within a field is a later refinement.
+pub fn placeCaretFromClick(
+    text_edit: *TextEditState,
+    field: TextFieldUi,
+    click_x: i32,
+    metrics: FontMetrics,
+) void {
+    const index = TextField.caretIndexAtX(
+        text_edit.buffer.currentText(),
+        metrics,
+        field.font_size,
+        click_x - field.text_position.x,
+    );
+    text_edit.buffer.moveCaretTo(index, false);
 }
 
 /// Baseline-to-baseline height for one line at `font_size`, in reference
@@ -1055,6 +1074,123 @@ test "routeTextInput: chars insert, edit keys apply, Enter/Escape resolve, repea
         types.TextEditOutcome.cancel,
         routeTextInput(&ui_state.text_edit.?, "", &escape_pressed, &no_keys, false),
     );
+}
+
+test "placeCaretFromClick: click x maps through the field's text origin" {
+    var ui_state: UiState = .{};
+    beginTextEdit(&ui_state, .{ .id = .entity_name, .target = .{ .entity_type = 0 } }, "abcd");
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const field: TextFieldUi = .{
+        .screen_position = .{ .x = 0, .y = 0 },
+        .width = 512,
+        .height = 96,
+        .text_position = .{ .x = 100, .y = 0 },
+        .text = "abcd",
+        .font_size = 100,
+        .frame_color = default_tint,
+        .ref = .{ .id = .entity_name, .target = .{ .entity_type = 0 } },
+    };
+
+    // Each glyph measures 55px at size 100 (the synthetic convention); a
+    // click two glyphs into the text (field x 100 + 110) lands the caret
+    // at index 2. Clicking far past the end lands at the end.
+    placeCaretFromClick(&ui_state.text_edit.?, field, 100 + 110, metrics);
+    try std.testing.expectEqual(@as(usize, 2), ui_state.text_edit.?.buffer.caret);
+    placeCaretFromClick(&ui_state.text_edit.?, field, 999, metrics);
+    try std.testing.expectEqual(@as(usize, 4), ui_state.text_edit.?.buffer.caret);
+    // A plain move clears any selection.
+    ui_state.text_edit.?.buffer.moveCaretTo(1, true);
+    try std.testing.expect(ui_state.text_edit.?.buffer.selectionRange() != null);
+    placeCaretFromClick(&ui_state.text_edit.?, field, 100, metrics);
+    try std.testing.expect(ui_state.text_edit.?.buffer.selectionRange() == null);
+}
+
+test "emitInspectorTextField via the content builder: current value unfocused, buffer + caret + selection while focused" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton Warrior", .sprite = "skeleton_1", .team = 1 },
+    }};
+    const editor: types.Editor = .{
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    };
+
+    // Unfocused: both fields show the current values; no caret/selection.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        const name_field = findTextField(&elements, .entity_name).?;
+        try std.testing.expectEqualStrings("Skeleton Warrior", name_field.text);
+        try std.testing.expect(name_field.caret == null);
+        try std.testing.expect(name_field.selection == null);
+        try std.testing.expectEqual(
+            types.TextFieldRef{ .id = .entity_name, .target = .{ .entity_type = 0 } },
+            name_field.ref,
+        );
+        // The control column: right of the label column, inside the row.
+        try std.testing.expectEqual(
+            editorInspectorPanelRect().x + ui_gap + editor_inspector_label_width + ui_gap,
+            name_field.screen_position.x,
+        );
+        const sprite_field = findTextField(&elements, .entity_sprite).?;
+        try std.testing.expectEqualStrings("skeleton_1", sprite_field.text);
+    }
+
+    // Focused (name), with a selection + mid-string caret: the field shows
+    // the BUFFER, the selection rect spans the selected glyphs, and the
+    // caret sits at the measured prefix width.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        beginTextEdit(&ui_state, .{ .id = .entity_name, .target = .{ .entity_type = 0 } }, "Skeleton");
+        // Type " W" (caret at 10), then select back two codepoints
+        // (" W" selected: anchor 10, caret 8).
+        const no_keys: [0]?[]const u8 = .{};
+        _ = routeTextInput(&ui_state.text_edit.?, " W", &no_keys, &no_keys, false);
+        const arrow_left: [2]?[]const u8 = .{ "ArrowLeft", "ArrowLeft" };
+        _ = routeTextInput(&ui_state.text_edit.?, "", &arrow_left, &no_keys, true);
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        const name_field = findTextField(&elements, .entity_name).?;
+        try std.testing.expectEqualStrings("Skeleton W", name_field.text);
+        // Selection spans buffer glyphs 8..10, caret sits at index 8 — the
+        // geometry is the metrics' own measurement of those slices (the
+        // accumulation truncates once at the end, so per-glyph arithmetic
+        // would drift; measure the same way the builder does).
+        const buffer_text = ui_state.text_edit.?.buffer.currentText();
+        const expected_selection_x = metrics.measureSpanWidth(text(buffer_text[0..8]), 64);
+        const expected_selection_width = metrics.measureSpanWidth(text(buffer_text[8..10]), 64);
+        try std.testing.expectEqual(expected_selection_x, name_field.selection.?.x);
+        try std.testing.expectEqual(expected_selection_width, name_field.selection.?.width);
+        try std.testing.expectEqual(expected_selection_x, name_field.caret.?.x);
+        // The sprite field is unfocused: still the current value, no caret.
+        const sprite_field = findTextField(&elements, .entity_sprite).?;
+        try std.testing.expectEqualStrings("skeleton_1", sprite_field.text);
+        try std.testing.expect(sprite_field.caret == null);
+    }
+}
+
+/// The first text field in `elements` whose ref id matches, for inspector
+/// builder tests.
+fn findTextField(elements: *const UiElementList, field_id: types.TextFieldId) ?TextFieldUi {
+    for (elements.items) |element| switch (element) {
+        .text_field => |field| if (field.ref.id == field_id) return field,
+        else => {},
+    };
+    return null;
 }
 
 test "textEditPressProceeds: M2 region is the open inspector panel + its toggle" {
@@ -1546,6 +1682,36 @@ pub const UiElement = union(enum) {
     image: Image,
     solid_rect: SolidRect,
     slider: Slider,
+    text_field: TextFieldUi,
+};
+
+/// An editable text field (the text-input widget's UI surface — see
+/// DESIGN → UI Framework → Text input widget). The builder computes ALL
+/// render data (it owns the metrics + the focused field's buffer): the
+/// frame rect, the text to show (the field's current value, or the live
+/// buffer while THIS field is focused), and the caret/selection geometry
+/// — the backend just draws. `ref` is the field's identity for
+/// focus-on-click + the commit path. blocks_input: clicks on the field
+/// are field presses (caret positioning / focus), not world clicks.
+pub const TextFieldUi = struct {
+    /// The frame rect (hit-test bounds).
+    screen_position: ScreenPosition,
+    width: i32,
+    height: i32,
+    /// Where the text draws (top-left, the TextLabel convention: raylib
+    /// draws from the top of a font_size-sized box).
+    text_position: ScreenPosition,
+    text: []const u8,
+    font_size: i32,
+    frame_color: Color,
+    ref: types.TextFieldRef,
+    /// Caret bar while focused: x offset from `text_position.x`, height.
+    caret: ?struct { x: i32, height: i32 } = null,
+    /// Selection highlight while a selection exists: x offset + width
+    /// from `text_position.x` (drawn under the text).
+    selection: ?struct { x: i32, width: i32 } = null,
+    tooltip: ?Tooltip = null,
+    blocks_input: bool = true,
 };
 
 /// A plain rectangle (filled by default, or stroked when `filled` is
@@ -1589,6 +1755,7 @@ pub fn boundsOf(element: UiElement) Rectangle {
         .image => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
         .solid_rect => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
         .slider => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
+        .text_field => |e| .{ .x = e.screen_position.x, .y = e.screen_position.y, .width = e.width, .height = e.height },
     };
 }
 
@@ -1674,6 +1841,23 @@ pub fn buttonAt(
     position: ScreenPosition,
 ) ?Button {
     return if (hitTest(ui_elements, position, isButton)) |i| ui_elements[i].button else null;
+}
+
+/// The topmost text field under `position` (respecting occlusion), or
+/// null. The press/release dispatch uses it for focus-on-click and
+/// caret positioning (see DESIGN → UI Framework → Text input widget).
+pub fn textFieldAt(
+    ui_elements: []const UiElement,
+    position: ScreenPosition,
+) ?TextFieldUi {
+    return if (hitTest(ui_elements, position, isTextField)) |i| ui_elements[i].text_field else null;
+}
+
+fn isTextField(element: UiElement) bool {
+    return switch (element) {
+        .text_field => true,
+        else => false,
+    };
 }
 
 /// The index in `ui_elements` of the topmost button under `position`
@@ -2759,9 +2943,9 @@ test "wrapRow breaks at spaces and drops the break space" {
 
 // Builders append UiElements into a shared list in back-to-front draw
 // order. The view function calls each relevant builder based on game
-// state; the flat list is what the renderer walks.
-
-const UiElementList = std.ArrayList(UiElement);
+// state; the flat list is what the renderer walks. pub: main.zig's
+// focus-on-click integration test builds elements directly.
+pub const UiElementList = std.ArrayList(UiElement);
 
 /// The player entity is index 0 in a level, or the dedicated hub player.
 pub fn playerEntity(game_state: *const GameState) ?Entity {
@@ -3672,7 +3856,7 @@ pub fn buildEditorInspectorPanel(
     editor: types.Editor,
     active_theme: types.ActiveColorTheme,
     inspector_open: bool,
-    scroll_offset: *i32,
+    ui_state: *UiState,
 ) !void {
     const p = active_theme.player_gradient.colors;
     const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
@@ -3727,9 +3911,10 @@ pub fn buildEditorInspectorPanel(
         try buildEditorInspectorContent(
             elements,
             allocator,
+            font_metrics,
             editor,
             active_theme,
-            scroll_offset,
+            ui_state,
         );
     }
 }
@@ -3758,13 +3943,22 @@ pub fn editorInspectorEntityTarget(editor: types.Editor) ?u32 {
     };
 }
 
-/// One line of inspector content: a section header, or a field row (the
-/// row's CONTROL lands with its slice; the label is stable — it names the
-/// level-format field group it edits, per the coupling contract in DESIGN
-/// → Architecture → Level Editor → Editor UI layout → Inspector fields).
+/// The control a field row hosts. Controls land per slice; `none` rows
+/// render label-only until theirs.
+const EditorInspectorControl = union(enum) {
+    none,
+    text: types.TextFieldId,
+};
+
+/// One line of inspector content: a section header, or a field row (label
+/// + control) — per the coupling contract in DESIGN → Architecture →
+/// Level Editor → Editor UI layout → Inspector fields.
 const EditorInspectorEntry = union(enum) {
     section: []const u8,
-    field: []const u8,
+    field: struct {
+        label: []const u8,
+        control: EditorInspectorControl,
+    },
 };
 
 /// The enemy-type inspector's full content plan: five sections over every
@@ -3773,30 +3967,30 @@ const EditorInspectorEntry = union(enum) {
 fn editorInspectorEntityEntries() []const EditorInspectorEntry {
     return &.{
         .{ .section = "Identity" },
-        .{ .field = "Name" },
-        .{ .field = "Sprite" },
-        .{ .field = "Color" },
-        .{ .field = "Displays weapons" },
+        .{ .field = .{ .label = "Name", .control = .{ .text = .entity_name } } },
+        .{ .field = .{ .label = "Sprite", .control = .{ .text = .entity_sprite } } },
+        .{ .field = .{ .label = "Color", .control = .none } },
+        .{ .field = .{ .label = "Displays weapons", .control = .none } },
         .{ .section = "Stats" },
-        .{ .field = "Max health" },
-        .{ .field = "Defense" },
-        .{ .field = "Speed" },
-        .{ .field = "Aggro range" },
+        .{ .field = .{ .label = "Max health", .control = .none } },
+        .{ .field = .{ .label = "Defense", .control = .none } },
+        .{ .field = .{ .label = "Speed", .control = .none } },
+        .{ .field = .{ .label = "Aggro range", .control = .none } },
         .{ .section = "Weapons" },
-        .{ .field = "Main hand" },
-        .{ .field = "Off hand" },
+        .{ .field = .{ .label = "Main hand", .control = .none } },
+        .{ .field = .{ .label = "Off hand", .control = .none } },
         .{ .section = "Gear" },
-        .{ .field = "Amulet" },
-        .{ .field = "Coat" },
-        .{ .field = "Gloves" },
-        .{ .field = "Pants" },
-        .{ .field = "Boots" },
+        .{ .field = .{ .label = "Amulet", .control = .none } },
+        .{ .field = .{ .label = "Coat", .control = .none } },
+        .{ .field = .{ .label = "Gloves", .control = .none } },
+        .{ .field = .{ .label = "Pants", .control = .none } },
+        .{ .field = .{ .label = "Boots", .control = .none } },
         .{ .section = "Utility skills" },
-        .{ .field = "Slot 4" },
-        .{ .field = "Slot 5" },
-        .{ .field = "Slot 6" },
-        .{ .field = "Slot 7" },
-        .{ .field = "Slot 8" },
+        .{ .field = .{ .label = "Slot 4", .control = .none } },
+        .{ .field = .{ .label = "Slot 5", .control = .none } },
+        .{ .field = .{ .label = "Slot 6", .control = .none } },
+        .{ .field = .{ .label = "Slot 7", .control = .none } },
+        .{ .field = .{ .label = "Slot 8", .control = .none } },
     };
 }
 
@@ -3813,9 +4007,10 @@ fn editorInspectorEntityEntries() []const EditorInspectorEntry {
 fn buildEditorInspectorContent(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
     editor: types.Editor,
     active_theme: types.ActiveColorTheme,
-    scroll_offset: *i32,
+    ui_state: *UiState,
 ) !void {
     const panel = editorInspectorPanelRect();
     const content: Rectangle = .{
@@ -3825,10 +4020,11 @@ fn buildEditorInspectorContent(
         .height = panel.height - 2 * ui_gap,
     };
     const visible_rows = @divFloor(content.height, editor_inspector_row_height);
+    const scroll_offset = &ui_state.editor_inspector_scroll;
 
     // Target resolution: the active enemy tool's type, else the empty
     // state (a hint — the inspector edits the ACTIVE TOOL's type).
-    if (editorInspectorEntityTarget(editor) == null) {
+    const type_index = editorInspectorEntityTarget(editor) orelse {
         scroll_offset.* = 0;
         try elements.append(allocator, .{ .text_label = .{
             .text = "Select an enemy tool to edit its type",
@@ -3838,7 +4034,7 @@ fn buildEditorInspectorContent(
             .blocks_input = false,
         } });
         return;
-    }
+    };
 
     const entries = editorInspectorEntityEntries();
     const total_rows: i32 = @intCast(entries.len);
@@ -3848,6 +4044,8 @@ fn buildEditorInspectorContent(
     const first_row: usize = @intCast(scroll_offset.*);
 
     const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const text_edit: ?*const TextEditState =
+        if (ui_state.text_edit != null) &ui_state.text_edit.? else null;
     var view_row: i32 = 0;
     while (view_row < visible_rows) : (view_row += 1) {
         const index = first_row + @as(usize, @intCast(view_row));
@@ -3878,17 +4076,30 @@ fn buildEditorInspectorContent(
                     .blocks_input = false,
                 } });
             },
-            // Field row: the label in the label column, vertically centered.
-            // The control column (right of `editor_inspector_label_width`)
-            // is filled by the field slices.
-            .field => |label| {
+            // Field row: the label in the label column + the row's control
+            // in the control column (label-only until its slice lands).
+            .field => |row| {
                 try elements.append(allocator, .{ .text_label = .{
-                    .text = label,
+                    .text = row.label,
                     .screen_position = .{ .x = cell.x, .y = text_y },
                     .font_size = editor_group_header_font_size,
                     .color = active_theme.lightest,
                     .blocks_input = false,
                 } });
+                switch (row.control) {
+                    .none => {},
+                    .text => |field_id| try emitInspectorTextField(
+                        elements,
+                        allocator,
+                        font_metrics,
+                        text_edit,
+                        editor,
+                        type_index,
+                        cell,
+                        field_id,
+                        active_theme,
+                    ),
+                }
             },
         }
     }
@@ -3919,6 +4130,79 @@ fn buildEditorInspectorContent(
             .color = .{ .r = 180, .g = 180, .b = 180 },
         } });
     }
+}
+
+/// The current value of an entity-type field (the display text of its
+/// unfocused text field, and the seed `beginFocusedTextEdit` reads).
+fn entityFieldValue(
+    editor: types.Editor,
+    type_index: u32,
+    field_id: types.TextFieldId,
+) []const u8 {
+    if (type_index >= editor.entity_types.len) return "";
+    const template = editor.entity_types[type_index].template;
+    return switch (field_id) {
+        .entity_name => template.name,
+        .entity_sprite => template.sprite,
+    };
+}
+
+/// Emit one inspector text field in the row's control column. The builder
+/// computes ALL render data (it owns the metrics + the focused buffer):
+/// the display text is the live buffer while THIS field is focused, else
+/// the field's current value; the caret/selection geometry is measured
+/// from the buffer. Display text is duped into the frame allocator — an
+/// element slice must never point into UiState (it mutates between
+/// frames, and the previous frame's elements are hit-tested a frame
+/// later).
+fn emitInspectorTextField(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    text_edit: ?*const TextEditState,
+    editor: types.Editor,
+    type_index: u32,
+    row: Rectangle,
+    field_id: types.TextFieldId,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const ref: types.TextFieldRef = .{ .id = field_id, .target = .{ .entity_type = type_index } };
+    const field_rect: Rectangle = .{
+        .x = row.x + editor_inspector_label_width + ui_gap,
+        .y = row.y + ui_gap,
+        .width = row.width - editor_inspector_label_width - 2 * ui_gap,
+        .height = row.height - 2 * ui_gap,
+    };
+    const font_size = editor_group_header_font_size;
+    var field: TextFieldUi = .{
+        .screen_position = field_rect.position(),
+        .width = field_rect.width,
+        .height = field_rect.height,
+        .text_position = .{
+            .x = field_rect.x + ui_gap,
+            .y = field_rect.y + @divFloor(field_rect.height - font_size, 2),
+        },
+        .text = try allocator.dupe(u8, entityFieldValue(editor, type_index, field_id)),
+        .font_size = font_size,
+        .frame_color = active_theme.player_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)],
+        .ref = ref,
+    };
+
+    if (text_edit) |edit| {
+        if (std.meta.eql(edit.field, ref)) {
+            const buffer_text = edit.buffer.currentText();
+            field.text = try allocator.dupe(u8, buffer_text);
+            if (edit.buffer.selectionRange()) |selection| {
+                const before = font_metrics.measureSpanWidth(text(buffer_text[0..selection.start]), font_size);
+                const within = font_metrics.measureSpanWidth(text(buffer_text[selection.start..selection.end]), font_size);
+                field.selection = .{ .x = before, .width = within };
+            }
+            const caret_x = font_metrics.measureSpanWidth(text(buffer_text[0..edit.buffer.caret]), font_size);
+            field.caret = .{ .x = caret_x, .height = font_size };
+        }
+    }
+
+    try elements.append(allocator, .{ .text_field = field });
 }
 
 /// M2 press arbitration for a focused text field (see DESIGN → UI
@@ -5508,8 +5792,8 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
     // panel + empty-state hint = 5 elements.
     {
         var elements: UiElementList = .empty;
-        var scroll: i32 = 0;
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &scroll);
+        var ui_state: UiState = .{};
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try std.testing.expectEqual(@as(usize, 5), elements.items.len);
         try expectInspectorToggleShape(&elements, true);
 
@@ -5546,8 +5830,8 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
     // Closed: just the toggle (3 elements), no longer highlighted.
     {
         var elements: UiElementList = .empty;
-        var scroll: i32 = 0;
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, false, &scroll);
+        var ui_state: UiState = .{};
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, false, &ui_state);
         try std.testing.expectEqual(@as(usize, 3), elements.items.len);
         try expectInspectorToggleShape(&elements, false);
     }
@@ -5588,9 +5872,10 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
     // stat fields (2 sections × 2 elements + 8 fields + scrollbar 2).
     {
         var elements: UiElementList = .empty;
-        var scroll: i32 = 0;
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &scroll);
-        try std.testing.expectEqual(@as(usize, 18), elements.items.len);
+        var ui_state: UiState = .{};
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        // 18 layout elements + the Name + Sprite text fields = 20.
+        try std.testing.expectEqual(@as(usize, 20), elements.items.len);
         try expectInspectorLabels(&elements, &.{ "Identity", "Name", "Sprite", "Color", "Displays weapons", "Stats", "Max health", "Defense", "Speed", "Aggro range" });
         try std.testing.expectEqual(@as(usize, 2), countSolidRects(&elements));
     }
@@ -5598,8 +5883,8 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
     // Scroll 3: the window starts at entry 3 ("Color").
     {
         var elements: UiElementList = .empty;
-        var scroll: i32 = 3;
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &scroll);
+        var ui_state: UiState = .{ .editor_inspector_scroll = 3 };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{ "Color", "Displays weapons", "Stats", "Max health", "Defense", "Speed", "Aggro range", "Weapons", "Main hand", "Off hand" });
     }
 
@@ -5607,18 +5892,18 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
     // at "Coat" and runs to the last slot.
     {
         var elements: UiElementList = .empty;
-        var scroll: i32 = 999;
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &scroll);
-        try std.testing.expectEqual(@as(i32, 15), scroll);
+        var ui_state: UiState = .{ .editor_inspector_scroll = 999 };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try std.testing.expectEqual(@as(i32, 15), ui_state.editor_inspector_scroll);
         try expectInspectorLabels(&elements, &.{ "Coat", "Gloves", "Pants", "Boots", "Utility skills", "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8" });
     }
 
     // Negative scroll clamps to 0.
     {
         var elements: UiElementList = .empty;
-        var scroll: i32 = -4;
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &scroll);
-        try std.testing.expectEqual(@as(i32, 0), scroll);
+        var ui_state: UiState = .{ .editor_inspector_scroll = -4 };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try std.testing.expectEqual(@as(i32, 0), ui_state.editor_inspector_scroll);
     }
 
     // A stale tool id (the type deleted mid-edit) is the empty state, and
@@ -5629,9 +5914,9 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
             .active_tool = .{ .entity_type = 7 },
         };
         var elements: UiElementList = .empty;
-        var scroll: i32 = 5;
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, stale_editor, theme, true, &scroll);
-        try std.testing.expectEqual(@as(i32, 0), scroll);
+        var ui_state: UiState = .{ .editor_inspector_scroll = 5 };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, stale_editor, theme, true, &ui_state);
+        try std.testing.expectEqual(@as(i32, 0), ui_state.editor_inspector_scroll);
         try std.testing.expectEqualStrings(
             "Select an enemy tool to edit its type",
             elements.items[4].text_label.text,
