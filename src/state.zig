@@ -1206,6 +1206,22 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_select_editor_region without the select tool active");
                     }
                 },
+                // Same structural legality as the region select (ctrl+A is
+                // its unbounded form).
+                .player_select_editor_all => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_select_editor_all outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_select_editor_all with no editor");
+                    };
+                    if (editor.levels.len == 0) {
+                        @panic("replay validation: player_select_editor_all with no levels");
+                    }
+                    if (editor.active_tool != .select) {
+                        @panic("replay validation: player_select_editor_all without the select tool active");
+                    }
+                },
                 // Same structural legality as the toggle + region (the
                 // selection only exists while the select tool is active).
                 .player_delete_editor_selection => {

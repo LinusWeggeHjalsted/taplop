@@ -49,6 +49,11 @@ ctrl true
 action clear_editor_selection
 
 input_type key
+input_name KeyA
+ctrl true
+action select_editor_all
+
+input_type key
 input_name KeyI
 ctrl true
 action zoom_in

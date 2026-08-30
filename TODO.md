@@ -496,6 +496,9 @@ yet implemented. Remaining work:
   ordering; one undo step — see DESIGN → Level Editor → Selection model
   + DONE.md). Ctrl+D clear-everything DONE too (single
   `editor_clear_selection` event, gated on a nonempty selection — see
+  DONE.md). Ctrl+A select-everything DONE too (`player_select_editor_all`
+  → the marquee's granular-add planner with no region bound, skipping
+  already-selected entries; select-tool-only, one undo step — see
   DONE.md). The selection MOVE is DONE (plain left-drag on a selected
   thing → `player_move_editor_selection` → clear phase + chained
   `editor_commit_selection_move` placement worklist via the existing

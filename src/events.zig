@@ -628,6 +628,13 @@ pub const PlayerInputEvent = union(enum) {
         start_position: Vector2,
         end_position: Vector2,
     },
+    // Select-tool ctrl+A: add EVERY selectable thing in the active level
+    // (tiles, entity / item / decoration placements, the '!' / '='). No
+    // payload — the handler computes the granular editor_select plan from
+    // state (the marquee's membership rule with no region bound); entries
+    // already in the selection are skipped, so an all-selected level never
+    // fires. All the adds share this action's idle point — one undo step.
+    player_select_editor_all: void,
     // Select-tool Delete key: delete the current selection. No payload —
     // the handler reads `editor.selection` from reconstructable state (the
     // whole point of the selection living on the timeline) and fans out

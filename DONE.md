@@ -7158,3 +7158,30 @@ Tests: handler test (flip + undo/redo round trip), builder test (button
 always present + tab-shaped, panel only when open, layout constants).
 Follow-up tracked in TODO → Tech Debt: unify the in-game middle-panel
 toggles onto the same GameState convention.
+
+### Editor select-all — ctrl+A (DONE)
+
+Select everything in the active level with one keypress. Same shape as
+the marquee region-select: `Action.select_editor_all` (binding ctrl+A in
+`default_settings.txt`, beside ctrl+D) → `IdleInput.select_editor_all` →
+consumed in `handleIdleInput`'s editor arm → `player_select_editor_all`
+(no payload — the handler reads state) →
+`planEditorSelectAllActions` pushes one granular `editor_select` per
+selectable thing in the active level: every tile, entity / item /
+decoration placement, and the '!' / '=' singletons. That's the marquee's
+membership rule with no region bound; the shared
+`appendSelectEntryIfNew` helper (renamed from
+`appendRegionSelectEntryIfNew` — it now serves both planners) skips
+entries already in the selection, so an all-selected level plans empty.
+
+No-op gates at the input site (no dead undo steps): the plan must be
+nonempty, AND the select tool must be active — every selection op is
+select-tool-only (`validatePlayerAction` panics otherwise; the same arm
+shape as the region select). All adds share the player action's idle
+point, so one undo step reverts the whole batch to the prior selection.
+
+Tests: select-all over a 9-thing level from a 2-entry partial (batch
+fires once, all 9 present, undo restores the partial — note the test
+seeds the selection BEFORE `runToIdle` so the idle-point snapshot
+captures it); no-op cases (tile tool active; everything already
+selected). 398 tests pass.

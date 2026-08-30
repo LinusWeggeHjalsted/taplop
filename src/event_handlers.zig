@@ -1465,6 +1465,17 @@ fn handlePlayerInputEvent(
                 );
             }
         },
+        // Select-tool ctrl+A: thin over the shared planner (the input layer
+        // fires only nonempty plans — see planEditorSelectAllActions).
+        .player_select_editor_all => {
+            if (current.editor) |*editor| {
+                pushEvents(
+                    current,
+                    planEditorSelectAllActions(editor, allocator),
+                    allocator,
+                );
+            }
+        },
         // Select-tool Delete key: thin over the shared planner (the input
         // layer fires only nonempty plans — see
         // planEditorSelectionDeleteActions).
@@ -2797,21 +2808,21 @@ pub fn planEditorRegionSelectActions(
     var plan: std.ArrayList(Event) = .empty;
     for (level.level_tiles) |tile| {
         if (tile.x >= min_x and tile.x <= max_x and tile.y >= min_y and tile.y <= max_y) {
-            appendRegionSelectEntryIfNew(&plan, editor.selection, .{ .tile = tile }, allocator);
+            appendSelectEntryIfNew(&plan, editor.selection, .{ .tile = tile }, allocator);
         }
     }
     for (level.entity_placements, 0..) |placement, placement_index| {
         if (placement.position.x >= min_x and placement.position.x <= max_x and
             placement.position.y >= min_y and placement.position.y <= max_y)
         {
-            appendRegionSelectEntryIfNew(&plan, editor.selection, .{ .entity_placement = @intCast(placement_index) }, allocator);
+            appendSelectEntryIfNew(&plan, editor.selection, .{ .entity_placement = @intCast(placement_index) }, allocator);
         }
     }
     for (level.item_placements, 0..) |placement, placement_index| {
         if (placement.position.x >= min_x and placement.position.x <= max_x and
             placement.position.y >= min_y and placement.position.y <= max_y)
         {
-            appendRegionSelectEntryIfNew(&plan, editor.selection, .{ .ground_item_placement = @intCast(placement_index) }, allocator);
+            appendSelectEntryIfNew(&plan, editor.selection, .{ .ground_item_placement = @intCast(placement_index) }, allocator);
         }
     }
     for (level.decoration_placements, 0..) |placement, placement_index| {
@@ -2825,7 +2836,7 @@ pub fn planEditorRegionSelectActions(
             if (world_tile.x >= min_x and world_tile.x <= max_x and
                 world_tile.y >= min_y and world_tile.y <= max_y)
             {
-                appendRegionSelectEntryIfNew(&plan, editor.selection, .{ .decoration_placement = @intCast(placement_index) }, allocator);
+                appendSelectEntryIfNew(&plan, editor.selection, .{ .decoration_placement = @intCast(placement_index) }, allocator);
                 break;
             }
         }
@@ -2833,13 +2844,13 @@ pub fn planEditorRegionSelectActions(
     if (level.player_start.x >= min_x and level.player_start.x <= max_x and
         level.player_start.y >= min_y and level.player_start.y <= max_y)
     {
-        appendRegionSelectEntryIfNew(&plan, editor.selection, .player_start, allocator);
+        appendSelectEntryIfNew(&plan, editor.selection, .player_start, allocator);
     }
     if (level.level_end) |level_end_position| {
         if (level_end_position.x >= min_x and level_end_position.x <= max_x and
             level_end_position.y >= min_y and level_end_position.y <= max_y)
         {
-            appendRegionSelectEntryIfNew(&plan, editor.selection, .level_end, allocator);
+            appendSelectEntryIfNew(&plan, editor.selection, .level_end, allocator);
         }
     }
 
@@ -2848,9 +2859,58 @@ pub fn planEditorRegionSelectActions(
     return plan.items;
 }
 
+/// Plan the ctrl+A select-all: one `editor_select` per selectable thing
+/// in the ACTIVE level (every tile, entity / item / decoration placement,
+/// the '!' / '='), skipping entries already in the selection — the
+/// marquee's membership rule with no region bound. The adds share the
+/// action's idle point, so one undo step reverts the whole batch.
+pub fn planEditorSelectAllActions(
+    editor: *const types.Editor,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+    var plan: std.ArrayList(Event) = .empty;
+    for (level.level_tiles) |tile| {
+        appendSelectEntryIfNew(&plan, editor.selection, .{ .tile = tile }, allocator);
+    }
+    for (level.entity_placements, 0..) |_, placement_index| {
+        appendSelectEntryIfNew(
+            &plan,
+            editor.selection,
+            .{ .entity_placement = @intCast(placement_index) },
+            allocator,
+        );
+    }
+    for (level.item_placements, 0..) |_, placement_index| {
+        appendSelectEntryIfNew(
+            &plan,
+            editor.selection,
+            .{ .ground_item_placement = @intCast(placement_index) },
+            allocator,
+        );
+    }
+    for (level.decoration_placements, 0..) |_, placement_index| {
+        appendSelectEntryIfNew(
+            &plan,
+            editor.selection,
+            .{ .decoration_placement = @intCast(placement_index) },
+            allocator,
+        );
+    }
+    appendSelectEntryIfNew(&plan, editor.selection, .player_start, allocator);
+    if (level.level_end != null) {
+        appendSelectEntryIfNew(&plan, editor.selection, .level_end, allocator);
+    }
+
+    // LIFO: reverse so processing + log order = plan order.
+    std.mem.reverse(Event, plan.items);
+    return plan.items;
+}
+
 /// Append `entry`'s select event unless it is already in the selection
-/// (the marquee is an add — never a remove, never a duplicate).
-fn appendRegionSelectEntryIfNew(
+/// (shared by the marquee region and the ctrl+A select-all — an add,
+/// never a remove, never a duplicate).
+fn appendSelectEntryIfNew(
     plan: *std.ArrayList(Event),
     selection: []const types.Selectable,
     entry: types.Selectable,

@@ -1883,6 +1883,19 @@ pub fn handleIdleInput(
                 }
             }
         }
+        // ctrl+A: select everything in the active level. Gated on the
+        // select tool (every selection op requires it — validation panics
+        // otherwise) and a nonempty plan (an all-selected level never
+        // fires — no dead undo step).
+        if (idle.select_editor_all) {
+            if (current.editor) |*editor| {
+                if (editor.active_tool == .select) {
+                    if (event_handlers.planEditorSelectAllActions(editor, allocator).len > 0) {
+                        event_handlers.pushPlayerAction(current, .player_select_editor_all, allocator);
+                    }
+                }
+            }
+        }
         if (idle.tile_clicked) |clicked_position| {
             if (current.editor) |*editor| {
                 switch (editor.active_tool) {

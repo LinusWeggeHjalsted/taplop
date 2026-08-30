@@ -370,6 +370,11 @@ pub const IdleInput = struct {
     // Editor select tool: clear the current selection (ctrl+D, press-only).
     // Same consumption + no-op discipline as `delete_editor_selection`.
     clear_editor_selection: bool = false,
+    // Editor select tool: select everything in the active level (ctrl+A,
+    // press-only). Same consumption + no-op discipline as
+    // `delete_editor_selection` (plus a select-tool gate — every
+    // selection op requires the select tool).
+    select_editor_all: bool = false,
     /// A main-menu command (New Game / Load Save / ...), set only when a menu
     /// button is clicked (no keybind path). Handled by the main_menu branch of
     /// handleIdleInput.
@@ -430,6 +435,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .skip_level => player_input.idle.skip_level = true,
         .delete_editor_selection => player_input.idle.delete_editor_selection = true,
         .clear_editor_selection => player_input.idle.clear_editor_selection = true,
+        .select_editor_all => player_input.idle.select_editor_all = true,
         .skill_slot_1 => player_input.idle.skill_slot_selected = 1,
         .skill_slot_2 => player_input.idle.skill_slot_selected = 2,
         .skill_slot_3 => player_input.idle.skill_slot_selected = 3,
@@ -811,6 +817,7 @@ pub fn translateInput(
     result.idle.skip_level = checkAction(.skip_level, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.idle.delete_editor_selection = checkAction(.delete_editor_selection, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.idle.clear_editor_selection = checkAction(.clear_editor_selection, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.idle.select_editor_all = checkAction(.select_editor_all, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
 
     // Skill slots 1-8 (press-only — repeating would queue uses by accident).
     const skill_slot_actions = [_]types.Action{

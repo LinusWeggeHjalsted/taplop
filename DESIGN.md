@@ -2008,7 +2008,12 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   reconstructable state. Ctrl+D clears the whole selection
   (`player_clear_editor_selection` → the single `editor_clear_selection`
   event — one operation, not a per-entry fan-out; gated on a nonempty
-  selection so an empty one never records). The selection MOVE is landed:
+  selection so an empty one never records). Ctrl+A adds EVERY selectable
+  thing in the active level (`player_select_editor_all` → the marquee's
+  granular-add planner with no region bound — tiles, placements, the '!' /
+  '='; skips already-selected entries, so an all-selected level never
+  fires; one undo step reverts the whole batch; select-tool-only like
+  every selection op). The selection MOVE is landed:
   a plain left press on a selected thing (tile / entity / item, a selected
   decoration's footprint, or a selected marker —
   `editorSelectionContainsPosition`) claims a drag; the threshold promotes

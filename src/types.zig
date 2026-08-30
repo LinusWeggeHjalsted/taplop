@@ -173,6 +173,13 @@ pub const Action = enum {
     // Consumed in handleIdleInput's editor arm, gated on a nonempty
     // selection — a no-op on every other screen.
     clear_editor_selection,
+    // Select everything in the editor's active level (editor viewport,
+    // ctrl+A). Pushes `player_select_editor_all` → a batch of granular
+    // `editor_select` adds sharing one idle point (one undo step),
+    // skipping entries already selected — an all-selected level is a
+    // no-op. Consumed in handleIdleInput's editor arm, gated on the
+    // select tool active — a no-op on every other screen.
+    select_editor_all,
 };
 
 /// One per editable `Settings` scalar field. Drives the settings-screen

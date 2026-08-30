@@ -2030,6 +2030,108 @@ test "player_clear_editor_selection: ctrl+D clears everything, gated on a nonemp
     try testing.expectEqual(types.Selectable{ .decoration_placement = 0 }, selection[2]);
 }
 
+test "player_select_editor_all: ctrl+A selects everything, skips present, one undo restores the prior selection" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Same fixture shape as the marquee region test: 3 tiles + 1 entity +
+    // 1 item + 2 decorations + the '!' + the '=' = 9 selectable things.
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 }, .{ .x = 9, .y = 9 } };
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 2, .y = 1 },
+    }};
+    const item_placements = [_]types.ItemPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 3, .y = 1 },
+    }};
+    const decoration_placements = [_]types.DecorationPlacement{
+        .{ .type_id = 0, .position = .{ .x = 7, .y = 7 } },
+        .{ .type_id = 1, .position = .{ .x = 5, .y = 10 } },
+    };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 9, .y = 0 },
+        .entity_placements = &entity_placements,
+        .item_placements = &item_placements,
+        .decoration_placements = &decoration_placements,
+    }};
+    var history = harness.newHistory(editorStateWith(marqueeTestEditor(&levels)));
+    // Seed BEFORE runToIdle so the idle-point snapshot captures the
+    // partial selection (undo replays to that snapshot).
+    const seeded_selection = [_]types.Selectable{
+        .{ .tile = .{ .x = 1, .y = 1 } },
+        .player_start,
+    };
+    history.current_state.editor.?.selection = &seeded_selection;
+    runToIdle(&history);
+
+    // ctrl+A adds the other 7, skipping the present two — one player
+    // action, one undo step.
+    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, .{});
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try testing.expect(
+        history.current_state.event_stack[0].player_input_event == .player_select_editor_all,
+    );
+    runToIdle(&history);
+
+    const selection = history.current_state.editor.?.selection;
+    try testing.expectEqual(@as(usize, 9), selection.len);
+    try testing.expect(selectionContainsEntry(selection, .{ .tile = .{ .x = 9, .y = 9 } }));
+    try testing.expect(selectionContainsEntry(selection, .{ .entity_placement = 0 }));
+    try testing.expect(selectionContainsEntry(selection, .{ .ground_item_placement = 0 }));
+    try testing.expect(selectionContainsEntry(selection, .{ .decoration_placement = 0 }));
+    try testing.expect(selectionContainsEntry(selection, .{ .decoration_placement = 1 }));
+    try testing.expect(selectionContainsEntry(selection, .level_end));
+
+    // One undo reverts the whole batch back to the seeded partial.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    const restored = history.current_state.editor.?.selection;
+    try testing.expectEqual(@as(usize, 2), restored.len);
+    try testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, restored[0]);
+    try testing.expectEqual(types.Selectable.player_start, restored[1]);
+}
+
+test "player_select_editor_all: no-op without the select tool, and when everything is already selected" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+    }};
+    var history = harness.newHistory(editorStateWith(marqueeTestEditor(&levels)));
+    runToIdle(&history);
+
+    // Not the select tool (a paint tool): the selection ops are
+    // select-tool-only, so ctrl+A never fires.
+    history.current_state.editor.?.active_tool = .tile;
+    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, .{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Select tool, but everything (the tile + the '!') is already
+    // selected: the plan is empty, so nothing fires (no dead undo step).
+    history.current_state.editor.?.active_tool = .select;
+    const everything = [_]types.Selectable{ .{ .tile = .{ .x = 1, .y = 1 } }, .player_start };
+    history.current_state.editor.?.selection = &everything;
+    input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, .{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
+/// Membership check for a `Selectable` entry in a selection slice (test-
+/// local; the production `selectionContains` is file-private in
+/// event_handlers.zig).
+fn selectionContainsEntry(selection: []const types.Selectable, entry: types.Selectable) bool {
+    for (selection) |selected| {
+        if (std.meta.eql(selected, entry)) return true;
+    }
+    return false;
+}
+
 // --- Select-tool selection move (player_move_editor_selection) -------------
 
 fn moveTestEditor(levels: []const types.EditorLevel) types.Editor {
