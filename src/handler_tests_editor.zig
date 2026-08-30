@@ -15,14 +15,21 @@ const test_harness = @import("test_harness.zig");
 const Harness = test_harness.Harness;
 const runToIdle = test_harness.runToIdle;
 
-/// A minimal editor-screen starting state with `level_count` empty levels.
+/// A minimal editor-screen starting state (editor default: no palette, no
+/// levels).
 fn editorStartingState(levels: []const types.EditorLevel) state.GameState {
+    return editorStateWith(.{ .levels = levels });
+}
+
+/// An editor-screen starting state carrying a full `Editor` (palette +
+/// levels) — the placement-click tests need palette + placements.
+fn editorStateWith(editor: types.Editor) state.GameState {
     return .{
         .screen = .editor,
         .event_stack = &.{},
         .player_data = .{},
         .camera = null,
-        .editor = .{ .levels = levels },
+        .editor = editor,
         .replay_viewer = null,
         .campaign = null,
         .mission = null,
@@ -347,4 +354,293 @@ test "editor_delete_decoration_placement: removes the placement, order preserved
     try testing.expectEqual(@as(usize, 2), level.decoration_placements.len);
     try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.decoration_placements[0].position);
     try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, level.decoration_placements[1].position);
+}
+
+/// Two palette entity types (a Skeleton and a Wolf) for the placement
+/// tests — retyping needs a second type to switch to.
+fn placementTestEditor(
+    levels: []const types.EditorLevel,
+) types.Editor {
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } },
+        .{ .id = "Wolf", .template = .{ .name = "Wolf", .sprite = "wolf", .team = 1 } },
+    };
+    return .{ .levels = levels, .entity_types = &entity_types };
+}
+
+test "player_place_editor_entity: empty tile → enemy placed on it" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{.{ .x = 2, .y = 2 }};
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
+    var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
+            .type_id = 1,
+            .position = .{ .x = 2, .y = 2 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.entity_placements.len);
+    try testing.expectEqual(@as(u32, 1), level.entity_placements[0].type_id);
+    try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, level.entity_placements[0].position);
+    // The tile was already there — untouched.
+    try testing.expectEqual(@as(usize, 1), level.level_tiles.len);
+}
+
+test "player_place_editor_entity: no tile → tile placed + enemy on top" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
+            .type_id = 0,
+            .position = .{ .x = 3, .y = 1 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expect(hasTile(level, .{ .x = 3, .y = 1 }));
+    try testing.expectEqual(@as(usize, 1), level.entity_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 3, .y = 1 }, level.entity_placements[0].position);
+}
+
+test "player_place_editor_entity: decoration + missing tile → both handled, one undo reverts" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const footprint = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "stone_2",
+        .sprite = "stone_2",
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 256, .y = 256 },
+    }};
+    const decoration_placements = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 1, .y = 0 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .decoration_placements = &decoration_placements,
+    }};
+    var editor = placementTestEditor(&levels);
+    editor.decoration_types = &decoration_types;
+    var history = harness.newHistory(editorStateWith(editor));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
+            .type_id = 0,
+            .position = .{ .x = 1, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 0), level.decoration_placements.len);
+    try testing.expect(hasTile(level, .{ .x = 1, .y = 0 }));
+    try testing.expectEqual(@as(usize, 1), level.entity_placements.len);
+
+    // One click = one idle point: a single undo reverts decoration + tile
+    // + enemy together.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    const reverted = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), reverted.decoration_placements.len);
+    try testing.expect(!hasTile(reverted, .{ .x = 1, .y = 0 }));
+    try testing.expectEqual(@as(usize, 0), reverted.entity_placements.len);
+}
+
+test "player_place_editor_entity: player start and level end are no-ops" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 4, .y = 0 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 4, .y = 0 },
+    }};
+    var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
+    runToIdle(&history);
+
+    for ([_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 4, .y = 0 } }) |position| {
+        event_handlers.pushEvents(
+            &history.current_state,
+            &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
+                .type_id = 0,
+                .position = position,
+            } } }},
+            history.current_arena.allocator(),
+        );
+        runToIdle(&history);
+    }
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 0), level.entity_placements.len);
+    try testing.expectEqual(@as(usize, 2), level.level_tiles.len);
+}
+
+test "player_place_editor_entity: existing enemy is retyped in place, same type is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{.{ .x = 1, .y = 1 }};
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0, // Skeleton
+        .position = .{ .x = 1, .y = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .entity_placements = &entity_placements,
+    }};
+    var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
+    runToIdle(&history);
+
+    // Different type → retyped in place: same index, same position, new
+    // type_id, placement count unchanged.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
+            .type_id = 1, // Wolf
+            .position = .{ .x = 1, .y = 1 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    var level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.entity_placements.len);
+    try testing.expectEqual(@as(u32, 1), level.entity_placements[0].type_id);
+    try testing.expectEqual(types.Vector2{ .x = 1, .y = 1 }, level.entity_placements[0].position);
+
+    // Same type again → nothing to do (no do-nothing undo step).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
+            .type_id = 1,
+            .position = .{ .x = 1, .y = 1 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.entity_placements.len);
+    try testing.expectEqual(@as(u32, 1), level.entity_placements[0].type_id);
+}
+
+test "player_place_editor_entity: ground item on the tile is deleted, enemy placed" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{.{ .x = 2, .y = 0 }};
+    const item_placements = [_]types.ItemPlacement{
+        .{ .type_id = 0, .position = .{ .x = 2, .y = 0 } }, // deleted
+        .{ .type_id = 0, .position = .{ .x = 5, .y = 5 } }, // untouched
+    };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .item_placements = &item_placements,
+    }};
+    var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
+            .type_id = 0,
+            .position = .{ .x = 2, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.item_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 5, .y = 5 }, level.item_placements[0].position);
+    try testing.expectEqual(@as(usize, 1), level.entity_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, level.entity_placements[0].position);
+}
+
+test "editor_set_entity_placement_type: retypes without touching position or count" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_placements = [_]types.EntityPlacement{
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 0 } },
+    };
+    const levels = [_]types.EditorLevel{.{ .entity_placements = &entity_placements }};
+    var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_entity_placement_type = .{
+            .level_index = 0,
+            .placement_index = 1,
+            .type_id = 1,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 2), level.entity_placements.len);
+    try testing.expectEqual(@as(u32, 0), level.entity_placements[0].type_id);
+    try testing.expectEqual(@as(u32, 1), level.entity_placements[1].type_id);
+    try testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, level.entity_placements[1].position);
+}
+
+test "editor_delete_item_placement: removes the placement, order preserved" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const item_placements = [_]types.ItemPlacement{
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 1 } },
+        .{ .type_id = 0, .position = .{ .x = 2, .y = 2 } },
+    };
+    const levels = [_]types.EditorLevel{.{ .item_placements = &item_placements }};
+    var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_delete_item_placement = .{
+            .level_index = 0,
+            .placement_index = 1,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 2), level.item_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.item_placements[0].position);
+    try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, level.item_placements[1].position);
 }

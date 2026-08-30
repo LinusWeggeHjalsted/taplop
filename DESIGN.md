@@ -1906,10 +1906,22 @@ is determined by the active tool:
   Deferred: right-click erase and drag-painting (one `editor_set_tile` per
   cell crossed). Does not modify the selection set.
 - **Placement tools (enemy/decoration/item type):** click places one
-  instance of that type at the cursor position (pushes an
-  `editor_place_*` event). Placing does NOT select the placed instance —
-  you switch to the selection tool to select. (Auto-select-after-place is
-  deliberately NOT the model; keeps tool responsibilities disjoint.)
+  instance of that type at the cursor position. The ENEMY tool is landed
+  (`player_place_editor_entity` — the decoration/item tools mirror it
+  later): the click's effect is computed from state as occupant
+  replacement — player start / level end → no-op (never overwritten);
+  covering decoration footprints → deleted; missing tile → placed (the
+  enemy stands ON a tile); co-located ground item → deleted; existing
+  enemy → RETYPED in place (`editor_set_entity_placement_type` — identity
+  + position stay stable, preferred over delete + re-place; same type
+  already there → nothing to do); empty tile → `editor_place_entity`.
+  **One thing per placed tile is an invariant** — `editor_place_entity`
+  panics on an occupied tile (the orchestrator clears occupants first);
+  the decoration/item placement events get the same guard when they land,
+  and future move/drag handlers must preserve it. Placing does NOT select
+  the placed instance — you switch to the selection tool to select.
+  (Auto-select-after-place is deliberately NOT the model; keeps tool
+  responsibilities disjoint.)
 
 **Selection model (`Selectable` union).** The viewport can contain
 heterogeneous selectable things; multi-select is a REQUIRED feature
@@ -1975,7 +1987,11 @@ bar restyle: collapsed (or empty) groups sit flush against the bottom of the
 screen (expanded groups keep the hovering strip), and every editor `+`
 (palette add-new + the add-level cell right of the level tabs) is a square
 `ui/panel` cell; the add-level `+` renders inert (tooltip only — its event
-wiring is a TODO).
+wiring is a TODO). Enemy-tool clicks landed (see Placement tools above):
+`player_place_editor_entity` + the `editor_place_entity` /
+`editor_delete_item_placement` / `editor_set_entity_placement_type`
+handler arms, and `handleIdleInput`'s editor arm is now a tool switch (tile
+paint + enemy placement wired).
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
 struct exists in events.zig (`editor_add_level` / `editor_delete_level` /
@@ -1989,7 +2005,9 @@ events — see Level theme below) / `editor_set_mission_name` /
 / `editor_set_entity_*` (20+ field setters) / `editor_set_decoration_*` /
 `editor_set_item_*` / `editor_add_*_layer` / `editor_remove_*_layer` /
 `editor_set_*_layer`). `handleEditorEvent` implements the arms the landed UI
-slices need (`editor_set_tile` both directions, `editor_delete_decoration_placement`); the rest still `@panic` so an unhooked edit verb
+slices need (`editor_set_tile` both directions, `editor_delete_decoration_placement`,
+`editor_place_entity`, `editor_set_entity_placement_type`,
+`editor_delete_item_placement`); the rest still `@panic` so an unhooked edit verb
 fails fast rather than silently no-op'ing. Remaining handlers land with
 their UI slices.
 

@@ -6264,3 +6264,58 @@ Tests: level-tabs test extended (11 elements, + panel square/top-aligned/
 tooltip/inert), new collapsed-layout test (expanded header hovers,
 collapsed headers + glyphs flush bottom, no type cells from collapsed
 groups, 3 square plus panels).
+
+### Editor viewport input slice 2 — enemy-tool placement (occupant replacement)
+
+Clicking with an ENEMY palette tool active places that entity type at the
+clicked level position, replacing whatever occupies the tile. Left click
+only; the decoration / item tools mirror this orchestrator later.
+
+**Occupant semantics** (all computed from state in the orchestrator
+handler, `player_place_editor_entity { type_id, position }`):
+- player start (`!`) or level end (`=`) at the position → no-op; the
+  singletons are movable, never overwritten.
+- covering decoration footprint(s) → deleted (all of them, descending
+  index order — same LIFO-drain index-stability reasoning as tile paint).
+- no tile there → one is placed (the enemy stands ON a tile).
+- co-located ground item → deleted (order-preserving removal).
+- existing enemy → RETYPED in place via the new
+  `editor_set_entity_placement_type` event (index + position stable —
+  nothing referencing the placement shifts; no delete/re-append reordering);
+  same type already there → nothing pushed (no do-nothing undo step).
+- otherwise → `editor_place_entity` (append).
+
+**One thing per placed tile is now an invariant** (user decision): there
+is no path that stacks entities / ground items on one tile, and
+`editor_place_entity` ENFORCES it — it panics if the target tile already
+carries an entity or item placement (the orchestrator clears occupants
+first, so reaching the place occupied is a logic bug — fail-fast, not
+silent corruption). Decoration/item placement events get the same guard
+when they land; future move/drag handlers must preserve the invariant.
+Recorded in DESIGN → Level Editor → Active-tool model (placement tools).
+
+**Why the type_id rides in the event payload:** handlers can't read
+`UiState` for event semantics — it lives on SessionState, which replay
+doesn't reconstruct (the live session's UI state would leak into replay).
+Same reasoning as `player_set_editor_level`. `validatePlayerAction` arm:
+screen/editor/levels + type_id in palette range (an out-of-range id would
+create a placement the view can't resolve; the live path can't produce
+one, a hand-crafted log could).
+
+**Input:** `handleIdleInput`'s editor arm became a tool switch — `.tile`
+→ paint, `.entity_type` → place; select/decoration/item are no-ops until
+their slices. Enter still folds into `tile_clicked`, but the tile cursor
+currently resolves only under the tile tool (cursor-follow for placement
+tools is a TODO).
+
+**Handler arms added** to `handleEditorEvent` (rest still panic):
+`editor_place_entity` (occupancy-guarded append),
+`editor_set_entity_placement_type` (in-place retype),
+`editor_delete_item_placement` (order-preserving removal, same shape as
+the decoration delete).
+
+Tests: `handler_tests_editor.zig` +7 (empty-tile place; missing-tile
+place; decoration + missing tile + one-undo reverts all three; player
+start / level end no-ops; retype in place + same-type no-op; ground item
+deleted + enemy placed; direct retype + item-delete arms) with a shared
+two-type palette fixture (`placementTestEditor`).

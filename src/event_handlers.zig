@@ -307,6 +307,78 @@ fn handleEditorEvent(
             );
             level.decoration_placements = placements;
         },
+        .editor_place_entity => |place| {
+            if (place.level_index >= editor.levels.len) {
+                @panic("editor_place_entity: level index out of range");
+            }
+            const level = &@constCast(editor.levels)[place.level_index];
+            // One thing per placed tile (see the placement-tools bullet in
+            // DESIGN → Level Editor → Active-tool model): a placement never
+            // lands on a tile that already carries an entity or item. The
+            // click orchestrator clears occupants first, so reaching here
+            // occupied is a logic bug — fail fast.
+            for (level.entity_placements) |placement| {
+                if (placement.position.x == place.position.x and
+                    placement.position.y == place.position.y)
+                {
+                    @panic("editor_place_entity onto a tile that already has an entity");
+                }
+            }
+            for (level.item_placements) |placement| {
+                if (placement.position.x == place.position.x and
+                    placement.position.y == place.position.y)
+                {
+                    @panic("editor_place_entity onto a tile that already has a ground item");
+                }
+            }
+            var placements = allocator.alloc(
+                types.EntityPlacement,
+                level.entity_placements.len + 1,
+            ) catch @panic("failed to allocate entity placements");
+            @memcpy(placements[0..level.entity_placements.len], level.entity_placements);
+            placements[level.entity_placements.len] = .{
+                .type_id = place.type_id,
+                .position = place.position,
+            };
+            level.entity_placements = placements;
+        },
+        .editor_set_entity_placement_type => |set| {
+            if (set.level_index >= editor.levels.len) {
+                @panic("editor_set_entity_placement_type: level index out of range");
+            }
+            const level = &@constCast(editor.levels)[set.level_index];
+            if (set.placement_index >= level.entity_placements.len) {
+                @panic("editor_set_entity_placement_type: placement index out of range");
+            }
+            // In-place retype: identity (index) + position stay stable, so
+            // nothing referencing the placement shifts.
+            @constCast(level.entity_placements)[set.placement_index].type_id = set.type_id;
+        },
+        .editor_delete_item_placement => |delete| {
+            if (delete.level_index >= editor.levels.len) {
+                @panic("editor_delete_item_placement: level index out of range");
+            }
+            const level = &@constCast(editor.levels)[delete.level_index];
+            if (delete.placement_index >= level.item_placements.len) {
+                @panic("editor_delete_item_placement: placement index out of range");
+            }
+            var placements = allocator.alloc(
+                types.ItemPlacement,
+                level.item_placements.len - 1,
+            ) catch @panic("failed to allocate item placements");
+            // Order-preserving removal (same reasoning as the decoration
+            // delete — indices are the identity the move/delete events
+            // address).
+            @memcpy(
+                placements[0..delete.placement_index],
+                level.item_placements[0..delete.placement_index],
+            );
+            @memcpy(
+                placements[delete.placement_index..],
+                level.item_placements[delete.placement_index + 1 ..],
+            );
+            level.item_placements = placements;
+        },
         else => @panic("editor event handler not implemented"),
     }
 }
@@ -925,6 +997,105 @@ fn handlePlayerInputEvent(
                             .level_index = @intCast(level_index),
                             .placement_index = @intCast(placement_index),
                         } } }) catch @panic("failed to allocate editor paint events");
+                    }
+                }
+                pushEvents(current, pushes.items, allocator);
+            }
+        },
+        // Enemy-tool click: place the palette entity type at the clicked
+        // tile, replacing whatever occupies it. Occupant semantics (see
+        // DESIGN → Level Editor → Active-tool model, placement tools):
+        // player start / level end → no-op (never overwritten); covering
+        // decorations → deleted; missing tile → placed; co-located ground
+        // item → deleted; existing enemy → RETYPED in place
+        // (`editor_set_entity_placement_type`, not delete + re-place —
+        // stable identity); empty tile → placed. Pushes are LIFO-drained:
+        // the array below is the REVERSE of the processing order, and the
+        // per-kind delete lists are pushed ascending so they process
+        // descending (index-stable removal). All sub-events share one idle
+        // point — one undo reverts the whole click. The one-thing-per-tile
+        // invariant is enforced at `editor_place_entity` (panic on an
+        // occupied tile) — the deletes above run first, so the place lands
+        // on a cleared tile.
+        .player_place_editor_entity => |place| {
+            if (current.editor) |*editor| {
+                if (editor.levels.len == 0) return;
+                const level_index = editor.active_level_index;
+                if (level_index >= editor.levels.len) return;
+                const level = &editor.levels[level_index];
+
+                // The '!' and '=' are singletons, movable never deletable —
+                // an enemy never overwrites them.
+                if (level.player_start.x == place.position.x and
+                    level.player_start.y == place.position.y) return;
+                if (level.level_end) |level_end_position| {
+                    if (level_end_position.x == place.position.x and
+                        level_end_position.y == place.position.y) return;
+                }
+
+                // Is a tile already there (the enemy stands ON a tile — a
+                // missing one is placed as part of the click)?
+                var tile_present = false;
+                for (level.level_tiles) |tile| {
+                    if (tile.x == place.position.x and tile.y == place.position.y) {
+                        tile_present = true;
+                        break;
+                    }
+                }
+
+                // Co-located entity placement, if any (invariant: at most
+                // one — the loop degrades gracefully if that's ever
+                // violated).
+                var occupant_index: ?usize = null;
+                for (level.entity_placements, 0..) |placement, placement_index| {
+                    if (placement.position.x == place.position.x and
+                        placement.position.y == place.position.y)
+                    {
+                        occupant_index = placement_index;
+                        break;
+                    }
+                }
+
+                var pushes: std.ArrayList(Event) = .empty;
+                if (occupant_index == null) {
+                    pushes.append(allocator, .{ .editor_event = .{ .editor_place_entity = .{
+                        .level_index = @intCast(level_index),
+                        .type_id = place.type_id,
+                        .position = place.position,
+                    } } }) catch @panic("failed to allocate editor place events");
+                } else if (level.entity_placements[occupant_index.?].type_id != place.type_id) {
+                    // Same type already there — nothing to do (no no-op
+                    // undo step).
+                    pushes.append(allocator, .{ .editor_event = .{ .editor_set_entity_placement_type = .{
+                        .level_index = @intCast(level_index),
+                        .placement_index = @intCast(occupant_index.?),
+                        .type_id = place.type_id,
+                    } } }) catch @panic("failed to allocate editor place events");
+                }
+                if (!tile_present) {
+                    pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
+                        .level_index = @intCast(level_index),
+                        .position = place.position,
+                        .is_floor = true,
+                    } } }) catch @panic("failed to allocate editor place events");
+                }
+                for (level.item_placements, 0..) |placement, placement_index| {
+                    if (placement.position.x == place.position.x and
+                        placement.position.y == place.position.y)
+                    {
+                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_item_placement = .{
+                            .level_index = @intCast(level_index),
+                            .placement_index = @intCast(placement_index),
+                        } } }) catch @panic("failed to allocate editor place events");
+                    }
+                }
+                for (level.decoration_placements, 0..) |placement, placement_index| {
+                    const type_definition = editor.decoration_types[placement.type_id];
+                    if (decorationFootprintCovers(type_definition.footprint, placement.position, place.position)) {
+                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
+                            .level_index = @intCast(level_index),
+                            .placement_index = @intCast(placement_index),
+                        } } }) catch @panic("failed to allocate editor place events");
                     }
                 }
                 pushEvents(current, pushes.items, allocator);

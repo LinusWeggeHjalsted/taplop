@@ -1135,6 +1135,26 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_paint_editor_tile with no levels");
                     }
                 },
+                // Structural legality: the paint checks + the entity type
+                // in palette range (an out-of-range type_id would create a
+                // placement the view can't resolve — the live path can't
+                // produce one, a hand-crafted log could). The position is
+                // unrestricted (occupant no-op clicks are legal in a
+                // recorded session).
+                .player_place_editor_entity => |place| {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_place_editor_entity outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_place_editor_entity with no editor");
+                    };
+                    if (editor.levels.len == 0) {
+                        @panic("replay validation: player_place_editor_entity with no levels");
+                    }
+                    if (place.type_id >= editor.entity_types.len) {
+                        @panic("replay validation: player_place_editor_entity type id out of range");
+                    }
+                },
                 .player_replay_mission => {
                     if (self.current_state.last_completed_mission == null) {
                         @panic("replay validation: player_replay_mission with no completed mission");

@@ -1383,18 +1383,24 @@ pub fn handleIdleInput(
         return;
     }
 
-    // Editor edit mode: the tile tool paints on a world click (one click =
-    // one tile). The press-side world/UI arbitration in update() already
+    // Editor edit mode: viewport clicks are fully modal on the active
+    // tool. The press-side world/UI arbitration in update() already
     // consumed clicks over blocking UI (palette, tabs), so a surviving
     // tile_clicked is a viewport click. Enter folds into tile_clicked at
-    // the top of handleIdleInput, so the keyboard path paints at the tile
-    // cursor too. Other tools have no viewport input yet.
+    // the top of handleIdleInput, so the keyboard path acts at the tile
+    // cursor too. Landed tools: tile paint + enemy placement; the
+    // decoration / item / selection tools land in later slices.
     if (current.screen == .editor) {
-        if (history.session.ui_state.editor_active_tool == .tile) {
-            if (idle.tile_clicked) |clicked_position| {
-                event_handlers.pushPlayerAction(current, .{ .player_paint_editor_tile = .{
+        if (idle.tile_clicked) |clicked_position| {
+            switch (history.session.ui_state.editor_active_tool) {
+                .tile => event_handlers.pushPlayerAction(current, .{ .player_paint_editor_tile = .{
                     .position = clicked_position,
-                } }, allocator);
+                } }, allocator),
+                .entity_type => |type_id| event_handlers.pushPlayerAction(current, .{ .player_place_editor_entity = .{
+                    .type_id = type_id,
+                    .position = clicked_position,
+                } }, allocator),
+                .select, .decoration_type, .item_type => {},
             }
         }
         return;

@@ -264,6 +264,15 @@ pub const EditorEvent = union(enum) {
         placement_index: u32,
         new_position: Vector2,
     },
+    // Retype an entity placement to another palette type in place (the
+    // enemy-tool click on an occupied tile): identity (index) and position
+    // stay stable — nothing referencing the placement shifts. Preferred
+    // over delete + re-place for exactly that reason.
+    editor_set_entity_placement_type: struct {
+        level_index: u32,
+        placement_index: u32,
+        type_id: u32,
+    },
     editor_move_decoration_placement: struct {
         level_index: u32,
         placement_index: u32,
@@ -521,6 +530,21 @@ pub const PlayerInputEvent = union(enum) {
     // Decorations & Footprint → Placement invariant). Erase (right-click)
     // and drag-painting are deferred; each lands as its own gesture.
     player_paint_editor_tile: struct {
+        position: Vector2,
+    },
+    // Enemy-tool click in the editor viewport: place the palette entity
+    // type at the clicked tile. The handler computes the full effect from
+    // state (see the placement-tools bullet in DESIGN → Architecture →
+    // Level Editor → Active-tool model): occupant replacement — covering
+    // decorations are deleted, a missing tile is placed, a co-located
+    // ground item is deleted, an existing enemy is RETYPED in place (not
+    // delete + re-place), and the player start / level end are never
+    // overwritten (no-op). One thing per placed tile is an invariant —
+    // `editor_place_entity` panics on an occupied tile. `type_id` rides in
+    // the payload (handlers can't read UiState — replay doesn't
+    // reconstruct it). Decoration/item tools land as their own slices.
+    player_place_editor_entity: struct {
+        type_id: u32,
         position: Vector2,
     },
 

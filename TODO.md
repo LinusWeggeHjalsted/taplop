@@ -445,10 +445,14 @@ yet implemented. Remaining work:
   DONE.md), the top row (options + undo buttons via the shared
   `buildTopBar`, plus 128px level tabs that switch the active level via
   `player_set_editor_level` — see DONE.md), the viewport world scene, and
-  the first viewport-input slice: TILE PAINT (one click = one tile via
+  the first viewport-input slices: TILE PAINT (one click = one tile via
   `player_paint_editor_tile`; replaces covering decorations; tile-tool
   cursor outline drawn over empty space — see DONE.md + DESIGN → Level
-  Editor → Active-tool model). Deferred from it: right-click erase,
+  Editor → Active-tool model) and ENEMY-TOOL PLACEMENT
+  (`player_place_editor_entity`: occupant replacement — covering
+  decorations deleted, missing tile placed, ground item deleted,
+  existing enemy retyped in place, player start / level end never
+  overwritten — see DONE.md). Deferred: right-click erase,
   drag-painting. Still-needed event
   structs: `editor_toggle_inspector` / `editor_set_tool` /
   gradient-override setters. Default level template
@@ -456,9 +460,10 @@ yet implemented. Remaining work:
   bottom tool palette + the viewport world scene (tiles, palette-resolved
   placements, `!`/`=` markers; camera centered on the active level's
   player_start, right-drag pan) — reachable via the main-menu "Editor"
-  button. Remaining viewport INPUT: erase gesture, drag-paint, placement
-  tools (place/drag/move), selection tool (click / shift-click /
-  marquee).
+  button. Remaining viewport INPUT: erase gesture, drag-paint, decoration
+  + item placement tools (mirror the enemy tool's occupant-replacement
+  orchestrator), selection tool (click / shift-click / marquee),
+  cursor-follow for placement tools (currently tile-tool only).
 - **Right-click in the editor viewport — gesture split still to pick.**
   Right-drag pans the camera; a future right-click is the natural erase
   gesture for the tile tool (drag-paint being deferred removes the
