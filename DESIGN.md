@@ -1867,7 +1867,49 @@ layout + a left inspector + a right settings sidebar:
   assignment, gear equip, stat fields, footprint editing (decorations),
   etc. Base-sprite selection is the one exception — it goes through the
   centered sprite picker (below); decoration layers added via the
-  inspector pick their sprite through the picker the same way.
+  inspector pick their sprite through the picker the same way. The
+  panel scrolls: the wheel over it shifts `UiState.editor_inspector_scroll`
+  (clamped in the builder), and only rows fitting the panel height are
+  emitted (offscreen rows can't be clicked).
+- **Inspector fields (enemy types — settled):** the COUPLING CONTRACT is
+  the parser: every key `parseEntityDefinition` reads maps to exactly
+  one inspector control, and field bounds are single-sourced from the
+  `max_*` constants in loaders.zig (the parser's clamp and the UI's
+  commit-time clamp read the same constants — a bound can't exist in
+  one place only). Event routing: one thin `PlayerInputEvent` wrapper
+  per field verb → the existing `editor_set_entity_*` EditorEvent (the
+  orchestrator convention; the replay whitelist requires a
+  PlayerInputEvent at the top of every stack — see Determinism &
+  Tiebreaking). Controls per field:
+  - name, sprite id: text inputs (see UI Framework → Text input
+    widget). The sprite id is a plain text field in v1 — the centered
+    sprite picker replaces it later, and sprite RESOLUTION must then
+    prioritize `.png`s in the mission folder being edited (custom
+    assets) over shipped sprites.
+  - color_index: inline swatch row (the settings screen's 6-swatch
+    player-color row is the precedent) — not a picker.
+  - displays_weapons: toggle.
+  - base stats (max_health, defense, speed, aggro_range): numeric text
+    inputs, UNBOUNDED by design — gear bounds exist for player-pickup
+    balance (the player acquires exactly those items), while enemies
+    are deliberately allowed to be as unbalanced as the author wants;
+    validation guarantees a level is completable either way. momentum
+    is NOT authorable (a transient combat stat, every entity starts 0
+    — a level file can't set it; `editor_set_entity_momentum` was
+    removed for exactly this).
+  - weapons (main/off hand, nullable): the 6 weapon types as an INLINE
+    row — picking a type while the slot is null CREATES a default
+    weapon of that type (name "New <Type>", damage 0); picking another
+    type while present RETYPES in place (name/damage kept); a Delete
+    button clears the slot to null. weapon_damage: numeric input
+    clamped to `max_weapon_damage`.
+  - other gear (amulet/coat/gloves/pants/boots, nullable): Add creates
+    a default item, Delete clears to null; per-stat numeric inputs
+    clamped to the gear `max_*` constants.
+  - utility skills (slot_4..slot_8, nullable): the centered picker
+    (below) — 25 skills don't fit a row; it is the picker framework's
+    first consumer.
+  - entity layers: deferred with the sprite picker (they share it).
 - **Settings sidebar (right bar):** mission + active-level settings.
   User-toggleable like the inspector, open by default. Mission settings:
   mission name. Active-level settings: level name, theme settings
@@ -2736,3 +2778,49 @@ rAF IS vsync on web, and no page code can render faster than it — so the
 web label reads "(always on in browser)" and both the toggle and the
 render cap can only ever render *slower* than refresh, never faster.
 
+
+### Text input widget
+
+The shared freeform-editing widget (first consumers: the editor
+inspector's name/sprite/stat fields; later the settings screen's deferred
+freeform-integer entry). Design:
+
+- **Pure core, unit-tested:** `TextField` (ui.zig) — a fixed-capacity
+  (128-byte) UTF-8 buffer with `length`, a byte-index `caret`, and a
+  `selection_anchor`. All edit operations are pure methods over the
+  struct (insert / deleteBackward / deleteForward / moveCaretTo with a
+  `select` flag), so the editing logic is testable without raylib.
+  Caret movement is CODEPOINT-aware (never splits a multibyte char).
+  `moveCaretTo(index, select)` is the one movement primitive: click =
+  `select=false` (clears the anchor), drag/shift+arrow = `select=true`
+  (sets the anchor if unset, then moves the caret) — one primitive
+  covers click-position, drag-select, and shift+arrow selection.
+  Character FILTERING (digits-only for numeric fields) is not core —
+  the input-routing layer knows the field kind and filters before
+  insert.
+- **Backend seam:** the backend drains the platform char queue each
+  frame into a transient UTF-8 string on the polled input; the pipeline
+  routes it to the focused field. The only raylib-side surface — the
+  rest of the pipeline is headless-testable by injecting the string.
+- **Focus model:** one focused field at a time, state on `UiState` (off
+  GameState — transient like drag state; the COMMIT is the event, the
+  buffer never needs replay). While a field is focused, ALL action
+  translation is suppressed (chords too, ctrl+Z included — Escape
+  first, then undo); the field's keys route to the buffer: chars
+  insert, Backspace/Delete/arrows edit, shift+arrows select.
+- **Resolution semantics (M2 + commit-on-dismiss):** Enter or the
+  field's OK button COMMITS (validate/clamp, push the field's wrapper
+  event, clear focus); Escape DISCARDS. A click on another INSPECTOR
+  control commits the old field and the click proceeds normally
+  (one-click field switching). A click ANYWHERE ELSE (viewport, undo,
+  tabs, palette) commits the old field and is CONSUMED as pure
+  dismissal — a click outside the inspector mid-edit is either
+  deliberate dismissal or a misclick, and placing an enemy or firing
+  undo as a side effect of ending an edit is the surprising outcome.
+  Corollary: Undo while focused commits the field and eats the click —
+  the NEXT click performs the undo (commit-and-immediately-undo in one
+  click would read as "undo is broken").
+- **Render:** the field's builder emits the field element; `view()`
+  adds the caret (a thin solid_rect positioned by measuring the prefix
+  via FontMetrics) and the selection highlight rect for the focused
+  field only.

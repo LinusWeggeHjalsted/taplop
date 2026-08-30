@@ -311,9 +311,9 @@ Open:
         `frame()`; audio via the diff-and-apply; vsync restart-only. DONE.
   - [ ] **Deferred — text input widget:** freeform integer entry for
         `render_fps_cap` / `animation_fps` (currently sliders cover them).
-        Needs a focus model + text buffer on `SessionState` + raw-character
-        keyboard routing seam in `translateInput`/`pollInput` + caret render.
-        Revisit if slider-only entry feels limiting.
+        The WIDGET itself lands with the editor inspector (shared piece:
+        DESIGN → UI Framework → Text input widget); this item reduces to
+        wiring the two settings fields to it once it exists.
 - buildOptionsMenu: settings controls (volume, gameplay toggles).
 - buildMainMenu Continue availability: DONE — Continue now shows when
   PlayerData is populated OR an autosave exists; clicking it resumes (loads
@@ -491,9 +491,40 @@ yet implemented. Remaining work:
   options button + background panel, open by default; `Editor.inspector_open`
   + `player_toggle_editor_inspector` → `editor_toggle_inspector`, on the
   undo timeline — see DESIGN → Architecture → Level Editor → Editor UI
-  layout). Deferred: drag-painting. Still-needed event
-  structs: gradient-override setters (the inspector's field-edit events
-  exist; the field-editor UI is the next slice). Default level template
+  layout). The inspector FIELD EDITOR design is settled (enemy types
+  first): the coupling contract, controls per field, and event routing —
+  see DESIGN → Architecture → Level Editor → Editor UI layout →
+  "Inspector fields (enemy types — settled)" + DESIGN → UI Framework →
+  Text input widget (the new shared widget: pure core, backend char seam,
+  M2 focus semantics, commit-on-dismiss). Slices:
+  - [ ] **1 — text input core:** the pure `TextField` (buffer/caret/
+        selection, codepoint-aware) + unit tests; then the backend char
+        seam, UiState focus state, routing (chars/keys → field, bindings
+        suppressed, M2 click-away), caret/selection render, proven with
+        the entity-name commit path end-to-end.
+  - [ ] **2 — inspector content scaffolding:** row layout (label + control
+        columns), section headers, scrollbar (`UiState.editor_inspector_scroll`)
+        + wheel routing over the panel + windowed render (only rows that
+        fit are emitted); target resolution (active enemy tool → its
+        type; empty state for other tools).
+  - [ ] **3 — scalar fields:** name + sprite id (text; sprite id is the
+        interim v1 until the picker), color_index swatch row,
+        displays_weapons toggle, base stats (numeric, UNBOUNDED — see
+        DESIGN) + wrappers/handlers/validation/tests. Rides with this
+        slice: REMOVE `editor_set_entity_momentum` (momentum is a
+        transient combat stat, not authorable — level files never set
+        it).
+  - [ ] **4 — gear + weapons:** nullable slots, weapon-type inline row
+        (create-on-pick-while-null / retype-while-present / delete),
+        gear Add/Delete, bounded numeric stat fields, name fields.
+  - [ ] **5 — utility skills:** the centered picker framework (first
+        consumer: the 25-skill list) + slot none/delete.
+  - [ ] **6 — later: sprite picker + entity layers:** replaces the interim
+        sprite-id text field; sprite resolution must PRIORITIZE `.png`s
+        in the mission folder being edited (custom assets) over shipped
+        sprites.
+  Deferred: drag-painting. Still-needed event
+  structs: gradient-override setters. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved
   placements, `!`/`=` markers; camera centered on the active level's
