@@ -1338,6 +1338,18 @@ fn handlePlayerInputEvent(
                 pushEvents(current, planEditorSelectionActions(editor, toggle.position, allocator), allocator);
             }
         },
+        // Select-tool marquee release: thin over the shared planner (the
+        // gesture handler fires only nonempty plans — see
+        // planEditorRegionSelectActions).
+        .player_select_editor_region => |select| {
+            if (current.editor) |*editor| {
+                pushEvents(
+                    current,
+                    planEditorRegionSelectActions(editor, select.start_position, select.end_position, allocator),
+                    allocator,
+                );
+            }
+        },
         // Tile-paint click: thin over the shared planner (the input layer
         // fires only nonempty plans — see planEditorTilePaintActions).
         .player_paint_editor_tile => |paint| {
@@ -2209,6 +2221,97 @@ pub fn planEditorSelectionActions(
         plan.append(allocator, variant) catch @panic("failed to allocate editor selection plan");
     }
     return plan.items;
+}
+
+/// Select-tool marquee planner: ADD every selectable thing inside the
+/// inclusive rectangle spanned by the two corner tiles (order-
+/// independent), skipping entries already in the selection (an add,
+/// never a remove — the plain click toggles). Region membership: level
+/// tiles / entity / item placements by position; a decoration when ANY
+/// of its footprint tiles is inside (matching the click hit-testing — if
+/// you can click it, you can marquee it); the '!' / '=' singletons by
+/// their tile. Deterministic order — tiles, entities, items, decorations,
+/// singletons, each in stored order — and the list is REVERSED before
+/// returning (the event stack is LIFO) so the entries process + land in
+/// the log in plan order. An empty plan (nothing in the region, or
+/// everything already selected) means no player action fires.
+pub fn planEditorRegionSelectActions(
+    editor: *const types.Editor,
+    start_position: Vector2,
+    end_position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+    const min_x = @min(start_position.x, end_position.x);
+    const max_x = @max(start_position.x, end_position.x);
+    const min_y = @min(start_position.y, end_position.y);
+    const max_y = @max(start_position.y, end_position.y);
+
+    var plan: std.ArrayList(Event) = .empty;
+    for (level.level_tiles) |tile| {
+        if (tile.x >= min_x and tile.x <= max_x and tile.y >= min_y and tile.y <= max_y) {
+            appendRegionSelectEntryIfNew(&plan, editor.selection, .{ .tile = tile }, allocator);
+        }
+    }
+    for (level.entity_placements, 0..) |placement, placement_index| {
+        if (placement.position.x >= min_x and placement.position.x <= max_x and
+            placement.position.y >= min_y and placement.position.y <= max_y)
+        {
+            appendRegionSelectEntryIfNew(&plan, editor.selection, .{ .entity_placement = @intCast(placement_index) }, allocator);
+        }
+    }
+    for (level.item_placements, 0..) |placement, placement_index| {
+        if (placement.position.x >= min_x and placement.position.x <= max_x and
+            placement.position.y >= min_y and placement.position.y <= max_y)
+        {
+            appendRegionSelectEntryIfNew(&plan, editor.selection, .{ .ground_item_placement = @intCast(placement_index) }, allocator);
+        }
+    }
+    for (level.decoration_placements, 0..) |placement, placement_index| {
+        // Any footprint tile inside the region grabs the decoration.
+        const world_tiles = loaders.decorationFootprintWorldTiles(
+            editor.decoration_types[placement.type_id].footprint,
+            placement.position,
+            allocator,
+        );
+        for (world_tiles) |world_tile| {
+            if (world_tile.x >= min_x and world_tile.x <= max_x and
+                world_tile.y >= min_y and world_tile.y <= max_y)
+            {
+                appendRegionSelectEntryIfNew(&plan, editor.selection, .{ .decoration_placement = @intCast(placement_index) }, allocator);
+                break;
+            }
+        }
+    }
+    if (level.player_start.x >= min_x and level.player_start.x <= max_x and
+        level.player_start.y >= min_y and level.player_start.y <= max_y)
+    {
+        appendRegionSelectEntryIfNew(&plan, editor.selection, .player_start, allocator);
+    }
+    if (level.level_end) |level_end_position| {
+        if (level_end_position.x >= min_x and level_end_position.x <= max_x and
+            level_end_position.y >= min_y and level_end_position.y <= max_y)
+        {
+            appendRegionSelectEntryIfNew(&plan, editor.selection, .level_end, allocator);
+        }
+    }
+
+    // LIFO: reverse so processing + log order = plan order.
+    std.mem.reverse(Event, plan.items);
+    return plan.items;
+}
+
+/// Append `entry`'s select event unless it is already in the selection
+/// (the marquee is an add — never a remove, never a duplicate).
+fn appendRegionSelectEntryIfNew(
+    plan: *std.ArrayList(Event),
+    selection: []const types.Selectable,
+    entry: types.Selectable,
+    allocator: std.mem.Allocator,
+) void {
+    if (selectionContains(selection, entry)) return;
+    plan.append(allocator, .{ .editor_event = .{ .editor_select = .{ .entry = entry } } }) catch
+        @panic("failed to allocate editor selection plan");
 }
 
 /// Process a single event from the stack. Applies the event to the current

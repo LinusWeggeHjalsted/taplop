@@ -844,6 +844,131 @@ pub fn handleRightClickEditorDelete(
         clearPendingRightClick(ui_state, .editor_delete);
     }
 }
+
+/// Editor-screen shift+left-drag: the select tool's MARQUEE. A press with
+/// Shift held over the viewport records the press tile; moving beyond the
+/// drag threshold promotes the gesture (the rectangle renders, the end
+/// corner tracks the pointer live); release with Shift STILL held adds
+/// everything inside the region (`player_select_editor_region` — skipping
+/// already-selected entries; the marquee never removes). Shift released
+/// mid-drag cancels. An UNPROMOTED release (no drag) acts as a plain
+/// click: the toggle the press would have fired had Shift not been held
+/// (the select arm in `handleIdleInput` defers to this gesture while
+/// Shift is held) — fired here with the same no-op gate. Mirrors the
+/// inventory salvage-region gesture (`handleDrag`) + the right-click
+/// clean-click disambiguation (`handleRightClickEditorDelete`).
+pub fn handleEditorMarquee(
+    history: *GameStateHistory,
+    pointer: input.PointerInput,
+    ui_elements: []const ui.UiElement,
+    camera: types.Camera,
+    camera_zoom: f32,
+    viewport: input.ViewportSize,
+) void {
+    const current = &history.current_state;
+    const ui_state = &history.session.ui_state;
+
+    // Editor edit mode + the select tool only. Not our context — clear any
+    // in-progress marquee (a stale gesture must not fire later).
+    if (current.screen != .editor or current.editor == null or
+        current.editor.?.active_tool != .select)
+    {
+        ui_state.editor_marquee = null;
+        return;
+    }
+
+    if (pointer.pressed) {
+        // Only a Shift press starts a marquee (Shift acquired mid-drag does
+        // not); a press over blocking UI belongs to the panel, never the
+        // world.
+        if (!pointer.modifiers.shift) return;
+        if (ui.blockingElementAt(ui_elements, pointer.position) != null) return;
+        const press_tile = input.screenToTile(
+            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+            camera,
+            camera_zoom,
+            viewport,
+        );
+        ui_state.editor_marquee = .{
+            .start_position = press_tile,
+            .end_position = press_tile,
+            .press_position = pointer.position,
+            .promoted = false,
+        };
+        return;
+    }
+
+    if (ui_state.editor_marquee) |*marquee| {
+        // Promotion: movement beyond the threshold (strict `>` — a
+        // zero-threshold config still tolerates a no-movement press+
+        // release as a click; same convention as the inventory drag +
+        // right-click cancel).
+        if (pointer.held) {
+            const dx = pointer.position.x - marquee.press_position.x;
+            const dy = pointer.position.y - marquee.press_position.y;
+            if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
+                marquee.promoted = true;
+            }
+        }
+        // The end corner tracks the pointer live, but only over the
+        // viewport (not blocking UI) — a release over a panel fires the
+        // LAST VALID region (inventory salvage-region behavior: the region
+        // keeps the last valid corner).
+        if (pointer.held and marquee.promoted and
+            ui.blockingElementAt(ui_elements, pointer.position) == null)
+        {
+            marquee.end_position = input.screenToTile(
+                .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+                camera,
+                camera_zoom,
+                viewport,
+            );
+        }
+    }
+
+    if (pointer.released) {
+        if (ui_state.editor_marquee) |marquee| {
+            if (marquee.promoted) {
+                // Shift still held at release → add the region (no-op gate:
+                // an empty or all-already-selected region never fires — no
+                // dead undo step); Shift released mid-drag → cancel.
+                if (pointer.modifiers.shift) {
+                    if (current.editor) |*editor| {
+                        const arena = history.current_arena.allocator();
+                        if (event_handlers.planEditorRegionSelectActions(
+                            editor,
+                            marquee.start_position,
+                            marquee.end_position,
+                            arena,
+                        ).len > 0) {
+                            event_handlers.pushPlayerAction(current, .{ .player_select_editor_region = .{
+                                .start_position = marquee.start_position,
+                                .end_position = marquee.end_position,
+                            } }, arena);
+                        }
+                    }
+                }
+            } else {
+                // No drag: a plain click — fire the toggle at the press tile
+                // (the same no-op gate as the select arm: empty ground
+                // never fires).
+                if (current.editor) |*editor| {
+                    const arena = history.current_arena.allocator();
+                    if (event_handlers.planEditorSelectionActions(
+                        editor,
+                        marquee.start_position,
+                        arena,
+                    ).len > 0) {
+                        event_handlers.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
+                            .position = marquee.start_position,
+                        } }, arena);
+                    }
+                }
+            }
+        }
+        ui_state.editor_marquee = null;
+    }
+}
 pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
     if (!std.mem.eql(u8, log_game_version, build_info.game_version)) {
         std.debug.print(
@@ -1644,6 +1769,11 @@ pub fn handleIdleInput(
                         }
                     },
                     .select => {
+                        // While Shift is held the marquee gesture owns the
+                        // press (`handleEditorMarquee`): a shift press never
+                        // toggles — an unpromoted shift release fires the
+                        // toggle from there instead.
+                        if (modifiers.shift) return;
                         const plan = event_handlers.planEditorSelectionActions(editor, clicked_position, allocator);
                         if (plan.len > 0) {
                             event_handlers.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
@@ -2485,6 +2615,168 @@ test "select_editor_tool: changing tools clears the selection, re-selecting keep
     try std.testing.expectEqual(@as(usize, 1), selection.len);
     try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection[0]);
 }
+
+test "handleEditorMarquee: shift-drag adds the region, shift-click toggles, shift-release cancels" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 3, .y = 3 } };
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    // The select tool is the default; state it for the reader.
+    history.current_state.editor.?.active_tool = .select;
+
+    // Camera centered on (0,0) at zoom 1 with the reference viewport: the
+    // screen center maps to tile (0,0), +256px per tile.
+    const camera = types.Camera{ .position = .{ .x = 128, .y = 128 } };
+    const viewport = input.ViewportSize{ .width = 3840, .height = 2160 };
+    const center = types.ScreenPosition{ .x = 1920, .y = 1080 };
+    const shift: types.Modifiers = .{ .shift = true };
+    const no_shift: types.Modifiers = .{};
+    const tilePosition = struct {
+        fn call(tile: types.Vector2) types.ScreenPosition {
+            return .{ .x = center.x + tile.x * 256, .y = center.y + tile.y * 256 };
+        }
+    }.call;
+
+    // --- Shift+drag: press records, threshold promotes, release fires
+    // the region add. ---
+    handleEditorMarquee(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 1, .y = 1 }), .modifiers = shift },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_marquee != null);
+    try std.testing.expect(!history.session.ui_state.editor_marquee.?.promoted);
+
+    // Not yet beyond the threshold (moving only along x, same row): still
+    // unpromoted (the end corner does not track before promotion).
+    handleEditorMarquee(
+        &history,
+        .{ .held = true, .position = .{ .x = tilePosition(.{ .x = 1, .y = 1 }).x + input.drag_threshold_pixels, .y = tilePosition(.{ .x = 1, .y = 1 }).y }, .modifiers = shift },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(!history.session.ui_state.editor_marquee.?.promoted);
+
+    // Beyond the threshold: promoted, the end corner tracks the pointer.
+    handleEditorMarquee(
+        &history,
+        .{ .held = true, .position = tilePosition(.{ .x = 3, .y = 3 }), .modifiers = shift },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_marquee.?.promoted);
+    try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 3 }, history.session.ui_state.editor_marquee.?.end_position);
+
+    // Release with Shift still held: the region add fires ((1,1)-(3,3)).
+    handleEditorMarquee(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 3, .y = 3 }), .modifiers = shift },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    {
+        const region = history.current_state.event_stack[0].player_input_event.player_select_editor_region;
+        try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 1 }, region.start_position);
+        try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 3 }, region.end_position);
+    }
+    try std.testing.expect(history.session.ui_state.editor_marquee == null);
+    @import("event_handlers.zig").processEvent(&history);
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(@as(usize, 2), history.current_state.editor.?.selection.len);
+
+    // --- Shift+click WITHOUT drag: acts as a plain click — the toggle
+    // fires at the press tile (the press-time toggle was suppressed while
+    // Shift was held). ---
+    handleEditorMarquee(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 1, .y = 1 }), .modifiers = shift },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    handleEditorMarquee(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 1, .y = 1 }), .modifiers = shift },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 1, .y = 1 },
+        history.current_state.event_stack[0].player_input_event.player_toggle_editor_selection.position,
+    );
+    @import("event_handlers.zig").processEvent(&history);
+    @import("test_harness.zig").runToIdle(&history);
+
+    // --- Shift released mid-drag: the marquee cancels — no region, no
+    // toggle (the gesture consumed the press). ---
+    handleEditorMarquee(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 1, .y = 1 }), .modifiers = shift },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    handleEditorMarquee(
+        &history,
+        .{ .held = true, .position = tilePosition(.{ .x = 3, .y = 3 }), .modifiers = shift },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    handleEditorMarquee(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 3, .y = 3 }), .modifiers = no_shift },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expect(history.session.ui_state.editor_marquee == null);
+
+    // --- A press WITHOUT Shift never starts a marquee (the plain-click
+    // path owns it via handleIdleInput). ---
+    handleEditorMarquee(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 1, .y = 1 }), .modifiers = no_shift },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_marquee == null);
+}
+
 
 // --- Prepared-skill toggle (same-slot re-activation) ------------------------
 // Re-activating the slot of an already-prepared skill toggles the

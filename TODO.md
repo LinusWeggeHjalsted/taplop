@@ -480,9 +480,13 @@ yet implemented. Remaining work:
   bottom tool palette + the viewport world scene (tiles, palette-resolved
   placements, `!`/`=` markers; camera centered on the active level's
   player_start, right-drag pan) — reachable via the main-menu "Editor"
-  button. Remaining viewport INPUT: drag-paint + selection follow-ups
-  (shift-click add-vs-replace distinction, marquee, and the selection
-  OPERATIONS — move / delete, the reason selection exists). All tools
+  button. The shift+drag MARQUEE is DONE (select tool:
+  `handleEditorMarquee` gesture + `player_select_editor_region` → granular
+  `editor_select` adds skipping already-selected entries; footprint-
+  intersection membership for decorations; an unpromoted shift release
+  acts as a plain click — see DESIGN → Level Editor → Selection model +
+  DONE.md). Remaining viewport INPUT: drag-paint + the selection
+  OPERATIONS — move / delete, the reason selection exists. All tools
   have left-click input + cursor previews + the right-click delete.
   No-op clicks never fire: each tool's effect is computed by a pure
   planner (`planEditor*Actions`, event_handlers.zig) shared by the

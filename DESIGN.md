@@ -1967,7 +1967,22 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   bookkeeping atomically. This is also the replay-safety foundation for
   the selection OPERATIONS (group move): a selection-dependent handler
   reads reconstructable state, so the recorded log reproduces its effect.
-  Deferred: shift-click / marquee / selection operations (move / delete).
+  The shift+drag MARQUEE is landed on the same events: a press with Shift
+  held records the press tile (`UiState.editor_marquee`, off the timeline —
+  a view affordance like the inventory salvage region); the drag
+  threshold promotes it (rectangle renders, the end corner tracks the
+  pointer live, keeping the last valid corner over blocking UI); release
+  with Shift STILL held adds everything inside the inclusive rectangle via
+  `player_select_editor_region` (skipping already-selected entries — an
+  add, never a remove; all the adds share the click's idle point, one
+  undo step); Shift released mid-drag cancels. Membership: tiles /
+  entity / item placements by position; a decoration when ANY footprint
+  tile is inside (matching the click hit-testing — if you can click it,
+  you can marquee it); the '!' / '=' by their tile. An UNPROMOTED release
+  (no drag) acts as a plain click — the toggle the press would have fired
+  had Shift not been held (the select arm defers to the gesture while
+  Shift is held). Mirrors the inventory salvage-region gesture.
+  Deferred: selection operations (move / delete).
   Placing does NOT happen in selection mode. The tool-switch clear rides
   the `editor_set_tool` event (invariant: selection nonempty ⇔ active tool
   is select), so one undo step reverts a tool switch together with its
@@ -2033,7 +2048,7 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
 
 **Selection model (`Selectable` union).** The viewport can contain
 heterogeneous selectable things; multi-select is a REQUIRED feature
-(marquee + shift-click). A `Selectable` union covers all kinds:
+(landed: the shift+drag marquee — see the selection tool above). A `Selectable` union covers all kinds:
 
 ```zig
 Selectable = union(enum) {
@@ -2125,8 +2140,12 @@ both it and the active tool pointer migrated onto the Editor
 (`player_toggle_editor_selection` → granular `editor_select` /
 `editor_deselect`; see Selection model), tool switches and level-tab
 switches clear the selection inside their own events, and the delete arms
-reconcile it atomically. Remaining viewport input: selection
-operations (move / delete / shift-click / marquee) + drag-painting.
+reconcile it atomically. The shift+drag marquee landed too
+(`player_select_editor_region` + `planEditorRegionSelectActions` + the
+`handleEditorMarquee` gesture — footprint-intersection membership,
+unpromoted release acts as a plain click; see Selection model). Remaining
+viewport input: selection
+operations (move / delete) + drag-painting.
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
 struct exists in events.zig (`editor_add_level` / `editor_delete_level` /

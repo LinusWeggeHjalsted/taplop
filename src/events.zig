@@ -571,6 +571,17 @@ pub const PlayerInputEvent = union(enum) {
     player_toggle_editor_selection: struct {
         position: Vector2,
     },
+    // Select-tool shift+drag release in the editor viewport: ADD every
+    // selectable thing inside the rectangle spanned by the two corner
+    // tiles (order-independent, inclusive) — skipping entries already in
+    // the selection (an add, never a remove; the plain click toggles). A
+    // decoration is in the region when ANY of its footprint tiles is. The
+    // handler computes the granular editor_select plan from state; an
+    // empty region (or an all-already-selected one) never fires.
+    player_select_editor_region: struct {
+        start_position: Vector2,
+        end_position: Vector2,
+    },
     // Tile-paint click in the editor viewport (tile tool active): one click
     // = one tile. The handler computes the effect from state — no-op when a
     // tile is already there; every decoration whose footprint covers the

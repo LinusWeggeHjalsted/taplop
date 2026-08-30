@@ -6862,3 +6862,59 @@ no-op click must skip the drain (a duplicate idle point at the same index
 makes undo appear to no-op); off-timeline test seeding must happen BEFORE
 the first `runToIdle` or the earlier snapshot reverts it on undo. All 381
 tests pass.
+
+### Editor select-tool marquee (shift+left-drag region add)
+
+**Why.** Multi-select by clicking one group at a time doesn't scale to the
+selection operations (group move/delete) — the marquee is the bulk path.
+Built on the slice-2 selection events: the marquee is just a batch of
+`editor_select` additions, so it inherited undo/redo, replay, and the
+no-op discipline with zero new state on the timeline.
+
+**Semantics (settled in the session discussion).** A press with Shift held
+starts the gesture (Shift acquired mid-drag does not — inventory salvage
+precedent); the drag threshold promotes it (rectangle renders, end corner
+tracks the pointer live, keeping the LAST VALID corner while over blocking
+UI — release over a panel fires the last valid region); release with Shift
+STILL held adds everything inside the inclusive rectangle, SKIPPING
+already-selected entries (an add, never a remove). Shift released
+mid-drag cancels. Decoration membership is FOOTPRINT-INTERSECTION (any
+footprint tile inside grabs it — matching the click hit-testing: "if you
+can click it, you can marquee it"; chosen over the anchor rule). An
+UNPROMOTED release (no drag) acts as a plain click: the toggle the press
+would have fired had Shift not been held — fired from the gesture handler
+with the same no-op gate, since `handleIdleInput`'s select arm defers to
+the gesture while Shift is held (a shift press never toggles). This gives
+the TODO's "shift-click add-vs-replace" behavior as a degenerate case:
+plain click toggles, shift+click adds, shift+drag adds a region.
+
+**What landed.** `UiState.editor_marquee` (`EditorMarquee`: corners +
+press px + promoted flag — off the timeline, a view affordance exactly
+like the inventory `salvage_region`); `handleEditorMarquee` (anytime
+handler in input_handlers, called in `update()` beside
+`handleRightClickEditorDelete`); `player_select_editor_region {
+start_position, end_position }` → `planEditorRegionSelectActions` (pure
+planner: tiles/entities/items by position, decorations by footprint
+intersection via `decorationFootprintWorldTiles`, the '!' / '=' by their
+tile; deterministic order — tiles, entities, items, decorations,
+singletons, each in stored order — reversed before returning per the LIFO
+convention so processing + log read in plan order); the
+`validatePlayerAction` arm (same structural checks as the toggle);
+`buildEditorMarqueeOverlay` (lightest region outline via the shared
+`appendRegionOutline`, rendered only once promoted).
+
+No-op gates at every layer: an empty or all-already-selected region never
+fires the player action (no dead undo step); the handler's empty plan
+replays a crafted redundant event gracefully (idempotent — the
+editor_select arm skips duplicates); the unpromoted-release toggle uses
+the click planner's gate (empty ground never fires).
+
+Tests: planner test (region membership incl. the anchor-outside/
+footprint-pokes-in decoration, skip-present, empty region; asserts the
+REVERSED slice per the LIFO convention), integration test (one undo step
+reverts the whole batch; the redundant event is idempotent), gesture test
+(promotion threshold incl. a sub-threshold probe, live end tracking,
+release-fires, unpromoted-release-toggles, shift-release-cancels,
+no-shift-press-never-starts). Test-writing gotcha: a "sub-threshold"
+probe point must move along ONE axis from the press — a diagonal probe
+tile silently exceeds the threshold and promotes. All 384 tests pass.

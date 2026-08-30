@@ -191,6 +191,18 @@ pub fn view(
             camera,
             camera_zoom,
         );
+        // The in-progress marquee rectangle (shift+left-drag, promoted):
+        // a lightest region outline around the dragged region — the same
+        // color as the selection it will add to. View-side transient state
+        // (UiState.editor_marquee); the RESULT goes through events.
+        buildEditorMarqueeOverlay(
+            &tile_overlays,
+            frame_allocator,
+            session.ui_state.editor_marquee,
+            active_theme,
+            camera,
+            camera_zoom,
+        );
     }
 
     // Unified y-sort (ascending sort_y, then sort_x) and extract into the
@@ -2112,6 +2124,39 @@ fn buildEditorSelectionOverlay(
             }
         },
     };
+}
+
+/// The in-progress marquee rectangle (see `UiState.editor_marquee`): the
+/// inclusive tile region between the two corners, outlined in the theme's
+/// lightest via the shared region-outline builder — the same color as the
+/// selection it will add to. Nothing renders before the drag threshold
+/// promotes the press (an unpromoted release is a plain click, not a
+/// region).
+fn buildEditorMarqueeOverlay(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    marquee: ?ui.EditorMarquee,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    const region = marquee orelse return;
+    if (!region.promoted) return;
+    const min_x = @min(region.start_position.x, region.end_position.x);
+    const max_x = @max(region.start_position.x, region.end_position.x);
+    const min_y = @min(region.start_position.y, region.end_position.y);
+    const max_y = @max(region.start_position.y, region.end_position.y);
+
+    var region_tiles: std.ArrayList(Vector2) = .empty;
+    var y = min_y;
+    while (y <= max_y) : (y += 1) {
+        var x = min_x;
+        while (x <= max_x) : (x += 1) {
+            region_tiles.append(allocator, .{ .x = x, .y = y }) catch
+                @panic("failed to allocate marquee region tiles");
+        }
+    }
+    appendRegionOutline(list, allocator, region_tiles.items, active_theme.lightest, camera, zoom);
 }
 
 /// The active editor level (clamped), or null when there are no levels —

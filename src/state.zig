@@ -1160,6 +1160,25 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_toggle_editor_selection without the select tool active");
                     }
                 },
+                // Same structural legality as the toggle (the marquee is the
+                // select tool's other gesture); the corner positions are
+                // unrestricted (an empty region is a legal no-op in a
+                // recorded session — it plans empty and records nothing, but
+                // a hand-crafted log may contain one).
+                .player_select_editor_region => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_select_editor_region outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_select_editor_region with no editor");
+                    };
+                    if (editor.levels.len == 0) {
+                        @panic("replay validation: player_select_editor_region with no levels");
+                    }
+                    if (editor.active_tool != .select) {
+                        @panic("replay validation: player_select_editor_region without the select tool active");
+                    }
+                },
                 // Structural legality only: screen + editor + a level to
                 // paint on. The position is unrestricted (any tile
                 // coordinate is a legal paint target — the handler no-ops

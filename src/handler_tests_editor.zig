@@ -1666,3 +1666,145 @@ test "editor right-click delete with an empty plan fires no event" {
     );
     try testing.expectEqual(@as(usize, 1), tiled_history.current_state.event_stack.len);
 }
+
+// --- Select-tool marquee (planEditorRegionSelectActions) --------------------
+
+const tall_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 0, .y = 1 } };
+
+fn marqueeTestEditor(levels: []const types.EditorLevel) types.Editor {
+    // Decoration 0: single tile at its placement (in-region). Decoration 1:
+    // a 1-wide 2-tall column — its anchor (bottom tile) sits OUTSIDE the
+    // test region while the tile above it pokes in (the footprint-
+    // intersection membership rule).
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "single", .sprite = "stone_2", .footprint = &single_footprint, .pixel_dims = .{ .x = 256, .y = 256 } },
+        .{ .id = "tall", .sprite = "ruin_1", .footprint = &tall_footprint, .pixel_dims = .{ .x = 256, .y = 512 } },
+    };
+    return .{ .levels = levels, .decoration_types = &decoration_types };
+}
+
+test "planEditorRegionSelectActions: region adds everything inside, skips present, decorates by footprint" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 }, .{ .x = 9, .y = 9 } };
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 2, .y = 1 },
+    }};
+    const item_placements = [_]types.ItemPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 3, .y = 1 },
+    }};
+    const decoration_placements = [_]types.DecorationPlacement{
+        .{ .type_id = 0, .position = .{ .x = 7, .y = 7 } },
+        .{ .type_id = 1, .position = .{ .x = 5, .y = 10 } },
+    };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 9, .y = 0 },
+        .entity_placements = &entity_placements,
+        .item_placements = &item_placements,
+        .decoration_placements = &decoration_placements,
+    }};
+    var history = harness.newHistory(editorStateWith(marqueeTestEditor(&levels)));
+    runToIdle(&history);
+
+    // The (1,1) tile is already selected — the marquee must SKIP it.
+    const seeded_selection = [_]types.Selectable{.{ .tile = .{ .x = 1, .y = 1 } }};
+    history.current_state.editor.?.selection = &seeded_selection;
+
+    const arena = history.current_arena.allocator();
+    const editor = &history.current_state.editor.?;
+    const plan = event_handlers.planEditorRegionSelectActions(
+        editor,
+        .{ .x = 0, .y = 0 },
+        .{ .x = 9, .y = 9 },
+        arena,
+    );
+
+    // The returned slice is REVERSED (LIFO convention — see the planner
+    // doc): pushEvents pushes slice order, the stack pops from the end, so
+    // PROCESSING + log order is the reverse of this slice: tiles, entity,
+    // item, decorations, player_start, level_end — with the already-
+    // selected (1,1) tile skipped and the tall decoration included via its
+    // NON-anchor footprint tile (5,9).
+    try testing.expectEqual(@as(usize, 8), plan.len);
+    try testing.expectEqual(types.Selectable.level_end, plan[0].editor_event.editor_select.entry);
+    try testing.expectEqual(types.Selectable.player_start, plan[1].editor_event.editor_select.entry);
+    try testing.expectEqual(types.Selectable{ .decoration_placement = 1 }, plan[2].editor_event.editor_select.entry);
+    try testing.expectEqual(types.Selectable{ .decoration_placement = 0 }, plan[3].editor_event.editor_select.entry);
+    try testing.expectEqual(types.Selectable{ .ground_item_placement = 0 }, plan[4].editor_event.editor_select.entry);
+    try testing.expectEqual(types.Selectable{ .entity_placement = 0 }, plan[5].editor_event.editor_select.entry);
+    try testing.expectEqual(types.Selectable{ .tile = .{ .x = 9, .y = 9 } }, plan[6].editor_event.editor_select.entry);
+    try testing.expectEqual(types.Selectable{ .tile = .{ .x = 2, .y = 1 } }, plan[7].editor_event.editor_select.entry);
+
+    // Empty region (nothing there) → empty plan (no player action fires).
+    const empty_plan = event_handlers.planEditorRegionSelectActions(
+        editor,
+        .{ .x = 20, .y = 20 },
+        .{ .x = 21, .y = 21 },
+        arena,
+    );
+    try testing.expectEqual(@as(usize, 0), empty_plan.len);
+}
+
+test "player_select_editor_region: adds the region in one undoable step" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+    }};
+    var history = harness.newHistory(editorStateWith(marqueeTestEditor(&levels)));
+    runToIdle(&history);
+
+    // Marquee over (1,1)-(2,1): both tiles + the player start (0,0) is
+    // OUTSIDE the region (the rect is inclusive between the corners).
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_select_editor_region = .{
+            .start_position = .{ .x = 1, .y = 1 },
+            .end_position = .{ .x = 2, .y = 1 },
+        } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    {
+        const selection = history.current_state.editor.?.selection;
+        try testing.expectEqual(@as(usize, 2), selection.len);
+        // Processing order = plan order: tiles first.
+        try testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection[0]);
+        try testing.expectEqual(types.Selectable{ .tile = .{ .x = 2, .y = 1 } }, selection[1]);
+    }
+
+    // The whole marquee is ONE undo step (all its editor_selects share the
+    // player action's idle point) — undo reverts the batch together.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+    // Redo walks it back in.
+    try testing.expect(history.redo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.selection.len);
+
+    // Marquee over an all-already-selected region → nothing new → no
+    // player action should fire from the input layer; the handler's empty
+    // plan replays a crafted redundant event gracefully (selection
+    // unchanged, no duplicates).
+    const selection_before = history.current_state.editor.?.selection.len;
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_select_editor_region = .{
+            .start_position = .{ .x = 1, .y = 1 },
+            .end_position = .{ .x = 2, .y = 1 },
+        } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(selection_before, history.current_state.editor.?.selection.len);
+}

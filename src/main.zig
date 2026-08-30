@@ -217,6 +217,12 @@ fn update(
     // inspect handler (which clears only its own kind elsewhere).
     input_handlers.handleRightClickEditorDelete(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
+    // Editor select-tool marquee (shift+left-drag region add). Runs after
+    // the right-click handlers, same anytime block; a shift press is
+    // claimed here so `handleIdleInput`'s select arm skips it (the arm
+    // gates on Shift itself).
+    input_handlers.handleEditorMarquee(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
+
     // Turn-flow pause: while waiting, drain the timer and stall event
     // processing until it elapses. Anytime input and drag above still run, so
     // undo/redo/options remain responsive mid-wait (undo rebuilds state and

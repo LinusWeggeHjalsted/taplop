@@ -153,6 +153,16 @@ pub const UiState = struct {
     /// outline around the bounding box. See DESIGN → Input.
     salvage_region: ?SalvageRegion = null,
 
+    /// In-progress shift-drag region selection in the editor viewport (the
+    /// select tool's marquee). Set on a shift+left press over the viewport
+    /// (select tool active); `end_position` updates live once the drag
+    /// threshold promotes the press; cleared on release (fires the region
+    /// add via `player_select_editor_region` if Shift is still held — an
+    /// unpromoted release acts as a plain click instead) or cancel. The
+    /// rectangle renders as a lightest region outline once promoted. See
+    /// DESIGN → Architecture → Level Editor → Selection model.
+    editor_marquee: ?EditorMarquee = null,
+
     pub fn toggleMiddlePanel(self: *UiState, panel_id: MiddlePanelId) void {
         // If already open, close it
         for (&self.open_middle_panels) |*slot| {
@@ -320,6 +330,20 @@ pub const LastItemClick = struct {
 pub const SalvageRegion = struct {
     start_slot: u32,
     end_slot: u32,
+};
+
+/// In-progress shift-drag region selection in the editor viewport. The two
+/// tile positions are opposite corners (order-independent); `end_position`
+/// updates live as the pointer moves (tracking the last valid tile — a
+/// release over blocking UI still fires the last valid region).
+/// `press_position` (screen px) drives the drag-threshold promotion;
+/// `promoted` gates the rectangle rendering (an unpromoted release is a
+/// plain click, not a region). See `UiState.editor_marquee`.
+pub const EditorMarquee = struct {
+    start_position: types.Vector2,
+    end_position: types.Vector2,
+    press_position: ScreenPosition,
+    promoted: bool,
 };
 
 // ============================================================
