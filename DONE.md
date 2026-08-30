@@ -7296,3 +7296,44 @@ code was right. Also: undo after an action pushed via
 `pushPlayerActionAndDrain` needs `runToIdle` to record the idle point
 (idle-point recording is main.zig's job in the live loop; tests must call
 it explicitly).
+
+### Inspector content scaffolding — sections, rows, scrollbar (DONE, slice 2)
+
+The inspector's content surface (the open panel is no longer empty); the
+field CONTROLS land with slices 3-5.
+
+**Target resolution.** `ui.editorInspectorEntityTarget`: the active enemy
+tool → its palette index; every other tool (select/tile, and decoration/
+item until their slices) → the empty state — a hint label ("Select an
+enemy tool to edit its type"). Stale tool ids (the type deleted while its
+tool was active) fall to the hint too, not a panic.
+
+**Content plan.** `editorInspectorEntityEntries` lists the full enemy-type
+field set as 5 sections (Identity / Stats / Weapons / Gear / Utility
+skills) + 20 field rows — the coupling contract made visible: one row per
+field `parseEntityDefinition` reads. Rows are LABEL-ONLY in this slice
+(control columns are filled by the field slices); the labels are the
+stable part. Section headers render as panel-backed strips (the group-
+header visual class, gradient[5] + lightest label); field rows are
+lightest labels in a fixed label column (`editor_inspector_label_width`
+384) at the 128-high row pitch.
+
+**Scrolling.** `UiState.editor_inspector_scroll` (rows — the whole-row
+convention). Windowed emission is the skills-panel model: only FULLY
+visible rows are emitted at view-relative positions at the top of the
+content region (nothing half-draws or overflows the panel; the thumb
+conveys position). 25 entries vs 10 visible rows → the scrollbar (track +
+proportional thumb in the right ui_gap margin, skills geometry) shows.
+The builder's clamp is authoritative; the wheel handler (inserted in
+handleAnytimeInput's scroll chain: open panel + pointer inside the panel
+rect — the wheel over the panel belongs to the panel, never the camera)
+clamps the lower bound on write. Panel closed → the routing falls
+through. Wheel still flows while a text field is focused (only KEY
+bindings are suppressed).
+
+Tests: builder (window at scroll 0/3/max-clamp, negative clamp, element
+counts incl. scrollbar rects, stale-id empty state resetting the scroll),
+wheel routing (inside → ±1 row with top clamp; outside + closed →
+untouched). 410 pass. One more expectation-index slip caught by the test
+run (scroll 3 starts at entry 3 = "Color", not "Sprite" — comment
+arithmetic, code was right).

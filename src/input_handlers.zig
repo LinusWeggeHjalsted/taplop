@@ -1566,6 +1566,23 @@ pub fn handleAnytimeInput(
             if (history.session.ui_state.load_save_scroll_offset < 0) {
                 history.session.ui_state.load_save_scroll_offset = 0;
             }
+        } else if (history.current_state.screen == .editor and
+            history.current_state.editor != null and
+            history.current_state.editor.?.inspector_open and
+            ui.editorInspectorPanelRect().contains(pointer_position))
+        {
+            // Editor inspector content scroll (vertical): one wheel notch =
+            // one row. The wheel over the OPEN inspector panel belongs to
+            // the panel — never the camera — whether or not a field target
+            // exists (the empty state clamps to 0). Lower clamp here; the
+            // builder clamps the upper bound in place (authoritative — it
+            // knows the content height). See DESIGN → Architecture →
+            // Level Editor → Editor UI layout (inspector).
+            const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+            history.session.ui_state.editor_inspector_scroll -= delta_rows;
+            if (history.session.ui_state.editor_inspector_scroll < 0) {
+                history.session.ui_state.editor_inspector_scroll = 0;
+            }
         } else if (skillsSlotUnderPointer(ui_elements, pointer_position)) {
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
             history.session.ui_state.skills_scroll_offset -= delta_rows;

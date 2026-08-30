@@ -509,11 +509,15 @@ yet implemented. Remaining work:
         (`player_set_editor_entity_name` → `editor_set_entity_name`,
         no-op gate, undo). The caret/selection RENDER lands with slice 3
         (a field element must exist to draw it in).
-  - [ ] **2 — inspector content scaffolding:** row layout (label + control
-        columns), section headers, scrollbar (`UiState.editor_inspector_scroll`)
-        + wheel routing over the panel + windowed render (only rows that
-        fit are emitted); target resolution (active enemy tool → its
-        type; empty state for other tools).
+  - [x] **2 — inspector content scaffolding:** DONE — target resolution
+        (`editorInspectorEntityTarget`: the active enemy tool, else the
+        empty-state hint; stale tool ids fall to the hint), the content
+        plan (5 sections + 20 field rows over the full format field set,
+        label-only — controls land with slices 3-5), view-relative
+        windowed emission (10 fully-visible rows, the skills-panel model),
+        the scrollbar (track + thumb in the right margin, only on
+        overflow), `UiState.editor_inspector_scroll` + wheel routing over
+        the open panel (one notch = one row; falls through when closed).
   - [ ] **3 — scalar fields:** name + sprite id (text; sprite id is the
         interim v1 until the picker), color_index swatch row,
         displays_weapons toggle, base stats (numeric, UNBOUNDED — see

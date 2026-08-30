@@ -2175,6 +2175,42 @@ test "text field commit: entity name end-to-end, no-op gate, cancel" {
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
+test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+
+    // Inside the open panel (default open): one wheel-down notch = one
+    // row down; wheel-up at the top clamps at 0.
+    const inside: types.ScreenPosition = .{
+        .x = 512,
+        .y = ui.editorInspectorPanelRect().y + 100,
+    };
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, inside, &.{});
+    try testing.expectEqual(@as(i32, 1), history.session.ui_state.editor_inspector_scroll);
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, inside, &.{});
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_inspector_scroll);
+
+    // Outside the panel (top-right, over no UI): the wheel belongs to the
+    // camera-zoom branch — the inspector offset is untouched.
+    input_handlers.handleAnytimeInput(
+        &history,
+        .{ .scroll_delta = -1 },
+        .{ .x = 2000, .y = 300 },
+        &.{},
+    );
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_inspector_scroll);
+
+    // Panel closed: the routing falls through even inside the rect.
+    history.current_state.editor.?.inspector_open = false;
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, inside, &.{});
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_inspector_scroll);
+}
+
 test "player_select_editor_all: no-op without the select tool, and when everything is already selected" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

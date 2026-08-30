@@ -328,8 +328,10 @@ pub fn view(
                 &ui_elements,
                 frame_allocator,
                 font_metrics,
+                editor,
                 active_theme,
                 editor.inspector_open,
+                &session.ui_state.editor_inspector_scroll,
             ) catch @panic("failed to build editor inspector panel");
             ui.buildEditorBottomBar(
                 &ui_elements,

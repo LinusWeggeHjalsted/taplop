@@ -123,6 +123,14 @@ pub const UiState = struct {
     /// undo timeline (same as `skills_scroll_offset`).
     editor_palette_scroll: [3]i32 = .{ 0, 0, 0 },
 
+    /// Editor inspector content scroll offset, in ROWS — one wheel notch =
+    /// one row pitch (the skills/load-save whole-row convention, so text
+    /// placement is identical at every offset). Clamped in place by the
+    /// inspector content builder (authoritative — it knows the content
+    /// height) and on write in the wheel handler. Off the undo timeline
+    /// like the other scrolls.
+    editor_inspector_scroll: i32 = 0,
+
     /// Editor palette group collapse state: false = expanded, true =
     /// collapsed (header + "+" only, no type cells). Collapsed by DEFAULT
     /// (all groups) — the bar starts minimal. Toggled by clicking the group
@@ -3661,8 +3669,10 @@ pub fn buildEditorInspectorPanel(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
+    editor: types.Editor,
     active_theme: types.ActiveColorTheme,
     inspector_open: bool,
+    scroll_offset: *i32,
 ) !void {
     const p = active_theme.player_gradient.colors;
     const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
@@ -3713,6 +3723,200 @@ pub fn buildEditorInspectorPanel(
             .width = panel_rect.width,
             .height = panel_rect.height,
             .color = active_theme.darkest,
+        } });
+        try buildEditorInspectorContent(
+            elements,
+            allocator,
+            editor,
+            active_theme,
+            scroll_offset,
+        );
+    }
+}
+
+/// Inspector content row pitch — one field row or section header is 128
+/// high (the editor strip-height class; a 64px label with padding).
+pub const editor_inspector_row_height: i32 = editor_header_strip_height;
+
+/// Fixed label-column width for field rows; the control column fills the
+/// remaining content width. Wide enough for the longest field label at the
+/// header font size.
+pub const editor_inspector_label_width: i32 = 384;
+
+/// Inspector scrollbar track width, centered in the panel's right `ui_gap`
+/// margin (the skills-panel precedent).
+pub const editor_inspector_scrollbar_width: i32 = 12;
+
+/// The entity type the inspector currently edits (the ACTIVE enemy tool),
+/// or null for every other tool — select/tile have no fields, and the
+/// decoration/item inspectors are later slices. Range-guarded (a stale
+/// tool id after a type deletion shows the empty state, not a panic).
+pub fn editorInspectorEntityTarget(editor: types.Editor) ?u32 {
+    return switch (editor.active_tool) {
+        .entity_type => |type_id| if (type_id < editor.entity_types.len) type_id else null,
+        else => null,
+    };
+}
+
+/// One line of inspector content: a section header, or a field row (the
+/// row's CONTROL lands with its slice; the label is stable — it names the
+/// level-format field group it edits, per the coupling contract in DESIGN
+/// → Architecture → Level Editor → Editor UI layout → Inspector fields).
+const EditorInspectorEntry = union(enum) {
+    section: []const u8,
+    field: []const u8,
+};
+
+/// The enemy-type inspector's full content plan: five sections over every
+/// field `parseEntityDefinition` reads (the coupling contract — anything
+/// editable by text-editing the level file is a row here).
+fn editorInspectorEntityEntries() []const EditorInspectorEntry {
+    return &.{
+        .{ .section = "Identity" },
+        .{ .field = "Name" },
+        .{ .field = "Sprite" },
+        .{ .field = "Color" },
+        .{ .field = "Displays weapons" },
+        .{ .section = "Stats" },
+        .{ .field = "Max health" },
+        .{ .field = "Defense" },
+        .{ .field = "Speed" },
+        .{ .field = "Aggro range" },
+        .{ .section = "Weapons" },
+        .{ .field = "Main hand" },
+        .{ .field = "Off hand" },
+        .{ .section = "Gear" },
+        .{ .field = "Amulet" },
+        .{ .field = "Coat" },
+        .{ .field = "Gloves" },
+        .{ .field = "Pants" },
+        .{ .field = "Boots" },
+        .{ .section = "Utility skills" },
+        .{ .field = "Slot 4" },
+        .{ .field = "Slot 5" },
+        .{ .field = "Slot 6" },
+        .{ .field = "Slot 7" },
+        .{ .field = "Slot 8" },
+    };
+}
+
+/// Build the inspector's content inside the open panel (called by
+/// `buildEditorInspectorPanel`): the active enemy tool's fields — section
+/// headers + one row per format field. View-relative windowed emission
+/// (the skills-panel model): only FULLY visible rows are emitted at the top
+/// of the content region, so nothing half-draws or overflows the panel; the
+/// scrollbar thumb conveys the position. `scroll_offset` (rows) is clamped
+/// here — authoritative, this fn knows the content height. The wheel
+/// routes here from handleAnytimeInput when the pointer is inside the panel
+/// rect; while a text field is focused the wheel still flows (only key
+/// bindings are suppressed).
+fn buildEditorInspectorContent(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    editor: types.Editor,
+    active_theme: types.ActiveColorTheme,
+    scroll_offset: *i32,
+) !void {
+    const panel = editorInspectorPanelRect();
+    const content: Rectangle = .{
+        .x = panel.x + ui_gap,
+        .y = panel.y + ui_gap,
+        .width = panel.width - 2 * ui_gap,
+        .height = panel.height - 2 * ui_gap,
+    };
+    const visible_rows = @divFloor(content.height, editor_inspector_row_height);
+
+    // Target resolution: the active enemy tool's type, else the empty
+    // state (a hint — the inspector edits the ACTIVE TOOL's type).
+    if (editorInspectorEntityTarget(editor) == null) {
+        scroll_offset.* = 0;
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "Select an enemy tool to edit its type",
+            .screen_position = content.position(),
+            .font_size = material_count_font_size,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+        return;
+    }
+
+    const entries = editorInspectorEntityEntries();
+    const total_rows: i32 = @intCast(entries.len);
+    const max_scroll_row = @max(@as(i32, 0), total_rows - visible_rows);
+    if (scroll_offset.* < 0) scroll_offset.* = 0;
+    if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
+    const first_row: usize = @intCast(scroll_offset.*);
+
+    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    var view_row: i32 = 0;
+    while (view_row < visible_rows) : (view_row += 1) {
+        const index = first_row + @as(usize, @intCast(view_row));
+        if (index >= entries.len) break;
+        const cell: Rectangle = .{
+            .x = content.x,
+            .y = content.y + view_row * editor_inspector_row_height,
+            .width = content.width,
+            .height = editor_inspector_row_height,
+        };
+        const text_y = cell.y + @divFloor(cell.height - editor_group_header_font_size, 2);
+        switch (entries[index]) {
+            // Section header: a panel-backed strip (the group-header visual
+            // class), label left-padded + vertically centered.
+            .section => |label| {
+                try elements.append(allocator, .{ .nine_slice_panel = .{
+                    .sprite_id = "ui/panel",
+                    .screen_position = cell.position(),
+                    .width = cell.width,
+                    .height = cell.height,
+                    .color = button_color,
+                } });
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = label,
+                    .screen_position = .{ .x = cell.x + ui_gap, .y = text_y },
+                    .font_size = editor_group_header_font_size,
+                    .color = active_theme.lightest,
+                    .blocks_input = false,
+                } });
+            },
+            // Field row: the label in the label column, vertically centered.
+            // The control column (right of `editor_inspector_label_width`)
+            // is filled by the field slices.
+            .field => |label| {
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = label,
+                    .screen_position = .{ .x = cell.x, .y = text_y },
+                    .font_size = editor_group_header_font_size,
+                    .color = active_theme.lightest,
+                    .blocks_input = false,
+                } });
+            },
+        }
+    }
+
+    // Scrollbar (only when the content overflows): track + proportional
+    // thumb in the right `ui_gap` margin — the skills-panel geometry.
+    if (total_rows > visible_rows) {
+        const track_x = panel.x + panel.width - ui_gap +
+            @divFloor(ui_gap - editor_inspector_scrollbar_width, 2);
+        const track_y = content.y;
+        const track_height = visible_rows * editor_inspector_row_height;
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = track_x, .y = track_y },
+            .width = editor_inspector_scrollbar_width,
+            .height = track_height,
+            .color = .{ .r = 80, .g = 80, .b = 80 },
+        } });
+        const thumb_height = @max(
+            @as(i32, 40),
+            @divTrunc(track_height * visible_rows, total_rows),
+        );
+        const thumb_y = track_y +
+            @divTrunc(scroll_offset.* * (track_height - thumb_height), max_scroll_row);
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = track_x, .y = thumb_y },
+            .width = editor_inspector_scrollbar_width,
+            .height = thumb_height,
+            .color = .{ .r = 180, .g = 180, .b = 180 },
         } });
     }
 }
@@ -5295,13 +5499,18 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
         .player_gradient = .{ .colors = .{ black, player_one, black, black, black, player_five } },
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    // Select tool (no enemy target): the open panel carries the EMPTY
+    // STATE hint — this test covers the shell; the content test below
+    // covers the enemy-tool rows.
+    const editor: types.Editor = .{};
 
     // Open (the default): panel + spriteless button + label + background
-    // panel = 4 elements.
+    // panel + empty-state hint = 5 elements.
     {
         var elements: UiElementList = .empty;
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, theme, true);
-        try std.testing.expectEqual(@as(usize, 4), elements.items.len);
+        var scroll: i32 = 0;
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &scroll);
+        try std.testing.expectEqual(@as(usize, 5), elements.items.len);
         try expectInspectorToggleShape(&elements, true);
 
         // The background panel: flush left, below the button, down to one
@@ -5337,10 +5546,123 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
     // Closed: just the toggle (3 elements), no longer highlighted.
     {
         var elements: UiElementList = .empty;
-        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, theme, false);
+        var scroll: i32 = 0;
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, false, &scroll);
         try std.testing.expectEqual(@as(usize, 3), elements.items.len);
         try expectInspectorToggleShape(&elements, false);
     }
+}
+
+test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scrollbar on overflow" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const player_five: types.Color = .{ .r = 40, .g = 40, .b = 40 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{ black, black, black, black, black, player_five } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .team = 1 } },
+    };
+    const editor: types.Editor = .{
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    };
+
+    // 25 entries (5 sections + 20 fields); the panel fits 10 rows
+    // ((1328 − 2×16) / 128 = 10), so 15 rows scroll + the scrollbar shows.
+    const visible_rows = @divFloor(
+        editorInspectorPanelRect().height - 2 * ui_gap,
+        editor_inspector_row_height,
+    );
+    try std.testing.expectEqual(@as(i32, 10), visible_rows);
+
+    // Scroll 0: the first 10 entries — Identity + 4 fields + Stats + 4
+    // stat fields (2 sections × 2 elements + 8 fields + scrollbar 2).
+    {
+        var elements: UiElementList = .empty;
+        var scroll: i32 = 0;
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &scroll);
+        try std.testing.expectEqual(@as(usize, 18), elements.items.len);
+        try expectInspectorLabels(&elements, &.{ "Identity", "Name", "Sprite", "Color", "Displays weapons", "Stats", "Max health", "Defense", "Speed", "Aggro range" });
+        try std.testing.expectEqual(@as(usize, 2), countSolidRects(&elements));
+    }
+
+    // Scroll 3: the window starts at entry 3 ("Color").
+    {
+        var elements: UiElementList = .empty;
+        var scroll: i32 = 3;
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &scroll);
+        try expectInspectorLabels(&elements, &.{ "Color", "Displays weapons", "Stats", "Max health", "Defense", "Speed", "Aggro range", "Weapons", "Main hand", "Off hand" });
+    }
+
+    // Out-of-range scroll clamps to max (25 − 10 = 15): the window starts
+    // at "Coat" and runs to the last slot.
+    {
+        var elements: UiElementList = .empty;
+        var scroll: i32 = 999;
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &scroll);
+        try std.testing.expectEqual(@as(i32, 15), scroll);
+        try expectInspectorLabels(&elements, &.{ "Coat", "Gloves", "Pants", "Boots", "Utility skills", "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8" });
+    }
+
+    // Negative scroll clamps to 0.
+    {
+        var elements: UiElementList = .empty;
+        var scroll: i32 = -4;
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &scroll);
+        try std.testing.expectEqual(@as(i32, 0), scroll);
+    }
+
+    // A stale tool id (the type deleted mid-edit) is the empty state, and
+    // it RESETS the scroll.
+    {
+        const stale_editor: types.Editor = .{
+            .entity_types = &entity_types,
+            .active_tool = .{ .entity_type = 7 },
+        };
+        var elements: UiElementList = .empty;
+        var scroll: i32 = 5;
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, stale_editor, theme, true, &scroll);
+        try std.testing.expectEqual(@as(i32, 0), scroll);
+        try std.testing.expectEqualStrings(
+            "Select an enemy tool to edit its type",
+            elements.items[4].text_label.text,
+        );
+        try std.testing.expectEqual(@as(usize, 0), countSolidRects(&elements));
+    }
+}
+
+/// Assert the inspector's content labels, in order, skipping the toggle
+/// button's own "Inspector" label (elements 0-2 are the toggle group, 3
+/// the background panel).
+fn expectInspectorLabels(elements: *const UiElementList, expected: []const []const u8) !void {
+    var labels: std.ArrayList([]const u8) = .empty;
+    defer labels.deinit(std.testing.allocator);
+    for (elements.items[4..]) |element| switch (element) {
+        .text_label => |label| try labels.append(std.testing.allocator, label.text),
+        else => {},
+    };
+    try std.testing.expectEqual(expected.len, labels.items.len);
+    for (expected, labels.items) |want, got| {
+        try std.testing.expectEqualStrings(want, got);
+    }
+}
+
+fn countSolidRects(elements: *const UiElementList) usize {
+    var count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .solid_rect => count += 1,
+        else => {},
+    };
+    return count;
 }
 
 /// Shared shape checks for the inspector toggle button (the level-tab
