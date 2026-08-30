@@ -1948,15 +1948,25 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   moved). Anything from the group already selected → every present entry
   is removed (clicking a selected tile deselects the tile AND its
   occupant); nothing selected → the whole group is added. Empty ground
-  selects nothing. The selection lives on UiState (off the undo timeline —
-  a UI affordance, not a mission edit) and renders as outlines in the
-  theme's LIGHTEST color (the same as every other world outline) around
-  every selected region; changing to a different tool clears it. DELETES
-  keep the selection consistent: the placement-removal arms prune the
+  selects nothing. The selection lives on the Editor (`Editor.selection`,
+  GameState — ON the undo timeline) and is mutated only via the granular
+  `editor_select` / `editor_deselect` events (one per entry; a group click
+  pushes the group's events together, sharing the click's idle point, so
+  one undo step reverts the whole click — and a future marquee /
+  shift-click batch is one undoable step of many additions). Per-click
+  undo granularity is ACCEPTED by design: undoing a misclicked selection
+  is a feature, and marquee bounds the click count. It renders as outlines
+  in the theme's LIGHTEST color (the same as every other world outline)
+  around every selected region; changing to a different tool or level tab
+  clears it (both clears ride their events). DELETES keep the selection
+  consistent WITHIN the same event: the placement-removal arms prune the
   deleted entry and remap the indices above it (an index shift would
   otherwise leave surviving entries pointing at the wrong placements),
   and a tile erased by any flow (right-click, decoration placement) leaves
-  the selection with it.
+  the selection with it — so undo/redo restores an edit and its selection
+  bookkeeping atomically. This is also the replay-safety foundation for
+  the selection OPERATIONS (group move): a selection-dependent handler
+  reads reconstructable state, so the recorded log reproduces its effect.
   Deferred: shift-click / marquee / selection operations (move / delete).
   Placing does NOT happen in selection mode. The tool-switch clear rides
   the `editor_set_tool` event (invariant: selection nonempty ⇔ active tool
@@ -2036,10 +2046,14 @@ Selectable = union(enum) {
 };
 ```
 
-The selection set is `[]Selectable` — LANDED as
-`UiState.editor_selection` (types.zig `Selectable`, placement indices are
-u32; the delete arms prune deleted entries and remap shifted indices, so
-the set stays consistent across edits). The click resolution (see the
+The selection set is `[]Selectable` — LANDED as `Editor.selection`
+(types.zig `Selectable`, placement indices are u32) on the undo timeline,
+mutated only via the `editor_select` / `editor_deselect` events pushed by
+the `player_toggle_editor_selection` click orchestrator (see the
+selection tool above for the granularity + undo semantics; the delete
+arms prune deleted entries and remap shifted indices within the same
+event, so the set stays consistent across edits AND across undo/redo).
+The click resolution (see the
 selection tool above) is the landed hit-testing: '!' / '=' singletons,
 first covering decoration, else tile + occupants; the render-order
 priority below is the future selection-op refinement. **Inspector tool-type inference:** when
@@ -2104,12 +2118,14 @@ landed last (`player_place_editor_item` + `editor_place_item` /
 `editor_set_item_placement_type` arms) — every placement tool now has
 left-click input; the tool-independent right-click delete
 (`player_delete_editor_at` + the `PendingRightClick` gesture union) landed
-after it. The select tool's plain-click selection landed last
-(`types.Selectable` + `UiState.editor_selection` + white selection
-outlines + the hover preview). The active tool pointer migrated onto the
-Editor (`Editor.active_tool` + `player_set_editor_tool` /
-`editor_set_tool`): tool switches — and the selection clear they carry —
-ride the undo timeline. Remaining viewport input: selection
+after it. The select tool's plain-click selection landed
+(`types.Selectable` + white selection outlines + the hover preview), and
+both it and the active tool pointer migrated onto the Editor
+(`Editor.selection` + `Editor.active_tool`): selecting is undoable
+(`player_toggle_editor_selection` → granular `editor_select` /
+`editor_deselect`; see Selection model), tool switches and level-tab
+switches clear the selection inside their own events, and the delete arms
+reconcile it atomically. Remaining viewport input: selection
 operations (move / delete / shift-click / marquee) + drag-painting.
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event

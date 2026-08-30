@@ -163,6 +163,19 @@ pub const EditorEvent = union(enum) {
         tool: types.EditorToolId,
     },
 
+    // ── Selection (the select tool) ──
+    // Granular by design: a click toggles a GROUP (up to tile + entity +
+    // item), pushing one event per entry — they share the click's idle
+    // point, so one undo step reverts the whole click, and a future
+    // marquee / shift-click batch reads as a run of additions. Entries
+    // address the ACTIVE level (see `types.Selectable`).
+    editor_select: struct {
+        entry: types.Selectable,
+    },
+    editor_deselect: struct {
+        entry: types.Selectable,
+    },
+
     // ── Level management ──
     // Switch the active level tab. Pure state on editor.active_level_index.
     editor_set_active_level: struct {
@@ -548,6 +561,15 @@ pub const PlayerInputEvent = union(enum) {
     // reconstructable state.
     player_set_editor_tool: struct {
         tool: types.EditorToolId,
+    },
+    // Select-tool click in the editor viewport: toggle the clicked thing's
+    // group in the selection (see the selection-tool bullet in DESIGN →
+    // Architecture → Level Editor → Active-tool model). The handler
+    // computes the granular editor_select / editor_deselect plan from
+    // state (the group + its toggle direction); a click that selects
+    // nothing (empty ground) never fires.
+    player_toggle_editor_selection: struct {
+        position: Vector2,
     },
     // Tile-paint click in the editor viewport (tile tool active): one click
     // = one tile. The handler computes the effect from state — no-op when a

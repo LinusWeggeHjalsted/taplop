@@ -1643,7 +1643,14 @@ pub fn handleIdleInput(
                             } }, allocator);
                         }
                     },
-                    .select => selectAtEditorPosition(history, clicked_position),
+                    .select => {
+                        const plan = event_handlers.planEditorSelectionActions(editor, clicked_position, allocator);
+                        if (plan.len > 0) {
+                            event_handlers.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
+                                .position = clicked_position,
+                            } }, allocator);
+                        }
+                    },
                 }
             }
         }
@@ -1971,134 +1978,6 @@ fn resolveEditorTileCursor(
     cursor.x += in_game.cursor_direction.x;
     cursor.y += in_game.cursor_direction.y;
     history.session.tile_cursor = cursor;
-}
-
-/// Select-tool click: TOGGLE the clicked thing's group in the selection
-/// set (`UiState.editor_selection` — a UI affordance, not a mission edit,
-/// so a direct write off the undo timeline). A click's group is
-/// everything that toggles together: the '!' / '=' singletons; a covering
-/// decoration (the FIRST — exactly what the hover preview shows); or the
-/// tile INCLUDING anything standing on it (entity / ground-item
-/// placements). Anything from the group already selected → every present
-/// entry is removed (clicking a selected tile deselects the tile AND its
-/// occupant); nothing selected → the whole group is added. Empty ground
-/// selects nothing. Placement entries are kept consistent by the delete
-/// arms (pruned + index-remapped — see
-/// `reconcileSelectionAfterPlacementDelete`).
-fn selectAtEditorPosition(
-    history: *GameStateHistory,
-    position: types.Vector2,
-) void {
-    const current = &history.current_state;
-    const editor = &(current.editor orelse return);
-    if (editor.levels.len == 0) return;
-    const level_index = editor.active_level_index;
-    if (level_index >= editor.levels.len) return;
-    const level = &editor.levels[level_index];
-    const selection = &history.session.ui_state.editor_selection;
-    const allocator = history.backing_allocator;
-
-    // Resolve the click's group (at most tile + entity + item = 3).
-    var group: [3]types.Selectable = undefined;
-    var group_length: usize = 0;
-
-    if (position.x == level.player_start.x and position.y == level.player_start.y) {
-        group[0] = .player_start;
-        group_length = 1;
-    } else if (level.level_end) |level_end_position| {
-        if (position.x == level_end_position.x and position.y == level_end_position.y) {
-            group[0] = .level_end;
-            group_length = 1;
-        }
-    }
-    if (group_length == 0) {
-        // A covering decoration (the first — matching the hover preview).
-        for (level.decoration_placements, 0..) |placement, placement_index| {
-            const type_definition = editor.decoration_types[placement.type_id];
-            if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
-                group[0] = .{ .decoration_placement = @intCast(placement_index) };
-                group_length = 1;
-                break;
-            }
-        }
-    }
-    if (group_length == 0) {
-        // The tile including anything standing on it. Empty ground (no
-        // tile, no occupants) selects nothing.
-        for (level.level_tiles) |tile| {
-            if (tile.x == position.x and tile.y == position.y) {
-                group[group_length] = .{ .tile = position };
-                group_length += 1;
-                break;
-            }
-        }
-        for (level.entity_placements, 0..) |placement, placement_index| {
-            if (placement.position.x == position.x and placement.position.y == position.y) {
-                group[group_length] = .{ .entity_placement = @intCast(placement_index) };
-                group_length += 1;
-            }
-        }
-        for (level.item_placements, 0..) |placement, placement_index| {
-            if (placement.position.x == position.x and placement.position.y == position.y) {
-                group[group_length] = .{ .ground_item_placement = @intCast(placement_index) };
-                group_length += 1;
-            }
-        }
-    }
-    if (group_length == 0) return;
-
-    // Toggle the group: anything present → remove every present entry;
-    // nothing present → add the whole group.
-    var any_present = false;
-    for (group[0..group_length]) |entry| {
-        if (selectionContains(selection.items, entry)) {
-            any_present = true;
-            break;
-        }
-    }
-    if (any_present) {
-        for (group[0..group_length]) |entry| {
-            removeSelectable(selection, entry);
-        }
-    } else {
-        for (group[0..group_length]) |entry| {
-            selection.append(allocator, entry) catch @panic("failed to allocate editor selection");
-        }
-    }
-}
-
-/// Remove the first entry equal to `entry` (a no-op when absent).
-fn removeSelectable(
-    selection: *std.ArrayList(types.Selectable),
-    entry: types.Selectable,
-) void {
-    for (selection.items, 0..) |existing, index| {
-        if (selectableEqual(existing, entry)) {
-            _ = selection.orderedRemove(index);
-            return;
-        }
-    }
-}
-
-fn selectionContains(items: []const types.Selectable, entry: types.Selectable) bool {
-    for (items) |existing| {
-        if (selectableEqual(existing, entry)) return true;
-    }
-    return false;
-}
-
-/// Value equality over `Selectable` (tag + payload). Unions don't support
-/// `==` in Zig, so the comparison is spelled out.
-fn selectableEqual(a: types.Selectable, b: types.Selectable) bool {
-    return switch (a) {
-        .tile => |position| b == .tile and
-            b.tile.x == position.x and b.tile.y == position.y,
-        .entity_placement => |index| b == .entity_placement and b.entity_placement == index,
-        .decoration_placement => |index| b == .decoration_placement and b.decoration_placement == index,
-        .ground_item_placement => |index| b == .ground_item_placement and b.ground_item_placement == index,
-        .player_start => b == .player_start,
-        .level_end => b == .level_end,
-    };
 }
 
 test "dragToOrchestrator maps valid drags and blocks cross-domain drops" {
@@ -2434,7 +2313,20 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
-test "selectAtEditorPosition: click toggles the tile + occupants group, singletons, decoration" {
+/// A select-tool viewport click through the REAL input path
+/// (`handleIdleInput`'s editor arm: empty plans never fire) drained to
+/// idle — the contract-level toggle used by the selection tests. The
+/// drain (and its idle-point recording) only happens when a player action
+/// actually fired — mirroring the live loop, which records idle points
+/// only when events ran (runToIdle records unconditionally).
+fn toggleSelectionAt(history: *GameStateHistory, position: types.Vector2) void {
+    handleIdleInput(history, .{ .tile_clicked = position }, .{});
+    if (history.current_state.event_stack.len > 0) {
+        @import("test_harness.zig").runToIdle(history);
+    }
+}
+
+test "player_toggle_editor_selection: toggles the tile + occupants group, singletons, decoration; undo/redo restores the selection" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     var harness = @import("test_harness.zig").Harness.init(backing.allocator());
@@ -2482,40 +2374,67 @@ test "selectAtEditorPosition: click toggles the tile + occupants group, singleto
         .level = null,
         .hub = null,
     });
-    const selection = &history.session.ui_state.editor_selection;
+    @import("test_harness.zig").runToIdle(&history);
 
     // A tile with an enemy + item on it: all three added in one click.
-    selectAtEditorPosition(&history, .{ .x = 1, .y = 1 });
-    try std.testing.expectEqual(@as(usize, 3), selection.items.len);
-    try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection.items[0]);
-    try std.testing.expectEqual(@as(u32, 0), selection.items[1].entity_placement);
-    try std.testing.expectEqual(@as(u32, 0), selection.items[2].ground_item_placement);
+    toggleSelectionAt(&history, .{ .x = 1, .y = 1 });
+    {
+        const selection = history.current_state.editor.?.selection;
+        try std.testing.expectEqual(@as(usize, 3), selection.len);
+        try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection[0]);
+        try std.testing.expectEqual(@as(u32, 0), selection[1].entity_placement);
+        try std.testing.expectEqual(@as(u32, 0), selection[2].ground_item_placement);
+    }
 
     // Clicking the same tile again toggles the WHOLE group off — the tile
-    // AND its occupant leave together.
-    selectAtEditorPosition(&history, .{ .x = 1, .y = 1 });
-    try std.testing.expectEqual(@as(usize, 0), selection.items.len);
+    // AND its occupants leave together.
+    toggleSelectionAt(&history, .{ .x = 1, .y = 1 });
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
     // A third click toggles it back on.
-    selectAtEditorPosition(&history, .{ .x = 1, .y = 1 });
-    try std.testing.expectEqual(@as(usize, 3), selection.items.len);
+    toggleSelectionAt(&history, .{ .x = 1, .y = 1 });
+    try std.testing.expectEqual(@as(usize, 3), history.current_state.editor.?.selection.len);
 
     // The '!' and '=' singletons are selectable — and toggleable.
-    selectAtEditorPosition(&history, .{ .x = 0, .y = 0 });
-    try std.testing.expectEqual(types.Selectable.player_start, selection.items[3]);
-    selectAtEditorPosition(&history, .{ .x = 2, .y = 2 });
-    try std.testing.expectEqual(types.Selectable.level_end, selection.items[4]);
-    selectAtEditorPosition(&history, .{ .x = 0, .y = 0 });
-    try std.testing.expectEqual(@as(usize, 4), selection.items.len);
+    toggleSelectionAt(&history, .{ .x = 0, .y = 0 });
+    try std.testing.expectEqual(
+        types.Selectable.player_start,
+        history.current_state.editor.?.selection[3],
+    );
+    toggleSelectionAt(&history, .{ .x = 2, .y = 2 });
+    try std.testing.expectEqual(
+        types.Selectable.level_end,
+        history.current_state.editor.?.selection[4],
+    );
+    toggleSelectionAt(&history, .{ .x = 0, .y = 0 });
+    try std.testing.expectEqual(@as(usize, 4), history.current_state.editor.?.selection.len);
 
     // The covering decoration (by index) — and toggling it off.
-    selectAtEditorPosition(&history, .{ .x = 7, .y = 7 });
-    try std.testing.expectEqual(@as(u32, 0), selection.items[4].decoration_placement);
-    selectAtEditorPosition(&history, .{ .x = 7, .y = 7 });
-    try std.testing.expectEqual(@as(usize, 4), selection.items.len);
+    toggleSelectionAt(&history, .{ .x = 7, .y = 7 });
+    try std.testing.expectEqual(
+        @as(u32, 0),
+        history.current_state.editor.?.selection[4].decoration_placement,
+    );
+    toggleSelectionAt(&history, .{ .x = 7, .y = 7 });
+    try std.testing.expectEqual(@as(usize, 4), history.current_state.editor.?.selection.len);
 
-    // Empty ground: nothing to select (and nothing to toggle).
-    selectAtEditorPosition(&history, .{ .x = 9, .y = 9 });
-    try std.testing.expectEqual(@as(usize, 4), selection.items.len);
+    // Empty ground: nothing to select — and NOTHING RECORDED (no player
+    // action fired, so the event history is unchanged).
+    const history_length_before = history.event_history.items.len;
+    toggleSelectionAt(&history, .{ .x = 9, .y = 9 });
+    try std.testing.expectEqual(@as(usize, 4), history.current_state.editor.?.selection.len);
+    try std.testing.expectEqual(history_length_before, history.event_history.items.len);
+
+    // The selection rides the undo timeline: undo reverts the decoration
+    // OFF-toggle (the last recorded click) — the decoration entry returns.
+    // Redo walks forward again.
+    try std.testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const selection = history.current_state.editor.?.selection;
+        try std.testing.expectEqual(@as(usize, 5), selection.len);
+        try std.testing.expectEqual(@as(u32, 0), selection[4].decoration_placement);
+    }
+    try std.testing.expect(history.redo(event_handlers.processEvent));
+    try std.testing.expectEqual(@as(usize, 4), history.current_state.editor.?.selection.len);
 }
 
 test "select_editor_tool: changing tools clears the selection, re-selecting keeps it, undo reverts the tool" {
@@ -2536,19 +2455,17 @@ test "select_editor_tool: changing tools clears the selection, re-selecting keep
         .level = null,
         .hub = null,
     });
-    @import("test_harness.zig").runToIdle(&history);
+    const seeded_selection = [_]types.Selectable{.{ .tile = .{ .x = 1, .y = 1 } }};
     history.current_state.editor.?.active_tool = .select;
-    try history.session.ui_state.editor_selection.append(
-        history.backing_allocator,
-        .{ .tile = .{ .x = 1, .y = 1 } },
-    );
+    history.current_state.editor.?.selection = &seeded_selection;
+    @import("test_harness.zig").runToIdle(&history);
 
     // Re-selecting the ACTIVE tool changes nothing (no event fired).
     handleAnytimeInput(&history, .{
         .options_action = .select_editor_tool,
         .clicked_editor_tool = .select,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try std.testing.expectEqual(@as(usize, 1), history.session.ui_state.editor_selection.items.len);
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.editor.?.selection.len);
 
     // Changing to a different tool clears the selection (the clear rides
     // the editor_set_tool event, so it is atomic with the switch).
@@ -2558,14 +2475,15 @@ test "select_editor_tool: changing tools clears the selection, re-selecting keep
     }, .{ .x = 0, .y = 0 }, &.{});
     @import("test_harness.zig").runToIdle(&history);
     try std.testing.expectEqual(types.EditorToolId.tile, history.current_state.editor.?.active_tool);
-    try std.testing.expectEqual(@as(usize, 0), history.session.ui_state.editor_selection.items.len);
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
 
-    // The tool pointer rides the undo timeline — undo walks back to the
-    // select tool. (The selection clear is UiState in this slice — it is
-    // NOT restored by undo yet; that lands when the selection migrates
-    // onto the Editor.)
+    // The tool pointer AND the selection ride the undo timeline — one undo
+    // step reverts the switch together with its selection clear.
     try std.testing.expect(history.undo(event_handlers.processEvent));
     try std.testing.expectEqual(types.EditorToolId.select, history.current_state.editor.?.active_tool);
+    const selection = history.current_state.editor.?.selection;
+    try std.testing.expectEqual(@as(usize, 1), selection.len);
+    try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection[0]);
 }
 
 // --- Prepared-skill toggle (same-slot re-activation) ------------------------

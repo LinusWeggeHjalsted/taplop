@@ -865,8 +865,10 @@ pub const EditorToolId = union(enum) {
 /// Placement entries address the ACTIVE level's placement lists by index
 /// — kept consistent by the delete arms (the deleted entry is pruned and
 /// the indices above it are remapped; the render's bounds-check is
-/// defensive only). The selection set lives on UiState (off the undo
-/// timeline — selecting is a UI affordance, not a mission edit).
+/// defensive only). The selection set lives on the Editor (GameState, on
+/// the undo timeline) and is mutated only via the `editor_select` /
+/// `editor_deselect` events — so undo/redo restores the selection of that
+/// time, and selection-dependent operations (group move) replay safely.
 pub const Selectable = union(enum) {
     /// A floor tile at `position` (a paint/erase target).
     tile: Vector2,
@@ -902,6 +904,12 @@ pub const Editor = struct {
     /// nonempty only while this is `.select` (a tool switch away from
     /// select clears it in the same event).
     active_tool: EditorToolId = .select,
+    /// The select tool's selection set (see `Selectable`). Active-level-
+    /// relative; cleared by `editor_set_active_level` and by any
+    /// `editor_set_tool` to a non-select tool. Mutated only via the
+    /// `editor_select` / `editor_deselect` events; the placement-delete
+    /// arms keep it consistent within the same event (prune + remap).
+    selection: []const Selectable = &.{},
     mode: EditorMode = .edit,
 };
 

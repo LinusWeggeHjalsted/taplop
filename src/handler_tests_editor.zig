@@ -1237,9 +1237,8 @@ test "editor deletes prune the selection and remap shifted indices" {
     }));
     runToIdle(&history);
 
-    const selection = &history.session.ui_state.editor_selection;
-    try selection.append(history.backing_allocator, .{ .entity_placement = 0 });
-    try selection.append(history.backing_allocator, .{ .entity_placement = 2 });
+    const seeded_selection = [_]types.Selectable{ .{ .entity_placement = 0 }, .{ .entity_placement = 2 } };
+    history.current_state.editor.?.selection = &seeded_selection;
 
     event_handlers.pushEvents(
         &history.current_state,
@@ -1251,12 +1250,15 @@ test "editor deletes prune the selection and remap shifted indices" {
     );
     runToIdle(&history);
 
-    try testing.expectEqual(@as(usize, 2), selection.items.len);
-    try testing.expectEqual(@as(u32, 0), selection.items[0].entity_placement);
-    try testing.expectEqual(@as(u32, 1), selection.items[1].entity_placement);
-    // The remapped entry still points at the same placement: (2,0).
-    const level = history.current_state.editor.?.levels[0];
-    try testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, level.entity_placements[selection.items[1].entity_placement].position);
+    {
+        const selection = history.current_state.editor.?.selection;
+        try testing.expectEqual(@as(usize, 2), selection.len);
+        try testing.expectEqual(@as(u32, 0), selection[0].entity_placement);
+        try testing.expectEqual(@as(u32, 1), selection[1].entity_placement);
+        // The remapped entry still points at the same placement: (2,0).
+        const level = history.current_state.editor.?.levels[0];
+        try testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, level.entity_placements[selection[1].entity_placement].position);
+    }
 
     // Deleting a SELECTED placement removes its entry outright.
     event_handlers.pushEvents(
@@ -1268,8 +1270,11 @@ test "editor deletes prune the selection and remap shifted indices" {
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expectEqual(@as(usize, 1), selection.items.len);
-    try testing.expectEqual(@as(u32, 0), selection.items[0].entity_placement);
+    {
+        const selection = history.current_state.editor.?.selection;
+        try testing.expectEqual(@as(usize, 1), selection.len);
+        try testing.expectEqual(@as(u32, 0), selection[0].entity_placement);
+    }
 }
 
 test "editor deletes prune selected tiles and decorations" {
@@ -1293,10 +1298,12 @@ test "editor deletes prune selected tiles and decorations" {
     }));
     runToIdle(&history);
 
-    const selection = &history.session.ui_state.editor_selection;
-    try selection.append(history.backing_allocator, .{ .tile = .{ .x = 1, .y = 1 } });
-    try selection.append(history.backing_allocator, .{ .tile = .{ .x = 2, .y = 2 } });
-    try selection.append(history.backing_allocator, .{ .decoration_placement = 0 });
+    const seeded_selection = [_]types.Selectable{
+        .{ .tile = .{ .x = 1, .y = 1 } },
+        .{ .tile = .{ .x = 2, .y = 2 } },
+        .{ .decoration_placement = 0 },
+    };
+    history.current_state.editor.?.selection = &seeded_selection;
 
     // Erasing a selected tile removes just that tile entry (the other tile
     // + the decoration stay).
@@ -1310,8 +1317,11 @@ test "editor deletes prune selected tiles and decorations" {
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expectEqual(@as(usize, 2), selection.items.len);
-    try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, selection.items[0].tile);
+    {
+        const selection = history.current_state.editor.?.selection;
+        try testing.expectEqual(@as(usize, 2), selection.len);
+        try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, selection[0].tile);
+    }
 
     // Deleting the selected decoration removes its entry.
     event_handlers.pushEvents(
@@ -1323,8 +1333,11 @@ test "editor deletes prune selected tiles and decorations" {
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expectEqual(@as(usize, 1), selection.items.len);
-    try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, selection.items[0].tile);
+    {
+        const selection = history.current_state.editor.?.selection;
+        try testing.expectEqual(@as(usize, 1), selection.len);
+        try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, selection[0].tile);
+    }
 }
 
 test "player_place_editor_decoration: cascaded tile erases prune selected tiles" {
@@ -1339,9 +1352,11 @@ test "player_place_editor_decoration: cascaded tile erases prune selected tiles"
     var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
     runToIdle(&history);
 
-    const selection = &history.session.ui_state.editor_selection;
-    try selection.append(history.backing_allocator, .{ .tile = .{ .x = 5, .y = 5 } });
-    try selection.append(history.backing_allocator, .{ .tile = .{ .x = 9, .y = 9 } });
+    const seeded_selection = [_]types.Selectable{
+        .{ .tile = .{ .x = 5, .y = 5 } },
+        .{ .tile = .{ .x = 9, .y = 9 } },
+    };
+    history.current_state.editor.?.selection = &seeded_selection;
 
     event_handlers.pushEvents(
         &history.current_state,
@@ -1354,8 +1369,9 @@ test "player_place_editor_decoration: cascaded tile erases prune selected tiles"
     runToIdle(&history);
 
     // The covered tile (5,5) was erased + pruned; the clear tile survives.
-    try testing.expectEqual(@as(usize, 1), selection.items.len);
-    try testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, selection.items[0].tile);
+    const selection = history.current_state.editor.?.selection;
+    try testing.expectEqual(@as(usize, 1), selection.len);
+    try testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, selection[0].tile);
 }
 
 // --- Editor click planners (pure, directly tested) -------------------------

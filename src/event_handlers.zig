@@ -268,16 +268,15 @@ fn pushGameplayStartEvents(current: *GameState, allocator: std.mem.Allocator, sy
 /// one inline case and routes the rest here. Arms land incrementally with
 /// the editor UI slices; unimplemented variants still panic so an unhooked
 /// editor event fails fast rather than silently no-op'ing (which would let
-/// the UI believe it edited something). `selection` is the select tool's
-/// selection set (SessionState UiState, off the undo timeline) — the
+/// the UI believe it edited something). The select tool's selection set
+/// lives on the Editor (`Editor.selection`, on the undo timeline); the
 /// placement-removal arms keep it consistent (prune the deleted entry,
-/// remap the indices above it) so surviving entries keep pointing at the
-/// same placements.
+/// remap the indices above it) in the same event, so undo/redo restores
+/// the edit and its selection bookkeeping together.
 fn handleEditorEvent(
     current: *GameState,
     event: events.EditorEvent,
     allocator: std.mem.Allocator,
-    selection: *std.ArrayList(types.Selectable),
 ) void {
     const editor = &(current.editor orelse @panic("editor event with no editor"));
     switch (event) {
@@ -297,7 +296,28 @@ fn handleEditorEvent(
             // Invariant: selection nonempty ⇔ active tool is select — a
             // switch away from the select tool takes the selection with it
             // (same event, so one undo step reverts both).
-            if (set.tool != .select) selection.clearRetainingCapacity();
+            if (set.tool != .select) editor.selection = &.{};
+        },
+        .editor_select => |select| {
+            // Defensive against crafted logs: the select workflow only, and
+            // placement entries must address the active level's lists (a
+            // live plan can't violate either — validatePlayerAction rejects
+            // the tool case at the replay seam).
+            if (editor.active_tool != .select) return;
+            const level = activeEditorLevel(editor) orelse return;
+            const entry_valid = switch (select.entry) {
+                .entity_placement => |index| index < level.entity_placements.len,
+                .decoration_placement => |index| index < level.decoration_placements.len,
+                .ground_item_placement => |index| index < level.item_placements.len,
+                .tile, .player_start, .level_end => true,
+            };
+            if (!entry_valid) return;
+            if (selectionContains(editor.selection, select.entry)) return;
+            editor.selection = selectionWithEntry(editor.selection, select.entry, allocator);
+        },
+        .editor_deselect => |deselect| {
+            if (editor.active_tool != .select) return;
+            editor.selection = selectionWithoutEntry(editor.selection, deselect.entry, allocator);
         },
         .editor_set_tile => |set| {
             if (set.level_index >= editor.levels.len) {
@@ -306,9 +326,13 @@ fn handleEditorEvent(
             const level = &@constCast(editor.levels)[set.level_index];
             // A selected tile leaves the selection when the tile is
             // actually erased (an erase of an absent tile is an idempotent
-            // no-op — nothing to prune).
-            if (!set.is_floor and functions.tileListContains(level.level_tiles, set.position)) {
-                selectionRemoveTile(selection, set.position);
+            // no-op — nothing to prune). Gated on the erase targeting the
+            // active level (selection entries are active-level-relative).
+            if (!set.is_floor and
+                set.level_index == editor.active_level_index and
+                functions.tileListContains(level.level_tiles, set.position))
+            {
+                editor.selection = selectionWithoutTile(editor.selection, set.position, allocator);
             }
             level.level_tiles = setLevelTile(level.level_tiles, set.position, set.is_floor, allocator);
         },
@@ -337,7 +361,14 @@ fn handleEditorEvent(
                 level.decoration_placements[delete.placement_index + 1 ..],
             );
             level.decoration_placements = placements;
-            reconcileSelectionAfterPlacementDelete(selection, .decoration_placement, delete.placement_index);
+            if (delete.level_index == editor.active_level_index) {
+                editor.selection = reconcileSelectionAfterPlacementDelete(
+                    editor.selection,
+                    .decoration_placement,
+                    delete.placement_index,
+                    allocator,
+                );
+            }
         },
         .editor_place_entity => |place| {
             if (place.level_index >= editor.levels.len) {
@@ -410,7 +441,14 @@ fn handleEditorEvent(
                 level.item_placements[delete.placement_index + 1 ..],
             );
             level.item_placements = placements;
-            reconcileSelectionAfterPlacementDelete(selection, .ground_item_placement, delete.placement_index);
+            if (delete.level_index == editor.active_level_index) {
+                editor.selection = reconcileSelectionAfterPlacementDelete(
+                    editor.selection,
+                    .ground_item_placement,
+                    delete.placement_index,
+                    allocator,
+                );
+            }
         },
         .editor_delete_entity_placement => |delete| {
             if (delete.level_index >= editor.levels.len) {
@@ -435,7 +473,14 @@ fn handleEditorEvent(
                 level.entity_placements[delete.placement_index + 1 ..],
             );
             level.entity_placements = placements;
-            reconcileSelectionAfterPlacementDelete(selection, .entity_placement, delete.placement_index);
+            if (delete.level_index == editor.active_level_index) {
+                editor.selection = reconcileSelectionAfterPlacementDelete(
+                    editor.selection,
+                    .entity_placement,
+                    delete.placement_index,
+                    allocator,
+                );
+            }
         },
         .editor_place_decoration => |place| {
             if (place.level_index >= editor.levels.len) {
@@ -586,20 +631,90 @@ fn tileBefore(a: Vector2, b: Vector2) bool {
     return a.y < b.y;
 }
 
+/// Value equality over `Selectable` (tag + payload). Unions don't support
+/// `==` in Zig, so the comparison is spelled out.
+fn selectableEqual(a: types.Selectable, b: types.Selectable) bool {
+    return switch (a) {
+        .tile => |position| b == .tile and
+            b.tile.x == position.x and b.tile.y == position.y,
+        .entity_placement => |index| b == .entity_placement and b.entity_placement == index,
+        .decoration_placement => |index| b == .decoration_placement and b.decoration_placement == index,
+        .ground_item_placement => |index| b == .ground_item_placement and b.ground_item_placement == index,
+        .player_start => b == .player_start,
+        .level_end => b == .level_end,
+    };
+}
+
+fn selectionContains(items: []const types.Selectable, entry: types.Selectable) bool {
+    for (items) |existing| {
+        if (selectableEqual(existing, entry)) return true;
+    }
+    return false;
+}
+
+/// The selection with `entry` appended (a fresh slice — `Editor.selection`
+/// is replaced wholesale, never mutated in place, so deepCopy snapshots
+/// stay sound).
+fn selectionWithEntry(
+    selection: []const types.Selectable,
+    entry: types.Selectable,
+    allocator: std.mem.Allocator,
+) []const types.Selectable {
+    const grown = allocator.alloc(types.Selectable, selection.len + 1) catch
+        @panic("failed to allocate editor selection");
+    @memcpy(grown[0..selection.len], selection);
+    grown[selection.len] = entry;
+    return grown;
+}
+
+/// The selection without its first entry equal to `entry` (the original
+/// slice when absent — a deselect of a non-selected entry is an
+/// idempotent no-op).
+fn selectionWithoutEntry(
+    selection: []const types.Selectable,
+    entry: types.Selectable,
+    allocator: std.mem.Allocator,
+) []const types.Selectable {
+    for (selection, 0..) |existing, index| {
+        if (selectableEqual(existing, entry)) {
+            const shrunk = allocator.alloc(types.Selectable, selection.len - 1) catch
+                @panic("failed to allocate editor selection");
+            @memcpy(shrunk[0..index], selection[0..index]);
+            @memcpy(shrunk[index..], selection[index + 1 ..]);
+            return shrunk;
+        }
+    }
+    return selection;
+}
+
 /// Keep the select tool's selection consistent after a placement removal:
 /// drop the deleted entry and DECREMENT the selected indices above it — a
 /// removal shifts later placements down, so without the remap the
 /// surviving entries would point at the WRONG placements (skipping only
 /// out-of-range entries isn't enough). `kind` selects which placement
 /// list the indices refer to; entries of other kinds are untouched.
+/// Callers gate on the removal targeting the ACTIVE level (selection
+/// entries are active-level-relative). Returns the original slice when no
+/// entry of `kind` is present.
 fn reconcileSelectionAfterPlacementDelete(
-    selection: *std.ArrayList(types.Selectable),
+    selection: []const types.Selectable,
     kind: std.meta.Tag(types.Selectable),
     removed_index: u32,
-) void {
-    var index: usize = 0;
-    while (index < selection.items.len) {
-        const selected = selection.items[index];
+    allocator: std.mem.Allocator,
+) []const types.Selectable {
+    var has_relevant = false;
+    for (selection) |selected| {
+        if (std.meta.activeTag(selected) == kind) {
+            has_relevant = true;
+            break;
+        }
+    }
+    if (!has_relevant) return selection;
+
+    const rebuilt = allocator.alloc(types.Selectable, selection.len) catch
+        @panic("failed to allocate editor selection");
+    var length: usize = 0;
+    for (selection) |selected| {
         const relevant: ?u32 = switch (selected) {
             .entity_placement => |value| if (kind == .entity_placement) value else null,
             .decoration_placement => |value| if (kind == .decoration_placement) value else null,
@@ -607,43 +722,56 @@ fn reconcileSelectionAfterPlacementDelete(
             else => null,
         };
         if (relevant) |value| {
-            if (value == removed_index) {
-                _ = selection.orderedRemove(index);
-                continue;
-            }
+            if (value == removed_index) continue;
             if (value > removed_index) {
                 switch (selected) {
-                    .entity_placement => selection.items[index].entity_placement -= 1,
-                    .decoration_placement => selection.items[index].decoration_placement -= 1,
-                    .ground_item_placement => selection.items[index].ground_item_placement -= 1,
+                    .entity_placement => |shifted| rebuilt[length] = .{ .entity_placement = shifted - 1 },
+                    .decoration_placement => |shifted| rebuilt[length] = .{ .decoration_placement = shifted - 1 },
+                    .ground_item_placement => |shifted| rebuilt[length] = .{ .ground_item_placement = shifted - 1 },
                     else => unreachable,
                 }
+                length += 1;
+                continue;
             }
         }
-        index += 1;
+        rebuilt[length] = selected;
+        length += 1;
     }
+    return rebuilt[0..length];
 }
 
-/// Drop the selected tile at `position` (a tile entry is position-keyed,
-/// not index-keyed — nothing to remap).
-fn selectionRemoveTile(
-    selection: *std.ArrayList(types.Selectable),
+/// The selection without its tile entry at `position` (a tile entry is
+/// position-keyed, not index-keyed — nothing to remap; other kinds pass
+/// through). Returns the original slice when no such entry exists.
+fn selectionWithoutTile(
+    selection: []const types.Selectable,
     position: Vector2,
-) void {
-    var index: usize = 0;
-    while (index < selection.items.len) {
-        const selected = selection.items[index];
-        switch (selected) {
-            .tile => |tile_position| {
-                if (tile_position.x == position.x and tile_position.y == position.y) {
-                    _ = selection.orderedRemove(index);
-                    continue;
-                }
-            },
-            else => {},
-        }
-        index += 1;
-    }
+    allocator: std.mem.Allocator,
+) []const types.Selectable {
+    var has_tile = false;
+    for (selection) |selected| switch (selected) {
+        .tile => |tile_position| {
+            if (tile_position.x == position.x and tile_position.y == position.y) has_tile = true;
+        },
+        else => {},
+    };
+    if (!has_tile) return selection;
+
+    const rebuilt = allocator.alloc(types.Selectable, selection.len) catch
+        @panic("failed to allocate editor selection");
+    var length: usize = 0;
+    for (selection) |selected| switch (selected) {
+        .tile => |tile_position| {
+            if (tile_position.x == position.x and tile_position.y == position.y) continue;
+            rebuilt[length] = selected;
+            length += 1;
+        },
+        else => {
+            rebuilt[length] = selected;
+            length += 1;
+        },
+    };
+    return rebuilt[0..length];
 }
 
 /// Get a mutable pointer to the player entity, whether in a level or hub.
@@ -1202,6 +1330,13 @@ fn handlePlayerInputEvent(
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_tool = .{
                 .tool = set.tool,
             } } }}, allocator);
+        },
+        // Select-tool click: thin over the shared planner (the input layer
+        // fires only nonempty plans — see planEditorSelectionActions).
+        .player_toggle_editor_selection => |toggle| {
+            if (current.editor) |*editor| {
+                pushEvents(current, planEditorSelectionActions(editor, toggle.position, allocator), allocator);
+            }
         },
         // Tile-paint click: thin over the shared planner (the input layer
         // fires only nonempty plans — see planEditorTilePaintActions).
@@ -1980,6 +2115,100 @@ pub fn planEditorDeleteActions(
     }
     // Nothing there — no-op.
     return &.{};
+}
+
+/// Select-tool click planner: toggle the clicked thing's GROUP in the
+/// selection. A click's group is everything that toggles together: the
+/// '!' / '=' singletons; a covering decoration (the FIRST — exactly what
+/// the hover preview outlines); or the tile INCLUDING anything standing
+/// on it (entity / ground-item placements). Anything from the group
+/// already selected → the plan deselects every PRESENT entry (clicking a
+/// selected tile deselects the tile AND its occupant); nothing selected →
+/// the plan selects the whole group. Empty ground selects nothing (empty
+/// plan — no player action fires). One event per entry (granular by
+/// design — see DESIGN → Architecture → Level Editor → Selection model);
+/// they share the click's idle point, so one undo step reverts the whole
+/// click.
+pub fn planEditorSelectionActions(
+    editor: *const types.Editor,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+
+    // Resolve the click's group (at most tile + entity + item = 3).
+    var group: [3]types.Selectable = undefined;
+    var group_length: usize = 0;
+
+    if (level.player_start.x == position.x and level.player_start.y == position.y) {
+        group[0] = .player_start;
+        group_length = 1;
+    } else if (level.level_end) |level_end_position| {
+        if (level_end_position.x == position.x and level_end_position.y == position.y) {
+            group[0] = .level_end;
+            group_length = 1;
+        }
+    }
+    if (group_length == 0) {
+        // A covering decoration (the first — matching the hover preview).
+        for (level.decoration_placements, 0..) |placement, placement_index| {
+            const type_definition = editor.decoration_types[placement.type_id];
+            if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+                group[0] = .{ .decoration_placement = @intCast(placement_index) };
+                group_length = 1;
+                break;
+            }
+        }
+    }
+    if (group_length == 0) {
+        // The tile including anything standing on it. Empty ground (no
+        // tile, no occupants) selects nothing.
+        for (level.level_tiles) |tile| {
+            if (tile.x == position.x and tile.y == position.y) {
+                group[group_length] = .{ .tile = position };
+                group_length += 1;
+                break;
+            }
+        }
+        for (level.entity_placements, 0..) |placement, placement_index| {
+            if (placement.position.x == position.x and placement.position.y == position.y) {
+                group[group_length] = .{ .entity_placement = @intCast(placement_index) };
+                group_length += 1;
+            }
+        }
+        for (level.item_placements, 0..) |placement, placement_index| {
+            if (placement.position.x == position.x and placement.position.y == position.y) {
+                group[group_length] = .{ .ground_item_placement = @intCast(placement_index) };
+                group_length += 1;
+            }
+        }
+    }
+    if (group_length == 0) return &.{};
+
+    // Toggle direction: anything present → deselect every present entry;
+    // nothing present → select the whole group.
+    var any_present = false;
+    for (group[0..group_length]) |entry| {
+        if (selectionContains(editor.selection, entry)) {
+            any_present = true;
+            break;
+        }
+    }
+    // The event stack is LIFO — push the group REVERSED so the entries
+    // process (and land in the recorded log) in group order: tile, then
+    // entity, then item.
+    var plan: std.ArrayList(Event) = .empty;
+    var group_index = group_length;
+    while (group_index > 0) {
+        group_index -= 1;
+        const entry = group[group_index];
+        const variant = if (any_present)
+            Event{ .editor_event = .{ .editor_deselect = .{ .entry = entry } } }
+        else
+            Event{ .editor_event = .{ .editor_select = .{ .entry = entry } } };
+        plan.append(allocator, variant) catch @panic("failed to allocate editor selection plan");
+    }
+    return plan.items;
 }
 
 /// Process a single event from the stack. Applies the event to the current
@@ -2818,6 +3047,10 @@ pub fn processEvent(
                     if (current.editor) |*editor| {
                         if (set.level_index < editor.levels.len) {
                             editor.active_level_index = set.level_index;
+                            // The selection is active-level-relative — a
+                            // tab switch takes it with it (same event, so
+                            // undo restores the tab AND its selection).
+                            editor.selection = &.{};
                         }
                     }
                 },
@@ -2829,7 +3062,6 @@ pub fn processEvent(
                     current,
                     ev,
                     allocator,
-                    &history.session.ui_state.editor_selection,
                 ),
             }
         },

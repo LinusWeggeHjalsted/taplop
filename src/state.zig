@@ -1139,6 +1139,27 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_set_editor_tool type id out of range");
                     }
                 },
+                // Structural legality: the paint checks + the select tool
+                // active (the live path only toggles from the select tool's
+                // viewport arm; the handler no-ops otherwise as the
+                // defensive path for machinery events). The position is
+                // unrestricted (empty-ground clicks are legal in a recorded
+                // session — they plan empty and record nothing, but a
+                // hand-crafted log may contain one).
+                .player_toggle_editor_selection => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_toggle_editor_selection outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_toggle_editor_selection with no editor");
+                    };
+                    if (editor.levels.len == 0) {
+                        @panic("replay validation: player_toggle_editor_selection with no levels");
+                    }
+                    if (editor.active_tool != .select) {
+                        @panic("replay validation: player_toggle_editor_selection without the select tool active");
+                    }
+                },
                 // Structural legality only: screen + editor + a level to
                 // paint on. The position is unrestricted (any tile
                 // coordinate is a legal paint target — the handler no-ops

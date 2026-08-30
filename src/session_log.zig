@@ -485,6 +485,11 @@ test "writeEventLog serializes representative event shapes" {
         .{ .editor_event = .{ .editor_set_tool = .{ .tool = .select } } },
         .{ .editor_event = .{ .editor_set_tool = .{ .tool = .{ .entity_type = 2 } } } },
         .{ .player_input_event = .{ .player_set_editor_tool = .{ .tool = .tile } } },
+        // Selectable union payloads: struct tag (tile → Vector2 fields),
+        // index tag, void tag (singletons)
+        .{ .editor_event = .{ .editor_select = .{ .entry = .{ .tile = .{ .x = 3, .y = 4 } } } } },
+        .{ .editor_event = .{ .editor_select = .{ .entry = .{ .entity_placement = 1 } } } },
+        .{ .editor_event = .{ .editor_deselect = .{ .entry = .player_start } } },
     };
 
     const output = try writeEventLog(&history, "20260815_143022", allocator);
@@ -514,6 +519,9 @@ test "writeEventLog serializes representative event shapes" {
     try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_set_tool\ntool select\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_set_tool\ntool entity_type 2\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_tool\ntool tile\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_select\nentry tile 3 4\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_select\nentry entity_placement 1\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_deselect\nentry player_start\n") != null);
 
     // The output round-trips through the generic config parser structurally:
     // Metadata + EventLog sections, with one entry group per event.
@@ -540,6 +548,9 @@ test "writeEventLog serializes representative event shapes" {
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer arena.deinit();
         const log = try loadEventLog(sections, arena.allocator());
+        try std.testing.expectEqualDeep(history[history.len - 6], log.events[log.events.len - 6]);
+        try std.testing.expectEqualDeep(history[history.len - 5], log.events[log.events.len - 5]);
+        try std.testing.expectEqualDeep(history[history.len - 4], log.events[log.events.len - 4]);
         try std.testing.expectEqualDeep(history[history.len - 3], log.events[log.events.len - 3]);
         try std.testing.expectEqualDeep(history[history.len - 2], log.events[log.events.len - 2]);
         try std.testing.expectEqualDeep(history[history.len - 1], log.events[log.events.len - 1]);

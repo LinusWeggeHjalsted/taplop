@@ -6803,3 +6803,62 @@ selection restoration.
 Tests: the tool-change test in input_handlers.zig now drives the full
 input → event → handler path and asserts undo reverts the tool; the
 planner/cursor/view tests read `editor.?.active_tool`. All tests pass.
+
+### Editor selection onto the Editor (selection-undoability slice 2)
+
+**Why.** The upcoming selection operations (group move / delete) have
+handlers whose effect depends on the selection — so the selection must be
+reconstructable from the event log, and undo/redo across edits should show
+what was selected at that time. Off-timeline (UiState), a group-move event
+would either break replay or need a selection snapshot embedded in every
+selection-dependent payload. Design decisions from the session discussion:
+granular `editor_select`/`editor_deselect` events (log readability; a
+group click / future marquee batch shares one idle point, so it is one
+undoable step), per-click undo granularity ACCEPTED (undoing a misclicked
+selection is a feature), and the `Selectable` union rides in the event
+payload rather than 12 per-kind variants (kind is pure addressing here —
+identical semantics — unlike the placement family where kind picks
+different invariants).
+
+**What landed.** `Editor.selection: []const Selectable` (GameState),
+mutated only via events; `UiState.editor_selection` deleted — event
+handlers no longer reach into UiState at all (`handleEditorEvent` dropped
+its selection parameter). `player_toggle_editor_selection { position }`
+carries just the click (matching `player_delete_editor_at`); the handler
+is thin over `planEditorSelectionActions` (the group-resolution + toggle
+logic extracted from the old direct-write `selectAtEditorPosition` — the
+planner is the single source for the input no-op gate and the handler).
+The planner pushes the group REVERSED (the event stack is LIFO — same
+reason the delete planner pushes high-before-low) so entries process and
+log in group order: tile, entity, item.
+
+Consistency now rides the timeline atomically: the placement-delete arms
+prune + remap `editor.selection` within the same event (rebuilt slices,
+never in-place mutation, so deepCopy snapshots stay sound — the old
+`reconcileSelectionAfterPlacementDelete`/`selectionRemoveTile` became
+pure slice-returning helpers); a tile erased by any flow prunes its entry;
+`editor_set_tool` to a non-select tool and `editor_set_active_level`
+clear the selection inside their own events. Two latent-bug fixes that the
+migration exposed: level-tab switches previously LEFT the selection
+(indices are active-level-relative — stale indices pointed into the new
+level's lists); the delete-arm reconcile previously ran regardless of
+`delete.level_index` (a non-active-level delete would have remapped the
+wrong indices — now gated on `level_index == active_level_index`).
+
+`validatePlayerAction` arm: screen + editor + levels + the select tool
+active; the handler additionally bounds-checks placement indices and
+no-ops on a non-select tool or duplicate entry (defensive paths for
+crafted machinery events; a redundant player toggle replays gracefully —
+empty plan, nothing pushed). Session-log shapes test extended: Selectable
+payloads in all three shapes (struct tag `tile 3 4`, index tag, void tag)
+write + parse + load round-trip.
+
+Tests: the toggle test drives the REAL input path (`handleIdleInput` →
+runToIdle) and asserts undo/redo restores the selection; the tool-change
+test now asserts one undo reverts the switch together with its selection
+clear (the slice-1 intermediate state is closed). Test-harness gotchas
+hit along the way: `runToIdle` records idle points unconditionally, so a
+no-op click must skip the drain (a duplicate idle point at the same index
+makes undo appear to no-op); off-timeline test seeding must happen BEFORE
+the first `runToIdle` or the earlier snapshot reverts it on undo. All 381
+tests pass.

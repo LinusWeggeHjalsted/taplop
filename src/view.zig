@@ -187,7 +187,6 @@ pub fn view(
             &tile_overlays,
             frame_allocator,
             editor,
-            session,
             active_theme,
             camera,
             camera_zoom,
@@ -2067,23 +2066,22 @@ fn buildEditorCursorOverlay(
 /// same color as every other world outline — cursor, range, region
 /// previews): a single-tile outline per tile / singleton / placement
 /// position, and a continuous region outline per decoration placement.
-/// Pure over SessionState + the editor (replay-safe). Stale placement
+/// Pure over the editor (replay-safe). Stale placement
 /// entries (a selected placement later deleted — indices shift/go out of
 /// range) are skipped.
 fn buildEditorSelectionOverlay(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
     editor: *const Editor,
-    session: *const state.SessionState,
     active_theme: types.ActiveColorTheme,
     camera: types.Camera,
     zoom: f32,
 ) void {
-    if (session.ui_state.editor_selection.items.len == 0) return;
+    if (editor.selection.len == 0) return;
     const level = selectEditorLevel(editor) orelse return;
     const outline_color = active_theme.lightest;
 
-    for (session.ui_state.editor_selection.items) |selected| switch (selected) {
+    for (editor.selection) |selected| switch (selected) {
         .tile => |position| appendSingleTileOutline(list, allocator, position, outline_color, camera, zoom),
         .player_start => appendSingleTileOutline(list, allocator, level.player_start, outline_color, camera, zoom),
         .level_end => {
@@ -3166,11 +3164,14 @@ test "editor selection overlay: lightest-color outlines around all selected regi
     // 2-wide decoration — the union of everything selectable. Cursor null
     // so only the selection overlays emit.
     state_.editor.?.active_tool = .select;
-    try session.ui_state.editor_selection.append(arena, .{ .tile = .{ .x = 1, .y = 1 } });
-    try session.ui_state.editor_selection.append(arena, .{ .entity_placement = 0 });
-    try session.ui_state.editor_selection.append(arena, .player_start);
-    try session.ui_state.editor_selection.append(arena, .level_end);
-    try session.ui_state.editor_selection.append(arena, .{ .decoration_placement = 0 });
+    const seeded_selection = [_]types.Selectable{
+        .{ .tile = .{ .x = 1, .y = 1 } },
+        .{ .entity_placement = 0 },
+        .player_start,
+        .level_end,
+        .{ .decoration_placement = 0 },
+    };
+    state_.editor.?.selection = &seeded_selection;
 
     const camera = computeCamera(&state_, 1.0, null);
     // The selection outlines use the active theme's lightest — the same

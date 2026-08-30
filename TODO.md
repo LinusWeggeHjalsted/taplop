@@ -467,12 +467,12 @@ yet implemented. Remaining work:
   DELETE (`player_delete_editor_at`: one thing per click — occupant,
   then covering decoration, then the bare tile; '!' / '=' / empty ground
   no-ops; clean-click-vs-pan disambiguation — see DONE.md), and the SELECT
-  TOOL's plain-click selection (`types.Selectable` set on UiState, lightest-
-  color region outlines, hover preview, cleared on tool change — see
-  DONE.md), and the ACTIVE TOOL pointer onto the Editor
-  (`Editor.active_tool` + `player_set_editor_tool`/`editor_set_tool` —
-  tool switches + their selection clear ride the undo timeline; the
-  selection itself migrates onto the Editor in the next slice).
+  TOOL's plain-click selection (`types.Selectable` set on the Editor via
+  the granular `editor_select`/`editor_deselect` events — undoable, see
+  DESIGN → Level Editor → Selection model; lightest-color region
+  outlines, hover preview, cleared on tool + level-tab change inside those
+  events — see DONE.md), and the ACTIVE TOOL pointer onto the Editor
+  (`Editor.active_tool` + `player_set_editor_tool`/`editor_set_tool`).
   Deferred: drag-painting. Still-needed event
   structs: `editor_toggle_inspector` /
   gradient-override setters. Default level template
