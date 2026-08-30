@@ -768,6 +768,38 @@ pub const PlayerInputEvent = union(enum) {
         target: EntityEditTarget,
         value: u32,
     },
+    // Equipped-slot commits (weapons + gear, nullable whole-item values —
+    // the per-slot EditorEvents carry the full item, so one event covers
+    // create / retype / field-edit / delete; one undo step either way).
+    // Names mirror the editor events (the variant carries the slot).
+    player_set_editor_entity_main_hand_weapon: struct {
+        target: EntityEditTarget,
+        value: ?Weapon,
+    },
+    player_set_editor_entity_off_hand_weapon: struct {
+        target: EntityEditTarget,
+        value: ?Weapon,
+    },
+    player_set_editor_entity_amulet: struct {
+        target: EntityEditTarget,
+        value: ?Amulet,
+    },
+    player_set_editor_entity_coat: struct {
+        target: EntityEditTarget,
+        value: ?Coat,
+    },
+    player_set_editor_entity_gloves: struct {
+        target: EntityEditTarget,
+        value: ?Gloves,
+    },
+    player_set_editor_entity_pants: struct {
+        target: EntityEditTarget,
+        value: ?Pants,
+    },
+    player_set_editor_entity_boots: struct {
+        target: EntityEditTarget,
+        value: ?Boots,
+    },
 
     // --- Meta: exit/skip orchestrators ---
     // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;

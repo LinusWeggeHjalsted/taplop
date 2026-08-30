@@ -337,6 +337,34 @@ fn handleEditorEvent(
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.aggro_range = set.value;
         },
+        .editor_set_entity_main_hand_weapon => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.main_hand_weapon = set.value;
+        },
+        .editor_set_entity_off_hand_weapon => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.off_hand_weapon = set.value;
+        },
+        .editor_set_entity_amulet => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.amulet = set.value;
+        },
+        .editor_set_entity_coat => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.coat = set.value;
+        },
+        .editor_set_entity_gloves => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.gloves = set.value;
+        },
+        .editor_set_entity_pants => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.pants = set.value;
+        },
+        .editor_set_entity_boots => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.boots = set.value;
+        },
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
             // placement entries must address the active level's lists (a
@@ -1526,6 +1554,49 @@ fn handlePlayerInputEvent(
         },
         .player_set_editor_entity_aggro_range => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_aggro_range = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        // Equipped-slot commits: thin forwards of the whole (nullable) item.
+        .player_set_editor_entity_main_hand_weapon => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_main_hand_weapon = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_off_hand_weapon => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_off_hand_weapon = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_amulet => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_amulet = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_coat => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_coat = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_gloves => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_gloves = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_pants => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_pants = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_boots => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_boots = .{
                 .target = set.target,
                 .value = set.value,
             } } }}, allocator);

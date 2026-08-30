@@ -527,9 +527,25 @@ yet implemented. Remaining work:
         leading zeros don't false-positive), `Entity.textFieldValue` as
         the single value source (display + focus seed + would-change),
         and `editor_set_entity_momentum` REMOVED (not authorable).
-  - [ ] **4 — gear + weapons:** nullable slots, weapon-type inline row
-        (create-on-pick-while-null / retype-while-present / delete),
-        gear Add/Delete, bounded numeric stat fields, name fields.
+  - [~] **4 — gear + weapons:**
+    - [x] **4a — item data layer:** DONE — `TextFieldId` is now a union
+          (entity_name/sprite, `entity_stat: EntityStatField`,
+          `item_name`/`item_stat` addressing a `GearSlot`), the seven
+          equipped-slot wrappers + handler arms + validation
+          (`validateInspectorEntityEdit`, renamed — covers scalars +
+          items), `Entity.gearSlotItem` (the single slot→item mapping;
+          ui.zig delegates), item accessors in types.zig (`itemName`/
+          `itemWithName`/`itemStatValue`/`itemWithStat`/`itemStatMax`),
+          and the gear-stat `max_*` bounds MOVED to types.zig (the
+          parser + the commit clamp now read one constant — the coupling
+          contract). Commits: whole-item events (one undo step for
+          create/retype/field-edit/delete), bounded item-stat clamps,
+          empty-slot + wrong-stat + would-change no-op gates.
+    - [ ] **4b — the UI:** the Weapons + Gear sections' rows — weapon
+          type rows (create-on-pick-while-null / retype-while-present /
+          delete), gear Add/Delete, item name + stat fields. The entries
+          list becomes state-dependent (a present item adds its
+          sub-field rows).
   - [ ] **5 — utility skills:** the centered picker framework (first
         consumer: the 25-skill list) + slot none/delete.
   - [ ] **6 — later: sprite picker + entity layers:** replaces the interim

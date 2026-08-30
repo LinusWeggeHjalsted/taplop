@@ -2313,7 +2313,7 @@ test "inspector stat commits: numeric parse, unbounded clamp, empty no-op, leadi
 
     const no_keys: [0]?[]const u8 = .{};
     const backspace_pressed: [1]?[]const u8 = .{"Backspace"};
-    const field: types.TextFieldRef = .{ .id = .entity_max_health, .target = .{ .entity_type = 0 } };
+    const field: types.TextFieldRef = .{ .id = .{ .entity_stat = .max_health }, .target = .{ .entity_type = 0 } };
 
     // Edit 20 → 25 (backspace the 0, type 5): parsed + committed.
     ui.beginTextEdit(&history.session.ui_state, field, "20");
@@ -2353,6 +2353,89 @@ test "inspector stat commits: numeric parse, unbounded clamp, empty no-op, leadi
     try testing.expectEqualStrings("025", history.session.ui_state.text_edit.?.buffer.currentText());
     input_handlers.resolveTextEditOutcome(&history, .commit);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
+test "inspector item commits: weapon name + damage (bounded), empty-slot and wrong-stat no-ops" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{
+            .name = "Skeleton",
+            .team = 1,
+            .main_hand_weapon = .{ .name = "Skeleton Sword", .weapon_type = .sword, .weapon_damage = 5 },
+            .coat = .{ .name = "Skeleton Coat", .health_bonus = 2, .defense_bonus = 1 },
+        },
+    }};
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+    }));
+    runToIdle(&history);
+
+    const no_keys: [0]?[]const u8 = .{};
+    const target: types.EntityEditTarget = .{ .entity_type = 0 };
+
+    // Weapon NAME: the whole-item event carries the edit (type + damage
+    // ride along untouched); one undo restores.
+    {
+        const field: types.TextFieldRef = .{ .id = .{ .item_name = .main_hand }, .target = target };
+        ui.beginTextEdit(&history.session.ui_state, field, "Skeleton Sword");
+        _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, " of Doom", &no_keys, &no_keys, false);
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        const weapon = history.current_state.editor.?.entity_types[0].template.main_hand_weapon.?;
+        try testing.expectEqualStrings("Skeleton Sword of Doom", weapon.name);
+        try testing.expectEqual(types.WeaponType.sword, weapon.weapon_type);
+        try testing.expectEqual(@as(u32, 5), weapon.weapon_damage);
+        try testing.expect(history.undo(event_handlers.processEvent));
+        try testing.expectEqualStrings(
+            "Skeleton Sword",
+            history.current_state.editor.?.entity_types[0].template.main_hand_weapon.?.name,
+        );
+    }
+
+    // Weapon DAMAGE: bounded — an out-of-range buffer clamps to
+    // max_weapon_damage (the parser's own bound, single-sourced).
+    {
+        const field: types.TextFieldRef = .{
+            .id = .{ .item_stat = .{ .slot = .main_hand, .stat = .weapon_damage } },
+            .target = target,
+        };
+        ui.beginTextEdit(&history.session.ui_state, field, "5");
+        _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "99", &no_keys, &no_keys, false);
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(
+            types.max_weapon_damage,
+            history.current_state.editor.?.entity_types[0].template.main_hand_weapon.?.weapon_damage,
+        );
+    }
+
+    // A stat the item kind doesn't carry commits nothing (a coat has no
+    // weapon_damage) — nothing recorded, focus dropped.
+    {
+        const field: types.TextFieldRef = .{
+            .id = .{ .item_stat = .{ .slot = .coat, .stat = .weapon_damage } },
+            .target = target,
+        };
+        ui.beginTextEdit(&history.session.ui_state, field, "");
+        _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "7", &no_keys, &no_keys, false);
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+        try testing.expect(history.session.ui_state.text_edit == null);
+    }
+
+    // An EMPTY slot commits nothing (no amulet to rename).
+    {
+        const field: types.TextFieldRef = .{ .id = .{ .item_name = .amulet }, .target = target };
+        ui.beginTextEdit(&history.session.ui_state, field, "");
+        _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "Amulet", &no_keys, &no_keys, false);
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+        try testing.expect(history.current_state.editor.?.entity_types[0].template.amulet == null);
+    }
 }
 
 test "inspector wheel routing: scrolls over the open panel, not elsewhere" {

@@ -1218,6 +1218,86 @@ pub fn resolveTextEditOutcome(
 /// this is where a TextFieldId becomes a player action. A no-op edit (the
 /// buffer equals the current value) records nothing; a stale focus (no
 /// editor, or the target type deleted mid-edit) just drops the buffer.
+/// Parse a digits-only buffer as u32: null when empty/unparseable (commit
+/// nothing); overflow clamps to u32 max (the UNBOUNDED base stats).
+fn parseUnboundedStatValue(value: []const u8) ?u32 {
+    return std.fmt.parseInt(u32, value, 10) catch |parse_error| switch (parse_error) {
+        error.Overflow => std.math.maxInt(u32),
+        else => null,
+    };
+}
+
+/// Parse + clamp to a bounded stat's max (the gear-stat balance bounds —
+/// the same max_* the parser clamps with; the single source is types.zig).
+fn parseBoundedStatValue(value: []const u8, max: u32) ?u32 {
+    const parsed = parseUnboundedStatValue(value) orelse return null;
+    return @min(parsed, max);
+}
+
+/// Build the per-slot player wrapper carrying a WHOLE item (one event per
+/// slot — create / retype / field-edit / delete all push the full value,
+/// so one undo step covers any of them). The item's kind must match the
+/// slot (it always does — items are read from the slot itself); a mismatch
+/// (crafted state) records nothing. Shared by the text-field commits and
+/// the slot click handlers (add / delete / weapon-type pick).
+fn editorSlotItemAction(
+    target: types.EntityEditTarget,
+    slot: types.GearSlot,
+    item: types.Item,
+) ?events.PlayerInputEvent {
+    switch (slot) {
+        .main_hand => switch (item) {
+            .weapon => |weapon| return .{ .player_set_editor_entity_main_hand_weapon = .{
+                .target = target,
+                .value = weapon,
+            } },
+            else => return null,
+        },
+        .off_hand => switch (item) {
+            .weapon => |weapon| return .{ .player_set_editor_entity_off_hand_weapon = .{
+                .target = target,
+                .value = weapon,
+            } },
+            else => return null,
+        },
+        .amulet => switch (item) {
+            .amulet => |amulet| return .{ .player_set_editor_entity_amulet = .{
+                .target = target,
+                .value = amulet,
+            } },
+            else => return null,
+        },
+        .coat => switch (item) {
+            .coat => |coat| return .{ .player_set_editor_entity_coat = .{
+                .target = target,
+                .value = coat,
+            } },
+            else => return null,
+        },
+        .gloves => switch (item) {
+            .gloves => |gloves| return .{ .player_set_editor_entity_gloves = .{
+                .target = target,
+                .value = gloves,
+            } },
+            else => return null,
+        },
+        .pants => switch (item) {
+            .pants => |pants| return .{ .player_set_editor_entity_pants = .{
+                .target = target,
+                .value = pants,
+            } },
+            else => return null,
+        },
+        .boots => switch (item) {
+            .boots => |boots| return .{ .player_set_editor_entity_boots = .{
+                .target = target,
+                .value = boots,
+            } },
+            else => return null,
+        },
+    }
+}
+
 pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
     if (history.session.ui_state.text_edit == null) return;
     const text_edit: *ui.TextEditState = &history.session.ui_state.text_edit.?;
@@ -1259,46 +1339,74 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             };
             pushPlayerActionAndDrain(history, action);
         },
-        .entity_max_health, .entity_defense, .entity_speed, .entity_aggro_range => {
+        .entity_stat => |stat| {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
             const template = event_handlers.editorEntityTemplate(editor, field.target) orelse return;
-            // Parse the digits-only buffer: empty commits nothing; an
-            // overflow clamps to u32 max (base stats are UNBOUNDED by
-            // design — see DESIGN → Level Editor → Inspector fields).
-            const parsed = std.fmt.parseInt(u32, value, 10) catch |parse_error| switch (parse_error) {
-                error.Overflow => std.math.maxInt(u32),
-                else => return,
-            };
-            // Would-change gate with NUMERIC semantics: compare the parsed
-            // value against the field's current value (a string compare
-            // would false-positive on "020" vs 20).
+            // Base stats are UNBOUNDED by design — see DESIGN → Level
+            // Editor → Inspector fields.
+            const parsed = parseUnboundedStatValue(value) orelse return;
+            // Would-change gate with NUMERIC semantics ("020" == 20).
             const current_formatted = template.textFieldValue(
                 history.current_arena.allocator(),
                 field.id,
             ) catch @panic("failed to format entity field value");
-            const current = std.fmt.parseInt(u32, current_formatted, 10) catch return;
+            const current = parseUnboundedStatValue(current_formatted) orelse return;
             if (parsed == current) return;
             history.session.queueSound(history.backing_allocator, .button_click_up);
-            const action: events.PlayerInputEvent = switch (field.id) {
-                .entity_max_health => .{ .player_set_editor_entity_max_health = .{
+            const action: events.PlayerInputEvent = switch (stat) {
+                .max_health => .{ .player_set_editor_entity_max_health = .{
                     .target = field.target,
                     .value = parsed,
                 } },
-                .entity_defense => .{ .player_set_editor_entity_defense = .{
+                .defense => .{ .player_set_editor_entity_defense = .{
                     .target = field.target,
                     .value = parsed,
                 } },
-                .entity_speed => .{ .player_set_editor_entity_speed = .{
+                .speed => .{ .player_set_editor_entity_speed = .{
                     .target = field.target,
                     .value = parsed,
                 } },
-                .entity_aggro_range => .{ .player_set_editor_entity_aggro_range = .{
+                .aggro_range => .{ .player_set_editor_entity_aggro_range = .{
                     .target = field.target,
                     .value = parsed,
                 } },
-                else => unreachable,
             };
+            pushPlayerActionAndDrain(history, action);
+        },
+        .item_name => |slot| {
+            if (history.current_state.editor == null) return;
+            const editor: *types.Editor = &history.current_state.editor.?;
+            const template = event_handlers.editorEntityTemplate(editor, field.target) orelse return;
+            // An empty slot commits nothing (nothing to rename).
+            const item = template.gearSlotItem(slot) orelse return;
+            if (std.mem.eql(u8, types.itemName(item), value)) return;
+            history.session.queueSound(history.backing_allocator, .button_click_up);
+            const action = editorSlotItemAction(
+                field.target,
+                slot,
+                types.itemWithName(item, value),
+            ) orelse return;
+            pushPlayerActionAndDrain(history, action);
+        },
+        .item_stat => |item_field| {
+            if (history.current_state.editor == null) return;
+            const editor: *types.Editor = &history.current_state.editor.?;
+            const template = event_handlers.editorEntityTemplate(editor, field.target) orelse return;
+            // An empty slot, or a stat the item kind doesn't carry, commits
+            // nothing.
+            const item = template.gearSlotItem(item_field.slot) orelse return;
+            const current = types.itemStatValue(item, item_field.stat) orelse return;
+            // Item stats are BOUNDED (the player can pick up exactly these
+            // items — the same max_* the parser clamps with).
+            const parsed = parseBoundedStatValue(value, types.itemStatMax(item_field.stat)) orelse return;
+            if (parsed == current) return;
+            history.session.queueSound(history.backing_allocator, .button_click_up);
+            const action = editorSlotItemAction(
+                field.target,
+                item_field.slot,
+                types.itemWithStat(item, item_field.stat, parsed),
+            ) orelse return;
             pushPlayerActionAndDrain(history, action);
         },
     }

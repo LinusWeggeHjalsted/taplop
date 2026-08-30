@@ -1097,12 +1097,14 @@ pub const GameStateHistory = struct {
     /// Fail-fast `@panic` (malicious replay = reject); server-side leaderboard
     /// validation reuses this hard gate. See DESIGN → Determinism &
     /// Tiebreaking → Replay VERIFICATION.
-    /// Structural legality shared by the inspector scalar commits (color
-    /// swatch, displays-weapons toggle, the stat fields): the editor screen
-    /// with an editor present, and the target's palette index in range (a
-    /// recorded commit always has a live target — a stale focus records
-    /// nothing at the would-change gate).
-    fn validateInspectorScalarCommit(self: *GameStateHistory, target: types.EntityEditTarget) void {
+    /// Structural legality shared by the inspector's entity-edit commits
+    /// (scalars + equipped-slot items): the editor screen with an editor
+    /// present, and the target's palette index in range (a recorded commit
+    /// always has a live target — a stale focus records nothing at the
+    /// would-change gate). Item VALUES are unrestricted (stats are clamped
+    /// at the UI; a crafted out-of-range value is a harmless gameplay
+    /// number, same class as an unbalanced base stat).
+    fn validateInspectorEntityEdit(self: *GameStateHistory, target: types.EntityEditTarget) void {
         if (self.current_state.screen != .editor) {
             @panic("replay validation: inspector scalar commit outside editor screen");
         }
@@ -1225,12 +1227,19 @@ pub const GameStateHistory = struct {
                 // count at the UI, and a crafted out-of-range index is a
                 // harmless render-time clamp). Separate arms (not a
                 // multi-case capture): the payloads are distinct types.
-                .player_set_editor_entity_color_index => |set| self.validateInspectorScalarCommit(set.target),
-                .player_set_editor_entity_displays_weapons => |set| self.validateInspectorScalarCommit(set.target),
-                .player_set_editor_entity_max_health => |set| self.validateInspectorScalarCommit(set.target),
-                .player_set_editor_entity_defense => |set| self.validateInspectorScalarCommit(set.target),
-                .player_set_editor_entity_speed => |set| self.validateInspectorScalarCommit(set.target),
-                .player_set_editor_entity_aggro_range => |set| self.validateInspectorScalarCommit(set.target),
+                .player_set_editor_entity_color_index => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_displays_weapons => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_max_health => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_defense => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_speed => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_aggro_range => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_main_hand_weapon => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_off_hand_weapon => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_amulet => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_coat => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_gloves => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_pants => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_boots => |set| self.validateInspectorEntityEdit(set.target),
                 // Structural legality: the paint checks + the select tool
                 // active (the live path only toggles from the select tool's
                 // viewport arm; the handler no-ops otherwise as the

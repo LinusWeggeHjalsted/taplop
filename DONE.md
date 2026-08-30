@@ -7490,3 +7490,48 @@ masking `runToIdle` calls are removed from the commit tests — their undo
 assertions now pass on the commit's own recording — and the name test
 gained an explicit undo→redo→undo round trip (the exact reported
 symptom).
+
+### Inspector item data layer — TextFieldId union, slot events, bounds single-sourced (DONE, slice 4a)
+
+The plumbing under the Weapons + Gear sections (their UI is 4b): item
+sub-fields are now addressable, committable, and bounded.
+
+**TextFieldId became a union** (it only flows through UiState + the
+commit switch — never serialized into events — so the reshape was
+cheap): `entity_name` / `entity_sprite` /
+`entity_stat: EntityStatField` (the four base stats) /
+`item_name: GearSlot` / `item_stat: { slot, stat: ItemStatField }`.
+Payload-less cases keep their `.entity_name` literal construction, so
+pre-existing call sites barely churned.
+
+**Item addressing.** `Entity.gearSlotItem(slot) ?Item` is the single
+slot→item mapping (types.zig; ui.zig's gear-panel fn is now a delegate —
+it had the identical switch). Item accessors in types.zig: `itemName` /
+`itemWithName` (a skill tome carries no name — unchanged/empty),
+`itemStatValue` (null when the item kind doesn't carry the stat — a coat
+has no weapon_damage), `itemWithStat`, `itemStatMax`.
+
+**Bounds moved to types.zig.** The gear-stat `max_*` constants
+(max_weapon_damage 10 … max_boots_speed 2) lived in loaders.zig, which
+types.zig can't import — the coupling contract ("the parser's clamp and
+the UI's commit clamp read the same constants") required the move;
+loaders' 56 internal references now point at types.max_*. The commit
+paths: base stats UNBOUNDED (overflow → u32 max), item stats clamped to
+`itemStatMax` (parseBoundedStatValue).
+
+**Events.** Seven thin wrappers (player_set_editor_entity_main_hand_
+weapon … _boots) carrying whole nullable items → the pre-existing
+per-slot EditorEvents. One event per slot means create / retype /
+field-edit / delete are all one undo step. `editorSlotItemAction`
+(input_handlers) builds the wrapper from the Item union — the ONE
+union→typed conversion site, shared with 4b's click handlers.
+`validateInspectorEntityEdit` (renamed from validateInspectorScalarCommit
+— it now covers item commits too) checks screen/editor/target for all 13
+inspector entity-edit arms. Commit no-op gates: empty slot, wrong-stat-
+for-kind, would-change (numeric semantics for stats, string for names).
+
+Tests (420): weapon name edit rides the whole-item event (type + damage
+intact, one undo), weapon damage clamps to max_weapon_damage, wrong-stat
+and empty-slot no-ops. UI-side churn: the Stats entries + tests now
+construct `.entity_stat` payload ids; findTextField compares via
+std.meta.eql (unions have no ==).

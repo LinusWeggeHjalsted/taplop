@@ -474,6 +474,163 @@ pub const Item = union(enum) {
     skill_tome: SkillTome,
 };
 
+// ── Gear-stat balance bounds (the single source) ──
+//
+// Shared by the parser's `boundedU32` clamp (loaders.zig) and the editor
+// inspector's commit-time clamp — a bound can't exist in one place only
+// (the coupling contract, DESIGN → Level Editor → Inspector fields).
+// Entity base stats are deliberately NOT bounded here (enemies may be as
+// unbalanced as the author wants); these bound the ITEM stats because the
+// player can pick up exactly those items. See DESIGN → Custom Missions →
+// Balance bounds.
+pub const max_weapon_damage: u32 = 10;
+pub const max_spell_damage: u32 = 10;
+pub const max_health_bonus: u32 = 10;
+pub const max_defense_bonus: u32 = 5;
+pub const max_gloves_damage: u32 = 5;
+pub const max_pickup_radius: u32 = 5;
+pub const max_boots_speed: u32 = 2;
+
+/// One of the entity's unbounded base stats (the inspector's numeric
+/// fields — see DESIGN → Level Editor → Inspector fields).
+pub const EntityStatField = enum {
+    max_health,
+    defense,
+    speed,
+    aggro_range,
+};
+
+/// One numeric stat an equipped item can carry. Not every item kind has
+/// every stat — `itemStatValue` returns null for the non-applicable ones
+/// (the inspector only offers the applicable set).
+pub const ItemStatField = enum {
+    weapon_damage,
+    spell_damage,
+    health_bonus,
+    defense_bonus,
+    damage_bonus,
+    pickup_radius_bonus,
+    speed_bonus,
+};
+
+/// The item's display name (every item kind carries one).
+pub fn itemName(item: Item) []const u8 {
+    return switch (item) {
+        .weapon => |weapon| weapon.name,
+        .amulet => |amulet| amulet.name,
+        .coat => |coat| coat.name,
+        .gloves => |gloves| gloves.name,
+        .pants => |pants| pants.name,
+        .boots => |boots| boots.name,
+        // A skill tome carries no name (it IS its skill).
+        .skill_tome => "",
+    };
+}
+
+/// A copy of `item` with its name replaced.
+pub fn itemWithName(item: Item, name: []const u8) Item {
+    var modified = item;
+    switch (modified) {
+        .weapon => |*weapon| weapon.name = name,
+        .amulet => |*amulet| amulet.name = name,
+        .coat => |*coat| coat.name = name,
+        .gloves => |*gloves| gloves.name = name,
+        .pants => |*pants| pants.name = name,
+        .boots => |*boots| boots.name = name,
+        // A skill tome carries no name (it IS its skill) — unchanged.
+        .skill_tome => {},
+    }
+    return modified;
+}
+
+/// The item's current value for `stat`, or null when the item kind doesn't
+/// carry that stat (a weapon has no health_bonus; a coat has no damage).
+pub fn itemStatValue(item: Item, stat: ItemStatField) ?u32 {
+    return switch (item) {
+        .weapon => |weapon| switch (stat) {
+            .weapon_damage => weapon.weapon_damage,
+            else => null,
+        },
+        .amulet => |amulet| switch (stat) {
+            .spell_damage => amulet.spell_damage,
+            else => null,
+        },
+        .coat => |coat| switch (stat) {
+            .health_bonus => coat.health_bonus,
+            .defense_bonus => coat.defense_bonus,
+            else => null,
+        },
+        .gloves => |gloves| switch (stat) {
+            .damage_bonus => gloves.damage_bonus,
+            .health_bonus => gloves.health_bonus,
+            else => null,
+        },
+        .pants => |pants| switch (stat) {
+            .pickup_radius_bonus => pants.pickup_radius_bonus,
+            .health_bonus => pants.health_bonus,
+            else => null,
+        },
+        .boots => |boots| switch (stat) {
+            .speed_bonus => boots.speed_bonus,
+            .health_bonus => boots.health_bonus,
+            else => null,
+        },
+        .skill_tome => null,
+    };
+}
+
+/// A copy of `item` with `stat` set to `value` (assumes the stat applies —
+/// callers gate on `itemStatValue != null`).
+pub fn itemWithStat(item: Item, stat: ItemStatField, value: u32) Item {
+    var modified = item;
+    switch (modified) {
+        .weapon => |*weapon| switch (stat) {
+            .weapon_damage => weapon.weapon_damage = value,
+            else => {},
+        },
+        .amulet => |*amulet| switch (stat) {
+            .spell_damage => amulet.spell_damage = value,
+            else => {},
+        },
+        .coat => |*coat| switch (stat) {
+            .health_bonus => coat.health_bonus = value,
+            .defense_bonus => coat.defense_bonus = value,
+            else => {},
+        },
+        .gloves => |*gloves| switch (stat) {
+            .damage_bonus => gloves.damage_bonus = value,
+            .health_bonus => gloves.health_bonus = value,
+            else => {},
+        },
+        .pants => |*pants| switch (stat) {
+            .pickup_radius_bonus => pants.pickup_radius_bonus = value,
+            .health_bonus => pants.health_bonus = value,
+            else => {},
+        },
+        .boots => |*boots| switch (stat) {
+            .speed_bonus => boots.speed_bonus = value,
+            .health_bonus => boots.health_bonus = value,
+            else => {},
+        },
+        .skill_tome => {},
+    }
+    return modified;
+}
+
+/// The balance bound for an item stat (the same constant the parser clamps
+/// with — the single source, see the max_* block above).
+pub fn itemStatMax(stat: ItemStatField) u32 {
+    return switch (stat) {
+        .weapon_damage => max_weapon_damage,
+        .spell_damage => max_spell_damage,
+        .health_bonus => max_health_bonus,
+        .defense_bonus => max_defense_bonus,
+        .damage_bonus => max_gloves_damage,
+        .pickup_radius_bonus => max_pickup_radius,
+        .speed_bonus => max_boots_speed,
+    };
+}
+
 pub const AdditiveEffectModifiers = struct {
     outgoing_damage: i32 = 0,
     incoming_damage: i32 = 0,
@@ -547,10 +704,26 @@ pub const Entity = struct {
     skill_cooldowns: std.EnumArray(SkillId, u32) = std.EnumArray(SkillId, u32).initFill(0),
     active_effects: []const Effect = &.{},
 
+    /// The item equipped in `slot`, as the generic union (null when the
+    /// slot is empty). The single slot→item mapping — the gear panel (via
+    /// ui.gearSlotItem's delegate) and the editor inspector both read it.
+    pub fn gearSlotItem(self: Entity, slot: GearSlot) ?Item {
+        return switch (slot) {
+            .main_hand => if (self.main_hand_weapon) |weapon| .{ .weapon = weapon } else null,
+            .off_hand => if (self.off_hand_weapon) |weapon| .{ .weapon = weapon } else null,
+            .amulet => if (self.amulet) |amulet| .{ .amulet = amulet } else null,
+            .coat => if (self.coat) |coat| .{ .coat = coat } else null,
+            .gloves => if (self.gloves) |gloves| .{ .gloves = gloves } else null,
+            .pants => if (self.pants) |pants| .{ .pants = pants } else null,
+            .boots => if (self.boots) |boots| .{ .boots = boots } else null,
+        };
+    }
+
     /// The field's current value as the text-input widget shows it (strings
     /// verbatim, numbers decimal-formatted) — the single source shared by
     /// the inspector builder (display text), focus seeding, and the commit
-    /// path's would-change gate.
+    /// path's would-change gate. An item field on an empty slot (or a stat
+    /// the item kind doesn't carry) shows empty — its commit no-ops.
     pub fn textFieldValue(
         self: Entity,
         allocator: std.mem.Allocator,
@@ -559,10 +732,25 @@ pub const Entity = struct {
         return switch (field_id) {
             .entity_name => self.name,
             .entity_sprite => self.sprite,
-            .entity_max_health => try std.fmt.allocPrint(allocator, "{d}", .{self.max_health}),
-            .entity_defense => try std.fmt.allocPrint(allocator, "{d}", .{self.defense}),
-            .entity_speed => try std.fmt.allocPrint(allocator, "{d}", .{self.speed}),
-            .entity_aggro_range => try std.fmt.allocPrint(allocator, "{d}", .{self.aggro_range}),
+            .entity_stat => |stat| switch (stat) {
+                .max_health => try std.fmt.allocPrint(allocator, "{d}", .{self.max_health}),
+                .defense => try std.fmt.allocPrint(allocator, "{d}", .{self.defense}),
+                .speed => try std.fmt.allocPrint(allocator, "{d}", .{self.speed}),
+                .aggro_range => try std.fmt.allocPrint(allocator, "{d}", .{self.aggro_range}),
+            },
+            .item_name => |slot| if (self.gearSlotItem(slot)) |item|
+                itemName(item)
+            else
+                "",
+            .item_stat => |field| if (self.gearSlotItem(field.slot)) |item|
+                (
+                    if (itemStatValue(item, field.stat)) |value|
+                        try std.fmt.allocPrint(allocator, "{d}", .{value})
+                    else
+                        ""
+                )
+            else
+                "",
         };
     }
 
@@ -857,14 +1045,17 @@ pub const EntityEditTarget = union(enum) {
 /// DESIGN → UI Framework → Text input widget). The id tells the commit
 /// path (input_handlers) how to parse the buffer and which wrapper event
 /// to push; `target` names the entity being edited. Ids land incrementally
-/// with the inspector slices.
-pub const TextFieldId = enum {
+/// with the inspector slices. UiState-only — never serialized into events
+/// (the events carry values).
+pub const TextFieldId = union(enum) {
     entity_name,
     entity_sprite,
-    entity_max_health,
-    entity_defense,
-    entity_speed,
-    entity_aggro_range,
+    entity_stat: EntityStatField,
+    /// The equipped item's name in `slot` (an empty slot commits nothing).
+    item_name: GearSlot,
+    /// One numeric stat of the equipped item in `slot` (a stat the item
+    /// kind doesn't carry commits nothing).
+    item_stat: struct { slot: GearSlot, stat: ItemStatField },
 };
 
 /// Identity of one focused text field.

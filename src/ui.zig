@@ -803,8 +803,8 @@ fn textEditKey(text_edit: *TextEditState, key: []const u8, shift_held: bool) ?ty
 /// as it's typed). Numeric ids join here with their slices.
 fn textFieldIsNumeric(field_id: types.TextFieldId) bool {
     return switch (field_id) {
-        .entity_name, .entity_sprite => false,
-        .entity_max_health, .entity_defense, .entity_speed, .entity_aggro_range => true,
+        .entity_name, .entity_sprite, .item_name => false,
+        .entity_stat, .item_stat => true,
     };
 }
 
@@ -1218,7 +1218,7 @@ test "emitInspectorTextField via the content builder: current value unfocused, b
 /// builder tests.
 fn findTextField(elements: *const UiElementList, field_id: types.TextFieldId) ?TextFieldUi {
     for (elements.items) |element| switch (element) {
-        .text_field => |field| if (field.ref.id == field_id) return field,
+        .text_field => |field| if (std.meta.eql(field.ref.id, field_id)) return field,
         else => {},
     };
     return null;
@@ -1257,10 +1257,10 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
         var ui_state: UiState = .{ .editor_inspector_scroll = 10 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{ "Max health", "Defense", "Speed", "Aggro range", "Weapons" });
-        try std.testing.expectEqualStrings("20", findTextField(&elements, .entity_max_health).?.text);
-        try std.testing.expectEqualStrings("0", findTextField(&elements, .entity_defense).?.text);
-        try std.testing.expectEqualStrings("1", findTextField(&elements, .entity_speed).?.text);
-        try std.testing.expectEqualStrings("3", findTextField(&elements, .entity_aggro_range).?.text);
+        try std.testing.expectEqualStrings("20", findTextField(&elements, .{ .entity_stat = .max_health }).?.text);
+        try std.testing.expectEqualStrings("0", findTextField(&elements, .{ .entity_stat = .defense }).?.text);
+        try std.testing.expectEqualStrings("1", findTextField(&elements, .{ .entity_stat = .speed }).?.text);
+        try std.testing.expectEqualStrings("3", findTextField(&elements, .{ .entity_stat = .aggro_range }).?.text);
     }
 
     // The Color control (scroll 0 window): six swatch fills in the ENEMY
@@ -4110,10 +4110,10 @@ fn editorInspectorEntityEntries() []const EditorInspectorEntry {
         .{ .field = .{ .label = "Color", .control = .swatches } },
         .{ .field = .{ .label = "Displays weapons", .control = .toggle } },
         .{ .section = "Stats" },
-        .{ .field = .{ .label = "Max health", .control = .{ .text = .entity_max_health } } },
-        .{ .field = .{ .label = "Defense", .control = .{ .text = .entity_defense } } },
-        .{ .field = .{ .label = "Speed", .control = .{ .text = .entity_speed } } },
-        .{ .field = .{ .label = "Aggro range", .control = .{ .text = .entity_aggro_range } } },
+        .{ .field = .{ .label = "Max health", .control = .{ .text = .{ .entity_stat = .max_health } } } },
+        .{ .field = .{ .label = "Defense", .control = .{ .text = .{ .entity_stat = .defense } } } },
+        .{ .field = .{ .label = "Speed", .control = .{ .text = .{ .entity_stat = .speed } } } },
+        .{ .field = .{ .label = "Aggro range", .control = .{ .text = .{ .entity_stat = .aggro_range } } } },
         .{ .section = "Weapons" },
         .{ .field = .{ .label = "Main hand", .control = .none } },
         .{ .field = .{ .label = "Off hand", .control = .none } },
@@ -5019,15 +5019,7 @@ pub fn slotContentIcon(game_state: *const GameState, ref: SlotRef) ?[]const u8 {
 /// The Item in a gear slot, or null if empty. Used by panel builders for
 /// item icons + tooltips. Mirrors the handler-side `gearSlotItem`.
 pub fn gearSlotItem(player: Entity, gear_slot: GearSlot) ?types.Item {
-    return switch (gear_slot) {
-        .main_hand => if (player.main_hand_weapon) |weapon| .{ .weapon = weapon } else null,
-        .off_hand => if (player.off_hand_weapon) |weapon| .{ .weapon = weapon } else null,
-        .amulet => if (player.amulet) |amulet| .{ .amulet = amulet } else null,
-        .coat => if (player.coat) |coat| .{ .coat = coat } else null,
-        .gloves => if (player.gloves) |gloves| .{ .gloves = gloves } else null,
-        .pants => if (player.pants) |pants| .{ .pants = pants } else null,
-        .boots => if (player.boots) |boots| .{ .boots = boots } else null,
-    };
+    return player.gearSlotItem(gear_slot);
 }
 
 pub fn buildInventoryPanel(
