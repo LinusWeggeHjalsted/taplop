@@ -408,7 +408,11 @@ are DONE — see DONE.md (inventory click+drag slice). Multi-salvage
 
 ## NPC Interaction
 
-- interact_with_npc handler (dialogue, shop, quest, etc.)
+- interact_with_npc handler (dialogue, shop, quest, etc.). The hub input
+  path deliberately does NOT fire it yet — the handler is a `{}` stub and
+  firing it would record a no-op undo step (clicks on NPC tiles do nothing;
+  the click→push site is marked in handleIdleInput's hub branch). When the
+  handler lands, re-wire that site and drop the move-blocker comment.
 - NPC dialogue system
 - NPC types (shopkeeper, quest giver, etc.)
 

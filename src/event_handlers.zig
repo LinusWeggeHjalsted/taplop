@@ -675,6 +675,40 @@ fn cancelPreparedSkill(current: *GameState) void {
 }
 
 /// Return the piece currently in a gear slot as an Item, or null if empty.
+/// The occupied inventory slot indices inside a salvage region (two
+/// opposite-corner slot indices, order-independent). Shared by the
+/// `player_salvage_inventory_region` handler (one salvage_item per slot)
+/// and the input-side no-op gate (an all-empty region never fires) — one
+/// definition of the region's slots so the two can't drift.
+pub fn salvageRegionOccupiedSlots(
+    player: types.Entity,
+    start_slot: u32,
+    end_slot: u32,
+    allocator: std.mem.Allocator,
+) []const u32 {
+    const start_row = @divTrunc(start_slot, types.inventory_columns);
+    const start_col = @rem(start_slot, types.inventory_columns);
+    const end_row = @divTrunc(end_slot, types.inventory_columns);
+    const end_col = @rem(end_slot, types.inventory_columns);
+    const min_row = @min(start_row, end_row);
+    const max_row = @max(start_row, end_row);
+    const min_col = @min(start_col, end_col);
+    const max_col = @max(start_col, end_col);
+    var occupied: std.ArrayList(u32) = .empty;
+    var row: u32 = min_row;
+    while (row <= max_row) : (row += 1) {
+        var col: u32 = min_col;
+        while (col <= max_col) : (col += 1) {
+            const slot_index = row * types.inventory_columns + col;
+            if (player.inventory.slots[slot_index] != null) {
+                occupied.append(allocator, slot_index) catch
+                    @panic("failed to allocate salvage region slots");
+            }
+        }
+    }
+    return occupied.items;
+}
+
 fn gearSlotItem(player: *Entity, gear_slot: types.GearSlot) ?types.Item {
     return switch (gear_slot) {
         .main_hand => if (player.main_hand_weapon) |weapon| .{ .weapon = weapon } else null,
@@ -688,7 +722,10 @@ fn gearSlotItem(player: *Entity, gear_slot: types.GearSlot) ?types.Item {
 }
 
 /// Whether an inventory item can be equipped into the given gear slot.
-fn itemFitsGearSlot(item: types.Item, gear_slot: types.GearSlot) bool {
+/// Whether `item` can go into `gear_slot`. Shared by the equip/unequip
+/// machinery here and the input-side drag no-op gate (input_handlers)
+/// so "fits" has one definition and the two can't drift.
+pub fn itemFitsGearSlot(item: types.Item, gear_slot: types.GearSlot) bool {
     return switch (gear_slot) {
         .main_hand, .off_hand => item == .weapon,
         .amulet => item == .amulet,
@@ -1383,29 +1420,21 @@ fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         .player_salvage_inventory_region => |region| {
-            // Compute the bounding box from the two corner slots (order-
-            // independent) and push one salvage_item per occupied slot.
-            const start_row = @divTrunc(region.start_slot, types.inventory_columns);
-            const start_col = @rem(region.start_slot, types.inventory_columns);
-            const end_row = @divTrunc(region.end_slot, types.inventory_columns);
-            const end_col = @rem(region.end_slot, types.inventory_columns);
-            const min_row = @min(start_row, end_row);
-            const max_row = @max(start_row, end_row);
-            const min_col = @min(start_col, end_col);
-            const max_col = @max(start_col, end_col);
+            // One salvage_item per occupied slot in the region's bounding
+            // box — the slot list comes from the shared region helper (the
+            // input-side no-op gate reads the same definition).
             const player = getPlayerEntity(current, 0);
+            const occupied_slots = salvageRegionOccupiedSlots(
+                player.*,
+                region.start_slot,
+                region.end_slot,
+                allocator,
+            );
             var salvage_events: std.ArrayList(Event) = .empty;
-            var row: u32 = min_row;
-            while (row <= max_row) : (row += 1) {
-                var col: u32 = min_col;
-                while (col <= max_col) : (col += 1) {
-                    const slot_index = row * types.inventory_columns + col;
-                    if (player.inventory.slots[slot_index] != null) {
-                        salvage_events.append(allocator, .{ .player_event = .{ .salvage_item = .{
-                            .inventory_slot_index = slot_index,
-                        } } }) catch @panic("failed to allocate salvage events");
-                    }
-                }
+            for (occupied_slots) |slot_index| {
+                salvage_events.append(allocator, .{ .player_event = .{ .salvage_item = .{
+                    .inventory_slot_index = slot_index,
+                } } }) catch @panic("failed to allocate salvage events");
             }
             pushEvents(current, salvage_events.items, allocator);
         },
@@ -2638,11 +2667,14 @@ pub fn processEvent(
                         @panic("failed to allocate learned skills");
                 },
                 .salvage_item => |salvage| {
-                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .salvage);
                     const player = getPlayerEntity(current, 0);
                     const slot = &player.inventory.slots[salvage.inventory_slot_index];
 
                     const item = slot.* orelse return;
+                    // Sound after the guard: a salvage of an empty slot
+                    // (crafted logs; live clicks are gated to occupied
+                    // slots) must not click.
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .salvage);
 
                     // Compute salvage value and add to player materials
                     const materials = functions.computeSalvageValue(item, history.salvage_definitions);
@@ -2652,12 +2684,15 @@ pub fn processEvent(
                     slot.* = null;
                 },
                 .equip_item => |equip| {
-                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .equip);
                     const player = getPlayerEntity(current, 0);
                     const slot = &player.inventory.slots[equip.inventory_slot_index];
 
                     const item = slot.* orelse return;
                     if (!itemFitsGearSlot(item, equip.gear_slot)) return;
+                    // Sound after the guards: a no-op equip (empty slot /
+                    // unfitting item — crafted logs; live drags are gated at
+                    // the drop site) must not click.
+                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .equip);
 
                     // Capture the displaced weapon before the gear-slot swap
                     // overwrites the slot, so its skill cooldowns can be

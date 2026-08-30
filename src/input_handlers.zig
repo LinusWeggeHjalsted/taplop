@@ -136,6 +136,53 @@ pub fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputE
     };
 }
 
+/// Whether a resolved drag orchestrator would actually change state — the
+/// no-op gate at the drag drop site (a drop that would change nothing never
+/// fires, so it can't become a recorded no-op undo step). Mirrors the
+/// machinery handlers' early-return guards: equip_item's item-fit check,
+/// unequip_item's empty-source/filled-target-fit checks,
+/// equip_utility_skill's same-skill re-assign, swap_utility_skills'
+/// same-skill pair, unequip_utility_skill's empty slot. `skill_prepared`
+/// (a level skill preparation is active) keeps the utility-skill cases
+/// honest: those handlers also cancel a preparation, which IS a change.
+/// Pure over the player entity — testable without input.
+fn dragActionWouldChange(
+    player: types.Entity,
+    skill_prepared: bool,
+    action: events.PlayerInputEvent,
+) bool {
+    return switch (action) {
+        .player_equip_to_gear => |equip| {
+            const item = player.inventory.slots[equip.inventory_slot_index] orelse return false;
+            return event_handlers.itemFitsGearSlot(item, equip.gear_slot);
+        },
+        .player_unequip_from_gear => |unequip| {
+            if (ui.gearSlotItem(player, unequip.gear_slot) == null) return false;
+            const existing = player.inventory.slots[unequip.inventory_slot_index] orelse return true;
+            return event_handlers.itemFitsGearSlot(existing, unequip.gear_slot);
+        },
+        .player_assign_utility_skill => |assign| {
+            if (assign.slot_index >= player.equipped_utility_skills.len) return false;
+            if (player.equipped_utility_skills[assign.slot_index] == assign.skill_id) {
+                return skill_prepared;
+            }
+            return true;
+        },
+        .player_swap_utility_skills => |swap| {
+            if (swap.slot_a_index >= player.equipped_utility_skills.len) return false;
+            if (swap.slot_b_index >= player.equipped_utility_skills.len) return false;
+            const same_skill = player.equipped_utility_skills[swap.slot_a_index] ==
+                player.equipped_utility_skills[swap.slot_b_index];
+            return !same_skill or skill_prepared;
+        },
+        .player_clear_utility_skill => |clear| {
+            if (clear.slot_index >= player.equipped_utility_skills.len) return false;
+            return player.equipped_utility_skills[clear.slot_index] != null or skill_prepared;
+        },
+        else => true,
+    };
+}
+
 /// Pointer-driven slot-press lifecycle. Runs every tick (anytime): a press
 /// on a content slot records a pending press (no ghost yet); movement beyond
 /// `drag_threshold_pixels` promotes it to a drag (ghost appears, drop on
@@ -238,12 +285,22 @@ pub fn handleDrag(
     if (pointer.released) {
         if (ui_state.salvage_region) |region| {
             // Shift-drag release: salvage the bounding box if Shift is still
-            // held, else cancel. Either way the selection clears.
+            // held, else cancel. Either way the selection clears. No-op
+            // gate: an all-empty region (empty slots are valid region
+            // corners) never fires — no dead undo step.
             if (pointer.modifiers.shift) {
-                event_handlers.pushPlayerAction(current, .{ .player_salvage_inventory_region = .{
-                    .start_slot = region.start_slot,
-                    .end_slot = region.end_slot,
-                } }, allocator);
+                const player = ui.playerEntity(current) orelse types.Entity{};
+                if (event_handlers.salvageRegionOccupiedSlots(
+                    player,
+                    region.start_slot,
+                    region.end_slot,
+                    allocator,
+                ).len > 0) {
+                    event_handlers.pushPlayerAction(current, .{ .player_salvage_inventory_region = .{
+                        .start_slot = region.start_slot,
+                        .end_slot = region.end_slot,
+                    } }, allocator);
+                }
             }
             ui_state.salvage_region = null;
             ui_state.pending_slot_press = null;
@@ -275,7 +332,20 @@ pub fn handleDrag(
                 };
             }
             if (resolved) |orchestrator| {
-                event_handlers.pushPlayerAction(current, orchestrator, allocator);
+                // No-op gate: a drop that would change nothing (unfitting
+                // item→gear or gear→occupied-slot pair, re-assigning the
+                // skill already in the slot) never fires — see
+                // dragActionWouldChange. The empty-entity fallback makes a
+                // mid-drag screen transition (no player anymore) a safe
+                // no-op drop instead of a panic.
+                const player = ui.playerEntity(current) orelse types.Entity{};
+                const skill_prepared = if (current.level) |level|
+                    level.prepared_skill != null
+                else
+                    false;
+                if (dragActionWouldChange(player, skill_prepared, orchestrator)) {
+                    event_handlers.pushPlayerAction(current, orchestrator, allocator);
+                }
             }
             ui_state.drag = null;
             ui_state.pending_slot_press = null;
@@ -1283,8 +1353,19 @@ pub fn handleAnytimeInput(
         // ui_elements + world tiles, which live in main.zig's world.
 
         if (in_game.swap_weapons) {
-            if (!history.replaying) history.session.queueSound(history.backing_allocator, .swap_skill);
-            event_handlers.pushPlayerAction(current, .swap_hands, allocator);
+            // No-op gate: with both hands empty and nothing prepared, the
+            // swap is a recorded no-op (swap_hands also cancels a
+            // preparation, which IS a change — see the handler).
+            const player = ui.playerEntity(current) orelse types.Entity{};
+            const skill_prepared = if (current.level) |level|
+                level.prepared_skill != null
+            else
+                false;
+            const any_weapon = player.main_hand_weapon != null or player.off_hand_weapon != null;
+            if (any_weapon or skill_prepared) {
+                if (!history.replaying) history.session.queueSound(history.backing_allocator, .swap_skill);
+                event_handlers.pushPlayerAction(current, .swap_hands, allocator);
+            }
         }
     }
 }
@@ -1704,35 +1785,40 @@ pub fn handleIdleInput(
 
     if (idle.tile_clicked) |clicked_position| {
         if (current.hub) |hub| {
-            // Check if an NPC is on the clicked tile
-            var clicked_npc: ?u32 = null;
-            for (hub.npcs, 0..) |npc, npc_index| {
+            // An NPC on the clicked tile: interaction is an unimplemented
+            // stub (TODO → NPC Interaction), so the click does nothing —
+            // firing interact_with_npc would record a no-op undo step, and
+            // walking onto the NPC would misread a click addressed to the
+            // NPC as a click addressed to the tile. When the system lands,
+            // this is where the click → interact_with_npc push goes.
+            var clicked_npc = false;
+            for (hub.npcs) |npc| {
                 if (npc.entity.position.x == clicked_position.x and
                     npc.entity.position.y == clicked_position.y)
                 {
-                    clicked_npc = @intCast(npc_index);
+                    clicked_npc = true;
                     break;
                 }
             }
 
-            if (clicked_npc) |npc_index| {
-                event_handlers.pushPlayerAction(current, .{ .interact_with_npc = .{
-                    .npc_index = npc_index,
+            // Move to the clicked tile if walkable. The player's own tile
+            // is walkable (they stand on it), but a same-position move
+            // would be a recorded no-op — gated. The player never overlaps
+            // a mission exit (hubs spawn them at the layout's '!'), so an
+            // own-tile click can't be an intentional mission entry.
+            var is_walkable = false;
+            for (hub.hub_tiles) |tile| {
+                if (tile.x == clicked_position.x and tile.y == clicked_position.y) {
+                    is_walkable = true;
+                    break;
+                }
+            }
+            const own_tile = clicked_position.x == hub.player.position.x and
+                clicked_position.y == hub.player.position.y;
+            if (is_walkable and !own_tile and !clicked_npc) {
+                event_handlers.pushPlayerAction(current, .{ .move_player = .{
+                    .destination = clicked_position,
                 } }, allocator);
-            } else {
-                // Move to clicked tile if walkable
-                var is_walkable = false;
-                for (hub.hub_tiles) |tile| {
-                    if (tile.x == clicked_position.x and tile.y == clicked_position.y) {
-                        is_walkable = true;
-                        break;
-                    }
-                }
-                if (is_walkable) {
-                    event_handlers.pushPlayerAction(current, .{ .move_player = .{
-                        .destination = clicked_position,
-                    } }, allocator);
-                }
             }
         }
     }
@@ -2576,4 +2662,183 @@ test "attack-phase slot press on the prepared skill unprepares it" {
     try std.testing.expect(history.undo(event_handlers.processEvent));
     try std.testing.expectEqual(types.SkillId.flash_strike, history.current_state.level.?.prepared_skill.?);
     try std.testing.expectEqual(@as(usize, 2), history.current_state.level.?.highlighted_tiles.len);
+}
+
+// --- Drag no-op gate (pure predicate) ---------------------------------------
+// A drop that would change nothing never fires (no dead undo step). The
+// predicate is pure over the player entity; the handleDrag wiring is
+// covered by the gate tests in handler_tests_gear.zig.
+
+/// Fixture: a sword in inventory slot 0, boots in slot 1, a main-hand
+/// weapon equipped, Flash Strike in utility slot 0.
+fn dragGatePlayer() types.Entity {
+    var player_entity = types.Entity{};
+    player_entity.inventory.slots[0] = .{ .weapon = .{
+        .name = "sword",
+        .weapon_type = .sword,
+        .weapon_damage = 4,
+    } };
+    player_entity.inventory.slots[1] = .{ .boots = .{ .name = "boots" } };
+    player_entity.main_hand_weapon = .{ .name = "equipped", .weapon_type = .sword, .weapon_damage = 5 };
+    player_entity.equipped_utility_skills[0] = .flash_strike;
+    return player_entity;
+}
+
+test "dragActionWouldChange: equip fit conditions" {
+    const player_entity = dragGatePlayer();
+    // A weapon into a hand slot: fits → fires.
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
+        .inventory_slot_index = 0,
+        .gear_slot = .main_hand,
+    } }));
+    // A weapon into the boots slot: doesn't fit → never fires.
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
+        .inventory_slot_index = 0,
+        .gear_slot = .boots,
+    } }));
+    // Boots into the boots slot: fits → fires.
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
+        .inventory_slot_index = 1,
+        .gear_slot = .boots,
+    } }));
+    // An empty inventory slot: nothing to equip → never fires.
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
+        .inventory_slot_index = 2,
+        .gear_slot = .main_hand,
+    } }));
+}
+
+test "dragActionWouldChange: unequip fit conditions" {
+    const player_entity = dragGatePlayer();
+    // Main hand (occupied) into an empty inventory slot: fires.
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
+        .gear_slot = .main_hand,
+        .inventory_slot_index = 2,
+    } }));
+    // Into a slot holding boots (doesn't fit a hand): never fires.
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
+        .gear_slot = .main_hand,
+        .inventory_slot_index = 1,
+    } }));
+    // Into a slot holding a weapon (fits the hand): fires.
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
+        .gear_slot = .main_hand,
+        .inventory_slot_index = 0,
+    } }));
+    // From an empty gear slot (amulet): never fires.
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
+        .gear_slot = .amulet,
+        .inventory_slot_index = 2,
+    } }));
+}
+
+test "dragActionWouldChange: utility-skill conditions" {
+    var player_entity = dragGatePlayer();
+    // Re-assigning the skill already in the slot: only a change when a
+    // preparation is active (the handler cancels it).
+    const assign_same: events.PlayerInputEvent = .{ .player_assign_utility_skill = .{
+        .skill_id = .flash_strike,
+        .slot_index = 0,
+    } };
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, assign_same));
+    try std.testing.expect(dragActionWouldChange(player_entity, true, assign_same));
+    // A different skill: always fires.
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_assign_utility_skill = .{
+        .skill_id = .replenish,
+        .slot_index = 0,
+    } }));
+    // Swapping two slots holding the same skill (a duplicate assignment):
+    // only a change when a preparation is active.
+    player_entity.equipped_utility_skills[1] = .flash_strike;
+    const swap_same: events.PlayerInputEvent = .{ .player_swap_utility_skills = .{
+        .slot_a_index = 0,
+        .slot_b_index = 1,
+    } };
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, swap_same));
+    try std.testing.expect(dragActionWouldChange(player_entity, true, swap_same));
+    // Swapping a skill with an empty slot: a real move → fires.
+    player_entity.equipped_utility_skills[1] = null;
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_swap_utility_skills = .{
+        .slot_a_index = 0,
+        .slot_b_index = 1,
+    } }));
+}
+
+test "hub clicks: own tile and NPC tiles fire nothing, walkable tile moves" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } };
+    const npcs = [_]types.NPC{.{ .entity = .{
+        .name = "Shopkeeper",
+        .position = .{ .x = 2, .y = 0 },
+    } }};
+    var history = harness.newHistory(.{
+        .screen = .hub,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = .{
+            .hub_tiles = &tiles,
+            .player = .{ .position = .{ .x = 0, .y = 0 } },
+            .npcs = &npcs,
+        },
+    });
+    @import("test_harness.zig").runToIdle(&history);
+
+    // Own tile: a same-position move would be a recorded no-op — no fire.
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 0, .y = 0 } }, .{});
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // NPC tile: the interact_with_npc handler is an unimplemented stub —
+    // no fire (no recorded no-op).
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 0 } }, .{});
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // A walkable other tile: fires move_player and moves.
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 0 } }, .{});
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try std.testing.expect(history.current_state.event_stack[0].player_input_event == .move_player);
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.current_state.hub.?.player.position);
+
+    // A non-walkable tile: no fire.
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 5, .y = 5 } }, .{});
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
+test "swap_weapons with both hands empty fires nothing" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const entities = [_]types.Entity{.{ .name = "Player", .team = 0 }};
+    const tiles = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    var history = harness.newHistory(@import("test_harness.zig").levelStateWithEntities(
+        backing.allocator(),
+        &entities,
+        &tiles,
+    ));
+    @import("test_harness.zig").runToIdle(&history);
+
+    // Both hands empty, nothing prepared: the swap would be a recorded
+    // no-op — no fire (and no click sound).
+    handleAnytimeInput(&history, .{ .in_game = .{ .swap_weapons = true } }, .{ .x = 0, .y = 0 }, &.{});
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Positive control: with a main-hand weapon, the swap fires.
+    @import("test_harness.zig").levelEntity(&history, 0).main_hand_weapon = .{
+        .name = "sword",
+        .weapon_type = .sword,
+        .weapon_damage = 4,
+    };
+    handleAnytimeInput(&history, .{ .in_game = .{ .swap_weapons = true } }, .{ .x = 0, .y = 0 }, &.{});
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try std.testing.expect(history.current_state.event_stack[0].player_input_event == .swap_hands);
 }

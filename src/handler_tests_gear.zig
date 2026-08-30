@@ -711,3 +711,107 @@ test "handleDrag: drag a bar skill onto another bar slot swaps (not clear)" {
     try testing.expectEqual(@as(?SkillId, .howl), player(&history).equipped_utility_skills[0]);
     try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[3]);
 }
+
+// ───────────────────────── drag no-op gate ─────────────────────────
+// A drop that would change nothing (unfitting item→gear or gear→occupied
+// pair, re-assigning the skill already in the slot) never fires — no dead
+// undo step. The pure predicate is covered in input_handlers.zig; these
+// pin the wiring through handleDrag.
+
+fn inventorySlotElement(slot: u32, pos: types.ScreenPosition) ui.UiElement {
+    return .{ .slot = .{
+        .screen_position = pos,
+        .size = 128,
+        .icon_sprite_id = "ui/item_slot",
+        .ref = .{ .inventory = slot },
+    } };
+}
+
+fn gearSlotElement(gear_slot: types.GearSlot, pos: types.ScreenPosition) ui.UiElement {
+    return .{ .slot = .{
+        .screen_position = pos,
+        .size = 128,
+        .icon_sprite_id = "ui/item_slot",
+        .ref = .{ .gear = gear_slot },
+    } };
+}
+
+test "handleDrag: unfitting equip drop never fires" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).inventory.slots[0] = .{ .weapon = .{
+        .name = "sword",
+        .weapon_type = .sword,
+        .weapon_damage = 4,
+    } };
+
+    // An inventory slot at (0,0) holding the sword; the boots gear slot at
+    // (400,0).
+    const elements = [_]ui.UiElement{
+        inventorySlotElement(0, .{ .x = 0, .y = 0 }),
+        gearSlotElement(.boots, .{ .x = 400, .y = 0 }),
+    };
+    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_handlers.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
+
+    // A weapon doesn't fit the boots slot — nothing fired, nothing moved.
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expect(inventoryWeaponDamage(player(&history).inventory.slots[0]) != null);
+    try testing.expect(player(&history).boots == null);
+}
+
+test "handleDrag: unequip onto a filled unfitting slot never fires" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).boots = .{ .name = "worn boots", .speed_bonus = 2 };
+    player(&history).inventory.slots[0] = .{ .weapon = .{
+        .name = "sword",
+        .weapon_type = .sword,
+        .weapon_damage = 4,
+    } };
+
+    // The boots gear slot at (0,0); an inventory slot at (400,0) holding a
+    // weapon (which doesn't fit the boots slot the piece would vacate).
+    const elements = [_]ui.UiElement{
+        gearSlotElement(.boots, .{ .x = 0, .y = 0 }),
+        inventorySlotElement(0, .{ .x = 400, .y = 0 }),
+    };
+    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_handlers.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
+
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expect(player(&history).boots != null);
+    try testing.expect(inventoryWeaponDamage(player(&history).inventory.slots[0]) != null);
+}
+
+test "handleDrag: re-assigning the skill already in the bar slot never fires" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(hubStateWithPlayer(.{}));
+    player(&history).equipped_utility_skills[0] = .replenish;
+
+    // A learned-skill entry at (0,0); bar slot 0 (already holding that
+    // skill) at (400,0).
+    const elements = [_]ui.UiElement{
+        .{ .slot = .{
+            .screen_position = .{ .x = 0, .y = 0 },
+            .size = 128,
+            .icon_sprite_id = "ui/item_slot",
+            .ref = .{ .learned_skill = .replenish },
+        } },
+        skillBarElement(0, .{ .x = 400, .y = 0 }),
+    };
+    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_handlers.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
+
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[0]);
+}

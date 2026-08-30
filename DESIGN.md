@@ -1549,6 +1549,19 @@ So a clone is a permanent, compounding material factory keyed by mission.
   stream, so they must funnel through a single orchestrator. Bonus: undo
   granularity matches a single click/key. Orchestrators carry only the
   player's intent; all mutation is in the verbs they push.
+- **A player action that would change nothing never fires.** Every recorded
+  player action creates an idle point; one that no-ops leaves an undo step
+  (and a future replay step) that visibly does nothing. The input layer
+  therefore gates every fire site on a would-change check, and the check is
+  never ad-hoc duplication — it reuses the same pure predicates the handlers
+  guard with (or, for the editor, one planner both sides consume). Landed
+  gates: the editor click planners (see Level Editor → Active-tool model),
+  the prepared-skill same-slot toggle (`resolveSkillSlotAction` →
+  `.unprepare`), `dragActionWouldChange` + `salvageRegionOccupiedSlots` for
+  the drag/inventory family, and the hub own-tile / NPC-tile /
+  both-empty-hands swap gates. Handlers keep their graceful no-op returns for
+  crafted or pre-change session logs (a redundant event in a log replays
+  harmlessly).
 - Arena allocation for game state snapshots/checkpoints. Deep copy via comptime reflection
 - Allocator model (all on `GameStateHistory`, see state.zig): `backing_allocator`
   is the gpa backing every arena. Two live lifetimes: `history_arena` — durable,

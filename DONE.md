@@ -1412,6 +1412,68 @@ preparation + highlight cleared, one undo restores both). Fixture:
 `preparedSkillToggleHistory` (Flash Strike: targeting, range 3 — empty
 reachable tiles are valid targets).
 
+### Input no-op sweep — every player action changes something (DONE)
+
+**The audit.** After the editor click gate and the prepared-skill toggle,
+the remaining `PlayerInputEvent` orchestrators were swept handler-by-handler
+plus fire-site, looking for player actions that fire, get recorded, and
+change nothing (each creates an idle point — a dead undo step, and a dead
+step for a future replay viewer). Settled principle now in DESIGN →
+Architecture ("A player action that would change nothing never fires").
+
+**The seven cases found + fixed (all input-side gates, handlers untouched
+except sound ordering):**
+
+1. Hub own-tile click → `move_player` (same-position reassign). Gate:
+  destination != player position. (Player never overlaps a mission exit —
+  hubs spawn at the layout's `!` — so an own-tile click can't be an intended
+  mission entry.)
+2. Shift-drag over an all-empty region →
+  `player_salvage_inventory_region` (empty slots are deliberately valid
+  region corners). Gate: `salvageRegionOccupiedSlots(...).len > 0`.
+3. Drag item → unfitting gear slot → `player_equip_to_gear` (`equip_item`'s
+  fit guard no-ops the whole click). Gate: `itemFitsGearSlot` at the drop.
+4. Drag gear → inventory slot holding an unfitting item →
+  `player_unequip_from_gear` (mirror fit guard). Same gate.
+5. Drag learned skill → bar slot already holding it →
+  `player_assign_utility_skill` (same value, `max(cd, cd)` unchanged).
+6. `swap_hands` with both hands empty (the binding still fired + clicked).
+  Gate: any weapon or an active preparation (the handler cancels one — a
+  real change).
+7. `interact_with_npc` — handler is a literal `{}` stub and the hub click
+  path fired it on any NPC tile. The push is gone; the scan stays as a
+  MOVE BLOCKER (an NPC's tile is walkable, so removing it entirely let the
+  player walk onto the NPC — the hub gate test caught the regression in
+  review; a click addressed to the NPC must not move).
+
+**Shared predicates, no drift.** `itemFitsGearSlot` (event_handlers) made
+pub — the machinery and the gate call the same one definition of "fits".
+`salvageRegionOccupiedSlots` extracted from the region handler so the
+handler and the release gate read the same slot list. New
+`dragActionWouldChange` (input_handlers, pure over the player entity)
+mirrors the drag family's machinery guards — including the
+`skill_prepared` parameter: the utility-skill handlers also cancel a
+preparation, which IS a change, so e.g. a same-skill re-assign with a
+preparation active still fires. Sound ordering fixed alongside:
+`equip_item`/`salvage_item` now queue their click sounds AFTER the
+empty-slot/fit guards (a no-op must not click).
+
+**Verified clean (no action needed):** level `player_move_action`
+(`reachableTiles` excludes the start tile + input gates on highlights),
+`player_cancel_skill` (all fire sites gated on a preparation), inventory
+clicks (press gated on occupied slots; modifier combos → `.none`),
+utility/inventory swaps (self-drop gated in `dragToOrchestrator`; drags
+start only on occupied slots), `player_clear_utility_skill`, the editor
+family (prior slice), and the exit/skip/replay/overwrite/continue
+orchestrators (buttons gated on their precondition state).
+
+Tests: `dragActionWouldChange` decision-level (equip/unequip fit matrix,
+assign/swap same-skill ± preparation), handleDrag wiring (unfitting equip
+drop, unequip-onto-unfitting, re-assign same skill — all fire nothing,
+state untouched), hub clicks (own tile / NPC tile / non-walkable fire
+nothing; walkable tile moves), swap binding (both-empty fires nothing,
+weapon fires). 377 total pass.
+
 ## Error Handling
 
 ### Slice 1 — error surface (DONE)
