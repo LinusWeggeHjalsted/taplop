@@ -211,6 +211,12 @@ fn update(
     // pans). See handleRightClickInspect.
     input_handlers.handleRightClickInspect(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
+    // Editor right-click: the tool-independent delete (clean click) vs the
+    // camera pan (right-drag) — same disambiguation, owning the
+    // `.editor_delete` pending kind on the editor screen. Runs after the
+    // inspect handler (which clears only its own kind elsewhere).
+    input_handlers.handleRightClickEditorDelete(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
+
     // Turn-flow pause: while waiting, drain the timer and stall event
     // processing until it elapses. Anytime input and drag above still run, so
     // undo/redo/options remain responsive mid-wait (undo rebuilds state and

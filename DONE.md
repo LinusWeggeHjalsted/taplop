@@ -6435,3 +6435,46 @@ decoration → deleted + tile + item with one-undo revert; '!' / '='
 no-ops; enemy deleted + item placed; retype in place + same-type no-op;
 direct retype arm), view + item-tool single-tile overlay case,
 cursor-resolution + item-tool case.
+
+### Editor viewport input slice 5 — tool-independent right-click delete
+
+The right-click approach changed per user decision: instead of a
+per-tool erase gesture, right-click is ONE delete action that works with
+any active tool. One clean click deletes ONE thing at the pressed tile —
+priority (state-computed in the `player_delete_editor_at { position }`
+orchestrator):
+- enemy / ground-item occupant → deleted (the tile survives — progressive
+  delete: the occupant goes first, the tile on the next click);
+- covering decoration → deleted (ALL covering placements, consistent with
+  every other editor flow; overlapping footprints are a degenerate
+  hand-authored case);
+- bare tile → erased (`editor_set_tile` is_floor=false);
+- '!' / '=' → no-op — checked FIRST, before the bare-tile erase, because
+  they sit ON tiles (a naive tile-erase would delete the tile under the
+  player spawn);
+- empty ground → no-op.
+
+**Gesture machinery:** `PendingRightClick` generalized from a flat struct
+into a tagged union — `inspect` (levels, the entity right-click) and
+`editor_delete` (editor screen, carrying the pressed world tile + press
+position). One right-press gesture state, two owners by kind: each
+handler touches only its own kind (`clearPendingRightClick` helper), so
+they can't fight over the shared field across screens. The new
+`handleRightClickEditorDelete` mirrors the inspect lifecycle: press over
+non-blocking UI records the pending; movement beyond
+`drag_threshold_pixels` cancels it (the press became a camera pan — the
+editor's right-drag pan coexists unchanged); a clean release pushes the
+event. The pressed tile is recorded at PRESS — a clean click acts on what
+was under the pointer when the button went down, not where sub-threshold
+drift left it at release. Called from `update()` right after the inspect
+handler.
+
+`validatePlayerAction` arm: screen/editor/levels; position unrestricted
+(no-op clicks are legal in a recording). One delete = one undo step by
+construction. This also resolves the old TODO open question "right-click
+gesture split" — the disambiguation landed with the slice.
+
+Tests: handler +2 covering all five rules (occupant-before-tile
+progression on one fixture; '!' / '=' tile survival; decoration delete),
+input +1 for the gesture lifecycle (clean click pushes targeting the
+pressed tile; drag-cancel; blocking-UI press no-ops).

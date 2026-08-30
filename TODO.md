@@ -459,24 +459,20 @@ yet implemented. Remaining work:
   preview — see DONE.md), and GROUND-ITEM PLACEMENT
   (`player_place_editor_item`: enemy-tool shape with the placement
   kinds' roles swapped — existing item retyped in place, enemy deleted —
-  single-tile cursor — see DONE.md). Deferred: right-click erase,
-  drag-painting. Still-needed event
+  single-tile cursor — see DONE.md), and the TOOL-INDEPENDENT RIGHT-CLICK
+  DELETE (`player_delete_editor_at`: one thing per click — occupant,
+  then covering decoration, then the bare tile; '!' / '=' / empty ground
+  no-ops; clean-click-vs-pan disambiguation — see DONE.md).
+  Deferred: drag-painting. Still-needed event
   structs: `editor_toggle_inspector` / `editor_set_tool` /
   gradient-override setters. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved
   placements, `!`/`=` markers; camera centered on the active level's
   player_start, right-drag pan) — reachable via the main-menu "Editor"
-  button. Remaining viewport INPUT: erase gesture, drag-paint, selection
-  tool (click / shift-click / marquee). Every placement tool (tile /
-  enemy / decoration / ground item) has left-click + cursor previews
-  today.
-- **Right-click in the editor viewport — gesture split still to pick.**
-  Right-drag pans the camera; a future right-click is the natural erase
-  gesture for the tile tool (drag-paint being deferred removes the
-  conflict). Needs the movement-threshold disambiguation pattern (see
-  `handleRightClickInspect`) so a pan release doesn't erase. Land with the
-  erase slice.
+  button. Remaining viewport INPUT: drag-paint, selection tool (click /
+  shift-click / marquee). Left-click placement (tile / enemy / decoration /
+  ground item) + cursor previews + the right-click delete all work today.
 - **Hook up the add-level "+" (top bar, right of the level tabs).** The
   square panel cell renders (inert, tooltip "Add level"); wiring it is a
   `player_add_editor_level` orchestrator + the `editor_add_level` handler

@@ -591,6 +591,15 @@ pub const PlayerInputEvent = union(enum) {
         type_id: u32,
         position: Vector2,
     },
+    // Editor right-click: the TOOL-INDEPENDENT delete. One clean click
+    // deletes ONE thing at the pressed tile — priority: enemy / ground
+    // item occupant, then covering decoration, then the bare tile; the
+    // '!' / '=' and empty ground are no-ops (all computed from state in
+    // the handler). The gesture (click-vs-pan disambiguation) lives in
+    // `handleRightClickEditorDelete`.
+    player_delete_editor_at: struct {
+        position: Vector2,
+    },
 
     // --- Meta: exit/skip orchestrators ---
     // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;

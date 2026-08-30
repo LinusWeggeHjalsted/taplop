@@ -585,13 +585,15 @@ pub fn handleRightClickInspect(
     const current = &history.current_state;
     const ui_state = &history.session.ui_state;
 
-    // Levels only.
+    // Levels only. Not our screen — drop only OUR kind of pending (the
+    // editor screen's delete gesture owns the field there; see
+    // PendingRightClick).
     if (current.screen != .level) {
-        ui_state.pending_right_click = null;
+        clearPendingRightClick(ui_state, .inspect);
         return;
     }
     const level = current.level orelse {
-        ui_state.pending_right_click = null;
+        clearPendingRightClick(ui_state, .inspect);
         return;
     };
 
@@ -601,7 +603,7 @@ pub fn handleRightClickInspect(
     // nothing).
     if (pointer.right_pressed) {
         if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
-            ui_state.pending_right_click = null;
+            clearPendingRightClick(ui_state, .inspect);
             return;
         }
         const mouse_tile = input.screenToTile(
@@ -612,14 +614,14 @@ pub fn handleRightClickInspect(
         );
         for (level.entities, 0..) |entity, index| {
             if (entity.position.x == mouse_tile.x and entity.position.y == mouse_tile.y) {
-                ui_state.pending_right_click = .{
+                ui_state.pending_right_click = .{ .inspect = .{
                     .entity_index = @intCast(index),
                     .press_position = pointer.position,
-                };
+                } };
                 return;
             }
         }
-        ui_state.pending_right_click = null;
+        clearPendingRightClick(ui_state, .inspect);
         return;
     }
 
@@ -629,12 +631,17 @@ pub fn handleRightClickInspect(
     // no-movement press+release — `0 > 0` is false, so a clean click survives.
     // Same convention as the inventory drag promotion in `handleDrag`.
     if (ui_state.pending_right_click) |press| {
-        if (pointer.right_held) {
-            const dx = pointer.position.x - press.press_position.x;
-            const dy = pointer.position.y - press.press_position.y;
-            if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
-                ui_state.pending_right_click = null;
-            }
+        switch (press) {
+            .inspect => |pending| {
+                if (pointer.right_held) {
+                    const dx = pointer.position.x - pending.press_position.x;
+                    const dy = pointer.position.y - pending.press_position.y;
+                    if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
+                        ui_state.pending_right_click = null;
+                    }
+                }
+            },
+            else => {},
         }
     }
 
@@ -642,22 +649,117 @@ pub fn handleRightClickInspect(
     // crossing), toggle inspect on that entity.
     if (pointer.right_released) {
         if (ui_state.pending_right_click) |press| {
-            if (ui_state.inspected_entity_index) |current_inspected| {
-                if (current_inspected == press.entity_index) {
-                    // Same entity — close the panel.
-                    ui_state.toggleMiddlePanel(.entity_inspect);
-                    ui_state.inspected_entity_index = null;
-                } else {
-                    // Different entity — switch target.
-                    ui_state.inspected_entity_index = press.entity_index;
-                }
-            } else {
-                // Not inspecting — open the panel.
-                ui_state.inspected_entity_index = press.entity_index;
-                ui_state.toggleMiddlePanel(.entity_inspect);
+            switch (press) {
+                .inspect => |pending| {
+                    if (ui_state.inspected_entity_index) |current_inspected| {
+                        if (current_inspected == pending.entity_index) {
+                            // Same entity — close the panel.
+                            ui_state.toggleMiddlePanel(.entity_inspect);
+                            ui_state.inspected_entity_index = null;
+                        } else {
+                            // Different entity — switch target.
+                            ui_state.inspected_entity_index = pending.entity_index;
+                        }
+                    } else {
+                        // Not inspecting — open the panel.
+                        ui_state.inspected_entity_index = pending.entity_index;
+                        ui_state.toggleMiddlePanel(.entity_inspect);
+                    }
+                },
+                else => {},
             }
         }
-        ui_state.pending_right_click = null;
+        clearPendingRightClick(ui_state, .inspect);
+    }
+}
+
+/// Drop the pending right-click if it is of `kind` (a no-op otherwise —
+/// each right-click handler owns only its own kind; see PendingRightClick).
+fn clearPendingRightClick(
+    ui_state: *ui.UiState,
+    kind: std.meta.Tag(ui.PendingRightClick),
+) void {
+    if (ui_state.pending_right_click) |press| {
+        if (std.meta.activeTag(press) == kind) ui_state.pending_right_click = null;
+    }
+}
+
+/// Editor-screen right-click: the TOOL-INDEPENDENT delete. One clean
+/// click deletes ONE thing at the pressed tile — priority: enemy / ground
+/// item occupant, then covering decoration, then the bare tile; the '!' /
+/// '=' and empty ground are no-ops. All of that policy lives in the pushed
+/// `player_delete_editor_at` handler (state-computed); this handler only
+/// owns the gesture. Same movement-threshold lifecycle as the inspect
+/// right-click: a right-drag pans the camera (handleCameraPan) and cancels
+/// the pending; a clean release fires the delete. The pressed tile is
+/// recorded at PRESS (a clean click acts on what was under the pointer
+/// when the button went down).
+pub fn handleRightClickEditorDelete(
+    history: *GameStateHistory,
+    pointer: input.PointerInput,
+    ui_elements: []const ui.UiElement,
+    camera: types.Camera,
+    camera_zoom: f32,
+    viewport: input.ViewportSize,
+) void {
+    const current = &history.current_state;
+    const ui_state = &history.session.ui_state;
+
+    // Editor edit mode only (playtest/validate are the .level screen,
+    // where the inspect handler owns right-clicks). Not our screen — drop
+    // only OUR kind of pending.
+    if (current.screen != .editor or current.editor == null) {
+        clearPendingRightClick(ui_state, .editor_delete);
+        return;
+    }
+
+    if (pointer.right_pressed) {
+        if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
+            clearPendingRightClick(ui_state, .editor_delete);
+            return;
+        }
+        const mouse_tile = input.screenToTile(
+            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+            camera,
+            camera_zoom,
+            viewport,
+        );
+        ui_state.pending_right_click = .{ .editor_delete = .{
+            .position = mouse_tile,
+            .press_position = pointer.position,
+        } };
+        return;
+    }
+
+    // Movement beyond the threshold cancels the pending (the press became
+    // a camera pan). `>` strict, same convention as the inspect handler.
+    if (ui_state.pending_right_click) |press| {
+        switch (press) {
+            .editor_delete => |pending| {
+                if (pointer.right_held) {
+                    const dx = pointer.position.x - pending.press_position.x;
+                    const dy = pointer.position.y - pending.press_position.y;
+                    if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
+                        ui_state.pending_right_click = null;
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
+    if (pointer.right_released) {
+        if (ui_state.pending_right_click) |press| {
+            switch (press) {
+                .editor_delete => |pending| {
+                    event_handlers.pushPlayerAction(current, .{ .player_delete_editor_at = .{
+                        .position = pending.position,
+                    } }, history.current_arena.allocator());
+                },
+                else => {},
+            }
+        }
+        clearPendingRightClick(ui_state, .editor_delete);
     }
 }
 pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
@@ -1921,4 +2023,115 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
         &.{},
     );
     try std.testing.expectEqual(types.Vector2{ .x = 6, .y = 6 }, history.session.tile_cursor.?);
+}
+
+test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no-ops" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+
+    // Camera centered on (0,0) at zoom 1 with the reference viewport: the
+    // screen center maps to tile (0,0), +256px x to tile (1,0).
+    const camera = types.Camera{ .position = .{ .x = 128, .y = 128 } };
+    const viewport = input.ViewportSize{ .width = 3840, .height = 2160 };
+    const center = types.ScreenPosition{ .x = 1920, .y = 1080 };
+
+    // Clean press + release at the center → the delete event is pushed
+    // (targeting the pressed tile (0,0)).
+    handleRightClickEditorDelete(
+        &history,
+        .{ .right_pressed = true, .position = center },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.pending_right_click != null);
+    handleRightClickEditorDelete(
+        &history,
+        .{ .right_released = true, .position = center },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 0, .y = 0 },
+        history.current_state.event_stack[0].player_input_event.player_delete_editor_at.position,
+    );
+    try std.testing.expect(history.session.ui_state.pending_right_click == null);
+
+    // Process it (no-op on empty ground — nothing pushed as sub-events).
+    @import("event_handlers.zig").processEvent(&history);
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Press then move beyond the drag threshold → the pending cancels (the
+    // press became a camera pan); release pushes nothing.
+    handleRightClickEditorDelete(
+        &history,
+        .{ .right_pressed = true, .position = center },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    handleRightClickEditorDelete(
+        &history,
+        .{ .right_held = true, .position = .{ .x = center.x + input.drag_threshold_pixels + 1, .y = center.y } },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.pending_right_click == null);
+    handleRightClickEditorDelete(
+        &history,
+        .{ .right_released = true, .position = center },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Press over blocking UI → no pending; release pushes nothing.
+    const blocking_panel = [_]ui.UiElement{.{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = .{ .x = 1800, .y = 1000 },
+        .width = 400,
+        .height = 400,
+    } }};
+    handleRightClickEditorDelete(
+        &history,
+        .{ .right_pressed = true, .position = center },
+        &blocking_panel,
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.pending_right_click == null);
+    handleRightClickEditorDelete(
+        &history,
+        .{ .right_released = true, .position = center },
+        &blocking_panel,
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }

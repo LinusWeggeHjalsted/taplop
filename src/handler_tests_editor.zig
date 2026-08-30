@@ -1089,3 +1089,123 @@ test "editor_set_item_placement_type: retypes without touching position or count
     try testing.expectEqual(@as(u32, 1), level.item_placements[1].type_id);
     try testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, level.item_placements[1].position);
 }
+
+test "player_delete_editor_at: one thing per click, occupant before tile" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A tile with an enemy on it, a tile with an item, a bare tile, and
+    // empty ground. One right-click each.
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 }, .{ .x = 3, .y = 1 } };
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } },
+    };
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 1, .y = 1 },
+    }};
+    const item_placements = [_]types.ItemPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 2, .y = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .entity_placements = &entity_placements,
+        .item_placements = &item_placements,
+    }};
+    var editor = itemTestEditor(&levels);
+    editor.entity_types = &entity_types;
+    var history = harness.newHistory(editorStateWith(editor));
+    runToIdle(&history);
+
+    const pushDelete = struct {
+        fn call(history_: *state.GameStateHistory, position: types.Vector2) void {
+            event_handlers.pushEvents(
+                &history_.current_state,
+                &.{.{ .player_input_event = .{ .player_delete_editor_at = .{
+                    .position = position,
+                } } }},
+                history_.current_arena.allocator(),
+            );
+        }
+    }.call;
+
+    // Enemy tile: the enemy goes, the tile stays.
+    pushDelete(&history, .{ .x = 1, .y = 1 });
+    runToIdle(&history);
+    var level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 0), level.entity_placements.len);
+    try testing.expect(hasTile(level, .{ .x = 1, .y = 1 }));
+
+    // Item tile: the item goes, the tile stays.
+    pushDelete(&history, .{ .x = 2, .y = 1 });
+    runToIdle(&history);
+    level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 0), level.item_placements.len);
+    try testing.expect(hasTile(level, .{ .x = 2, .y = 1 }));
+
+    // Bare tile: the tile goes.
+    pushDelete(&history, .{ .x = 3, .y = 1 });
+    runToIdle(&history);
+    level = history.current_state.editor.?.levels[0];
+    try testing.expect(!hasTile(level, .{ .x = 3, .y = 1 }));
+
+    // Empty ground: no-op.
+    pushDelete(&history, .{ .x = 9, .y = 9 });
+    runToIdle(&history);
+    level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 2), level.level_tiles.len);
+}
+
+test "player_delete_editor_at: player start / level end / decoration cases" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // '!' and '=' sit on tiles — a right-click on them must not delete the
+    // tile underneath. A covering decoration is deleted instead of the
+    // (nonexistent) tile.
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 4, .y = 0 } };
+    const decoration_placements = [_]types.DecorationPlacement{.{
+        .type_id = 1, // single-tile footprint
+        .position = .{ .x = 7, .y = 7 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 4, .y = 0 },
+        .decoration_placements = &decoration_placements,
+    }};
+    const decoration_editor = decorationTestEditor(&levels);
+    var editor = itemTestEditor(&levels);
+    editor.decoration_types = decoration_editor.decoration_types;
+    var history = harness.newHistory(editorStateWith(editor));
+    runToIdle(&history);
+
+    const pushDelete = struct {
+        fn call(history_: *state.GameStateHistory, position: types.Vector2) void {
+            event_handlers.pushEvents(
+                &history_.current_state,
+                &.{.{ .player_input_event = .{ .player_delete_editor_at = .{
+                    .position = position,
+                } } }},
+                history_.current_arena.allocator(),
+            );
+        }
+    }.call;
+
+    // '!' / '=': no-op — their tiles survive.
+    pushDelete(&history, .{ .x = 0, .y = 0 });
+    runToIdle(&history);
+    pushDelete(&history, .{ .x = 4, .y = 0 });
+    runToIdle(&history);
+    var level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 2), level.level_tiles.len);
+
+    // Covering decoration: deleted.
+    pushDelete(&history, .{ .x = 7, .y = 7 });
+    runToIdle(&history);
+    level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 0), level.decoration_placements.len);
+}

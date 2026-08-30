@@ -286,15 +286,29 @@ pub const PendingSlotPress = struct {
     shift_held: bool = false,
 };
 
-/// A right-press on a world tile with an entity, awaiting click-vs-drag
-/// disambiguation (movement-threshold lifecycle). If the pointer stays
-/// within `drag_threshold_pixels` until release, the entity is inspected
-/// (toggle the entity inspect panel on `inspected_entity_index`). If it
-/// moves beyond the threshold first, this is cancelled — the press became
-/// a camera pan. See `handleRightClickInspect` in input_handlers.
-pub const PendingRightClick = struct {
-    entity_index: u32,
-    press_position: ScreenPosition,
+/// A right-press on the world awaiting click-vs-drag disambiguation
+/// (movement-threshold lifecycle): if the pointer stays within
+/// `drag_threshold_pixels` until release, the press was a CLICK and the
+/// kind's action fires; if it moves beyond the threshold first, this is
+/// cancelled — the press became a camera pan. One gesture state, two
+/// owners by kind: `inspect` (levels — right-click an entity to toggle
+/// the inspect panel, `handleRightClickInspect`) and `editor_delete`
+/// (editor screen — the tool-independent delete,
+/// `handleRightClickEditorDelete`). Each handler only touches its own
+/// kind (the other screen's pending survives its handler's clear).
+pub const PendingRightClick = union(enum) {
+    /// The pressed entity (levels).
+    inspect: struct {
+        entity_index: u32,
+        press_position: ScreenPosition,
+    },
+    /// The pressed world tile (editor). Recorded at PRESS — a clean
+    /// click acts on what was under the pointer when the button went
+    /// down, not where sub-threshold drift left it at release.
+    editor_delete: struct {
+        position: types.Vector2,
+        press_position: ScreenPosition,
+    },
 };
 
 /// The most recent plain (no-modifier) single click on a content inventory

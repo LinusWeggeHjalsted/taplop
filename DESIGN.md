@@ -1885,11 +1885,20 @@ ground items (bag sprite), and the `!`/`=` markers all render via the
 existing drawable builders. The same placement-through-reference
 structure is what save reads to generate the mission files.
 
-**Active-tool model (fully modal).** The active tool is always exactly one
+**Active-tool model (left clicks fully modal; right-click is the tool-
+independent delete).** The active tool is always exactly one
 of: {selection, tile-paint, enemy-type-X, decoration-type-X,
 ground-item-type-X}. Selecting a palette slot sets the active tool to that
-type and the inspector shows that type's fields. A viewport click's effect
-is determined by the active tool:
+type and the inspector shows that type's fields. A viewport LEFT click's
+effect is determined by the active tool. A RIGHT click is the same
+delete regardless of tool (`player_delete_editor_at`): one clean click
+deletes ONE thing at the pressed tile — priority: enemy / ground-item
+occupant, then covering decoration(s), then the bare tile; the '!' / '='
+and empty ground are no-ops. The pressed tile is recorded at press; a
+right-drag stays the camera pan (movement-threshold disambiguation, the
+`PendingRightClick` gesture state shared with the level-screen inspect).
+Progressive delete: clicking an occupied tile removes the occupant first,
+the tile goes on the next click.
 - **Selection tool:** click selects / shift-click adds to / drag-marquee
   builds the selection set (heterogeneous `Selectable` set, see below).
   Placing does NOT happen in selection mode.
@@ -1908,8 +1917,8 @@ is determined by the active tool:
   around the whole footprint region instead (one `region_edge` overlay
   per boundary edge — any footprint shape reads as one closed outline),
   anchored so the decoration's ANCHOR tile sits at the cursor.
-  Deferred: right-click erase and drag-painting (one `editor_set_tile` per
-  cell crossed). Does not modify the selection set.
+  Drag-painting (one `editor_set_tile` per
+  cell crossed) is still deferred. Does not modify the selection set.
 - **Placement tools (enemy/decoration/item type):** click places one
   instance of that type at the cursor position. The ENEMY tool is landed
   (`player_place_editor_entity` — the decoration/item tools mirror it
@@ -2022,8 +2031,9 @@ region-outline preview landed too (`player_place_editor_decoration` +
 single source of the anchor-translation formula). Ground-item-tool clicks
 landed last (`player_place_editor_item` + `editor_place_item` /
 `editor_set_item_placement_type` arms) — every placement tool now has
-left-click input; remaining viewport input is selection, erase, and
-single-tile drag-painting.
+left-click input; the tool-independent right-click delete
+(`player_delete_editor_at` + the `PendingRightClick` gesture union) landed
+after it. Remaining viewport input: selection + drag-painting.
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
 struct exists in events.zig (`editor_add_level` / `editor_delete_level` /

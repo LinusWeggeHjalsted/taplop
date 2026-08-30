@@ -1190,6 +1190,20 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_place_editor_item type id out of range");
                     }
                 },
+                // The right-click delete: screen + editor + a level. The
+                // position is unrestricted — every branch (including the
+                // no-op ones) is legal in a recorded session.
+                .player_delete_editor_at => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_delete_editor_at outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_delete_editor_at with no editor");
+                    };
+                    if (editor.levels.len == 0) {
+                        @panic("replay validation: player_delete_editor_at with no levels");
+                    }
+                },
                 .player_replay_mission => {
                     if (self.current_state.last_completed_mission == null) {
                         @panic("replay validation: player_replay_mission with no completed mission");

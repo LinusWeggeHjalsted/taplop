@@ -1410,6 +1410,82 @@ fn handlePlayerInputEvent(
                 pushEvents(current, pushes.items, allocator);
             }
         },
+        // Editor right-click: the tool-independent delete — ONE thing per
+        // click, priority: enemy / ground-item occupant (at most one by
+        // the one-thing-per-tile invariant; an entity wins if both are
+        // somehow present), then covering decoration(s) (all of them —
+        // consistent with every other editor flow; overlapping footprints
+        // are a degenerate hand-authored case), then the bare tile. The
+        // '!' / '=' are never deleted (checked first — they sit ON tiles,
+        // so the bare-tile erase must not fire under them), and empty
+        // ground is a no-op. One delete = one undo step by construction.
+        .player_delete_editor_at => |delete| {
+            if (current.editor) |*editor| {
+                if (editor.levels.len == 0) return;
+                const level_index = editor.active_level_index;
+                if (level_index >= editor.levels.len) return;
+                const level = &editor.levels[level_index];
+
+                // The '!' / '=' are singletons, movable never deletable —
+                // and their tiles survive too.
+                if (level.player_start.x == delete.position.x and
+                    level.player_start.y == delete.position.y) return;
+                if (level.level_end) |level_end_position| {
+                    if (level_end_position.x == delete.position.x and
+                        level_end_position.y == delete.position.y) return;
+                }
+
+                // Occupant first (progressive delete: the item/enemy goes,
+                // the tile survives for the next click).
+                for (level.entity_placements, 0..) |placement, placement_index| {
+                    if (placement.position.x == delete.position.x and
+                        placement.position.y == delete.position.y)
+                    {
+                        pushEvents(current, &.{.{ .editor_event = .{ .editor_delete_entity_placement = .{
+                            .level_index = @intCast(level_index),
+                            .placement_index = @intCast(placement_index),
+                        } } }}, allocator);
+                        return;
+                    }
+                }
+                for (level.item_placements, 0..) |placement, placement_index| {
+                    if (placement.position.x == delete.position.x and
+                        placement.position.y == delete.position.y)
+                    {
+                        pushEvents(current, &.{.{ .editor_event = .{ .editor_delete_item_placement = .{
+                            .level_index = @intCast(level_index),
+                            .placement_index = @intCast(placement_index),
+                        } } }}, allocator);
+                        return;
+                    }
+                }
+                // Covering decoration(s).
+                var covering: std.ArrayList(Event) = .empty;
+                for (level.decoration_placements, 0..) |placement, placement_index| {
+                    const type_definition = editor.decoration_types[placement.type_id];
+                    if (decorationFootprintCovers(type_definition.footprint, placement.position, delete.position, allocator)) {
+                        covering.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
+                            .level_index = @intCast(level_index),
+                            .placement_index = @intCast(placement_index),
+                        } } }) catch @panic("failed to allocate editor delete events");
+                    }
+                }
+                if (covering.items.len > 0) {
+                    // Ascending array → descending processing (index-stable).
+                    pushEvents(current, covering.items, allocator);
+                    return;
+                }
+                // Bare tile.
+                if (functions.tileListContains(level.level_tiles, delete.position)) {
+                    pushEvents(current, &.{.{ .editor_event = .{ .editor_set_tile = .{
+                        .level_index = @intCast(level_index),
+                        .position = delete.position,
+                        .is_floor = false,
+                    } } }}, allocator);
+                }
+                // Nothing there — no-op.
+            }
+        },
         .player_overwrite_clone => {
             // Replace the existing clone for this mission with the just-
             // completed run's data. Only offered when overwrite_offered is
