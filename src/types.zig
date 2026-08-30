@@ -167,6 +167,17 @@ pub const Action = enum {
     // The inspector's displays-weapons toggle (flip the edited entity
     // type's flag). No payload — the handler reads + flips live state.
     toggle_editor_entity_displays_weapons,
+    // An inspector weapon-type cell was clicked (create the slot's weapon
+    // while empty, or retype in place keeping name/damage). The hand
+    // (`GearSlot`, main/off) rides in `AnytimeInput.clicked_editor_gear_slot`
+    // + the type in `clicked_editor_weapon_type`.
+    select_editor_weapon_type,
+    // The inspector's gear Add button (create a default item in the empty
+    // slot — the slot rides in `AnytimeInput.clicked_editor_gear_slot`).
+    add_editor_item,
+    // The inspector's item Delete button (clear the slot to null — the
+    // slot rides in `AnytimeInput.clicked_editor_gear_slot`).
+    delete_editor_item,
     // Delete the select tool's current selection (editor viewport, Delete
     // key). Fans out into the per-entry delete events via
     // `player_delete_editor_selection`; consumed in handleIdleInput's
@@ -423,6 +434,34 @@ pub const GearSlot = enum {
     pants,
     boots,
 };
+
+/// The slot's display name (the inspector's entry labels, and the "New X"
+/// default item names). pub: shared by the ui builder + the input handlers'
+/// default-item construction.
+pub fn gearSlotLabel(slot: GearSlot) []const u8 {
+    return switch (slot) {
+        .main_hand => "Main hand",
+        .off_hand => "Off hand",
+        .amulet => "Amulet",
+        .coat => "Coat",
+        .gloves => "Gloves",
+        .pants => "Pants",
+        .boots => "Boots",
+    };
+}
+
+/// The weapon type's display name (tooltips + the "New X" default weapon
+/// names — capitalized, unlike @tagName).
+pub fn weaponTypeLabel(weapon_type: WeaponType) []const u8 {
+    return switch (weapon_type) {
+        .sword => "Sword",
+        .shield => "Shield",
+        .spear => "Spear",
+        .dagger => "Dagger",
+        .axe => "Axe",
+        .staff => "Staff",
+    };
+}
 
 pub const Weapon = struct {
     name: []const u8 = &.{},

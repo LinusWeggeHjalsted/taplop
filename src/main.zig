@@ -229,6 +229,15 @@ fn update(
                         if (button.editor_color) |color_index| {
                             player_input.anytime.clicked_editor_color = color_index;
                         }
+                        // Inspector slot controls (weapon-type cells, Add,
+                        // Delete): the slot + (for type cells) the weapon
+                        // type ride alongside the action.
+                        if (button.editor_gear_slot) |gear_slot| {
+                            player_input.anytime.clicked_editor_gear_slot = gear_slot;
+                        }
+                        if (button.editor_weapon_type) |weapon_type| {
+                            player_input.anytime.clicked_editor_weapon_type = weapon_type;
+                        }
                         // Release sound: generic button-up for actions without a
                         // specific sound. Actions WITH a specific sound (skip,
                         // swap_weapons, panel toggles) get their sound from the

@@ -527,25 +527,18 @@ yet implemented. Remaining work:
         leading zeros don't false-positive), `Entity.textFieldValue` as
         the single value source (display + focus seed + would-change),
         and `editor_set_entity_momentum` REMOVED (not authorable).
-  - [~] **4 — gear + weapons:**
-    - [x] **4a — item data layer:** DONE — `TextFieldId` is now a union
-          (entity_name/sprite, `entity_stat: EntityStatField`,
-          `item_name`/`item_stat` addressing a `GearSlot`), the seven
-          equipped-slot wrappers + handler arms + validation
-          (`validateInspectorEntityEdit`, renamed — covers scalars +
-          items), `Entity.gearSlotItem` (the single slot→item mapping;
-          ui.zig delegates), item accessors in types.zig (`itemName`/
-          `itemWithName`/`itemStatValue`/`itemWithStat`/`itemStatMax`),
-          and the gear-stat `max_*` bounds MOVED to types.zig (the
-          parser + the commit clamp now read one constant — the coupling
-          contract). Commits: whole-item events (one undo step for
-          create/retype/field-edit/delete), bounded item-stat clamps,
-          empty-slot + wrong-stat + would-change no-op gates.
-    - [ ] **4b — the UI:** the Weapons + Gear sections' rows — weapon
-          type rows (create-on-pick-while-null / retype-while-present /
-          delete), gear Add/Delete, item name + stat fields. The entries
-          list becomes state-dependent (a present item adds its
-          sub-field rows).
+  - [x] **4 — gear + weapons:** DONE (4a + 4b). 4b: the entries list is
+        built per frame from the editor state (an equipped item adds its
+        Name + stat rows after its slot row); weapon slots show the
+        six-type inline row (`weapons/enemy_<type>` silhouettes on button
+        backgrounds, the palette tool-cell class — pick-while-empty
+        creates "New <Type>" damage 0, pick-while-equipped retypes keeping
+        name/damage, Delete clears) and gear slots show Add/Delete
+        ("New <Slot>" defaults); item stats clamp to the moved `max_*`
+        bounds at commit. Slot controls route through three new actions
+        (`.select_editor_weapon_type` / `.add_editor_item` /
+        `.delete_editor_item`) with Button payloads
+        (`editor_gear_slot` + `editor_weapon_type`).
   - [ ] **5 — utility skills:** the centered picker framework (first
         consumer: the 25-skill list) + slot none/delete.
   - [ ] **6 — later: sprite picker + entity layers:** replaces the interim

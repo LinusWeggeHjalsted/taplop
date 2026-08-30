@@ -329,6 +329,13 @@ pub const AnytimeInput = struct {
     /// `options_action == .select_editor_entity_color` by the release
     /// dispatch (the inspector's swatch row).
     clicked_editor_color: ?u32 = null,
+    /// Editor gear slot, set alongside `options_action ==
+    /// .select_editor_weapon_type / .add_editor_item / .delete_editor_item`
+    /// by the release dispatch (the inspector's slot controls).
+    clicked_editor_gear_slot: ?types.GearSlot = null,
+    /// Editor weapon type, set alongside
+    /// `options_action == .select_editor_weapon_type` (a weapon-type cell).
+    clicked_editor_weapon_type: ?types.WeaponType = null,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -437,6 +444,9 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_editor_inspector => player_input.anytime.options_action = action,
         .select_editor_entity_color => player_input.anytime.options_action = action,
         .toggle_editor_entity_displays_weapons => player_input.anytime.options_action = action,
+        .select_editor_weapon_type => player_input.anytime.options_action = action,
+        .add_editor_item => player_input.anytime.options_action = action,
+        .delete_editor_item => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,

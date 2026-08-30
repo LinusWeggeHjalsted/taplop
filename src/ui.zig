@@ -1315,6 +1315,111 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
     }
 }
 
+test "inspector weapons + gear sections: type rows, add/delete, item fields when equipped" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // Main hand: an equipped sword. Coat: equipped. Everything else empty.
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{
+            .name = "Skeleton",
+            .team = 1,
+            .main_hand_weapon = .{ .name = "Skeleton Sword", .weapon_type = .sword, .weapon_damage = 5 },
+            .coat = .{ .name = "Skeleton Coat", .health_bonus = 2, .defense_bonus = 1 },
+        },
+    }};
+    const editor: types.Editor = .{
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    };
+
+    // Units: Identity 9, Stats 9 (18), Weapons header 18. Scroll 18 shows:
+    // the Weapons header, Main hand (equipped: type row + Delete + Name +
+    // Damage), Off hand (empty: type row, no Delete), the Gear header.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_inspector_scroll = 18 };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try expectInspectorLabels(&elements, &.{ "Weapons", "Main hand", "Delete", "Name", "Damage", "Off hand", "Gear" });
+
+        // The equipped weapon's fields carry its values.
+        try std.testing.expectEqualStrings(
+            "Skeleton Sword",
+            findTextField(&elements, .{ .item_name = .main_hand }).?.text,
+        );
+        try std.testing.expectEqualStrings(
+            "5",
+            findTextField(&elements, .{ .item_stat = .{ .slot = .main_hand, .stat = .weapon_damage } }).?.text,
+        );
+        // No off-hand fields (the slot is empty).
+        try std.testing.expect(findTextField(&elements, .{ .item_name = .off_hand }) == null);
+
+        // Type cells: 12 total (two hands × 6), exactly one highlighted —
+        // the main hand's sword. The main hand's row also carries a
+        // Delete; the off hand's doesn't.
+        var type_cells: usize = 0;
+        var highlighted: ?types.GearSlot = null;
+        var deletes: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .select_editor_weapon_type) {
+                    type_cells += 1;
+                    if (button.highlighted) highlighted = button.editor_gear_slot.?;
+                    try std.testing.expect(button.editor_weapon_type != null);
+                }
+                if (button.action == .delete_editor_item and button.editor_gear_slot.? == .main_hand) {
+                    deletes += 1;
+                }
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 12), type_cells);
+        try std.testing.expectEqual(types.GearSlot.main_hand, highlighted.?);
+        try std.testing.expectEqual(@as(usize, 1), deletes);
+    }
+
+    // The Gear section's items (scroll 28 — the window opens past the
+    // Gear header at 27): coat equipped → Delete + its three fields;
+    // amulet empty → Add, no fields.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_inspector_scroll = 28 };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try expectInspectorLabels(&elements, &.{ "Amulet", "Add", "Coat", "Delete", "Name", "Health bonus", "Defense bonus" });
+
+        var adds: usize = 0;
+        var coat_deletes: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .add_editor_item and button.editor_gear_slot.? == .amulet) adds += 1;
+                if (button.action == .delete_editor_item and button.editor_gear_slot.? == .coat) coat_deletes += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), adds);
+        try std.testing.expectEqual(@as(usize, 1), coat_deletes);
+        try std.testing.expectEqualStrings(
+            "Skeleton Coat",
+            findTextField(&elements, .{ .item_name = .coat }).?.text,
+        );
+        try std.testing.expectEqualStrings(
+            "2",
+            findTextField(&elements, .{ .item_stat = .{ .slot = .coat, .stat = .health_bonus } }).?.text,
+        );
+    }
+}
+
 test "textEditPressProceeds: M2 region is the open inspector panel + its toggle" {
     const rect = editorInspectorPanelRect();
     try std.testing.expectEqual(@as(i32, 0), rect.x);
@@ -1720,6 +1825,14 @@ pub const Button = struct {
     /// action + `AnytimeInput.clicked_editor_color` fold this into the
     /// handler.
     editor_color: ?u32 = null,
+    /// Editor gear slot, if this button is an inspector slot control (a
+    /// weapon-type cell, Add, or Delete). Rides in
+    /// `AnytimeInput.clicked_editor_gear_slot` alongside its action.
+    editor_gear_slot: ?types.GearSlot = null,
+    /// Editor weapon type, if this button is a weapon-type cell (set
+    /// alongside `editor_gear_slot`). Rides in
+    /// `AnytimeInput.clicked_editor_weapon_type`.
+    editor_weapon_type: ?types.WeaponType = null,
     blocks_input: bool = true,
 };
 
@@ -4079,31 +4192,73 @@ const EditorInspectorControl = union(enum) {
     toggle,
 };
 
-/// One line of inspector content: a section header, or a field entry (label
-/// line + control line) — per the coupling contract in DESIGN → Architecture
-/// → Level Editor → Editor UI layout → Inspector fields.
+/// One line of inspector content — per the coupling contract in DESIGN →
+/// Architecture → Level Editor → Editor UI layout → Inspector fields. The
+/// list is built PER FRAME from the editor state (a present item adds its
+/// sub-field rows after its slot row).
 const EditorInspectorEntry = union(enum) {
     section: []const u8,
     field: struct {
         label: []const u8,
         control: EditorInspectorControl,
     },
+    /// A weapon slot: the label line + the weapon-type row (a pick creates
+    /// while empty / retypes in place) + Delete while a weapon is equipped.
+    weapon_slot: types.GearSlot,
+    /// A non-weapon gear slot: the label line + Add (while empty) / Delete
+    /// (while equipped); a present item's name/stat field entries follow.
+    gear_slot: types.GearSlot,
 };
 
-/// Row units an entry occupies: a section header is one; a field entry is
-/// two (the label line above the editable value).
+/// Row units an entry occupies: a section header is one; everything else
+/// is two (the label line above the control line).
 fn editorInspectorEntryUnits(entry: EditorInspectorEntry) i32 {
     return switch (entry) {
         .section => 1,
-        .field => 2,
+        .field, .weapon_slot, .gear_slot => 2,
     };
 }
 
-/// The enemy-type inspector's full content plan: five sections over every
+/// The stat fields an item kind carries, in display order (the inspector
+/// only offers these — a stat the item doesn't have commits nothing by
+/// construction).
+fn gearSlotStatSet(slot: types.GearSlot) []const types.ItemStatField {
+    return switch (slot) {
+        .main_hand, .off_hand => &.{.weapon_damage},
+        .amulet => &.{.spell_damage},
+        .coat => &.{ .health_bonus, .defense_bonus },
+        .gloves => &.{ .damage_bonus, .health_bonus },
+        .pants => &.{ .pickup_radius_bonus, .health_bonus },
+        .boots => &.{ .speed_bonus, .health_bonus },
+    };
+}
+
+fn itemStatLabel(stat: types.ItemStatField) []const u8 {
+    return switch (stat) {
+        .weapon_damage => "Damage",
+        .spell_damage => "Spell damage",
+        .health_bonus => "Health bonus",
+        .defense_bonus => "Defense bonus",
+        .damage_bonus => "Damage bonus",
+        .pickup_radius_bonus => "Pickup radius",
+        .speed_bonus => "Speed bonus",
+    };
+}
+
+/// The enemy-type inspector's content plan: five sections over every
 /// field `parseEntityDefinition` reads (the coupling contract — anything
-/// editable by text-editing the level file is a row here).
-fn editorInspectorEntityEntries() []const EditorInspectorEntry {
-    return &.{
+/// editable by text-editing the level file is a row here). The Weapons +
+/// Gear sections are state-dependent: each slot row is followed by the
+/// equipped item's Name + stat rows (nothing when the slot is empty).
+fn editorInspectorEntityEntries(
+    allocator: std.mem.Allocator,
+    editor: types.Editor,
+    type_index: u32,
+) ![]const EditorInspectorEntry {
+    var entries: std.ArrayList(EditorInspectorEntry) = .empty;
+
+    // Identity + Stats: fixed.
+    try entries.appendSlice(allocator, &.{
         .{ .section = "Identity" },
         .{ .field = .{ .label = "Name", .control = .{ .text = .entity_name } } },
         .{ .field = .{ .label = "Sprite", .control = .{ .text = .entity_sprite } } },
@@ -4114,22 +4269,58 @@ fn editorInspectorEntityEntries() []const EditorInspectorEntry {
         .{ .field = .{ .label = "Defense", .control = .{ .text = .{ .entity_stat = .defense } } } },
         .{ .field = .{ .label = "Speed", .control = .{ .text = .{ .entity_stat = .speed } } } },
         .{ .field = .{ .label = "Aggro range", .control = .{ .text = .{ .entity_stat = .aggro_range } } } },
-        .{ .section = "Weapons" },
-        .{ .field = .{ .label = "Main hand", .control = .none } },
-        .{ .field = .{ .label = "Off hand", .control = .none } },
-        .{ .section = "Gear" },
-        .{ .field = .{ .label = "Amulet", .control = .none } },
-        .{ .field = .{ .label = "Coat", .control = .none } },
-        .{ .field = .{ .label = "Gloves", .control = .none } },
-        .{ .field = .{ .label = "Pants", .control = .none } },
-        .{ .field = .{ .label = "Boots", .control = .none } },
-        .{ .section = "Utility skills" },
-        .{ .field = .{ .label = "Slot 4", .control = .none } },
-        .{ .field = .{ .label = "Slot 5", .control = .none } },
-        .{ .field = .{ .label = "Slot 6", .control = .none } },
-        .{ .field = .{ .label = "Slot 7", .control = .none } },
-        .{ .field = .{ .label = "Slot 8", .control = .none } },
-    };
+    });
+
+    const has_item = struct {
+        fn check(some_editor: types.Editor, index: u32, slot: types.GearSlot) bool {
+            if (index >= some_editor.entity_types.len) return false;
+            return some_editor.entity_types[index].template.gearSlotItem(slot) != null;
+        }
+    }.check;
+
+    // Weapons: each hand's slot row + the equipped weapon's fields.
+    try entries.append(allocator, .{ .section = "Weapons" });
+    for ([_]types.GearSlot{ .main_hand, .off_hand }) |hand| {
+        try entries.append(allocator, .{ .weapon_slot = hand });
+        if (has_item(editor, type_index, hand)) {
+            try entries.append(allocator, .{ .field = .{
+                .label = "Name",
+                .control = .{ .text = .{ .item_name = hand } },
+            } });
+            for (gearSlotStatSet(hand)) |stat| {
+                try entries.append(allocator, .{ .field = .{
+                    .label = itemStatLabel(stat),
+                    .control = .{ .text = .{ .item_stat = .{ .slot = hand, .stat = stat } } },
+                } });
+            }
+        }
+    }
+
+    // Gear: each slot's row + the equipped item's fields.
+    try entries.append(allocator, .{ .section = "Gear" });
+    for ([_]types.GearSlot{ .amulet, .coat, .gloves, .pants, .boots }) |slot| {
+        try entries.append(allocator, .{ .gear_slot = slot });
+        if (has_item(editor, type_index, slot)) {
+            try entries.append(allocator, .{ .field = .{
+                .label = "Name",
+                .control = .{ .text = .{ .item_name = slot } },
+            } });
+            for (gearSlotStatSet(slot)) |stat| {
+                try entries.append(allocator, .{ .field = .{
+                    .label = itemStatLabel(stat),
+                    .control = .{ .text = .{ .item_stat = .{ .slot = slot, .stat = stat } } },
+                } });
+            }
+        }
+    }
+
+    // Utility skills: fixed until the picker slice (slot_4..slot_8).
+    try entries.append(allocator, .{ .section = "Utility skills" });
+    for ([_][]const u8{ "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8" }) |label| {
+        try entries.append(allocator, .{ .field = .{ .label = label, .control = .none } });
+    }
+
+    return entries.items;
 }
 
 /// Build the inspector's content inside the open panel (called by
@@ -4174,7 +4365,7 @@ fn buildEditorInspectorContent(
         return;
     };
 
-    const entries = editorInspectorEntityEntries();
+    const entries = try editorInspectorEntityEntries(allocator, editor, type_index);
     // Unit math: a section header is 1 row unit, a field entry 2 (label
     // line + control line). Scroll + windowing are in units, so every line
     // stays on the 128px grid at any offset.
@@ -4278,6 +4469,49 @@ fn buildEditorInspectorContent(
                         active_theme,
                     ),
                 }
+            },
+            // A weapon slot: the slot's label + the weapon-type row (create
+            // on pick while empty / retype in place) + Delete while equipped.
+            .weapon_slot => |hand| {
+                try emitInspectorSlotLabel(elements, allocator, cell, types.gearSlotLabel(hand), active_theme);
+                const control_rect: Rectangle = .{
+                    .x = cell.x,
+                    .y = cell.y + editor_inspector_row_height + ui_gap,
+                    .width = cell.width,
+                    .height = editor_inspector_row_height - 2 * ui_gap,
+                };
+                try emitInspectorWeaponSlot(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    editor,
+                    type_index,
+                    hand,
+                    control_rect,
+                    active_theme,
+                );
+            },
+            // A gear slot: the slot's label + Add (while empty) / Delete
+            // (while equipped); the item's field entries follow as their
+            // own rows.
+            .gear_slot => |slot| {
+                try emitInspectorSlotLabel(elements, allocator, cell, types.gearSlotLabel(slot), active_theme);
+                const control_rect: Rectangle = .{
+                    .x = cell.x,
+                    .y = cell.y + editor_inspector_row_height + ui_gap,
+                    .width = cell.width,
+                    .height = editor_inspector_row_height - 2 * ui_gap,
+                };
+                try emitInspectorGearSlot(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    editor,
+                    type_index,
+                    slot,
+                    control_rect,
+                    active_theme,
+                );
             },
         }
     }
@@ -4465,7 +4699,187 @@ fn emitInspectorToggle(
     } });
 }
 
-/// M2 press arbitration for a focused text field (see DESIGN → UI
+/// A slot entry's label line (the top row unit of a weapon/gear slot).
+fn emitInspectorSlotLabel(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    label: []const u8,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = .{
+            .x = cell.x,
+            .y = cell.y + @divFloor(editor_inspector_row_height - editor_group_header_font_size, 2),
+        },
+        .font_size = editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+}
+
+/// A weapon slot's control line: the six weapon types as cells (the
+/// enemy_<type> silhouette the entity will actually wield, on the shared
+/// button background — the palette tool-cell visual class). Picking a type
+/// CREATES a default weapon while the slot is empty, or RETYPES in place
+/// (name/damage kept); the current type is highlighted. A Delete button
+/// follows while a weapon is equipped (clears the slot to null).
+fn emitInspectorWeaponSlot(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    editor: types.Editor,
+    type_index: u32,
+    hand: types.GearSlot,
+    control_rect: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const weapon_color = active_theme.enemy_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    const equipped_weapon: ?types.Weapon = if (type_index < editor.entity_types.len)
+        switch (hand) {
+            .main_hand => editor.entity_types[type_index].template.main_hand_weapon,
+            .off_hand => editor.entity_types[type_index].template.off_hand_weapon,
+            else => null,
+        }
+    else
+        null;
+
+    const cell_size = control_rect.height;
+    const cell_pitch = cell_size + ui_gap;
+    inline for (std.meta.fields(types.WeaponType), 0..) |field, loop_index| {
+        const weapon_type: types.WeaponType = @enumFromInt(field.value);
+        const index: i32 = @intCast(loop_index);
+        const cell: Rectangle = .{
+            .x = control_rect.x + index * cell_pitch,
+            .y = control_rect.y,
+            .width = cell_size,
+            .height = cell_size,
+        };
+        const highlighted = if (equipped_weapon) |weapon| weapon.weapon_type == weapon_type else false;
+        try elements.append(allocator, .{ .button = .{
+            .sprite_id = button_background_sprite_id,
+            .screen_position = cell.position(),
+            .width = cell.width,
+            .height = cell.height,
+            .action = .select_editor_weapon_type,
+            .editor_gear_slot = hand,
+            .editor_weapon_type = weapon_type,
+            .color = button_color,
+            .highlighted = highlighted,
+            .tooltip = .{ .header = try spanRow(allocator, text(types.weaponTypeLabel(weapon_type))) },
+        } });
+        // The silhouette (512x640 frame art, aspect-preserved into the
+        // cell; enemy tint — this is what the entity will wield).
+        const sprite_id = try std.fmt.allocPrint(
+            allocator,
+            "weapons/enemy_{s}",
+            .{field.name},
+        );
+        const fitted = scaleToFit(cell, editor_entity_frame_width, editor_entity_frame_height);
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = sprite_id,
+            .screen_position = fitted.position(),
+            .width = fitted.width,
+            .height = fitted.height,
+            .color = weapon_color,
+            .blocks_input = false,
+        } });
+    }
+
+    // Delete (while equipped): the row's remaining width after the cells.
+    if (equipped_weapon != null) {
+        const type_row_width = @as(i32, @intCast(std.meta.fields(types.WeaponType).len)) * cell_pitch - ui_gap;
+        const delete_rect: Rectangle = .{
+            .x = control_rect.x + type_row_width + ui_gap,
+            .y = control_rect.y,
+            .width = control_rect.width - type_row_width - 2 * ui_gap,
+            .height = cell_size,
+        };
+        try emitInspectorSlotButton(
+            elements,
+            allocator,
+            font_metrics,
+            delete_rect,
+            "Delete",
+            .delete_editor_item,
+            hand,
+            button_color,
+            active_theme.lightest,
+        );
+    }
+}
+
+/// A gear slot's control line: Add while the slot is empty (creates a
+/// default item), Delete while an item is equipped (clears to null). The
+/// item's own name/stat fields follow as separate entries.
+fn emitInspectorGearSlot(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    editor: types.Editor,
+    type_index: u32,
+    slot: types.GearSlot,
+    control_rect: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const occupied = type_index < editor.entity_types.len and
+        editor.entity_types[type_index].template.gearSlotItem(slot) != null;
+    const label: []const u8 = if (occupied) "Delete" else "Add";
+    const action: types.Action = if (occupied) .delete_editor_item else .add_editor_item;
+    try emitInspectorSlotButton(
+        elements,
+        allocator,
+        font_metrics,
+        control_rect,
+        label,
+        action,
+        slot,
+        button_color,
+        active_theme.lightest,
+    );
+}
+
+/// A full-rect panel-backed slot button (Add / Delete): panel + spriteless
+/// button + centered label — the toggle's visual class.
+fn emitInspectorSlotButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    rect: Rectangle,
+    label: []const u8,
+    action: types.Action,
+    slot: types.GearSlot,
+    button_color: Color,
+    label_color: Color,
+) !void {
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .action = action,
+        .editor_gear_slot = slot,
+    } });
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = rect
+            .placeCenter(label_width, editor_group_header_font_size)
+            .position(),
+        .font_size = editor_group_header_font_size,
+        .color = label_color,
+        .blocks_input = false,
+    } });
+}
 /// Framework → Text input widget): true when a left press may PROCEED
 /// after committing the field — the press is on a sibling inspector
 /// control (anything inside the open inspector panel, or the inspector

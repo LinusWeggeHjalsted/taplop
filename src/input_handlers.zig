@@ -1298,6 +1298,42 @@ fn editorSlotItemAction(
     }
 }
 
+/// The per-slot player wrapper carrying a NULL item (the Delete path —
+/// the clear event is always well-formed, no kind to match).
+fn editorSlotClearAction(
+    target: types.EntityEditTarget,
+    slot: types.GearSlot,
+) events.PlayerInputEvent {
+    return switch (slot) {
+        .main_hand => .{ .player_set_editor_entity_main_hand_weapon = .{ .target = target, .value = null } },
+        .off_hand => .{ .player_set_editor_entity_off_hand_weapon = .{ .target = target, .value = null } },
+        .amulet => .{ .player_set_editor_entity_amulet = .{ .target = target, .value = null } },
+        .coat => .{ .player_set_editor_entity_coat = .{ .target = target, .value = null } },
+        .gloves => .{ .player_set_editor_entity_gloves = .{ .target = target, .value = null } },
+        .pants => .{ .player_set_editor_entity_pants = .{ .target = target, .value = null } },
+        .boots => .{ .player_set_editor_entity_boots = .{ .target = target, .value = null } },
+    };
+}
+
+/// A default item for an EMPTY gear slot (the Add button / a weapon-type
+/// pick on an empty hand): "New <Slot>", zero stats. Weapons are created
+/// by the TYPE row (not here) — null for the hands.
+fn defaultItemForSlot(history: *GameStateHistory, slot: types.GearSlot) ?types.Item {
+    const name = std.fmt.allocPrint(
+        history.current_arena.allocator(),
+        "New {s}",
+        .{types.gearSlotLabel(slot)},
+    ) catch @panic("failed to allocate default item name");
+    return switch (slot) {
+        .main_hand, .off_hand => null,
+        .amulet => .{ .amulet = .{ .name = name } },
+        .coat => .{ .coat = .{ .name = name } },
+        .gloves => .{ .gloves = .{ .name = name } },
+        .pants => .{ .pants = .{ .name = name } },
+        .boots => .{ .boots = .{ .name = name } },
+    };
+}
+
 pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
     if (history.session.ui_state.text_edit == null) return;
     const text_edit: *ui.TextEditState = &history.session.ui_state.text_edit.?;
@@ -1752,6 +1788,70 @@ pub fn handleAnytimeInput(
                     .target = target,
                     .value = !template.displays_weapons,
                 } });
+            },
+            // Weapon-type cell: CREATE a default weapon while the hand is
+            // empty ("New <Type>", damage 0), or RETYPE in place keeping
+            // name/damage. Same-type picks never fire.
+            .select_editor_weapon_type => {
+                const hand = anytime.clicked_editor_gear_slot orelse return;
+                const weapon_type = anytime.clicked_editor_weapon_type orelse return;
+                if (hand != .main_hand and hand != .off_hand) return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
+                const target: types.EntityEditTarget = .{ .entity_type = type_index };
+                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                const equipped: ?types.Weapon = switch (hand) {
+                    .main_hand => template.main_hand_weapon,
+                    .off_hand => template.off_hand_weapon,
+                    else => unreachable,
+                };
+                if (equipped) |weapon| {
+                    if (weapon.weapon_type == weapon_type) return;
+                    // Retype in place — identity (name/damage) stay stable.
+                    var retyped = weapon;
+                    retyped.weapon_type = weapon_type;
+                    const retype_action = editorSlotItemAction(target, hand, .{ .weapon = retyped }) orelse return;
+                    pushPlayerActionAndDrain(history, retype_action);
+                } else {
+                    const name = std.fmt.allocPrint(
+                        history.current_arena.allocator(),
+                        "New {s}",
+                        .{types.weaponTypeLabel(weapon_type)},
+                    ) catch @panic("failed to allocate default weapon name");
+                    const weapon: types.Weapon = .{
+                        .name = name,
+                        .weapon_type = weapon_type,
+                        .weapon_damage = 0,
+                    };
+                    const create_action = editorSlotItemAction(target, hand, .{ .weapon = weapon }) orelse return;
+                    pushPlayerActionAndDrain(history, create_action);
+                }
+            },
+            // Gear Add: create a default item in the EMPTY slot (a
+            // present item never re-adds — its fields edit in place).
+            .add_editor_item => {
+                const slot = anytime.clicked_editor_gear_slot orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
+                const target: types.EntityEditTarget = .{ .entity_type = type_index };
+                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                if (template.gearSlotItem(slot) != null) return;
+                const item = defaultItemForSlot(history, slot) orelse return;
+                const add_action = editorSlotItemAction(target, slot, item) orelse return;
+                pushPlayerActionAndDrain(history, add_action);
+            },
+            // Item Delete: clear the slot to null (an empty slot is a
+            // no-op — the button isn't rendered then, but the gate holds
+            // for crafted input).
+            .delete_editor_item => {
+                const slot = anytime.clicked_editor_gear_slot orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
+                const target: types.EntityEditTarget = .{ .entity_type = type_index };
+                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                if (template.gearSlotItem(slot) == null) return;
+                const clear_action = editorSlotClearAction(target, slot);
+                pushPlayerActionAndDrain(history, clear_action);
             },
             else => {},
         }

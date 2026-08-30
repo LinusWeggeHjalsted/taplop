@@ -7535,3 +7535,47 @@ intact, one undo), weapon damage clamps to max_weapon_damage, wrong-stat
 and empty-slot no-ops. UI-side churn: the Stats entries + tests now
 construct `.entity_stat` payload ids; findTextField compares via
 std.meta.eql (unions have no ==).
+
+### Inspector weapons + gear UI — slot rows, type cells, item fields (DONE, slice 4b)
+
+The Weapons + Gear sections are live; the enemy-type inspector now covers
+every field the level format carries except utility skills (slice 5) and
+layers (slice 6).
+
+**State-dependent entries.** `editorInspectorEntityEntries` is now BUILT
+per frame (frame arena) instead of a static table: each weapon/gear slot
+row is followed by the equipped item's Name + stat rows (nothing when
+empty — `gearSlotStatSet` gives each slot's stat fields in display
+order). Unit accounting: every slot row is 2 units like a field; with no
+items equipped the plan occupies the same 45 units as before, so the
+existing window/clamp tests held unchanged.
+
+**Slot rows.** Weapons: the six types as cells — the
+`weapons/enemy_<type>` silhouette (what the entity will actually wield),
+aspect-fitted on the shared `ui/button_background` (the palette tool-cell
+visual class), enemy-tinted, the equipped type highlighted, a tooltip with
+the type's display name — plus a Delete button in the row's remaining
+width while equipped. Gear: a full-width Add (empty) / Delete (equipped)
+panel button (the toggle's visual class). New actions
+`.select_editor_weapon_type` / `.add_editor_item` / `.delete_editor_item`
+route through `options_action` with Button payloads (`editor_gear_slot`,
+`editor_weapon_type`) riding in AnytimeInput.
+
+**Click semantics** (handleAnytimeInput arms, all via
+`editorSlotItemAction` / `editorSlotClearAction` from 4a): a type pick on
+an EMPTY hand creates the default weapon ("New <Type>" via the shared
+`weaponTypeLabel` table, damage 0); on an EQUIPPED hand it retypes in
+place (name/damage stable — identity survives, the same reasoning as
+placement retype); same-type picks never fire. Gear Add creates "New
+<Slot>" (zero stats) — only on an empty slot, and never on the weapon
+hands (their creation path is the type row). Delete clears to null,
+empty slots no-op. One whole-item event = one undo step for any of them.
+
+Tests (421): builder (equipped main hand → type row + Delete + Name/
+Damage fields with values, empty off hand → no fields/no Delete; gear
+Add vs Delete per occupancy; highlighted type cell) and clicks (create +
+undo, retype keeps identity, same-type no-op, delete + empty no-op, gear
+add + present no-op, weapon-hand add gate). Window-arithmetic slips in
+the test expectations (section headers start AT the boundary; the Add/
+Delete buttons carry their own labels into the label list) were the only
+failures — the code was right each time.

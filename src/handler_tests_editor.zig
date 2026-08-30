@@ -2438,6 +2438,107 @@ test "inspector item commits: weapon name + damage (bounded), empty-slot and wro
     }
 }
 
+test "inspector slot clicks: weapon create/retype/delete, gear add/delete" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{
+            .name = "Skeleton",
+            .team = 1,
+            .main_hand_weapon = .{ .name = "Skeleton Sword", .weapon_type = .sword, .weapon_damage = 5 },
+        },
+    }};
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    }));
+    runToIdle(&history);
+
+    // Weapon-type pick on the EMPTY off hand: creates the default weapon
+    // ("New Axe", damage 0); one undo clears the slot again.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_weapon_type,
+        .clicked_editor_gear_slot = .off_hand,
+        .clicked_editor_weapon_type = .axe,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    {
+        const weapon = history.current_state.editor.?.entity_types[0].template.off_hand_weapon.?;
+        try testing.expectEqualStrings("New Axe", weapon.name);
+        try testing.expectEqual(types.WeaponType.axe, weapon.weapon_type);
+        try testing.expectEqual(@as(u32, 0), weapon.weapon_damage);
+    }
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.editor.?.entity_types[0].template.off_hand_weapon == null);
+
+    // Type pick on the EQUIPPED main hand with a DIFFERENT type: retypes
+    // in place — name + damage stay.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_weapon_type,
+        .clicked_editor_gear_slot = .main_hand,
+        .clicked_editor_weapon_type = .spear,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    {
+        const weapon = history.current_state.editor.?.entity_types[0].template.main_hand_weapon.?;
+        try testing.expectEqualStrings("Skeleton Sword", weapon.name);
+        try testing.expectEqual(types.WeaponType.spear, weapon.weapon_type);
+        try testing.expectEqual(@as(u32, 5), weapon.weapon_damage);
+    }
+
+    // Same-type pick never fires (no dead undo step).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_weapon_type,
+        .clicked_editor_gear_slot = .main_hand,
+        .clicked_editor_weapon_type = .spear,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Delete clears the slot to null; delete on an empty slot is a no-op.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_item,
+        .clicked_editor_gear_slot = .main_hand,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.current_state.editor.?.entity_types[0].template.main_hand_weapon == null);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_item,
+        .clicked_editor_gear_slot = .main_hand,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Gear Add creates the default item ("New Amulet", zero stats);
+    // add on a present item never fires.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .add_editor_item,
+        .clicked_editor_gear_slot = .amulet,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    {
+        const amulet = history.current_state.editor.?.entity_types[0].template.amulet.?;
+        try testing.expectEqualStrings("New Amulet", amulet.name);
+        try testing.expectEqual(@as(u32, 0), amulet.spell_damage);
+    }
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .add_editor_item,
+        .clicked_editor_gear_slot = .amulet,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Weapon slots don't take gear Add (their creation path is the type
+    // row) — the gate holds for crafted input.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .add_editor_item,
+        .clicked_editor_gear_slot = .main_hand,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
 test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
