@@ -84,6 +84,16 @@ pub const UiState = struct {
     /// screen-transition UI reset.
     active_slider: ?types.SettingId = null,
 
+    /// The focused text-input field, if any (see DESIGN → UI Framework →
+    /// Text input widget). While set, `translateInput` suppresses ALL
+    /// binding translation and routes keys/chars into the field's buffer;
+    /// Enter/OK commit (the field-kind switch lives in input_handlers),
+    /// Escape discards, and a left press outside the field commits + is
+    /// arbitrated per the M2 rule. Off the undo timeline — the COMMIT is
+    /// the event; the buffer never needs replay. Cleared by the
+    /// screen-transition UI reset.
+    text_edit: ?TextEditState = null,
+
     /// Load-save browser vertical scroll offset, in ROWS (not pixels) — one
     /// scroll tick = one full row pitch, so text placement is identical at
     /// every scroll position. Clamped to `[0, max_scroll_row]` in
@@ -530,7 +540,9 @@ const TextField = struct {
     /// no selection. The rendered/edited selection is min/max of the two.
     selection_anchor: ?usize = null,
 
-    fn currentText(self: *const TextField) []const u8 {
+    /// The buffer's current contents (pub: the input-side commit path in
+    /// input_handlers reads the value to push).
+    pub fn currentText(self: *const TextField) []const u8 {
         return self.buffer[0..self.length];
     }
 
@@ -686,6 +698,102 @@ fn codepointEndAfter(field_text: []const u8, index: usize) usize {
     var end = index + 1;
     while (end < field_text.len and isContinuationByte(field_text[end])) end += 1;
     return end;
+}
+
+/// One focused text field: its identity (which GameState field + which
+/// entity target) plus the edit buffer. Owned by `UiState.text_edit`.
+pub const TextEditState = struct {
+    field: types.TextFieldRef,
+    buffer: TextField = .{},
+};
+
+/// Begin editing a field (its UI element was clicked): seed the buffer
+/// with the field's current value so editing starts from it. Pure UiState
+/// write — the commit (not the focus) is what touches GameState.
+pub fn beginTextEdit(
+    ui_state: *UiState,
+    field: types.TextFieldRef,
+    current_value: []const u8,
+) void {
+    var edit: TextEditState = .{ .field = field };
+    edit.buffer.loadValue(current_value);
+    ui_state.text_edit = edit;
+}
+
+/// Route one frame of raw input into the focused field's buffer. Called
+/// from `translateInput` (the seam that owns raw key edges + synthetic
+/// repeats) while a field is focused; returns the keyboard outcome for the
+/// caller to resolve once per frame (the field-kind commit switch lives in
+/// input_handlers — the framework stays field-agnostic). Digits-only
+/// filtering for numeric fields happens HERE (the routing layer knows the
+/// field kind; the core buffer stays generic). See DESIGN → UI Framework →
+/// Text input widget.
+pub fn routeTextInput(
+    text_edit: *TextEditState,
+    characters: []const u8,
+    pressed_keys: []const ?[]const u8,
+    repeated_keys: []const ?[]const u8,
+    shift_held: bool,
+) types.TextEditOutcome {
+    if (textFieldIsNumeric(text_edit.field.id)) {
+        // Numeric fields accept digits only, filtered codepoint-by-
+        // codepoint as they're typed.
+        var index: usize = 0;
+        while (index < characters.len) {
+            const end = codepointEndAfter(characters, index);
+            if (std.ascii.isDigit(characters[index])) {
+                text_edit.buffer.insertText(characters[index..end]);
+            }
+            index = end;
+        }
+    } else {
+        text_edit.buffer.insertText(characters);
+    }
+
+    // Edit keys: real edges first, then synthetic repeats (hold-backspace).
+    // Repeats never resolve (a held Enter committed on the real edge; the
+    // field is gone by the next frame's synthetic edge) — their outcomes are
+    // discarded, only the buffer edits apply.
+    var outcome: types.TextEditOutcome = .none;
+    for (pressed_keys) |slot| {
+        const resolved = textEditKey(text_edit, slot orelse continue, shift_held) orelse continue;
+        outcome = resolved;
+    }
+    for (repeated_keys) |slot| {
+        const key = slot orelse continue;
+        _ = textEditKey(text_edit, key, shift_held);
+    }
+    return outcome;
+}
+
+/// Apply one edit key to the buffer; a non-null return is a resolution key
+/// (Enter commits, Escape discards). Any other key is ignored here — its
+/// binding was suppressed at the translateInput level.
+fn textEditKey(text_edit: *TextEditState, key: []const u8, shift_held: bool) ?types.TextEditOutcome {
+    const buffer = &text_edit.buffer;
+    if (std.mem.eql(u8, key, "Backspace")) {
+        buffer.deleteBackward();
+    } else if (std.mem.eql(u8, key, "Delete")) {
+        buffer.deleteForward();
+    } else if (std.mem.eql(u8, key, "ArrowLeft")) {
+        buffer.moveCaretLeft(shift_held);
+    } else if (std.mem.eql(u8, key, "ArrowRight")) {
+        buffer.moveCaretRight(shift_held);
+    } else if (std.mem.eql(u8, key, "Enter")) {
+        return .commit;
+    } else if (std.mem.eql(u8, key, "Escape")) {
+        return .cancel;
+    }
+    return null;
+}
+
+/// Whether a field id takes digits only (the stat fields — parsing and
+/// clamping happen at commit; this filter keeps garbage out of the buffer
+/// as it's typed). Numeric ids join here with their slices.
+fn textFieldIsNumeric(field_id: types.TextFieldId) bool {
+    return switch (field_id) {
+        .entity_name => false,
+    };
 }
 
 /// Baseline-to-baseline height for one line at `font_size`, in reference
@@ -887,6 +995,81 @@ test "TextField: caretIndexAtX maps a click x to a boundary" {
     // same as an ASCII glyph here) keeps boundaries whole.
     try std.testing.expectEqual(@as(usize, 0), TextField.caretIndexAtX("\u{00E9}z", metrics, 100, 50));
     try std.testing.expectEqual(@as(usize, 2), TextField.caretIndexAtX("\u{00E9}z", metrics, 100, 56));
+}
+
+test "routeTextInput: chars insert, edit keys apply, Enter/Escape resolve, repeats edit-only" {
+    var ui_state: UiState = .{};
+    beginTextEdit(
+        &ui_state,
+        .{ .id = .entity_name, .target = .{ .entity_type = 0 } },
+        "Skeleton",
+    );
+
+    const no_keys: [0]?[]const u8 = .{};
+    const enter_pressed: [1]?[]const u8 = .{"Enter"};
+    const escape_pressed: [1]?[]const u8 = .{"Escape"};
+    const backspace_pressed: [1]?[]const u8 = .{"Backspace"};
+    const backspace_repeated: [1]?[]const u8 = .{"Backspace"};
+    const arrow_pressed: [1]?[]const u8 = .{"ArrowLeft"};
+
+    // Typed characters append at the caret.
+    try std.testing.expectEqual(
+        types.TextEditOutcome.none,
+        routeTextInput(&ui_state.text_edit.?, " Warrior", &no_keys, &no_keys, false),
+    );
+    try std.testing.expectEqualStrings("Skeleton Warrior", ui_state.text_edit.?.buffer.currentText());
+
+    // A real backspace edge deletes one codepoint.
+    try std.testing.expectEqual(
+        types.TextEditOutcome.none,
+        routeTextInput(&ui_state.text_edit.?, "", &backspace_pressed, &no_keys, false),
+    );
+    try std.testing.expectEqualStrings("Skeleton Warrio", ui_state.text_edit.?.buffer.currentText());
+
+    // A synthetic repeat edge (hold-backspace) deletes another; its
+    // outcome — if the key were a resolver — is discarded.
+    _ = routeTextInput(&ui_state.text_edit.?, "", &no_keys, &backspace_repeated, false);
+    try std.testing.expectEqualStrings("Skeleton Warri", ui_state.text_edit.?.buffer.currentText());
+
+    // Shift+ArrowLeft selects (the anchor plants at the old caret —
+    // caret 14 on the 14-char buffer, one codepoint back to 13).
+    _ = routeTextInput(&ui_state.text_edit.?, "", &arrow_pressed, &no_keys, true);
+    const selection = ui_state.text_edit.?.buffer.selectionRange().?;
+    try std.testing.expectEqual(@as(usize, 13), selection.start);
+    try std.testing.expectEqual(@as(usize, 14), selection.end);
+
+    // Enter resolves to commit; Escape to discard.
+    try std.testing.expectEqual(
+        types.TextEditOutcome.commit,
+        routeTextInput(&ui_state.text_edit.?, "", &enter_pressed, &no_keys, false),
+    );
+    try std.testing.expectEqual(
+        types.TextEditOutcome.cancel,
+        routeTextInput(&ui_state.text_edit.?, "", &escape_pressed, &no_keys, false),
+    );
+}
+
+test "textEditPressProceeds: M2 region is the open inspector panel + its toggle" {
+    const rect = editorInspectorPanelRect();
+    try std.testing.expectEqual(@as(i32, 0), rect.x);
+    try std.testing.expectEqual(
+        top_bar_height + ui_gap + editor_header_strip_height + ui_gap,
+        rect.y,
+    );
+    try std.testing.expectEqual(editor_inspector_width, rect.width);
+
+    const inside_panel: ScreenPosition = .{ .x = 512, .y = rect.y + 100 };
+    const outside_panel: ScreenPosition = .{ .x = 1500, .y = rect.y + 100 };
+    const over_viewport: ScreenPosition = .{ .x = 1500, .y = 1000 };
+
+    // Inside the open panel → a sibling control; the press proceeds.
+    try std.testing.expect(textEditPressProceeds(true, inside_panel, null));
+    // Panel closed → only the toggle button itself proceeds.
+    try std.testing.expect(!textEditPressProceeds(false, inside_panel, null));
+    try std.testing.expect(textEditPressProceeds(false, inside_panel, .toggle_editor_inspector));
+    // Outside the panel → pure dismissal, even over other UI (Undo).
+    try std.testing.expect(!textEditPressProceeds(true, outside_panel, .undo));
+    try std.testing.expect(!textEditPressProceeds(true, over_viewport, null));
 }
 
 
@@ -3452,6 +3635,16 @@ pub fn buildEditorLevelTabs(
 /// visible.
 pub const editor_inspector_width: i32 = 1024;
 
+/// The inspector background panel's rect — the single source for the
+/// builder's layout AND the M2 press arbitration (DESIGN → UI Framework →
+/// Text input widget), so the two can't drift.
+pub fn editorInspectorPanelRect() Rectangle {
+    const top = top_bar_height + ui_gap + editor_header_strip_height + ui_gap;
+    const bottom = types.reference_height -
+        bottom_bar_height - 2 * ui_gap - editor_header_strip_height;
+    return .{ .x = 0, .y = top, .width = editor_inspector_width, .height = bottom - top };
+}
+
 /// Editor inspector sidebar (the left bar): a top-left "Inspector" toggle
 /// button flush below the options button (the level-tab / group-header
 /// visual class: panel-backed, `editor_header_strip_height` tall, label +
@@ -3513,17 +3706,35 @@ pub fn buildEditorInspectorPanel(
     // the background-panel class (button panels tint gradient[5] to read
     // as buttons against it).
     if (inspector_open) {
-        const panel_top = button_cell.y + button_cell.height + ui_gap;
-        const panel_bottom = types.reference_height -
-            bottom_bar_height - 2 * ui_gap - editor_header_strip_height;
+        const panel_rect = editorInspectorPanelRect();
         try elements.append(allocator, .{ .nine_slice_panel = .{
             .sprite_id = "ui/panel",
-            .screen_position = .{ .x = 0, .y = panel_top },
-            .width = editor_inspector_width,
-            .height = panel_bottom - panel_top,
+            .screen_position = panel_rect.position(),
+            .width = panel_rect.width,
+            .height = panel_rect.height,
             .color = active_theme.darkest,
         } });
     }
+}
+
+/// M2 press arbitration for a focused text field (see DESIGN → UI
+/// Framework → Text input widget): true when a left press may PROCEED
+/// after committing the field — the press is on a sibling inspector
+/// control (anything inside the open inspector panel, or the inspector
+/// toggle button itself); false when it must be consumed as pure
+/// dismissal. Callers gate on a focused field before calling; `pressed_button`
+/// is the button under the press position, if any (the toggle button is
+/// outside the panel rect, so it is matched by action).
+pub fn textEditPressProceeds(
+    inspector_open: bool,
+    position: ScreenPosition,
+    pressed_button: ?Action,
+) bool {
+    if (pressed_button) |action| {
+        if (action == .toggle_editor_inspector) return true;
+    }
+    if (!inspector_open) return false;
+    return editorInspectorPanelRect().contains(position);
 }
 
 /// Editor bottom bar: the tool palette. Fixed tools first
@@ -5109,6 +5320,18 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
         try std.testing.expectEqual(expanded_header_top - ui_gap, panel.screen_position.y + panel.height);
         try std.testing.expectEqual(theme.darkest, panel.color);
         try std.testing.expect(panel.blocks_input);
+        // The builder draws exactly the shared rect fn — the M2 press
+        // arbitration (`textEditPressProceeds`) reads the same geometry,
+        // so the two cannot drift.
+        try std.testing.expectEqual(
+            editorInspectorPanelRect(),
+            Rectangle{
+                .x = panel.screen_position.x,
+                .y = panel.screen_position.y,
+                .width = panel.width,
+                .height = panel.height,
+            },
+        );
     }
 
     // Closed: just the toggle (3 elements), no longer highlighted.

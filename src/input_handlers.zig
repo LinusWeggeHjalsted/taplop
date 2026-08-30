@@ -1197,6 +1197,58 @@ fn pushPlayerActionAndDrain(
     }
 }
 
+/// Resolve a focused text field's keyboard outcome (Enter commits,
+/// Escape discards — see DESIGN → UI Framework → Text input widget).
+/// Called ONCE per frame from main (after translateInput, before the
+/// drain) — never per update() drain iteration.
+pub fn resolveTextEditOutcome(
+    history: *GameStateHistory,
+    outcome: types.TextEditOutcome,
+) void {
+    switch (outcome) {
+        .none => {},
+        .commit => commitFocusedTextEdit(history),
+        .cancel => history.session.ui_state.text_edit = null,
+    }
+}
+
+/// Commit the focused text field (Enter/OK, or the M2 click-away path):
+/// push the field's wrapper event + drain, then drop focus. The
+/// field-kind switch lives HERE — the UI framework is field-agnostic;
+/// this is where a TextFieldId becomes a player action. A no-op edit (the
+/// buffer equals the current value) records nothing; a stale focus (no
+/// editor, or the target type deleted mid-edit) just drops the buffer.
+pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
+    if (history.session.ui_state.text_edit == null) return;
+    const text_edit: *ui.TextEditState = &history.session.ui_state.text_edit.?;
+    const field = text_edit.field;
+    // Dupe the buffer into the current arena BEFORE dropping focus: the
+    // payload slice must not point into UiState once the optional is
+    // cleared (recordEvent's deep copy happens during the drain below;
+    // the dupe makes that ordering irrelevant).
+    const value = history.current_arena.allocator().dupe(
+        u8,
+        text_edit.buffer.currentText(),
+    ) catch @panic("failed to allocate text field commit value");
+    history.session.ui_state.text_edit = null;
+
+    switch (field.id) {
+        .entity_name => {
+            if (history.current_state.editor == null) return;
+            const editor: *types.Editor = &history.current_state.editor.?;
+            const template = event_handlers.editorEntityTemplate(editor, field.target) orelse return;
+            // Would-change gate: an unchanged value never records (no
+            // dead undo step).
+            if (std.mem.eql(u8, template.name, value)) return;
+            history.session.queueSound(history.backing_allocator, .button_click_up);
+            pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_name = .{
+                .target = field.target,
+                .value = value,
+            } });
+        },
+    }
+}
+
 /// Queue the menu sound for an Escape keypress that does something (a
 /// closing overlay or a triggered action). Keybind-triggered actions have no
 /// button, so the input-handler site queues the feedback sound (see DESIGN →

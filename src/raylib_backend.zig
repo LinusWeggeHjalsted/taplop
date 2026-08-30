@@ -573,6 +573,10 @@ pub const RaylibBackend = struct {
     /// Scratch for the events emitted by pollInput each frame. Valid only until
     /// the next pollInput; translateInput consumes it synchronously.
     event_buffer: [max_events_per_frame]input.PlatformInputEvent = undefined,
+    /// Scratch for the UTF-8 text characters drained from the platform
+    /// char queue each pollInput (see PlatformInput.text_characters). Same
+    /// lifetime as `event_buffer`.
+    char_buffer: [64]u8 = undefined,
     /// Unified file source for asset bytes (embedded map / persistent dir).
     /// The texture cache loads via loadImageFromMemory from this instead of
     /// touching the filesystem directly — see DESIGN → File System & IO.
@@ -972,6 +976,25 @@ pub const RaylibBackend = struct {
             count += 1;
         }
 
+        // Text characters: drain the platform char queue (the text-input /
+        // IME path — distinct from key edges) into UTF-8. Drained
+        // unconditionally so the queue can't back up between frames;
+        // consumers only read it while a text field is focused. Read before
+        // the pump like the wheel (the queue accumulates between polls).
+        var char_count: usize = 0;
+        while (char_count < self.char_buffer.len) {
+            const codepoint = rl.getCharPressed();
+            if (codepoint <= 0) break;
+            // Out-of-range values (control junk from the platform) are
+            // skipped, not fatal — `@intCast` to u21 would panic otherwise.
+            if (codepoint > 0x10FFFF) continue;
+            var encoded: [4]u8 = undefined;
+            const length = std.unicode.utf8Encode(@intCast(codepoint), &encoded) catch continue;
+            if (char_count + length > self.char_buffer.len) break;
+            @memcpy(self.char_buffer[char_count .. char_count + length], encoded[0..length]);
+            char_count += length;
+        }
+
         // Pump the OS event queue AFTER reading edges. On native this calls
         // glfwPollEvents() (fires callbacks that update current for the next
         // iteration) + copies previous = current. On web it just copies
@@ -984,6 +1007,7 @@ pub const RaylibBackend = struct {
             // The game works entirely in reference space (the pointer above is
             // mapped there), so report the reference resolution as the viewport.
             .viewport = .{ .width = reference_width, .height = reference_height },
+            .text_characters = self.char_buffer[0..char_count],
         };
     }
 

@@ -301,6 +301,14 @@ fn handleEditorEvent(
         .editor_toggle_inspector => {
             editor.inspector_open = !editor.inspector_open;
         },
+        // Inspector field edit (entity name). The target's palette index
+        // is guarded defensively (a crafted log could name a deleted
+        // type; the live path resolves the target from the still-focused
+        // field and commits nothing when stale).
+        .editor_set_entity_name => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.name = set.value;
+        },
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
             // placement entries must address the active level's lists (a
@@ -1438,6 +1446,15 @@ fn handlePlayerInputEvent(
         .player_toggle_editor_inspector => {
             pushEvents(current, &.{.{ .editor_event = .editor_toggle_inspector }}, allocator);
         },
+        // Inspector entity-name commit: thin forward (the EditorEvent owns
+        // the mutation; recordEvent deep-copies the value slice into the
+        // durable log arena).
+        .player_set_editor_entity_name => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_name = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
         // Select-tool click: thin over the shared planner (the input layer
         // fires only nonempty plans — see planEditorSelectionActions).
         .player_toggle_editor_selection => |toggle| {
@@ -1894,6 +1911,25 @@ fn activeEditorLevel(editor: *const types.Editor) ?*const types.EditorLevel {
     if (editor.levels.len == 0) return null;
     if (editor.active_level_index >= editor.levels.len) return null;
     return &editor.levels[editor.active_level_index];
+}
+
+/// The editable template an `EntityEditTarget` addresses (a palette type's
+/// template, or the editor-global player definition), or null when the
+/// target is out of range — the inspector field-edit handlers no-op on
+/// null (defensive: the live path commits nothing when a focused field's
+/// type was deleted mid-edit; crafted logs can name any index). pub: shared
+/// with input_handlers' text-field commit path.
+pub fn editorEntityTemplate(
+    editor: *types.Editor,
+    target: types.EntityEditTarget,
+) ?*types.Entity {
+    return switch (target) {
+        .entity_type => |type_id| blk: {
+            if (type_id >= editor.entity_types.len) break :blk null;
+            break :blk &@constCast(editor.entity_types)[type_id].template;
+        },
+        .player_def => &editor.player_def.template,
+    };
 }
 
 /// Pure planners for the editor click orchestrators (tile paint, the three

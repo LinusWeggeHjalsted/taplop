@@ -497,11 +497,18 @@ yet implemented. Remaining work:
   "Inspector fields (enemy types — settled)" + DESIGN → UI Framework →
   Text input widget (the new shared widget: pure core, backend char seam,
   M2 focus semantics, commit-on-dismiss). Slices:
-  - [ ] **1 — text input core:** the pure `TextField` (buffer/caret/
-        selection, codepoint-aware) + unit tests; then the backend char
-        seam, UiState focus state, routing (chars/keys → field, bindings
-        suppressed, M2 click-away), caret/selection render, proven with
-        the entity-name commit path end-to-end.
+  - [x] **1 — text input core:** DONE — the pure `TextField` (buffer/
+        caret/selection, codepoint-aware), the backend char seam
+        (`pollInput` drains the platform char queue into
+        `PlatformInput.text_characters`), UiState focus state
+        (`text_edit` + `beginTextEdit`), routing (`routeTextInput` from
+        `translateInput`: chars/keys → buffer, ALL bindings suppressed
+        while focused), M2 press arbitration (`textEditPressProceeds` +
+        `commitFocusedTextEdit` at the press-dispatch site), and the
+        entity-name commit path end-to-end
+        (`player_set_editor_entity_name` → `editor_set_entity_name`,
+        no-op gate, undo). The caret/selection RENDER lands with slice 3
+        (a field element must exist to draw it in).
   - [ ] **2 — inspector content scaffolding:** row layout (label + control
         columns), section headers, scrollbar (`UiState.editor_inspector_scroll`)
         + wheel routing over the panel + windowed render (only rows that
@@ -510,7 +517,9 @@ yet implemented. Remaining work:
   - [ ] **3 — scalar fields:** name + sprite id (text; sprite id is the
         interim v1 until the picker), color_index swatch row,
         displays_weapons toggle, base stats (numeric, UNBOUNDED — see
-        DESIGN) + wrappers/handlers/validation/tests. Rides with this
+        DESIGN) + wrappers/handlers/validation/tests + the field ELEMENT
+        (click-to-focus, click/drag caret positioning) and the
+        caret/selection render. Rides with this
         slice: REMOVE `editor_set_entity_momentum` (momentum is a
         transient combat stat, not authorable — level files never set
         it).

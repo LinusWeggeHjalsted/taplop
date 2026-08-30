@@ -826,6 +826,25 @@ pub const EntityEditTarget = union(enum) {
     player_def: void, // the editor-global player loadout
 };
 
+/// Which GameState field a focused text-input widget is editing (see
+/// DESIGN → UI Framework → Text input widget). The id tells the commit
+/// path (input_handlers) how to parse the buffer and which wrapper event
+/// to push; `target` names the entity being edited. Ids land incrementally
+/// with the inspector slices.
+pub const TextFieldId = enum {
+    entity_name,
+};
+
+/// Identity of one focused text field.
+pub const TextFieldRef = struct {
+    id: TextFieldId,
+    target: EntityEditTarget,
+};
+
+/// A focused text field's per-frame keyboard outcome (Enter commits,
+/// Escape discards — see DESIGN → UI Framework → Text input widget).
+pub const TextEditOutcome = enum { none, commit, cancel };
+
 // A reference-based level: placements point into the editor's palette instead
 // of carrying full entity/decoration definitions. Serializes back to the
 // existing inline level format (the editor save flattens placements into

@@ -1150,6 +1150,27 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_toggle_editor_inspector with no editor");
                     }
                 },
+                // Structural legality: the editor screen + editor + the
+                // target's palette index in range (the live path resolves
+                // the target from the focused field; a stale focus — its
+                // type deleted mid-edit — commits nothing, so an out-of-
+                // range target here is a crafted log).
+                .player_set_editor_entity_name => |set| {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_set_editor_entity_name outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_set_editor_entity_name with no editor");
+                    };
+                    switch (set.target) {
+                        .entity_type => |type_id| {
+                            if (type_id >= editor.entity_types.len) {
+                                @panic("replay validation: player_set_editor_entity_name type id out of range");
+                            }
+                        },
+                        .player_def => {},
+                    }
+                },
                 // Structural legality: the paint checks + the select tool
                 // active (the live path only toggles from the select tool's
                 // viewport arm; the handler no-ops otherwise as the

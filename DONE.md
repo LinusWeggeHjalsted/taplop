@@ -7234,3 +7234,65 @@ caret path was wrong on the first pass (byte-index arithmetic done in
 my head instead of walking the actual byte layout) — the CODE was
 right, the EXPECTATION was wrong. Self-referential asserts are only as
 good as the walk that derives them.
+
+### Text input widget — seam, routing, M2 arbitration, entity-name commit (DONE, slice 1 complete)
+
+The full input path for the text widget, headless-tested end-to-end; the
+first real consumer (the inspector's rendered fields) is slice 3.
+
+**Backend seam.** `pollInput` drains the platform char queue
+(`rl.getCharPressed`, read before the pump like the wheel) into a 64-byte
+scratch buffer, UTF-8-encoded, exposed as `PlatformInput.text_characters`
+(valid one frame, like `event_buffer`). Out-of-range codepoints are
+skipped, not fatal — `@intCast` to u21 would panic on platform junk.
+Headless tests inject the field directly.
+
+**Focus state + routing.** `UiState.text_edit: ?TextEditState`
+(`TextEditState` = `TextFieldRef` (types: `TextFieldId` +
+`EntityEditTarget`) + the private `TextField` buffer; `beginTextEdit`
+seeds it from the field's current value). `translateInput` gained a
+`?*ui.TextEditState` param: while set it calls `ui.routeTextInput`
+(chars → buffer, Backspace/Delete/arrows(+shift) → edits, Enter/Escape →
+`TextEditOutcome`), populates pointer facts + wheel + cursor-resolution
+inputs, and returns WITHOUT any binding translation — chords suppressed
+too (ctrl+Z included; Escape discards first). Edit keys accept synthetic
+repeat edges (hold-backspace); resolver keys ignore them. Numeric
+filtering lives in `routeTextInput` (`textFieldIsNumeric`), not the core
+buffer. `pointerFacts` was extracted so the focused early-return builds
+the identical pointer state. `PlayerInput.text_edit_outcome` carries the
+resolution.
+
+**M2 + commit-on-dismiss.** `main.frame` resolves the outcome ONCE per
+frame (before the drain — `update()` re-runs per drain iteration).
+`main.update`'s press dispatch: a left press while focused calls
+`commitFocusedTextEdit`, then `ui.textEditPressProceeds` decides — inside
+the OPEN inspector panel or on the toggle button → proceed (one-click
+sibling switching); anywhere else → consume as pure dismissal (the
+Undo-while-focused corollary: the next click performs the undo).
+`editorInspectorPanelRect` is now the single source for the builder's
+panel geometry AND the arbitration (the builder test cross-checks them),
+so the two can't drift. Idempotent across drain re-calls (commit clears
+focus). `commitFocusedTextEdit` (input_handlers) is the field-kind
+switch: dupes the buffer into current_arena BEFORE dropping focus (the
+payload must not point into UiState), would-change gate (an unchanged
+value records nothing), pushes
+`player_set_editor_entity_name` → `editor_set_entity_name`
+(`editorEntityTemplate` shared pub helper — the target-resolution
+switch exists once). `validatePlayerAction` arm: editor screen + editor +
+target index in range.
+
+**Tests (408 pass).** translateInput: focused suppresses Enter→confirm /
+Escape→options bindings (with an unfocused control case) + chars insert +
+outcome; routeTextInput: chars/edges/repeats/shift-select/resolvers;
+textEditPressProceeds region cases; end-to-end: focus → type → Enter →
+name changed + focus dropped + one undo restores, no-op gate, cancel.
+Web build compiles (the seam change is in pollInput).
+
+Three test-writing misses this slice, same shape as last time: the
+caret-math expectations (selection range on a 14-char buffer) and the
+seed-vs-fixture value (beginTextEdit seeds from the CURRENT value — the
+test's seed must BE the fixture's name) were wrong on paper while the
+code was right. Also: undo after an action pushed via
+`pushPlayerActionAndDrain` needs `runToIdle` to record the idle point
+(idle-point recording is main.zig's job in the live loop; tests must call
+it explicitly).

@@ -96,7 +96,37 @@ fn update(
     // level/hub behind it (world/UI arbitration). See DESIGN → Input.
     if (player_input.pointer.pressed) {
         const pointer_position = player_input.pointer.position;
-        if (ui.buttonAt(ui_elements, pointer_position)) |button| {
+        // Text-field focus arbitration (M2 — DESIGN → UI Framework → Text
+        // input widget): a left press while a field is focused COMMITS it,
+        // then either proceeds (the press is on a sibling inspector
+        // control — one-click field switching) or is consumed as pure
+        // dismissal (no tool/world action as a side effect of ending an
+        // edit; e.g. Undo-while-focused eats the click so the NEXT click
+        // undoes the just-committed value). Idempotent across the drain's
+        // repeated update() calls: the commit clears focus, so later calls
+        // take the normal path below.
+        var consumed_by_text_edit = false;
+        if (history.session.ui_state.text_edit != null) {
+            input_handlers.commitFocusedTextEdit(history);
+            const inspector_open = if (history.current_state.editor) |editor|
+                editor.inspector_open
+            else
+                false;
+            const pressed_button = if (ui.buttonAt(ui_elements, pointer_position)) |button|
+                button.action
+            else
+                null;
+            consumed_by_text_edit = !ui.textEditPressProceeds(
+                inspector_open,
+                pointer_position,
+                pressed_button,
+            );
+        }
+        if (consumed_by_text_edit) {
+            history.session.pressed_button = null;
+            player_input.idle.tile_clicked = null;
+            player_input.idle.confirm = false;
+        } else if (ui.buttonAt(ui_elements, pointer_position)) |button| {
             history.session.pressed_button = button.action;
             history.session.queueSound(history.backing_allocator, .button_click_down);
             player_input.idle.tile_clicked = null;
@@ -328,7 +358,21 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         history.settings,
         camera,
         delta_microseconds,
+        // The focused text field, if any (binding translation is suppressed
+        // while set — see DESIGN → UI Framework → Text input widget).
+        if (history.session.ui_state.text_edit != null)
+            &history.session.ui_state.text_edit.?
+        else
+            null,
     );
+
+    // Text-field keyboard resolution (Enter commits, Escape discards). Once
+    // per frame HERE, before the drain — update() re-runs per drain
+    // iteration and must not re-resolve. A commit pushes + drains its own
+    // event, so the drain below sees the resulting stack state.
+    if (player_input.text_edit_outcome != .none) {
+        input_handlers.resolveTextEditOutcome(history, player_input.text_edit_outcome);
+    }
 
     // Player position before the drain, for the pan-recenter check: if the
     // player moved this frame (a move event in the drain, or a click-to-move

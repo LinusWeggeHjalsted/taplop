@@ -733,6 +733,18 @@ pub const PlayerInputEvent = union(enum) {
         position: Vector2,
     },
 
+    // --- Editor: inspector field edits ---
+    // One thin wrapper per field verb (the orchestrator convention; the
+    // EditorEvent owns the mutation — see DESIGN → Architecture → Level
+    // Editor → Editor UI layout → "Inspector fields"). The text-input
+    // widget commits on Enter / OK / M2 click-away (DESIGN → UI Framework
+    // → Text input widget); the input layer gates on would-change (an
+    // unchanged value records nothing — no dead undo step).
+    player_set_editor_entity_name: struct {
+        target: EntityEditTarget,
+        value: []const u8,
+    },
+
     // --- Meta: exit/skip orchestrators ---
     // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;
     // the handler pushes end_level with the default continuation.

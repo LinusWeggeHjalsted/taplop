@@ -9,6 +9,7 @@
 
 const std = @import("std");
 const types = @import("types.zig");
+const ui = @import("ui.zig");
 
 const Vector2 = types.Vector2;
 const SkillId = types.SkillId;
@@ -75,6 +76,12 @@ pub const TouchEvent = struct {
 pub const PlatformInput = struct {
     events: []const PlatformInputEvent,
     viewport: ViewportSize,
+    /// UTF-8 text characters typed this frame (the platform text/IME
+    /// queue — distinct from key edges; a held key's repeat arrives as a
+    /// key edge, IME-composed text arrives here). Only consumed while a
+    /// text field is focused; the backend drains the queue unconditionally
+    /// so it can't back up. See DESIGN → UI Framework → Text input widget.
+    text_characters: []const u8 = &.{},
 };
 
 // ============================================================
@@ -226,6 +233,11 @@ pub const PlayerInput = struct {
     /// forces the attack step even with auto_skip enabled). Not a binding —
     /// bindings filter on modifiers in checkAction; this is the raw held state.
     modifiers: Modifiers = .{},
+    /// Text-field keyboard resolution for this frame (Enter/Escape while a
+    /// field is focused — see DESIGN → UI Framework → Text input widget).
+    /// Resolved ONCE per frame by the caller (main), never per update()
+    /// drain iteration. `.none` when no field is focused.
+    text_edit_outcome: types.TextEditOutcome = .none,
 };
 
 /// Shared movement threshold for drag gestures (inventory drag once it
@@ -657,6 +669,7 @@ pub fn translateInput(
     settings: Settings,
     camera: Camera,
     delta_microseconds: u64,
+    text_edit: ?*ui.TextEditState,
 ) PlayerInput {
     // Track which inputs were just pressed this tick (edge detection)
     var keys_pressed: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;
@@ -768,6 +781,28 @@ pub fn translateInput(
     // Build PlayerInput from triggered actions
     var result = PlayerInput{};
 
+    // Text-field focus (see DESIGN → UI Framework → Text input widget):
+    // while a field is focused, ALL binding translation is suppressed
+    // (chords too — ctrl+Z included; Escape discards first) and the raw
+    // keys + typed characters route into the field buffer instead. Pointer
+    // facts, the wheel delta, and the cursor-resolution inputs still flow
+    // (press arbitration is M2, at the press-dispatch site in update()).
+    if (text_edit) |field| {
+        result.text_edit_outcome = ui.routeTextInput(
+            field,
+            platform.text_characters,
+            &keys_pressed,
+            &keys_repeated,
+            modifiers.shift,
+        );
+        result.anytime.scroll_delta = scroll_delta;
+        result.anytime.in_game.mouse_tile = screenToTile(state.mouse_screen_position, camera, zoom, platform.viewport);
+        result.anytime.in_game.mouse_moved_this_tick = mouse_moved_this_tick;
+        result.pointer = pointerFacts(state, &mouse_pressed, &mouse_released, modifiers);
+        result.modifiers = modifiers;
+        return result;
+    }
+
     // Anytime actions. Repeat whitelist: undo, redo, skip, error-scroll.
     // Toggles / dump_event_log / dismiss_error are press-only.
     result.anytime.undo = checkAction(.undo, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
@@ -839,19 +874,31 @@ pub fn translateInput(
     // Primary-pointer facts for the UI-resolution step. The pointer is assumed
     // to already be in reference-resolution space (same assumption screenToTile
     // makes); update alongside it if the platform viewport mapping changes.
-    result.pointer = .{
-        .pressed = InputState.isHeld(&mouse_pressed, "left"),
-        .released = InputState.isHeld(&mouse_released, "left"),
-        .held = InputState.isHeld(&state.mouse_buttons_held, "left"),
-        .position = state.mouse_screen_position.toScreenPosition(),
-        .right_pressed = InputState.isHeld(&mouse_pressed, "right"),
-        .right_released = InputState.isHeld(&mouse_released, "right"),
-        .right_held = InputState.isHeld(&state.mouse_buttons_held, "right"),
-        .modifiers = modifiers,
-    };
+    result.pointer = pointerFacts(state, &mouse_pressed, &mouse_released, modifiers);
 
     result.modifiers = modifiers;
     return result;
+}
+
+/// Primary-pointer facts shared by the normal + text-field-focused paths
+/// of `translateInput` (the focused path returns early, before the action
+/// section, but must build the identical pointer state).
+fn pointerFacts(
+    state: *InputState,
+    mouse_pressed: []const ?[]const u8,
+    mouse_released: []const ?[]const u8,
+    modifiers: Modifiers,
+) PointerInput {
+    return .{
+        .pressed = InputState.isHeld(mouse_pressed, "left"),
+        .released = InputState.isHeld(mouse_released, "left"),
+        .held = InputState.isHeld(&state.mouse_buttons_held, "left"),
+        .position = state.mouse_screen_position.toScreenPosition(),
+        .right_pressed = InputState.isHeld(mouse_pressed, "right"),
+        .right_released = InputState.isHeld(mouse_released, "right"),
+        .right_held = InputState.isHeld(&state.mouse_buttons_held, "right"),
+        .modifiers = modifiers,
+    };
 }
 
 // ============================================================
@@ -866,6 +913,53 @@ pub fn translateInput(
 const empty_mouse: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
 const empty_gamepad: [InputState.max_held_gamepad]?[]const u8 = .{null} ** InputState.max_held_gamepad;
 const no_repeat_keys: [0]?[]const u8 = .{};
+const no_keys: [0]?[]const u8 = .{};
+
+test "translateInput: focused text field suppresses bindings, routes keys + chars" {
+    // Enter is bound to confirm, Escape to the options menu. While a field
+    // is focused those keys must resolve the FIELD (commit / discard) and
+    // no binding may fire — the M2 suppression rule (DESIGN → UI Framework
+    // → Text input widget).
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Enter" }, .action = .confirm },
+        .{ .input = .{ .key = "Escape" }, .action = .toggle_options_menu },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const platform = PlatformInput{
+        .events = &.{.{ .key_down = "Enter" }},
+        .viewport = .{ .width = 2560, .height = 2160 },
+        .text_characters = " Pup",
+    };
+
+    // Control (unfocused): Enter fires its binding.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(platform, &input_state, settings, camera, 0, null);
+        try std.testing.expect(result.idle.confirm);
+        try std.testing.expectEqual(types.TextEditOutcome.none, result.text_edit_outcome);
+    }
+
+    // Focused: the typed characters insert into the buffer, Enter resolves
+    // to commit, and both bindings are suppressed.
+    {
+        var ui_state: ui.UiState = .{};
+        ui.beginTextEdit(&ui_state, .{ .id = .entity_name, .target = .{ .entity_type = 0 } }, "Wolf");
+        var input_state: InputState = .{};
+        const result = translateInput(
+            platform,
+            &input_state,
+            settings,
+            camera,
+            0,
+            &ui_state.text_edit.?,
+        );
+        try std.testing.expectEqual(types.TextEditOutcome.commit, result.text_edit_outcome);
+        try std.testing.expect(!result.idle.confirm);
+        try std.testing.expect(!result.anytime.toggle_options_menu);
+        try std.testing.expectEqualStrings("Wolf Pup", ui_state.text_edit.?.buffer.currentText());
+    }
+}
 
 fn keysPressedOne(comptime id: []const u8) [InputState.max_held_keys]?[]const u8 {
     var arr: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;

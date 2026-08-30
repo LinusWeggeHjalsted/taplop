@@ -14,6 +14,7 @@ const input = @import("input.zig");
 const event_handlers = @import("event_handlers.zig");
 const input_handlers = @import("input_handlers.zig");
 const test_harness = @import("test_harness.zig");
+const ui = @import("ui.zig");
 
 const Harness = test_harness.Harness;
 const runToIdle = test_harness.runToIdle;
@@ -2092,6 +2093,86 @@ test "player_select_editor_all: ctrl+A selects everything, skips present, one un
     try testing.expectEqual(@as(usize, 2), restored.len);
     try testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, restored[0]);
     try testing.expectEqual(types.Selectable.player_start, restored[1]);
+}
+
+test "text field commit: entity name end-to-end, no-op gate, cancel" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .team = 1 } },
+    };
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+    }));
+    runToIdle(&history);
+
+    const no_keys: [0]?[]const u8 = .{};
+    const enter_pressed: [1]?[]const u8 = .{"Enter"};
+    const escape_pressed: [1]?[]const u8 = .{"Escape"};
+    const field: types.TextFieldRef = .{ .id = .entity_name, .target = .{ .entity_type = 0 } };
+
+    // Focus (slice 3's field click does this via beginTextEdit), type
+    // through the real routing path, resolve the Enter outcome.
+    // loadValue seeds the caret at the END, so typing appends.
+    ui.beginTextEdit(&history.session.ui_state, field, "Skeleton");
+    const outcome = ui.routeTextInput(
+        &history.session.ui_state.text_edit.?,
+        " Knight",
+        &enter_pressed,
+        &no_keys,
+        false,
+    );
+    try testing.expectEqual(types.TextEditOutcome.commit, outcome);
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    runToIdle(&history);
+
+    try testing.expectEqualStrings(
+        "Skeleton Knight",
+        history.current_state.editor.?.entity_types[0].template.name,
+    );
+    // Focus dropped, the action drained (stack empty).
+    try testing.expect(history.session.ui_state.text_edit == null);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // One undo reverts to the old name (the edit rode the timeline).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqualStrings(
+        "Skeleton",
+        history.current_state.editor.?.entity_types[0].template.name,
+    );
+
+    // No-op gate: a commit whose buffer equals the current value records
+    // nothing (no dead undo step) — but still drops focus.
+    ui.beginTextEdit(&history.session.ui_state, field, "Skeleton");
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    try testing.expectEqualStrings(
+        "Skeleton",
+        history.current_state.editor.?.entity_types[0].template.name,
+    );
+    try testing.expect(history.session.ui_state.text_edit == null);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Cancel: Escape discards the buffer — nothing recorded, name intact.
+    ui.beginTextEdit(&history.session.ui_state, field, "Skeleton");
+    const cancel_outcome = ui.routeTextInput(
+        &history.session.ui_state.text_edit.?,
+        " Renamed",
+        &escape_pressed,
+        &no_keys,
+        false,
+    );
+    try testing.expectEqual(types.TextEditOutcome.cancel, cancel_outcome);
+    input_handlers.resolveTextEditOutcome(&history, .cancel);
+    try testing.expectEqualStrings(
+        "Skeleton",
+        history.current_state.editor.?.entity_types[0].template.name,
+    );
+    try testing.expect(history.session.ui_state.text_edit == null);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
 test "player_select_editor_all: no-op without the select tool, and when everything is already selected" {
