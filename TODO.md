@@ -463,8 +463,9 @@ yet implemented. Remaining work:
   DELETE (`player_delete_editor_at`: one thing per click — occupant,
   then covering decoration, then the bare tile; '!' / '=' / empty ground
   no-ops; clean-click-vs-pan disambiguation — see DONE.md), and the SELECT
-  TOOL's plain-click selection (`types.Selectable` set on UiState, white
-  region outlines, hover preview, cleared on tool change — see DONE.md).
+  TOOL's plain-click selection (`types.Selectable` set on UiState, lightest-
+  color region outlines, hover preview, cleared on tool change — see
+  DONE.md).
   Deferred: drag-painting. Still-needed event
   structs: `editor_toggle_inspector` / `editor_set_tool` /
   gradient-override setters. Default level template

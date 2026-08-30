@@ -6535,3 +6535,15 @@ preview: footprint region over a decoration, single tile elsewhere;
 selection overlay: 4 white tile outlines + 6 region edges on a
 kitchen-sink selection), and the two existing cursor tests updated for
 select now resolving the cursor.
+
+### Fix: editor selection outlines rendered black (Color channels are u8)
+
+The selection overlay's first cut asked for "white" outlines but passed
+`types.Color{ .r = 1, .g = 1, .b = 1 }` — and `types.Color` channels are
+u8 0-255, not floats 0-1, so that is 1/255 ≈ BLACK. The test didn't catch
+it because it asserted the literal `{1,1,1}` (tautological against the
+constant) instead of a theme-derived value. Per user preference the
+selection now uses the active theme's LIGHTEST — the same color as every
+other world outline (cursor, range/radius, region previews) instead of a
+separate white. The test derives the expected color via `activeThemeFor`
+(the real harness theme), so a constant-vs-theme drift fails there again.

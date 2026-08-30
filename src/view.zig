@@ -188,6 +188,7 @@ pub fn view(
             frame_allocator,
             editor,
             session,
+            active_theme,
             camera,
             camera_zoom,
         );
@@ -2062,39 +2063,42 @@ fn buildEditorCursorOverlay(
     }) catch @panic("failed to append editor cursor overlay");
 }
 
-/// The select tool's selection set, outlined in WHITE: a single-tile
-/// outline per tile / singleton / placement position, and a continuous
-/// region outline per decoration placement. Pure over SessionState + the
-/// editor (replay-safe). Stale placement entries (a selected placement
-/// later deleted — indices shift/go out of range) are skipped.
+/// The select tool's selection set, outlined in the theme's lightest (the
+/// same color as every other world outline — cursor, range, region
+/// previews): a single-tile outline per tile / singleton / placement
+/// position, and a continuous region outline per decoration placement.
+/// Pure over SessionState + the editor (replay-safe). Stale placement
+/// entries (a selected placement later deleted — indices shift/go out of
+/// range) are skipped.
 fn buildEditorSelectionOverlay(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
     editor: *const Editor,
     session: *const state.SessionState,
+    active_theme: types.ActiveColorTheme,
     camera: types.Camera,
     zoom: f32,
 ) void {
     if (session.ui_state.editor_selection.items.len == 0) return;
     const level = selectEditorLevel(editor) orelse return;
-    const white = types.Color{ .r = 1, .g = 1, .b = 1 };
+    const outline_color = active_theme.lightest;
 
     for (session.ui_state.editor_selection.items) |selected| switch (selected) {
-        .tile => |position| appendSingleTileOutline(list, allocator, position, white, camera, zoom),
-        .player_start => appendSingleTileOutline(list, allocator, level.player_start, white, camera, zoom),
+        .tile => |position| appendSingleTileOutline(list, allocator, position, outline_color, camera, zoom),
+        .player_start => appendSingleTileOutline(list, allocator, level.player_start, outline_color, camera, zoom),
         .level_end => {
             if (level.level_end) |level_end_position| {
-                appendSingleTileOutline(list, allocator, level_end_position, white, camera, zoom);
+                appendSingleTileOutline(list, allocator, level_end_position, outline_color, camera, zoom);
             }
         },
         .entity_placement => |placement_index| {
             if (placement_index < level.entity_placements.len) {
-                appendSingleTileOutline(list, allocator, level.entity_placements[placement_index].position, white, camera, zoom);
+                appendSingleTileOutline(list, allocator, level.entity_placements[placement_index].position, outline_color, camera, zoom);
             }
         },
         .ground_item_placement => |placement_index| {
             if (placement_index < level.item_placements.len) {
-                appendSingleTileOutline(list, allocator, level.item_placements[placement_index].position, white, camera, zoom);
+                appendSingleTileOutline(list, allocator, level.item_placements[placement_index].position, outline_color, camera, zoom);
             }
         },
         .decoration_placement => |placement_index| {
@@ -2106,7 +2110,7 @@ fn buildEditorSelectionOverlay(
                     placement.position,
                     allocator,
                 );
-                appendRegionOutline(list, allocator, region_tiles, white, camera, zoom);
+                appendRegionOutline(list, allocator, region_tiles, outline_color, camera, zoom);
             }
         },
     };
@@ -3110,7 +3114,7 @@ test "editor select tool: hover previews the covering decoration's footprint, el
     try std.testing.expectEqual(types.TileOverlayType.cursor, over_ground.tile_overlays[0].overlay_type);
 }
 
-test "editor selection overlay: white outlines around all selected regions" {
+test "editor selection overlay: lightest-color outlines around all selected regions" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     const arena = backing.allocator();
@@ -3169,6 +3173,11 @@ test "editor selection overlay: white outlines around all selected regions" {
     try session.ui_state.editor_selection.append(arena, .{ .decoration_placement = 0 });
 
     const camera = computeCamera(&state_, 1.0, null);
+    // The selection outlines use the active theme's lightest — the same
+    // color as every other world outline (a fix: the first cut used
+    // "pure white" {1,1,1}, but types.Color channels are u8 0-255, so that
+    // rendered near-BLACK).
+    const outline_color = activeThemeFor(&state_, harness.color_theme_definitions).lightest;
     const view_state = view(
         &state_,
         &session,
@@ -3187,11 +3196,10 @@ test "editor selection overlay: white outlines around all selected regions" {
         },
     );
 
-    const white = types.Color{ .r = 1, .g = 1, .b = 1 };
     var tile_outlines: usize = 0;
     var region_edges: usize = 0;
     for (view_state.tile_overlays) |overlay| {
-        try std.testing.expect(std.meta.eql(white, overlay.color));
+        try std.testing.expect(std.meta.eql(outline_color, overlay.color));
         switch (overlay.overlay_type) {
             .cursor => tile_outlines += 1,
             .region_edge => region_edges += 1,

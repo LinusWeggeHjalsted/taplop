@@ -1907,8 +1907,9 @@ the tile goes on the next click.
   selection is the only way they'll ever be moved). Already-selected
   entries are skipped (a full no-op when nothing new); empty ground
   selects nothing. The selection lives on UiState (off the undo timeline —
-  a UI affordance, not a mission edit) and renders as WHITE outlines
-  around every selected region; changing to a different tool clears it.
+  a UI affordance, not a mission edit) and renders as outlines in the
+  theme's LIGHTEST color (the same as every other world outline) around
+  every selected region; changing to a different tool clears it.
   Deferred: shift-click / marquee / selection operations (move / delete).
   Placing does NOT happen in selection mode.
 - **Tile-paint tool:** one click = one tile (`player_paint_editor_tile`,
