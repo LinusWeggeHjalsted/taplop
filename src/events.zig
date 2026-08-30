@@ -368,10 +368,6 @@ pub const EditorEvent = union(enum) {
         target: EntityEditTarget,
         value: u32,
     },
-    editor_set_entity_momentum: struct {
-        target: EntityEditTarget,
-        value: u32,
-    },
     editor_set_entity_speed: struct {
         target: EntityEditTarget,
         value: u32,
@@ -747,6 +743,30 @@ pub const PlayerInputEvent = union(enum) {
     player_set_editor_entity_sprite: struct {
         target: EntityEditTarget,
         value: []const u8,
+    },
+    player_set_editor_entity_color_index: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
+    player_set_editor_entity_displays_weapons: struct {
+        target: EntityEditTarget,
+        value: bool,
+    },
+    player_set_editor_entity_max_health: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
+    player_set_editor_entity_defense: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
+    player_set_editor_entity_speed: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
+    player_set_editor_entity_aggro_range: struct {
+        target: EntityEditTarget,
+        value: u32,
     },
 
     // --- Meta: exit/skip orchestrators ---

@@ -1240,6 +1240,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             const current_value = switch (field.id) {
                 .entity_name => template.name,
                 .entity_sprite => template.sprite,
+                else => unreachable,
             };
             // Would-change gate: an unchanged value never records (no
             // dead undo step).
@@ -1254,6 +1255,49 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
                     .target = field.target,
                     .value = value,
                 } },
+                else => unreachable,
+            };
+            pushPlayerActionAndDrain(history, action);
+        },
+        .entity_max_health, .entity_defense, .entity_speed, .entity_aggro_range => {
+            if (history.current_state.editor == null) return;
+            const editor: *types.Editor = &history.current_state.editor.?;
+            const template = event_handlers.editorEntityTemplate(editor, field.target) orelse return;
+            // Parse the digits-only buffer: empty commits nothing; an
+            // overflow clamps to u32 max (base stats are UNBOUNDED by
+            // design — see DESIGN → Level Editor → Inspector fields).
+            const parsed = std.fmt.parseInt(u32, value, 10) catch |parse_error| switch (parse_error) {
+                error.Overflow => std.math.maxInt(u32),
+                else => return,
+            };
+            // Would-change gate with NUMERIC semantics: compare the parsed
+            // value against the field's current value (a string compare
+            // would false-positive on "020" vs 20).
+            const current_formatted = template.textFieldValue(
+                history.current_arena.allocator(),
+                field.id,
+            ) catch @panic("failed to format entity field value");
+            const current = std.fmt.parseInt(u32, current_formatted, 10) catch return;
+            if (parsed == current) return;
+            history.session.queueSound(history.backing_allocator, .button_click_up);
+            const action: events.PlayerInputEvent = switch (field.id) {
+                .entity_max_health => .{ .player_set_editor_entity_max_health = .{
+                    .target = field.target,
+                    .value = parsed,
+                } },
+                .entity_defense => .{ .player_set_editor_entity_defense = .{
+                    .target = field.target,
+                    .value = parsed,
+                } },
+                .entity_speed => .{ .player_set_editor_entity_speed = .{
+                    .target = field.target,
+                    .value = parsed,
+                } },
+                .entity_aggro_range => .{ .player_set_editor_entity_aggro_range = .{
+                    .target = field.target,
+                    .value = parsed,
+                } },
+                else => unreachable,
             };
             pushPlayerActionAndDrain(history, action);
         },
@@ -1271,10 +1315,10 @@ pub fn beginFocusedTextEdit(
     if (history.current_state.editor != null) {
         const editor: *types.Editor = &history.current_state.editor.?;
         if (event_handlers.editorEntityTemplate(editor, field.target)) |template| {
-            current_value = switch (field.id) {
-                .entity_name => template.name,
-                .entity_sprite => template.sprite,
-            };
+            current_value = template.textFieldValue(
+                history.current_arena.allocator(),
+                field.id,
+            ) catch @panic("failed to format entity field value");
         }
     }
     ui.beginTextEdit(&history.session.ui_state, field, current_value);
@@ -1560,6 +1604,34 @@ pub fn handleAnytimeInput(
             .toggle_editor_inspector => {
                 if (current.editor == null) return;
                 pushPlayerActionAndDrain(history, .player_toggle_editor_inspector);
+            },
+            // Inspector color swatch: set the edited type's color_index. The
+            // gradient index rode in `anytime.clicked_editor_color`; the
+            // target is the ACTIVE enemy tool's type (the swatches only
+            // render for it). Same-value picks never fire.
+            .select_editor_entity_color => {
+                const color_index = anytime.clicked_editor_color orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
+                const target: types.EntityEditTarget = .{ .entity_type = type_index };
+                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                if (template.color_index == color_index) return;
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_color_index = .{
+                    .target = target,
+                    .value = color_index,
+                } });
+            },
+            // Inspector displays-weapons toggle: flip the edited type's flag.
+            // Always changes (a flip), so no would-change gate.
+            .toggle_editor_entity_displays_weapons => {
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
+                const target: types.EntityEditTarget = .{ .entity_type = type_index };
+                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_displays_weapons = .{
+                    .target = target,
+                    .value = !template.displays_weapons,
+                } });
             },
             else => {},
         }

@@ -585,9 +585,12 @@ const TextField = struct {
         const available = text_field_capacity - self.length + removed;
         const accepted = @min(new_text.len, available);
         // Shift the tail to its post-insert position, then fill the gap.
+        // copyBackwards: the tail moves RIGHT when accepted > removed (the
+        // regions overlap — a forward copy would read already-overwritten
+        // bytes); backwards is safe in both directions.
         const tail_start = start + removed;
         const tail_length = self.length - tail_start;
-        std.mem.copyForwards(
+        std.mem.copyBackwards(
             u8,
             self.buffer[start + accepted .. start + accepted + tail_length],
             self.buffer[tail_start .. tail_start + tail_length],
@@ -801,6 +804,7 @@ fn textEditKey(text_edit: *TextEditState, key: []const u8, shift_held: bool) ?ty
 fn textFieldIsNumeric(field_id: types.TextFieldId) bool {
     return switch (field_id) {
         .entity_name, .entity_sprite => false,
+        .entity_max_health, .entity_defense, .entity_speed, .entity_aggro_range => true,
     };
 }
 
@@ -851,6 +855,32 @@ test "measurement seam: row width sums spans, bold equals plain" {
     try std.testing.expectEqual(metrics.measureSpanWidth(text("abcd"), font_size), metrics.measureRowWidth(row, font_size));
     // Line height exceeds the font size (leading).
     try std.testing.expect(lineHeight(font_size) > font_size);
+}
+
+test "TextField: insert at a mid-string caret shifts the tail intact" {
+    // The case the original insertText got wrong (copyForwards on a
+    // right-shifting overlap corrupted the tail): inserting at the START
+    // or the MIDDLE with no selection.
+    var field: TextField = .{};
+    field.loadValue("25");
+    field.moveCaretTo(0, false);
+    field.insertText("0");
+    try std.testing.expectEqualStrings("025", field.currentText());
+    try std.testing.expectEqual(@as(usize, 1), field.caret);
+
+    field.loadValue("skeleton");
+    field.moveCaretTo(4, false);
+    field.insertText("-");
+    try std.testing.expectEqualStrings("skel-eton", field.currentText());
+    try std.testing.expectEqual(@as(usize, 5), field.caret);
+
+    // Selection-replace where the replacement is LONGER than the removed
+    // selection (the tail also shifts right).
+    field.loadValue("Skeleton Warrior");
+    field.moveCaretTo(9, false); // caret at 'W'
+    field.moveCaretTo(16, true); // select "Warrior"
+    field.insertText("Champion");
+    try std.testing.expectEqualStrings("Skeleton Champion", field.currentText());
 }
 
 test "TextField: loadValue seeds caret-at-end, insert appends, capacity truncates" {
@@ -1192,6 +1222,97 @@ fn findTextField(elements: *const UiElementList, field_id: types.TextFieldId) ?T
         else => {},
     };
     return null;
+}
+
+test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const enemy_two: types.Color = .{ .r = 20, .g = 20, .b = 20 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{ black, black, enemy_two, black, black, black } },
+        .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // Defaults: max_health 20, defense 0, speed 1, aggro_range 3,
+    // displays_weapons true; color_index SET TO 2 (the highlighted swatch).
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1, .color_index = 2 },
+    }};
+    const editor: types.Editor = .{
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    };
+
+    // Scroll 10 — the Stats section's four numeric fields are the window
+    // (with the Weapons header at the tail): decimal-formatted values.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_inspector_scroll = 10 };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try expectInspectorLabels(&elements, &.{ "Max health", "Defense", "Speed", "Aggro range", "Weapons" });
+        try std.testing.expectEqualStrings("20", findTextField(&elements, .entity_max_health).?.text);
+        try std.testing.expectEqualStrings("0", findTextField(&elements, .entity_defense).?.text);
+        try std.testing.expectEqualStrings("1", findTextField(&elements, .entity_speed).?.text);
+        try std.testing.expectEqualStrings("3", findTextField(&elements, .entity_aggro_range).?.text);
+    }
+
+    // The Color control (scroll 0 window): six swatch fills in the ENEMY
+    // gradient + six payload buttons, the current index (2) highlighted.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        var swatch_count: usize = 0;
+        var highlighted_count: usize = 0;
+        var swatch_fill_seen = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_entity_color) {
+                swatch_count += 1;
+                if (button.highlighted) {
+                    highlighted_count += 1;
+                    try std.testing.expectEqual(@as(u32, 2), button.editor_color.?);
+                }
+            },
+            .solid_rect => |rect| {
+                // The enemy gradient's index-2 color is the swatch fill for
+                // index 2 (the others are black — assert the distinctive one).
+                if (std.meta.eql(rect.color, enemy_two)) swatch_fill_seen = true;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 6), swatch_count);
+        try std.testing.expectEqual(@as(usize, 1), highlighted_count);
+        try std.testing.expect(swatch_fill_seen);
+    }
+
+    // The Displays-weapons control: a full-width toggle showing the FORMAT
+    // vocabulary ("true"), highlighted while true.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        var toggle_button: ?Button = null;
+        var saw_true_label = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .toggle_editor_entity_displays_weapons) {
+                toggle_button = button;
+            },
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "true")) saw_true_label = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(toggle_button != null);
+        try std.testing.expect(toggle_button.?.highlighted);
+        try std.testing.expect(saw_true_label);
+    }
 }
 
 test "textEditPressProceeds: M2 region is the open inspector panel + its toggle" {
@@ -1594,6 +1715,11 @@ pub const Button = struct {
     /// level active). The `.select_editor_level` action +
     /// `AnytimeInput.clicked_editor_level` fold this into the handler.
     editor_level: ?u32 = null,
+    /// Editor entity color-swatch index, if this button is one of the
+    /// inspector's color swatches. The `.select_editor_entity_color`
+    /// action + `AnytimeInput.clicked_editor_color` fold this into the
+    /// handler.
+    editor_color: ?u32 = null,
     blocks_input: bool = true,
 };
 
@@ -3940,11 +4066,17 @@ pub fn editorInspectorEntityTarget(editor: types.Editor) ?u32 {
     };
 }
 
-/// The control a field row hosts. Controls land per slice; `none` rows
-/// render label-only until theirs.
+/// The control a field entry hosts (the editable value line, below the
+/// label). Controls land per slice; `none` entries render label-only until
+/// theirs.
 const EditorInspectorControl = union(enum) {
     none,
     text: types.TextFieldId,
+    /// The color_index swatch row (the enemy gradient, one swatch per
+    /// index — the settings screen's player-color row is the precedent).
+    swatches,
+    /// The displays_weapons true/false toggle.
+    toggle,
 };
 
 /// One line of inspector content: a section header, or a field entry (label
@@ -3975,13 +4107,13 @@ fn editorInspectorEntityEntries() []const EditorInspectorEntry {
         .{ .section = "Identity" },
         .{ .field = .{ .label = "Name", .control = .{ .text = .entity_name } } },
         .{ .field = .{ .label = "Sprite", .control = .{ .text = .entity_sprite } } },
-        .{ .field = .{ .label = "Color", .control = .none } },
-        .{ .field = .{ .label = "Displays weapons", .control = .none } },
+        .{ .field = .{ .label = "Color", .control = .swatches } },
+        .{ .field = .{ .label = "Displays weapons", .control = .toggle } },
         .{ .section = "Stats" },
-        .{ .field = .{ .label = "Max health", .control = .none } },
-        .{ .field = .{ .label = "Defense", .control = .none } },
-        .{ .field = .{ .label = "Speed", .control = .none } },
-        .{ .field = .{ .label = "Aggro range", .control = .none } },
+        .{ .field = .{ .label = "Max health", .control = .{ .text = .entity_max_health } } },
+        .{ .field = .{ .label = "Defense", .control = .{ .text = .entity_defense } } },
+        .{ .field = .{ .label = "Speed", .control = .{ .text = .entity_speed } } },
+        .{ .field = .{ .label = "Aggro range", .control = .{ .text = .entity_aggro_range } } },
         .{ .section = "Weapons" },
         .{ .field = .{ .label = "Main hand", .control = .none } },
         .{ .field = .{ .label = "Off hand", .control = .none } },
@@ -4128,6 +4260,23 @@ fn buildEditorInspectorContent(
                         field_id,
                         active_theme,
                     ),
+                    .swatches => try emitInspectorColorSwatches(
+                        elements,
+                        allocator,
+                        editor,
+                        type_index,
+                        control_rect,
+                        active_theme,
+                    ),
+                    .toggle => try emitInspectorToggle(
+                        elements,
+                        allocator,
+                        font_metrics,
+                        editor,
+                        type_index,
+                        control_rect,
+                        active_theme,
+                    ),
                 }
             },
         }
@@ -4163,18 +4312,18 @@ fn buildEditorInspectorContent(
 }
 
 /// The current value of an entity-type field (the display text of its
-/// unfocused text field, and the seed `beginFocusedTextEdit` reads).
+/// unfocused text field, and the seed `beginFocusedTextEdit` reads) —
+/// delegated to `Entity.textFieldValue`, the single source shared with the
+/// commit path (strings verbatim, numbers decimal-formatted).
 fn entityFieldValue(
+    allocator: std.mem.Allocator,
     editor: types.Editor,
     type_index: u32,
     field_id: types.TextFieldId,
 ) []const u8 {
     if (type_index >= editor.entity_types.len) return "";
-    const template = editor.entity_types[type_index].template;
-    return switch (field_id) {
-        .entity_name => template.name,
-        .entity_sprite => template.sprite,
-    };
+    return editor.entity_types[type_index].template.textFieldValue(allocator, field_id) catch
+        @panic("failed to format entity field value");
 }
 
 /// Emit one inspector text field in the row's control column. The builder
@@ -4207,7 +4356,7 @@ fn emitInspectorTextField(
             .x = field_rect.x + ui_gap,
             .y = field_rect.y + @divFloor(field_rect.height - font_size, 2),
         },
-        .text = try allocator.dupe(u8, entityFieldValue(editor, type_index, field_id)),
+        .text = try allocator.dupe(u8, entityFieldValue(allocator, editor, type_index, field_id)),
         .font_size = font_size,
         .frame_color = active_theme.player_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)],
         .ref = ref,
@@ -4228,6 +4377,92 @@ fn emitInspectorTextField(
     }
 
     try elements.append(allocator, .{ .text_field = field });
+}
+
+/// The color_index control: one swatch per enemy-gradient index (the
+/// settings screen's player-color row is the precedent — colored fill +
+/// invisible payload button + highlighted selection). A swatch click
+/// commits the index via `.select_editor_entity_color` (same-value picks
+/// never fire).
+fn emitInspectorColorSwatches(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    editor: types.Editor,
+    type_index: u32,
+    control_rect: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    if (type_index >= editor.entity_types.len) return;
+    const current_index = editor.entity_types[type_index].template.color_index;
+    const enemy = active_theme.enemy_gradient.colors;
+    for (0..types.gradient_color_count) |index| {
+        const swatch_rect: Rectangle = .{
+            .x = control_rect.x + @as(i32, @intCast(index)) * (control_rect.height + ui_gap),
+            .y = control_rect.y,
+            .width = control_rect.height,
+            .height = control_rect.height,
+        };
+        // The swatch fill.
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = swatch_rect.position(),
+            .width = swatch_rect.width,
+            .height = swatch_rect.height,
+            .color = enemy[@min(@as(u32, @intCast(index)), types.gradient_color_count - 1)],
+        } });
+        // Invisible hit-test button over it, carrying the index.
+        try elements.append(allocator, .{ .button = .{
+            .screen_position = swatch_rect.position(),
+            .width = swatch_rect.width,
+            .height = swatch_rect.height,
+            .action = .select_editor_entity_color,
+            .editor_color = @intCast(index),
+            .highlighted = current_index == index,
+        } });
+    }
+}
+
+/// The displays_weapons control: a panel-backed strip showing the current
+/// value in the FORMAT's vocabulary ("true"/"false" — the exact tokens
+/// `asBool` parses), highlighted while true; clicking flips it via
+/// `.toggle_editor_entity_displays_weapons`.
+fn emitInspectorToggle(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    editor: types.Editor,
+    type_index: u32,
+    control_rect: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    if (type_index >= editor.entity_types.len) return;
+    const current = editor.entity_types[type_index].template.displays_weapons;
+    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const label: []const u8 = if (current) "true" else "false";
+
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = control_rect.position(),
+        .width = control_rect.width,
+        .height = control_rect.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = control_rect.position(),
+        .width = control_rect.width,
+        .height = control_rect.height,
+        .action = .toggle_editor_entity_displays_weapons,
+        .highlighted = current,
+    } });
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = control_rect
+            .placeCenter(label_width, editor_group_header_font_size)
+            .position(),
+        .font_size = editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
 }
 
 /// M2 press arbitration for a focused text field (see DESIGN → UI
@@ -5896,15 +6131,18 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
 
     // Scroll 0: units 0..10 — Identity, Name, Sprite, Color, Displays
     // weapons, Stats (Max health starts at 10 + needs 2 units → skipped).
-    // Elements: toggle 3 + bg 1 + Identity 2 + Name 2 (label + field) +
-    // Sprite 2 + Color 1 + Displays 1 + Stats 2 + scrollbar 2 = 16.
+    // Elements: toggle 3 + bg 1 + Identity 2 + Name 2 + Sprite 2 + Color
+    // (label + 6 swatch fills + 6 swatch buttons = 13) + Displays weapons
+    // (label + panel + button + value label = 4) + Stats 2 + scrollbar 2
+    // = 31.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 16), elements.items.len);
-        try expectInspectorLabels(&elements, &.{ "Identity", "Name", "Sprite", "Color", "Displays weapons", "Stats" });
-        try std.testing.expectEqual(@as(usize, 2), countSolidRects(&elements));
+        try std.testing.expectEqual(@as(usize, 31), elements.items.len);
+        try expectInspectorLabels(&elements, &.{ "Identity", "Name", "Sprite", "Color", "Displays weapons", "true", "Stats" });
+        // 6 swatch fills + the 2 scrollbar rects.
+        try std.testing.expectEqual(@as(usize, 8), countSolidRects(&elements));
     }
 
     // Scroll 3: the window starts at the Sprite entry (unit 3); Defense
@@ -5913,7 +6151,7 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 3 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Sprite", "Color", "Displays weapons", "Stats", "Max health" });
+        try expectInspectorLabels(&elements, &.{ "Sprite", "Color", "Displays weapons", "true", "Stats", "Max health" });
     }
 
     // Out-of-range scroll clamps to max (45 − 10 = 35): the window is the

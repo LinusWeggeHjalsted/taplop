@@ -313,6 +313,30 @@ fn handleEditorEvent(
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.sprite = set.value;
         },
+        .editor_set_entity_color_index => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.color_index = set.value;
+        },
+        .editor_set_entity_displays_weapons => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.displays_weapons = set.value;
+        },
+        .editor_set_entity_max_health => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.max_health = set.value;
+        },
+        .editor_set_entity_defense => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.defense = set.value;
+        },
+        .editor_set_entity_speed => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.speed = set.value;
+        },
+        .editor_set_entity_aggro_range => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.aggro_range = set.value;
+        },
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
             // placement entries must address the active level's lists (a
@@ -1464,6 +1488,44 @@ fn handlePlayerInputEvent(
         // later; see DESIGN → Level Editor → Editor UI layout).
         .player_set_editor_entity_sprite => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_sprite = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        // Inspector scalar commits (swatch pick, toggle flip, stat fields):
+        // thin forwards — the EditorEvents own the mutations.
+        .player_set_editor_entity_color_index => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_color_index = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_displays_weapons => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_displays_weapons = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_max_health => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_max_health = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_defense => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_defense = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_speed => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_speed = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_aggro_range => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_aggro_range = .{
                 .target = set.target,
                 .value = set.value,
             } } }}, allocator);

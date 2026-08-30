@@ -223,6 +223,12 @@ fn update(
                         if (button.editor_level) |level_index| {
                             player_input.anytime.clicked_editor_level = level_index;
                         }
+                        // Inspector color swatches: the gradient index rides
+                        // in `anytime.clicked_editor_color` alongside the
+                        // `.select_editor_entity_color` action.
+                        if (button.editor_color) |color_index| {
+                            player_input.anytime.clicked_editor_color = color_index;
+                        }
                         // Release sound: generic button-up for actions without a
                         // specific sound. Actions WITH a specific sound (skip,
                         // swap_weapons, panel toggles) get their sound from the

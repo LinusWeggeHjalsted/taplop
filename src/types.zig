@@ -159,6 +159,14 @@ pub const Action = enum {
     // `editor_toggle_inspector`, so it rides the undo timeline. See DESIGN
     // → Architecture → Level Editor → Editor UI layout (inspector).
     toggle_editor_inspector,
+    // An inspector color swatch was clicked (set the edited entity type's
+    // color_index — the gradient index into the enemy gradient). The index
+    // rides in `AnytimeInput.clicked_editor_color`. Routed through
+    // `options_action` like the other payload-carrying editor clicks.
+    select_editor_entity_color,
+    // The inspector's displays-weapons toggle (flip the edited entity
+    // type's flag). No payload — the handler reads + flips live state.
+    toggle_editor_entity_displays_weapons,
     // Delete the select tool's current selection (editor viewport, Delete
     // key). Fans out into the per-entry delete events via
     // `player_delete_editor_selection`; consumed in handleIdleInput's
@@ -539,6 +547,25 @@ pub const Entity = struct {
     skill_cooldowns: std.EnumArray(SkillId, u32) = std.EnumArray(SkillId, u32).initFill(0),
     active_effects: []const Effect = &.{},
 
+    /// The field's current value as the text-input widget shows it (strings
+    /// verbatim, numbers decimal-formatted) — the single source shared by
+    /// the inspector builder (display text), focus seeding, and the commit
+    /// path's would-change gate.
+    pub fn textFieldValue(
+        self: Entity,
+        allocator: std.mem.Allocator,
+        field_id: TextFieldId,
+    ) ![]const u8 {
+        return switch (field_id) {
+            .entity_name => self.name,
+            .entity_sprite => self.sprite,
+            .entity_max_health => try std.fmt.allocPrint(allocator, "{d}", .{self.max_health}),
+            .entity_defense => try std.fmt.allocPrint(allocator, "{d}", .{self.defense}),
+            .entity_speed => try std.fmt.allocPrint(allocator, "{d}", .{self.speed}),
+            .entity_aggro_range => try std.fmt.allocPrint(allocator, "{d}", .{self.aggro_range}),
+        };
+    }
+
     /// Sum a single modifier field across all active effects.
     fn sumEffectModifier(
         self: Entity,
@@ -834,6 +861,10 @@ pub const EntityEditTarget = union(enum) {
 pub const TextFieldId = enum {
     entity_name,
     entity_sprite,
+    entity_max_health,
+    entity_defense,
+    entity_speed,
+    entity_aggro_range,
 };
 
 /// Identity of one focused text field.

@@ -1097,6 +1097,28 @@ pub const GameStateHistory = struct {
     /// Fail-fast `@panic` (malicious replay = reject); server-side leaderboard
     /// validation reuses this hard gate. See DESIGN → Determinism &
     /// Tiebreaking → Replay VERIFICATION.
+    /// Structural legality shared by the inspector scalar commits (color
+    /// swatch, displays-weapons toggle, the stat fields): the editor screen
+    /// with an editor present, and the target's palette index in range (a
+    /// recorded commit always has a live target — a stale focus records
+    /// nothing at the would-change gate).
+    fn validateInspectorScalarCommit(self: *GameStateHistory, target: types.EntityEditTarget) void {
+        if (self.current_state.screen != .editor) {
+            @panic("replay validation: inspector scalar commit outside editor screen");
+        }
+        const editor = self.current_state.editor orelse {
+            @panic("replay validation: inspector scalar commit with no editor");
+        };
+        switch (target) {
+            .entity_type => |type_id| {
+                if (type_id >= editor.entity_types.len) {
+                    @panic("replay validation: inspector scalar commit type id out of range");
+                }
+            },
+            .player_def => {},
+        }
+    }
+
     fn validatePlayerAction(self: *GameStateHistory, event: Event) void {
         switch (event) {
             .player_input_event => |pi| switch (pi) {
@@ -1196,6 +1218,19 @@ pub const GameStateHistory = struct {
                         .player_def => {},
                     }
                 },
+                // The remaining inspector scalar commits share one structural
+                // legality (helper below): editor screen + editor + target
+                // index in range (values are unrestricted — base stats are
+                // unbounded by design, color_index is bounded by the swatch
+                // count at the UI, and a crafted out-of-range index is a
+                // harmless render-time clamp). Separate arms (not a
+                // multi-case capture): the payloads are distinct types.
+                .player_set_editor_entity_color_index => |set| self.validateInspectorScalarCommit(set.target),
+                .player_set_editor_entity_displays_weapons => |set| self.validateInspectorScalarCommit(set.target),
+                .player_set_editor_entity_max_health => |set| self.validateInspectorScalarCommit(set.target),
+                .player_set_editor_entity_defense => |set| self.validateInspectorScalarCommit(set.target),
+                .player_set_editor_entity_speed => |set| self.validateInspectorScalarCommit(set.target),
+                .player_set_editor_entity_aggro_range => |set| self.validateInspectorScalarCommit(set.target),
                 // Structural legality: the paint checks + the select tool
                 // active (the live path only toggles from the select tool's
                 // viewport arm; the handler no-ops otherwise as the

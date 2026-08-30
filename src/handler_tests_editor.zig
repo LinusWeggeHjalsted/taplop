@@ -2224,6 +2224,127 @@ test "text field commit: entity sprite edits ride the same path (v1 text field, 
     );
 }
 
+test "inspector scalar clicks: color swatch + displays-weapons toggle ride the timeline" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton", .team = 1 }, // color_index 0, displays_weapons true
+    }};
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    }));
+    runToIdle(&history);
+
+    // Swatch click: color_index 0 → 3 (the payload rode in
+    // clicked_editor_color; the target is the active enemy tool).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_entity_color,
+        .clicked_editor_color = 3,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 3), history.current_state.editor.?.entity_types[0].template.color_index);
+
+    // Same-value pick never fires (no dead undo step).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_entity_color,
+        .clicked_editor_color = 3,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Toggle: true → false; a flip always changes, so no gate.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_entity_displays_weapons,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(!history.current_state.editor.?.entity_types[0].template.displays_weapons);
+
+    // One undo reverts the toggle; another reverts the color (one step per
+    // committed edit).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.editor.?.entity_types[0].template.displays_weapons);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.entity_types[0].template.color_index);
+
+    // No enemy tool active (select tool): both clicks no-op.
+    history.current_state.editor.?.active_tool = .select;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_entity_color,
+        .clicked_editor_color = 5,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_entity_displays_weapons,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.entity_types[0].template.color_index);
+}
+
+test "inspector stat commits: numeric parse, unbounded clamp, empty no-op, leading-zero no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton", .team = 1, .max_health = 20 },
+    }};
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+    }));
+    runToIdle(&history);
+
+    const no_keys: [0]?[]const u8 = .{};
+    const backspace_pressed: [1]?[]const u8 = .{"Backspace"};
+    const field: types.TextFieldRef = .{ .id = .entity_max_health, .target = .{ .entity_type = 0 } };
+
+    // Edit 20 → 25 (backspace the 0, type 5): parsed + committed.
+    ui.beginTextEdit(&history.session.ui_state, field, "20");
+    _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "", &backspace_pressed, &no_keys, false);
+    _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "5", &no_keys, &no_keys, false);
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 25), history.current_state.editor.?.entity_types[0].template.max_health);
+
+    // Overflow clamps to u32 max (base stats are unbounded by design).
+    ui.beginTextEdit(&history.session.ui_state, field, "25");
+    _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "99999999999", &no_keys, &no_keys, false);
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    runToIdle(&history);
+    try testing.expectEqual(std.math.maxInt(u32), history.current_state.editor.?.entity_types[0].template.max_health);
+
+    // Empty buffer commits nothing (no event, value intact, focus dropped).
+    ui.beginTextEdit(&history.session.ui_state, field, "99999999999");
+    for (0..11) |_| {
+        _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "", &backspace_pressed, &no_keys, false);
+    }
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expectEqual(std.math.maxInt(u32), history.current_state.editor.?.entity_types[0].template.max_health);
+    try testing.expect(history.session.ui_state.text_edit == null);
+
+    // Leading zeros that parse to the current value record nothing (numeric
+    // would-change semantics, not a string compare). ONE undo reverts the
+    // overflow commit (two would also revert the 20→25 edit).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(u32, 25), history.current_state.editor.?.entity_types[0].template.max_health);
+    // Seed with the CURRENT value, move the caret to the start, then type
+    // a leading zero: "025" parses to 25 == current → no event.
+    ui.beginTextEdit(&history.session.ui_state, field, "25");
+    const home: [2]?[]const u8 = .{ "ArrowLeft", "ArrowLeft" };
+    _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "", &home, &no_keys, false);
+    _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "0", &no_keys, &no_keys, false);
+    try testing.expectEqualStrings("025", history.session.ui_state.text_edit.?.buffer.currentText());
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
 test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

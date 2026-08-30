@@ -7412,3 +7412,53 @@ vs 10 visible), and an entry is emitted only when it FULLY fits the
 window (partially-visible entries are skipped — same no-half-drawing
 rule, now per-entry instead of per-row). The scrollbar thumb is
 proportional over units. Wheel notch = one unit.
+
+### Inspector scalar controls — swatches, toggle, numeric stats (DONE, slice 3b)
+
+The Identity + Stats sections are now fully live; the enemy-type
+inspector's scalar set is complete (weapons/gear/utility skills are
+slices 4/5).
+
+**Controls.** Color: a six-swatch row in the ENEMY gradient (the settings
+screen's player-color pattern — colored solid_rect fill + invisible
+payload button + highlighted selection), committing via
+`.select_editor_entity_color` (the index rides in
+`AnytimeInput.clicked_editor_color` + a new `Button.editor_color`
+payload); same-value picks never fire. Displays weapons: a full-width
+panel-backed toggle showing the FORMAT's own vocabulary ("true"/"false" —
+the exact tokens `asBool` parses), highlighted while true, flipping via
+`.toggle_editor_entity_displays_weapons` (a flip always changes — no
+gate). The four stat fields are numeric text inputs riding the slice-1/3a
+machinery: digits-only filter (`textFieldIsNumeric`), commit parses with
+u32-max clamp on overflow (base stats UNBOUNDED by design), an EMPTY
+buffer commits nothing, and the would-change gate compares PARSED values
+(so "025" vs 25 records nothing — a string compare would false-positive).
+`editor_set_entity_momentum` REMOVED (transient combat stat, never
+authorable — level files can't set it).
+
+**Single value source.** `Entity.textFieldValue(allocator, field_id)`
+(types.zig): strings verbatim, numbers decimal-formatted — shared by the
+builder's display text, `beginFocusedTextEdit`'s seed, and the commit
+gate, so the three can't drift. Six thin player wrappers
+(color/displays_weapons/4 stats) → the pre-existing editor events; the
+six validate arms share `validateInspectorScalarCommit` (Zig can't
+multi-case-capture distinct payload struct types — separate arms, one
+helper).
+
+**A REAL bug the tests caught** (worth the pattern note): the leading-
+zero test scenario — seed "25", caret to start, type "0" — produced
+"022". `TextField.insertText` shifted the tail with `copyForwards`, but
+insertion shifts the tail RIGHT (dst > src, overlapping regions) where a
+forward copy reads already-overwritten bytes; every prior test inserted
+at the end or replaced a selection with a SHORTER string, so the
+mid-string case had never run. Fixed with `copyBackwards` (safe in both
+directions) + a dedicated mid-string insert test (start, middle, and
+longer-than-selection replace). The DONE convention from slice 1 keeps
+paying off: derive expectations by walking the actual state, and the
+failures that survive THAT scrutiny are real bugs.
+
+Tests (417): builder (stat fields formatted "20"/"0"/"1"/"3", swatch
+count/payload/highlight, toggle label + highlight), clicks (swatch
+commit + same-value no-op + undo-per-edit, toggle flip, no-tool no-ops),
+numeric commits (parse, overflow clamp, empty no-op, leading-zero
+no-op).
