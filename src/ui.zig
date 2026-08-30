@@ -1167,6 +1167,10 @@ test "emitInspectorTextField via the content builder: current value unfocused, b
         try std.testing.expectEqualStrings("Skeleton Warrior", name_field.text);
         try std.testing.expect(name_field.caret == null);
         try std.testing.expect(name_field.selection == null);
+        // The paper-strip treatment: lightest frame, PURE-black text
+        // (literal 0,0,0 — the caret/selection follow the text color).
+        try std.testing.expectEqual(theme.lightest, name_field.frame_color);
+        try std.testing.expectEqual(types.Color{ .r = 0, .g = 0, .b = 0 }, name_field.text_color);
         try std.testing.expectEqual(
             types.TextFieldRef{ .id = .entity_name, .target = .{ .entity_type = 0 } },
             name_field.ref,
@@ -1950,6 +1954,10 @@ pub const TextFieldUi = struct {
     text: []const u8,
     font_size: i32,
     frame_color: Color,
+    /// The text's color — also the caret + selection color (a field's
+    /// accents match its text). default_tint renders as the theme
+    /// lightest; the inspector sets pure black on the lightest frame.
+    text_color: Color = default_tint,
     ref: types.TextFieldRef,
     /// Caret bar while focused: x offset from `text_position.x`, height.
     caret: ?struct { x: i32, height: i32 } = null,
@@ -4606,7 +4614,12 @@ fn emitInspectorTextField(
         },
         .text = try allocator.dupe(u8, entityFieldValue(allocator, editor, type_index, field_id)),
         .font_size = font_size,
-        .frame_color = active_theme.player_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)],
+        // The field reads as an editable paper strip: a lightest frame
+        // with PURE-BLACK text (literal 0,0,0 — not theme darkest; the
+        // contrast is the point). The caret + selection draw in the same
+        // color (see the backend arm).
+        .frame_color = active_theme.lightest,
+        .text_color = .{ .r = 0, .g = 0, .b = 0 },
         .ref = ref,
     };
 
@@ -4777,7 +4790,7 @@ fn emitInspectorWeaponSlot(
         };
         const highlighted = if (equipped_weapon) |weapon| weapon.weapon_type == weapon_type else false;
         try elements.append(allocator, .{ .button = .{
-            .sprite_id = button_background_sprite_id,
+            .sprite_id = "ui/item_slot",
             .screen_position = cell.position(),
             .width = cell.width,
             .height = cell.height,

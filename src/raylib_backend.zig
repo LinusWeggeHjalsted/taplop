@@ -1426,12 +1426,13 @@ pub const RaylibBackend = struct {
                         .width = @as(f32, @floatFromInt(selection.width)),
                         .height = @as(f32, @floatFromInt(field.font_size)),
                     };
-                    rl.drawRectangleRec(selection_rect, toRaylibColor(highlight_color, 128));
+                    rl.drawRectangleRec(selection_rect, toRaylibColor(field.text_color, 128));
                 }
                 self.drawTextLabel(.{
                     .text = field.text,
                     .screen_position = field.text_position,
                     .font_size = field.font_size,
+                    .color = field.text_color,
                     .blocks_input = false,
                 }, highlight_color);
                 if (field.caret) |caret| {
@@ -1441,7 +1442,7 @@ pub const RaylibBackend = struct {
                         .width = @as(f32, @floatFromInt(caret_width)),
                         .height = @as(f32, @floatFromInt(caret.height)),
                     };
-                    rl.drawRectangleRec(caret_rect, toRaylibColor(highlight_color, 255));
+                    rl.drawRectangleRec(caret_rect, toRaylibColor(field.text_color, 255));
                 }
             },
             .fill_sprite => |fill| self.drawFillSprite(fill),

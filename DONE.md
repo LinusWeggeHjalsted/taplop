@@ -7597,3 +7597,17 @@ Six adjustments before the utility-skill picker:
   against the control line and the control inset halved
   (`editor_inspector_control_gap` 8, shared `inspectorControlRect` /
   `inspectorLabelY` helpers — the three entry arms can't drift).
+
+### Inspector visual polish, round 2 (author feedback)
+
+- Weapon-type cells now sit on the inventory's `ui/item_slot` graphic
+  (same gradient[5] tint the inventory grid uses) instead of the shared
+  button background — they read as item slots, matching the item icons
+  they carry.
+- Text fields read as editable paper strips: the frame is the theme
+  LIGHTEST and the text is PURE black — literal {0,0,0}, not theme
+  darkest (the contrast is the point). `TextFieldUi` gained `text_color`
+  and the backend draws the caret + selection in the SAME color (solid
+  caret, 128-alpha selection) — the theme-lightest accents the backend
+  previously used would have vanished on the light frame. Platform seam
+  touched → web compile-checked (WEB OK).
