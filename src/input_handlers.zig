@@ -1302,6 +1302,18 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             pushPlayerActionAndDrain(history, action);
         },
     }
+
+    // A committed edit is ONE undo step: record the idle point HERE. The
+    // keyboard-resolution path commits from frame() BEFORE the drain, so
+    // no other site would record it (the idle update() sees an empty
+    // stack + no input, and its events_processed check comes up false) —
+    // without this, undo steps PAST the edit and discards it from the
+    // future timeline. The M2 click-away path (inside update()) lands on
+    // this same recording; its own later maybeRecordIdlePoint dedupes via
+    // the not-already-an-idle-point guard. Mid-drain commits (a non-empty
+    // stack) are absorbed into the surrounding drain's idle point — the
+    // stack-empty check inside maybeRecordIdlePoint skips them.
+    history.maybeRecordIdlePoint(true);
 }
 
 /// Focus a text field (its element was clicked): read the field's current

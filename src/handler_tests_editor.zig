@@ -2128,7 +2128,6 @@ test "text field commit: entity name end-to-end, no-op gate, cancel" {
     );
     try testing.expectEqual(types.TextEditOutcome.commit, outcome);
     input_handlers.resolveTextEditOutcome(&history, .commit);
-    runToIdle(&history);
 
     try testing.expectEqualStrings(
         "Skeleton Knight",
@@ -2139,6 +2138,19 @@ test "text field commit: entity name end-to-end, no-op gate, cancel" {
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 
     // One undo reverts to the old name (the edit rode the timeline).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqualStrings(
+        "Skeleton",
+        history.current_state.editor.?.entity_types[0].template.name,
+    );
+    // And redo re-applies it — the regression check: the commit used to
+    // record no undo stop, so undo stepped PAST the edit (discarding it
+    // from the future timeline) and redo had nothing to restore.
+    try testing.expect(history.redo(event_handlers.processEvent));
+    try testing.expectEqualStrings(
+        "Skeleton Knight",
+        history.current_state.editor.?.entity_types[0].template.name,
+    );
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqualStrings(
         "Skeleton",
@@ -2204,7 +2216,6 @@ test "text field commit: entity sprite edits ride the same path (v1 text field, 
     );
     try testing.expectEqual(types.TextEditOutcome.commit, outcome);
     input_handlers.resolveTextEditOutcome(&history, .commit);
-    runToIdle(&history);
 
     try testing.expectEqualStrings(
         "skeleton_1_elite",
@@ -2316,7 +2327,6 @@ test "inspector stat commits: numeric parse, unbounded clamp, empty no-op, leadi
     ui.beginTextEdit(&history.session.ui_state, field, "25");
     _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "99999999999", &no_keys, &no_keys, false);
     input_handlers.resolveTextEditOutcome(&history, .commit);
-    runToIdle(&history);
     try testing.expectEqual(std.math.maxInt(u32), history.current_state.editor.?.entity_types[0].template.max_health);
 
     // Empty buffer commits nothing (no event, value intact, focus dropped).

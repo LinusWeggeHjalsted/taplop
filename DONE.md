@@ -7462,3 +7462,31 @@ count/payload/highlight, toggle label + highlight), clicks (swatch
 commit + same-value no-op + undo-per-edit, toggle flip, no-tool no-ops),
 numeric commits (parse, overflow clamp, empty no-op, leading-zero
 no-op).
+
+### Fix: text-field commits now record their own undo stop
+
+Author-reported: committing a text field (e.g. Sprite) updated the state
+but undo stepped PAST the edit and redo lost it — the commit recorded
+its EVENT but never an idle point (the undo stop).
+
+Root cause: the keyboard-resolution path (Enter) commits from
+`main.frame()` BEFORE the drain loop, and the only idle-point recordings
+live in the drain loop / the idle update() call — both of which see an
+empty stack + no input afterward, so `events_processed` comes up false.
+The M2 click-away path was fine (it commits inside update(), where the
+idle branch's events_processed check catches the index advance). The
+unit tests masked the bug: they called `runToIdle` after resolving (its
+unconditional recordIdlePoint was the missing stop) — noted as a
+"harness gotcha" in the slice-1 entry without recognizing it was the
+LIVE path's gap.
+
+Fix: `commitFocusedTextEdit` calls `maybeRecordIdlePoint(true)` after
+its push+drain — the invariant "a committed edit is one undo step" now
+lives with the commit, not the call site. Safe everywhere:
+maybeRecordIdlePoint's own guards skip a non-empty stack (a mid-drain
+commit absorbs into the surrounding drain's idle point) and an
+already-recorded position (the M2 path's later recording dedupes). The
+masking `runToIdle` calls are removed from the commit tests — their undo
+assertions now pass on the commit's own recording — and the name test
+gained an explicit undo→redo→undo round trip (the exact reported
+symptom).
