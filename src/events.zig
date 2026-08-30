@@ -175,6 +175,14 @@ pub const EditorEvent = union(enum) {
     editor_deselect: struct {
         entry: types.Selectable,
     },
+    // Clear the whole selection (ctrl+D). One event, not a per-entry
+    // fan-out: a clear is a single operation, and a large marquee's
+    // worth of deselect lines would be log noise, not readability (the
+    // granular add/remove events exist for the click + marquee semantics,
+    // where the entries carry meaning). The tool-switch and level-tab
+    // clears are side effects of THEIR events; this is the explicit
+    // user action.
+    editor_clear_selection: void,
 
     // ── Level management ──
     // Switch the active level tab. Pure state on editor.active_level_index.
@@ -590,6 +598,10 @@ pub const PlayerInputEvent = union(enum) {
     // everything else in the selection goes. All the deletes share this
     // action's idle point, so one undo step reverts the whole deletion.
     player_delete_editor_selection: void,
+    // Select-tool ctrl+D: clear the whole selection. No payload — the
+    // handler pushes the single `editor_clear_selection`. The input layer
+    // gates on a nonempty selection (no dead undo step on an empty one).
+    player_clear_editor_selection: void,
     // Tile-paint click in the editor viewport (tile tool active): one click
     // = one tile. The handler computes the effect from state — no-op when a
     // tile is already there; every decoration whose footprint covers the

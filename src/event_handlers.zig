@@ -319,6 +319,9 @@ fn handleEditorEvent(
             if (editor.active_tool != .select) return;
             editor.selection = selectionWithoutEntry(editor.selection, deselect.entry, allocator);
         },
+        .editor_clear_selection => {
+            editor.selection = &.{};
+        },
         .editor_set_tile => |set| {
             if (set.level_index >= editor.levels.len) {
                 @panic("editor_set_tile: level index out of range");
@@ -1357,6 +1360,10 @@ fn handlePlayerInputEvent(
             if (current.editor) |*editor| {
                 pushEvents(current, planEditorSelectionDeleteActions(editor, allocator), allocator);
             }
+        },
+        // Select-tool ctrl+D: push the single clear event.
+        .player_clear_editor_selection => {
+            pushEvents(current, &.{.{ .editor_event = .editor_clear_selection }}, allocator);
         },
         // Tile-paint click: thin over the shared planner (the input layer
         // fires only nonempty plans — see planEditorTilePaintActions).

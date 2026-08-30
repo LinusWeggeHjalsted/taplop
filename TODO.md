@@ -490,7 +490,9 @@ yet implemented. Remaining work:
   everything selected goes except the '!' / '=' and their tiles; a
   selected tile sweeps its occupant; per-kind high-before-low delete
   ordering; one undo step — see DESIGN → Level Editor → Selection model
-  + DONE.md). Remaining viewport INPUT: drag-paint + the selection
+  + DONE.md). Ctrl+D clear-everything DONE too (single
+  `editor_clear_selection` event, gated on a nonempty selection — see
+  DONE.md). Remaining viewport INPUT: drag-paint + the selection
   OPERATIONS — move, the reason selection exists. All tools
   have left-click input + cursor previews + the right-click delete.
   No-op clicks never fire: each tool's effect is computed by a pure

@@ -1195,6 +1195,17 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_delete_editor_selection without the select tool active");
                     }
                 },
+                // Structural legality: screen + editor (no levels check —
+                // clearing needs no level; a crafted event with an empty
+                // selection is an idempotent no-op in the handler).
+                .player_clear_editor_selection => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_clear_editor_selection outside editor screen");
+                    }
+                    if (self.current_state.editor == null) {
+                        @panic("replay validation: player_clear_editor_selection with no editor");
+                    }
+                },
                 // Structural legality only: screen + editor + a level to
                 // paint on. The position is unrestricted (any tile
                 // coordinate is a legal paint target — the handler no-ops

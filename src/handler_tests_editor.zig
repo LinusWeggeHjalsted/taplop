@@ -1959,3 +1959,44 @@ test "player_delete_editor_selection: an all-marker selection plans nothing (no-
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try testing.expect(history.current_state.event_stack[0].player_input_event == .player_delete_editor_selection);
 }
+
+test "player_clear_editor_selection: ctrl+D clears everything, gated on a nonempty selection, undo restores" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 2 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+    }};
+    const seeded_selection = [_]types.Selectable{
+        .{ .tile = .{ .x = 1, .y = 1 } },
+        .player_start,
+        .{ .decoration_placement = 0 },
+    };
+    var history = harness.newHistory(editorStateWith(marqueeTestEditor(&levels)));
+    history.current_state.editor.?.selection = &seeded_selection;
+    runToIdle(&history);
+
+    // An empty selection never fires (no dead undo step).
+    history.current_state.editor.?.selection = &.{};
+    input_handlers.handleIdleInput(&history, .{ .clear_editor_selection = true }, .{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // A nonempty selection fires the orchestrator; the single clear event
+    // empties it; one undo step restores the selection.
+    history.current_state.editor.?.selection = &seeded_selection;
+    input_handlers.handleIdleInput(&history, .{ .clear_editor_selection = true }, .{});
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try testing.expect(history.current_state.event_stack[0].player_input_event == .player_clear_editor_selection);
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+
+    try testing.expect(history.undo(event_handlers.processEvent));
+    const selection = history.current_state.editor.?.selection;
+    try testing.expectEqual(@as(usize, 3), selection.len);
+    try testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection[0]);
+    try testing.expectEqual(types.Selectable.player_start, selection[1]);
+    try testing.expectEqual(types.Selectable{ .decoration_placement = 0 }, selection[2]);
+}

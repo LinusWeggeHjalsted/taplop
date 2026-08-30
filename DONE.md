@@ -6964,3 +6964,28 @@ ONE undo step reverts the whole deletion incl. the selection) + the
 no-op gate + the positive input path through handleIdleInput. Hit the
 recorded test-harness gotcha again (seed before the first runToIdle or
 undo restores the pre-seed snapshot). All 386 tests pass.
+
+### Editor selection clear (ctrl+D)
+
+`Action.clear_editor_selection` (ctrl+D, press-only, rebindable — the
+`skip_level` shipping pattern) → `IdleInput` field → `handleIdleInput`'s
+editor arm, gated on a NONEMPTY selection (the user's spec — an empty
+selection never records, no dead undo step) → `player_clear_editor_selection`
+→ the single `editor_clear_selection` machinery event (`editor.selection =
+&.{}`).
+
+**Granularity call:** ONE clear event, not a per-entry `editor_deselect`
+fan-out. The granular add/remove events exist for click + marquee
+semantics, where the entries carry meaning; a clear is a single operation,
+and a 100-entry marquee clearing as 100 deselect lines would be log noise.
+(Deliberate counterpart to the selection-delete fan-out, where each
+per-entry delete names a different machinery verb with its own
+invariants.) The tool-switch + level-tab clears remain side effects of
+their own events; this is the explicit user action. `validatePlayerAction`
+arm: screen + editor (no levels check — clearing needs no level; a
+crafted event over an empty selection is an idempotent no-op).
+
+New key mapping `KeyD` in raylib_backend's key_mappings (ctrl+D chord;
+no collision with the existing ctrl chords — Z/Y/L/Enter). Tests: empty
+selection never fires; nonempty fires the orchestrator; the clear empties
+the selection; ONE undo step restores it. All 387 tests pass.

@@ -1741,6 +1741,15 @@ pub fn handleIdleInput(
                 }
             }
         }
+        // ctrl+D: clear the whole selection. Gated on a nonempty selection
+        // — an empty one never fires (no dead undo step).
+        if (idle.clear_editor_selection) {
+            if (current.editor) |*editor| {
+                if (editor.selection.len > 0) {
+                    event_handlers.pushPlayerAction(current, .player_clear_editor_selection, allocator);
+                }
+            }
+        }
         if (idle.tile_clicked) |clicked_position| {
             if (current.editor) |*editor| {
                 switch (editor.active_tool) {

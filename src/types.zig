@@ -160,6 +160,13 @@ pub const Action = enum {
     // default_settings.txt regardless, like `skip_level`). The '!' / '='
     // and the tiles under them are never deleted.
     delete_editor_selection,
+    // Clear the select tool's current selection (editor viewport, ctrl+D).
+    // Pushes `player_clear_editor_selection` → `editor_clear_selection` —
+    // a single event (a clear is one operation, not a per-entry fan-out:
+    // a 100-entry marquee clearing as 100 deselect lines is log noise).
+    // Consumed in handleIdleInput's editor arm, gated on a nonempty
+    // selection — a no-op on every other screen.
+    clear_editor_selection,
 };
 
 /// One per editable `Settings` scalar field. Drives the settings-screen

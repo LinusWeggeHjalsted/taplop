@@ -1990,7 +1990,10 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   deletes process high-before-low (index stability), the tile erases
   process last (position-keyed); one undo step reverts the whole
   deletion. No payload — the handler reads `editor.selection` from
-  reconstructable state.
+  reconstructable state. Ctrl+D clears the whole selection
+  (`player_clear_editor_selection` → the single `editor_clear_selection`
+  event — one operation, not a per-entry fan-out; gated on a nonempty
+  selection so an empty one never records).
   Deferred: selection operations (move).
   Placing does NOT happen in selection mode. The tool-switch clear rides
   the `editor_set_tool` event (invariant: selection nonempty ⇔ active tool

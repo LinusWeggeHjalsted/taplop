@@ -44,6 +44,11 @@ input_name Delete
 action delete_editor_selection
 
 input_type key
+input_name KeyD
+ctrl true
+action clear_editor_selection
+
+input_type key
 input_name KeyI
 ctrl true
 action zoom_in
