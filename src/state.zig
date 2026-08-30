@@ -1206,6 +1206,24 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_clear_editor_selection with no editor");
                     }
                 },
+                // Same structural legality as the selection delete (the
+                // move reads the selection from state; the delta is
+                // unrestricted — a zero delta is a legal no-op in a
+                // recorded session, the live gesture never fires one).
+                .player_move_editor_selection => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_move_editor_selection outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_move_editor_selection with no editor");
+                    };
+                    if (editor.levels.len == 0) {
+                        @panic("replay validation: player_move_editor_selection with no levels");
+                    }
+                    if (editor.active_tool != .select) {
+                        @panic("replay validation: player_move_editor_selection without the select tool active");
+                    }
+                },
                 // Structural legality only: screen + editor + a level to
                 // paint on. The position is unrestricted (any tile
                 // coordinate is a legal paint target — the handler no-ops

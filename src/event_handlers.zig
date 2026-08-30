@@ -585,6 +585,102 @@ fn handleEditorEvent(
             // nothing referencing the placement shifts.
             @constCast(level.item_placements)[set.placement_index].type_id = set.type_id;
         },
+        .editor_set_player_start => |set| {
+            if (set.level_index >= editor.levels.len) {
+                @panic("editor_set_player_start: level index out of range");
+            }
+            @constCast(editor.levels)[set.level_index].player_start = set.position;
+        },
+        .editor_set_level_end => |set| {
+            if (set.level_index >= editor.levels.len) {
+                @panic("editor_set_level_end: level index out of range");
+            }
+            @constCast(editor.levels)[set.level_index].level_end = set.position;
+        },
+        .editor_commit_selection_move => |commit| {
+            // Final link: the worklist is exhausted — a move deselects
+            // (nothing is reselected; the clear phase's reconcile already
+            // pruned the deleted entries, this drops the rest).
+            if (commit.next_index >= commit.entries.len) {
+                editor.selection = &.{};
+                return;
+            }
+            const entry = commit.entries[commit.next_index];
+
+            // Plan THIS entry against the live post-clear state — the
+            // placement planners are the current placement rules (a
+            // marker target plans empty, so that thing was deleted fully
+            // in the clear phase and simply doesn't place). Type ids from
+            // a crafted worklist are skipped defensively (the live path
+            // derives them from real placements, and the clear phase
+            // never deletes palette types).
+            var plan: std.ArrayList(Event) = .empty;
+            switch (entry) {
+                .entity => |move_entry| {
+                    if (move_entry.type_id < editor.entity_types.len) {
+                        plan.appendSlice(
+                            allocator,
+                            planEditorEntityPlacementActions(editor, move_entry.type_id, move_entry.position, allocator),
+                        ) catch @panic("failed to allocate editor selection move plan");
+                    }
+                },
+                .decoration => |move_entry| {
+                    if (move_entry.type_id < editor.decoration_types.len) {
+                        plan.appendSlice(
+                            allocator,
+                            planEditorDecorationPlacementActions(editor, move_entry.type_id, move_entry.position, allocator),
+                        ) catch @panic("failed to allocate editor selection move plan");
+                    }
+                },
+                .item => |move_entry| {
+                    if (move_entry.type_id < editor.item_types.len) {
+                        plan.appendSlice(
+                            allocator,
+                            planEditorItemPlacementActions(editor, move_entry.type_id, move_entry.position, allocator),
+                        ) catch @panic("failed to allocate editor selection move plan");
+                    }
+                },
+                .tile => |position| {
+                    plan.appendSlice(
+                        allocator,
+                        planEditorTilePaintActions(editor, position, allocator),
+                    ) catch @panic("failed to allocate editor selection move plan");
+                },
+                .player_start, .level_end => |position| {
+                    // A tile is ensured under the moved marker (paint = the
+                    // current replacement rules), then the marker moves.
+                    plan.appendSlice(
+                        allocator,
+                        planEditorTilePaintActions(editor, position, allocator),
+                    ) catch @panic("failed to allocate editor selection move plan");
+                    const marker_variant: events.EditorEvent = if (entry == .player_start)
+                        .{ .editor_set_player_start = .{
+                            .level_index = @intCast(editor.active_level_index),
+                            .position = position,
+                        } }
+                    else
+                        .{ .editor_set_level_end = .{
+                            .level_index = @intCast(editor.active_level_index),
+                            .position = position,
+                        } };
+                    plan.append(allocator, .{ .editor_event = marker_variant }) catch
+                        @panic("failed to allocate editor selection move plan");
+                },
+            }
+
+            // Push [next link, …plan] — LIFO runs this entry's plan first,
+            // then the next link plans the following entry against the
+            // result (the chain exists precisely so each entry sees the
+            // fully-processed state; see the event's doc in events.zig).
+            var push: std.ArrayList(Event) = .empty;
+            push.append(allocator, .{ .editor_event = .{ .editor_commit_selection_move = .{
+                .entries = commit.entries,
+                .next_index = commit.next_index + 1,
+            } } }) catch @panic("failed to allocate editor selection move plan");
+            push.appendSlice(allocator, plan.items) catch
+                @panic("failed to allocate editor selection move plan");
+            pushEvents(current, push.items, allocator);
+        },
         else => @panic("editor event handler not implemented"),
     }
 }
@@ -1364,6 +1460,70 @@ fn handlePlayerInputEvent(
         // Select-tool ctrl+D: push the single clear event.
         .player_clear_editor_selection => {
             pushEvents(current, &.{.{ .editor_event = .editor_clear_selection }}, allocator);
+        },
+        // Select-tool move-drag release: back the selection up as concrete
+        // things at their translated positions, then push [commit link 0,
+        // …clear plan] — LIFO runs the clear phase first, then the commit
+        // chain places the worklist one entry at a time against the live
+        // post-clear state (see editor_commit_selection_move).
+        .player_move_editor_selection => |move| {
+            if (current.editor) |*editor| {
+                const level = activeEditorLevel(editor) orelse return;
+                var entries: std.ArrayList(types.EditorSelectionMoveEntry) = .empty;
+                for (editor.selection) |selected| {
+                    switch (selected) {
+                        .entity_placement => |index| {
+                            if (index < level.entity_placements.len) {
+                                const placement = level.entity_placements[index];
+                                entries.append(allocator, .{ .entity = .{
+                                    .type_id = placement.type_id,
+                                    .position = translatedPosition(placement.position, move.delta),
+                                } }) catch @panic("failed to allocate editor selection move entries");
+                            }
+                        },
+                        .decoration_placement => |index| {
+                            if (index < level.decoration_placements.len) {
+                                const placement = level.decoration_placements[index];
+                                entries.append(allocator, .{ .decoration = .{
+                                    .type_id = placement.type_id,
+                                    .position = translatedPosition(placement.position, move.delta),
+                                } }) catch @panic("failed to allocate editor selection move entries");
+                            }
+                        },
+                        .ground_item_placement => |index| {
+                            if (index < level.item_placements.len) {
+                                const placement = level.item_placements[index];
+                                entries.append(allocator, .{ .item = .{
+                                    .type_id = placement.type_id,
+                                    .position = translatedPosition(placement.position, move.delta),
+                                } }) catch @panic("failed to allocate editor selection move entries");
+                            }
+                        },
+                        .tile => |position| {
+                            entries.append(allocator, .{ .tile = translatedPosition(position, move.delta) }) catch
+                                @panic("failed to allocate editor selection move entries");
+                        },
+                        .player_start => {
+                            entries.append(allocator, .{ .player_start = translatedPosition(level.player_start, move.delta) }) catch
+                                @panic("failed to allocate editor selection move entries");
+                        },
+                        .level_end => {
+                            if (level.level_end) |level_end_position| {
+                                entries.append(allocator, .{ .level_end = translatedPosition(level_end_position, move.delta) }) catch
+                                    @panic("failed to allocate editor selection move entries");
+                            }
+                        },
+                    }
+                }
+                var push: std.ArrayList(Event) = .empty;
+                push.append(allocator, .{ .editor_event = .{ .editor_commit_selection_move = .{
+                    .entries = entries.items,
+                    .next_index = 0,
+                } } }) catch @panic("failed to allocate editor selection move plan");
+                push.appendSlice(allocator, planEditorSelectionMoveDeleteActions(editor, allocator)) catch
+                    @panic("failed to allocate editor selection move plan");
+                pushEvents(current, push.items, allocator);
+            }
         },
         // Tile-paint click: thin over the shared planner (the input layer
         // fires only nonempty plans — see planEditorTilePaintActions).
@@ -2271,9 +2431,98 @@ pub fn planEditorSelectionActions(
 /// range indices, absent tiles) are skipped defensively. Everything shares
 /// the player action's idle point — one undo step reverts the whole
 /// deletion.
+/// Which selection-deletion policy a plan runs — see
+/// `planEditorSelectionDeleteActions` / `planEditorSelectionMoveDeleteActions`.
+const SelectionDeleteMode = enum {
+    /// The Delete key: a selected tile's OCCUPANT is swept with it (an
+    /// occupant can't stand on nothing).
+    delete_key,
+    /// A selection move's clear phase: an UNSELECTED occupant PINS its
+    /// tile — the tile stays underneath it and the moved tile lands at
+    /// the target instead (only selected things are backed up + moved;
+    /// a selected occupant is deleted via its own entry, so the erase
+    /// proceeds normally under it).
+    selection_move,
+};
+
 pub fn planEditorSelectionDeleteActions(
     editor: *const types.Editor,
     allocator: std.mem.Allocator,
+) []const Event {
+    return planSelectionDelete(editor, allocator, .delete_key);
+}
+
+/// The selection move's clear phase (see `player_move_editor_selection`):
+/// same shape as the Delete key's plan, but a selected tile with an
+/// UNSELECTED occupant is not erased at all (the occupant pins its
+/// ground) and no occupants are swept.
+/// Does the select tool's selection cover `position` — i.e. would a plain
+/// press there start a MOVE drag? Mirrors the click group resolution: a
+/// selected tile / entity / item at the position, a selected decoration
+/// whose footprint covers it, or a selected '!' / '=' at it. Used by the
+/// move-drag gesture (`handleEditorMoveDrag`).
+pub fn editorSelectionContainsPosition(
+    editor: *const types.Editor,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) bool {
+    const level = activeEditorLevel(editor) orelse return false;
+    for (editor.selection) |selected| {
+        switch (selected) {
+            .tile => |tile_position| {
+                if (tile_position.x == position.x and tile_position.y == position.y) return true;
+            },
+            .entity_placement => |index| {
+                if (index < level.entity_placements.len) {
+                    const placement = level.entity_placements[index];
+                    if (placement.position.x == position.x and placement.position.y == position.y) return true;
+                }
+            },
+            .ground_item_placement => |index| {
+                if (index < level.item_placements.len) {
+                    const placement = level.item_placements[index];
+                    if (placement.position.x == position.x and placement.position.y == position.y) return true;
+                }
+            },
+            .decoration_placement => |index| {
+                if (index < level.decoration_placements.len) {
+                    const placement = level.decoration_placements[index];
+                    if (loaders.decorationFootprintCovers(
+                        editor.decoration_types[placement.type_id].footprint,
+                        placement.position,
+                        position,
+                        allocator,
+                    )) return true;
+                }
+            },
+            .player_start => {
+                if (level.player_start.x == position.x and level.player_start.y == position.y) return true;
+            },
+            .level_end => {
+                if (level.level_end) |level_end_position| {
+                    if (level_end_position.x == position.x and level_end_position.y == position.y) return true;
+                }
+            },
+        }
+    }
+    return false;
+}
+
+fn translatedPosition(position: Vector2, delta: Vector2) Vector2 {
+    return .{ .x = position.x + delta.x, .y = position.y + delta.y };
+}
+
+pub fn planEditorSelectionMoveDeleteActions(
+    editor: *const types.Editor,
+    allocator: std.mem.Allocator,
+) []const Event {
+    return planSelectionDelete(editor, allocator, .selection_move);
+}
+
+fn planSelectionDelete(
+    editor: *const types.Editor,
+    allocator: std.mem.Allocator,
+    mode: SelectionDeleteMode,
 ) []const Event {
     const level = activeEditorLevel(editor) orelse return &.{};
     const level_index: u32 = @intCast(editor.active_level_index);
@@ -2300,20 +2549,44 @@ pub fn planEditorSelectionDeleteActions(
                     if (position.x == level_end_position.x and position.y == level_end_position.y) continue;
                 }
                 if (!functions.tileListContains(level.level_tiles, position)) continue;
+                // A move keeps the ground under an UNSELECTED occupant
+                // (the occupant stays, the moved tile lands at its target
+                // instead — nothing is swept).
+                if (mode == .selection_move) {
+                    var pinned = false;
+                    for (level.entity_placements, 0..) |placement, placement_index| {
+                        if (placement.position.x == position.x and placement.position.y == position.y and
+                            !selectionContains(editor.selection, .{ .entity_placement = @intCast(placement_index) }))
+                        {
+                            pinned = true;
+                        }
+                    }
+                    for (level.item_placements, 0..) |placement, placement_index| {
+                        if (placement.position.x == position.x and placement.position.y == position.y and
+                            !selectionContains(editor.selection, .{ .ground_item_placement = @intCast(placement_index) }))
+                        {
+                            pinned = true;
+                        }
+                    }
+                    if (pinned) continue;
+                }
                 tile_positions.append(allocator, position) catch
                     @panic("failed to allocate editor selection delete plan");
-                // Sweep the occupant (at most one — one thing per placed
-                // tile; deduped against the selected entries).
-                for (level.entity_placements, 0..) |placement, placement_index| {
-                    if (placement.position.x == position.x and placement.position.y == position.y) {
-                        appendIndexIfNew(&entity_indices, @intCast(placement_index), allocator);
-                        break;
+                // Delete-key mode sweeps the occupant (at most one — one
+                // thing per placed tile; deduped against the selected
+                // entries).
+                if (mode == .delete_key) {
+                    for (level.entity_placements, 0..) |placement, placement_index| {
+                        if (placement.position.x == position.x and placement.position.y == position.y) {
+                            appendIndexIfNew(&entity_indices, @intCast(placement_index), allocator);
+                            break;
+                        }
                     }
-                }
-                for (level.item_placements, 0..) |placement, placement_index| {
-                    if (placement.position.x == position.x and placement.position.y == position.y) {
-                        appendIndexIfNew(&item_indices, @intCast(placement_index), allocator);
-                        break;
+                    for (level.item_placements, 0..) |placement, placement_index| {
+                        if (placement.position.x == position.x and placement.position.y == position.y) {
+                            appendIndexIfNew(&item_indices, @intCast(placement_index), allocator);
+                            break;
+                        }
                     }
                 }
             },

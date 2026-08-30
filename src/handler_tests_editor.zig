@@ -2000,3 +2000,247 @@ test "player_clear_editor_selection: ctrl+D clears everything, gated on a nonemp
     try testing.expectEqual(types.Selectable.player_start, selection[1]);
     try testing.expectEqual(types.Selectable{ .decoration_placement = 0 }, selection[2]);
 }
+
+// --- Select-tool selection move (player_move_editor_selection) -------------
+
+fn moveTestEditor(levels: []const types.EditorLevel) types.Editor {
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } },
+    };
+    const item_types = [_]types.ItemTypeDef{.{
+        .id = "Iron Sword",
+        .item = .{ .weapon = .{} },
+    }};
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "single", .sprite = "stone_2", .footprint = &single_footprint, .pixel_dims = .{ .x = 256, .y = 256 } },
+        .{ .id = "wide", .sprite = "ruin_1", .footprint = &two_wide_footprint, .pixel_dims = .{ .x = 512, .y = 256 } },
+    };
+    return .{
+        .levels = levels,
+        .entity_types = &entity_types,
+        .item_types = &item_types,
+        .decoration_types = &decoration_types,
+    };
+}
+
+test "player_move_editor_selection: moves the whole selection, deselects after, one undo reverts" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // No tile under the decoration at (5,5) — a legal state (decoration
+    // footprint tiles are tile-free by the placement invariant; a selected
+    // decoration never has a selected tile beneath it).
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 1 } };
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 1, .y = 1 },
+    }};
+    const item_placements = [_]types.ItemPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 2, .y = 1 },
+    }};
+    const decoration_placements = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 5, .y = 5 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 9, .y = 9 },
+        .entity_placements = &entity_placements,
+        .item_placements = &item_placements,
+        .decoration_placements = &decoration_placements,
+    }};
+    const seeded_selection = [_]types.Selectable{
+        .{ .tile = .{ .x = 1, .y = 1 } },
+        .{ .entity_placement = 0 },
+        .{ .tile = .{ .x = 2, .y = 1 } },
+        .{ .ground_item_placement = 0 },
+        .{ .decoration_placement = 0 },
+        .player_start,
+    };
+    var history = harness.newHistory(editorStateWith(moveTestEditor(&levels)));
+    history.current_state.editor.?.selection = &seeded_selection;
+    runToIdle(&history);
+
+    // Move everything down 3 rows. The moved player start lands on empty
+    // ground (0,3) — a tile is ensured under it.
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_move_editor_selection = .{ .delta = .{ .x = 0, .y = 3 } } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    {
+        const level = history.current_state.editor.?.levels[0];
+        // Everything moved; the sources are cleared (their occupants were
+        // selected, so nothing pinned the tiles).
+        try testing.expectEqual(@as(usize, 1), level.entity_placements.len);
+        try testing.expectEqual(types.Vector2{ .x = 1, .y = 4 }, level.entity_placements[0].position);
+        try testing.expectEqual(@as(usize, 1), level.item_placements.len);
+        try testing.expectEqual(types.Vector2{ .x = 2, .y = 4 }, level.item_placements[0].position);
+        try testing.expectEqual(@as(usize, 1), level.decoration_placements.len);
+        try testing.expectEqual(types.Vector2{ .x = 5, .y = 8 }, level.decoration_placements[0].position);
+        try testing.expect(!hasTile(level, .{ .x = 1, .y = 1 }));
+        try testing.expect(!hasTile(level, .{ .x = 2, .y = 1 }));
+        try testing.expect(hasTile(level, .{ .x = 1, .y = 4 }));
+        try testing.expect(hasTile(level, .{ .x = 2, .y = 4 }));
+        // The decoration's target is tile-free by its own placement rules
+        // (footprint tiles are erased when it lands).
+        try testing.expect(!hasTile(level, .{ .x = 5, .y = 8 }));
+        // The '!' moved to (0,3) with a tile ensured under it; the '=' and
+        // the '!' old tile are untouched.
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 3 }, level.player_start);
+        try testing.expect(hasTile(level, .{ .x = 0, .y = 3 }));
+        try testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, level.level_end.?);
+
+        // A move deselects — nothing is reselected.
+        try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+    }
+
+    // ONE undo step reverts the whole move: positions, tiles, the marker,
+    // and the selection.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const level = history.current_state.editor.?.levels[0];
+        try testing.expectEqual(types.Vector2{ .x = 1, .y = 1 }, level.entity_placements[0].position);
+        try testing.expectEqual(types.Vector2{ .x = 2, .y = 1 }, level.item_placements[0].position);
+        try testing.expectEqual(types.Vector2{ .x = 5, .y = 5 }, level.decoration_placements[0].position);
+        try testing.expect(hasTile(level, .{ .x = 1, .y = 1 }));
+        try testing.expect(!hasTile(level, .{ .x = 1, .y = 4 }));
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.player_start);
+        try testing.expect(!hasTile(level, .{ .x = 0, .y = 3 }));
+        try testing.expectEqual(@as(usize, 6), history.current_state.editor.?.selection.len);
+    }
+}
+
+test "player_move_editor_selection: an unselected occupant pins its tile (no sweep)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A selected tile whose occupant is NOT selected: the occupant pins its
+    // ground — the tile stays underneath it and the moved tile lands at the
+    // target instead (nothing is swept).
+    const tiles = [_]types.Vector2{.{ .x = 5, .y = 5 }};
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 5, .y = 5 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .entity_placements = &entity_placements,
+    }};
+    const seeded_selection = [_]types.Selectable{.{ .tile = .{ .x = 5, .y = 5 } }};
+    var history = harness.newHistory(editorStateWith(moveTestEditor(&levels)));
+    history.current_state.editor.?.selection = &seeded_selection;
+    runToIdle(&history);
+
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_move_editor_selection = .{ .delta = .{ .x = 1, .y = 0 } } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.entity_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 5, .y = 5 }, level.entity_placements[0].position);
+    try testing.expect(hasTile(level, .{ .x = 5, .y = 5 }));
+    try testing.expect(hasTile(level, .{ .x = 6, .y = 5 }));
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+}
+
+test "player_move_editor_selection: a target on a marker drops the thing entirely" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Moving an entity (+ its tile) ONTO the '!' at (0,0): the entity plans
+    // empty (markers are never overwritten) and the tile paints over an
+    // existing tile (also empty) — both are deleted fully.
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 1 } };
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 1, .y = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .entity_placements = &entity_placements,
+    }};
+    const seeded_selection = [_]types.Selectable{
+        .{ .tile = .{ .x = 1, .y = 1 } },
+        .{ .entity_placement = 0 },
+    };
+    var history = harness.newHistory(editorStateWith(moveTestEditor(&levels)));
+    history.current_state.editor.?.selection = &seeded_selection;
+    runToIdle(&history);
+
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_move_editor_selection = .{ .delta = .{ .x = -1, .y = -1 } } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 0), level.entity_placements.len);
+    try testing.expect(!hasTile(level, .{ .x = 1, .y = 1 }));
+    try testing.expect(hasTile(level, .{ .x = 0, .y = 0 }));
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.player_start);
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+}
+
+test "player_move_editor_selection: chained placement handles targets sharing a covering decoration" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // THE chain-motivating case: a wide decoration covers both move
+    // targets. Up-front planning would plan its deletion TWICE (stale
+    // index → panic); the chain plans each entry against the live state —
+    // the first entry's placement removes the decoration, the second
+    // places cleanly.
+    const wide_decoration_placements = [_]types.DecorationPlacement{.{
+        .type_id = 1,
+        .position = .{ .x = 4, .y = 4 },
+    }};
+    const entity_placements = [_]types.EntityPlacement{
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 1 } },
+        .{ .type_id = 0, .position = .{ .x = 2, .y = 1 } },
+    };
+    const levels = [_]types.EditorLevel{.{
+        .player_start = .{ .x = 0, .y = 0 },
+        .entity_placements = &entity_placements,
+        .decoration_placements = &wide_decoration_placements,
+    }};
+    const seeded_selection = [_]types.Selectable{
+        .{ .entity_placement = 0 },
+        .{ .entity_placement = 1 },
+    };
+    var history = harness.newHistory(editorStateWith(moveTestEditor(&levels)));
+    history.current_state.editor.?.selection = &seeded_selection;
+    runToIdle(&history);
+
+    // Targets (4,4) + (5,4) — both under the wide footprint (the
+    // decoration erased the tiles there when it was placed).
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_move_editor_selection = .{ .delta = .{ .x = 3, .y = 3 } } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 2), level.entity_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 4, .y = 4 }, level.entity_placements[0].position);
+    try testing.expectEqual(types.Vector2{ .x = 5, .y = 4 }, level.entity_placements[1].position);
+    try testing.expectEqual(@as(usize, 0), level.decoration_placements.len);
+    try testing.expect(hasTile(level, .{ .x = 4, .y = 4 }));
+    try testing.expect(hasTile(level, .{ .x = 5, .y = 4 }));
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+}

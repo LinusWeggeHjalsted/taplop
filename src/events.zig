@@ -183,6 +183,20 @@ pub const EditorEvent = union(enum) {
     // clears are side effects of THEIR events; this is the explicit
     // user action.
     editor_clear_selection: void,
+    // Commit ONE link of a selection move's placement worklist (see
+    // `player_move_editor_selection`). Chained by necessity: each entry is
+    // planned against the LIVE post-delete state via the placement
+    // planners — up-front planning of the whole worklist breaks when two
+    // entries' targets share a covering decoration (duplicate delete →
+    // stale index) or an item entry's enemy-delete shifts an index a
+    // later retype still addresses. Each link plans `entries[next_index]`,
+    // pushes `[next link, …plan]` (LIFO: the plan processes first), and the
+    // exhausted link clears the selection (a move deselects — nothing is
+    // reselected). Recorded once per link; replay reproduces the chain.
+    editor_commit_selection_move: struct {
+        entries: []const types.EditorSelectionMoveEntry,
+        next_index: u32,
+    },
 
     // ── Level management ──
     // Switch the active level tab. Pure state on editor.active_level_index.
@@ -602,6 +616,20 @@ pub const PlayerInputEvent = union(enum) {
     // handler pushes the single `editor_clear_selection`. The input layer
     // gates on a nonempty selection (no dead undo step on an empty one).
     player_clear_editor_selection: void,
+    // Select-tool move drag release: move the whole selection by `delta`
+    // (release tile − press tile). No payload beyond the delta — the
+    // handler reads `editor.selection` from reconstructable state, backs
+    // it up as concrete things (`EditorSelectionMoveEntry`), and pushes
+    // the delete plan + the chained `editor_commit_selection_move`
+    // worklist. The delete phase does NOT sweep occupants of selected
+    // tiles (unlike the Delete key): an unselected occupant pins its tile
+    // — the tile stays underneath it and the moved tile lands at the
+    // target instead. Things whose target overlaps the '!' / '=' plan
+    // empty and are deleted fully. After the move the selection is
+    // CLEARED (nothing reselected). One undo step reverts the whole move.
+    player_move_editor_selection: struct {
+        delta: Vector2,
+    },
     // Tile-paint click in the editor viewport (tile tool active): one click
     // = one tile. The handler computes the effect from state — no-op when a
     // tile is already there; every decoration whose footprint covers the

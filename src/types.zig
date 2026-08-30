@@ -895,6 +895,35 @@ pub const Selectable = union(enum) {
     level_end: void,
 };
 
+/// One backed-up thing in a selection MOVE (the commit event's worklist —
+/// see `player_move_editor_selection` / `editor_commit_selection_move`).
+/// The backup is concrete (kind + type_id + TARGET position) because the
+/// delete phase destroys the placements the selection addressed — the
+/// type ids must survive in the payload. Placed sequentially by the
+/// chained commit event, each against the live post-delete state via the
+/// placement planners (the current placement rules — see DESIGN →
+/// Architecture → Level Editor → Selection model).
+pub const EditorSelectionMoveEntry = union(enum) {
+    entity: struct {
+        type_id: u32,
+        position: Vector2,
+    },
+    decoration: struct {
+        type_id: u32,
+        position: Vector2,
+    },
+    item: struct {
+        type_id: u32,
+        position: Vector2,
+    },
+    /// A moved floor tile (paints at the target).
+    tile: Vector2,
+    /// The moved '!' (a tile is ensured under the new position).
+    player_start: Vector2,
+    /// The moved '=' (a tile is ensured under the new position).
+    level_end: Vector2,
+};
+
 pub const Editor = struct {
     mission: Mission = .{}, // metadata + path (the mission being edited)
     levels: []const EditorLevel = &.{}, // all levels, reference-based

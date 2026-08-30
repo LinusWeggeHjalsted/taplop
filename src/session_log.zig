@@ -490,6 +490,14 @@ test "writeEventLog serializes representative event shapes" {
         .{ .editor_event = .{ .editor_select = .{ .entry = .{ .tile = .{ .x = 3, .y = 4 } } } } },
         .{ .editor_event = .{ .editor_select = .{ .entry = .{ .entity_placement = 1 } } } },
         .{ .editor_event = .{ .editor_deselect = .{ .entry = .player_start } } },
+        // selection move: the delta + the commit worklist (a slice of
+        // unions with struct + bare-Vector2 tags)
+        .{ .player_input_event = .{ .player_move_editor_selection = .{ .delta = .{ .x = 2, .y = -1 } } } },
+        .{ .editor_event = .{ .editor_commit_selection_move = .{ .entries = &.{
+            .{ .entity = .{ .type_id = 0, .position = .{ .x = 5, .y = 5 } } },
+            .{ .tile = .{ .x = 6, .y = 6 } },
+            .{ .player_start = .{ .x = 7, .y = 7 } },
+        }, .next_index = 1 } } },
     };
 
     const output = try writeEventLog(&history, "20260815_143022", allocator);
@@ -522,6 +530,9 @@ test "writeEventLog serializes representative event shapes" {
     try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_select\nentry tile 3 4\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_select\nentry entity_placement 1\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_deselect\nentry player_start\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_move_editor_selection\ndelta 2 -1\n") != null);
+    // The worklist slice: each entry flattens as `<tag> <payload fields...>`.
+    try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_commit_selection_move\nentries entity 0 5 5 tile 6 6 player_start 7 7\nnext_index 1\n") != null);
 
     // The output round-trips through the generic config parser structurally:
     // Metadata + EventLog sections, with one entry group per event.
@@ -548,12 +559,9 @@ test "writeEventLog serializes representative event shapes" {
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer arena.deinit();
         const log = try loadEventLog(sections, arena.allocator());
-        try std.testing.expectEqualDeep(history[history.len - 6], log.events[log.events.len - 6]);
-        try std.testing.expectEqualDeep(history[history.len - 5], log.events[log.events.len - 5]);
-        try std.testing.expectEqualDeep(history[history.len - 4], log.events[log.events.len - 4]);
-        try std.testing.expectEqualDeep(history[history.len - 3], log.events[log.events.len - 3]);
-        try std.testing.expectEqualDeep(history[history.len - 2], log.events[log.events.len - 2]);
-        try std.testing.expectEqualDeep(history[history.len - 1], log.events[log.events.len - 1]);
+        for (0..6) |offset| {
+            try std.testing.expectEqualDeep(history[history.len - 6 + offset], log.events[log.events.len - 6 + offset]);
+        }
     }
 }
 

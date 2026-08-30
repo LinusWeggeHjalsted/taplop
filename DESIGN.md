@@ -1993,8 +1993,31 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   reconstructable state. Ctrl+D clears the whole selection
   (`player_clear_editor_selection` → the single `editor_clear_selection`
   event — one operation, not a per-entry fan-out; gated on a nonempty
-  selection so an empty one never records).
-  Deferred: selection operations (move).
+  selection so an empty one never records). The selection MOVE is landed:
+  a plain left press on a selected thing (tile / entity / item, a selected
+  decoration's footprint, or a selected marker —
+  `editorSelectionContainsPosition`) claims a drag; the threshold promotes
+  it (the view translates the selection OUTLINES by the live delta — the
+  world stays put); release with a nonzero delta fires
+  `player_move_editor_selection { delta }`, a zero delta fires nothing,
+  and an unpromoted release acts as a plain click (the toggle — the select
+  arm defers to the gesture). The commit: the handler backs the selection
+  up as concrete things (`EditorSelectionMoveEntry` — kind + type_id +
+  target), pushes the clear plan
+  (`planEditorSelectionMoveDeleteActions` — like the Delete key but an
+  UNSELECTED occupant PINS its tile: the ground stays under it and the
+  moved tile lands at the target instead; markers + their tiles
+  protected) and then a CHAINED `editor_commit_selection_move` worklist —
+  each link plans ONE entry against the live post-clear state via the
+  placement planners (the current placement rules; chained because
+  up-front planning breaks when entries' targets share a covering
+  decoration or interact via index shifts), and the exhausted link CLEARS
+  the selection (a move deselects — nothing is reselected). A moved
+  marker sets its coordinate via `editor_set_player_start` /
+  `editor_set_level_end` with a tile ensured under the new position; a
+  thing whose target overlaps a marker plans empty and is deleted fully.
+  One undo step reverts the whole move. The selection operations are
+  complete.
   Placing does NOT happen in selection mode. The tool-switch clear rides
   the `editor_set_tool` event (invariant: selection nonempty ⇔ active tool
   is select), so one undo step reverts a tool switch together with its
@@ -2157,9 +2180,11 @@ reconcile it atomically. The shift+drag marquee landed too
 `handleEditorMarquee` gesture — footprint-intersection membership,
 unpromoted release acts as a plain click; see Selection model), and so
 did the selection DELETE (Delete key → `player_delete_editor_selection`
-+ `planEditorSelectionDeleteActions`; markers + their tiles protected).
-Remaining
-viewport input: selection move + drag-painting.
++ `planEditorSelectionDeleteActions`; markers + their tiles protected),
+and the selection MOVE (`player_move_editor_selection` + the chained
+`editor_commit_selection_move` worklist + the `handleEditorMoveDrag`
+gesture — see Selection model). Remaining
+viewport input: drag-painting.
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
 struct exists in events.zig (`editor_add_level` / `editor_delete_level` /

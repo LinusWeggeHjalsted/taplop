@@ -187,6 +187,15 @@ pub fn view(
             &tile_overlays,
             frame_allocator,
             editor,
+            // While a selection move drag is promoted, the outlines preview
+            // the translation (null otherwise).
+            if (session.ui_state.editor_move_drag) |move_drag| blk: {
+                if (!move_drag.promoted) break :blk null;
+                break :blk Vector2{
+                    .x = move_drag.current_position_tile.x - move_drag.press_position_tile.x,
+                    .y = move_drag.current_position_tile.y - move_drag.press_position_tile.y,
+                };
+            } else null,
             active_theme,
             camera,
             camera_zoom,
@@ -2085,6 +2094,7 @@ fn buildEditorSelectionOverlay(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
     editor: *const Editor,
+    move_delta: ?Vector2,
     active_theme: types.ActiveColorTheme,
     camera: types.Camera,
     zoom: f32,
@@ -2092,23 +2102,32 @@ fn buildEditorSelectionOverlay(
     if (editor.selection.len == 0) return;
     const level = selectEditorLevel(editor) orelse return;
     const outline_color = active_theme.lightest;
+    const delta = move_delta orelse Vector2{ .x = 0, .y = 0 };
+    const translated = struct {
+        fn call(position: Vector2, by: Vector2) Vector2 {
+            return .{ .x = position.x + by.x, .y = position.y + by.y };
+        }
+    }.call;
 
+    // While a selection MOVE drag is promoted, every outline translates by
+    // the live delta (the world stays put — only the outlines preview the
+    // move; see `handleEditorMoveDrag`).
     for (editor.selection) |selected| switch (selected) {
-        .tile => |position| appendSingleTileOutline(list, allocator, position, outline_color, camera, zoom),
-        .player_start => appendSingleTileOutline(list, allocator, level.player_start, outline_color, camera, zoom),
+        .tile => |position| appendSingleTileOutline(list, allocator, translated(position, delta), outline_color, camera, zoom),
+        .player_start => appendSingleTileOutline(list, allocator, translated(level.player_start, delta), outline_color, camera, zoom),
         .level_end => {
             if (level.level_end) |level_end_position| {
-                appendSingleTileOutline(list, allocator, level_end_position, outline_color, camera, zoom);
+                appendSingleTileOutline(list, allocator, translated(level_end_position, delta), outline_color, camera, zoom);
             }
         },
         .entity_placement => |placement_index| {
             if (placement_index < level.entity_placements.len) {
-                appendSingleTileOutline(list, allocator, level.entity_placements[placement_index].position, outline_color, camera, zoom);
+                appendSingleTileOutline(list, allocator, translated(level.entity_placements[placement_index].position, delta), outline_color, camera, zoom);
             }
         },
         .ground_item_placement => |placement_index| {
             if (placement_index < level.item_placements.len) {
-                appendSingleTileOutline(list, allocator, level.item_placements[placement_index].position, outline_color, camera, zoom);
+                appendSingleTileOutline(list, allocator, translated(level.item_placements[placement_index].position, delta), outline_color, camera, zoom);
             }
         },
         .decoration_placement => |placement_index| {
@@ -2117,7 +2136,7 @@ fn buildEditorSelectionOverlay(
                 const type_definition = editor.decoration_types[placement.type_id];
                 const region_tiles = loaders.decorationFootprintWorldTiles(
                     type_definition.footprint,
-                    placement.position,
+                    translated(placement.position, delta),
                     allocator,
                 );
                 appendRegionOutline(list, allocator, region_tiles, outline_color, camera, zoom);

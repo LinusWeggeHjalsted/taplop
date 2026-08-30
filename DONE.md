@@ -6989,3 +6989,71 @@ New key mapping `KeyD` in raylib_backend's key_mappings (ctrl+D chord;
 no collision with the existing ctrl chords — Z/Y/L/Enter). Tests: empty
 selection never fires; nonempty fires the orchestrator; the clear empties
 the selection; ONE undo step restores it. All 387 tests pass.
+
+### Editor selection move (plain left-drag on a selected thing)
+
+**Why.** The last selection operation — the reason the selection went onto
+the undo timeline in the first place. The handler reads `editor.selection`
+from reconstructable state; only the delta rides in the payload
+(`player_move_editor_selection { delta }`), so replay reproduces a move
+purely from the recorded selection events.
+
+**Gesture** (`handleEditorMoveDrag`, mirroring the marquee): a plain left
+press claims the drag when the press tile hits the selection — a selected
+tile / entity / item, a selected decoration's FOOTPRINT, or a selected
+marker (`editorSelectionContainsPosition`, the hit-test mirroring the
+click group resolution). Threshold promotes; the view translates the
+selection OUTLINES by the live delta (the world stays put — only the
+preview moves). Release: nonzero delta → the move; zero delta → nothing
+(no dead undo step); unpromoted → the plain-click toggle at the press tile
+(the select arm defers to the gesture while it holds the press — a press
+on a selected thing no longer toggles on press). Shift+press is the
+marquee's; the two gestures clear each other's stale state on press.
+
+**Commit — the two-phase + chained design.** The player handler backs the
+selection up as concrete things (`types.EditorSelectionMoveEntry` — kind +
+type_id + TARGET position; the clear phase destroys the placements, so the
+type ids must survive in the payload), then pushes [commit link 0, …clear
+plan] — LIFO runs the clear first. The clear plan is
+`planEditorSelectionMoveDeleteActions`: the Delete key's plan refactored
+to a mode (`delete_key` sweeps occupants; `selection_move` instead has an
+UNSELECTED occupant PIN its tile — the ground stays under it and the moved
+tile lands at the target; a selected occupant is deleted via its own
+entry, so the erase proceeds under it). The commit is a CHAIN
+(`editor_commit_selection_move { entries, next_index }`): each link plans
+ONE entry against the live post-clear state via the existing placement
+planners (the current placement rules, zero rule duplication) and pushes
+[next link, …plan]. The chain exists because up-front planning of the
+whole worklist breaks when two entries' targets share a covering
+decoration (duplicate delete → stale index → panic) or an item entry's
+enemy-delete shifts an index a later retype still addresses — proven by
+the dedicated chain test (two entities moved under one wide decoration).
+The exhausted link CLEARS the selection: a move deselects, nothing is
+reselected (the user's call — most uses would ctrl+D right after anyway,
+and it skips the new-index bookkeeping entirely).
+
+**Markers:** the '!' / '=' move via the newly-implemented
+`editor_set_player_start` / `editor_set_level_end` handler arms (previously
+@panic stubs) with a tile ENSURED under the new position (paint plan). A
+thing whose target overlaps a marker plans empty (the placement rules
+never overwrite markers) and is therefore deleted fully — the user's drop
+rule, falling out of the planners for free.
+
+Session-log: the commit's `entries` field is the first slice-of-tagged-
+unions payload — variable arity per tag (struct tags 3 tokens, Vector2
+tags 2); the reader's top-level slice loop regroups by parsing until
+tokens run out, so it round-trips (proven in the shapes test with entity +
+tile + player_start entries).
+
+Tests: full-move integration (placements/tiles/markers translate, sources
+clear, deselect after, ONE undo reverts everything incl. the selection);
+pinned-tile (unselected occupant keeps its ground, moved tile lands at
+target); marker-target drop (entity + tile moving onto the '!' vanish,
+marker + its tile intact); the chain-collision case; gesture (press
+claims + same-frame tile_clicked defers, promote + live delta + release
+fires with delta, zero-delta wobble never fires, unpromoted release
+toggles, unselected press never claims). Two fixture lessons: a legal
+level never has a tile under a decoration footprint (a selected decoration
+never has a selected tile beneath it — the conflict can't arise), and a
+stale re-seeded selection must reference things that still exist after a
+prior move deleted them. All 392 tests pass.

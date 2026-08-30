@@ -889,6 +889,7 @@ pub fn handleEditorMarquee(
             camera_zoom,
             viewport,
         );
+        ui_state.editor_move_drag = null;
         ui_state.editor_marquee = .{
             .start_position = press_tile,
             .end_position = press_tile,
@@ -967,6 +968,129 @@ pub fn handleEditorMarquee(
             }
         }
         ui_state.editor_marquee = null;
+    }
+}
+
+/// Editor-screen selection MOVE drag (select tool, plain left press on a
+/// selected thing). Press claims the gesture when the press tile hits the
+/// selection (a selected tile / entity / item, a selected decoration's
+/// footprint, or a selected '!' / '=' — see `editorSelectionContainsPosition`);
+/// the drag threshold promotes it (the view translates the selection
+/// OUTLINES by the live delta — the world stays put); release commits the
+/// move when the delta is nonzero (`player_move_editor_selection` — see
+/// its doc for the clear + chained-place semantics) and CLEARS the
+/// selection (a move deselects). An UNPROMOTED release (no movement) acts
+/// as a plain click — the toggle the press would have fired had the
+/// gesture not claimed it (the select arm in `handleIdleInput` defers
+/// while a move drag is in progress). Shift+press never claims (the
+/// marquee owns it); a press over blocking UI never claims.
+pub fn handleEditorMoveDrag(
+    history: *GameStateHistory,
+    pointer: input.PointerInput,
+    ui_elements: []const ui.UiElement,
+    camera: types.Camera,
+    camera_zoom: f32,
+    viewport: input.ViewportSize,
+) void {
+    const current = &history.current_state;
+    const ui_state = &history.session.ui_state;
+
+    // Editor edit mode + the select tool only. Not our context — clear any
+    // in-progress drag (a stale gesture must not fire later).
+    if (current.screen != .editor or current.editor == null or
+        current.editor.?.active_tool != .select)
+    {
+        ui_state.editor_move_drag = null;
+        return;
+    }
+
+    if (pointer.pressed) {
+        // A Shift press belongs to the marquee gesture; a press over
+        // blocking UI belongs to the panel.
+        if (pointer.modifiers.shift) return;
+        if (ui.blockingElementAt(ui_elements, pointer.position) != null) return;
+        const press_tile = input.screenToTile(
+            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+            camera,
+            camera_zoom,
+            viewport,
+        );
+        const arena = history.current_arena.allocator();
+        const claims = event_handlers.editorSelectionContainsPosition(
+            &current.editor.?,
+            press_tile,
+            arena,
+        );
+        if (!claims) return;
+        ui_state.editor_marquee = null;
+        ui_state.editor_move_drag = .{
+            .press_position_tile = press_tile,
+            .current_position_tile = press_tile,
+            .press_position = pointer.position,
+            .promoted = false,
+        };
+        return;
+    }
+
+    if (ui_state.editor_move_drag) |*move_drag| {
+        // Promotion: movement beyond the threshold (strict `>`, the house
+        // convention — a no-movement press+release stays a click).
+        if (pointer.held) {
+            const dx = pointer.position.x - move_drag.press_position.x;
+            const dy = pointer.position.y - move_drag.press_position.y;
+            if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
+                move_drag.promoted = true;
+            }
+        }
+        // The live delta tracks the pointer, but only over the viewport
+        // (not blocking UI) — a release over a panel commits the LAST
+        // VALID delta (the marquee's end-corner behavior).
+        if (pointer.held and move_drag.promoted and
+            ui.blockingElementAt(ui_elements, pointer.position) == null)
+        {
+            move_drag.current_position_tile = input.screenToTile(
+                .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+                camera,
+                camera_zoom,
+                viewport,
+            );
+        }
+    }
+
+    if (pointer.released) {
+        if (ui_state.editor_move_drag) |move_drag| {
+            if (move_drag.promoted) {
+                const delta = types.Vector2{
+                    .x = move_drag.current_position_tile.x - move_drag.press_position_tile.x,
+                    .y = move_drag.current_position_tile.y - move_drag.press_position_tile.y,
+                };
+                // Zero delta → nothing to move — no event (no dead undo
+                // step). The commit machinery handles everything else.
+                if (delta.x != 0 or delta.y != 0) {
+                    event_handlers.pushPlayerAction(
+                        current,
+                        .{ .player_move_editor_selection = .{ .delta = delta } },
+                        history.current_arena.allocator(),
+                    );
+                }
+            } else {
+                // No drag: a plain click — fire the toggle at the press tile
+                // (the same no-op gate as the select arm).
+                if (current.editor) |*editor| {
+                    const arena = history.current_arena.allocator();
+                    if (event_handlers.planEditorSelectionActions(
+                        editor,
+                        move_drag.press_position_tile,
+                        arena,
+                    ).len > 0) {
+                        event_handlers.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
+                            .position = move_drag.press_position_tile,
+                        } }, arena);
+                    }
+                }
+            }
+        }
+        ui_state.editor_move_drag = null;
     }
 }
 pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
@@ -1790,10 +1914,13 @@ pub fn handleIdleInput(
                     },
                     .select => {
                         // While Shift is held the marquee gesture owns the
-                        // press (`handleEditorMarquee`): a shift press never
-                        // toggles — an unpromoted shift release fires the
-                        // toggle from there instead.
+                        // press (`handleEditorMarquee`), and while a move
+                        // drag is in progress it owns the press
+                        // (`handleEditorMoveDrag` — an unpromoted release
+                        // fires the toggle from there): a claimed press
+                        // never toggles here.
                         if (modifiers.shift) return;
+                        if (history.session.ui_state.editor_move_drag != null) return;
                         const plan = event_handlers.planEditorSelectionActions(editor, clicked_position, allocator);
                         if (plan.len > 0) {
                             event_handlers.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
@@ -2795,6 +2922,171 @@ test "handleEditorMarquee: shift-drag adds the region, shift-click toggles, shif
         viewport,
     );
     try std.testing.expect(history.session.ui_state.editor_marquee == null);
+}
+
+
+test "handleEditorMoveDrag: press on a selected thing moves it, plain click toggles, unselected press does nothing" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 4, .y = 4 } };
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles, .player_start = .{ .x = 0, .y = 0 } }};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    const seeded_selection = [_]types.Selectable{.{ .tile = .{ .x = 1, .y = 1 } }};
+    history.current_state.editor.?.selection = &seeded_selection;
+
+    // Camera centered on (0,0) at zoom 1 with the reference viewport: the
+    // screen center maps to tile (0,0), +256px per tile.
+    const camera = types.Camera{ .position = .{ .x = 128, .y = 128 } };
+    const viewport = input.ViewportSize{ .width = 3840, .height = 2160 };
+    const center = types.ScreenPosition{ .x = 1920, .y = 1080 };
+    const tilePosition = struct {
+        fn call(tile: types.Vector2) types.ScreenPosition {
+            return .{ .x = center.x + tile.x * 256, .y = center.y + tile.y * 256 };
+        }
+    }.call;
+
+    // --- Plain press ON the selected tile claims the gesture; the same
+    // frame's tile_clicked does NOT toggle (the gesture owns the press). ---
+    handleEditorMoveDrag(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 1, .y = 1 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag != null);
+    try std.testing.expect(!history.session.ui_state.editor_move_drag.?.promoted);
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // --- Drag beyond the threshold promotes; the live delta tracks the
+    // pointer; release fires the move with the pointer delta. ---
+    handleEditorMoveDrag(
+        &history,
+        .{ .held = true, .position = tilePosition(.{ .x = 4, .y = 4 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag.?.promoted);
+    try std.testing.expectEqual(types.Vector2{ .x = 4, .y = 4 }, history.session.ui_state.editor_move_drag.?.current_position_tile);
+    handleEditorMoveDrag(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 4, .y = 4 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    {
+        const move_event = history.current_state.event_stack[0].player_input_event.player_move_editor_selection;
+        try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 3 }, move_event.delta);
+    }
+    try std.testing.expect(history.session.ui_state.editor_move_drag == null);
+    @import("event_handlers.zig").processEvent(&history);
+    @import("test_harness.zig").runToIdle(&history);
+    // The moved tile painted at (4,4) (already a tile there — the paint
+    // plan is empty, so the tile was deleted fully) and the move
+    // deselects.
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+
+    // --- A promoted release with a ZERO delta never fires. ---
+    history.current_state.editor.?.selection = &seeded_selection;
+    handleEditorMoveDrag(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 1, .y = 1 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    // Promote via a sub-threshold-then-back wobble: move beyond the
+    // threshold, then return to the press tile before releasing.
+    handleEditorMoveDrag(
+        &history,
+        .{ .held = true, .position = .{ .x = tilePosition(.{ .x = 1, .y = 1 }).x + input.drag_threshold_pixels + 10, .y = tilePosition(.{ .x = 1, .y = 1 }).y } },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag.?.promoted);
+    handleEditorMoveDrag(
+        &history,
+        .{ .held = true, .position = tilePosition(.{ .x = 1, .y = 1 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    handleEditorMoveDrag(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 1, .y = 1 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expect(history.session.ui_state.editor_move_drag == null);
+
+    // --- An UNPROMOTED release acts as a plain click: the toggle fires
+    // at the press tile. (The re-seeded selection must reference a tile
+    // that still EXISTS — the first move deleted (1,1) fully when it
+    // landed on the existing tile at (4,4).) ---
+    const surviving_selection = [_]types.Selectable{.{ .tile = .{ .x = 4, .y = 4 } }};
+    history.current_state.editor.?.selection = &surviving_selection;
+    handleEditorMoveDrag(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 4, .y = 4 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    handleEditorMoveDrag(
+        &history,
+        .{ .released = true, .position = tilePosition(.{ .x = 4, .y = 4 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try std.testing.expectEqual(
+        types.Vector2{ .x = 4, .y = 4 },
+        history.current_state.event_stack[0].player_input_event.player_toggle_editor_selection.position,
+    );
+
+    // --- A press NOT on a selected thing never claims (the normal click
+    // path owns it). ---
+    @import("event_handlers.zig").processEvent(&history);
+    @import("test_harness.zig").runToIdle(&history);
+    handleEditorMoveDrag(
+        &history,
+        .{ .pressed = true, .position = tilePosition(.{ .x = 4, .y = 4 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.editor_move_drag == null);
 }
 
 

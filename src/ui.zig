@@ -163,6 +163,12 @@ pub const UiState = struct {
     /// DESIGN → Architecture → Level Editor → Selection model.
     editor_marquee: ?EditorMarquee = null,
 
+    /// In-progress selection MOVE drag (see `EditorMoveDrag`). Mutually
+    /// exclusive with `editor_marquee` by construction: a Shift press
+    /// claims the marquee, a plain press on a selected thing claims the
+    /// move — each gesture's press clears the other's stale state.
+    editor_move_drag: ?EditorMoveDrag = null,
+
     pub fn toggleMiddlePanel(self: *UiState, panel_id: MiddlePanelId) void {
         // If already open, close it
         for (&self.open_middle_panels) |*slot| {
@@ -342,6 +348,22 @@ pub const SalvageRegion = struct {
 pub const EditorMarquee = struct {
     start_position: types.Vector2,
     end_position: types.Vector2,
+    press_position: ScreenPosition,
+    promoted: bool,
+};
+
+/// In-progress selection MOVE drag (select tool, plain left press on a
+/// selected thing). `press_position_tile` anchors the delta;
+/// `current_position_tile` tracks the pointer live once the drag
+/// threshold promotes the press (keeping the last valid tile over
+/// blocking UI); the promoted delta drives the view's translated
+/// selection outlines. Cleared on release (fires
+/// `player_move_editor_selection` when the delta is nonzero — an
+/// unpromoted release acts as a plain click instead) or cancel. See
+/// `UiState.editor_move_drag`.
+pub const EditorMoveDrag = struct {
+    press_position_tile: types.Vector2,
+    current_position_tile: types.Vector2,
     press_position: ScreenPosition,
     promoted: bool,
 };

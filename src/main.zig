@@ -223,6 +223,12 @@ fn update(
     // gates on Shift itself).
     input_handlers.handleEditorMarquee(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
+    // Editor select-tool selection move (plain left press on a selected
+    // thing, drag, release). Runs after the marquee (a Shift press is the
+    // marquee's; a plain press on a selected thing is the move's — the
+    // two gestures are exclusive by press modifier + selection hit).
+    input_handlers.handleEditorMoveDrag(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
+
     // Turn-flow pause: while waiting, drain the timer and stall event
     // processing until it elapses. Anytime input and drag above still run, so
     // undo/redo/options remain responsive mid-wait (undo rebuilds state and

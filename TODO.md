@@ -492,8 +492,14 @@ yet implemented. Remaining work:
   ordering; one undo step — see DESIGN → Level Editor → Selection model
   + DONE.md). Ctrl+D clear-everything DONE too (single
   `editor_clear_selection` event, gated on a nonempty selection — see
-  DONE.md). Remaining viewport INPUT: drag-paint + the selection
-  OPERATIONS — move, the reason selection exists. All tools
+  DONE.md). The selection MOVE is DONE (plain left-drag on a selected
+  thing → `player_move_editor_selection` → clear phase + chained
+  `editor_commit_selection_move` placement worklist via the existing
+  planners; unselected occupants pin their tiles; markers move with a
+  tile ensured underneath; targets on markers delete fully; deselects
+  after; one undo step — see DESIGN → Level Editor → Selection model +
+  DONE.md) — the selection operations are COMPLETE. Remaining viewport
+  INPUT: drag-paint. All tools
   have left-click input + cursor previews + the right-click delete.
   No-op clicks never fire: each tool's effect is computed by a pure
   planner (`planEditor*Actions`, event_handlers.zig) shared by the
