@@ -258,7 +258,8 @@ scrubbing is silent. The architecture mirrors `PendingWrite`:
   double-play). Skill slots are special: auto-fire suppresses the generic up
   and lets the `use_skill` event's weapon_swing/spell play alone; the prepare
   (targeting) path plays `button_click_up` explicitly so the player gets
-  feedback that targeting started. `releaseSoundForAction` (types.zig) maps an
+  feedback that targeting started (and the same-slot toggle-off plays it
+  too — feedback that targeting ended). `releaseSoundForAction` (types.zig) maps an
   Action to its specific release sound (or null = generic up). Keybind-
   triggered actions queue their specific sound at the input-handler site (no
   click sounds, since no button was involved). `pressed_button` is transient —
@@ -478,7 +479,10 @@ gameplay — not in snapshots, not touched by replay.
   prepare-time is never needed for reconstruction, so it's safe off GameState.
   Resolved per-frame in `update()` (`resolveTileCursor`): mouse-move drives it
   (with UI occlusion + tile validity), arrow keys nudge when the mouse is idle
-  (snapping to the player tile if null).
+  (snapping to the player tile if null). Re-activating the slot of an
+  already-prepared skill toggles the preparation OFF (`resolveSkillSlotAction`
+  → `player_cancel_skill`); the auto-target hit still takes precedence and
+  fires — a same-slot press never resolves to a recorded no-op.
 - **Replay must not create events; new actions branch the timeline.**
   `processEvent` records into `event_history` only when `!replaying` (via
   `GameStateHistory.recordEvent`); the event index still advances (processEvent

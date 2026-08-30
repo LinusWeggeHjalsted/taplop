@@ -1375,6 +1375,43 @@ looking prose sweep fixed two drift cases: "future emscripten build" →
 does" → "not wired" (VFS layer). The rest of the "future"/"deferred" mentions
 are legitimate settled-deferral scope notes (AGENTS.md's job), left as-is.
 
+### Prepared-skill toggle — same-slot re-activation (DONE)
+
+**The bug.** With a skill prepared (targeting, awaiting a tile),
+re-activating the same skill's slot re-fired `player_prepare_skill`:
+the handler re-set `level.prepared_skill` to the value it already held
+and re-pushed the same `highlight_tiles` event — recorded events, zero
+state change. Undo consumed a step and nothing visibly changed (the same
+no-op-undo pollution shape as the editor click gate, but here the fix is a
+behavior change rather than a gate: the press should DO something).
+
+**The fix.** `resolveSkillSlotAction` (input_handlers.zig — the pure
+use/prepare resolver both turn phases share) gained a third case:
+when the pressed slot's skill is already the prepared skill, it resolves
+to `.unprepare`, and the input branches push the EXISTING
+`player_cancel_skill` orchestrator (clear_highlights +
+clear_prepared_skill). No new events, no handler changes, no
+replay-whitelist or `validatePlayerAction` changes — the press is now a
+real undo step (restores both the preparation and its highlight), and the
+log reads honestly ("player cancelled skill" rather than a prepare whose
+effect was unpreparing). Precedence: auto-target-at-cursor still wins —
+if the tile cursor sits on a valid target, the press fires the skill
+there (same as clicking the highlighted tile); the toggle only claims the
+press that would otherwise re-prepare identically. The move-phase
+consumption site gained a matching (unreachable-by-invariant — a skill is
+only prepared during the attack phase) `.unprepare` arm so the shared
+union switch stays total. `button_click_up` plays on the toggle (same as
+the prepare path — feedback that targeting ended; DESIGN → Audio).
+
+Tests: `resolveSkillSlotAction` had zero direct coverage — added decision-
+level tests (same-skill → `.unprepare`; cursor-on-valid-target → `.use`
+at that target; different prepared skill → `.prepare`), plus an
+end-to-end contract test (attack phase, prepared Flash Strike in utility
+slot 4 + highlight set, slot re-activation → `player_cancel_skill` →
+preparation + highlight cleared, one undo restores both). Fixture:
+`preparedSkillToggleHistory` (Flash Strike: targeting, range 3 — empty
+reachable tiles are valid targets).
+
 ## Error Handling
 
 ### Slice 1 — error surface (DONE)

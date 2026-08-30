@@ -1291,12 +1291,15 @@ pub fn handleAnytimeInput(
 
 /// Handle inputs that are only accepted when the event stack is empty.
 /// A resolved skill-bar slot press: use the skill now (auto-target hit or
-/// no-targeting skill, with an optional target tile) or begin targeting
-/// (prepare). Produced by `resolveSkillSlotAction` and consumed by both the
+/// no-targeting skill, with an optional target tile), begin targeting
+/// (prepare), or toggle an already-prepared skill back off (unprepare —
+/// re-preparing the same skill would be a recorded no-op undo step).
+/// Produced by `resolveSkillSlotAction` and consumed by both the
 /// player_move and player_attack turn phases.
 const SkillSlotAction = union(enum) {
     use: struct { skill_id: SkillId, target: ?Vector2 },
     prepare: SkillId,
+    unprepare: void,
 };
 
 /// Resolve a skill-bar slot press into a concrete action. Returns null when
@@ -1334,6 +1337,11 @@ fn resolveSkillSlotAction(
             }
         }
     }
+    // Same skill already prepared → toggle it off. Auto-target above wins
+    // when the cursor sits on a valid target (the press fires there), so
+    // this only claims the press that would otherwise re-prepare
+    // identically — a recorded no-op undo step.
+    if (level.prepared_skill == skill_id) return .unprepare;
     return .{ .prepare = skill_id };
 }
 
@@ -1582,6 +1590,15 @@ pub fn handleIdleInput(
                                         .prepare = true,
                                     } }, allocator);
                                 },
+                                .unprepare => {
+                                    // Unreachable in the move phase (a skill
+                                    // is only prepared during the attack
+                                    // phase) — the arm keeps the shared union
+                                    // switch total; the cancel is the sane
+                                    // behavior if that invariant ever breaks.
+                                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
+                                    event_handlers.pushPlayerAction(current, .player_cancel_skill, allocator);
+                                },
                             }
                             return;
                         }
@@ -1627,6 +1644,15 @@ pub fn handleIdleInput(
                                         .caster_index = 0,
                                         .skill_id = skill_id,
                                     } }, allocator);
+                                },
+                                .unprepare => {
+                                    // Toggle the prepared skill back off —
+                                    // the same cancel path as the cancel
+                                    // binding (clear highlights + clear the
+                                    // preparation), so the press is a real
+                                    // undo step instead of a recorded no-op.
+                                    if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
+                                    event_handlers.pushPlayerAction(current, .player_cancel_skill, allocator);
                                 },
                             }
                             return;
@@ -2432,4 +2458,122 @@ test "select_editor_tool: changing tools clears the selection, re-selecting keep
     }, .{ .x = 0, .y = 0 }, &.{});
     try std.testing.expectEqual(types.EditorToolId.tile, history.session.ui_state.editor_active_tool);
     try std.testing.expectEqual(@as(usize, 0), history.session.ui_state.editor_selection.items.len);
+}
+
+// --- Prepared-skill toggle (same-slot re-activation) ------------------------
+// Re-activating the slot of an already-prepared skill toggles the
+// preparation off (the auto-target hit still fires the skill instead —
+// resolveSkillSlotAction resolves the press one way or the other, never to
+// a recorded no-op). Flash Strike (targeting, range 3) in utility slot 4
+// is the fixture.
+
+/// Attack-phase history with Flash Strike equipped in utility slot 4,
+/// prepared, with its highlight set, and the tile cursor cleared.
+fn preparedSkillToggleHistory(
+    backing: *std.heap.ArenaAllocator,
+    prepared: ?types.SkillId,
+) state.GameStateHistory {
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const entities = [_]types.Entity{.{
+        .name = "Player",
+        .position = .{ .x = 0, .y = 0 },
+        .team = 0,
+        .equipped_utility_skills = .{ .flash_strike, null, null, null, null },
+    }};
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 } };
+    var history = harness.newHistory(@import("test_harness.zig").levelStateWithEntities(
+        backing.allocator(),
+        &entities,
+        &tiles,
+    ));
+    history.current_state.level.?.turn_phase = .player_attack;
+    history.current_state.level.?.prepared_skill = prepared;
+    history.current_state.level.?.highlighted_tiles = &tiles;
+    history.session.tile_cursor = null;
+    return history;
+}
+
+test "resolveSkillSlotAction: same prepared skill resolves to unprepare" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var history = preparedSkillToggleHistory(&backing, .flash_strike);
+
+    const action = resolveSkillSlotAction(
+        &history,
+        &history.current_state,
+        &history.current_state.level.?,
+        4,
+        history.current_arena.allocator(),
+    );
+    try std.testing.expect(action != null);
+    try std.testing.expectEqual(
+        @as(std.meta.Tag(SkillSlotAction), .unprepare),
+        std.meta.activeTag(action.?),
+    );
+}
+
+test "resolveSkillSlotAction: auto-target hit fires instead of unprepare" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var history = preparedSkillToggleHistory(&backing, .flash_strike);
+
+    // The cursor sits on (1,0) — an empty tile within range 3, a valid
+    // Flash Strike target. The press fires there, NOT a toggle.
+    history.session.tile_cursor = .{ .x = 1, .y = 0 };
+    const action = resolveSkillSlotAction(
+        &history,
+        &history.current_state,
+        &history.current_state.level.?,
+        4,
+        history.current_arena.allocator(),
+    );
+    try std.testing.expect(action != null);
+    try std.testing.expectEqual(
+        @as(std.meta.Tag(SkillSlotAction), .use),
+        std.meta.activeTag(action.?),
+    );
+    try std.testing.expectEqual(types.SkillId.flash_strike, action.?.use.skill_id);
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, action.?.use.target.?);
+}
+
+test "resolveSkillSlotAction: different prepared skill still prepares" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var history = preparedSkillToggleHistory(&backing, .spinblade);
+
+    const action = resolveSkillSlotAction(
+        &history,
+        &history.current_state,
+        &history.current_state.level.?,
+        4,
+        history.current_arena.allocator(),
+    );
+    try std.testing.expect(action != null);
+    try std.testing.expectEqual(
+        @as(std.meta.Tag(SkillSlotAction), .prepare),
+        std.meta.activeTag(action.?),
+    );
+    try std.testing.expectEqual(types.SkillId.flash_strike, action.?.prepare);
+}
+
+test "attack-phase slot press on the prepared skill unprepares it" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var history = preparedSkillToggleHistory(&backing, .flash_strike);
+    @import("test_harness.zig").runToIdle(&history);
+
+    handleIdleInput(&history, .{ .skill_slot_selected = 4 }, .{});
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try std.testing.expect(history.current_state.event_stack[0].player_input_event == .player_cancel_skill);
+    @import("test_harness.zig").runToIdle(&history);
+
+    // Both the preparation and its highlight are cleared — a real change,
+    // so undo is a meaningful step (restores both).
+    try std.testing.expect(history.current_state.level.?.prepared_skill == null);
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.level.?.highlighted_tiles.len);
+
+    try std.testing.expect(history.undo(event_handlers.processEvent));
+    try std.testing.expectEqual(types.SkillId.flash_strike, history.current_state.level.?.prepared_skill.?);
+    try std.testing.expectEqual(@as(usize, 2), history.current_state.level.?.highlighted_tiles.len);
 }
