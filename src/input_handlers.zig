@@ -851,10 +851,10 @@ pub fn handleRightClickEditorDelete(
 /// corner tracks the pointer live); release with Shift STILL held adds
 /// everything inside the region (`player_select_editor_region` — skipping
 /// already-selected entries; the marquee never removes). Shift released
-/// mid-drag cancels. An UNPROMOTED release (no drag) acts as a plain
-/// click: the toggle the press would have fired had Shift not been held
-/// (the select arm in `handleIdleInput` defers to this gesture while
-/// Shift is held) — fired here with the same no-op gate. Mirrors the
+/// mid-drag cancels. An UNPROMOTED release (no drag) IS the shift+click
+/// TOGGLE path: the toggle fires at the press tile (the select arm in
+/// `handleIdleInput` defers to this gesture while Shift is held; a plain
+/// click there would REPLACE) — fired here with the same no-op gate. Mirrors the
 /// inventory salvage-region gesture (`handleDrag`) + the right-click
 /// clean-click disambiguation (`handleRightClickEditorDelete`).
 pub fn handleEditorMarquee(
@@ -950,9 +950,8 @@ pub fn handleEditorMarquee(
                     }
                 }
             } else {
-                // No drag: a plain click — fire the toggle at the press tile
-                // (the same no-op gate as the select arm: empty ground
-                // never fires).
+                // No drag: the shift+click TOGGLE — fire it at the press
+                // tile (the same no-op gate: empty ground never fires).
                 if (current.editor) |*editor| {
                     const arena = history.current_arena.allocator();
                     if (event_handlers.planEditorSelectionActions(
@@ -980,9 +979,9 @@ pub fn handleEditorMarquee(
 /// move when the delta is nonzero (`player_move_editor_selection` — see
 /// its doc for the clear + chained-place semantics) and CLEARS the
 /// selection (a move deselects). An UNPROMOTED release (no movement) acts
-/// as a plain click — the toggle the press would have fired had the
-/// gesture not claimed it (the select arm in `handleIdleInput` defers
-/// while a move drag is in progress). Shift+press never claims (the
+/// as a plain click — the REPLACE fires at the press tile (the select arm
+/// in `handleIdleInput` defers while a move drag is in progress; usually
+/// a no-op, since the pressed thing is selected). Shift+press never claims (the
 /// marquee owns it); a press over blocking UI never claims.
 pub fn handleEditorMoveDrag(
     history: *GameStateHistory,
@@ -1074,16 +1073,18 @@ pub fn handleEditorMoveDrag(
                     );
                 }
             } else {
-                // No drag: a plain click — fire the toggle at the press tile
-                // (the same no-op gate as the select arm).
+                // No drag: a plain click — fire the REPLACE at the press
+                // tile (the same path + no-op gate as the select arm; a
+                // plain click on the whole current selection changes
+                // nothing and never fires).
                 if (current.editor) |*editor| {
                     const arena = history.current_arena.allocator();
-                    if (event_handlers.planEditorSelectionActions(
+                    if (event_handlers.planEditorReplaceSelectionActions(
                         editor,
                         move_drag.press_position_tile,
                         arena,
                     ).len > 0) {
-                        event_handlers.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
+                        event_handlers.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
                             .position = move_drag.press_position_tile,
                         } }, arena);
                     }
@@ -1914,16 +1915,18 @@ pub fn handleIdleInput(
                     },
                     .select => {
                         // While Shift is held the marquee gesture owns the
-                        // press (`handleEditorMarquee`), and while a move
-                        // drag is in progress it owns the press
-                        // (`handleEditorMoveDrag` — an unpromoted release
-                        // fires the toggle from there): a claimed press
-                        // never toggles here.
+                        // press (`handleEditorMarquee` — shift+click is the
+                        // TOGGLE path), and while a move drag is in
+                        // progress it owns the press (`handleEditorMoveDrag`
+                        // — an unpromoted release fires the replace from
+                        // there). An unclaimed plain press REPLACES the
+                        // selection with the clicked group (empty ground →
+                        // the clear alone).
                         if (modifiers.shift) return;
                         if (history.session.ui_state.editor_move_drag != null) return;
-                        const plan = event_handlers.planEditorSelectionActions(editor, clicked_position, allocator);
+                        const plan = event_handlers.planEditorReplaceSelectionActions(editor, clicked_position, allocator);
                         if (plan.len > 0) {
-                            event_handlers.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
+                            event_handlers.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
                                 .position = clicked_position,
                             } }, allocator);
                         }
@@ -2590,20 +2593,19 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
-/// A select-tool viewport click through the REAL input path
-/// (`handleIdleInput`'s editor arm: empty plans never fire) drained to
-/// idle — the contract-level toggle used by the selection tests. The
-/// drain (and its idle-point recording) only happens when a player action
-/// actually fired — mirroring the live loop, which records idle points
-/// only when events ran (runToIdle records unconditionally).
+/// A shift+click toggle (the player orchestrator — exactly what the
+/// marquee gesture's unpromoted shift release fires) drained to idle —
+/// the contract-level toggle used by the selection tests.
 fn toggleSelectionAt(history: *GameStateHistory, position: types.Vector2) void {
-    handleIdleInput(history, .{ .tile_clicked = position }, .{});
-    if (history.current_state.event_stack.len > 0) {
-        @import("test_harness.zig").runToIdle(history);
-    }
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_toggle_editor_selection = .{ .position = position } },
+        history.current_arena.allocator(),
+    );
+    @import("test_harness.zig").runToIdle(history);
 }
 
-test "player_toggle_editor_selection: toggles the tile + occupants group, singletons, decoration; undo/redo restores the selection" {
+test "player_toggle_editor_selection (shift+click): toggles the tile + occupants group, singletons, decoration; undo/redo restores" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     var harness = @import("test_harness.zig").Harness.init(backing.allocator());
@@ -2694,12 +2696,17 @@ test "player_toggle_editor_selection: toggles the tile + occupants group, single
     toggleSelectionAt(&history, .{ .x = 7, .y = 7 });
     try std.testing.expectEqual(@as(usize, 4), history.current_state.editor.?.selection.len);
 
-    // Empty ground: nothing to select — and NOTHING RECORDED (no player
-    // action fired, so the event history is unchanged).
-    const history_length_before = history.event_history.items.len;
-    toggleSelectionAt(&history, .{ .x = 9, .y = 9 });
+    // Empty ground: nothing to select — the toggle PLANS empty (the
+    // input gate never fires a player action for it).
+    try std.testing.expectEqual(
+        @as(usize, 0),
+        event_handlers.planEditorSelectionActions(
+            &history.current_state.editor.?,
+            .{ .x = 9, .y = 9 },
+            history.current_arena.allocator(),
+        ).len,
+    );
     try std.testing.expectEqual(@as(usize, 4), history.current_state.editor.?.selection.len);
-    try std.testing.expectEqual(history_length_before, history.event_history.items.len);
 
     // The selection rides the undo timeline: undo reverts the decoration
     // OFF-toggle (the last recorded click) — the decoration entry returns.
@@ -2855,9 +2862,9 @@ test "handleEditorMarquee: shift-drag adds the region, shift-click toggles, shif
     @import("test_harness.zig").runToIdle(&history);
     try std.testing.expectEqual(@as(usize, 2), history.current_state.editor.?.selection.len);
 
-    // --- Shift+click WITHOUT drag: acts as a plain click — the toggle
-    // fires at the press tile (the press-time toggle was suppressed while
-    // Shift was held). ---
+    // --- Shift+click WITHOUT drag: the TOGGLE path — the toggle fires
+    // at the press tile (the select arm deferred to the gesture while
+    // Shift was held; a plain click would REPLACE). ---
     handleEditorMarquee(
         &history,
         .{ .pressed = true, .position = tilePosition(.{ .x = 1, .y = 1 }), .modifiers = shift },
@@ -3046,11 +3053,13 @@ test "handleEditorMoveDrag: press on a selected thing moves it, plain click togg
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try std.testing.expect(history.session.ui_state.editor_move_drag == null);
 
-    // --- An UNPROMOTED release acts as a plain click: the toggle fires
-    // at the press tile. (The re-seeded selection must reference a tile
-    // that still EXISTS — the first move deleted (1,1) fully when it
-    // landed on the existing tile at (4,4).) ---
-    const surviving_selection = [_]types.Selectable{.{ .tile = .{ .x = 4, .y = 4 } }};
+    // --- An UNPROMOTED release acts as a plain click: the REPLACE fires
+    // at the press tile, collapsing the selection to the clicked group.
+    // (The re-seeded selection must reference things that still EXIST —
+    // the first move deleted (1,1) fully when it landed on the existing
+    // tile at (4,4) — and must contain MORE than the clicked group, or
+    // the replace would be a no-op that never fires.) ---
+    const surviving_selection = [_]types.Selectable{ .{ .tile = .{ .x = 4, .y = 4 } }, .player_start };
     history.current_state.editor.?.selection = &surviving_selection;
     handleEditorMoveDrag(
         &history,
@@ -3071,16 +3080,17 @@ test "handleEditorMoveDrag: press on a selected thing moves it, plain click togg
     try std.testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
     try std.testing.expectEqual(
         types.Vector2{ .x = 4, .y = 4 },
-        history.current_state.event_stack[0].player_input_event.player_toggle_editor_selection.position,
+        history.current_state.event_stack[0].player_input_event.player_replace_editor_selection.position,
     );
 
     // --- A press NOT on a selected thing never claims (the normal click
-    // path owns it). ---
+    // path owns it). After the replace, only the (4,4) tile is selected —
+    // press the player-start tile. ---
     @import("event_handlers.zig").processEvent(&history);
     @import("test_harness.zig").runToIdle(&history);
     handleEditorMoveDrag(
         &history,
-        .{ .pressed = true, .position = tilePosition(.{ .x = 4, .y = 4 }) },
+        .{ .pressed = true, .position = tilePosition(.{ .x = 0, .y = 0 }) },
         &.{},
         camera,
         1.0,
@@ -3437,4 +3447,85 @@ test "resolveTileCursor: nudge onto a gap jumps to the first tile in the directi
         &.{},
     );
     try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.session.tile_cursor.?);
+}
+
+test "player_replace_editor_selection (plain click): replaces the selection, empty ground clears it, no-op clicks never fire" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 2 } };
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 1, .y = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .entity_placements = &entity_placements,
+    }};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{
+            .levels = &levels,
+            .entity_types = &.{.{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } }},
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    @import("test_harness.zig").runToIdle(&history);
+
+    // A plain click on (1,1) with an EMPTY selection: the group (tile +
+    // entity) becomes the selection.
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
+    @import("test_harness.zig").runToIdle(&history);
+    {
+        const selection = history.current_state.editor.?.selection;
+        try std.testing.expectEqual(@as(usize, 2), selection.len);
+        try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection[0]);
+        try std.testing.expectEqual(@as(u32, 0), selection[1].entity_placement);
+    }
+
+    // A plain click elsewhere REPLACES the selection entirely (the old
+    // entries go, the clicked group becomes the selection).
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
+    @import("test_harness.zig").runToIdle(&history);
+    {
+        const selection = history.current_state.editor.?.selection;
+        try std.testing.expectEqual(@as(usize, 1), selection.len);
+        try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 2, .y = 2 } }, selection[0]);
+    }
+
+    // Clicking the exact current selection is a NO-OP — no event fires.
+    const history_length_before = history.event_history.items.len;
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expectEqual(history_length_before, history.event_history.items.len);
+
+    // A plain click on EMPTY GROUND clears the selection — the clicky
+    // deselect-all.
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, .{});
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+
+    // Clicking empty ground with an ALREADY-EMPTY selection is a no-op.
+    const history_length_before_empty = history.event_history.items.len;
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, .{});
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expectEqual(history_length_before_empty, history.event_history.items.len);
+
+    // One undo step reverts a replace (the clear + the new group share the
+    // click's idle point).
+    try std.testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const selection = history.current_state.editor.?.selection;
+        try std.testing.expectEqual(@as(usize, 1), selection.len);
+        try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 2, .y = 2 } }, selection[0]);
+    }
 }

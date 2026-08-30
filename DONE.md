@@ -7086,3 +7086,38 @@ Regression tests: the exact repro (singleton-selected '!' on a real tile →
 moved → old tile GONE, target tile ensured, one undo restores both) + the
 marquee shape (tile + marker both selected — the tile entry is skipped by
 the protection, the marker entry drives the single erase). All 393 pass.
+
+### Select-tool click semantics inversion: plain click replaces, shift+click toggles
+
+**The change.** Plain left click (no Shift) now REPLACES the selection with
+the clicked group (`player_replace_editor_selection` →
+`planEditorReplaceSelectionActions`: clear everything, then select the
+group — one player action, one undo step). Clicking EMPTY GROUND clears
+the selection — the clicky deselect-all the user wanted as a side effect.
+Shift+left click (no drag) is now the TOGGLE path (the semantics the plain
+click used to have — group toggle, shift+clicking a selected thing
+deselects it). Shift+drag marquee and plain-drag move are unchanged.
+
+**Wiring.** The click-group resolution was extracted from
+`planEditorSelectionActions` into `editorClickGroup` (shared by the toggle
++ replace planners). The replace plan composes the existing
+`editor_clear_selection` + granular `editor_select` events (processing
+order: clear first, then the group — built forward, reversed for LIFO).
+No-op discipline: a click that would change nothing (the selection already
+IS the group, or empty ground with an empty selection) plans empty and
+never fires. Three press paths updated: `handleIdleInput`'s select arm
+(plain click → replace), the move-drag's unpromoted release (mirrors the
+plain click → replace — usually a no-op since the pressed thing is
+selected, but it collapses the selection when other things were selected
+too), and the marquee's unpromoted shift release (IS the toggle now, not
+"acts as a plain click"). `validatePlayerAction` arm mirrors the toggle's.
+
+Tests: the toggle test now drives the player event directly (it is the
+shift+click path; its empty-ground case asserts the planner gate since a
+direct push always records); a new replace test drives plain clicks
+through `handleIdleInput` (group select on empty selection, replace on
+click elsewhere, exact-selection no-op with nothing recorded, empty-ground
+clear, empty-ground-with-empty-selection no-op, one-step undo); the
+move-drag test's unpromoted case expects the replace (and its re-seeded
+selection must now contain MORE than the clicked group or the replace
+no-ops). All 395 tests pass.

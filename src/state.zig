@@ -1160,6 +1160,22 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_toggle_editor_selection without the select tool active");
                     }
                 },
+                // Same structural legality as the toggle (the plain-click
+                // replace path).
+                .player_replace_editor_selection => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_replace_editor_selection outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_replace_editor_selection with no editor");
+                    };
+                    if (editor.levels.len == 0) {
+                        @panic("replay validation: player_replace_editor_selection with no levels");
+                    }
+                    if (editor.active_tool != .select) {
+                        @panic("replay validation: player_replace_editor_selection without the select tool active");
+                    }
+                },
                 // Same structural legality as the toggle (the marquee is the
                 // select tool's other gesture); the corner positions are
                 // unrestricted (an empty region is a legal no-op in a

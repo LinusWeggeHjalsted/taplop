@@ -1437,6 +1437,14 @@ fn handlePlayerInputEvent(
                 pushEvents(current, planEditorSelectionActions(editor, toggle.position, allocator), allocator);
             }
         },
+        // Select-tool plain click: thin over the shared planner (the input
+        // layer fires only nonempty plans — see
+        // planEditorReplaceSelectionActions).
+        .player_replace_editor_selection => |replace| {
+            if (current.editor) |*editor| {
+                pushEvents(current, planEditorReplaceSelectionActions(editor, replace.position, allocator), allocator);
+            }
+        },
         // Select-tool marquee release: thin over the shared planner (the
         // gesture handler fires only nonempty plans — see
         // planEditorRegionSelectActions).
@@ -2316,14 +2324,19 @@ pub fn planEditorDeleteActions(
 /// design — see DESIGN → Architecture → Level Editor → Selection model);
 /// they share the click's idle point, so one undo step reverts the whole
 /// click.
-pub fn planEditorSelectionActions(
+/// The select tool's click GROUP at `position`: everything that acts as
+/// one unit — the '!' / '=' singletons; a covering decoration (the FIRST —
+/// exactly what the hover preview outlines); or the tile INCLUDING
+/// anything standing on it (entity / ground-item placements). Empty ground
+/// → an empty group. Shared by the toggle (shift+click) and replace (plain
+/// click) planners; the group order is tile, entity, item.
+fn editorClickGroup(
     editor: *const types.Editor,
     position: Vector2,
     allocator: std.mem.Allocator,
-) []const Event {
+) []const types.Selectable {
     const level = activeEditorLevel(editor) orelse return &.{};
 
-    // Resolve the click's group (at most tile + entity + item = 3).
     var group: [3]types.Selectable = undefined;
     var group_length: usize = 0;
 
@@ -2370,12 +2383,25 @@ pub fn planEditorSelectionActions(
             }
         }
     }
-    if (group_length == 0) return &.{};
+
+    const entries = allocator.alloc(types.Selectable, group_length) catch
+        @panic("failed to allocate editor click group");
+    @memcpy(entries, group[0..group_length]);
+    return entries;
+}
+
+pub fn planEditorSelectionActions(
+    editor: *const types.Editor,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const group = editorClickGroup(editor, position, allocator);
+    if (group.len == 0) return &.{};
 
     // Toggle direction: anything present → deselect every present entry;
     // nothing present → select the whole group.
     var any_present = false;
-    for (group[0..group_length]) |entry| {
+    for (group) |entry| {
         if (selectionContains(editor.selection, entry)) {
             any_present = true;
             break;
@@ -2385,7 +2411,7 @@ pub fn planEditorSelectionActions(
     // process (and land in the recorded log) in group order: tile, then
     // entity, then item.
     var plan: std.ArrayList(Event) = .empty;
-    var group_index = group_length;
+    var group_index = group.len;
     while (group_index > 0) {
         group_index -= 1;
         const entry = group[group_index];
@@ -2395,6 +2421,47 @@ pub fn planEditorSelectionActions(
             Event{ .editor_event = .{ .editor_select = .{ .entry = entry } } };
         plan.append(allocator, variant) catch @panic("failed to allocate editor selection plan");
     }
+    return plan.items;
+}
+
+/// Plain-click (no Shift) planner: REPLACE the selection with the clicked
+/// group — the whole selection is cleared, then the group is selected.
+/// Empty ground → the clear alone (the clicky deselect-all). A click that
+/// would change nothing (the selection IS exactly the group, or empty
+/// ground with an already-empty selection) plans empty — no player action
+/// fires. Built forward in processing order (clear first, then the
+/// group's selects in group order) and reversed for the LIFO push, so the
+/// clear processes first and the final selection reads in group order.
+pub fn planEditorReplaceSelectionActions(
+    editor: *const types.Editor,
+    position: Vector2,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const group = editorClickGroup(editor, position, allocator);
+
+    // The selection is already exactly the group (also covers empty
+    // ground + empty selection) → nothing to do.
+    if (group.len == editor.selection.len) {
+        var all_present = true;
+        for (group) |entry| {
+            if (!selectionContains(editor.selection, entry)) {
+                all_present = false;
+                break;
+            }
+        }
+        if (all_present) return &.{};
+    }
+
+    var plan: std.ArrayList(Event) = .empty;
+    if (editor.selection.len > 0) {
+        plan.append(allocator, .{ .editor_event = .editor_clear_selection }) catch
+            @panic("failed to allocate editor selection plan");
+    }
+    for (group) |entry| {
+        plan.append(allocator, .{ .editor_event = .{ .editor_select = .{ .entry = entry } } }) catch
+            @panic("failed to allocate editor selection plan");
+    }
+    std.mem.reverse(Event, plan.items);
     return plan.items;
 }
 

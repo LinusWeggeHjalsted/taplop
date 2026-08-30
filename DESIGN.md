@@ -1939,16 +1939,20 @@ source of truth for both sides (no duplicated no-op conditions to drift)
 and directly unit-testable; the handlers keep the empty-plan return as the
 defensive path for crafted or pre-change session logs (they replay
 gracefully — a redundant event in a log is harmless, it just plans empty).
-- **Selection tool (plain click LANDED):** a click TOGGLES its group in
-  the selection set (heterogeneous `Selectable` set — see below; a
-  click's group is everything that toggles together: the tile INCLUDING
-  the entity / ground item standing on it, a covering decoration (the
-  first, exactly what the hover preview outlines), or the '!' / '='
-  singletons — selectable since selection is the only way they'll ever be
-  moved). Anything from the group already selected → every present entry
-  is removed (clicking a selected tile deselects the tile AND its
-  occupant); nothing selected → the whole group is added. Empty ground
-  selects nothing. The selection lives on the Editor (`Editor.selection`,
+- **Selection tool (click semantics LANDED):** a click's GROUP is
+  everything that acts as one unit: the tile INCLUDING the entity / ground
+  item standing on it, a covering decoration (the first, exactly what the
+  hover preview outlines), or the '!' / '=' singletons — selectable since
+  selection is the only way they'll ever be moved. A PLAIN click
+  (no Shift) REPLACES the selection with the clicked group
+  (`player_replace_editor_selection` — clear everything, then select the
+  group); clicking EMPTY GROUND clears the selection (the clicky
+  deselect-all); a click that would change nothing (the selection already
+  IS the group) never fires. A SHIFT+CLICK (no drag) TOGGLES the group
+  (`player_toggle_editor_selection`): anything from the group already
+  selected → every present entry is removed (shift+clicking a selected
+  tile deselects the tile AND its occupant); nothing selected → the whole
+  group is added; empty ground plans nothing. The selection lives on the Editor (`Editor.selection`,
   GameState — ON the undo timeline) and is mutated only via the granular
   `editor_select` / `editor_deselect` events (one per entry; a group click
   pushes the group's events together, sharing the click's idle point, so
@@ -1979,9 +1983,9 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   entity / item placements by position; a decoration when ANY footprint
   tile is inside (matching the click hit-testing — if you can click it,
   you can marquee it); the '!' / '=' by their tile. An UNPROMOTED release
-  (no drag) acts as a plain click — the toggle the press would have fired
-  had Shift not been held (the select arm defers to the gesture while
-  Shift is held). Mirrors the inventory salvage-region gesture.
+  (no drag) IS the shift+click TOGGLE path — the unpromoted shift
+  release fires the toggle at the press tile (the select arm defers to
+  the gesture while Shift is held; a plain click there would REPLACE). Mirrors the inventory salvage-region gesture.
   The Delete key deletes the selection (`player_delete_editor_selection`
   → `planEditorSelectionDeleteActions`): everything selected goes EXCEPT
   the '!' / '=' entries and the tiles under them (a marker needs its
@@ -2000,8 +2004,9 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   it (the view translates the selection OUTLINES by the live delta — the
   world stays put); release with a nonzero delta fires
   `player_move_editor_selection { delta }`, a zero delta fires nothing,
-  and an unpromoted release acts as a plain click (the toggle — the select
-  arm defers to the gesture). The commit: the handler backs the selection
+  and an unpromoted release acts as a plain click (the REPLACE — the
+  select arm defers to the gesture; usually a no-op, since the pressed
+  thing is selected). The commit: the handler backs the selection
   up as concrete things (`EditorSelectionMoveEntry` — kind + type_id +
   target), pushes the clear plan
   (`planEditorSelectionMoveDeleteActions` — like the Delete key but an
@@ -2181,7 +2186,7 @@ switches clear the selection inside their own events, and the delete arms
 reconcile it atomically. The shift+drag marquee landed too
 (`player_select_editor_region` + `planEditorRegionSelectActions` + the
 `handleEditorMarquee` gesture — footprint-intersection membership,
-unpromoted release acts as a plain click; see Selection model), and so
+unpromoted shift release is the toggle path; see Selection model), and so
 did the selection DELETE (Delete key → `player_delete_editor_selection`
 + `planEditorSelectionDeleteActions`; markers + their tiles protected),
 and the selection MOVE (`player_move_editor_selection` + the chained

@@ -586,11 +586,22 @@ pub const PlayerInputEvent = union(enum) {
     },
     // Select-tool click in the editor viewport: toggle the clicked thing's
     // group in the selection (see the selection-tool bullet in DESIGN →
-    // Architecture → Level Editor → Active-tool model). The handler
+    // Architecture → Level Editor → Active-tool model). The SHIFT+CLICK
+    // path (the marquee gesture's unpromoted release). The handler
     // computes the granular editor_select / editor_deselect plan from
     // state (the group + its toggle direction); a click that selects
     // nothing (empty ground) never fires.
     player_toggle_editor_selection: struct {
+        position: Vector2,
+    },
+    // Select-tool PLAIN click (no Shift): REPLACE the selection with the
+    // clicked thing's group — clear everything, then select the group.
+    // Clicking empty ground clears the selection (the clicky deselect-
+    // all). A click that would change nothing (the selection already IS
+    // the group) never fires. Fired from handleIdleInput's select arm and
+    // the move-drag gesture's unpromoted release (a plain click on a
+    // selected thing — the press was claimed by the gesture).
+    player_replace_editor_selection: struct {
         position: Vector2,
     },
     // Select-tool shift+drag release in the editor viewport: ADD every

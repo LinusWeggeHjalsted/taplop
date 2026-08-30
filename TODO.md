@@ -498,7 +498,11 @@ yet implemented. Remaining work:
   planners; unselected occupants pin their tiles; markers move with a
   tile ensured underneath; targets on markers delete fully; deselects
   after; one undo step — see DESIGN → Level Editor → Selection model +
-  DONE.md) — the selection operations are COMPLETE. Remaining viewport
+  DONE.md) — the selection operations are COMPLETE. The CLICK SEMANTICS
+  are: plain click = REPLACE the selection with the clicked group (empty
+  ground clears it — the clicky deselect-all); shift+click = TOGGLE the
+  group; shift+drag = marquee add; plain drag on a selected thing = move
+  (see DESIGN → Level Editor → Selection model). Remaining viewport
   INPUT: drag-paint. All tools
   have left-click input + cursor previews + the right-click delete.
   No-op clicks never fire: each tool's effect is computed by a pure
