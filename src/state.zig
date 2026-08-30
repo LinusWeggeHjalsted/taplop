@@ -7,6 +7,7 @@
 //! See DESIGN → Replay & Side Effects, Architecture (Allocator model).
 
 const std = @import("std");
+const utility_skills = @import("utility_skills.zig");
 const types = @import("types.zig");
 const events = @import("events.zig");
 const deep_copy = @import("deep_copy.zig");
@@ -1240,6 +1241,17 @@ pub const GameStateHistory = struct {
                 .player_set_editor_entity_gloves => |set| self.validateInspectorEntityEdit(set.target),
                 .player_set_editor_entity_pants => |set| self.validateInspectorEntityEdit(set.target),
                 .player_set_editor_entity_boots => |set| self.validateInspectorEntityEdit(set.target),
+                .player_set_editor_entity_utility_skill => |set| {
+                    self.validateInspectorEntityEdit(set.target);
+                    if (set.slot_index >= types.utility_skill_count) {
+                        @panic("replay validation: player_set_editor_entity_utility_skill slot index out of range");
+                    }
+                    if (set.value) |skill_id| {
+                        if (!utility_skills.isUtilitySkill(skill_id)) {
+                            @panic("replay validation: player_set_editor_entity_utility_skill with a weapon skill");
+                        }
+                    }
+                },
                 // Structural legality: the paint checks + the select tool
                 // active (the live path only toggles from the select tool's
                 // viewport arm; the handler no-ops otherwise as the
@@ -1529,6 +1541,12 @@ pub const GameStateHistory = struct {
                 },
                 .player_assign_utility_skill => |assign| {
                     self.validateUtilitySlot(assign.slot_index);
+                    // Only UTILITY skills may sit on the bar; the learned
+                    // list can contain weapon-skill tomes, so the drag path
+                    // is validated here (the handler also no-ops defensively).
+                    if (!utility_skills.isUtilitySkill(assign.skill_id)) {
+                        @panic("replay validation: player_assign_utility_skill with a weapon skill");
+                    }
                 },
                 .player_swap_utility_skills => |swap| {
                     self.validateUtilitySlot(swap.slot_a_index);

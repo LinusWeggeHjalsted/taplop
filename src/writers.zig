@@ -358,10 +358,12 @@ test "writePlayerSave round-trips through loadPlayerSave" {
             .speed_bonus = 1,
             .health_bonus = 2,
         },
-        .learned_skills = &.{ .slice, .replenish },
+        .learned_skills = &.{ .slice, .replenish, .swap },
         // Gap in the middle: slots 5 and 7-8 empty, to verify the save writer
-        // and loader preserve slot positions instead of compacting.
-        .equipped_utility_skills = .{ .replenish, null, .slice, null, null },
+        // and loader preserve slot positions instead of compacting. Only
+        // utility skills on the bar (slice is a weapon skill — the parser
+        // drops it from slots; learned_skills may still carry it).
+        .equipped_utility_skills = .{ .replenish, null, .swap, null, null },
         .clones = &.{.{
             .mission_uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             .name = "Test Clone",
@@ -436,12 +438,13 @@ test "writePlayerSave round-trips through loadPlayerSave" {
     try std.testing.expectEqual(1, loaded.boots.?.speed_bonus);
 
     // Skills
-    try std.testing.expectEqual(2, loaded.learned_skills.len);
+    try std.testing.expectEqual(3, loaded.learned_skills.len);
     try std.testing.expectEqual(.slice, loaded.learned_skills[0]);
     try std.testing.expectEqual(.replenish, loaded.learned_skills[1]);
+    try std.testing.expectEqual(.swap, loaded.learned_skills[2]);
     try std.testing.expectEqual(.replenish, loaded.equipped_utility_skills[0]);
     try std.testing.expectEqual(null, loaded.equipped_utility_skills[1]);
-    try std.testing.expectEqual(.slice, loaded.equipped_utility_skills[2]);
+    try std.testing.expectEqual(.swap, loaded.equipped_utility_skills[2]);
     try std.testing.expectEqual(null, loaded.equipped_utility_skills[3]);
     try std.testing.expectEqual(null, loaded.equipped_utility_skills[4]);
 
@@ -517,4 +520,33 @@ test "new_player.txt parses and round-trips correctly" {
     try std.testing.expectEqualStrings("New Player", reloaded.player_name);
     try std.testing.expectEqualStrings("Starter Sword", reloaded.main_hand_weapon.?.name);
     try std.testing.expectEqual(.replenish, reloaded.equipped_utility_skills[0]);
+}
+
+test "loadPlayerSave utility gates: weapon skills dropped from slots and out of tomes, with warnings" {
+    const allocator = std.testing.allocator;
+    var original: types.PlayerData = .{};
+    // slot_4 (slice, a weapon skill) must be dropped; slot_5 (blink) kept.
+    original.equipped_utility_skills = .{ .slice, .blink, null, null, null };
+    // A slice tome is disallowed entirely; a blink tome is fine.
+    original.inventory.slots[0] = .{ .skill_tome = .{ .skill = .slice } };
+    original.inventory.slots[1] = .{ .skill_tome = .{ .skill = .blink } };
+
+    const save_text = try writePlayerSave(original, allocator);
+    defer allocator.free(save_text);
+
+    const sections = try parseConfigFile(save_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer warnings.deinit(allocator);
+    const loaded = try loadPlayerSave(sections, allocator, "save.txt", &warnings);
+    defer allocator.free(loaded.learned_skills);
+    defer allocator.free(loaded.clones);
+
+    try std.testing.expectEqual(null, loaded.equipped_utility_skills[0]);
+    try std.testing.expectEqual(types.SkillId.blink, loaded.equipped_utility_skills[1]);
+    try std.testing.expectEqual(null, loaded.inventory.slots[0]);
+    try std.testing.expectEqual(types.SkillId.blink, loaded.inventory.slots[1].?.skill_tome.skill);
+    try std.testing.expectEqual(@as(usize, 2), warnings.items.len);
+    for (warnings.items) |w| allocator.free(w);
 }

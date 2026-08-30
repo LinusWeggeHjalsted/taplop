@@ -7621,3 +7621,42 @@ rides the unit grid, so scrolling stays line-aligned. Total content: 45
 → 49 units (max scroll 39). Test windows recomputed (the failures were
 all expectation arithmetic — the Stats/Gear headers landing in or out of
 windows by one unit).
+
+### Utility-skill policy — one rule, five seams (DONE, slice 5 part 1)
+
+The rule (author-settled): only UTILITY skills — spells, cantrips,
+enchantments, curses — may sit on the utility bar; weapon skills belong
+to the equipped weapon's three slots. Previously the rule existed
+NOWHERE: the parser accepted any SkillId in slot_4..8 (entity defs AND
+player saves), skill tomes could teach weapon skills, and the player
+equip path only gated on "learned". Census for the record: 18 weapon
+skills, 5 cantrips, 2 enchantments, 0 spells/curses — 7 eligible today.
+
+**Single source:** `src/utility_skills.zig` — `isUtilitySkill` (reads the
+generated skill definitions, so new skills classify automatically) +
+`utility_skill_ids` (the comptime eligible list — the picker's options).
+Its own module because functions.zig would cycle (skills import
+functions; lookups import skills).
+
+**Seams:**
+1. Parser, entity definitions (level files + player.txt loadouts): a
+   weapon skill in slot_4..8 → WARN + DROP the slot (the level loads).
+2. Parser, player saves, UtilitySkills section: same.
+3. Parser, player saves, inventory: a weapon-skill TOME is disallowed —
+   warn + drop the ITEM (a tome feeding a bar weapon skills can't reach).
+   (Level-file Items don't support tomes — one site.) A shared
+   `appendWarning` helper factors the boundedU32 message shape.
+4. Editor: `player_set_editor_entity_utility_skill` → the existing
+   `editor_set_entity_utility_skill` (nullable SkillId — None clears);
+   validation rejects weapon skills + out-of-range slots; the handler
+   no-ops defensively.
+5. Player path: `equip_utility_skill` no-ops on a weapon skill, and
+   `player_assign_utility_skill` (the learned-skill drag — the learned
+   list CAN contain weapon-skill tomes) gains the validation check.
+
+Tests (424): the policy census; level-file slot drop + keep with the
+warning; save-side slot drop + tome drop with two warnings; the editor
+commit set/clear/undo + weapon-skill + bad-slot no-ops. The save
+round-trip fixture itself carried `slot_4 slice` — legal-by-accident for
+months, now swapped for `.swap` (learned list still carries slice, which
+is FINE: learning a weapon skill is legal, bar-equipping it is not).

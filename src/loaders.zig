@@ -7,6 +7,7 @@
 //! See DESIGN -> File System & IO / AGENTS -> Config File Format.
 
 const std = @import("std");
+const utility_skills = @import("utility_skills.zig");
 const types = @import("types.zig");
 const parser = @import("parser.zig");
 const deep_copy = @import("deep_copy.zig");
@@ -145,6 +146,20 @@ fn parseDimsString(dims_str: []const u8) types.Vector2 {
 
 /// parse failure (same as `asU32`). See DESIGN → Custom Missions → Balance
 /// bounds.
+/// Append a formatted warning; no-op when `warnings` is null or the
+/// allocation fails (a missing warning never blocks a load).
+fn appendWarning(
+    warnings: ?*std.ArrayList([]const u8),
+    allocator: std.mem.Allocator,
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    if (warnings) |w| {
+        const msg = std.fmt.allocPrint(allocator, format, args) catch return;
+        w.append(allocator, msg) catch {};
+    }
+}
+
 fn boundedU32(
     value_str: []const u8,
     max: u32,
@@ -449,12 +464,23 @@ pub fn parseEntityDefinition(
     }
 
     // Utility skills (slot_4..slot_8, matching the save format). Enemy types
-    // can carry a bar if present; the player loadout normally does.
+    // can carry a bar if present; the player loadout normally does. Only
+    // UTILITY skills are legal on the bar (weapon skills belong to the
+    // equipped weapon) — a weapon skill here is warned + dropped.
     var slot_key_buf: [16]u8 = undefined;
     for (0..types.utility_skill_count) |i| {
         const key = std.fmt.bufPrint(&slot_key_buf, "slot_{d}", .{i + 4}) catch continue;
         if (findValue(pairs, key)) |value| {
             if (parseEnum(types.SkillId, value)) |skill_id| {
+                if (!utility_skills.isUtilitySkill(skill_id)) {
+                    appendWarning(
+                        warnings,
+                        allocator,
+                        "Weapon skill '{s}' in {s} is not allowed on the utility bar (slot_{d}); dropped",
+                        .{ value, file_path, i + 4 },
+                    );
+                    continue;
+                }
                 entity.equipped_utility_skills[i] = skill_id;
             }
         }
@@ -1855,6 +1881,25 @@ pub fn loadPlayerSave(
             const item_type_id = parseEnum(ItemTypeId, item_type) orelse continue;
             const item_name = findValue(pairs, "item_name") orelse &.{};
 
+            // A skill tome must never carry a weapon skill (weapon skills
+            // belong to the equipped weapon, and can never sit on the
+            // utility bar a tome feeds) — warned + the item dropped.
+            if (item_type_id == .skill_tome) {
+                if (findValue(pairs, "skill_name")) |skill_name| {
+                    if (parseEnum(types.SkillId, skill_name)) |skill_id| {
+                        if (!utility_skills.isUtilitySkill(skill_id)) {
+                            appendWarning(
+                                warnings,
+                                allocator,
+                                "Weapon skill '{s}' in {s} cannot be a skill tome; item dropped",
+                                .{ skill_name, file_path },
+                            );
+                            continue;
+                        }
+                    }
+                }
+            }
+
             const item: types.Item = switch (item_type_id) {
                 .weapon => .{ .weapon = .{
                     .name = item_name,
@@ -1906,6 +1951,15 @@ pub fn loadPlayerSave(
                 const slot_index = slot_number - 4;
                 if (slot_index >= types.utility_skill_count) continue;
                 if (parseEnum(types.SkillId, pair.value)) |skill_id| {
+                    if (!utility_skills.isUtilitySkill(skill_id)) {
+                        appendWarning(
+                            warnings,
+                            allocator,
+                            "Weapon skill '{s}' in {s} is not allowed on the utility bar (slot_{d}); dropped",
+                            .{ pair.value, file_path, slot_number },
+                        );
+                        continue;
+                    }
                     player_data.equipped_utility_skills[slot_index] = skill_id;
                 }
             }
@@ -3083,4 +3137,44 @@ test "loadSettings without an InputBindings section keeps the base bindings unto
     try std.testing.expectEqual(@as(u32, 40), merged.master_volume);
     try std.testing.expectEqual(@as(usize, 1), merged.input_bindings.len);
     try std.testing.expectEqual(.skip, merged.input_bindings[0].action);
+}
+
+test "entity utility slots: a weapon skill is warned + dropped, utility skills kept" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\name Test Level
+        \\
+        \\Layout
+        \\  1..
+        \\..!..
+        \\  ..=
+        \\
+        \\Enemies
+        \\character_code 1
+        \\name Skeleton
+        \\slot_4 slice
+        \\slot_5 blink
+        \\
+        \\Decorations
+        \\
+        \\Items
+    ;
+
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer warnings.deinit(allocator);
+    const level = try loadLevel(sections, null, allocator, "level.txt", &warnings);
+    defer freeLevel(level, allocator);
+
+    // The enemy is entity index 1 (the player is 0). slot_4 (slice, a
+    // weapon skill) dropped; slot_5 (blink, a cantrip) kept.
+    try std.testing.expectEqual(null, level.entities[1].equipped_utility_skills[0]);
+    try std.testing.expectEqual(types.SkillId.blink, level.entities[1].equipped_utility_skills[1]);
+    try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "slice") != null);
+    for (warnings.items) |w| allocator.free(w);
 }

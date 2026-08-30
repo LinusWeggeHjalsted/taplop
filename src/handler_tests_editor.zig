@@ -2923,3 +2923,73 @@ test "player_move_editor_selection: a moved marker takes its ground with it" {
     try testing.expect(!hasTile(level, .{ .x = 0, .y = 0 }));
     try testing.expect(hasTile(level, .{ .x = 0, .y = 2 }));
 }
+
+test "editor utility-skill commit: set/clear via the wrapper, weapon skills and bad slots no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton", .template = .{} }};
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    }));
+    runToIdle(&history);
+
+    // Set slot 0 to blink (a cantrip): one undo step.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_entity_utility_skill = .{
+            .target = .{ .entity_type = 0 },
+            .slot_index = 0,
+            .value = .blink,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(
+        types.SkillId.blink,
+        history.current_state.editor.?.entity_types[0].template.equipped_utility_skills[0],
+    );
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(
+        @as(?types.SkillId, null),
+        history.current_state.editor.?.entity_types[0].template.equipped_utility_skills[0],
+    );
+
+    // A weapon skill no-ops (the handler's defensive gate — the picker
+    // never offers one and validation rejects crafted logs).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_entity_utility_skill = .{
+            .target = .{ .entity_type = 0 },
+            .slot_index = 0,
+            .value = .slice,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(
+        @as(?types.SkillId, null),
+        history.current_state.editor.?.entity_types[0].template.equipped_utility_skills[0],
+    );
+
+    // An out-of-range slot no-ops.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_entity_utility_skill = .{
+            .target = .{ .entity_type = 0 },
+            .slot_index = 9,
+            .value = .blink,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    var any_set = false;
+    for (history.current_state.editor.?.entity_types[0].template.equipped_utility_skills) |slot| {
+        if (slot != null) any_set = true;
+    }
+    try testing.expect(!any_set);
+}

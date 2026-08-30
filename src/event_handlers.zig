@@ -15,6 +15,7 @@
 //! no-op gate (see DESIGN → Level Editor → Active-tool model).
 
 const std = @import("std");
+const utility_skills = @import("utility_skills.zig");
 const types = @import("types.zig");
 const events = @import("events.zig");
 const state = @import("state.zig");
@@ -364,6 +365,18 @@ fn handleEditorEvent(
         .editor_set_entity_boots => |set| {
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.boots = set.value;
+        },
+        .editor_set_entity_utility_skill => |set| {
+            // Defensive against crafted logs: the slot must be in range and
+            // only UTILITY skills may sit on the bar (the live path can't
+            // produce a weapon skill here — the picker filters + validation
+            // rejects; see src/utility_skills.zig).
+            if (set.slot_index >= types.utility_skill_count) return;
+            if (set.value) |skill_id| {
+                if (!utility_skills.isUtilitySkill(skill_id)) return;
+            }
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.equipped_utility_skills[set.slot_index] = set.value;
         },
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
@@ -1598,6 +1611,14 @@ fn handlePlayerInputEvent(
         .player_set_editor_entity_boots => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_boots = .{
                 .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        // Inspector utility-skill commit: thin forward.
+        .player_set_editor_entity_utility_skill => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_utility_skill = .{
+                .target = set.target,
+                .slot_index = set.slot_index,
                 .value = set.value,
             } } }}, allocator);
         },
@@ -3883,6 +3904,10 @@ pub fn processEvent(
                 },
                 .equip_utility_skill => |equip| {
                     if (equip.slot_index >= utility_skill_count) return;
+                    // Only UTILITY skills may sit on the bar — the learned
+                    // list can contain weapon-skill tomes, so the drag path
+                    // gates here too (see src/utility_skills.zig).
+                    if (!utility_skills.isUtilitySkill(equip.skill_id)) return;
                     const player = getPlayerEntity(current, 0);
 
                     // Cooldown inheritance: the incoming skill's cd becomes

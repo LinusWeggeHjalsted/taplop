@@ -800,6 +800,15 @@ pub const PlayerInputEvent = union(enum) {
         target: EntityEditTarget,
         value: ?Boots,
     },
+    // Inspector utility-skill commit (the picker's pick, or its None
+    // option). Only UTILITY skills are legal on the bar — the picker
+    // never offers weapon skills and validation rejects them (see
+    // src/utility_skills.zig, the single source).
+    player_set_editor_entity_utility_skill: struct {
+        target: EntityEditTarget,
+        slot_index: u32,
+        value: ?SkillId,
+    },
 
     // --- Meta: exit/skip orchestrators ---
     // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;
