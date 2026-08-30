@@ -1890,9 +1890,18 @@ is determined by the active tool:
 - **Selection tool:** click selects / shift-click adds to / drag-marquee
   builds the selection set (heterogeneous `Selectable` set, see below).
   Placing does NOT happen in selection mode.
-- **Tile-paint tool:** click/drag toggles floor tiles at the cursor
-  position (paint floor / erase — right-click or a modifier for erase).
-  Does not modify the selection set.
+- **Tile-paint tool:** one click = one tile (`player_paint_editor_tile`,
+  LANDED). A click on empty space paints a floor tile; a click where a
+  tile already exists is a no-op (entities / items / the `!` / `=` sit ON
+  tiles, so they never block a paint); a click covered by a decoration
+  footprint REPLACES the decoration — every covering placement is deleted,
+  then the tile is placed (the click's delete + place sub-events share one
+  idle point, so one undo reverts the whole click). While the tile tool is
+  active the tile cursor draws its outline at the cursor position
+  unconditionally (over empty space too — the affordance that a tile can
+  go there; arrow keys nudge it without the level/hub clamp-to-real-tile).
+  Deferred: right-click erase and drag-painting (one `editor_set_tile` per
+  cell crossed). Does not modify the selection set.
 - **Placement tools (enemy/decoration/item type):** click places one
   instance of that type at the cursor position (pushes an
   `editor_place_*` event). Placing does NOT select the placed instance —
@@ -1954,10 +1963,14 @@ shared by enemy + player loading), `loadPlayerLoadout` + `player.txt` format
 (`PlayerLoadout` section), `buildEditorMission` (dedup-on-load),
 `instantiateEditorLevel`, round-trip test (open → playtest → end → close,
 asserts palette + player_def + instantiated entities). `beginnings` ships a
-`player.txt`.
+`player.txt`. The tile-paint slice is landed (see Active-tool model above):
+`player_paint_editor_tile` (orchestrator + replay-validation arm + idle-input
+consumption), the `editor_set_tile` / `editor_delete_decoration_placement`
+handlers, the tile-tool cursor resolution + overlay, and the editor screen
+runs handleIdleInput's editor arm (viewport clicks reach the world).
 
-**Event structs DEFINED, handlers PENDING.** Every edit-verb event struct
-exists in events.zig (`editor_add_level` / `editor_delete_level` /
+**Event structs DEFINED, handlers landing per slice.** Every edit-verb event
+struct exists in events.zig (`editor_add_level` / `editor_delete_level` /
 `editor_set_tile` / `editor_set_level_name` / `editor_set_level_color_wheel`
 / `editor_set_level_custom_theme` (superseded by the gradient-override
 events — see Level theme below) / `editor_set_mission_name` /
@@ -1967,9 +1980,10 @@ events — see Level theme below) / `editor_set_mission_name` /
 `editor_place_item` / `editor_delete_*_placement` / `editor_move_*_placement`
 / `editor_set_entity_*` (20+ field setters) / `editor_set_decoration_*` /
 `editor_set_item_*` / `editor_add_*_layer` / `editor_remove_*_layer` /
-`editor_set_*_layer`), but `handleEditorEvent` is a `@panic` stub — every
-edit verb except `editor_set_active_level` (handled inline in `processEvent`)
-traps. Wiring the handlers is part of the UI slice.
+`editor_set_*_layer`). `handleEditorEvent` implements the arms the landed UI
+slices need (`editor_set_tile` both directions, `editor_delete_decoration_placement`); the rest still `@panic` so an unhooked edit verb
+fails fast rather than silently no-op'ing. Remaining handlers land with
+their UI slices.
 
 **Pending:** editor UI/input — the layout + active-tool + selection model
 above, implemented as a vertical slice (static shell first: tabs + viewport +
@@ -2040,8 +2054,10 @@ with a footprint-covered world tile.
 **Placement invariant (parse + editor).** A world tile under a decoration's
 footprint must NOT also be a level/hub tile — decorations sit on top of tiles
 only via non-footprinted overhang. The parser rejects this at load; the editor
-blocks placing a decoration whose footprint overlaps an existing tile and
-blocks placing a tile under a decoration footprint.
+blocks placing a decoration whose footprint overlaps an existing tile, and
+painting a tile over a footprint REPLACES the covering decoration(s) first
+(the delete + place share one idle point — see the tile-paint tool above),
+restoring the invariant.
 
 **Rendering: split per bbox tile, sort by assigned footprint y.** The sprite
 is split into one `DecorationPieceDrawable` per **bbox** tile (9 for the tree:

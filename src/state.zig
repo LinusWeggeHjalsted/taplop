@@ -1119,6 +1119,22 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_set_editor_level index out of range");
                     }
                 },
+                // Structural legality only: screen + editor + a level to
+                // paint on. The position is unrestricted (any tile
+                // coordinate is a legal paint target — the handler no-ops
+                // on an existing tile, and a recorded session may contain
+                // such no-op clicks), so there is no position check here.
+                .player_paint_editor_tile => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_paint_editor_tile outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_paint_editor_tile with no editor");
+                    };
+                    if (editor.levels.len == 0) {
+                        @panic("replay validation: player_paint_editor_tile with no levels");
+                    }
+                },
                 .player_replay_mission => {
                     if (self.current_state.last_completed_mission == null) {
                         @panic("replay validation: player_replay_mission with no completed mission");

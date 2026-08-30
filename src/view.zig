@@ -167,6 +167,16 @@ pub fn view(
             session.animation_clock,
             settings.animation_fps,
         );
+        // Tile-tool cursor: outline at the cursor (unconditional — paints
+        // target empty space too). See buildEditorCursorOverlay.
+        buildEditorCursorOverlay(
+            &tile_overlays,
+            frame_allocator,
+            session,
+            active_theme,
+            camera,
+            camera_zoom,
+        );
     }
 
     // Unified y-sort (ascending sort_y, then sort_x) and extract into the
@@ -1978,6 +1988,30 @@ fn buildCursorOverlay(
     }
 }
 
+/// Editor tile-tool cursor: an outline at the cursor position, drawn
+/// UNCONDITIONALLY (no tile-membership check) — any tile position is a
+/// legal paint target, so the outline over empty space is the affordance
+/// that you can place a tile there (unlike levels/hubs, which only cursor
+/// over real tiles). Gated on the tile tool; other tools have no cursor
+/// yet. Same replay-safe shape as `buildCursorOverlay` (pure over
+/// SessionState).
+fn buildEditorCursorOverlay(
+    list: *std.ArrayList(types.TileOverlayDrawable),
+    allocator: std.mem.Allocator,
+    session: *const state.SessionState,
+    active_theme: types.ActiveColorTheme,
+    camera: types.Camera,
+    zoom: f32,
+) void {
+    if (session.ui_state.editor_active_tool != .tile) return;
+    const cursor = session.tile_cursor orelse return;
+    list.append(allocator, .{
+        .screen_position = tileToScreen(cursor, camera, zoom),
+        .overlay_type = .cursor,
+        .color = active_theme.lightest,
+    }) catch @panic("failed to append editor cursor overlay");
+}
+
 /// Range/radius outline: when the pointer hovers a skill button on the
 /// bottom bar, preview that skill's reach as a single square outline
 /// centered on the player. The square's half-side is the skill's `range`
@@ -2615,4 +2649,82 @@ test "editor scene: viewport projects tiles, placements, and markers" {
     try std.testing.expect(std.mem.eql(u8, "world/ground_items", drawables[3].ground_items.sprite_id));
     try std.testing.expectEqual(@as(u32, 2), drawables[3].ground_items.item_count);
     try std.testing.expect(std.mem.eql(u8, "world/flag_pole", drawables[4].level_end.sprite_id));
+}
+
+test "editor cursor overlay: tile tool outlines the cursor, other tools don't" {
+    // The tile-tool cursor draws at the cursor position UNCONDITIONALLY —
+    // over empty space too (the affordance that a tile can be placed
+    // there), unlike the level/hub cursor which only draws on real tiles.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+    var harness = test_harness.Harness.init(arena);
+
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &.{}, // no tiles — the outline must still draw
+        .player_start = .{ .x = 0, .y = 0 },
+    }};
+    const state_ = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    var session = state.SessionState{};
+    session.ui_state.editor_active_tool = .tile;
+    session.tile_cursor = .{ .x = 2, .y = 1 };
+
+    const camera = computeCamera(&state_, 1.0, null);
+    const view_state = view(
+        &state_,
+        &session,
+        .{ .input_bindings = &.{} },
+        harness.color_theme_definitions,
+        &harness.weapon_type_definitions,
+        .{
+            .camera = camera,
+            .camera_zoom = 1.0,
+            .event_history = &.{},
+            .level_start_index = null,
+            .current_event_index = 0,
+            .frame_allocator = arena,
+            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .sprite_bounds = .{},
+        },
+    );
+
+    try std.testing.expectEqual(@as(usize, 1), view_state.tile_overlays.len);
+    const overlay = view_state.tile_overlays[0];
+    try std.testing.expectEqual(types.TileOverlayType.cursor, overlay.overlay_type);
+    try std.testing.expectEqual(
+        tileToScreen(.{ .x = 2, .y = 1 }, camera, 1.0),
+        overlay.screen_position,
+    );
+
+    // A non-tile tool draws no cursor.
+    session.ui_state.editor_active_tool = .select;
+    const view_state_select = view(
+        &state_,
+        &session,
+        .{ .input_bindings = &.{} },
+        harness.color_theme_definitions,
+        &harness.weapon_type_definitions,
+        .{
+            .camera = camera,
+            .camera_zoom = 1.0,
+            .event_history = &.{},
+            .level_start_index = null,
+            .current_event_index = 0,
+            .frame_allocator = arena,
+            .font_metrics = .{ .base_size = 100, .advances = [_]i32{50} ** 95 },
+            .sprite_bounds = .{},
+        },
+    );
+    try std.testing.expectEqual(@as(usize, 0), view_state_select.tile_overlays.len);
 }

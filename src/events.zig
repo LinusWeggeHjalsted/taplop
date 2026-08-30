@@ -514,6 +514,15 @@ pub const PlayerInputEvent = union(enum) {
     player_set_editor_level: struct {
         level_index: u32,
     },
+    // Tile-paint click in the editor viewport (tile tool active): one click
+    // = one tile. The handler computes the effect from state — no-op when a
+    // tile is already there; every decoration whose footprint covers the
+    // position is deleted first (replace, not block — see DESIGN →
+    // Decorations & Footprint → Placement invariant). Erase (right-click)
+    // and drag-painting are deferred; each lands as its own gesture.
+    player_paint_editor_tile: struct {
+        position: Vector2,
+    },
 
     // --- Meta: exit/skip orchestrators ---
     // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;

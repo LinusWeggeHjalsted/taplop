@@ -1383,6 +1383,23 @@ pub fn handleIdleInput(
         return;
     }
 
+    // Editor edit mode: the tile tool paints on a world click (one click =
+    // one tile). The press-side world/UI arbitration in update() already
+    // consumed clicks over blocking UI (palette, tabs), so a surviving
+    // tile_clicked is a viewport click. Enter folds into tile_clicked at
+    // the top of handleIdleInput, so the keyboard path paints at the tile
+    // cursor too. Other tools have no viewport input yet.
+    if (current.screen == .editor) {
+        if (history.session.ui_state.editor_active_tool == .tile) {
+            if (idle.tile_clicked) |clicked_position| {
+                event_handlers.pushPlayerAction(current, .{ .player_paint_editor_tile = .{
+                    .position = clicked_position,
+                } }, allocator);
+            }
+        }
+        return;
+    }
+
     // Level turn phase input handling
     if (current.level) |*level| {
         if (level.turn_phase) |turn_phase| {
@@ -1544,14 +1561,25 @@ pub fn handleIdleInput(
 /// mouse, but is cleared when the pointer is over a blocking UI element (so
 /// panels/buttons don't leave a world-cursor ghost) or over a non-tile. When
 /// the mouse didn't move, arrow keys nudge the cursor one tile; if the cursor
-/// is null, it snaps to the player's tile first. Only runs in a level/hub
-/// (needs world tiles + the player position).
+/// is null, it snaps to the player's tile first. Runs in a level/hub (needs
+/// world tiles + the player position); the editor screen has its own arm
+/// with paint semantics (`resolveEditorTileCursor` — no tile-membership
+/// check, no nudge clamp).
 pub fn resolveTileCursor(
     history: *GameStateHistory,
     player_input: PlayerInput,
     ui_elements: []const ui.UiElement,
 ) void {
     const current = &history.current_state;
+
+    // Editor edit mode: the tile tool's cursor — its own semantics (any tile
+    // position is a legal paint target, so no tile-membership check and no
+    // nudge clamp). Other tools have no tile cursor yet.
+    if (current.screen == .editor) {
+        resolveEditorTileCursor(history, player_input, ui_elements);
+        return;
+    }
+
     if (current.screen != .level and current.screen != .hub) return;
 
     const in_game = player_input.anytime.in_game;
@@ -1617,6 +1645,54 @@ pub fn resolveTileCursor(
         }
     }
 }
+/// Editor arm of the tile-cursor resolution (tile tool active — see
+/// `resolveTileCursor`). The cursor follows the mouse to ANY tile position
+/// (cleared over blocking UI, like levels/hubs); arrow keys nudge freely —
+/// there is no clamp-to-real-tile because painting over empty space is the
+/// point. A null cursor snaps to the active level's player_start (the '!',
+/// the editor's player-position analog).
+fn resolveEditorTileCursor(
+    history: *GameStateHistory,
+    player_input: PlayerInput,
+    ui_elements: []const ui.UiElement,
+) void {
+    const current = &history.current_state;
+    if (history.session.ui_state.editor_active_tool != .tile) {
+        history.session.tile_cursor = null;
+        return;
+    }
+
+    const in_game = player_input.anytime.in_game;
+    if (in_game.mouse_moved_this_tick) {
+        // Mouse owns the cursor this frame.
+        if (ui.blockingElementAt(ui_elements, player_input.pointer.position) != null) {
+            history.session.tile_cursor = null;
+            return;
+        }
+        history.session.tile_cursor = in_game.mouse_tile;
+        return;
+    }
+
+    // Mouse idle — arrow keys nudge the cursor (same trigger/derive split
+    // as levels/hubs: the move_cursor_* edges fire, the direction comes
+    // from held keys).
+    const nudge_up = in_game.move_cursor_up;
+    const nudge_down = in_game.move_cursor_down;
+    const nudge_left = in_game.move_cursor_left;
+    const nudge_right = in_game.move_cursor_right;
+    if (!nudge_up and !nudge_down and !nudge_left and !nudge_right) return;
+
+    var cursor = history.session.tile_cursor orelse blk: {
+        const editor = current.editor orelse return;
+        if (editor.levels.len == 0) return;
+        break :blk editor.levels[@min(editor.active_level_index, editor.levels.len - 1)].player_start;
+    };
+
+    cursor.x += in_game.cursor_direction.x;
+    cursor.y += in_game.cursor_direction.y;
+    history.session.tile_cursor = cursor;
+}
+
 test "dragToOrchestrator maps valid drags and blocks cross-domain drops" {
     // inventory → gear = player_equip_to_gear
     {
@@ -1714,4 +1790,80 @@ test "skillsSlotUnderPointer: true over a learned_skill slot, false elsewhere" {
     try std.testing.expect(!skillsSlotUnderPointer(&elements, .{ .x = 310, .y = 10 }));
     // Over empty space.
     try std.testing.expect(!skillsSlotUnderPointer(&elements, .{ .x = 500, .y = 500 }));
+}
+
+test "resolveEditorTileCursor: mouse follows to any tile position, blocked over UI, nudges unclamped" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{ .player_start = .{ .x = 2, .y = 3 } }};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+
+    // Mouse owns the cursor when it moved — at a position with NO tile
+    // (paint semantics: any tile position is a legal target).
+    history.session.ui_state.editor_active_tool = .tile;
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 9, .y = 9 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, history.session.tile_cursor.?);
+
+    // Over a blocking UI element the cursor clears (no world-cursor ghost
+    // behind panels).
+    const blocking_panel = [_]ui.UiElement{.{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = .{ .x = 400, .y = 400 },
+        .width = 400,
+        .height = 400,
+    } }};
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 9, .y = 9 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &blocking_panel,
+    );
+    try std.testing.expectEqual(@as(?types.Vector2, null), history.session.tile_cursor);
+
+    // Non-tile tools have no cursor.
+    history.session.ui_state.editor_active_tool = .select;
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 9, .y = 9 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &.{},
+    );
+    try std.testing.expectEqual(@as(?types.Vector2, null), history.session.tile_cursor);
+
+    // Arrow nudge with a null cursor snaps to player_start first, then
+    // nudges — no clamp-to-real-tile (empty space is a legal paint target).
+    history.session.ui_state.editor_active_tool = .tile;
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .move_cursor_right = true,
+            .cursor_direction = .{ .x = 1, .y = 0 },
+        } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 3 }, history.session.tile_cursor.?);
 }

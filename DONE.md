@@ -6158,3 +6158,71 @@ Editor is part of GameState) — undo after switching tabs walks back.
 Tests: ui (element structure, payloads, active-only highlight, unnamed
 fallback, layout position/height), new `src/handler_tests_editor.zig`
 (switch + undo revert; out-of-range index no-op).
+
+### Editor viewport input slice 1 — tile paint + tile-tool cursor
+
+The first viewport interaction: clicking with the TILE tool active draws a
+floor tile at the clicked level position. One click = one tile (drag-paint
+and right-click erase are deliberately deferred; each lands as its own
+gesture — see TODO → Level Editor).
+
+**Click semantics** (per user decision, superseding the earlier DESIGN text
+that said the editor "blocks" a tile under a footprint — painting now
+REPLACES, which saves clicks):
+- tile already at the position → no-op (the orchestrator pushes nothing;
+  entities / items / the `!` / `=` all sit ON tiles, so they never block).
+- decoration footprint covering the position → every covering placement is
+  deleted, then the tile is placed.
+- nothing there → tile placed.
+
+**Event path** (replay/undo-correct by construction): new PlayerInputEvent
+orchestrator `player_paint_editor_tile { position }` — player input never
+pushes EditorEvents directly (the replay whitelist convention, same as
+`player_set_editor_level`). Its handler computes the effect from state and
+pushes `editor_delete_decoration_placement` (per covering placement) +
+`editor_set_tile` as children. Two subtleties:
+- `pushEvents` is LIFO-drained, so the push array (set_tile first, deletes
+  in ascending placement order) processes the deletes in DESCENDING
+  placement order — required for index-stable removal (deleting a lower
+  index first shifts the pending higher indices).
+- All sub-events land between two idle points, so one undo reverts the
+  whole click (delete + place) — verified by test.
+`validatePlayerAction` arm: structural only (screen == .editor, editor
+non-null, ≥1 level); the position is unrestricted because a no-op click
+(tile already present) is legal in a recorded session.
+
+**Handlers**: `handleEditorEvent` gained its first real arms —
+`editor_set_tile` (add keeps `tileBefore` row-major canonical order,
+idempotent both directions; erase arm implemented though no UI pushes it
+yet) and `editor_delete_decoration_placement` (order-preserving removal —
+placement indices are the identity the move/delete events address). The
+remaining edit verbs still `@panic` (fail fast, not silent no-op). New
+helper `decorationFootprintCovers` (event_handlers.zig) reuses
+`loaders.decorationAnchor` (made pub) — footprint world tile =
+`placement.position + (fp − anchor)`, same math as
+`validateDecorationFootprint`.
+
+**Input wiring**: `handleIdleInput` gained an editor arm — screen ==
+.editor + tile tool + `idle.tile_clicked` → push the orchestrator; it
+`return`s unconditionally (no other idle input applies on the editor
+screen yet). The press-side world/UI arbitration in `update()` already
+consumes clicks over blocking UI, and Enter folds into `tile_clicked` at
+the top of `handleIdleInput`, so the keyboard paints at the tile cursor
+for free.
+
+**Cursor**: `resolveTileCursor` gained an editor arm
+(`resolveEditorTileCursor`, tile tool only — other tools clear the
+cursor): mouse-follow to ANY tile position (no tile-membership check —
+cleared over blocking UI like levels/hubs), arrow-nudge WITHOUT the
+clamp-to-real-tile (painting empty space is the point), null-snap to the
+active level's `player_start`. `view()`'s editor world branch emits the
+cursor `TileOverlayDrawable` unconditionally (over empty space too — the
+affordance that a tile can go there; `buildEditorCursorOverlay`), gated on
+the tile tool.
+
+Tests: `handler_tests_editor.zig` +5 (paint sorted-insert; existing-tile
+no-op; decoration replace + one-undo reverts both; multi-decoration
+coverage with index-stability; erase arm + delete-placement order), view
+test (unconditional overlay, non-tile tool suppressed), input test
+(mouse-follow, UI occlusion, non-tile tool null, nudge unclamped from
+player_start snap).

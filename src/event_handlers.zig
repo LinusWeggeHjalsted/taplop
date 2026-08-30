@@ -263,19 +263,114 @@ fn pushGameplayStartEvents(current: *GameState, allocator: std.mem.Allocator, sy
 /// Handle an EditorEvent (the non-`editor_set_active_level` variants). Pure
 /// state transform on `current.editor.?.levels[]` or the palette. Called from
 /// the `.editor_event` arm of `processEvent`; the switch there dispatches the
-/// one inline case and routes the rest here. Implementation lands in the next
-/// slice (the handlers are mechanical — each sets a field). Until then this
-/// panics so an unimplemented editor event fails fast rather than silently
-/// no-op'ing (which would let the UI believe it edited something).
+/// one inline case and routes the rest here. Arms land incrementally with
+/// the editor UI slices; unimplemented variants still panic so an unhooked
+/// editor event fails fast rather than silently no-op'ing (which would let
+/// the UI believe it edited something).
 fn handleEditorEvent(
     current: *GameState,
     event: events.EditorEvent,
     allocator: std.mem.Allocator,
 ) void {
-    _ = current;
-    _ = event;
-    _ = allocator;
-    @panic("editor event handler not implemented");
+    const editor = &(current.editor orelse @panic("editor event with no editor"));
+    switch (event) {
+        .editor_set_tile => |set| {
+            if (set.level_index >= editor.levels.len) {
+                @panic("editor_set_tile: level index out of range");
+            }
+            const level = &@constCast(editor.levels)[set.level_index];
+            level.level_tiles = setLevelTile(level.level_tiles, set.position, set.is_floor, allocator);
+        },
+        .editor_delete_decoration_placement => |delete| {
+            if (delete.level_index >= editor.levels.len) {
+                @panic("editor_delete_decoration_placement: level index out of range");
+            }
+            const level = &@constCast(editor.levels)[delete.level_index];
+            if (delete.placement_index >= level.decoration_placements.len) {
+                @panic("editor_delete_decoration_placement: placement index out of range");
+            }
+            var placements = allocator.alloc(
+                types.DecorationPlacement,
+                level.decoration_placements.len - 1,
+            ) catch @panic("failed to allocate decoration placements");
+            // Order-preserving removal — placement indices are the identity
+            // the move/delete events address, so reordering would corrupt
+            // them (the orchestrator deletes high-before-low for exactly
+            // this reason).
+            @memcpy(
+                placements[0..delete.placement_index],
+                level.decoration_placements[0..delete.placement_index],
+            );
+            @memcpy(
+                placements[delete.placement_index..],
+                level.decoration_placements[delete.placement_index + 1 ..],
+            );
+            level.decoration_placements = placements;
+        },
+        else => @panic("editor event handler not implemented"),
+    }
+}
+
+/// Set or erase one tile in a level's tile list, returning the new list.
+/// Idempotent: painting an existing tile / erasing an absent one returns
+/// the input unchanged. Inserts keep `tileBefore` (row-major) order so the
+/// list stays canonical with the parser's layout-scan order.
+fn setLevelTile(
+    tiles: []const Vector2,
+    position: Vector2,
+    is_floor: bool,
+    allocator: std.mem.Allocator,
+) []const Vector2 {
+    if (is_floor) {
+        for (tiles) |tile| {
+            if (tile.x == position.x and tile.y == position.y) return tiles;
+        }
+        var new_tiles = allocator.alloc(Vector2, tiles.len + 1) catch
+            @panic("failed to allocate level tiles");
+        var insert_index: usize = tiles.len;
+        for (tiles, 0..) |tile, index| {
+            if (!tileBefore(tile, position)) {
+                insert_index = index;
+                break;
+            }
+        }
+        @memcpy(new_tiles[0..insert_index], tiles[0..insert_index]);
+        new_tiles[insert_index] = position;
+        @memcpy(new_tiles[insert_index + 1 ..], tiles[insert_index..]);
+        return new_tiles;
+    }
+    for (tiles, 0..) |tile, index| {
+        if (tile.x == position.x and tile.y == position.y) {
+            var new_tiles = allocator.alloc(Vector2, tiles.len - 1) catch
+                @panic("failed to allocate level tiles");
+            @memcpy(new_tiles[0..index], tiles[0..index]);
+            @memcpy(new_tiles[index..], tiles[index + 1 ..]);
+            return new_tiles;
+        }
+    }
+    return tiles;
+}
+
+/// Does a decoration placement's footprint cover `world_tile`? The footprint
+/// is sprite-grid coords; the anchor (bottom-most-then-left-most footprint
+/// tile — see DESIGN → Decorations & Footprint) sits at the placement's
+/// position, so a footprint tile's world position is
+/// `placement.position + (fp - anchor)`. An empty footprint reserves nothing
+/// (the loader rejects those at parse, so this is defensive only).
+fn decorationFootprintCovers(
+    footprint: []const Vector2,
+    placement_position: Vector2,
+    world_tile: Vector2,
+) bool {
+    const anchor = loaders.decorationAnchor(footprint) orelse return false;
+    for (footprint) |fp| {
+        const covered = Vector2{
+            .x = placement_position.x + (fp.x - anchor.x),
+            .y = placement_position.y + (fp.y - anchor.y),
+        };
+        if (covered.x == world_tile.x and covered.y == world_tile.y) return true;
+    }
+    return false;
 }
 
 fn tileBefore(a: Vector2, b: Vector2) bool {
@@ -795,6 +890,45 @@ fn handlePlayerInputEvent(
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_active_level = .{
                 .level_index = set.level_index,
             } } }}, allocator);
+        },
+        // Tile-paint click (tile tool active): one click = one tile. The
+        // effect is computed from state — no-op when a tile is already there
+        // (entities / items / the '!' / '=' sit ON tiles, so they never
+        // block a paint); every decoration whose footprint covers the
+        // position is deleted first (replace, not block — see DESIGN →
+        // Decorations & Footprint → Placement invariant). Pushes are
+        // LIFO-drained, so this array (set_tile first, deletes in ascending
+        // placement order) processes the deletes in DESCENDING order —
+        // required for index-stable removal, since deleting a lower index
+        // first would shift the pending higher ones — and the tile lands
+        // last. All sub-events land between two idle points, so one undo
+        // reverts the whole click.
+        .player_paint_editor_tile => |paint| {
+            if (current.editor) |*editor| {
+                if (editor.levels.len == 0) return;
+                const level_index = editor.active_level_index;
+                if (level_index >= editor.levels.len) return;
+                const level = &editor.levels[level_index];
+                for (level.level_tiles) |tile| {
+                    if (tile.x == paint.position.x and tile.y == paint.position.y) return;
+                }
+                var pushes: std.ArrayList(Event) = .empty;
+                pushes.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
+                    .level_index = @intCast(level_index),
+                    .position = paint.position,
+                    .is_floor = true,
+                } } }) catch @panic("failed to allocate editor paint events");
+                for (level.decoration_placements, 0..) |placement, placement_index| {
+                    const type_definition = editor.decoration_types[placement.type_id];
+                    if (decorationFootprintCovers(type_definition.footprint, placement.position, paint.position)) {
+                        pushes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
+                            .level_index = @intCast(level_index),
+                            .placement_index = @intCast(placement_index),
+                        } } }) catch @panic("failed to allocate editor paint events");
+                    }
+                }
+                pushEvents(current, pushes.items, allocator);
+            }
         },
         .player_overwrite_clone => {
             // Replace the existing clone for this mission with the just-

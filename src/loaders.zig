@@ -905,8 +905,9 @@ const DecorationDefinition = struct {
 
 /// Derive the anchor (bottom-most-then-left-most) from a sprite-grid footprint.
 /// Returns null if the footprint is empty — the caller panics (a decoration
-/// with no footprint tiles is a malformed level).
-fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
+/// with no footprint tiles is a malformed level). Shared with the editor's
+/// placement hit-testing (event_handlers.decorationFootprintCovers).
+pub fn decorationAnchor(footprint: []const types.Vector2) ?types.Vector2 {
     if (footprint.len == 0) return null;
     var anchor = footprint[0];
     for (footprint[1..]) |tile| {
