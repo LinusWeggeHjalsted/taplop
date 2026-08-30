@@ -861,10 +861,10 @@ pub const EditorToolId = union(enum) {
 /// One selectable thing in the editor viewport (the select tool's click
 /// target; see DESIGN → Architecture → Level Editor → Selection model).
 /// Placement entries address the ACTIVE level's placement lists by index
-/// — a selection can go stale when an edit removes/reorders placements
-/// (e.g. a right-click delete), so consumers bounds-check and skip stale
-/// entries. The selection set lives on UiState (off the undo timeline —
-/// selecting is a UI affordance, not a mission edit).
+/// — kept consistent by the delete arms (the deleted entry is pruned and
+/// the indices above it are remapped; the render's bounds-check is
+/// defensive only). The selection set lives on UiState (off the undo
+/// timeline — selecting is a UI affordance, not a mission edit).
 pub const Selectable = union(enum) {
     /// A floor tile at `position` (a paint/erase target).
     tile: Vector2,

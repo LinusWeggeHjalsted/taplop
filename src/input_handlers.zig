@@ -1813,16 +1813,18 @@ fn resolveEditorTileCursor(
     history.session.tile_cursor = cursor;
 }
 
-/// Select-tool click: add the thing(s) at the clicked tile to the
-/// selection set (`UiState.editor_selection` — a UI affordance, not a
-/// mission edit, so a direct write off the undo timeline). What a click
-/// selects: the '!' / '=' singletons; a covering decoration (the FIRST —
-/// exactly what the hover preview shows); or the tile INCLUDING anything
-/// standing on it (entity / ground-item placements). Already-selected
-/// entries are skipped (a full no-op when nothing new); empty ground
-/// selects nothing. Placement entries can go stale when an edit removes a
-/// placement (right-click delete) — the render bounds-checks and skips
-/// them.
+/// Select-tool click: TOGGLE the clicked thing's group in the selection
+/// set (`UiState.editor_selection` — a UI affordance, not a mission edit,
+/// so a direct write off the undo timeline). A click's group is
+/// everything that toggles together: the '!' / '=' singletons; a covering
+/// decoration (the FIRST — exactly what the hover preview shows); or the
+/// tile INCLUDING anything standing on it (entity / ground-item
+/// placements). Anything from the group already selected → every present
+/// entry is removed (clicking a selected tile deselects the tile AND its
+/// occupant); nothing selected → the whole group is added. Empty ground
+/// selects nothing. Placement entries are kept consistent by the delete
+/// arms (pruned + index-remapped — see
+/// `reconcileSelectionAfterPlacementDelete`).
 fn selectAtEditorPosition(
     history: *GameStateHistory,
     position: types.Vector2,
@@ -1836,59 +1838,93 @@ fn selectAtEditorPosition(
     const selection = &history.session.ui_state.editor_selection;
     const allocator = history.backing_allocator;
 
-    // The '!' / '=' singletons — selectable (this is the only way they'll
-    // ever be moved), never deletable.
+    // Resolve the click's group (at most tile + entity + item = 3).
+    var group: [3]types.Selectable = undefined;
+    var group_length: usize = 0;
+
     if (position.x == level.player_start.x and position.y == level.player_start.y) {
-        addSelectable(selection, .player_start, allocator);
-        return;
-    }
-    if (level.level_end) |level_end_position| {
+        group[0] = .player_start;
+        group_length = 1;
+    } else if (level.level_end) |level_end_position| {
         if (position.x == level_end_position.x and position.y == level_end_position.y) {
-            addSelectable(selection, .level_end, allocator);
-            return;
+            group[0] = .level_end;
+            group_length = 1;
         }
     }
-
-    // A covering decoration (the first — matching the hover preview).
-    for (level.decoration_placements, 0..) |placement, placement_index| {
-        const type_definition = editor.decoration_types[placement.type_id];
-        if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
-            addSelectable(selection, .{ .decoration_placement = @intCast(placement_index) }, allocator);
-            return;
+    if (group_length == 0) {
+        // A covering decoration (the first — matching the hover preview).
+        for (level.decoration_placements, 0..) |placement, placement_index| {
+            const type_definition = editor.decoration_types[placement.type_id];
+            if (loaders.decorationFootprintCovers(type_definition.footprint, placement.position, position, allocator)) {
+                group[0] = .{ .decoration_placement = @intCast(placement_index) };
+                group_length = 1;
+                break;
+            }
         }
     }
+    if (group_length == 0) {
+        // The tile including anything standing on it. Empty ground (no
+        // tile, no occupants) selects nothing.
+        for (level.level_tiles) |tile| {
+            if (tile.x == position.x and tile.y == position.y) {
+                group[group_length] = .{ .tile = position };
+                group_length += 1;
+                break;
+            }
+        }
+        for (level.entity_placements, 0..) |placement, placement_index| {
+            if (placement.position.x == position.x and placement.position.y == position.y) {
+                group[group_length] = .{ .entity_placement = @intCast(placement_index) };
+                group_length += 1;
+            }
+        }
+        for (level.item_placements, 0..) |placement, placement_index| {
+            if (placement.position.x == position.x and placement.position.y == position.y) {
+                group[group_length] = .{ .ground_item_placement = @intCast(placement_index) };
+                group_length += 1;
+            }
+        }
+    }
+    if (group_length == 0) return;
 
-    // The tile including anything standing on it. Empty ground (no tile,
-    // no occupants) selects nothing.
-    for (level.level_tiles) |tile| {
-        if (tile.x == position.x and tile.y == position.y) {
-            addSelectable(selection, .{ .tile = position }, allocator);
+    // Toggle the group: anything present → remove every present entry;
+    // nothing present → add the whole group.
+    var any_present = false;
+    for (group[0..group_length]) |entry| {
+        if (selectionContains(selection.items, entry)) {
+            any_present = true;
             break;
         }
     }
-    for (level.entity_placements, 0..) |placement, placement_index| {
-        if (placement.position.x == position.x and placement.position.y == position.y) {
-            addSelectable(selection, .{ .entity_placement = @intCast(placement_index) }, allocator);
+    if (any_present) {
+        for (group[0..group_length]) |entry| {
+            removeSelectable(selection, entry);
         }
-    }
-    for (level.item_placements, 0..) |placement, placement_index| {
-        if (placement.position.x == position.x and placement.position.y == position.y) {
-            addSelectable(selection, .{ .ground_item_placement = @intCast(placement_index) }, allocator);
+    } else {
+        for (group[0..group_length]) |entry| {
+            selection.append(allocator, entry) catch @panic("failed to allocate editor selection");
         }
     }
 }
 
-/// Append `entry` to the selection set unless already present (selecting
-/// what's already selected is a no-op).
-fn addSelectable(
+/// Remove the first entry equal to `entry` (a no-op when absent).
+fn removeSelectable(
     selection: *std.ArrayList(types.Selectable),
     entry: types.Selectable,
-    allocator: std.mem.Allocator,
 ) void {
-    for (selection.items) |existing| {
-        if (selectableEqual(existing, entry)) return;
+    for (selection.items, 0..) |existing, index| {
+        if (selectableEqual(existing, entry)) {
+            _ = selection.orderedRemove(index);
+            return;
+        }
     }
-    selection.append(allocator, entry) catch @panic("failed to allocate editor selection");
+}
+
+fn selectionContains(items: []const types.Selectable, entry: types.Selectable) bool {
+    for (items) |existing| {
+        if (selectableEqual(existing, entry)) return true;
+    }
+    return false;
 }
 
 /// Value equality over `Selectable` (tag + payload). Unions don't support
@@ -2231,7 +2267,7 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
-test "selectAtEditorPosition: click adds tile + occupants, singletons, decoration; no-ops" {
+test "selectAtEditorPosition: click toggles the tile + occupants group, singletons, decoration" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
     var harness = @import("test_harness.zig").Harness.init(backing.allocator());
@@ -2288,23 +2324,31 @@ test "selectAtEditorPosition: click adds tile + occupants, singletons, decoratio
     try std.testing.expectEqual(@as(u32, 0), selection.items[1].entity_placement);
     try std.testing.expectEqual(@as(u32, 0), selection.items[2].ground_item_placement);
 
-    // Clicking the same tile again: everything already selected — no-op.
+    // Clicking the same tile again toggles the WHOLE group off — the tile
+    // AND its occupant leave together.
+    selectAtEditorPosition(&history, .{ .x = 1, .y = 1 });
+    try std.testing.expectEqual(@as(usize, 0), selection.items.len);
+    // A third click toggles it back on.
     selectAtEditorPosition(&history, .{ .x = 1, .y = 1 });
     try std.testing.expectEqual(@as(usize, 3), selection.items.len);
 
-    // The '!' and '=' singletons are selectable.
+    // The '!' and '=' singletons are selectable — and toggleable.
     selectAtEditorPosition(&history, .{ .x = 0, .y = 0 });
     try std.testing.expectEqual(types.Selectable.player_start, selection.items[3]);
     selectAtEditorPosition(&history, .{ .x = 2, .y = 2 });
     try std.testing.expectEqual(types.Selectable.level_end, selection.items[4]);
+    selectAtEditorPosition(&history, .{ .x = 0, .y = 0 });
+    try std.testing.expectEqual(@as(usize, 4), selection.items.len);
 
-    // The covering decoration (by index).
+    // The covering decoration (by index) — and toggling it off.
     selectAtEditorPosition(&history, .{ .x = 7, .y = 7 });
-    try std.testing.expectEqual(@as(u32, 0), selection.items[5].decoration_placement);
+    try std.testing.expectEqual(@as(u32, 0), selection.items[4].decoration_placement);
+    selectAtEditorPosition(&history, .{ .x = 7, .y = 7 });
+    try std.testing.expectEqual(@as(usize, 4), selection.items.len);
 
-    // Empty ground: nothing to select.
+    // Empty ground: nothing to select (and nothing to toggle).
     selectAtEditorPosition(&history, .{ .x = 9, .y = 9 });
-    try std.testing.expectEqual(@as(usize, 6), selection.items.len);
+    try std.testing.expectEqual(@as(usize, 4), selection.items.len);
 }
 
 test "select_editor_tool: changing tools clears the selection, re-selecting keeps it" {

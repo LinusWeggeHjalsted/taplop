@@ -6547,3 +6547,40 @@ selection now uses the active theme's LIGHTEST — the same color as every
 other world outline (cursor, range/radius, region previews) instead of a
 separate white. The test derives the expected color via `activeThemeFor`
 (the real harness theme), so a constant-vs-theme drift fails there again.
+
+### Editor selection: click toggles; deletes prune + remap the selection
+
+Two selection-behavior refinements per user decision:
+
+**Click is a TOGGLE, not an add.** A click resolves its GROUP (the tile
+INCLUDING the entity / ground item standing on it, the covering
+decoration, or the '!' / '=' singleton — same resolution as before) and
+toggles it: anything from the group already selected → every present
+entry is removed (clicking a selected tile deselects the tile AND its
+occupant, per the group model); nothing present → the whole group is
+added. `selectAtEditorPosition` restructured around a small fixed group
+buffer + `selectionContains` / `removeSelectable` (orderedRemove)
+helpers; `addSelectable` is gone.
+
+**Deletes keep the selection consistent.** The placement-removal
+`handleEditorEvent` arms (`editor_delete_entity_placement` /
+`_decoration_` / `_item_`, and `editor_set_tile`'s erase direction) now
+maintain the selection via `reconcileSelectionAfterPlacementDelete`: the
+deleted entry is pruned and the selected indices ABOVE it are
+DECREMENTED — this is the important half, since a removal shifts later
+placements down and skipping-only-stale would leave surviving entries
+pointing at the WRONG placements (a real latent bug from slice 6: select
+entity 3, delete entity 1 → entry 3 survived the bounds check and
+outlined whatever placement took its place). A tile erased by ANY flow
+leaves the selection with it (`selectionRemoveTile`) — covers the
+right-click delete AND the decoration placement's cascaded footprint
+erases. `handleEditorEvent` takes the selection as a parameter
+(`processEvent` passes the session's UiState list) so every current and
+future mutation path maintains it uniformly — pruning runs unconditionally
+(replaying a delete via redo prunes again, which is the correct
+semantics; full-session replay has an empty selection anyway).
+
+Tests: the click test rewritten for toggles (group on/off/on, singleton
+toggle, decoration toggle, empty ground), handler +3 (prune + remap
+keeps entries pointing at the same placements; selected tile + decoration
+prunes; the decoration-placement cascade erases a selected tile).

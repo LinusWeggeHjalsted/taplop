@@ -266,11 +266,16 @@ fn pushGameplayStartEvents(current: *GameState, allocator: std.mem.Allocator, sy
 /// one inline case and routes the rest here. Arms land incrementally with
 /// the editor UI slices; unimplemented variants still panic so an unhooked
 /// editor event fails fast rather than silently no-op'ing (which would let
-/// the UI believe it edited something).
+/// the UI believe it edited something). `selection` is the select tool's
+/// selection set (SessionState UiState, off the undo timeline) — the
+/// placement-removal arms keep it consistent (prune the deleted entry,
+/// remap the indices above it) so surviving entries keep pointing at the
+/// same placements.
 fn handleEditorEvent(
     current: *GameState,
     event: events.EditorEvent,
     allocator: std.mem.Allocator,
+    selection: *std.ArrayList(types.Selectable),
 ) void {
     const editor = &(current.editor orelse @panic("editor event with no editor"));
     switch (event) {
@@ -279,6 +284,12 @@ fn handleEditorEvent(
                 @panic("editor_set_tile: level index out of range");
             }
             const level = &@constCast(editor.levels)[set.level_index];
+            // A selected tile leaves the selection when the tile is
+            // actually erased (an erase of an absent tile is an idempotent
+            // no-op — nothing to prune).
+            if (!set.is_floor and functions.tileListContains(level.level_tiles, set.position)) {
+                selectionRemoveTile(selection, set.position);
+            }
             level.level_tiles = setLevelTile(level.level_tiles, set.position, set.is_floor, allocator);
         },
         .editor_delete_decoration_placement => |delete| {
@@ -306,6 +317,7 @@ fn handleEditorEvent(
                 level.decoration_placements[delete.placement_index + 1 ..],
             );
             level.decoration_placements = placements;
+            reconcileSelectionAfterPlacementDelete(selection, .decoration_placement, delete.placement_index);
         },
         .editor_place_entity => |place| {
             if (place.level_index >= editor.levels.len) {
@@ -378,6 +390,7 @@ fn handleEditorEvent(
                 level.item_placements[delete.placement_index + 1 ..],
             );
             level.item_placements = placements;
+            reconcileSelectionAfterPlacementDelete(selection, .ground_item_placement, delete.placement_index);
         },
         .editor_delete_entity_placement => |delete| {
             if (delete.level_index >= editor.levels.len) {
@@ -402,6 +415,7 @@ fn handleEditorEvent(
                 level.entity_placements[delete.placement_index + 1 ..],
             );
             level.entity_placements = placements;
+            reconcileSelectionAfterPlacementDelete(selection, .entity_placement, delete.placement_index);
         },
         .editor_place_decoration => |place| {
             if (place.level_index >= editor.levels.len) {
@@ -550,6 +564,66 @@ fn setLevelTile(
 fn tileBefore(a: Vector2, b: Vector2) bool {
     if (a.x != b.x) return a.x < b.x;
     return a.y < b.y;
+}
+
+/// Keep the select tool's selection consistent after a placement removal:
+/// drop the deleted entry and DECREMENT the selected indices above it — a
+/// removal shifts later placements down, so without the remap the
+/// surviving entries would point at the WRONG placements (skipping only
+/// out-of-range entries isn't enough). `kind` selects which placement
+/// list the indices refer to; entries of other kinds are untouched.
+fn reconcileSelectionAfterPlacementDelete(
+    selection: *std.ArrayList(types.Selectable),
+    kind: std.meta.Tag(types.Selectable),
+    removed_index: u32,
+) void {
+    var index: usize = 0;
+    while (index < selection.items.len) {
+        const selected = selection.items[index];
+        const relevant: ?u32 = switch (selected) {
+            .entity_placement => |value| if (kind == .entity_placement) value else null,
+            .decoration_placement => |value| if (kind == .decoration_placement) value else null,
+            .ground_item_placement => |value| if (kind == .ground_item_placement) value else null,
+            else => null,
+        };
+        if (relevant) |value| {
+            if (value == removed_index) {
+                _ = selection.orderedRemove(index);
+                continue;
+            }
+            if (value > removed_index) {
+                switch (selected) {
+                    .entity_placement => selection.items[index].entity_placement -= 1,
+                    .decoration_placement => selection.items[index].decoration_placement -= 1,
+                    .ground_item_placement => selection.items[index].ground_item_placement -= 1,
+                    else => unreachable,
+                }
+            }
+        }
+        index += 1;
+    }
+}
+
+/// Drop the selected tile at `position` (a tile entry is position-keyed,
+/// not index-keyed — nothing to remap).
+fn selectionRemoveTile(
+    selection: *std.ArrayList(types.Selectable),
+    position: Vector2,
+) void {
+    var index: usize = 0;
+    while (index < selection.items.len) {
+        const selected = selection.items[index];
+        switch (selected) {
+            .tile => |tile_position| {
+                if (tile_position.x == position.x and tile_position.y == position.y) {
+                    _ = selection.orderedRemove(index);
+                    continue;
+                }
+            },
+            else => {},
+        }
+        index += 1;
+    }
 }
 
 /// Get a mutable pointer to the player entity, whether in a level or hub.
@@ -2612,7 +2686,12 @@ pub fn processEvent(
                 // editor handler block below (handleEditorEvent). They are
                 // pure state transforms on current.editor.?.levels[] or the
                 // palette; undo/redo works by construction via deepCopy.
-                else => |ev| handleEditorEvent(current, ev, allocator),
+                else => |ev| handleEditorEvent(
+                    current,
+                    ev,
+                    allocator,
+                    &history.session.ui_state.editor_selection,
+                ),
             }
         },
         .replay_viewer_event => |replay_event| {

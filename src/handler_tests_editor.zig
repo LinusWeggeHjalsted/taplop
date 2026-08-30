@@ -1209,3 +1209,148 @@ test "player_delete_editor_at: player start / level end / decoration cases" {
     level = history.current_state.editor.?.levels[0];
     try testing.expectEqual(@as(usize, 0), level.decoration_placements.len);
 }
+
+test "editor deletes prune the selection and remap shifted indices" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Three entities at (0,0), (1,0), (2,0). The selection holds the
+    // placements at indices 0 and 2; deleting index 1 must leave the
+    // selection pointing at the SAME placements (0 and the former 2,
+    // remapped to 1).
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } },
+    };
+    const entity_placements = [_]types.EntityPlacement{
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 0 } },
+        .{ .type_id = 0, .position = .{ .x = 2, .y = 0 } },
+    };
+    const levels = [_]types.EditorLevel{.{ .entity_placements = &entity_placements }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+    }));
+    runToIdle(&history);
+
+    const selection = &history.session.ui_state.editor_selection;
+    try selection.append(history.backing_allocator, .{ .entity_placement = 0 });
+    try selection.append(history.backing_allocator, .{ .entity_placement = 2 });
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_delete_entity_placement = .{
+            .level_index = 0,
+            .placement_index = 1,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    try testing.expectEqual(@as(usize, 2), selection.items.len);
+    try testing.expectEqual(@as(u32, 0), selection.items[0].entity_placement);
+    try testing.expectEqual(@as(u32, 1), selection.items[1].entity_placement);
+    // The remapped entry still points at the same placement: (2,0).
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, level.entity_placements[selection.items[1].entity_placement].position);
+
+    // Deleting a SELECTED placement removes its entry outright.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_delete_entity_placement = .{
+            .level_index = 0,
+            .placement_index = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), selection.items.len);
+    try testing.expectEqual(@as(u32, 0), selection.items[0].entity_placement);
+}
+
+test "editor deletes prune selected tiles and decorations" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 2 } };
+    const decoration_placements = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 7, .y = 7 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .decoration_placements = &decoration_placements,
+    }};
+    const decoration_editor = decorationTestEditor(&levels);
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .decoration_types = decoration_editor.decoration_types,
+    }));
+    runToIdle(&history);
+
+    const selection = &history.session.ui_state.editor_selection;
+    try selection.append(history.backing_allocator, .{ .tile = .{ .x = 1, .y = 1 } });
+    try selection.append(history.backing_allocator, .{ .tile = .{ .x = 2, .y = 2 } });
+    try selection.append(history.backing_allocator, .{ .decoration_placement = 0 });
+
+    // Erasing a selected tile removes just that tile entry (the other tile
+    // + the decoration stay).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_tile = .{
+            .level_index = 0,
+            .position = .{ .x = 1, .y = 1 },
+            .is_floor = false,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 2), selection.items.len);
+    try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, selection.items[0].tile);
+
+    // Deleting the selected decoration removes its entry.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_delete_decoration_placement = .{
+            .level_index = 0,
+            .placement_index = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), selection.items.len);
+    try testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, selection.items[0].tile);
+}
+
+test "player_place_editor_decoration: cascaded tile erases prune selected tiles" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A selected tile under the wide decoration's footprint gets erased by
+    // the placement — the selection entry must go with it.
+    const tiles = [_]types.Vector2{ .{ .x = 5, .y = 5 }, .{ .x = 9, .y = 9 } };
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    const selection = &history.session.ui_state.editor_selection;
+    try selection.append(history.backing_allocator, .{ .tile = .{ .x = 5, .y = 5 } });
+    try selection.append(history.backing_allocator, .{ .tile = .{ .x = 9, .y = 9 } });
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
+            .type_id = 0,
+            .position = .{ .x = 5, .y = 5 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The covered tile (5,5) was erased + pruned; the clear tile survives.
+    try testing.expectEqual(@as(usize, 1), selection.items.len);
+    try testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, selection.items[0].tile);
+}

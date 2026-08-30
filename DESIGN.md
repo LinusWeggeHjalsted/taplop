@@ -1899,17 +1899,24 @@ right-drag stays the camera pan (movement-threshold disambiguation, the
 `PendingRightClick` gesture state shared with the level-screen inspect).
 Progressive delete: clicking an occupied tile removes the occupant first,
 the tile goes on the next click.
-- **Selection tool (plain click LANDED):** a click ADDS to the selection
-  set (heterogeneous `Selectable` set — see below; a click on a tile
-  selects the tile INCLUDING the entity / ground item standing on it, a
-  covering decoration selects the decoration — the first, exactly what the
-  hover preview outlines — and the '!' / '=' are selectable since
-  selection is the only way they'll ever be moved). Already-selected
-  entries are skipped (a full no-op when nothing new); empty ground
+- **Selection tool (plain click LANDED):** a click TOGGLES its group in
+  the selection set (heterogeneous `Selectable` set — see below; a
+  click's group is everything that toggles together: the tile INCLUDING
+  the entity / ground item standing on it, a covering decoration (the
+  first, exactly what the hover preview outlines), or the '!' / '='
+  singletons — selectable since selection is the only way they'll ever be
+  moved). Anything from the group already selected → every present entry
+  is removed (clicking a selected tile deselects the tile AND its
+  occupant); nothing selected → the whole group is added. Empty ground
   selects nothing. The selection lives on UiState (off the undo timeline —
   a UI affordance, not a mission edit) and renders as outlines in the
   theme's LIGHTEST color (the same as every other world outline) around
-  every selected region; changing to a different tool clears it.
+  every selected region; changing to a different tool clears it. DELETES
+  keep the selection consistent: the placement-removal arms prune the
+  deleted entry and remap the indices above it (an index shift would
+  otherwise leave surviving entries pointing at the wrong placements),
+  and a tile erased by any flow (right-click, decoration placement) leaves
+  the selection with it.
   Deferred: shift-click / marquee / selection operations (move / delete).
   Placing does NOT happen in selection mode.
 - **Tile-paint tool:** one click = one tile (`player_paint_editor_tile`,
@@ -1984,12 +1991,11 @@ Selectable = union(enum) {
 
 The selection set is `[]Selectable` — LANDED as
 `UiState.editor_selection` (types.zig `Selectable`, placement indices are
-u32; a selection can go STALE when an edit removes a placement, so
-consumers bounds-check and skip — proper staleness handling lands with the
-selection-operations slice). The click resolution (see the selection tool
-above) is the landed hit-testing: '!' / '=' singletons, first covering
-decoration, else tile + occupants; the render-order priority below is the
-future selection-op refinement. **Inspector tool-type inference:** when
+u32; the delete arms prune deleted entries and remap shifted indices, so
+the set stays consistent across edits). The click resolution (see the
+selection tool above) is the landed hit-testing: '!' / '=' singletons,
+first covering decoration, else tile + occupants; the render-order
+priority below is the future selection-op refinement. **Inspector tool-type inference:** when
 the selection contains only placements (entity/decoration/item) that all
 share one `type_id`, the inspector switches to that palette tool and shows
 its type fields (editing the type updates all placements of it). When the
