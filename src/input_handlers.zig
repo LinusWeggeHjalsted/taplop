@@ -1730,6 +1730,17 @@ pub fn handleIdleInput(
     // changes nothing (see the planEditor*Actions planners / DESIGN →
     // Level Editor → Active-tool model).
     if (current.screen == .editor) {
+        // Delete key: delete the current selection (the select tool's bulk
+        // delete — see planEditorSelectionDeleteActions). Same no-op gate:
+        // an empty or all-marker selection never fires.
+        if (idle.delete_editor_selection) {
+            if (current.editor) |*editor| {
+                const plan = event_handlers.planEditorSelectionDeleteActions(editor, allocator);
+                if (plan.len > 0) {
+                    event_handlers.pushPlayerAction(current, .player_delete_editor_selection, allocator);
+                }
+            }
+        }
         if (idle.tile_clicked) |clicked_position| {
             if (current.editor) |*editor| {
                 switch (editor.active_tool) {

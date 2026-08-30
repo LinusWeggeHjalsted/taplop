@@ -153,6 +153,13 @@ pub const Action = enum {
     // `options_action` like the other payload-carrying editor clicks. See
     // DESIGN → Architecture → Level Editor → Editor UI layout (tabs).
     select_editor_level,
+    // Delete the select tool's current selection (editor viewport, Delete
+    // key). Fans out into the per-entry delete events via
+    // `player_delete_editor_selection`; consumed in handleIdleInput's
+    // editor arm — a no-op on every other screen (the binding ships in
+    // default_settings.txt regardless, like `skip_level`). The '!' / '='
+    // and the tiles under them are never deleted.
+    delete_editor_selection,
 };
 
 /// One per editable `Settings` scalar field. Drives the settings-screen

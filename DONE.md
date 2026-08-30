@@ -6918,3 +6918,49 @@ release-fires, unpromoted-release-toggles, shift-release-cancels,
 no-shift-press-never-starts). Test-writing gotcha: a "sub-threshold"
 probe point must move along ONE axis from the press — a diagonal probe
 tile silently exceeds the threshold and promotes. All 384 tests pass.
+
+### Editor selection delete (Delete key)
+
+**Why.** The first of the selection OPERATIONS — the reason selection was
+moved onto the undo timeline. The handler reads `editor.selection` from
+reconstructable state with NO payload on the orchestrator event
+(`player_delete_editor_selection: void`), which is the payoff of the
+slice-2 design: replay reproduces the deletion from the recorded
+selection events alone.
+
+**Semantics.** Everything selected goes EXCEPT the '!' / '=' entries and
+the tiles under them (mirroring the right-click delete's marker
+protection — a marker needs its ground). A selected tile takes its
+OCCUPANT with it: an entity/item placement standing on it is deleted even
+when unselected (unreachable via today's UI — clicks and marquees always
+grab tile + occupants together — but craftable in a log and reachable
+once deselect features land; an occupant can't stand on nothing).
+
+**Index stability — the subtle part.** The delete set is computed from
+the ORIGINAL state (selected placement indices + swept occupant indices,
+deduped per kind — duplicates in a crafted selection would otherwise
+panic the delete arm's bounds check after the first removal), and the
+processing order (the reversed LIFO push) runs each placement kind
+HIGH-BEFORE-LOW so a removal never shifts an index a later event still
+addresses — the same reasoning as the covering-decoration deletes in
+`planEditorDeleteActions`. Tile erases are position-keyed (safe any
+time) and process last. The selection reconcile inside each delete arm
+keeps the selection consistent mid-batch; the protected remainder (the
+markers + their surviving tiles) stays selected after the deletion.
+
+**Wiring.** `Action.delete_editor_selection` (press-only, rebindable —
+the `skip_level` pattern: the binding ships in default_settings.txt
+regardless and no-ops on every other screen) → `IdleInput` field →
+`handleIdleInput`'s editor arm (no-op gate: an empty or all-marker
+selection never fires) → `validatePlayerAction` arm (screen + editor +
+levels + select tool). New key mapping `Delete` in raylib_backend's
+key_mappings (W3C code "Delete" → raylib `.delete`) — web build verified
+compiling after the platform-seam touch (`scripts/web.sh`).
+
+Tests: contract-level integration (mixed selection — selected + swept
+occupants, markers + marker tiles protected, plan order asserted per the
+LIFO convention, selection remainder = exactly the protected entries,
+ONE undo step reverts the whole deletion incl. the selection) + the
+no-op gate + the positive input path through handleIdleInput. Hit the
+recorded test-harness gotcha again (seed before the first runToIdle or
+undo restores the pre-seed snapshot). All 386 tests pass.

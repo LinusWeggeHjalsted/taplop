@@ -1808,3 +1808,154 @@ test "player_select_editor_region: adds the region in one undoable step" {
     runToIdle(&history);
     try testing.expectEqual(selection_before, history.current_state.editor.?.selection.len);
 }
+
+test "player_delete_editor_selection: deletes everything selected except the markers and their tiles" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Entities 0 (selected) + 1 (the occupant of selected tile (5,5) —
+    // unselected, swept with its tile). Item 0: the occupant of selected
+    // tile (6,6), also swept. Decoration 0 (single tile at (7,7)):
+    // selected. Marker tiles (0,0) + (9,9): selected but protected.
+    const tiles = [_]types.Vector2{
+        .{ .x = 0, .y = 0 }, .{ .x = 5, .y = 5 }, .{ .x = 6, .y = 6 },
+        .{ .x = 8, .y = 8 }, .{ .x = 9, .y = 9 },
+    };
+    const entity_placements = [_]types.EntityPlacement{
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 1 } },
+        .{ .type_id = 0, .position = .{ .x = 5, .y = 5 } },
+    };
+    const item_placements = [_]types.ItemPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 6, .y = 6 },
+    }};
+    const decoration_placements = [_]types.DecorationPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 7, .y = 7 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 9, .y = 9 },
+        .entity_placements = &entity_placements,
+        .item_placements = &item_placements,
+        .decoration_placements = &decoration_placements,
+    }};
+    var history = harness.newHistory(editorStateWith(marqueeTestEditor(&levels)));
+    const seeded_selection = [_]types.Selectable{
+        .{ .tile = .{ .x = 0, .y = 0 } },
+        .player_start,
+        .{ .tile = .{ .x = 9, .y = 9 } },
+        .level_end,
+        .{ .entity_placement = 0 },
+        .{ .tile = .{ .x = 5, .y = 5 } },
+        .{ .tile = .{ .x = 6, .y = 6 } },
+        .{ .tile = .{ .x = 8, .y = 8 } },
+        .{ .decoration_placement = 0 },
+    };
+    history.current_state.editor.?.selection = &seeded_selection;
+    runToIdle(&history);
+
+    // The plan (returned slice = REVERSE processing order per the LIFO
+    // convention): processing runs the entity deletes high-before-low
+    // (1 then 0 — index stability), then the item, then the decoration,
+    // then the tile erases. The markers + their tiles plan NOTHING.
+    {
+        const plan = event_handlers.planEditorSelectionDeleteActions(
+            &history.current_state.editor.?,
+            history.current_arena.allocator(),
+        );
+        try testing.expectEqual(@as(usize, 7), plan.len);
+        try testing.expectEqual(types.Vector2{ .x = 8, .y = 8 }, plan[0].editor_event.editor_set_tile.position);
+        try testing.expectEqual(types.Vector2{ .x = 6, .y = 6 }, plan[1].editor_event.editor_set_tile.position);
+        try testing.expectEqual(types.Vector2{ .x = 5, .y = 5 }, plan[2].editor_event.editor_set_tile.position);
+        try testing.expectEqual(@as(u32, 0), plan[3].editor_event.editor_delete_decoration_placement.placement_index);
+        try testing.expectEqual(@as(u32, 0), plan[4].editor_event.editor_delete_item_placement.placement_index);
+        try testing.expectEqual(@as(u32, 0), plan[5].editor_event.editor_delete_entity_placement.placement_index);
+        try testing.expectEqual(@as(u32, 1), plan[6].editor_event.editor_delete_entity_placement.placement_index);
+    }
+
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .player_delete_editor_selection,
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    {
+        const level = history.current_state.editor.?.levels[0];
+        // Everything deletable is gone: both entities (one selected, one
+        // swept with its tile), the swept item, the decoration, and the
+        // three real tiles. The markers + their tiles survive.
+        try testing.expectEqual(@as(usize, 0), level.entity_placements.len);
+        try testing.expectEqual(@as(usize, 0), level.item_placements.len);
+        try testing.expectEqual(@as(usize, 0), level.decoration_placements.len);
+        try testing.expect(hasTile(level, .{ .x = 0, .y = 0 }));
+        try testing.expect(hasTile(level, .{ .x = 9, .y = 9 }));
+        try testing.expect(!hasTile(level, .{ .x = 5, .y = 5 }));
+        try testing.expect(!hasTile(level, .{ .x = 6, .y = 6 }));
+        try testing.expect(!hasTile(level, .{ .x = 8, .y = 8 }));
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.player_start);
+        try testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, level.level_end.?);
+
+        // The selection keeps exactly the protected remainder (the deleted
+        // entries were pruned by the delete arms' reconcile; the marker
+        // entries + surviving marker tiles stay).
+        const selection = history.current_state.editor.?.selection;
+        try testing.expectEqual(@as(usize, 4), selection.len);
+        try testing.expectEqual(types.Selectable{ .tile = .{ .x = 0, .y = 0 } }, selection[0]);
+        try testing.expectEqual(types.Selectable.player_start, selection[1]);
+        try testing.expectEqual(types.Selectable{ .tile = .{ .x = 9, .y = 9 } }, selection[2]);
+        try testing.expectEqual(types.Selectable.level_end, selection[3]);
+    }
+
+    // One undo step reverts the WHOLE deletion (all the deletes share the
+    // player action's idle point): placements + tiles + the selection.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const level = history.current_state.editor.?.levels[0];
+        try testing.expectEqual(@as(usize, 2), level.entity_placements.len);
+        try testing.expectEqual(@as(usize, 1), level.item_placements.len);
+        try testing.expectEqual(@as(usize, 1), level.decoration_placements.len);
+        try testing.expect(hasTile(level, .{ .x = 5, .y = 5 }));
+        try testing.expect(hasTile(level, .{ .x = 8, .y = 8 }));
+        try testing.expectEqual(@as(usize, 9), history.current_state.editor.?.selection.len);
+    }
+}
+
+test "player_delete_editor_selection: an all-marker selection plans nothing (no-op gate)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 2, .y = 2 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+    }};
+    var history = harness.newHistory(editorStateWith(marqueeTestEditor(&levels)));
+    const seeded_selection = [_]types.Selectable{ .player_start, .{ .tile = .{ .x = 0, .y = 0 } } };
+    history.current_state.editor.?.selection = &seeded_selection;
+    runToIdle(&history);
+
+    const plan = event_handlers.planEditorSelectionDeleteActions(
+        &history.current_state.editor.?,
+        history.current_arena.allocator(),
+    );
+    try testing.expectEqual(@as(usize, 0), plan.len);
+
+    // Through the input layer: no player action fires (no dead undo step),
+    // and the protected selection is untouched.
+    input_handlers.handleIdleInput(&history, .{ .delete_editor_selection = true }, .{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.selection.len);
+
+    // With a deletable tile selected, the same key press fires the
+    // orchestrator.
+    const with_deletable = [_]types.Selectable{ .player_start, .{ .tile = .{ .x = 0, .y = 0 } }, .{ .tile = .{ .x = 2, .y = 2 } } };
+    history.current_state.editor.?.selection = &with_deletable;
+    input_handlers.handleIdleInput(&history, .{ .delete_editor_selection = true }, .{});
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try testing.expect(history.current_state.event_stack[0].player_input_event == .player_delete_editor_selection);
+}

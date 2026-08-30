@@ -194,6 +194,7 @@ const key_mappings = [_]KeyMapping{
     .{ .key = .escape, .id = "Escape" },
     .{ .key = .enter, .id = "Enter" },
     .{ .key = .backspace, .id = "Backspace" },
+    .{ .key = .delete, .id = "Delete" },
     .{ .key = .space, .id = "Space" },
     .{ .key = .one, .id = "Digit1" },
     .{ .key = .zero, .id = "Digit0" },

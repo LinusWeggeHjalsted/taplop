@@ -582,6 +582,14 @@ pub const PlayerInputEvent = union(enum) {
         start_position: Vector2,
         end_position: Vector2,
     },
+    // Select-tool Delete key: delete the current selection. No payload —
+    // the handler reads `editor.selection` from reconstructable state (the
+    // whole point of the selection living on the timeline) and fans out
+    // into the per-entry delete events (`planEditorSelectionDeleteActions`).
+    // The '!' / '=' entries and the tiles under them are never deleted —
+    // everything else in the selection goes. All the deletes share this
+    // action's idle point, so one undo step reverts the whole deletion.
+    player_delete_editor_selection: void,
     // Tile-paint click in the editor viewport (tile tool active): one click
     // = one tile. The handler computes the effect from state — no-op when a
     // tile is already there; every decoration whose footprint covers the

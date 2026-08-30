@@ -40,6 +40,10 @@ ctrl true
 action skip_level
 
 input_type key
+input_name Delete
+action delete_editor_selection
+
+input_type key
 input_name KeyI
 ctrl true
 action zoom_in

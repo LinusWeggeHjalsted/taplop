@@ -1350,6 +1350,14 @@ fn handlePlayerInputEvent(
                 );
             }
         },
+        // Select-tool Delete key: thin over the shared planner (the input
+        // layer fires only nonempty plans — see
+        // planEditorSelectionDeleteActions).
+        .player_delete_editor_selection => {
+            if (current.editor) |*editor| {
+                pushEvents(current, planEditorSelectionDeleteActions(editor, allocator), allocator);
+            }
+        },
         // Tile-paint click: thin over the shared planner (the input layer
         // fires only nonempty plans — see planEditorTilePaintActions).
         .player_paint_editor_tile => |paint| {
@@ -2235,6 +2243,155 @@ pub fn planEditorSelectionActions(
 /// returning (the event stack is LIFO) so the entries process + land in
 /// the log in plan order. An empty plan (nothing in the region, or
 /// everything already selected) means no player action fires.
+/// Select-tool Delete-key planner: fan the selection out into the per-entry
+/// delete events (the same machinery the right-click delete composes). The
+/// '!' / '=' entries are NEVER deletable (skipped) and the tiles under them
+/// survive too (a marker needs its ground). A selected tile takes its
+/// OCCUPANT with it — an entity/item placement standing on it is deleted
+/// even when unselected (unreachable via today's UI — clicks and marquees
+/// always grab tile + occupants together — but craftable in a log and
+/// reachable once deselect features land; an occupant can't stand on
+/// nothing).
+///
+/// Index stability: the delete set is computed from the ORIGINAL state
+/// (selected placements + swept occupants, deduped per kind), and the
+/// processing order — the reversed LIFO push — runs each placement kind
+/// HIGH-BEFORE-LOW, so a removal never shifts an index a later event still
+/// addresses (same reasoning as the covering-decoration deletes in
+/// `planEditorDeleteActions`). Tile erases are position-keyed (safe any
+/// time) and process last. The selection reconcile runs inside each delete
+/// arm, keeping the selection consistent mid-batch; stale entries (out-of-
+/// range indices, absent tiles) are skipped defensively. Everything shares
+/// the player action's idle point — one undo step reverts the whole
+/// deletion.
+pub fn planEditorSelectionDeleteActions(
+    editor: *const types.Editor,
+    allocator: std.mem.Allocator,
+) []const Event {
+    const level = activeEditorLevel(editor) orelse return &.{};
+    const level_index: u32 = @intCast(editor.active_level_index);
+
+    // The delete set per placement kind (selected entries + swept
+    // occupants, deduped) + the erasable tile positions.
+    var entity_indices: std.ArrayList(u32) = .empty;
+    var item_indices: std.ArrayList(u32) = .empty;
+    var decoration_indices: std.ArrayList(u32) = .empty;
+    var tile_positions: std.ArrayList(Vector2) = .empty;
+
+    for (editor.selection) |selected| {
+        switch (selected) {
+            .entity_placement => |index| appendIndexIfNew(&entity_indices, index, allocator),
+            .ground_item_placement => |index| appendIndexIfNew(&item_indices, index, allocator),
+            .decoration_placement => |index| appendIndexIfNew(&decoration_indices, index, allocator),
+            // Never deletable — movable only.
+            .player_start, .level_end => {},
+            .tile => |position| {
+                // Marker tiles survive (the '!' / '=' need their ground),
+                // and so do stale entries (the tile is already gone).
+                if (position.x == level.player_start.x and position.y == level.player_start.y) continue;
+                if (level.level_end) |level_end_position| {
+                    if (position.x == level_end_position.x and position.y == level_end_position.y) continue;
+                }
+                if (!functions.tileListContains(level.level_tiles, position)) continue;
+                tile_positions.append(allocator, position) catch
+                    @panic("failed to allocate editor selection delete plan");
+                // Sweep the occupant (at most one — one thing per placed
+                // tile; deduped against the selected entries).
+                for (level.entity_placements, 0..) |placement, placement_index| {
+                    if (placement.position.x == position.x and placement.position.y == position.y) {
+                        appendIndexIfNew(&entity_indices, @intCast(placement_index), allocator);
+                        break;
+                    }
+                }
+                for (level.item_placements, 0..) |placement, placement_index| {
+                    if (placement.position.x == position.x and placement.position.y == position.y) {
+                        appendIndexIfNew(&item_indices, @intCast(placement_index), allocator);
+                        break;
+                    }
+                }
+            },
+        }
+    }
+
+    // Processing order: entity deletes, item deletes, decoration deletes
+    // (each descending), then the tile erases. The whole list is reversed
+    // for the LIFO push below.
+    var plan: std.ArrayList(Event) = .empty;
+    appendPlacementDeletesDescending(&plan, level, level_index, &entity_indices, .entity_placement, allocator);
+    appendPlacementDeletesDescending(&plan, level, level_index, &item_indices, .ground_item_placement, allocator);
+    appendPlacementDeletesDescending(&plan, level, level_index, &decoration_indices, .decoration_placement, allocator);
+    for (tile_positions.items) |position| {
+        plan.append(allocator, .{ .editor_event = .{ .editor_set_tile = .{
+            .level_index = level_index,
+            .position = position,
+            .is_floor = false,
+        } } }) catch @panic("failed to allocate editor selection delete plan");
+    }
+
+    // LIFO: reverse so processing + log order = plan order.
+    std.mem.reverse(Event, plan.items);
+    return plan.items;
+}
+
+/// Append `index` unless already collected (a crafted log can carry
+/// duplicate selection entries; a duplicate delete would panic in the
+/// delete arm's bounds check after the first removal shifts the list).
+fn appendIndexIfNew(
+    indices: *std.ArrayList(u32),
+    index: u32,
+    allocator: std.mem.Allocator,
+) void {
+    for (indices.items) |existing| {
+        if (existing == index) return;
+    }
+    indices.append(allocator, index) catch
+        @panic("failed to allocate editor selection delete plan");
+}
+
+/// Emit one placement-kind's deletes in DESCENDING index order — the
+/// processing order (the caller reverses the whole plan for the LIFO
+/// push, which flips it back to ascending in the slice). Out-of-range
+/// (stale) indices are skipped defensively.
+fn appendPlacementDeletesDescending(
+    plan: *std.ArrayList(Event),
+    level: *const types.EditorLevel,
+    level_index: u32,
+    indices: *std.ArrayList(u32),
+    kind: std.meta.Tag(types.Selectable),
+    allocator: std.mem.Allocator,
+) void {
+    std.mem.sort(u32, indices.items, {}, std.sort.asc(u32));
+    const placement_count: usize = switch (kind) {
+        .entity_placement => level.entity_placements.len,
+        .ground_item_placement => level.item_placements.len,
+        .decoration_placement => level.decoration_placements.len,
+        else => return,
+    };
+    var index = indices.items.len;
+    while (index > 0) {
+        index -= 1;
+        const placement_index = indices.items[index];
+        if (@as(usize, placement_index) >= placement_count) continue;
+        const variant: events.EditorEvent = switch (kind) {
+            .entity_placement => .{ .editor_delete_entity_placement = .{
+                .level_index = level_index,
+                .placement_index = placement_index,
+            } },
+            .ground_item_placement => .{ .editor_delete_item_placement = .{
+                .level_index = level_index,
+                .placement_index = placement_index,
+            } },
+            .decoration_placement => .{ .editor_delete_decoration_placement = .{
+                .level_index = level_index,
+                .placement_index = placement_index,
+            } },
+            else => unreachable,
+        };
+        plan.append(allocator, .{ .editor_event = variant }) catch
+            @panic("failed to allocate editor selection delete plan");
+    }
+}
+
 pub fn planEditorRegionSelectActions(
     editor: *const types.Editor,
     start_position: Vector2,

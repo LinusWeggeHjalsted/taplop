@@ -362,6 +362,11 @@ pub const IdleInput = struct {
     // level screen at the handler site; the binding ships in
     // default_settings.txt and no-ops elsewhere. See DESIGN → Input.
     skip_level: bool = false,
+    // Editor select tool: delete the current selection (Delete key,
+    // press-only). Consumed in handleIdleInput's editor arm — a no-op on
+    // every other screen. See DESIGN → Architecture → Level Editor →
+    // Selection model.
+    delete_editor_selection: bool = false,
     /// A main-menu command (New Game / Load Save / ...), set only when a menu
     /// button is clicked (no keybind path). Handled by the main_menu branch of
     /// handleIdleInput.
@@ -419,6 +424,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .cancel => player_input.idle.cancel = true,
         .skip => player_input.idle.skip = true,
         .skip_level => player_input.idle.skip_level = true,
+        .delete_editor_selection => player_input.idle.delete_editor_selection = true,
         .skill_slot_1 => player_input.idle.skill_slot_selected = 1,
         .skill_slot_2 => player_input.idle.skill_slot_selected = 2,
         .skill_slot_3 => player_input.idle.skill_slot_selected = 3,
@@ -798,6 +804,7 @@ pub fn translateInput(
     result.idle.cancel = checkAction(.cancel, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.idle.skip = checkAction(.skip, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.idle.skip_level = checkAction(.skip_level, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.idle.delete_editor_selection = checkAction(.delete_editor_selection, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
 
     // Skill slots 1-8 (press-only — repeating would queue uses by accident).
     const skill_slot_actions = [_]types.Action{

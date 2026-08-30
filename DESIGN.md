@@ -1982,7 +1982,16 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   (no drag) acts as a plain click — the toggle the press would have fired
   had Shift not been held (the select arm defers to the gesture while
   Shift is held). Mirrors the inventory salvage-region gesture.
-  Deferred: selection operations (move / delete).
+  The Delete key deletes the selection (`player_delete_editor_selection`
+  → `planEditorSelectionDeleteActions`): everything selected goes EXCEPT
+  the '!' / '=' entries and the tiles under them (a marker needs its
+  ground); a selected tile takes its occupant with it (an occupant can't
+  stand on nothing — swept even when unselected); each placement kind's
+  deletes process high-before-low (index stability), the tile erases
+  process last (position-keyed); one undo step reverts the whole
+  deletion. No payload — the handler reads `editor.selection` from
+  reconstructable state.
+  Deferred: selection operations (move).
   Placing does NOT happen in selection mode. The tool-switch clear rides
   the `editor_set_tool` event (invariant: selection nonempty ⇔ active tool
   is select), so one undo step reverts a tool switch together with its
@@ -2143,9 +2152,11 @@ switches clear the selection inside their own events, and the delete arms
 reconcile it atomically. The shift+drag marquee landed too
 (`player_select_editor_region` + `planEditorRegionSelectActions` + the
 `handleEditorMarquee` gesture — footprint-intersection membership,
-unpromoted release acts as a plain click; see Selection model). Remaining
-viewport input: selection
-operations (move / delete) + drag-painting.
+unpromoted release acts as a plain click; see Selection model), and so
+did the selection DELETE (Delete key → `player_delete_editor_selection`
++ `planEditorSelectionDeleteActions`; markers + their tiles protected).
+Remaining
+viewport input: selection move + drag-painting.
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
 struct exists in events.zig (`editor_add_level` / `editor_delete_level` /

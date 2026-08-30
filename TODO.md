@@ -485,8 +485,13 @@ yet implemented. Remaining work:
   `editor_select` adds skipping already-selected entries; footprint-
   intersection membership for decorations; an unpromoted shift release
   acts as a plain click — see DESIGN → Level Editor → Selection model +
-  DONE.md). Remaining viewport INPUT: drag-paint + the selection
-  OPERATIONS — move / delete, the reason selection exists. All tools
+  DONE.md). The selection DELETE is DONE too (Delete key →
+  `player_delete_editor_selection` → `planEditorSelectionDeleteActions`:
+  everything selected goes except the '!' / '=' and their tiles; a
+  selected tile sweeps its occupant; per-kind high-before-low delete
+  ordering; one undo step — see DESIGN → Level Editor → Selection model
+  + DONE.md). Remaining viewport INPUT: drag-paint + the selection
+  OPERATIONS — move, the reason selection exists. All tools
   have left-click input + cursor previews + the right-click delete.
   No-op clicks never fire: each tool's effect is computed by a pure
   planner (`planEditor*Actions`, event_handlers.zig) shared by the
