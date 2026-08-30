@@ -189,6 +189,7 @@ const key_mappings = [_]KeyMapping{
     .{ .key = .o, .id = "KeyO" },
     .{ .key = .g, .id = "KeyG" },
     .{ .key = .s, .id = "KeyS" },
+    .{ .key = .a, .id = "KeyA" },
     .{ .key = .d, .id = "KeyD" },
     .{ .key = .m, .id = "KeyM" },
     .{ .key = .l, .id = "KeyL" },
