@@ -1931,8 +1931,16 @@ layout + a left inspector + a right settings sidebar:
     a default item, Delete clears to null; per-stat numeric inputs
     clamped to the gear `max_*` constants.
   - utility skills (slot_4..slot_8, nullable): the centered picker
-    (below) — 25 skills don't fit a row; it is the picker framework's
-    first consumer.
+    (below) — it is the picker framework's first consumer. Only UTILITY
+    skills (spells, cantrips, enchantments, curses — never weapon
+    skills, which belong to the equipped weapon) may sit on the bar:
+    the picker never offers them, the parser warns + drops them from
+    slot_4..8 (entity definitions AND player saves), a weapon-skill
+    TOME is dropped entirely, and the player equip path gates the same
+    way (src/utility_skills.zig is the single source). The picker is a
+    MODAL centered panel: None + one cell per eligible skill (flat,
+    enum order), the current pick highlighted, close button top-right;
+    while open, only the picker's own actions run.
   - entity layers: deferred with the sprite picker (they share it).
 - **Settings sidebar (right bar):** mission + active-level settings.
   User-toggleable like the inspector, open by default. Mission settings:

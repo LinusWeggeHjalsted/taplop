@@ -336,6 +336,14 @@ pub const AnytimeInput = struct {
     /// Editor weapon type, set alongside
     /// `options_action == .select_editor_weapon_type` (a weapon-type cell).
     clicked_editor_weapon_type: ?types.WeaponType = null,
+    /// Editor utility-slot index, set alongside
+    /// `options_action == .open_editor_skill_picker` (an inspector slot
+    /// button).
+    clicked_editor_utility_slot: ?u32 = null,
+    /// Editor skill pick, set alongside
+    /// `options_action == .select_editor_utility_skill` (a picker cell).
+    /// No payload = the picker's None cell.
+    clicked_editor_skill: ?types.SkillId = null,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -447,6 +455,9 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_weapon_type => player_input.anytime.options_action = action,
         .add_editor_item => player_input.anytime.options_action = action,
         .delete_editor_item => player_input.anytime.options_action = action,
+        .open_editor_skill_picker => player_input.anytime.options_action = action,
+        .close_editor_picker => player_input.anytime.options_action = action,
+        .select_editor_utility_skill => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,

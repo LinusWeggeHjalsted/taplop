@@ -238,6 +238,15 @@ fn update(
                         if (button.editor_weapon_type) |weapon_type| {
                             player_input.anytime.clicked_editor_weapon_type = weapon_type;
                         }
+                        // Inspector utility-slot buttons + skill-picker
+                        // cells: the slot / skill ride alongside the action
+                        // (a missing skill payload = the picker's None cell).
+                        if (button.editor_utility_slot) |utility_slot| {
+                            player_input.anytime.clicked_editor_utility_slot = utility_slot;
+                        }
+                        if (button.editor_skill) |skill_id| {
+                            player_input.anytime.clicked_editor_skill = skill_id;
+                        }
                         // Release sound: generic button-up for actions without a
                         // specific sound. Actions WITH a specific sound (skip,
                         // swap_weapons, panel toggles) get their sound from the

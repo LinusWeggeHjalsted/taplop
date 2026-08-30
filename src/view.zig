@@ -344,6 +344,18 @@ pub fn view(
                 &session.ui_state.editor_palette_collapsed,
                 editor.active_tool,
             ) catch @panic("failed to build editor bottom bar");
+            // The centered picker draws LAST, above every editor surface
+            // (modal — see handleAnytimeInput's gate).
+            if (session.ui_state.editor_picker) |picker_target| {
+                ui.buildEditorSkillPicker(
+                    &ui_elements,
+                    frame_allocator,
+                    font_metrics,
+                    editor,
+                    picker_target,
+                    active_theme,
+                ) catch @panic("failed to build editor skill picker");
+            }
         }
     } else if (current_state.screen == .main_menu) {
         // Continue is available when there is a game to resume: either

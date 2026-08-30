@@ -539,8 +539,13 @@ yet implemented. Remaining work:
         (`.select_editor_weapon_type` / `.add_editor_item` /
         `.delete_editor_item`) with Button payloads
         (`editor_gear_slot` + `editor_weapon_type`).
-  - [ ] **5 — utility skills:** the centered picker framework (first
-        consumer: the 25-skill list) + slot none/delete.
+  - [x] **5 — utility skills:** DONE — the utility-skill POLICY (one
+        rule, five seams — see slice-5 part 1 in DONE.md) + the centered
+        picker (the framework's first consumer): flat
+        `utility_skills.utility_skill_ids` list + a None cell, modal
+        (only its own actions run while open), close button top-right;
+        the inspector's five slot rows are half-width current-skill
+        buttons that open it; same-value picks close without recording.
   - [ ] **6 — later: sprite picker + entity layers:** replaces the interim
         sprite-id text field; sprite resolution must PRIORITIZE `.png`s
         in the mission folder being edited (custom assets) over shipped

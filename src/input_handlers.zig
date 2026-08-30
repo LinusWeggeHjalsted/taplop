@@ -1617,6 +1617,42 @@ pub fn handleAnytimeInput(
         _ = history.redo(&event_handlers.processEvent);
     }
 
+    // The centered editor picker is MODAL: while open, only its own
+    // actions run (its panel blocks the world element-wise; this gate
+    // blocks every other action + the scroll/idle input below — same
+    // shape as the options-menu gate, minus the drill-through).
+    if (history.session.ui_state.editor_picker != null) {
+        if (anytime.options_action) |picker_action| switch (picker_action) {
+            // A picker cell: assign to the picker's slot (the skill rode
+            // in `clicked_editor_skill`; no payload = the None cell) and
+            // close. Same-value picks (incl. None-on-empty) close without
+            // recording.
+            .select_editor_utility_skill => {
+                const target = history.session.ui_state.editor_picker.?;
+                const slot_index = switch (target) {
+                    .utility_skill_slot => |index| index,
+                };
+                history.session.ui_state.editor_picker = null;
+                if (history.current_state.editor == null) return;
+                const editor: *types.Editor = &history.current_state.editor.?;
+                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
+                const entity_target: types.EntityEditTarget = .{ .entity_type = type_index };
+                if (slot_index >= types.utility_skill_count) return;
+                const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
+                const picked = anytime.clicked_editor_skill;
+                if (template.equipped_utility_skills[slot_index] == picked) return;
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_utility_skill = .{
+                    .target = entity_target,
+                    .slot_index = slot_index,
+                    .value = picked,
+                } });
+            },
+            .close_editor_picker => history.session.ui_state.editor_picker = null,
+            else => {},
+        };
+        return;
+    }
+
     if (anytime.dump_event_log) {
         dumpEventLog(history);
     }
@@ -1843,6 +1879,14 @@ pub fn handleAnytimeInput(
             // Item Delete: clear the slot to null (an empty slot is a
             // no-op — the button isn't rendered then, but the gate holds
             // for crafted input).
+            // An inspector utility-slot button: open the centered skill
+            // picker for that slot (pure UiState — opening is an
+            // affordance; the PICK is what records).
+            .open_editor_skill_picker => {
+                const slot_index = anytime.clicked_editor_utility_slot orelse return;
+                if (slot_index >= types.utility_skill_count) return;
+                history.session.ui_state.editor_picker = .{ .utility_skill_slot = slot_index };
+            },
             .delete_editor_item => {
                 const slot = anytime.clicked_editor_gear_slot orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;

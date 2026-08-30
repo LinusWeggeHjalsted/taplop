@@ -178,6 +178,18 @@ pub const Action = enum {
     // The inspector's item Delete button (clear the slot to null — the
     // slot rides in `AnytimeInput.clicked_editor_gear_slot`).
     delete_editor_item,
+    // An inspector utility-slot button was clicked (open the centered
+    // skill picker for that slot). The slot index rides in
+    // `AnytimeInput.clicked_editor_utility_slot`.
+    open_editor_skill_picker,
+    // The skill picker's close button (top-right, the middle-panel
+    // convention). No payload.
+    close_editor_picker,
+    // A skill picker cell was clicked (assign to the picker's slot). The
+    // skill rides in `AnytimeInput.clicked_editor_skill`; the None cell
+    // carries no payload (clears the slot). Only UTILITY skills are
+    // offered — see src/utility_skills.zig.
+    select_editor_utility_skill,
     // Delete the select tool's current selection (editor viewport, Delete
     // key). Fans out into the per-entry delete events via
     // `player_delete_editor_selection`; consumed in handleIdleInput's

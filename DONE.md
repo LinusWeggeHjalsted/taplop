@@ -7660,3 +7660,44 @@ commit set/clear/undo + weapon-skill + bad-slot no-ops. The save
 round-trip fixture itself carried `slot_4 slice` — legal-by-accident for
 months, now swapped for `.swap` (learned list still carries slice, which
 is FINE: learning a weapon skill is legal, bar-equipping it is not).
+
+### The centered skill picker (DONE, slice 5 part 2)
+
+The picker framework's first consumer; the enemy-type inspector now
+covers every scalar + slot field the format carries (layers remain,
+slice 6).
+
+**The picker.** `buildEditorSkillPicker` — a modal centered panel
+(darkest, `emitPanelHeader` with the middle-panel close button): a None
+cell (the empty-slot diamond frame) + one skill-button cell per
+utility-eligible skill (the flat comptime list — 7 today; icons
+centered, names at the cell bottom, skill tooltips), the currently
+assigned pick highlighted, header "Assign Slot N". `UiState.editor_picker:
+?EditorPickerTarget` (a union — the sprite picker joins later); opening
+is an affordance (off the timeline), the PICK records via
+`player_set_editor_entity_utility_skill`. The None cell carries no
+`editor_skill` payload (null = clear). MODAL: a gate at the top of
+handleAnytimeInput runs only the picker's own actions while open
+(everything else — including Escape→options-menu — is swallowed; the
+panel itself blocks the world element-wise). Same-value picks (incl.
+None-on-empty) close without recording.
+
+**The slot rows.** The five utility entries are half-width buttons
+showing the current skill's name (or "None") via a new `skill_slot`
+control kind; clicking opens the picker for that slot
+(`.open_editor_skill_picker` + the slot payload).
+
+One build hiccup worth remembering: a python replace anchored on the
+M2-arbitration doc comment silently no-opped (its first line had been
+eaten by an earlier slice's edit — the comment started mid-sentence).
+The tell was "inserted" printing while nothing landed; the fix restored
+the lost doc line. Python .replace never fails loudly — anchor on text
+you've just SEEN, and verify after.
+
+Tests (427): the picker builder (26 elements: header/close/None/7 cells,
+blink highlighted when assigned, no weapon-skill payload anywhere) and
+the full interaction (open → modal gate swallows other actions → pick
+assigns + closes + one undo → same-value no-op → None clears → close
+button). The picker arm commits inside handleAnytimeInput — the NORMAL
+path (update()'s recording covers it live) — so directly-driven tests
+need runToIdle, unlike the frame-level text-commit case.

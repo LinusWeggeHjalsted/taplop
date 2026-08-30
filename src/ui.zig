@@ -11,6 +11,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const state = @import("state.zig");
 const lookups = @import("generated_lookups.zig");
+const utility_skills = @import("utility_skills.zig");
 const Skill = @import("skills/skill.zig").Skill;
 const Effect = @import("effects/effect.zig").Effect;
 
@@ -44,6 +45,14 @@ pub const FullScreenOverlayId = enum {
 
 pub const max_middle_panels = 4;
 pub const max_full_screen_overlays = 2;
+
+/// Which field the editor's centered picker is assigning (see
+/// DESIGN → Architecture → Level Editor → Editor UI layout — the
+/// centered sprite picker section; the skill picker is the first
+/// consumer).
+pub const EditorPickerTarget = union(enum) {
+    utility_skill_slot: u32,
+};
 
 pub const UiState = struct {
     /// Middle section panels, ordered by open time (first opened = leftmost).
@@ -130,6 +139,13 @@ pub const UiState = struct {
     /// builder (authoritative — it knows the content height) and on write
     /// in the wheel handler. Off the undo timeline like the other scrolls.
     editor_inspector_scroll: i32 = 0,
+
+    /// The editor's centered picker, if open — which field is being
+    /// picked (first consumer: the utility-skill picker; the sprite picker
+    /// joins later). A MODAL overlay: while set, the input layer runs only
+    /// the picker's own actions (see handleAnytimeInput). Off the undo
+    /// timeline — picking is what records, opening is an affordance.
+    editor_picker: ?EditorPickerTarget = null,
 
     /// Editor palette group collapse state: false = expanded, true =
     /// collapsed (header + "+" only, no type cells). Collapsed by DEFAULT
@@ -1843,6 +1859,13 @@ pub const Button = struct {
     /// alongside `editor_gear_slot`). Rides in
     /// `AnytimeInput.clicked_editor_weapon_type`.
     editor_weapon_type: ?types.WeaponType = null,
+    /// Editor utility-slot index, if this button is an inspector
+    /// utility-slot button (opens the skill picker). Rides in
+    /// `AnytimeInput.clicked_editor_utility_slot`.
+    editor_utility_slot: ?u32 = null,
+    /// Editor skill pick, if this button is a skill-picker cell. Rides in
+    /// `AnytimeInput.clicked_editor_skill`; null on the None cell (clears).
+    editor_skill: ?types.SkillId = null,
     blocks_input: bool = true,
 };
 
@@ -4226,6 +4249,9 @@ const EditorInspectorControl = union(enum) {
     swatches,
     /// The displays_weapons true/false toggle.
     toggle,
+    /// A utility-skill slot button: shows the slot's current skill (or
+    /// "None") and opens the centered skill picker (the slot index rides).
+    skill_slot: u32,
 };
 
 /// One line of inspector content — per the coupling contract in DESIGN →
@@ -4360,11 +4386,15 @@ fn editorInspectorEntityEntries(
         }
     }
 
-    // Utility skills: fixed until the picker slice (slot_4..slot_8).
+    // Utility skills: one slot button per bar slot (opens the picker).
     try entries.append(allocator, .spacer);
     try entries.append(allocator, .{ .section = "Utility skills" });
-    for ([_][]const u8{ "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8" }) |label| {
-        try entries.append(allocator, .{ .field = .{ .label = label, .control = .none } });
+    for (0..types.utility_skill_count) |slot_index| {
+        const label = try std.fmt.allocPrint(allocator, "Slot {d}", .{slot_index + 4});
+        try entries.append(allocator, .{ .field = .{
+            .label = label,
+            .control = .{ .skill_slot = @intCast(slot_index) },
+        } });
     }
 
     return entries.items;
@@ -4506,6 +4536,16 @@ fn buildEditorInspectorContent(
                         font_metrics,
                         editor,
                         type_index,
+                        control_rect,
+                        active_theme,
+                    ),
+                    .skill_slot => |slot_index| try emitInspectorSkillSlot(
+                        elements,
+                        allocator,
+                        font_metrics,
+                        editor,
+                        type_index,
+                        slot_index,
                         control_rect,
                         active_theme,
                     ),
@@ -4927,6 +4967,209 @@ fn emitInspectorSlotButton(
         .blocks_input = false,
     } });
 }
+/// A utility-skill slot's control line: a half-width button showing the
+/// slot's current skill (or "None") — clicking opens the centered skill
+/// picker for that slot.
+fn emitInspectorSkillSlot(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    editor: types.Editor,
+    type_index: u32,
+    slot_index: u32,
+    control_rect: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    var label: []const u8 = "None";
+    if (type_index < editor.entity_types.len and slot_index < types.utility_skill_count) {
+        if (editor.entity_types[type_index].template.equipped_utility_skills[slot_index]) |skill_id| {
+            if (lookups.getSkillDefinition(skill_id)) |definition| {
+                label = definition.name;
+            }
+        }
+    }
+    // Half the control width (the full-width-vs-section-header convention).
+    const rect: Rectangle = .{
+        .x = control_rect.x,
+        .y = control_rect.y,
+        .width = @divFloor(control_rect.width, 2),
+        .height = control_rect.height,
+    };
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .action = .open_editor_skill_picker,
+        .editor_utility_slot = slot_index,
+        .tooltip = .{ .header = try spanRow(allocator, text(label)) },
+    } });
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = rect
+            .placeCenter(label_width, editor_group_header_font_size)
+            .position(),
+        .font_size = editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+}
+
+/// The centered utility-skill picker (the picker framework's first
+/// consumer — see DESIGN → Architecture → Level Editor → Editor UI
+/// layout). A modal panel: the None option + one cell per
+/// utility-eligible skill (the flat list from src/utility_skills.zig —
+/// weapon skills are never offered), 4-wide skill-button cells with the
+/// icon + name; the currently-assigned skill is highlighted; a close
+/// button top-right (the middle-panel convention). `target` names the
+/// slot being assigned.
+pub fn buildEditorSkillPicker(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    editor: types.Editor,
+    target: EditorPickerTarget,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const slot_index = switch (target) {
+        .utility_skill_slot => |index| index,
+    };
+    var current: ?types.SkillId = null;
+    if (editorInspectorEntityTarget(editor)) |type_index| {
+        if (slot_index < types.utility_skill_count) {
+            current = editor.entity_types[type_index].template.equipped_utility_skills[slot_index];
+        }
+    }
+
+    const options: i32 = @intCast(1 + utility_skills.utility_skill_ids.len); // None + skills
+    const columns: i32 = 4;
+    const rows: i32 = @divTrunc(options + columns - 1, columns);
+    const cell = slot_size;
+    const width = columns * cell + (columns - 1) * ui_gap + 2 * ui_gap;
+    const height = middle_panel_header_height + rows * cell + (rows - 1) * ui_gap + 2 * ui_gap;
+    const bounds = screenRect().placeCenter(width, height);
+
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = bounds.position(),
+        .width = width,
+        .height = height,
+        .color = active_theme.darkest,
+    } });
+    const title = try std.fmt.allocPrint(allocator, "Assign Slot {d}", .{slot_index + 4});
+    const content = try emitPanelHeader(elements, allocator, bounds, title, .close_editor_picker);
+
+    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const grid_origin: ScreenPosition = .{
+        .x = content.x + ui_gap,
+        .y = content.y + ui_gap,
+    };
+
+    // Cell 0: the None option (clears the slot) — no editor_skill payload.
+    try emitPickerSkillCell(
+        elements,
+        allocator,
+        font_metrics,
+        .{ .x = grid_origin.x, .y = grid_origin.y, .width = cell, .height = cell },
+        null,
+        "None",
+        "ui/skill_slot_empty",
+        current == null,
+        button_color,
+        active_theme.lightest,
+    );
+    // One cell per utility skill, in enum order (index + 1: cell 0 is None).
+    for (utility_skills.utility_skill_ids, 0..) |skill_id, index| {
+        const definition = lookups.getSkillDefinition(skill_id) orelse continue;
+        const column: i32 = @intCast((index + 1) % @as(usize, @intCast(columns)));
+        const row: i32 = @intCast((index + 1) / @as(usize, @intCast(columns)));
+        const cell_rect: Rectangle = .{
+            .x = grid_origin.x + column * (cell + ui_gap),
+            .y = grid_origin.y + row * (cell + ui_gap),
+            .width = cell,
+            .height = cell,
+        };
+        try emitPickerSkillCell(
+            elements,
+            allocator,
+            font_metrics,
+            cell_rect,
+            skill_id,
+            definition.name,
+            "ui/skill_button",
+            current == skill_id,
+            button_color,
+            active_theme.lightest,
+        );
+    }
+}
+
+/// One picker cell: the frame button (carrying the pick; null skill_id =
+/// the None cell) + the skill icon centered + the name label at the
+/// bottom.
+fn emitPickerSkillCell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell_rect: Rectangle,
+    skill_id: ?types.SkillId,
+    label: []const u8,
+    frame_sprite_id: []const u8,
+    highlighted: bool,
+    button_color: Color,
+    label_color: Color,
+) !void {
+    const tooltip: ?Tooltip = if (skill_id) |some_id|
+        if (lookups.getSkillDefinition(some_id)) |definition|
+            try buildSkillTooltip(allocator, definition)
+        else
+            null
+    else
+        .{ .header = try spanRow(allocator, text("None")) };
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = frame_sprite_id,
+        .screen_position = cell_rect.position(),
+        .width = cell_rect.width,
+        .height = cell_rect.height,
+        .action = .select_editor_utility_skill,
+        .editor_skill = skill_id,
+        .color = button_color,
+        .highlighted = highlighted,
+        .tooltip = tooltip,
+    } });
+    if (skill_id) |some_id| {
+        const icon_rect = cell_rect.placeCenter(@divFloor(cell_rect.width, 2), @divFloor(cell_rect.height, 2));
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = skillIconSpriteId(some_id),
+            .screen_position = icon_rect.position(),
+            .width = icon_rect.width,
+            .height = icon_rect.height,
+            .blocks_input = false,
+        } });
+    }
+    // Name label near the bottom, under the icon.
+    const font_size: i32 = 48;
+    const label_width = font_metrics.measureSpanWidth(text(label), font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = cell_rect
+            .placeBottomCenter(label_width, font_size, ui_gap)
+            .position(),
+        .font_size = font_size,
+        .color = label_color,
+        .blocks_input = false,
+    } });
+}
+
+/// M2 press arbitration for a focused text field (see DESIGN → UI
 /// Framework → Text input widget): true when a left press may PROCEED
 /// after committing the field — the press is on a sibling inspector
 /// control (anything inside the open inspector panel, or the inspector
@@ -6614,7 +6857,7 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         var ui_state: UiState = .{ .editor_inspector_scroll = 999 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try std.testing.expectEqual(@as(i32, 39), ui_state.editor_inspector_scroll);
-        try expectInspectorLabels(&elements, &.{ "Slot 4", "Slot 5", "Slot 6", "Slot 7", "Slot 8" });
+        try expectInspectorLabels(&elements, &.{ "Slot 4", "None", "Slot 5", "None", "Slot 6", "None", "Slot 7", "None", "Slot 8", "None" });
     }
 
     // Negative scroll clamps to 0.
@@ -8872,3 +9115,66 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
 }
 
 
+
+test "buildEditorSkillPicker: header + close + None + one cell per utility skill" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // Slot 1 (Slot 5) already carries blink — its cell is highlighted,
+    // the None cell is not.
+    const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton", .template = .{
+        .equipped_utility_skills = .{ null, .blink, null, null, null },
+    } }};
+    const editor: types.Editor = .{
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    };
+
+    var elements: UiElementList = .empty;
+    try buildEditorSkillPicker(&elements, arena.allocator(), metrics, editor, .{ .utility_skill_slot = 1 }, theme);
+
+    // Panel + header label + close + None (button+label) + 7 × (button +
+    // icon + label) = 26. No weapon-skill cells (the flat policy list).
+    try std.testing.expectEqual(@as(usize, 26), elements.items.len);
+
+    var picker_buttons: usize = 0;
+    var highlighted_skill: ?types.SkillId = null;
+    var none_highlighted = false;
+    var saw_blink_cell = false;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .select_editor_utility_skill) {
+            picker_buttons += 1;
+            if (button.editor_skill == null) {
+                none_highlighted = button.highlighted;
+            } else if (button.highlighted) {
+                highlighted_skill = button.editor_skill;
+            }
+            if (button.editor_skill == .blink) saw_blink_cell = true;
+        },
+        .text_label => |label| {
+            if (std.mem.eql(u8, label.text, "Assign Slot 5")) saw_blink_cell = saw_blink_cell;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 8), picker_buttons); // None + 7 skills
+    try std.testing.expectEqual(types.SkillId.blink, highlighted_skill.?);
+    try std.testing.expect(!none_highlighted);
+    try std.testing.expect(saw_blink_cell);
+    // No weapon-skill payload anywhere.
+    for (elements.items) |element| switch (element) {
+        .button => |button| try std.testing.expect(
+            button.editor_skill == null or utility_skills.isUtilitySkill(button.editor_skill.?),
+        ),
+        else => {},
+    };
+}

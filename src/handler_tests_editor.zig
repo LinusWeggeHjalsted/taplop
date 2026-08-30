@@ -2993,3 +2993,103 @@ test "editor utility-skill commit: set/clear via the wrapper, weapon skills and 
     }
     try testing.expect(!any_set);
 }
+
+test "skill picker interaction: open, assign, same-value no-op, None clears, modal gate" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton", .template = .{} }};
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    }));
+    runToIdle(&history);
+
+    // Open the picker for slot 0 (Slot 4).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_skill_picker,
+        .clicked_editor_utility_slot = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_picker != null);
+    try testing.expectEqual(@as(u32, 0), history.session.ui_state.editor_picker.?.utility_skill_slot);
+
+    // While open, other actions are swallowed by the modal gate.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_inspector,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.current_state.editor.?.inspector_open);
+
+    // Pick blink: assigned + the picker closes; one undo step.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_utility_skill,
+        .clicked_editor_skill = .blink,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expectEqual(
+        types.SkillId.blink,
+        history.current_state.editor.?.entity_types[0].template.equipped_utility_skills[0],
+    );
+    // runToIdle records the undo stop (driven directly here — the LIVE
+    // path commits inside update(), whose events_processed recording
+    // covers it; not the frame-level text-commit case).
+    runToIdle(&history);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(
+        @as(?types.SkillId, null),
+        history.current_state.editor.?.entity_types[0].template.equipped_utility_skills[0],
+    );
+
+    // Reopen + pick the SAME (empty) value: closes, records nothing.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_skill_picker,
+        .clicked_editor_utility_slot = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_utility_skill,
+        .clicked_editor_skill = null,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Assign, reopen, pick None: clears the slot (one event).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_skill_picker,
+        .clicked_editor_utility_slot = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_utility_skill,
+        .clicked_editor_skill = .stone_form,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(
+        types.SkillId.stone_form,
+        history.current_state.editor.?.entity_types[0].template.equipped_utility_skills[0],
+    );
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_skill_picker,
+        .clicked_editor_utility_slot = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_utility_skill,
+        .clicked_editor_skill = null,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(
+        @as(?types.SkillId, null),
+        history.current_state.editor.?.entity_types[0].template.equipped_utility_skills[0],
+    );
+
+    // The close button's action just closes.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_skill_picker,
+        .clicked_editor_utility_slot = 2,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .close_editor_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
