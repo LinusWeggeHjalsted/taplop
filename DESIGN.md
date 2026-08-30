@@ -1847,8 +1847,19 @@ layout + a left inspector + a right settings sidebar:
   one below) are square `ui/panel` cells, the level-tab visual class.
   Hover tooltips on slots show the type's name.
 - **Inspector (left bar):** shows TYPE fields for the currently-relevant
-  type (see selection model). User-toggleable (button in the bottom bar,
-  mirroring in-game panel toggles), open by default. Auto-opens on new
+  type (see selection model). User-toggleable via a top-left "Inspector"
+  button flush below the options button (the level-tab / group-header
+  visual class: panel-backed, 128 high), open by default; the button is
+  highlighted while open. The open flag lives on the Editor
+  (`Editor.inspector_open`) and flips via `editor_toggle_inspector` — on
+  the undo timeline, NOT a UiState write like the in-game middle-panel
+  toggles or the palette accordion: the auto-open-on-creation behavior
+  below mutates it from the `editor_add_*_type` handlers (handler purity
+  — events can't write session-side UiState), and replay must reproduce
+  it. (Unifying the in-game panel toggles onto this GameState convention
+  is a tracked TODO.) The background panel (width 1024, a placeholder
+  until the field layout settles) spans from below the button down to
+  the palette groups' header strip. Auto-opens on new
   enemy/decoration/item creation (an empty type isn't useful until
   populated). Field editing is inline within the inspector: skill
   assignment, gear equip, stat fields, footprint editing (decorations),

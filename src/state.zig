@@ -1139,6 +1139,17 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_set_editor_tool type id out of range");
                     }
                 },
+                // Structural legality: the editor screen with an editor
+                // present (the live path is the editor's top-left toggle
+                // button; no other screen renders it).
+                .player_toggle_editor_inspector => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_toggle_editor_inspector outside editor screen");
+                    }
+                    if (self.current_state.editor == null) {
+                        @panic("replay validation: player_toggle_editor_inspector with no editor");
+                    }
+                },
                 // Structural legality: the paint checks + the select tool
                 // active (the live path only toggles from the select tool's
                 // viewport arm; the handler no-ops otherwise as the

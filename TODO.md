@@ -472,10 +472,14 @@ yet implemented. Remaining work:
   DESIGN → Level Editor → Selection model; lightest-color region
   outlines, hover preview, cleared on tool + level-tab change inside those
   events — see DONE.md), and the ACTIVE TOOL pointer onto the Editor
-  (`Editor.active_tool` + `player_set_editor_tool`/`editor_set_tool`).
-  Deferred: drag-painting. Still-needed event
-  structs: `editor_toggle_inspector` /
-  gradient-override setters. Default level template
+  (`Editor.active_tool` + `player_set_editor_tool`/`editor_set_tool`),
+  and the INSPECTOR SIDEBAR SHELL (top-left toggle button below the
+  options button + background panel, open by default; `Editor.inspector_open`
+  + `player_toggle_editor_inspector` → `editor_toggle_inspector`, on the
+  undo timeline — see DESIGN → Architecture → Level Editor → Editor UI
+  layout). Deferred: drag-painting. Still-needed event
+  structs: gradient-override setters (the inspector's field-edit events
+  exist; the field-editor UI is the next slice). Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved
   placements, `!`/`=` markers; camera centered on the active level's
@@ -784,6 +788,18 @@ Already total (no action): A* comparePathNodes (f→x→y); entity draw sort
 ## Tech Debt / Refactoring
 
 Done items in DONE.md. Open:
+
+- **Unify the panel-toggle convention into GameState.** The in-game middle
+  panel toggles (inventory/gear/skills/entity-inspect, hub + level
+  screens) are direct `UiState` writes — off the undo timeline — while the
+  editor inspector toggle rides GameState via `editor_toggle_inspector`
+  (on the timeline; required there for auto-open-on-creation + replay
+  reproduction — see DESIGN → Architecture → Level Editor → Editor UI
+  layout). We want ONE convention: migrate the middle-panel open/close
+  flags onto GameState events (undo over panel toggles comes with it) the
+  next time that subsystem is touched. The palette accordion
+  (`editor_palette_collapsed`) can stay UiState — it's a pure view
+  affordance with no handler-mutated state.
 
 - [x] **Split AGENTS.md → AGENTS.md + DESIGN.md** — done; history in DONE.md.
 

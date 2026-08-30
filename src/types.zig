@@ -153,6 +153,12 @@ pub const Action = enum {
     // `options_action` like the other payload-carrying editor clicks. See
     // DESIGN → Architecture → Level Editor → Editor UI layout (tabs).
     select_editor_level,
+    // The editor's inspector toggle button (top-left, below options): flip
+    // the inspector sidebar open/closed. The open flag lives on the Editor
+    // (GameState) via `player_toggle_editor_inspector` →
+    // `editor_toggle_inspector`, so it rides the undo timeline. See DESIGN
+    // → Architecture → Level Editor → Editor UI layout (inspector).
+    toggle_editor_inspector,
     // Delete the select tool's current selection (editor viewport, Delete
     // key). Fans out into the per-entry delete events via
     // `player_delete_editor_selection`; consumed in handleIdleInput's
@@ -203,7 +209,7 @@ pub fn releaseSoundForAction(action: Action) ?SoundId {
     return switch (action) {
         .skip => .skip,
         .swap_weapons => .swap_skill,
-        .toggle_inventory, .toggle_gear, .toggle_skills, .toggle_entity_inspect, .toggle_world_map, .toggle_options_menu => .menu,
+        .toggle_inventory, .toggle_gear, .toggle_skills, .toggle_entity_inspect, .toggle_world_map, .toggle_options_menu, .toggle_editor_inspector => .menu,
         // Undo/redo: reuses the menu sound (no dedicated sfx).
         .undo, .redo => .menu,
         .save_game => .menu,
@@ -953,6 +959,12 @@ pub const Editor = struct {
     /// `editor_select` / `editor_deselect` events; the placement-delete
     /// arms keep it consistent within the same event (prune + remap).
     selection: []const Selectable = &.{},
+    /// The inspector sidebar's open state (the top-left toggle button;
+    /// open by default). Lives on the Editor — not UiState — so the settled
+    /// auto-open-on-new-type behavior can mutate it from the
+    /// `editor_add_*_type` handlers, and replay reproduces it. Mutated only
+    /// via `editor_toggle_inspector`.
+    inspector_open: bool = true,
     mode: EditorMode = .edit,
 };
 

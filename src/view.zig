@@ -324,6 +324,13 @@ pub fn view(
                 editor,
                 active_theme,
             ) catch @panic("failed to build editor level tabs");
+            ui.buildEditorInspectorPanel(
+                &ui_elements,
+                frame_allocator,
+                font_metrics,
+                active_theme,
+                editor.inspector_open,
+            ) catch @panic("failed to build editor inspector panel");
             ui.buildEditorBottomBar(
                 &ui_elements,
                 frame_allocator,

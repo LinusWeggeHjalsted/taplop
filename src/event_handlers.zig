@@ -298,6 +298,9 @@ fn handleEditorEvent(
             // (same event, so one undo step reverts both).
             if (set.tool != .select) editor.selection = &.{};
         },
+        .editor_toggle_inspector => {
+            editor.inspector_open = !editor.inspector_open;
+        },
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
             // placement entries must address the active level's lists (a
@@ -1429,6 +1432,11 @@ fn handlePlayerInputEvent(
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_tool = .{
                 .tool = set.tool,
             } } }}, allocator);
+        },
+        // Inspector toggle-button click: push the machinery event (the
+        // panel's open state rides the undo timeline with the edits).
+        .player_toggle_editor_inspector => {
+            pushEvents(current, &.{.{ .editor_event = .editor_toggle_inspector }}, allocator);
         },
         // Select-tool click: thin over the shared planner (the input layer
         // fires only nonempty plans — see planEditorSelectionActions).

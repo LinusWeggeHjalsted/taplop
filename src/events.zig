@@ -163,6 +163,13 @@ pub const EditorEvent = union(enum) {
         tool: types.EditorToolId,
     },
 
+    // ── Inspector panel ──
+    // Flip the inspector sidebar's open state (the top-left toggle button,
+    // below options; open by default — see `Editor.inspector_open` for why
+    // the flag lives on the Editor). Undo flips it back with the edit
+    // history, same posture as `editor_set_tool`.
+    editor_toggle_inspector: void,
+
     // ── Selection (the select tool) ──
     // Granular by design: a click toggles a GROUP (up to tile + entity +
     // item), pushing one event per entry — they share the click's idle
@@ -584,6 +591,12 @@ pub const PlayerInputEvent = union(enum) {
     player_set_editor_tool: struct {
         tool: types.EditorToolId,
     },
+    // Inspector toggle-button click (editor top-left, below options): flip
+    // the inspector sidebar. The handler pushes `editor_toggle_inspector`;
+    // the open flag lives on the Editor (GameState), so it rides the undo
+    // timeline. See DESIGN → Architecture → Level Editor → Editor UI
+    // layout (inspector).
+    player_toggle_editor_inspector: void,
     // Select-tool click in the editor viewport: toggle the clicked thing's
     // group in the selection (see the selection-tool bullet in DESIGN →
     // Architecture → Level Editor → Active-tool model). The SHIFT+CLICK

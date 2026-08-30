@@ -7121,3 +7121,40 @@ clear, empty-ground-with-empty-selection no-op, one-step undo); the
 move-drag test's unpromoted case expects the replace (and its re-seeded
 selection must now contain MORE than the clicked group or the replace
 no-ops). All 395 tests pass.
+
+### Inspector sidebar — toggle shell (DONE)
+
+The inspector's open/close plumbing + static shell (the field editors are
+the next slices; the panel is empty for now).
+
+**Mechanism.** The open flag lives on the Editor (`Editor.inspector_open`,
+default true) — NOT UiState like the in-game middle-panel toggles or the
+palette accordion. Two reasons, both settled in DESIGN → Architecture →
+Level Editor → Editor UI layout: the auto-open-on-new-type behavior must
+mutate it from the `editor_add_*_type` handlers (handler purity — events
+can't write session-side UiState), and replay must reproduce it. Full
+pair: `player_toggle_editor_inspector` (orchestrator;
+`validatePlayerAction` arm = editor screen + editor present) →
+`editor_toggle_inspector` (the flip). Undo flips it back with the edit
+history — same posture as `editor_set_tool`. The button click routes
+`.toggle_editor_inspector` through `options_action` (payload-free, so no
+main.zig release-dispatch rider); release sound `.menu` via
+`releaseSoundForAction`, matching the in-game panel toggles.
+
+**Layout** (the level-tab / group-header visual class): a top-left
+"Inspector" toggle button flush below the options button — `ui/panel`
+9-slice tinted player-gradient[5], 128 high (`editor_header_strip_height`),
+label + 2×`ui_gap` wide with a 128 floor, spriteless button overlay
+carrying the action + tooltip, text in theme lightest, highlighted while
+open (mirrors the active level tab). While open, a background panel sits
+beneath it: flush left, 1024 wide (`editor_inspector_width`, placeholder
+until the field layout settles), from below the button (y 416) down to
+the expanded palette groups' header strip (y 1760 — stopping short keeps
+the bottom-bar headers off the inspector background), theme-darkest tint
+(the background-panel class), `blocks_input` so viewport clicks don't
+fall through it.
+
+Tests: handler test (flip + undo/redo round trip), builder test (button
+always present + tab-shaped, panel only when open, layout constants).
+Follow-up tracked in TODO → Tech Debt: unify the in-game middle-panel
+toggles onto the same GameState convention.

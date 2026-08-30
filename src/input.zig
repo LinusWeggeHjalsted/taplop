@@ -413,6 +413,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_editor_palette_group => player_input.anytime.options_action = action,
         .select_editor_tool => player_input.anytime.options_action = action,
         .select_editor_level => player_input.anytime.options_action = action,
+        .toggle_editor_inspector => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
         .toggle_skills => player_input.anytime.in_game.toggle_skills = true,

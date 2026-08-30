@@ -1470,6 +1470,14 @@ pub fn handleAnytimeInput(
                     .level_index = level_index,
                 } });
             },
+            // Inspector toggle button (editor top-left, below options): push
+            // the orchestrator (the open flag lives on the Editor, GameState,
+            // so the toggle rides the undo timeline) and drain. No payload —
+            // the event is a bare flip.
+            .toggle_editor_inspector => {
+                if (current.editor == null) return;
+                pushPlayerActionAndDrain(history, .player_toggle_editor_inspector);
+            },
             else => {},
         }
     }

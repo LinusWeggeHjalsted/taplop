@@ -95,6 +95,35 @@ test "player_set_editor_level: out-of-range index is a no-op (handler guard)" {
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.active_level_index);
 }
 
+test "player_toggle_editor_inspector: flips the open state, undo/redo restores" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{ .{} };
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+    // Open by default (an empty type isn't useful until populated — the
+    // inspector is the first thing an author sees).
+    try testing.expect(history.current_state.editor.?.inspector_open);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_toggle_editor_inspector }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    try testing.expect(!history.current_state.editor.?.inspector_open);
+
+    // The toggle rides the undo timeline (the flag lives on the Editor,
+    // captured by snapshots) — undo re-opens, redo re-closes.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.editor.?.inspector_open);
+    try testing.expect(history.redo(event_handlers.processEvent));
+    try testing.expect(!history.current_state.editor.?.inspector_open);
+}
+
 test "player_paint_editor_tile: paints a tile on empty space, sorted into the list" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

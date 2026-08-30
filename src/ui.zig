@@ -3098,6 +3098,83 @@ pub fn buildEditorLevelTabs(
     );
 }
 
+/// Width of the editor inspector sidebar's background panel. Placeholder
+/// value — revisit once the field layout lands and the real width is
+/// visible.
+pub const editor_inspector_width: i32 = 1024;
+
+/// Editor inspector sidebar (the left bar): a top-left "Inspector" toggle
+/// button flush below the options button (the level-tab / group-header
+/// visual class: panel-backed, `editor_header_strip_height` tall, label +
+/// side padding wide), and — when open — a background panel underneath it
+/// that will host the active tool's field editors (later slices; empty for
+/// now). The panel spans from below the button down to the expanded palette
+/// groups' header strip (those headers sit `ui_gap` + one strip above the
+/// bottom bar; stopping short of the strip keeps them off the inspector
+/// background). The open flag lives on the Editor (GameState) — the toggle
+/// rides the undo timeline via `editor_toggle_inspector`. See DESIGN →
+/// Architecture → Level Editor → Editor UI layout (inspector).
+pub fn buildEditorInspectorPanel(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    active_theme: types.ActiveColorTheme,
+    inspector_open: bool,
+) !void {
+    const p = active_theme.player_gradient.colors;
+    const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+
+    // Toggle button: flush left, below the top bar's options button.
+    const label = "Inspector";
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+    const width = @max(label_width + 2 * ui_gap, editor_header_strip_height);
+    const button_cell: Rectangle = .{
+        .x = 0,
+        .y = top_bar_height + ui_gap,
+        .width = width,
+        .height = editor_header_strip_height,
+    };
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = button_cell.position(),
+        .width = width,
+        .height = editor_header_strip_height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = null,
+        .screen_position = button_cell.position(),
+        .width = width,
+        .height = editor_header_strip_height,
+        .action = .toggle_editor_inspector,
+        .highlighted = inspector_open,
+        .tooltip = .{ .header = try spanRow(allocator, text(label)) },
+    } });
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = button_cell.placeCenter(label_width, editor_group_header_font_size).position(),
+        .font_size = editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+
+    // Background panel (when open): from below the button to the expanded
+    // palette groups' header strip. Theme darkest — the background-panel
+    // class (button panels tint gradient[5] to read as buttons against it).
+    if (inspector_open) {
+        const panel_top = button_cell.y + button_cell.height + ui_gap;
+        const panel_bottom = types.reference_height -
+            bottom_bar_height - ui_gap - editor_header_strip_height;
+        try elements.append(allocator, .{ .nine_slice_panel = .{
+            .sprite_id = "ui/panel",
+            .screen_position = .{ .x = 0, .y = panel_top },
+            .width = editor_inspector_width,
+            .height = panel_bottom - panel_top,
+            .color = active_theme.darkest,
+        } });
+    }
+}
+
 /// Editor bottom bar: the tool palette. Fixed tools first
 /// (Select, Tile), then three groups — Enemies, Decorations, Ground Items —
 /// each a header toggle + a square panel "+" (add-new) cell + one slot per
@@ -4638,6 +4715,79 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     try std.testing.expect(plus_panel.tooltip != null);
     try std.testing.expectEqualStrings("+", elements.items[10].text_label.text);
     try std.testing.expect(!elements.items[10].text_label.blocks_input);
+}
+
+test "buildEditorInspectorPanel: toggle button always, background panel only when open" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const lightest: types.Color = .{ .r = 1, .g = 1, .b = 1 };
+    const player_one: types.Color = .{ .r = 30, .g = 30, .b = 30 };
+    const player_five: types.Color = .{ .r = 40, .g = 40, .b = 40 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = lightest,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{ black, player_one, black, black, black, player_five } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // Open (the default): panel + spriteless button + label + background
+    // panel = 4 elements.
+    {
+        var elements: UiElementList = .empty;
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, theme, true);
+        try std.testing.expectEqual(@as(usize, 4), elements.items.len);
+        try expectInspectorToggleShape(&elements, true);
+
+        // The background panel: flush left, below the button, down to the
+        // expanded palette groups' header strip, tinted darkest (the
+        // background-panel class — button panels tint gradient[5]).
+        const panel = elements.items[3].nine_slice_panel;
+        try std.testing.expectEqualStrings("ui/panel", panel.sprite_id);
+        try std.testing.expectEqual(@as(i32, 0), panel.screen_position.x);
+        try std.testing.expectEqual(top_bar_height + ui_gap + editor_header_strip_height + ui_gap, panel.screen_position.y);
+        try std.testing.expectEqual(editor_inspector_width, panel.width);
+        try std.testing.expectEqual(
+            types.reference_height - bottom_bar_height - ui_gap - editor_header_strip_height,
+            panel.screen_position.y + panel.height,
+        );
+        try std.testing.expectEqual(theme.darkest, panel.color);
+        try std.testing.expect(panel.blocks_input);
+    }
+
+    // Closed: just the toggle (3 elements), no longer highlighted.
+    {
+        var elements: UiElementList = .empty;
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, theme, false);
+        try std.testing.expectEqual(@as(usize, 3), elements.items.len);
+        try expectInspectorToggleShape(&elements, false);
+    }
+}
+
+/// Shared shape checks for the inspector toggle button (the level-tab
+/// visual class): panel-backed cell flush left below the options button,
+/// 128 high, label + side padding wide, spriteless button carrying the
+/// action + tooltip, highlighted exactly while open.
+fn expectInspectorToggleShape(elements: *const UiElementList, inspector_open: bool) !void {
+    const panel = elements.items[0].nine_slice_panel;
+    try std.testing.expectEqualStrings("ui/panel", panel.sprite_id);
+    try std.testing.expectEqual(@as(i32, 0), panel.screen_position.x);
+    try std.testing.expectEqual(top_bar_height + ui_gap, panel.screen_position.y);
+    try std.testing.expectEqual(editor_header_strip_height, panel.height);
+    try std.testing.expect(panel.width >= editor_header_strip_height);
+
+    const button = elements.items[1].button;
+    try std.testing.expectEqual(Action.toggle_editor_inspector, button.action);
+    try std.testing.expectEqual(inspector_open, button.highlighted);
+    try std.testing.expect(button.sprite_id == null);
+    try std.testing.expect(button.tooltip != null);
+
+    const label = elements.items[2].text_label;
+    try std.testing.expectEqualStrings("Inspector", label.text);
+    try std.testing.expect(!label.blocks_input);
 }
 
 test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
