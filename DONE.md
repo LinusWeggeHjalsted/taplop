@@ -8847,3 +8847,67 @@ mission — it opens a FRESH empty mission:
 - **Tests**: a fresh-open round-trip test in main.zig (mission shape,
   template level field-by-field, empty palettes, max-player seed name,
   playtest instantiation of the bare template level, close round-trip).
+
+## Level editor — save + export (the mission writer)
+
+The editor can save its mission to the persistent dir and export it as a
+.zip. Three slices, all landed:
+
+- **The pure writer (writers.zig)**: `writeEditorMission(editor, uuid,
+  allocator)` — the inverse of the load path, deterministic and
+  side-effect-free. mission.txt (uuid + name + level_count; the hub
+  fields stay unloaded/absent — the loader treats them as optional),
+  player.txt (the PlayerLoadout format; the loadout-section emitters were
+  EXTRACTED from writePlayerSave into a shared `writeLoadoutSections` —
+  one vocabulary, two files), and one level_N.txt per level. Per level:
+  the layout is TRANSLATED to the bounding box over everything placed
+  (tiles, placements, whole decoration footprints, '!', '=') with each
+  row trimmed to its own last used column — the written grid is minimal,
+  and positions shift by the translation on reload (the in-memory editor
+  is untouched; only the file is normalized). Tools get PER-LEVEL char
+  codes (a level file only defines the tools it places — an enemy that
+  only appears in level 2 is absent from level 1's file): assigned in
+  palette order from digits → lowercase → uppercase → remaining
+  printable ASCII (91 codes; '!', '.', '=', ' ' reserved); a level
+  needing more fails the write with `error.TooManyLayoutCodes` (surfaced
+  as the recoverable popup). Enemy/item chars imply their tile on reload
+  (the parser tiles under them — one char per cell round-trips); a
+  decoration's code sits at its anchor only, the footprint stays
+  tile-free. Tests are self-referential round-trips through
+  `buildEditorMission` with a SEMANTIC compare (reload dedup rebuilds the
+  palette in layout-encounter order, so palette order/type-ids are
+  compared as definitions + translated positions, not deep-equal) —
+  including exact-layout-line assertions and the code-exhaustion
+  boundary. Mid-flight fixes worth remembering: a fixture fn returning
+  an Editor borrowing its own locals (dangling palette pointers → garbage
+  strings in the writer's output; the fixture became a file-scope
+  comptime const), and Zig 0.16 has no `{c}` format specifier (a u8
+  prints as a 1-byte slice with `{s}`).
+- **The save (input_handlers.saveEditorMission)**: uuid resolution per
+  the settled identity rules — opened-from-disk → in-memory uuid, else
+  the SESSION MEMO (`SessionState.editor_saved_mission` — this session's
+  last save's uuid + dir; re-saves reuse it so identity never churns),
+  else a v4 mint (CSPRNG seeded from the wall clock — never enters
+  GameState). Target dir ALWAYS `missions/<uuid>_<sanitized name>/`
+  (rename → new dir; official mission → persistent-dir copy). The save
+  is the DUMP_EVENT_LOG class, not the save_game class: a pure
+  input-layer side effect with NO recorded event — there is no GameState
+  component to record, an event would mint dead undo steps (the bug
+  class the same-level-tab fix addressed), and replay never runs the
+  input layer. Wired to ctrl+S (a shipped binding — KeyS was already in
+  the backend key table) + the options menu's Save Mission button (the
+  editor context's replacement for the hidden Export Save). Failures
+  take the recoverable popup path.
+- **The export (input_handlers.exportEditorMission + zip_writer.zig)**:
+  save first (the bundle is always the current state), then bundle the
+  saved configs + the CURRENT mission dir's custom sprites (a fresh
+  mission's pre-save pngs sit in the placeholder dir — they bundle even
+  though the save writes elsewhere) + a validation_replay.txt when one
+  exists (the file itself lands with the validation slice) into a
+  STORE-method zip — std.zip has no writer in 0.16, so zip_writer.zig is
+  a hand-rolled ~100-line local-header/central-directory/EOCD writer
+  (Crc32, UTF-8 name flags, fixed 1980 mtime), structurally verified by
+  a central-directory-walk test. Lands at
+  `exported_missions/<uuid>_<name>.zip`; on web the file is also offered
+  as a browser download via the existing Export Save seam
+  (triggerBrowserDownload — comptime no-op on native).

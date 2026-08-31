@@ -811,14 +811,17 @@ paragraph). Remaining work:
   custom mission dir) for re-validation before uploading to the online
   database. NOT important right now — deferred with online services.
 - Editor autosave: nice-to-have, not need-to-have (explicit save for now).
-- **Editor save-to-disk (the mission writer).** Flatten the Editor back
-  into mission.txt / player.txt / level_N.txt under
-  `missions/<mission-name>/` in the persistent dir. Settled identity
-  rules — see DESIGN → Level Editor → Mission identity: the uuid is
-  minted at save (write-only, never written back into GameState),
-  read-modify-write to preserve an existing file's uuid, and a RENAMED
-  mission saves into a NEW directory for the new name. Also the natural
-  landing point for the mission-metadata derivation cleanup below.
+- **Editor save-to-disk + export — DONE.** The mission writer
+  (writers.writeEditorMission — the pure projection), the save
+  (input_handlers.saveEditorMission: uuid resolution — opened-from-disk →
+  in-memory, else the session memo, else a v4 mint; dir
+  `missions/<uuid>_<name>/`; ctrl+S + the options-menu Save Mission
+  button; a dump_event_log-class side effect — no recorded event, no undo
+  step) and the export (save first, then bundle configs + the mission
+  dir's pngs + a future validation_replay.txt into a STORE zip at
+  `exported_missions/<uuid>_<name>.zip`; browser download on web). See
+  DONE.md + DESIGN → Level Editor (the save/export flow). The
+  mission-metadata derivation cleanup below is still OPEN.
 - **Mission browser (options-menu button) — deferred by author request
   (design not settled).** Open an EXISTING mission into the editor:
   custom missions from the persistent dir + the official embedded

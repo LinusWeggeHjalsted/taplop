@@ -1823,19 +1823,47 @@ deferred mission browser + tests) — the loading path is unchanged.
 
 The fresh mission's uuid stays EMPTY for the whole editing session:
 mission uuids are FILE CONTENT (authored in mission.txt), and identity is
-minted when the file is born — at SAVE time, gated `!replaying` (safe to
-be random there). The mint is WRITE-ONLY: the save writes the generated
-uuid into mission.txt but never writes it back into GameState — a random
-value in state would diverge from the replayed log on every replay
-(`verifyReplayMatch` would catch it). Repeated saves must not churn the
-identity: the save flow reads an existing mission.txt in the target dir
-first and reuses ITS uuid, minting only when there is no file. The uuid
-enters state only when a mission is LOADED from disk. Nothing in an
-editor session needs it meanwhile (the only runtime consumer is the clone
-keying in the end_mission / mission-complete paths, which the editor's
-exit guard redirects to end_playtest/end_validation before they run).
-On save with a RENAMED mission, a NEW directory is created for the new
-name (the directory follows the name; the old dir is left behind).
+minted when the file is born — at SAVE time (the save is an input-layer
+side effect; replay never runs the input layer, so randomness is safe
+there). The mint is WRITE-ONLY: the save writes the generated uuid into
+mission.txt but never writes it back into GameState — a random value in
+state would diverge from the replayed log on every replay
+(`verifyReplayMatch` would catch it). Repeated saves keep the identity
+stable through a SESSION-SCOPED MEMO (`SessionState.editor_saved_mission`
+— the uuid + dir of this session's last save, the side-effect scratchpad,
+off GameState and off the timeline): a re-save reuses the memo's uuid
+instead of minting again. The uuid enters state only when a mission is
+LOADED from disk. Nothing in an editor session needs it meanwhile (the
+only runtime consumer is the clone keying in the end_mission /
+mission-complete paths, which the editor's exit guard redirects to
+end_playtest/end_validation before they run).
+
+**The save/export flow (LANDED).** The save target is ALWAYS derived as
+`missions/<uuid>_<sanitized name>/` (uuid first; path-hostile name
+characters → '_', empty → "Unnamed") — which gives the rename semantics
+for free: a re-save of an unchanged custom mission lands in the same dir,
+a RENAMED mission lands in a NEW dir (the old one stays behind), and an
+OFFICIAL mission opened for editing is saved as a persistent-dir copy
+(shipped data is immutable — FileSource refuses data/ writes). The save
+is the dump_event_log class — a pure input-layer side effect with NO
+recorded event (there is no GameState component, so an event would mint
+dead undo steps; replay never runs the input layer so it never re-fires):
+ctrl+S (a shipped binding) + the editor options menu's Save Mission
+button. The WRITER is pure (`writers.writeEditorMission` — mission.txt /
+player.txt / level_N.txt; the projection is directly round-trip-tested
+through buildEditorMission). Per level: the layout is TRANSLATED to its
+bounding box (each row trimmed to its own last used column — no wasted
+edge space; positions shift accordingly on reload) and tools get
+PER-LEVEL layout char codes (only the tools that level places get a
+definition; codes assigned in palette order from digits → lowercase →
+uppercase → remaining printable ASCII, `!` `.` `=` space reserved; a
+level exceeding the 91-code set fails the write with a popup). Enemy/item
+chars imply their tile on reload; decoration anchors take no tile. The
+EXPORT (the options menu's Export Mission button) saves first, then
+bundles the saved configs + the mission dir's custom sprites + a
+validation_replay.txt (once validation writes one) into a STORE-method
+zip (`zip_writer.zig`) at `exported_missions/<uuid>_<name>.zip` — on web
+the file is also offered as a browser download (the Export Save seam).
 
 **Editor edits ride the existing event system.** `EditorEvent` variants
 (`editor_set_active_level`, …) mutate `current.editor.?.levels[level_index]`
