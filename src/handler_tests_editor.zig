@@ -3357,6 +3357,61 @@ test "editor_delete_level: removal + active-tab adjustment + level_count sync, u
     }
 }
 
+test "level add/delete input arms: end-to-end + the single-level delete gate" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const level_0_tiles = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    const level_1_tiles = [_]types.Vector2{.{ .x = 1, .y = 0 }};
+    const levels = [_]types.EditorLevel{
+        .{ .name = "A", .level_tiles = &level_0_tiles },
+        .{ .name = "B", .level_tiles = &level_1_tiles },
+    };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .mission = .{ .level_count = 2 },
+    }));
+    runToIdle(&history);
+
+    // The top-bar "+": the template level lands + becomes the active tab.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .add_editor_level,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 3), history.current_state.editor.?.levels.len);
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.active_level_index);
+
+    // A tab's ×: the level goes; the active tab (2) shifts down with the
+    // levels above the delete.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_level,
+        .clicked_editor_level = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.levels.len);
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.active_level_index);
+
+    // Down to one level...
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_level,
+        .clicked_editor_level = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.levels.len);
+
+    // ...and the single-level gate holds: a crafted × click does nothing
+    // (no event, no undo step — the handler's ≥1-level invariant is never
+    // reached).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_level,
+        .clicked_editor_level = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.levels.len);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
 test "decoration sprite picker: open routing, official prefab adopt, same-def no-op, entity-picker gate" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

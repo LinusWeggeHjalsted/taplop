@@ -4734,9 +4734,13 @@ fn emitEditorToolDeleteButton(
 /// "Level N" if unnamed. The ACTIVE tab is highlighted (lightest edge
 /// outline — the same path as tool cells); clicking switches the active
 /// level (payload = level index → `.select_editor_level` →
-/// `player_set_editor_level`, which rides the undo timeline). To the right
-/// of the last tab sits a square panel "+" (add level — inert until
-/// `editor_add_level`'s handler + click routing land). See DESIGN →
+/// `player_set_editor_level`, which rides the undo timeline). Each tab
+/// carries a small close-button (the shared `ui/close_button` class) flush
+/// in its top-right corner — `.delete_editor_level` deletes the level;
+/// offered only while the mission has more than one level (a mission
+/// always keeps ≥1). To the right of the last tab sits a square panel
+/// "+" (`.add_editor_level`): append a new level from the shipped
+/// template (data/default_level.txt) + switch to it. See DESIGN →
 /// Architecture → Level Editor → Editor UI layout (tabs).
 pub fn buildEditorLevelTabs(
     elements: *UiElementList,
@@ -4794,11 +4798,32 @@ pub fn buildEditorLevelTabs(
             .color = active_theme.lightest,
             .blocks_input = false,
         } });
+        // The tab's × (delete level): the shared close-button visual, flush
+        // in the tab's top-right corner, emitted AFTER the tab so hit-
+        // testing (last-wins) prefers it where the two overlap. Offered
+        // only while the mission has more than one level — a mission
+        // always keeps ≥1 (the handler enforces it as its invariant).
+        if (editor.levels.len > 1) {
+            try elements.append(allocator, .{ .button = .{
+                .sprite_id = close_button_sprite_id,
+                .screen_position = .{
+                    .x = cell.x + width - close_button_size,
+                    .y = cell.y,
+                },
+                .width = close_button_size,
+                .height = close_button_size,
+                .action = .delete_editor_level,
+                .editor_level = @intCast(index),
+                .tooltip = .{ .header = try spanRow(allocator, text("Delete level")) },
+            } });
+        }
 
         x += width + ui_gap;
     }
 
-    // Add-level "+": square panel cell flush right of the last tab.
+    // Add-level "+": square panel cell flush right of the last tab — a
+    // BUTTON now (spriteless over the panel, the group-header class):
+    // `.add_editor_level` appends the template level + switches to it.
     try emitEditorPlusCell(
         elements,
         allocator,
@@ -4807,7 +4832,7 @@ pub fn buildEditorLevelTabs(
         button_color,
         active_theme.lightest,
         "Add level",
-        null,
+        .add_editor_level,
         null,
     );
 }
@@ -9831,9 +9856,9 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     var elements: UiElementList = .empty;
     try buildEditorLevelTabs(&elements, arena.allocator(), metrics, editor, theme);
 
-    // 3 tabs x (panel + spriteless button + label) + the add-level "+"
-    // (panel + glyph) = 11 elements.
-    try std.testing.expectEqual(@as(usize, 11), elements.items.len);
+    // 3 tabs x (panel + spriteless button + label + × button) + the
+    // add-level "+" (panel + button + glyph) = 15 elements.
+    try std.testing.expectEqual(@as(usize, 15), elements.items.len);
 
     // Tabs sit right of the top bar's options + undo cells, 128 high,
     // flush against the top of the screen.
@@ -9848,34 +9873,72 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     const expected_labels = [_][]const u8{ "The Crossing", "Level 2", "Level 3" };
     var previous_x: i32 = start_x;
     for (0..3) |tab| {
-        const button = elements.items[3 * tab + 1].button;
+        const button = elements.items[4 * tab + 1].button;
         try std.testing.expectEqual(Action.select_editor_level, button.action);
         try std.testing.expectEqual(@as(u32, @intCast(tab)), button.editor_level.?);
         try std.testing.expectEqual(tab == 1, button.highlighted);
         try std.testing.expect(button.sprite_id == null); // spriteless over the panel
 
-        const label = elements.items[3 * tab + 2].text_label;
+        const label = elements.items[4 * tab + 2].text_label;
         try std.testing.expectEqualStrings(expected_labels[tab], label.text);
         try std.testing.expect(!label.blocks_input);
 
+        // The tab's × (offered while the mission has >1 level): the shared
+        // close-button visual, flush in the tab's top-right corner,
+        // carrying the tab's index.
+        const close_button = elements.items[4 * tab + 3].button;
+        try std.testing.expectEqual(Action.delete_editor_level, close_button.action);
+        try std.testing.expectEqualStrings(close_button_sprite_id, close_button.sprite_id.?);
+        try std.testing.expectEqual(@as(u32, @intCast(tab)), close_button.editor_level.?);
+        try std.testing.expectEqual(close_button_size, close_button.width);
+        try std.testing.expectEqual(@as(i32, 0), close_button.screen_position.y);
+        const tab_panel = elements.items[4 * tab].nine_slice_panel;
+        try std.testing.expectEqual(
+            tab_panel.screen_position.x + tab_panel.width - close_button_size,
+            close_button.screen_position.x,
+        );
+
         // Tabs lay out left-to-right, advancing past each panel.
-        const panel_x = elements.items[3 * tab].nine_slice_panel.screen_position.x;
+        const panel_x = elements.items[4 * tab].nine_slice_panel.screen_position.x;
         try std.testing.expect(panel_x >= previous_x);
         previous_x = panel_x;
     }
 
     // Add-level "+": square ui/panel cell to the right of the last tab,
-    // top-aligned with the tabs, carrying the tooltip. Inert (a panel, not
-    // a button — no action until `editor_add_level`'s handler lands).
-    const plus_panel = elements.items[9].nine_slice_panel;
+    // top-aligned with the tabs, carrying the tooltip — a BUTTON now
+    // (spriteless over the panel): `.add_editor_level` appends the
+    // template level.
+    const plus_panel = elements.items[12].nine_slice_panel;
     try std.testing.expectEqualStrings("ui/panel", plus_panel.sprite_id);
     try std.testing.expectEqual(@as(i32, 128), plus_panel.width);
     try std.testing.expectEqual(@as(i32, 128), plus_panel.height);
     try std.testing.expectEqual(@as(i32, 0), plus_panel.screen_position.y);
     try std.testing.expect(plus_panel.screen_position.x > previous_x);
     try std.testing.expect(plus_panel.tooltip != null);
-    try std.testing.expectEqualStrings("+", elements.items[10].text_label.text);
-    try std.testing.expect(!elements.items[10].text_label.blocks_input);
+    const plus_button = elements.items[13].button;
+    try std.testing.expectEqual(Action.add_editor_level, plus_button.action);
+    try std.testing.expect(plus_button.sprite_id == null);
+    try std.testing.expectEqualStrings("+", elements.items[14].text_label.text);
+    try std.testing.expect(!elements.items[14].text_label.blocks_input);
+
+    // A single-level mission offers NO × (a mission always keeps ≥1 level
+    // — the delete gate): one tab x (panel + button + label) + the "+"
+    // trio = 6 elements.
+    {
+        var single_elements: UiElementList = .empty;
+        const single_levels = [_]types.EditorLevel{.{ .name = "Only" }};
+        const single_editor: types.Editor = .{ .levels = &single_levels };
+        try buildEditorLevelTabs(&single_elements, arena.allocator(), metrics, single_editor, theme);
+        try std.testing.expectEqual(@as(usize, 6), single_elements.items.len);
+        var close_button_count: usize = 0;
+        for (single_elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .delete_editor_level) close_button_count += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 0), close_button_count);
+    }
 }
 
 test "buildEditorInspectorPanel: toggle button always, background panel only when open" {

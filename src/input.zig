@@ -336,10 +336,12 @@ pub const AnytimeInput = struct {
     /// pattern as `clicked_setting`. Valid only in the same frame as the
     /// click.
     clicked_editor_tool: ?types.EditorToolId = null,
-    /// Which editor level tab was clicked (make that level active), set
-    /// alongside `options_action == .select_editor_level` by the button-
-    /// release dispatch in main.zig — same payload-rides-along pattern as
-    /// `clicked_setting`. Valid only in the same frame as the click.
+    /// Which editor level tab was clicked (make that level active) or which
+    /// tab's × button was clicked (delete it), set alongside
+    /// `options_action == .select_editor_level` / `.delete_editor_level` by
+    /// the button-release dispatch in main.zig — same payload-rides-along
+    /// pattern as `clicked_setting`. Valid only in the same frame as the
+    /// click.
     clicked_editor_level: ?u32 = null,
     /// Editor entity color-swatch index, set alongside
     /// `options_action == .select_editor_entity_color` by the release
@@ -485,6 +487,8 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_editor_palette_group => player_input.anytime.options_action = action,
         .add_editor_palette_type => player_input.anytime.options_action = action,
         .delete_editor_palette_type => player_input.anytime.options_action = action,
+        .add_editor_level => player_input.anytime.options_action = action,
+        .delete_editor_level => player_input.anytime.options_action = action,
         .select_editor_tool => player_input.anytime.options_action = action,
         .select_editor_level => player_input.anytime.options_action = action,
         .toggle_editor_inspector => player_input.anytime.options_action = action,

@@ -1941,6 +1941,28 @@ pub fn handleAnytimeInput(
                     .select, .tile => return,
                 }
             },
+            // Top-bar add-level "+": push the orchestrator + drain — the
+            // handler reads the shipped template (data/default_level.txt)
+            // through the reconstruction cache, appends the level, switches
+            // to it, and syncs level_count; one undo step reverts it all.
+            .add_editor_level => {
+                if (current.editor == null) return;
+                pushPlayerActionAndDrain(history, .player_add_editor_level);
+            },
+            // Level-tab ×: push the orchestrator + drain — the handler
+            // removes the level, shifts later levels down, syncs
+            // level_count, and adjusts the active tab. Gated here too (the
+            // UI only offers the × above one level, but a crafted click
+            // must not reach the handler's invariant panic).
+            .delete_editor_level => {
+                const level_index = anytime.clicked_editor_level orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                if (editor.levels.len <= 1) return;
+                if (level_index >= editor.levels.len) return;
+                pushPlayerActionAndDrain(history, .{ .player_delete_editor_level = .{
+                    .level_index = level_index,
+                } });
+            },
             // Inspector section header (expand/collapse). The section id
             // rode in `anytime.clicked_editor_section`. View-side display
             // state — a direct UiState write, off the undo timeline (same

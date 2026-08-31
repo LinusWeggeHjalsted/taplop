@@ -157,6 +157,16 @@ pub const Action = enum {
     // payload field as the tool cells. See DESIGN → Architecture → Level
     // Editor → Editor UI layout (tool palette).
     delete_editor_palette_type,
+    // The top-bar add-level "+" (right of the level tabs) was clicked:
+    // append a new level from the shipped template (data/default_level.txt)
+    // and switch to it. No payload — the template is fixed shipped content.
+    add_editor_level,
+    // A level tab's × button was clicked: delete that level (gated on more
+    // than one — a mission always keeps ≥1; the button isn't offered on a
+    // single-level mission). The level index rides in
+    // `AnytimeInput.clicked_editor_level` — the same payload field as the
+    // tab itself.
+    delete_editor_level,
     // An editor tool cell was clicked (make it the active tool). The
     // EditorToolId rides in `AnytimeInput.clicked_editor_tool`. See DESIGN
     // → Architecture → Level Editor (active-tool model).
