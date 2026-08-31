@@ -1085,7 +1085,8 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
             &history.current_state,
             &.{.{ .player_input_event = .{ .player_add_editor_entity_layer = .{
                 .target = target,
-                .layer = .{ .sprite = layer_sprite, .color_index = 2 },
+                .sprite = layer_sprite,
+                .color_index = 2,
             } } }},
             history.current_arena.allocator(),
         );
@@ -1102,7 +1103,8 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
         &.{.{ .player_input_event = .{ .player_set_editor_entity_layer = .{
             .target = target,
             .layer_index = 0,
-            .layer = .{ .sprite = "plate", .color_index = 4 },
+            .sprite = "plate",
+            .color_index = 4,
             } } }},
         history.current_arena.allocator(),
     );
@@ -1132,7 +1134,8 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_add_editor_entity_layer = .{
             .target = .player_def,
-            .layer = .{ .sprite = "hood", .color_index = 2 },
+            .sprite = "hood",
+            .color_index = 2,
             } } }},
         history.current_arena.allocator(),
     );
@@ -1179,7 +1182,9 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_add_editor_decoration_layer = .{
             .type_id = 0,
-            .layer = matching_layer,
+            .sprite = matching_layer.sprite,
+            .color_index = matching_layer.color_index,
+            .pixel_dims = matching_layer.pixel_dims,
         } } }},
         history.current_arena.allocator(),
     );
@@ -1188,7 +1193,9 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_add_editor_decoration_layer = .{
             .type_id = 0,
-            .layer = mismatched_layer,
+            .sprite = mismatched_layer.sprite,
+            .color_index = mismatched_layer.color_index,
+            .pixel_dims = mismatched_layer.pixel_dims,
         } } }},
         history.current_arena.allocator(),
     );
@@ -1205,7 +1212,9 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
         &.{.{ .player_input_event = .{ .player_set_editor_decoration_layer = .{
             .type_id = 0,
             .layer_index = 0,
-            .layer = recolored,
+            .sprite = recolored.sprite,
+            .color_index = recolored.color_index,
+            .pixel_dims = recolored.pixel_dims,
         } } }},
         history.current_arena.allocator(),
     );
@@ -1217,7 +1226,9 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
         &.{.{ .player_input_event = .{ .player_set_editor_decoration_layer = .{
             .type_id = 0,
             .layer_index = 0,
-            .layer = mismatched_layer,
+            .sprite = mismatched_layer.sprite,
+            .color_index = mismatched_layer.color_index,
+            .pixel_dims = mismatched_layer.pixel_dims,
         } } }},
         history.current_arena.allocator(),
     );
@@ -1253,7 +1264,9 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_add_editor_decoration_layer = .{
             .type_id = 99,
-            .layer = matching_layer,
+            .sprite = matching_layer.sprite,
+            .color_index = matching_layer.color_index,
+            .pixel_dims = matching_layer.pixel_dims,
         } } }},
         history.current_arena.allocator(),
     );

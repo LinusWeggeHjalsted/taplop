@@ -2299,12 +2299,14 @@ pub fn handleAnytimeInput(
                     pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_layer = .{
                         .target = target,
                         .layer_index = index,
-                        .layer = .{ .sprite = sprite_value, .color_index = current_layer.color_index },
+                        .sprite = sprite_value,
+                        .color_index = current_layer.color_index,
                     } });
                 } else {
                     pushPlayerActionAndDrain(history, .{ .player_add_editor_entity_layer = .{
                         .target = target,
-                        .layer = .{ .sprite = sprite_value, .color_index = 0 },
+                        .sprite = sprite_value,
+                        .color_index = 0,
                     } });
                 }
             },
@@ -2379,12 +2381,16 @@ pub fn handleAnytimeInput(
                     pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_layer = .{
                         .type_id = type_id,
                         .layer_index = index,
-                        .layer = new_layer,
+                        .sprite = new_layer.sprite,
+                        .color_index = new_layer.color_index,
+                        .pixel_dims = new_layer.pixel_dims,
                     } });
                 } else {
                     pushPlayerActionAndDrain(history, .{ .player_add_editor_decoration_layer = .{
                         .type_id = type_id,
-                        .layer = new_layer,
+                        .sprite = new_layer.sprite,
+                        .color_index = new_layer.color_index,
+                        .pixel_dims = new_layer.pixel_dims,
                     } });
                 }
             },
@@ -2513,7 +2519,8 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_layer = .{
                     .target = target,
                     .layer_index = layer_index,
-                    .layer = .{ .sprite = sprite_value, .color_index = color_index },
+                    .sprite = sprite_value,
+                    .color_index = color_index,
                 } });
             },
             .select_editor_decoration_layer_color => {
@@ -2531,11 +2538,9 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_layer = .{
                     .type_id = type_id,
                     .layer_index = layer_index,
-                    .layer = .{
-                        .sprite = current_layer.sprite,
-                        .color_index = color_index,
-                        .pixel_dims = current_layer.pixel_dims,
-                    },
+                    .sprite = current_layer.sprite,
+                    .color_index = color_index,
+                    .pixel_dims = current_layer.pixel_dims,
                 } });
             },
             // Inspector displays-weapons toggle: flip the edited type's flag.

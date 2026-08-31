@@ -126,12 +126,98 @@ fn writeEventField(
             if (value) |inner| try writeEventField(buffer, allocator, name, inner);
         },
         else => {
-            try buffer.appendSlice(allocator, name);
-            try buffer.appendSlice(allocator, " ");
-            try appendEventScalar(buffer, allocator, value);
-            try buffer.appendSlice(allocator, "\n");
+            // A slice of structs carrying strings (e.g. the decoration
+            // def's `layers`): the token stream can't regroup strings with
+            // spaces, so each element goes to its OWN indexed lines —
+            // see `isStringBearingStructSlice`. The comptime if/else keeps
+            // the generic path from instantiating for those slices (its
+            // appendEventScalar guard would reject them).
+            if (comptime isStringBearingStructSlice(@TypeOf(value))) {
+                try writeIndexedSliceField(buffer, allocator, name, value);
+            } else {
+                try buffer.appendSlice(allocator, name);
+                try buffer.appendSlice(allocator, " ");
+                try appendEventScalar(buffer, allocator, value);
+                try buffer.appendSlice(allocator, "\n");
+            }
         },
     }
+}
+
+/// Is T a slice of structs that carry a `[]const u8` field (at any depth
+/// through nested structs)? Such a slice can't serialize as one
+/// space-separated line — a string's spaces would break the reader's
+/// positional regrouping (e.g. a layer sprite `custom/My Mission/canopy`).
+/// Those fields take the indexed multi-line encoding instead; single
+/// nested values flatten to top level (the event-shape convention — see
+/// the editor_set_entity_gear / editor_set_item_def comments).
+fn isStringBearingStructSlice(comptime T: type) bool {
+    const info = @typeInfo(T);
+    if (info != .pointer) return false;
+    const pointer = info.pointer;
+    if (pointer.size != .slice or pointer.child == u8) return false;
+    return typeContainsString(pointer.child);
+}
+
+/// Does T carry a `[]const u8` anywhere inside (a string field of a
+/// struct, recursively through nested structs)?
+fn typeContainsString(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .pointer => |pointer| pointer.size == .slice and pointer.child == u8,
+        .@"struct" => |info| blk: {
+            for (info.fields) |field| {
+                if (typeContainsString(field.type)) break :blk true;
+            }
+            break :blk false;
+        },
+        else => false,
+    };
+}
+
+/// Write a string-bearing struct slice as INDEXED lines:
+/// `<name>_count N`, then per element one line per field,
+/// `<name>_<i>_<field> <value>` — every string on its own line, so
+/// spaces round-trip (the reader mirrors this in
+/// `parseIndexedSliceField`). Element fields must be one-line values
+/// (scalars, enums, strings, structs of scalars like Vector2) — a
+/// string-bearing struct/slice NESTED inside an element has no encoding
+/// and is a compile error.
+fn writeIndexedSliceField(
+    buffer: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    comptime name: []const u8,
+    value: anytype,
+) !void {
+    const Element = @typeInfo(@TypeOf(value)).pointer.child;
+    inline for (@typeInfo(Element).@"struct".fields) |field| {
+        if (comptime !isIndexedSliceFieldLineValue(field.type)) {
+            @compileError("indexed slice field element too deep: " ++ @typeName(field.type));
+        }
+    }
+    try buffer.print(allocator, "{s}_count {d}\n", .{ name, value.len });
+    for (value, 0..) |element, index| {
+        inline for (@typeInfo(Element).@"struct".fields) |field| {
+            try buffer.print(allocator, "{s}_{d}_{s} ", .{ name, index, field.name });
+            try appendEventScalar(buffer, allocator, @field(element, field.name));
+            try buffer.appendSlice(allocator, "\n");
+        }
+    }
+}
+
+/// May an indexed-slice element field serialize as one line? Strings are
+/// fine (their line is their own); anything that would need ANOTHER level
+/// of regrouping — a string-bearing struct or a non-u8 slice inside the
+/// element — is not.
+fn isIndexedSliceFieldLineValue(comptime T: type) bool {
+    const info = @typeInfo(T);
+    if (info == .pointer) {
+        const pointer = info.pointer;
+        if (pointer.size == .slice and pointer.child == u8) return true;
+        if (pointer.size == .slice) return !typeContainsString(pointer.child);
+        return false;
+    }
+    if (info == .@"struct") return !typeContainsString(T);
+    return true;
 }
 
 /// Append a single (non-optional) field value: ints as decimals, bools as
@@ -158,7 +244,13 @@ fn appendEventScalar(
                 // A slice of scalars/structs (e.g. `[]const Vector2`) flattened
                 // as space-separated element reprs. Elements have fixed arity
                 // (Vector2 = 2 ints), so decoding regroups; an empty slice
-                // writes nothing (an empty value).
+                // writes nothing (an empty value). Structs carrying STRINGS
+                // can't take this path (spaces break the regrouping) —
+                // `writeEventField` routes them to the indexed encoding, and
+                // this guard keeps any future direct caller honest.
+                if (comptime typeContainsString(pointer.child)) {
+                    @compileError("string-bearing struct slice must use the indexed encoding: " ++ @typeName(T));
+                }
                 for (value, 0..) |element, index| {
                     if (index != 0) try buffer.appendSlice(allocator, " ");
                     try appendEventScalar(buffer, allocator, element);
@@ -294,11 +386,23 @@ fn parseEvent(
                     else inner: {
                         var payload: Payload = undefined;
                         inline for (@typeInfo(Payload).@"struct".fields) |payload_field| {
-                            @field(payload, payload_field.name) = try parseEventFieldValue(
-                                payload_field.type,
-                                findValue(pairs, payload_field.name),
-                                allocator,
-                            );
+                            // A string-bearing struct slice reads back its
+                            // indexed lines (the writer's mirror — see
+                            // writeIndexedSliceField).
+                            @field(payload, payload_field.name) =
+                                if (comptime isStringBearingStructSlice(payload_field.type))
+                                    try parseIndexedSliceField(
+                                        payload_field.type,
+                                        payload_field.name,
+                                        pairs,
+                                        allocator,
+                                    )
+                                else
+                                    try parseEventFieldValue(
+                                        payload_field.type,
+                                        findValue(pairs, payload_field.name),
+                                        allocator,
+                                    );
                         }
                         break :inner @unionInit(Inner, variant_field.name, payload);
                     };
@@ -309,6 +413,39 @@ fn parseEvent(
         }
     }
     return error.MalformedSessionLog; // unknown category
+}
+
+/// The reader's mirror of `writeIndexedSliceField`: read `<name>_count N`,
+/// then each element's fields from their `<name>_<i>_<field>` lines.
+/// Every element field is a required one-line value (the writer's
+/// comptime guard guarantees the shape).
+fn parseIndexedSliceField(
+    comptime Slice: type,
+    comptime name: []const u8,
+    pairs: []const KeyValuePair,
+    allocator: std.mem.Allocator,
+) SessionLogError!Slice {
+    const Element = @typeInfo(Slice).pointer.child;
+    const count_value = findValue(pairs, name ++ "_count") orelse
+        return error.MalformedSessionLog;
+    const count = std.fmt.parseInt(usize, count_value, 10) catch
+        return error.MalformedSessionLog;
+    var elements: std.ArrayList(Element) = .empty;
+    for (0..count) |index| {
+        var element: Element = undefined;
+        inline for (@typeInfo(Element).@"struct".fields) |field| {
+            const key = std.fmt.allocPrint(
+                allocator,
+                "{s}_{d}_{s}",
+                .{ name, index, field.name },
+            ) catch return error.OutOfMemory;
+            const value = findValue(pairs, key) orelse
+                return error.MalformedSessionLog;
+            @field(element, field.name) = try parseEventScalar(field.type, value, allocator);
+        }
+        try elements.append(allocator, element);
+    }
+    return try elements.toOwnedSlice(allocator);
 }
 
 /// Read one payload field. An absent key is null for optionals (matching the
@@ -530,6 +667,34 @@ test "writeEventLog serializes representative event shapes" {
             .slot = .amulet,
             .equipped = false,
         } } },
+        // Layer events + the def's layers slice: sprite strings with
+        // SPACES (a mission dir named "My Mission") round-trip — the
+        // layer events carry flat top-level sprite fields, and the
+        // string-bearing struct slice takes the indexed multi-line
+        // encoding (layers_count + layers_0_sprite ... lines).
+        .{ .player_input_event = .{ .player_set_editor_entity_layer = .{
+            .target = .{ .entity_type = 0 },
+            .layer_index = 1,
+            .sprite = "custom/My Mission/canopy",
+            .color_index = 2,
+        } } },
+        .{ .editor_event = .{ .editor_add_decoration_layer = .{
+            .type_id = 0,
+            .sprite = "custom/My Mission/moss",
+            .color_index = 1,
+            .pixel_dims = .{ .x = 512, .y = 256 },
+        } } },
+        .{ .player_input_event = .{ .player_set_editor_decoration_def = .{
+            .type_id = 0,
+            .sprite = "tree_1",
+            .footprint = &.{.{ .x = 0, .y = 0 }},
+            .pixel_dims = .{ .x = 512, .y = 768 },
+            .color_index = 3,
+            .layers = &.{
+                .{ .sprite = "custom/My Mission/canopy", .color_index = 2, .pixel_dims = .{ .x = 512, .y = 768 } },
+                .{ .sprite = "tree_1_canopy", .color_index = 1, .pixel_dims = .{ .x = 512, .y = 768 } },
+            },
+        } } },
     };
 
     const output = try writeEventLog(&history, "20260815_143022", allocator);
@@ -553,11 +718,9 @@ test "writeEventLog serializes representative event shapes" {
 
     // Null optional omits its line: only the PRESENT use_skill's group
     // carries a target line (the null one's `skill_id` line is directly
-    // followed by the next event's discriminator). The gear events also
-    // carry `target` lines, so the bare "\ntarget " count can't prove
-    // this anymore — adjacency does.
+    // followed by the next event's discriminator). Adjacency proves it —
+    // a bare "\ntarget " count can't (many events carry target lines).
     try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "skill_id slice\ntarget 2 5\n"));
-    try std.testing.expectEqual(@as(usize, 3), std.mem.count(u8, output, "\ntarget "));
 
     // Nested tagged-union payload: `<tag> <payload-fields...>` (void tags
     // carry no payload fields).
@@ -580,6 +743,14 @@ test "writeEventLog serializes representative event shapes" {
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_entity_gear\ntarget entity_type 0\nslot main_hand\nequipped true\nweapon_type sword\nname New Sword\nweapon_damage 3\n") != null);
     // The clear: `equipped false`, the defaulted fields riding along.
     try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_set_entity_gear\ntarget player_def\nslot amulet\nequipped false\nweapon_type sword\nname \nweapon_damage 0\n") != null);
+    // The layer events: flat top-level sprite fields — spaces ride the
+    // sprite's own line verbatim.
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_entity_layer\ntarget entity_type 0\nlayer_index 1\nsprite custom/My Mission/canopy\ncolor_index 2\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_add_decoration_layer\ntype_id 0\nsprite custom/My Mission/moss\ncolor_index 1\npixel_dims 512 256\n") != null);
+    // The def's layers slice: the INDEXED encoding — one line per element
+    // field, each string on its own line (the footprint slice stays a
+    // single flattened line — no strings inside).
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_decoration_def\ntype_id 0\nsprite tree_1\nfootprint 0 0\npixel_dims 512 768\ncolor_index 3\nlayers_count 2\nlayers_0_sprite custom/My Mission/canopy\nlayers_0_color_index 2\nlayers_0_pixel_dims 512 768\nlayers_1_sprite tree_1_canopy\nlayers_1_color_index 1\nlayers_1_pixel_dims 512 768\n") != null);
 
     // The output round-trips through the generic config parser structurally:
     // Metadata + EventLog sections, with one entry group per event.
@@ -606,8 +777,8 @@ test "writeEventLog serializes representative event shapes" {
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer arena.deinit();
         const log = try loadEventLog(sections, arena.allocator());
-        for (0..10) |offset| {
-            try std.testing.expectEqualDeep(history[history.len - 10 + offset], log.events[log.events.len - 10 + offset]);
+        for (0..13) |offset| {
+            try std.testing.expectEqualDeep(history[history.len - 13 + offset], log.events[log.events.len - 13 + offset]);
         }
     }
 }

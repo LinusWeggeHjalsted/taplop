@@ -13,7 +13,6 @@ const SkillId = types.SkillId;
 const GearSlot = types.GearSlot;
 const Materials = types.Materials;
 const EffectId = types.EffectId;
-const EntityLayer = types.EntityLayer;
 const DecorationLayer = types.DecorationLayer;
 const EntityEditTarget = types.EntityEditTarget;
 const ItemKind = types.ItemKind;
@@ -429,9 +428,13 @@ pub const EditorEvent = union(enum) {
         value: ?SkillId,
     },
     // Entity sprite layers (base + overlays). Add/remove/set per layer.
+    // The layer's fields are FLATTENED to top level (a nested layer's
+    // sprite string can't round-trip the session log once it contains a
+    // space — mission-dir names carry spaces; see session_log.zig).
     editor_add_entity_layer: struct {
         target: EntityEditTarget,
-        layer: EntityLayer,
+        sprite: []const u8,
+        color_index: u32,
     },
     editor_remove_entity_layer: struct {
         target: EntityEditTarget,
@@ -440,7 +443,8 @@ pub const EditorEvent = union(enum) {
     editor_set_entity_layer: struct {
         target: EntityEditTarget,
         layer_index: u32,
-        layer: EntityLayer,
+        sprite: []const u8,
+        color_index: u32,
     },
 
     // ── Decoration type editing ──
@@ -474,7 +478,9 @@ pub const EditorEvent = union(enum) {
     },
     editor_add_decoration_layer: struct {
         type_id: u32,
-        layer: DecorationLayer,
+        sprite: []const u8,
+        color_index: u32,
+        pixel_dims: Vector2,
     },
     editor_remove_decoration_layer: struct {
         type_id: u32,
@@ -483,7 +489,9 @@ pub const EditorEvent = union(enum) {
     editor_set_decoration_layer: struct {
         type_id: u32,
         layer_index: u32,
-        layer: DecorationLayer,
+        sprite: []const u8,
+        color_index: u32,
+        pixel_dims: Vector2,
     },
 
     // ── Item type editing ──
@@ -912,10 +920,12 @@ pub const PlayerInputEvent = union(enum) {
     // Inspector layer commits (the Layers sections — enemy types +
     // decoration types; the player loadout has NO layers). The EditorEvents
     // own the mutations; set carries the WHOLE layer value (a sprite re-pick
-    // or a color swap — one event, one undo step).
+    // or a color swap — one event, one undo step). The layer's fields are
+    // FLATTENED like the editor events' (spaces-safe sprite strings).
     player_add_editor_entity_layer: struct {
         target: EntityEditTarget,
-        layer: EntityLayer,
+        sprite: []const u8,
+        color_index: u32,
     },
     player_remove_editor_entity_layer: struct {
         target: EntityEditTarget,
@@ -924,11 +934,14 @@ pub const PlayerInputEvent = union(enum) {
     player_set_editor_entity_layer: struct {
         target: EntityEditTarget,
         layer_index: u32,
-        layer: EntityLayer,
+        sprite: []const u8,
+        color_index: u32,
     },
     player_add_editor_decoration_layer: struct {
         type_id: u32,
-        layer: DecorationLayer,
+        sprite: []const u8,
+        color_index: u32,
+        pixel_dims: Vector2,
     },
     player_remove_editor_decoration_layer: struct {
         type_id: u32,
@@ -937,7 +950,9 @@ pub const PlayerInputEvent = union(enum) {
     player_set_editor_decoration_layer: struct {
         type_id: u32,
         layer_index: u32,
-        layer: DecorationLayer,
+        sprite: []const u8,
+        color_index: u32,
+        pixel_dims: Vector2,
     },
 
     // --- Meta: exit/skip orchestrators ---

@@ -1219,15 +1219,15 @@ pub const GameStateHistory = struct {
     fn validateInspectorDecorationLayerEdit(
         self: *GameStateHistory,
         type_id: u32,
-        layer: ?types.DecorationLayer,
+        pixel_dims: ?types.Vector2,
         layer_index: ?u32,
     ) void {
         self.validateInspectorDecorationEdit(type_id);
         const editor = self.current_state.editor.?;
         const definition = editor.decoration_types[type_id];
-        if (layer) |value| {
-            if (value.pixel_dims.x != definition.pixel_dims.x or
-                value.pixel_dims.y != definition.pixel_dims.y)
+        if (pixel_dims) |dims| {
+            if (dims.x != definition.pixel_dims.x or
+                dims.y != definition.pixel_dims.y)
             {
                 @panic("replay validation: decoration layer commit dims differ from the base");
             }
@@ -1425,11 +1425,11 @@ pub const GameStateHistory = struct {
                 .player_set_editor_entity_layer => |set|
                     self.validateInspectorEntityLayerEdit(set.target, set.layer_index),
                 .player_add_editor_decoration_layer => |set|
-                    self.validateInspectorDecorationLayerEdit(set.type_id, set.layer, null),
+                    self.validateInspectorDecorationLayerEdit(set.type_id, set.pixel_dims, null),
                 .player_remove_editor_decoration_layer => |set|
                     self.validateInspectorDecorationLayerEdit(set.type_id, null, set.layer_index),
                 .player_set_editor_decoration_layer => |set|
-                    self.validateInspectorDecorationLayerEdit(set.type_id, set.layer, set.layer_index),
+                    self.validateInspectorDecorationLayerEdit(set.type_id, set.pixel_dims, set.layer_index),
                 // Structural legality: the paint checks + the select tool
                 // active (the live path only toggles from the select tool's
                 // viewport arm; the handler no-ops otherwise as the

@@ -560,6 +560,21 @@ combat-log UI rendering + replay-viewer UI still TODO)
   Vector2/Materials/slices space-separated). Events alone reproduce a session —
   do NOT also log player input (the input→event translation is deterministic
   and would be redundant/divergent).
+- **String safety (the encoding rule):** a NESTED string (inside a struct or
+  union payload field) can't contain spaces — nested values serialize as
+  one space-separated token stream, and a string's spaces would break the
+  reader's positional regrouping. Two mechanisms keep every string
+  spaces-safe: single nested values FLATTEN to top-level event fields
+  (`editor_set_entity_gear`, `editor_set_item_def`, the layer events —
+  a top-level string line is verbatim), and a slice of structs carrying
+  strings (`editor_set_decoration_def`'s `layers`) takes the INDEXED
+  multi-line encoding — `<name>_count N` + `<name>_<i>_<field>` lines,
+  each string on its own line (`writeIndexedSliceField` /
+  `parseIndexedSliceField` in session_log.zig, comptime-detected via
+  `isStringBearingStructSlice`; `appendEventScalar` compile-errors if a
+  string-bearing slice ever reaches the one-line path). This is what lets
+  mission directories / custom asset stems carry spaces
+  (`custom/My Mission/canopy`).
 - Reader: `parser.loadEventLog(sections)` → `SessionLog { file_format_version,
   game_version, created, events }`, the comptime-generic inverse.
   file_format_version is a HARD gate; game_version is advisory (caller warns via

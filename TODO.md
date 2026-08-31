@@ -1097,26 +1097,19 @@ Done items in DONE.md. Open:
   check) call `.toScreenPosition()` at the UI seam. The rename made this
   visible (the type name now clearly says i32 where f32 was intended).
 
-- **Nested string fields in session-log payloads — the equipped-slot
-  events FIXED, the LAYER events remain.** `appendEventScalar` flattens
-  nested struct/union fields as space-separated tokens, so a `[]const u8`
-  INSIDE a nested payload can't contain spaces. The equipped-slot events
-  (`player_set_editor_entity_main_hand_weapon` etc. with a weapon named
-  "New Sword" — the weapon-slot create default!) were the live instance;
-  FIXED by unifying the 14 variants into ONE slot-parameterized
-  `editor_set_entity_gear` / `player_set_editor_entity_gear` pair
-  carrying the FLATTENED item (`EntityGearPayload`, the
-  `editor_set_item_def` shape) — see DONE.md. The remaining instances
-  are the LAYER events (`editor_add/set_entity_layer`,
-  `editor_add/remove/set_decoration_layer` — an `EntityLayer` /
-  `DecorationLayer` carries a nested `sprite` string): sprite ids are
-  file stems, so they only break if a MISSION DIRECTORY name carries a
-  space (the `custom/<mission>/<stem>` namespace) — low risk until
-  custom-mission acquisition lands; flatten them (sprite/color_index/
-  pixel_dims as top-level fields) when that slice touches the layer
-  events, or earlier if cheap. The general serializer limitation
-  (no spaces in nested strings) stands by design — the fix pattern is
-  flattening, not quoting.
+- **Nested string fields in session-log payloads — RESOLVED.**
+  `appendEventScalar` flattens nested struct/union fields as
+  space-separated tokens, so a `[]const u8` INSIDE a nested payload can't
+  contain spaces. Both live instances fixed (history in DONE.md): the
+  equipped-slot events (unified into the flattened
+  `editor_set_entity_gear` pair) and the LAYER events (flattened
+  top-level `sprite`/`color_index`/`pixel_dims`) — mission directories +
+  custom asset stems may carry spaces now. The def event's `layers`
+  SLICE (which can't flatten) takes the serializer's indexed multi-line
+  encoding — see DESIGN → Logging & Replay (String safety). The standing
+  rule for FUTURE events: no string inside a single nested value
+  (flatten to top level), no string-bearing struct slice outside the
+  indexed encoding (the comptime guards enforce both).
 - **`WorldOverlayDrawable` variant consistency.** `floating_icon` uses a
   named `FloatingIconDrawable` type; `floating_text` is an inline anonymous
   struct. Pure consistency nit — extract a `FloatingTextDrawable` named

@@ -8614,3 +8614,48 @@ Remaining instance of the class (filed in TODO → Tech Debt): the LAYER
 events carry a nested `sprite` string — only breaks if a mission
 directory name contains a space (the `custom/<mission>/<stem>` namespace),
 low risk until custom-mission acquisition lands.
+
+## Session-log string safety — the layer events + the indexed slice encoding
+
+Follow-up to the equipped-slot fix, completing "spaces in mission
+directories / custom asset stems":
+
+- **The layer events flattened**: the eight layer-carrying variants
+  (`editor_add/set_entity_layer` + `editor_add/set_decoration_layer`,
+  editor + player layers) dropped their nested
+  `layer: EntityLayer/DecorationLayer` payload for top-level
+  `sprite` / `color_index` (+ `pixel_dims` on decoration) — the
+  `editor_set_entity_gear` pattern. Handlers/validation/input sites
+  rebuild or read the flattened fields;
+  `validateInspectorDecorationLayerEdit` now takes the dims directly.
+- **The def event's `layers` slice — the case flattening can't cover**: a
+  slice of structs with sprite strings has no top-level flatten (the
+  token stream can't regroup variable-length strings at all), and a
+  custom base-sprite pick commits the type's CURRENT layers — which,
+  after the layer fix, can carry space-y custom stems. The serializer
+  gained the INDEXED multi-line encoding for exactly this class
+  (`isStringBearingStructSlice` comptime-detects it):
+  `layers_count 2` + `layers_0_sprite custom/My Mission/canopy` +
+  `layers_0_color_index 2` + `layers_0_pixel_dims 512 768` + … — each
+  string on its own line. Writer (`writeIndexedSliceField`) and reader
+  (`parseIndexedSliceField`) mirror each other;
+  `appendEventScalar` compile-errors if a string-bearing slice ever
+  reaches the one-line path, and the indexed writer compile-errors on
+  elements nested too deep to encode — the class is structurally closed.
+  The def event keeps its atomic one-event/one-undo shape (the
+  alternative — splitting layer re-authoring into orchestrator children —
+  would have needed a registry read inside a handler, breaking
+  cross-session replay purity: the registry is session-resident and
+  empty during reconstruction).
+- **Tests**: the session-log round-trip now carries space-y payloads
+  through every path — a layer event with
+  `custom/My Mission/canopy`, and a decoration def whose `layers` slice
+  mixes a space-y custom stem with an official one — write → parse →
+  load → deep-equal, plus exact output-line assertions for the indexed
+  encoding. The layer handler tests were reshaped onto the flat payloads
+  (same coverage: order, dims-match invariant, crafted-log guards).
+
+The standing rule (TODO → Tech Debt + DESIGN → Logging & Replay → String
+safety): strings inside single nested values flatten to top level;
+string-bearing struct slices take the indexed encoding; the comptime
+guards enforce both for future events.

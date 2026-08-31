@@ -565,7 +565,10 @@ fn handleEditorEvent(
         // replay seam). The layer index guards are the same posture.
         .editor_add_entity_layer => |add| {
             const template = entityLayerEditTemplate(editor, add.target) orelse return;
-            layerListAppend(types.EntityLayer, &template.layers, add.layer, allocator);
+            layerListAppend(types.EntityLayer, &template.layers, .{
+                .sprite = add.sprite,
+                .color_index = add.color_index,
+            }, allocator);
         },
         .editor_remove_entity_layer => |remove| {
             const template = entityLayerEditTemplate(editor, remove.target) orelse return;
@@ -575,7 +578,10 @@ fn handleEditorEvent(
         .editor_set_entity_layer => |set| {
             const template = entityLayerEditTemplate(editor, set.target) orelse return;
             if (set.layer_index >= template.layers.len) return;
-            layerListReplaceAt(types.EntityLayer, &template.layers, set.layer_index, set.layer, allocator);
+            layerListReplaceAt(types.EntityLayer, &template.layers, set.layer_index, .{
+                .sprite = set.sprite,
+                .color_index = set.color_index,
+            }, allocator);
         },
         // Decoration whole-def commit (a picker pick): adopt the full
         // definition — sprite, footprint, pixel dims, color index, layers —
@@ -616,8 +622,16 @@ fn handleEditorEvent(
         .editor_add_decoration_layer => |add| {
             if (add.type_id >= editor.decoration_types.len) return;
             const definition = &@constCast(editor.decoration_types)[add.type_id];
-            if (!decorationLayerDimsMatch(definition, add.layer)) return;
-            layerListAppend(types.DecorationLayer, &definition.layers, add.layer, allocator);
+            if (!decorationLayerDimsMatch(definition, .{
+                .sprite = add.sprite,
+                .color_index = add.color_index,
+                .pixel_dims = add.pixel_dims,
+            })) return;
+            layerListAppend(types.DecorationLayer, &definition.layers, .{
+                .sprite = add.sprite,
+                .color_index = add.color_index,
+                .pixel_dims = add.pixel_dims,
+            }, allocator);
         },
         .editor_remove_decoration_layer => |remove| {
             if (remove.type_id >= editor.decoration_types.len) return;
@@ -629,8 +643,16 @@ fn handleEditorEvent(
             if (set.type_id >= editor.decoration_types.len) return;
             const definition = &@constCast(editor.decoration_types)[set.type_id];
             if (set.layer_index >= definition.layers.len) return;
-            if (!decorationLayerDimsMatch(definition, set.layer)) return;
-            layerListReplaceAt(types.DecorationLayer, &definition.layers, set.layer_index, set.layer, allocator);
+            if (!decorationLayerDimsMatch(definition, .{
+                .sprite = set.sprite,
+                .color_index = set.color_index,
+                .pixel_dims = set.pixel_dims,
+            })) return;
+            layerListReplaceAt(types.DecorationLayer, &definition.layers, set.layer_index, .{
+                .sprite = set.sprite,
+                .color_index = set.color_index,
+                .pixel_dims = set.pixel_dims,
+            }, allocator);
         },
         // The footprint editor's confirm: adopt the new footprint (the
         // draft grid resolves to sprite-grid coords), then prune the
@@ -2140,7 +2162,8 @@ fn handlePlayerInputEvent(
         .player_add_editor_entity_layer => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_add_entity_layer = .{
                 .target = set.target,
-                .layer = set.layer,
+                .sprite = set.sprite,
+                .color_index = set.color_index,
             } } }}, allocator);
         },
         .player_remove_editor_entity_layer => |set| {
@@ -2153,13 +2176,16 @@ fn handlePlayerInputEvent(
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_layer = .{
                 .target = set.target,
                 .layer_index = set.layer_index,
-                .layer = set.layer,
+                .sprite = set.sprite,
+                .color_index = set.color_index,
             } } }}, allocator);
         },
         .player_add_editor_decoration_layer => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_add_decoration_layer = .{
                 .type_id = set.type_id,
-                .layer = set.layer,
+                .sprite = set.sprite,
+                .color_index = set.color_index,
+                .pixel_dims = set.pixel_dims,
             } } }}, allocator);
         },
         .player_remove_editor_decoration_layer => |set| {
@@ -2172,7 +2198,9 @@ fn handlePlayerInputEvent(
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_layer = .{
                 .type_id = set.type_id,
                 .layer_index = set.layer_index,
-                .layer = set.layer,
+                .sprite = set.sprite,
+                .color_index = set.color_index,
+                .pixel_dims = set.pixel_dims,
             } } }}, allocator);
         },
         // Select-tool click: thin over the shared planner (the input layer
