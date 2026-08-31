@@ -8236,3 +8236,56 @@ the verbs (six events + validation + handler tests), then the surface
 Zig note along the way: comptime `std.fmt.parseInt` inside a comptime
 build block needs an explicit `@setEvalBranchQuota` (the default 1000
 backwards branches don't cover even ~23 table entries).
+
+### Footprint editor (DONE)
+
+The decoration inspector's footprint editor — the centered tile-grid
+picker, replacing the read-only `<N> tiles` placeholder. One commit.
+
+- **The picker**: a centered panel (`buildEditorFootprintEditor`, the
+  `.decoration_footprint` kind on `EditorPickerTarget`) showing the
+  type's sprite FULL-SIZE — 1:1, so one sprite-grid tile is a 256×256
+  screen cell — with one invisible toggle button per cell. A continuous
+  WHITE outline marks the draft-selected region: per boundary side (the
+  neighbor across it unselected or off-grid) an 8px bar centered on the
+  boundary — the editor's `region_edge` placement-preview outline,
+  reproduced with `solid_rect` UI elements so corners join seamlessly
+  for any shape. Custom-stem art isn't renderable yet — those cells get
+  a dark fill so the grid stays visible. Confirm (bottom-center) +
+  close (top-right, discard).
+- **The draft** is transient view state, NOT GameState: a fixed 64-bool
+  grid on UiState (`editor_footprint_draft` — 8×8 tiles / 2048px
+  sprites; shipped art is 3×3 max), seeded from the current footprint at
+  open, flipped per cell click (direct UiState writes off the undo
+  timeline — the confirm is what records, the text-buffer model). The
+  picker target CARRIES THE TYPE ID it was opened on: the panel, the
+  toggles, and the confirm all address the stored id, so a mid-edit tool
+  switch (the pickers are dropdowns — everything else stays live) can
+  never silently retarget the user's in-progress draft.
+- **Confirm semantics**: commit `player_set_editor_decoration_footprint`
+  (row-major grid coords — canonical order, stable for serialization) IF
+  the draft differs; unchanged closes without recording; an EMPTY draft
+  stays open (the load-time invariant — a footprint must reserve ≥1
+  tile, so the confirm visibly doesn't take).
+- **The handler adopts + prunes**: an edited footprint re-anchors (the
+  anchor is derived bottom-most-then-left-most, not stored), so a
+  placement's world tiles can shift onto level tiles or other
+  decorations exactly like a sprite retype — the def handler's shared
+  `pruneDecorationPlacementsForType` runs, one undo step covering
+  footprint + prune. Defensive guards (crafted logs): bad type id, empty
+  footprint, tiles outside the sprite grid (the parser's
+  footprint-in-bbox invariant) are ignored.
+- Tests: handler (adopt + prune + one-undo, empty/oob/bad-type ignored),
+  input (open seeds the draft + carries the type id, toggle flips +
+  out-of-range no-op, unchanged confirm closes without recording, empty
+  draft stays open, changed draft commits + undoes), ui (the panel:
+  2×1 grid → 2 toggle cells, shipped-sprite graphic, a 4-bar outline
+  around a lone selected cell; custom stem → 2 dark fills + a 6-bar
+  block outline; the inspector row's open button).
+
+Why the first handler-test draft failed (worth remembering): the prune
+scenario used the 2-tall `tall_footprint` against the test editor's
+512×256 type — a 2×1 grid — so the handler's out-of-bounds guard
+correctly rejected it. The guard isn't test friction; it's the parser's
+footprint-in-bbox invariant doing its job. The scenario was rebuilt on
+a 512×512 (2×2-grid) type.

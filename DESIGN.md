@@ -2006,10 +2006,29 @@ layout + a left inspector + a right settings sidebar:
   index into it, matching the in-game tinting; commits via
   `editor_set_decoration_color_index`). NO name row — a decoration's
   name IS its sprite path (the palette label tracks the sprite). The
-  Footprint section is a minimal placeholder: a read-only `<N> tiles`
-  line; the footprint EDITOR (inline footprint-grid editing) is a later
-  slice and will commit through `editor_set_decoration_footprint`,
-  sharing the def handler's placement-prune helper.
+  Footprint section's row is a `<N> tiles` button that opens the
+  FOOTPRINT EDITOR (below).
+- **The footprint editor (LANDED):** a centered picker panel (the
+  `.decoration_footprint` picker kind) showing the type's sprite
+  FULL-SIZE (1:1 — 256 screen px per sprite-grid tile; custom stems get
+  a dark cell fill until custom-asset rendering lands) with one
+  toggleable cell per grid tile. The DRAFT — a bool grid on UiState
+  (`editor_footprint_draft`, a fixed 64-cell capacity = 8×8 tiles;
+  larger custom sprites don't open) — seeds from the current footprint
+  at open and flips per cell click (direct UiState writes, off the undo
+  timeline; the confirm is what records). A continuous WHITE outline
+  (the placement preview's region-edge style — 8px bars centered on
+  the boundary, seamless corners) marks the draft-selected region.
+  Confirm commits `editor_set_decoration_footprint` (row-major grid
+  coords) IF the draft differs — unchanged closes without recording;
+  an EMPTY draft stays open (a footprint must reserve ≥1 tile, the
+  load-time invariant). The handler ADOPTS + PRUNES: an edited
+  footprint re-anchors (bottom-most-then-left-most), so the def
+  handler's shared prune runs — placements whose shifted world tiles
+  cover a level tile or another decoration are deleted, one undo step
+  covering both. The picker target carries the TYPE ID it was opened
+  on, so a mid-edit tool switch can never silently retarget the draft
+  (toggles/confirm address the stored id; the panel renders from it).
 - **The Layers sections (enemy + decoration, LANDED; the player loadout
   has NO layers):** the LAST section of both contents. Per layer, two
   rows — "Layer N" (the sprite-stem button, a re-pick opens the layer
@@ -2118,8 +2137,9 @@ session-log reader doesn't regroup nested non-u8 slices):
   TODO → Content Loading). Entity custom stems don't hit this (entities
   carry no pixel_dims).
 Ground items always render as the shared ground-bag sprite — there is
-no sprite to pick for them. The picker is the editor's only centered
-panel; everything else stays inline in the inspector / settings sidebar.
+no sprite to pick for them. The sprite picker + the footprint editor
+(see the Inspector fields above) are the editor's only centered panels;
+everything else stays inline in the inspector / settings sidebar.
 
 **Level theme (gradient picking).** A level's theme is composed from the
 authoritative gradient list in `color_themes.txt` (currently 3 gradients;
@@ -2484,8 +2504,8 @@ events — see Level theme below) / `editor_set_mission_name` /
 / `editor_set_entity_*` (20+ field setters) / `editor_set_decoration_def`
 (LANDED — the whole-definition commit; the per-field name/sprite setters
 were superseded and removed) / `editor_set_decoration_color_index`
-(LANDED) / `editor_set_decoration_footprint` (reserved for the future
-footprint editor; shares the prune helper) /
+(LANDED) / `editor_set_decoration_footprint` (LANDED — the footprint
+  editor's confirm; adopts + prunes via the shared helper) /
 `editor_set_item_*` / `editor_add_*_layer` / `editor_remove_*_layer` /
 `editor_set_*_layer` (the six layer arms LANDED)).
 `handleEditorEvent` implements the arms the landed UI
@@ -2494,8 +2514,8 @@ trio, `editor_place_entity` / `editor_place_decoration` /
 `editor_place_item`, `editor_set_entity_placement_type` /
 `editor_set_item_placement_type`, `editor_set_decoration_def` +
 `editor_set_decoration_color_index`, the six LAYER arms —
-`editor_add/remove/set_entity_layer` + `editor_add/remove/set_decoration_layer`);
-the rest still `@panic` so an unhooked edit verb
+`editor_add/remove/set_entity_layer` + `editor_add/remove/set_decoration_layer`,
+and `editor_set_decoration_footprint`); the rest still `@panic` so an unhooked edit verb
 fails fast rather than silently no-op'ing. Remaining handlers land with
 their UI slices.
 

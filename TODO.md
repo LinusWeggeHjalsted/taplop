@@ -388,7 +388,9 @@ Settled — see DESIGN → Decorations & Footprint. WIRING progress:
       in the editor palette when the editor UI slice does.
 - [ ] Editor custom-decoration acquisition (pick PNG → write to file source →
       resolve dims → `editor_add_decoration_type` event).
-- [ ] Editor footprint editing event + UI.
+- [x] Editor footprint editing event + UI — DONE (the centered
+      tile-grid picker; see DESIGN → Level Editor → Editor UI layout →
+      the footprint editor).
 - Open wiring-time details (from AGENTS): overhang sort x; tall multi-y
   footprints if such art ships.
 
@@ -599,13 +601,17 @@ yet implemented. Remaining work:
         are rejected at the replay seam). See DESIGN → Level Editor →
         Editor UI layout (the Layers sections) + the centered sprite
         picker. History in DONE.md.
+  - [x] **The footprint editor** — DONE: the centered tile-grid picker
+        (full-size sprite, toggleable 256×256 cells, white region
+        outline, confirm-commits-if-changed + the shared placement
+        prune; the draft on UiState, the type id on the picker target).
+        See DESIGN → Level Editor → Editor UI layout (the footprint
+        editor). History in DONE.md.
   - [ ] **Remaining layer-adjacent opens:**
-        - the footprint EDITOR (inline footprint-grid editing →
-          `editor_set_decoration_footprint`, sharing the def handler's
-          prune helper) replaces the placeholder row;
         - custom-sprite DIMS verification (multiples of 256, sane
-          bounds) at the pick commit — currently any positive IHDR is
-          accepted (base + layer picks);
+          bounds) at the pick commit + the footprint editor's open gate
+          — currently any positive IHDR is accepted (base + layer picks)
+          and sprites beyond the 8×8 draft grid don't open the editor;
         - the LOAD-side dims resolution for `custom/<mission>/`
           decoration stems, base AND layer (a saved custom-sprite
           decoration panics on reload until the custom-asset acquisition
