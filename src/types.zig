@@ -144,6 +144,12 @@ pub const Action = enum {
     // of screen state. See DESIGN → Architecture → Level Editor → Editor
     // UI layout (tool palette).
     toggle_editor_palette_group,
+    // An editor palette group's "+" cell was clicked (add a new type to
+    // that group, built from the shipped defaults). The group index rides
+    // in `AnytimeInput.clicked_editor_group` — the same payload field as
+    // the group-header toggle. See DESIGN → Architecture → Level Editor →
+    // Editor UI layout (tool palette).
+    add_editor_palette_type,
     // An editor tool cell was clicked (make it the active tool). The
     // EditorToolId rides in `AnytimeInput.clicked_editor_tool`. See DESIGN
     // → Architecture → Level Editor (active-tool model).

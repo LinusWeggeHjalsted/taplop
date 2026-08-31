@@ -309,11 +309,12 @@ pub const AnytimeInput = struct {
     /// here. Valid only in the same frame as the click. See DESIGN → UI
     /// Framework → Settings screen.
     clicked_setting: ?types.SettingRef = null,
-    /// Which editor palette group's header was clicked (expand/collapse),
-    /// set alongside `options_action == .toggle_editor_palette_group` by
-    /// the button-release dispatch in main.zig — same payload-rides-along
-    /// pattern as `clicked_setting`. Valid only in the same frame as the
-    /// click.
+    /// Which editor palette group's header or "+" cell was clicked
+    /// (expand/collapse / add-new-type), set alongside
+    /// `options_action == .toggle_editor_palette_group` /
+    /// `.add_editor_palette_type` by the button-release dispatch in
+    /// main.zig — same payload-rides-along pattern as `clicked_setting`.
+    /// Valid only in the same frame as the click.
     clicked_editor_group: ?usize = null,
     /// Which inspector section header was clicked (expand/collapse), set
     /// alongside `options_action == .toggle_editor_inspector_section` by
@@ -480,6 +481,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .open_settings => player_input.anytime.options_action = action,
         .change_setting => player_input.anytime.options_action = action,
         .toggle_editor_palette_group => player_input.anytime.options_action = action,
+        .add_editor_palette_type => player_input.anytime.options_action = action,
         .select_editor_tool => player_input.anytime.options_action = action,
         .select_editor_level => player_input.anytime.options_action = action,
         .toggle_editor_inspector => player_input.anytime.options_action = action,

@@ -2476,8 +2476,9 @@ pub const Button = struct {
     /// DESIGN → UI Framework → Settings screen.
     setting_ref: ?types.SettingRef = null,
     /// Editor palette group index, if this button is a group header
-    /// (expand/collapse). The `.toggle_editor_palette_group` action +
-    /// `AnytimeInput.clicked_editor_group` fold this into the handler —
+    /// (expand/collapse) or the group's "+" add-new cell. The
+    /// `.toggle_editor_palette_group` / `.add_editor_palette_type` actions
+    /// + `AnytimeInput.clicked_editor_group` fold this into the handler —
     /// same pattern as `setting_ref`.
     editor_group: ?usize = null,
     /// Inspector section identity, if this button is a section header
@@ -4776,6 +4777,8 @@ pub fn buildEditorLevelTabs(
         button_color,
         active_theme.lightest,
         "Add level",
+        null,
+        null,
     );
 }
 
@@ -8425,9 +8428,11 @@ pub fn buildEditorBottomBar(
         } });
 
         // "+" (add-new): square ui/panel cell flush against the header's
-        // right edge (adjacent — reads as tied to the group). Inert until
-        // the edit-verb handlers land — tooltip-carrying panel, like the
-        // level tabs.
+        // right edge (adjacent — reads as tied to the group), carrying the
+        // add-new action + the group index payload. The handler builds the
+        // type from the shipped defaults, makes it the active tool, and
+        // opens the inspector; the input layer opens the sprite picker for
+        // enemies + decorations.
         const plus_cell: Rectangle = .{
             .x = group_left + header_width,
             .y = header_y,
@@ -8442,6 +8447,8 @@ pub fn buildEditorBottomBar(
             button_color,
             active_theme.lightest,
             try std.fmt.allocPrint(allocator, "Add new {s} type", .{label}),
+            .add_editor_palette_type,
+            group_index,
         );
 
         // Type cells: the visible window (skipped entirely when collapsed).
@@ -8550,6 +8557,8 @@ fn emitEditorPlusCell(
     panel_color: Color,
     text_color: Color,
     tooltip_header: []const u8,
+    action: ?types.Action,
+    editor_group: ?usize,
 ) !void {
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
@@ -8559,6 +8568,20 @@ fn emitEditorPlusCell(
         .color = panel_color,
         .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
     } });
+    // Interactive "+" cells (the palette groups' add-new) carry a
+    // spriteless button over the panel, the group-header class; a null
+    // action leaves the cell inert (the add-level "+" until its handler
+    // lands) — tooltip only.
+    if (action) |some_action| {
+        try elements.append(allocator, .{ .button = .{
+            .sprite_id = null,
+            .screen_position = cell.position(),
+            .width = cell.width,
+            .height = cell.height,
+            .action = some_action,
+            .editor_group = editor_group,
+        } });
+    }
     const plus_width = font_metrics.measureSpanWidth(text("+"), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
         .text = "+",
@@ -10253,8 +10276,9 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     );
 
     // 2 fixed tools x (bg + graphic) + 3 groups x (header panel + button
-    // + label + plus (panel + glyph) + type (bg + graphic)) = 4 + 21.
-    try std.testing.expectEqual(@as(usize, 25), elements.items.len);
+    // + label + plus (panel + button + glyph) + type (bg + graphic)) = 4 +
+    // 24.
+    try std.testing.expectEqual(@as(usize, 28), elements.items.len);
 
     // Every tool graphic sits on a button_background cell at the bottom of the
     // screen: 5 tool cells (2 fixed + 3 palette types) — the "+" cells are
@@ -10315,6 +10339,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     // left-aligned with their group's first cell; the "+" glyphs center on
     // their square panel cells beside the headers.
     var header_count: usize = 0;
+    var plus_button_count: usize = 0;
     var enemies_header: ?types.ScreenPosition = null;
     var enemies_header_button: ?types.ScreenPosition = null;
     var first_enemy_cell: ?types.ScreenPosition = null;
@@ -10322,7 +10347,16 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     var enemy_cell_index: usize = 0;
     for (elements.items) |element| switch (element) {
         .button => |button| {
-            if (button.editor_group == 0) enemies_header_button = button.screen_position;
+            // The header + "+" buttons BOTH carry the group payload — tell
+            // them apart by action.
+            if (button.editor_group == 0 and button.action == .toggle_editor_palette_group) {
+                enemies_header_button = button.screen_position;
+            }
+            if (button.action == .add_editor_palette_type) {
+                plus_button_count += 1;
+                try std.testing.expect(button.editor_group != null);
+                try std.testing.expect(button.sprite_id == null); // spriteless over the panel
+            }
             if (button.sprite_id != null and
                 std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
                 button.screen_position.y >= types.reference_height - bottom_bar_height)
@@ -10347,6 +10381,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
         else => {},
     };
     try std.testing.expectEqual(@as(usize, 5), header_count);
+    try std.testing.expectEqual(@as(usize, 3), plus_button_count);
     try std.testing.expect(enemies_header != null);
     try std.testing.expect(enemies_header_button != null);
     try std.testing.expect(first_enemy_cell != null);

@@ -1883,6 +1883,41 @@ pub fn handleAnytimeInput(
                     history.session.ui_state.editor_palette_collapsed[group_index] = true;
                 }
             },
+            // Palette group "+" (add-new type): push the per-kind
+            // orchestrator + drain — the handler builds the type from the
+            // shipped defaults (data/editor_defaults.txt), makes it the
+            // active tool, and opens the inspector. For enemies +
+            // decorations the base-sprite picker then opens on the new
+            // type (the mission rescan + Mission-tab reset — the inspector
+            // Sprite row's open path; the picker's commit targets the new
+            // type through the active tool it set). Ground items have no
+            // sprite to pick.
+            .add_editor_palette_type => {
+                const group_index = anytime.clicked_editor_group orelse return;
+                if (current.editor == null) return;
+                switch (group_index) {
+                    0 => pushPlayerActionAndDrain(history, .player_add_editor_entity_type),
+                    1 => pushPlayerActionAndDrain(history, .player_add_editor_decoration_type),
+                    2 => pushPlayerActionAndDrain(history, .player_add_editor_item_type),
+                    else => return,
+                }
+                // A failed defaults read reverts the action (the popup path)
+                // — no picker on top of a reverted creation.
+                if (history.load_error) return;
+                // The tool switch the handler made retargets the inspector —
+                // any picker still open is stale, so it closes (dropdown
+                // semantics; groups 0/1 immediately open the fresh one).
+                history.session.ui_state.editor_picker = null;
+                if (group_index <= 1) {
+                    const editor = &(history.current_state.editor orelse return);
+                    rescanEditorMissionSprites(history, editor.*);
+                    history.session.ui_state.editor_picker = if (group_index == 0)
+                        .{ .entity_sprite = {} }
+                    else
+                        .{ .decoration_sprite = {} };
+                    history.session.ui_state.editor_picker_sprite_tab = .mission_local;
+                }
+            },
             // Inspector section header (expand/collapse). The section id
             // rode in `anytime.clicked_editor_section`. View-side display
             // state — a direct UiState write, off the undo timeline (same

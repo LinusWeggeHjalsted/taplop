@@ -2847,6 +2847,89 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     try testing.expect(history.session.ui_state.editor_picker == null);
 }
 
+test "palette + click: default type creation, tool switch, picker routing" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A png in the mission dir so the rescan at picker-open finds one.
+    try harness.file_source.writeFile("missions/artists_den/boss.png", "png");
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .mission = .{ .path = "missions/artists_den" },
+    }));
+    runToIdle(&history);
+
+    // Enemies "+": the shipped default lands, becomes the active tool, and
+    // the base-sprite picker opens on it (Mission tab, the mission scan).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .add_editor_palette_type,
+        .clicked_editor_group = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expectEqual(@as(usize, 1), editor.entity_types.len);
+        try testing.expectEqualStrings("New Enemy", editor.entity_types[0].id);
+        try testing.expect(std.meta.eql(
+            types.EditorToolId{ .entity_type = 0 },
+            editor.active_tool,
+        ));
+    }
+    try testing.expectEqual(
+        ui.EditorPickerTarget.entity_sprite,
+        history.session.ui_state.editor_picker.?,
+    );
+    try testing.expectEqual(
+        types.EditorSpritePickerTab.mission_local,
+        history.session.ui_state.editor_picker_sprite_tab,
+    );
+    try testing.expectEqual(@as(usize, 1), history.session.editor_mission_sprites.len);
+
+    // Decorations "+": the stone_1 default + the decoration picker (the
+    // stale entity picker from the previous click closes).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .add_editor_palette_type,
+        .clicked_editor_group = 1,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.decoration_types.len);
+    try testing.expectEqualStrings(
+        "stone_1",
+        history.current_state.editor.?.decoration_types[0].sprite,
+    );
+    try testing.expectEqual(
+        ui.EditorPickerTarget.decoration_sprite,
+        history.session.ui_state.editor_picker.?,
+    );
+
+    // Items "+": the New Sword default, NO picker (nothing to pick) — and
+    // the decoration picker from the previous click closes.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .add_editor_palette_type,
+        .clicked_editor_group = 2,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.item_types.len);
+    try testing.expectEqualStrings(
+        "New Sword",
+        history.current_state.editor.?.item_types[0].item.weapon.name,
+    );
+    try testing.expect(history.session.ui_state.editor_picker == null);
+
+    // A crafted out-of-range group index does nothing (no event, no
+    // picker).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .add_editor_palette_type,
+        .clicked_editor_group = 3,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.entity_types.len);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
 test "decoration sprite picker: open routing, official prefab adopt, same-def no-op, entity-picker gate" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
