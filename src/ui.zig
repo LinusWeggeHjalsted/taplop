@@ -74,7 +74,7 @@ pub const EditorPickerTarget = union(enum) {
     /// mid-edit (the dropdown convention), and toggles/confirm can never
     /// silently apply to a different type.
     decoration_footprint: u32,
-    /// The settings sidebar's THEME PICKER (a gradient row's swatch):
+    /// The metadata sidebar's THEME PICKER (a gradient row's swatch):
     /// every gradient as a full-width strip, one pick per row. Carries
     /// the LEVEL INDEX it was opened on + the ROLE being picked (the
     /// world index, or an enemy/player override) — a mid-edit tab switch
@@ -228,6 +228,10 @@ pub const UiState = struct {
     /// builder (authoritative — it knows the content height) and on write
     /// in the wheel handler. Off the undo timeline like the other scrolls.
     editor_inspector_scroll: i32 = 0,
+    /// The metadata sidebar's scroll offset (row units) — same model as
+    /// `editor_inspector_scroll`: clamped authoritative in the builder,
+    /// lower-clamped in the wheel handler.
+    editor_metadata_scroll: i32 = 0,
 
     /// The editor's centered picker, if open — which field is being
     /// picked (first consumer: the utility-skill picker; the sprite picker
@@ -1929,13 +1933,13 @@ test "textEditPressProceeds: M2 region is the open inspector panel + its toggle"
     // interaction — the press proceeds (commit + pick in one click).
     try std.testing.expect(textEditPressProceeds(true, false, outside_panel, .select_editor_utility_skill));
     try std.testing.expect(textEditPressProceeds(true, false, outside_panel, .close_editor_picker));
-    // The settings sidebar's rect + toggle behave the same (a sibling
+    // The metadata sidebar's rect + toggle behave the same (a sibling
     // control of a sidebar field).
-    const sidebar_rect = editorSettingsSidebarPanelRect();
+    const sidebar_rect = editorMetadataSidebarPanelRect();
     const inside_sidebar: ScreenPosition = .{ .x = sidebar_rect.x + 100, .y = sidebar_rect.y + 100 };
     try std.testing.expect(textEditPressProceeds(false, true, inside_sidebar, null));
     try std.testing.expect(!textEditPressProceeds(false, false, inside_sidebar, null));
-    try std.testing.expect(textEditPressProceeds(false, false, inside_sidebar, .toggle_editor_settings_sidebar));
+    try std.testing.expect(textEditPressProceeds(false, false, inside_sidebar, .toggle_editor_metadata_sidebar));
 }
 
 
@@ -4696,48 +4700,48 @@ pub fn buildEditorInspectorPanel(
     }
 }
 
-/// Width of the editor settings sidebar's background panel (mirrors the
+/// Width of the editor metadata sidebar's background panel (mirrors the
 /// inspector's placeholder width).
-pub const editor_settings_sidebar_width: i32 = 1024;
+pub const editor_metadata_sidebar_width: i32 = 1024;
 
-/// The settings sidebar's panel rect — the inspector rect mirrored to the
+/// The metadata sidebar's panel rect — the inspector rect mirrored to the
 /// right edge. Single source for the builder's layout AND the M2 press
 /// arbitration, so the two can't drift.
-pub fn editorSettingsSidebarPanelRect() Rectangle {
+pub fn editorMetadataSidebarPanelRect() Rectangle {
     const top = top_bar_height + ui_gap + editor_header_strip_height + ui_gap;
     const bottom = types.reference_height -
         bottom_bar_height - 2 * ui_gap - editor_header_strip_height;
     return .{
-        .x = types.reference_width - editor_settings_sidebar_width,
+        .x = types.reference_width - editor_metadata_sidebar_width,
         .y = top,
-        .width = editor_settings_sidebar_width,
+        .width = editor_metadata_sidebar_width,
         .height = bottom - top,
     };
 }
 
-/// Editor settings sidebar (the right bar): a top-right "Settings" toggle
+/// Editor metadata sidebar (the right bar): a top-right "Settings" toggle
 /// button at the inspector toggle's height, flush to the right screen edge
 /// (the same visual class), and — when open — a background panel hosting
 /// the mission + active-level metadata: the Mission section (name field)
 /// and the Level section (name field; the gradient rows land with the
 /// theme slice). The open flag lives on the Editor (GameState) — the
-/// toggle rides the undo timeline via `editor_toggle_settings_sidebar`.
+/// toggle rides the undo timeline via `editor_toggle_metadata_sidebar`.
 /// See DESIGN → Architecture → Level Editor → Editor UI layout (Settings
 /// sidebar).
-pub fn buildEditorSettingsSidebar(
+pub fn buildEditorMetadataSidebar(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     editor: types.Editor,
     active_theme: types.ActiveColorTheme,
-    sidebar_open: bool,
+    metadata_sidebar_open: bool,
     ui_state: *UiState,
 ) !void {
     const p = active_theme.player_gradient.colors;
     const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
 
     // Toggle button: flush right, at the inspector toggle's height.
-    const label = "Settings";
+    const label = "Metadata";
     const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
     const width = @max(label_width + 2 * ui_gap, editor_header_strip_height);
     const button_cell: Rectangle = .{
@@ -4758,7 +4762,7 @@ pub fn buildEditorSettingsSidebar(
         .screen_position = button_cell.position(),
         .width = width,
         .height = editor_header_strip_height,
-        .action = .toggle_editor_settings_sidebar,
+        .action = .toggle_editor_metadata_sidebar,
         .tooltip = .{ .header = try spanRow(allocator, text(label)) },
     } });
     try elements.append(allocator, .{ .text_label = .{
@@ -4769,9 +4773,9 @@ pub fn buildEditorSettingsSidebar(
         .blocks_input = false,
     } });
 
-    if (!sidebar_open) return;
+    if (!metadata_sidebar_open) return;
 
-    const panel_rect = editorSettingsSidebarPanelRect();
+    const panel_rect = editorMetadataSidebarPanelRect();
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
         .screen_position = panel_rect.position(),
@@ -4780,195 +4784,251 @@ pub fn buildEditorSettingsSidebar(
         .color = active_theme.darkest,
     } });
 
-    // Content: the Mission section (name) then the Level section (name).
-    // The inspector's row geometry (two-unit field entries: label line
-    // above, control below) + section strips; the strips here are PLAIN
-    // labels (no collapse — the sidebar is two fixed sections).
+    // Content: the INSPECTOR'S EXACT MODEL — a per-frame entry list over
+    // the expansion state, view-relative windowed emission (only rows
+    // that FULLY fit), and a scrollbar when the content overflows. Both
+    // sections COLLAPSED by default; the strips are the shared
+    // collapsible section headers (`emitInspectorSectionStrip` — the +/-
+    // marker, the whole-strip click, the shared expansion array keyed by
+    // `EditorInspectorSectionId`).
     const content: Rectangle = .{
         .x = panel_rect.x + ui_gap,
         .y = panel_rect.y + ui_gap,
         .width = panel_rect.width - 2 * ui_gap,
         .height = panel_rect.height - 2 * ui_gap,
     };
+    const visible_rows = @divFloor(content.height, editor_inspector_row_height);
+    const scroll_offset = &ui_state.editor_metadata_scroll;
+
+    // The level the sidebar shows (the ACTIVE tab). The level index rides
+    // the name field's ref target (a mid-edit tab switch can't retarget
+    // the commit). A level-less editor (defensive — open_editor
+    // guarantees ≥1) shows an empty field whose commit gates on the
+    // index bound.
+    const active_level: usize = @min(editor.active_level_index, editor.levels.len);
+    const level: ?types.EditorLevel = if (active_level < editor.levels.len)
+        editor.levels[active_level]
+    else
+        null;
+    const entries: []const EditorMetadataEntry = try editorMetadataEntries(
+        allocator,
+        level,
+        active_theme,
+        &ui_state.editor_inspector_section_expanded,
+    );
+
+    // Unit math + scroll clamp — the inspector's (authoritative here: the
+    // builder knows the content height).
+    var total_units: i32 = 0;
+    for (entries) |entry| total_units += editorMetadataEntryUnits(entry);
+    const max_scroll_row = @max(@as(i32, 0), total_units - visible_rows);
+    if (scroll_offset.* < 0) scroll_offset.* = 0;
+    if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
+
     const text_edit: ?*const TextEditState =
         if (ui_state.text_edit != null) &ui_state.text_edit.? else null;
 
-    // Mission section: strip + the name field entry (two units — the
-    // inspector's field-entry geometry).
-    var cursor_y = content.y;
-    try emitSidebarSectionStrip(
-        elements,
-        allocator,
-        .{ .x = content.x, .y = cursor_y, .width = content.width, .height = editor_header_strip_height },
-        "Mission",
-        button_color,
-        active_theme,
-    );
-    cursor_y += editor_header_strip_height + ui_gap;
-    try emitSidebarNameField(
-        elements,
-        allocator,
-        font_metrics,
-        text_edit,
-        .{ .id = .mission_name, .target = .mission },
-        editor.mission.name,
-        .{ .x = content.x, .y = cursor_y, .width = content.width, .height = 2 * editor_inspector_row_height },
-        active_theme,
-    );
+    // Windowed emission (the skills-panel model, variable-height entries):
+    // an entry is emitted only when it FULLY fits the visible window.
+    var start_unit: i32 = 0;
+    var index: usize = 0;
+    while (index < entries.len and start_unit < scroll_offset.* + visible_rows) : (index += 1) {
+        const entry = entries[index];
+        const units = editorMetadataEntryUnits(entry);
+        defer start_unit += units;
+        if (start_unit < scroll_offset.* or
+            start_unit + units > scroll_offset.* + visible_rows) continue;
+        const cell: Rectangle = .{
+            .x = content.x,
+            .y = content.y + (start_unit - scroll_offset.*) * editor_inspector_row_height,
+            .width = content.width,
+            .height = units * editor_inspector_row_height,
+        };
+        switch (entry) {
+            // A blank unit — the section-break gap.
+            .spacer => {},
+            .section => |section_id| try emitInspectorSectionStrip(
+                elements,
+                allocator,
+                cell,
+                section_id,
+                ui_state.editor_inspector_section_expanded[@intFromEnum(section_id)],
+                button_color,
+                active_theme,
+            ),
+            .mission_name => try emitSidebarNameField(
+                elements,
+                allocator,
+                font_metrics,
+                text_edit,
+                .{ .id = .mission_name, .target = .mission },
+                editor.mission.name,
+                cell,
+                active_theme,
+            ),
+            .level_name => try emitSidebarNameField(
+                elements,
+                allocator,
+                font_metrics,
+                text_edit,
+                .{ .id = .level_name, .target = .{ .level = @intCast(active_level) } },
+                if (level) |some_level| some_level.name else "",
+                cell,
+                active_theme,
+            ),
+            .gradient => |row| try emitSidebarGradientRow(
+                elements,
+                allocator,
+                row,
+                button_color,
+                cell,
+                active_theme,
+            ),
+        }
+    }
 
-    // The section-break spacer belongs to the section above it (the
-    // inspector's convention).
-    cursor_y += 2 * editor_inspector_row_height + ui_gap;
-    try emitSidebarSectionStrip(
-        elements,
-        allocator,
-        .{ .x = content.x, .y = cursor_y, .width = content.width, .height = editor_header_strip_height },
-        "Level",
-        button_color,
-        active_theme,
-    );
-    cursor_y += editor_header_strip_height + ui_gap;
-    // The level index rides the ref target (the tab the field was focused
-    // on — a mid-edit tab switch can't retarget the commit). A level-less
-    // editor (defensive — open_editor guarantees ≥1) shows an empty field
-    // whose commit gates on the index bound.
-    const active_level: usize = @min(editor.active_level_index, editor.levels.len);
-    const level_name = if (active_level < editor.levels.len)
-        editor.levels[active_level].name
-    else
-        "";
-    try emitSidebarNameField(
-        elements,
-        allocator,
-        font_metrics,
-        text_edit,
-        .{ .id = .level_name, .target = .{ .level = @intCast(active_level) } },
-        level_name,
-        .{ .x = content.x, .y = cursor_y, .width = content.width, .height = 2 * editor_inspector_row_height },
-        active_theme,
-    );
-
-    // The Level section's THEME rows: world / enemy / player gradient
-    // picks (see DESIGN → Level Editor → Level theme). The swatches show
-    // the EFFECTIVE gradients — the active theme already derives them
-    // from this level's settings, so no re-derivation here. The enemy /
-    // player rows carry the AUTO toggle (highlighted while deriving;
-    // clicking while manual reverts, the same-value-picks-never-fire
-    // rule makes the auto-state click a no-op).
-    // The gradient rows are SINGLE-LINE (the settings-screen row pattern:
-    // role label + Auto button + swatch on one line) so the three rows
-    // fit the panel alongside the two name entries — the two-unit
-    // field-entry geometry would overflow the panel bottom by ~2 rows.
-    cursor_y += 2 * editor_inspector_row_height + ui_gap;
-    try emitSidebarGradientRow(
-        elements,
-        allocator,
-        "World",
-        active_theme.world_gradient.colors,
-        .world,
-        null,
-        button_color,
-        .{ .x = content.x, .y = cursor_y, .width = content.width, .height = editor_header_strip_height },
-        active_theme,
-    );
-    cursor_y += editor_header_strip_height + ui_gap;
-    try emitSidebarGradientRow(
-        elements,
-        allocator,
-        "Enemy",
-        active_theme.enemy_gradient.colors,
-        .enemy,
-        if (active_level < editor.levels.len)
-            editor.levels[active_level].enemy_gradient_index
-        else
-            null,
-        button_color,
-        .{ .x = content.x, .y = cursor_y, .width = content.width, .height = editor_header_strip_height },
-        active_theme,
-    );
-    cursor_y += editor_header_strip_height + ui_gap;
-    try emitSidebarGradientRow(
-        elements,
-        allocator,
-        "Player",
-        active_theme.player_gradient.colors,
-        .player,
-        if (active_level < editor.levels.len)
-            editor.levels[active_level].player_gradient_index
-        else
-            null,
-        button_color,
-        .{ .x = content.x, .y = cursor_y, .width = content.width, .height = editor_header_strip_height },
-        active_theme,
-    );
+    // Scrollbar (only when the content overflows): the inspector's
+    // geometry — track + proportional thumb in the right `ui_gap` margin,
+    // measured in row units.
+    if (total_units > visible_rows) {
+        const track_x = panel_rect.x + panel_rect.width - ui_gap +
+            @divFloor(ui_gap - editor_inspector_scrollbar_width, 2);
+        const track_y = content.y;
+        const track_height = visible_rows * editor_inspector_row_height;
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = track_x, .y = track_y },
+            .width = editor_inspector_scrollbar_width,
+            .height = track_height,
+            .color = .{ .r = 80, .g = 80, .b = 80 },
+        } });
+        const thumb_height = @max(
+            @as(i32, 40),
+            @divTrunc(track_height * visible_rows, total_units),
+        );
+        const thumb_y = track_y +
+            @divTrunc(scroll_offset.* * (track_height - thumb_height), max_scroll_row);
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = track_x, .y = thumb_y },
+            .width = editor_inspector_scrollbar_width,
+            .height = thumb_height,
+            .color = .{ .r = 180, .g = 180, .b = 180 },
+        } });
+    }
 }
 
-/// A sidebar section strip: the group-header visual class (panel-backed,
-/// label left-padded + vertically centered) — plain, not collapsible (the
-/// sidebar's two sections are fixed).
-fn emitSidebarSectionStrip(
-    elements: *UiElementList,
-    allocator: std.mem.Allocator,
-    cell: Rectangle,
+/// One row of the metadata sidebar's content plan. Mirrors the inspector's
+/// entry model: a SECTION header (1 unit, the shared collapsible strip),
+/// a section-break SPACER (1 unit), or a two-unit field entry (label line
+/// above, control below).
+const EditorMetadataEntry = union(enum) {
+    section: types.EditorInspectorSectionId,
+    spacer: void,
+    mission_name: void,
+    level_name: void,
+    /// One gradient row (see `EditorGradientRow`).
+    gradient: EditorGradientRow,
+};
+
+/// One gradient row of the metadata sidebar's Current-level section: the
+/// role's label + effective gradient + the override state (null =
+/// auto-deriving).
+const EditorGradientRow = struct {
     label: []const u8,
-    strip_color: types.Color,
-    active_theme: types.ActiveColorTheme,
-) !void {
-    try elements.append(allocator, .{ .nine_slice_panel = .{
-        .sprite_id = "ui/panel",
-        .screen_position = cell.position(),
-        .width = cell.width,
-        .height = cell.height,
-        .color = strip_color,
-    } });
-    try elements.append(allocator, .{ .text_label = .{
-        .text = label,
-        .screen_position = .{
-            .x = cell.x + ui_gap,
-            .y = cell.y + @divFloor(cell.height - editor_group_header_font_size, 2),
-        },
-        .font_size = editor_group_header_font_size,
-        .color = active_theme.lightest,
-        .blocks_input = false,
-    } });
+    role: types.LevelGradientRole,
+    colors: [types.gradient_color_count]types.Color,
+    gradient_override: ?u32,
+};
+
+/// Row units a metadata entry occupies: a section header / spacer is one;
+/// the field entries are two (the label line + the control line).
+fn editorMetadataEntryUnits(entry: EditorMetadataEntry) i32 {
+    return switch (entry) {
+        .section, .spacer => 1,
+        .mission_name, .level_name, .gradient => 2,
+    };
 }
 
-/// A sidebar gradient row (SINGLE LINE — the settings-screen row pattern,
-/// so three rows fit the panel alongside the name entries): the role
-/// label, then (for the enemy/player roles) the AUTO toggle, then the
-/// full-gradient swatch strip — ONE button over the whole strip, opening
-/// the theme picker. `gradient_override` is null while the role
-/// auto-derives (the AUTO button's highlighted state); the swatch colors
-/// are the EFFECTIVE gradient either way (passed in — the active theme
-/// already resolved them).
+/// The metadata sidebar's content plan: the Mission section (the mission's
+/// name) then the Current-level section (the active level's name + the
+/// three gradient rows). Each section header is followed by its children
+/// WHILE EXPANDED (the shared `editor_inspector_section_expanded` state —
+/// collapse is a view affordance, off the undo timeline). The spacer
+/// belongs to the section ABOVE it (a collapsed section takes no gap).
+fn editorMetadataEntries(
+    allocator: std.mem.Allocator,
+    level: ?types.EditorLevel,
+    active_theme: types.ActiveColorTheme,
+    expanded: *const [editor_inspector_section_count]bool,
+) ![]const EditorMetadataEntry {
+    var entries: std.ArrayList(EditorMetadataEntry) = .empty;
+
+    try entries.append(allocator, .{ .section = .mission });
+    if (expanded[@intFromEnum(types.EditorInspectorSectionId.mission)]) {
+        try entries.append(allocator, .mission_name);
+        try entries.append(allocator, .spacer);
+    }
+
+    try entries.append(allocator, .{ .section = .current_level });
+    if (expanded[@intFromEnum(types.EditorInspectorSectionId.current_level)]) {
+        try entries.appendSlice(allocator, &.{
+            .level_name,
+            .{ .gradient = .{
+                .label = "World",
+                .role = .world,
+                .colors = active_theme.world_gradient.colors,
+                .gradient_override = null,
+            } },
+            .{ .gradient = .{
+                .label = "Enemy",
+                .role = .enemy,
+                .colors = active_theme.enemy_gradient.colors,
+                .gradient_override = if (level) |some_level|
+                    some_level.enemy_gradient_index
+                else
+                    null,
+            } },
+            .{ .gradient = .{
+                .label = "Player",
+                .role = .player,
+                .colors = active_theme.player_gradient.colors,
+                .gradient_override = if (level) |some_level|
+                    some_level.player_gradient_index
+                else
+                    null,
+            } },
+        });
+    }
+
+    return entries.items;
+}
+
+/// A metadata-sidebar gradient row (two-unit field entry, the inspector's
+/// geometry): the role label line above, the control line below — the
+/// AUTO toggle (enemy/player roles only) then the full-gradient swatch
+/// strip, ONE button over the whole strip opening the theme picker.
+/// `gradient_override` is null while the role auto-derives (the AUTO
+/// button's highlighted state); the swatch colors are the EFFECTIVE
+/// gradient either way (the active theme already resolved them).
 fn emitSidebarGradientRow(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
-    label: []const u8,
-    gradient: [types.gradient_color_count]types.Color,
-    role: types.LevelGradientRole,
-    gradient_override: ?u32,
+    row: EditorGradientRow,
     button_color: types.Color,
-    row: Rectangle,
+    entry: Rectangle,
     active_theme: types.ActiveColorTheme,
 ) !void {
+    // The descriptor line (the role's label), flush to the bottom of the
+    // upper unit — the inspector's field-entry convention.
     try elements.append(allocator, .{ .text_label = .{
-        .text = label,
-        .screen_position = .{
-            .x = row.x,
-            .y = row.y + @divFloor(row.height - editor_group_header_font_size, 2),
-        },
+        .text = row.label,
+        .screen_position = .{ .x = entry.x, .y = inspectorLabelY(entry) },
         .font_size = editor_group_header_font_size,
         .color = active_theme.lightest,
         .blocks_input = false,
     } });
-    const label_width: i32 = 320;
-    const control_rect: Rectangle = .{
-        .x = row.x + label_width,
-        .y = row.y,
-        .width = row.width - label_width,
-        .height = row.height,
-    };
+    const control_rect = inspectorControlRect(entry);
+    const role = row.role;
+    const gradient_override = row.gradient_override;
 
     // The AUTO toggle (enemy/player rows only): highlighted while
     // deriving; a click while manual reverts (the input layer no-ops it
@@ -5028,7 +5088,7 @@ fn emitSidebarGradientRow(
             },
             .width = block_width,
             .height = swatch_rect.height,
-            .color = gradient[index],
+            .color = row.colors[index],
         } });
     }
     try elements.append(allocator, .{ .button = .{
@@ -5308,6 +5368,8 @@ fn editorInspectorSectionLabel(section: types.EditorInspectorSectionId) []const 
         .player => "Player",
         .footprint => "Footprint",
         .layers => "Layers",
+        .mission => "Mission",
+        .current_level => "Current level",
     };
 }
 
@@ -6220,7 +6282,7 @@ fn emitInspectorTextField(
 }
 
 /// The text-field ELEMENT (shared by the inspector's entity fields and
-/// the settings sidebar's name fields): the paper-strip visual (lightest
+/// the metadata sidebar's name fields): the paper-strip visual (lightest
 /// frame, pure-black text — the contrast is the point; the caret +
 /// selection draw in the same color, see the backend arm) + the focused
 /// field's live buffer/caret/selection overlay.
@@ -7225,7 +7287,7 @@ pub fn buildEditorSpritePicker(
 /// `UiState.editor_footprint_draft`; the type id rides the picker target
 /// (see the union). Custom-stem art isn't renderable yet — its cells get
 /// a dark fill so the grid stays visible.
-/// The settings sidebar's THEME PICKER (the `.level_gradient` target):
+/// The metadata sidebar's THEME PICKER (the `.level_gradient` target):
 /// a centered panel listing every gradient in `color_themes.txt` as a
 /// full-width swatch strip — one row per gradient, bare strips (no
 /// labels — the colors ARE the content), a close button top-right. The
@@ -7661,20 +7723,20 @@ fn emitPickerSkillCell(
 /// Framework → Text input widget): true when a left press may PROCEED
 /// after committing the field — the press is on a sibling control of the
 /// field's own panel (anything inside the open inspector panel or the
-/// open settings sidebar, or either toggle button); false when it must be
+/// open metadata sidebar, or either toggle button); false when it must be
 /// consumed as pure dismissal. Callers gate on a focused field before
 /// calling; `pressed_button` is the button under the press position, if
 /// any (the toggle buttons sit outside their panel rects, so they are
 /// matched by action).
 pub fn textEditPressProceeds(
     inspector_open: bool,
-    sidebar_open: bool,
+    metadata_sidebar_open: bool,
     position: ScreenPosition,
     pressed_button: ?Action,
 ) bool {
     if (pressed_button) |action| {
         if (action == .toggle_editor_inspector) return true;
-        if (action == .toggle_editor_settings_sidebar) return true;
+        if (action == .toggle_editor_metadata_sidebar) return true;
         // A picker surface (a skill cell, a sprite cell, a picker tab, or
         // the close button): the picker is the ACTIVE interaction — commit
         // the field and let the pick fire in the same click (it floats
@@ -7686,7 +7748,7 @@ pub fn textEditPressProceeds(
             action == .close_editor_picker) return true;
     }
     if (inspector_open and editorInspectorPanelRect().contains(position)) return true;
-    if (sidebar_open and editorSettingsSidebarPanelRect().contains(position)) return true;
+    if (metadata_sidebar_open and editorMetadataSidebarPanelRect().contains(position)) return true;
     return false;
 }
 
@@ -12457,7 +12519,7 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
     }
 }
 
-test "buildEditorSettingsSidebar: toggle always, panel + name fields when open" {
+test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
@@ -12479,49 +12541,90 @@ test "buildEditorSettingsSidebar: toggle always, panel + name fields when open" 
         .active_level_index = 1,
     };
 
-    // Open (the default): toggle (panel + button + label) + background
-    // panel + two section strips (panel + label each) + two name entries
-    // (label + text field each) + the three gradient rows (world: label +
-    // 6 blocks + button = 8; enemy/player: label + Auto panel + button +
-    // label + 6 blocks + button = 11 each) = 42 elements.
+    // The toggle button: always present, flush RIGHT at the inspector
+    // toggle's height.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
-        try buildEditorSettingsSidebar(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 42), elements.items.len);
-
-        // The toggle button: flush RIGHT at the inspector toggle's height.
+        try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, false, &ui_state);
+        try std.testing.expectEqual(@as(usize, 3), elements.items.len);
+        try std.testing.expectEqual(Action.toggle_editor_metadata_sidebar, elements.items[1].button.action);
         const toggle_panel = elements.items[0].nine_slice_panel;
-        try std.testing.expectEqualStrings("ui/panel", toggle_panel.sprite_id);
         try std.testing.expectEqual(top_bar_height + ui_gap, toggle_panel.screen_position.y);
         try std.testing.expectEqual(types.reference_width, toggle_panel.screen_position.x + toggle_panel.width);
-        const toggle_button = elements.items[1].button;
-        try std.testing.expectEqual(Action.toggle_editor_settings_sidebar, toggle_button.action);
+    }
 
-        // The background panel: the shared rect fn (the M2 press
-        // arbitration reads the same geometry), right-aligned.
-        const panel = elements.items[3].nine_slice_panel;
-        try std.testing.expectEqual(
-            editorSettingsSidebarPanelRect(),
-            Rectangle{
-                .x = panel.screen_position.x,
-                .y = panel.screen_position.y,
-                .width = panel.width,
-                .height = panel.height,
+    // Open + COLLAPSED (the default): the background panel + two section
+    // headers only — the inspector's all-collapsed convention. 10 = toggle
+    // 3 + panel 1 + two strips × (panel + button + label).
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try std.testing.expectEqual(@as(usize, 10), elements.items.len);
+        // The strips are the shared collapsible headers (+ marker, the
+        // toggle action, the section id payload).
+        var headers: [2]?Button = .{ null, null };
+        var headers_seen: [2]bool = .{ false, false };
+        for (elements.items) |element| switch (element) {
+            .button => |button| switch (button.action) {
+                .toggle_editor_inspector_section => switch (button.editor_section.?) {
+                    .mission => headers[0] = button,
+                    .current_level => headers[1] = button,
+                    else => {},
+                },
+                else => {},
             },
-        );
-        try std.testing.expectEqual(types.reference_width, panel.screen_position.x + panel.width);
-        try std.testing.expectEqual(theme.darkest, panel.color);
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "+ Mission")) headers_seen[0] = true;
+                if (std.mem.eql(u8, label.text, "+ Current level")) headers_seen[1] = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(headers[0] != null);
+        try std.testing.expect(headers[1] != null);
+        try std.testing.expect(headers_seen[0]);
+        try std.testing.expect(headers_seen[1]);
+        // No fields while collapsed.
+        for (elements.items) |element| try std.testing.expect(element != .text_field);
+    }
 
-        // The two text fields: mission ref + the ACTIVE TAB's level ref,
-        // seeded with the current names.
+    // Open + EXPANDED: the entries window like the inspector's (13 units
+    // of content, 10 visible) — at scroll 0 the mission + level name
+    // fields and the WORLD row are visible, the enemy/player rows are
+    // not (they don't fully fit); the scrollbar appears.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{
+            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
+        };
+        try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+
         var mission_field: ?TextFieldUi = null;
         var level_field: ?TextFieldUi = null;
+        var open_buttons: [3]?Button = .{ null, null, null };
+        var scrollbar_rects: usize = 0;
         for (elements.items) |element| switch (element) {
             .text_field => |field| switch (field.ref.id) {
                 .mission_name => mission_field = field,
                 .level_name => level_field = field,
                 else => {},
+            },
+            .button => |button| switch (button.action) {
+                .open_editor_level_gradient_picker => switch (button.editor_gradient_role.?) {
+                    .world => open_buttons[0] = button,
+                    .enemy => open_buttons[1] = button,
+                    .player => open_buttons[2] = button,
+                },
+                else => {},
+            },
+            .solid_rect => |rect| {
+                // Scrollbar track + thumb (the fixed grays).
+                if (std.meta.eql(rect.color, types.Color{ .r = 80, .g = 80, .b = 80 }) or
+                    std.meta.eql(rect.color, types.Color{ .r = 180, .g = 180, .b = 180 }))
+                {
+                    scrollbar_rects += 1;
+                }
             },
             else => {},
         };
@@ -12531,48 +12634,37 @@ test "buildEditorSettingsSidebar: toggle always, panel + name fields when open" 
         try std.testing.expect(level_field != null);
         try std.testing.expectEqualStrings("Second", level_field.?.text);
         try std.testing.expectEqual(types.TextEditTarget{ .level = 1 }, level_field.?.ref.target);
+        try std.testing.expect(open_buttons[0] != null);
+        try std.testing.expect(open_buttons[1] == null);
+        try std.testing.expect(open_buttons[2] == null);
+        try std.testing.expectEqual(@as(usize, 2), scrollbar_rects);
+    }
 
-        // The gradient rows: one open-picker button per role (the world
-        // row full-width, the enemy/player rows beside their Auto
-        // buttons), the Auto buttons highlighted while the role is on
-        // auto (no overrides set on this editor).
-        var open_buttons: [3]?Button = .{null, null, null};
-        var auto_buttons: [2]?Button = .{null, null};
+    // Scrolled to the bottom: the player row is visible, the mission
+    // name field is not (windowed out).
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{
+            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
+            .editor_metadata_scroll = 99, // clamped to 3 by the builder
+        };
+        try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        var mission_field_seen = false;
+        var player_button: ?Button = null;
         for (elements.items) |element| switch (element) {
-            .button => |button| switch (button.action) {
-                .open_editor_level_gradient_picker => switch (button.editor_gradient_role.?) {
-                    .world => open_buttons[0] = button,
-                    .enemy => open_buttons[1] = button,
-                    .player => open_buttons[2] = button,
-                },
-                .toggle_editor_level_gradient_auto => switch (button.editor_gradient_role.?) {
-                    .world => {},
-                    .enemy => auto_buttons[0] = button,
-                    .player => auto_buttons[1] = button,
-                },
-                else => {},
+            .text_field => |field| {
+                if (field.ref.id == .mission_name) mission_field_seen = true;
+            },
+            .button => |button| {
+                if (button.action == .open_editor_level_gradient_picker and
+                    button.editor_gradient_role.? == .player) player_button = button;
             },
             else => {},
         };
-        for (open_buttons) |maybe_button| try std.testing.expect(maybe_button != null);
-        // Every row reserves the 320px label column; the enemy/player
-        // swatches are narrowed further by their Auto buttons.
-        const content_width = editorSettingsSidebarPanelRect().width - 2 * ui_gap;
-        try std.testing.expectEqual(content_width - 320, open_buttons[0].?.width);
-        try std.testing.expect(open_buttons[1].?.width < open_buttons[0].?.width);
-        for (auto_buttons) |maybe_button| {
-            try std.testing.expect(maybe_button != null);
-            try std.testing.expect(maybe_button.?.highlighted);
-        }
-    }
-
-    // Closed: just the toggle (3 elements).
-    {
-        var elements: UiElementList = .empty;
-        var ui_state: UiState = .{};
-        try buildEditorSettingsSidebar(&elements, arena.allocator(), metrics, editor, theme, false, &ui_state);
-        try std.testing.expectEqual(@as(usize, 3), elements.items.len);
-        try std.testing.expectEqual(Action.toggle_editor_settings_sidebar, elements.items[1].button.action);
+        try std.testing.expect(!mission_field_seen);
+        try std.testing.expect(player_button != null);
+        // The scroll CLAMPED to the content max (13 units - 10 visible).
+        try std.testing.expectEqual(@as(i32, 3), ui_state.editor_metadata_scroll);
     }
 }
 

@@ -8415,3 +8415,39 @@ panels note).
   picker builder (strips, frame on the current row, derived-index
   highlight on an auto role), sidebar row shape (label column, narrowed
   enemy/player swatches, highlighted Auto buttons).
+
+## Level editor metadata sidebar — slice 4: mirror the inspector UI (author request)
+
+The author playtested slice 3 and asked for the sidebar to mirror the
+inspector exactly, plus renames. Changes:
+
+- **Renames:** "Settings" → "Metadata" everywhere (the toggle button's
+  label, `Editor.metadata_sidebar_open`, `editor_toggle_metadata_sidebar`
+  / `player_toggle_editor_metadata_sidebar`, the
+  `.toggle_editor_metadata_sidebar` action, the builder + rect fns), and
+  the second section's header "Level" → "Current level".
+- **Collapsible sections:** the two sections ride the inspector's shared
+  machinery — `EditorInspectorSectionId` grew `.mission` /
+  `.current_level` (one expansion-state array, one toggle action, one
+  label lookup — the section-id-keyed model), so the strips are
+  `emitInspectorSectionStrip` verbatim: +/- marker, whole-strip click,
+  COLLAPSED by default, view-affordance state off the undo timeline.
+- **Windowed content + scrollbar + wheel:** the content is now the
+  inspector's exact model — a per-frame `EditorMetadataEntry` list over
+  the expansion state, unit math (section/spacer = 1, field entries = 2),
+  view-relative windowed emission (only fully-visible rows),
+  `UiState.editor_metadata_scroll` clamped authoritatively in the
+  builder, the inspector's scrollbar geometry, and a wheel-routing branch
+  over the open panel rect in handleAnytimeInput. Replaced the
+  hand-rolled cursor layout (which had hardcoded the no-overflow
+  assumption — both sections expanded overflow the panel by ~3 rows,
+  which is exactly what the windowing exists for).
+- **Gradient rows back to two-unit entries** (the slice-3 single-line
+  rows were a workaround for that overflow): the role label line above,
+  AUTO toggle + full-gradient swatch on the control line below — the
+  inspector's field-entry convention, per the author's "swatches on
+  their own line below the descriptor".
+- Tests: the sidebar builder test rewritten for the model (collapsed
+  default = two headers only; expanded = windowed rows + scrollbar;
+  scrolled-to-bottom windowing), a metadata wheel-routing test, the
+  section-count assertions updated (9 → 11 sections).

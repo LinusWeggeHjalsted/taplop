@@ -469,8 +469,8 @@ fn handleEditorEvent(
         .editor_toggle_inspector => {
             editor.inspector_open = !editor.inspector_open;
         },
-        .editor_toggle_settings_sidebar => {
-            editor.settings_sidebar_open = !editor.settings_sidebar_open;
+        .editor_toggle_metadata_sidebar => {
+            editor.metadata_sidebar_open = !editor.metadata_sidebar_open;
         },
         // Inspector field edit (entity name). The target's palette index
         // is guarded defensively (a crafted log could name a deleted
@@ -1938,8 +1938,8 @@ fn handlePlayerInputEvent(
         },
         // Settings-sidebar toggle-button click: same shape (the flag
         // lives on the Editor — the toggle is undoable).
-        .player_toggle_editor_settings_sidebar => {
-            pushEvents(current, &.{.{ .editor_event = .editor_toggle_settings_sidebar }}, allocator);
+        .player_toggle_editor_metadata_sidebar => {
+            pushEvents(current, &.{.{ .editor_event = .editor_toggle_metadata_sidebar }}, allocator);
         },
         // Player inspector Import-button click: push the machinery event
         // (the loadout fields ride GameState — the import is undoable).

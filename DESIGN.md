@@ -1856,7 +1856,7 @@ player.txt + all level_N.txt via `readReconstructionFile` (cache-deterministic).
 concern.
 
 **Editor UI layout (settled design; implementation pending).** Three-zone
-layout + a left inspector + a right settings sidebar:
+layout + a left inspector + a right metadata sidebar:
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -2048,10 +2048,17 @@ layout + a left inspector + a right settings sidebar:
   is one (tree_1's canopy is 2), else 0; a re-pick KEEPS the layer's
   color (the weapon-retype semantics). Layers never affect placement
   validity — no prune.
-- **Settings sidebar (right bar):** mission + active-level settings.
-  User-toggleable like the inspector, open by default. Mission settings:
-  mission name. Active-level settings: level name, theme settings
-  (gradient picks — see "Level theme" below).
+- **Metadata sidebar (right bar):** mission + active-level metadata —
+  the inspector's EXACT UI model: user-toggleable (top-right button at
+  the inspector toggle's height, flush to the right screen edge), open
+  by default; a per-frame entry list over the shared collapsible-section
+  state (both sections COLLAPSED by default, the shared
+  `EditorInspectorSectionId` keying + toggle action), view-relative
+  windowed emission (only fully-visible rows) + scrollbar + wheel
+  routing when the content overflows. Mission section: the mission
+  name. Current-level section: the level name + the three gradient rows
+  (label line above, AUTO toggle + full-gradient swatch on the control
+  line below — see "Level theme" below).
 - **Primary actions (top-right):** Test + Validate buttons. Test =
   `start_playtest` on the active level (single-level); Validate =
   `start_validation` (full playthrough from level 1). Both transition to
@@ -2138,13 +2145,13 @@ session-log reader doesn't regroup nested non-u8 slices):
   carry no pixel_dims).
 Ground items always render as the shared ground-bag sprite — there is
 no sprite to pick for them. The sprite picker + the footprint editor
-(see the Inspector fields above) + the THEME PICKER (the settings
+(see the Inspector fields above) + the THEME PICKER (the metadata
 sidebar's gradient rows — every gradient as a bare full-width strip,
 one pick per row, the current index framed in lightest; a pick while an
 enemy/player role is on AUTO flips it to manual in the same commit, and
 an auto-role picker highlights its DERIVED index) are the editor's
 centered panels; everything else stays inline in the inspector /
-settings sidebar.
+metadata sidebar.
 
 **Level theme (gradient picking).** A level's theme is composed from the
 authoritative gradient list in `color_themes.txt` (currently 3 gradients;
@@ -2537,7 +2544,7 @@ their UI slices.
 
 **Pending:** editor UI/input — the layout + active-tool + selection model
 above, implemented as a vertical slice (static shell first: tabs + viewport +
-bottom bar + inspector + settings sidebar rendering with real data, no
+bottom bar + inspector + metadata sidebar rendering with real data, no
 interaction; then wire input per tool + the edit-verb handlers). The
 viewport shell includes the editor drawable projection (see Editor viewport
 rendering above). Still-needed event structs: none — the gradient-override

@@ -161,11 +161,11 @@ pub const Action = enum {
     toggle_editor_inspector,
     // The editor's settings-sidebar toggle button (top-right, at the
     // inspector toggle's height, flush to the right screen edge): flip the
-    // settings sidebar open/closed. Same convention as the inspector
+    // metadata sidebar open/closed. Same convention as the inspector
     // toggle — the flag lives on the Editor via
-    // `player_toggle_editor_settings_sidebar` →
-    // `editor_toggle_settings_sidebar` (undo timeline + replay).
-    toggle_editor_settings_sidebar,
+    // `player_toggle_editor_metadata_sidebar` →
+    // `editor_toggle_metadata_sidebar` (undo timeline + replay).
+    toggle_editor_metadata_sidebar,
     // A settings-sidebar gradient swatch (world / enemy / player row):
     // open the centered theme picker for that role. The role rides in
     // `AnytimeInput.clicked_editor_gradient_role`; the picker target
@@ -1176,15 +1176,15 @@ pub const TextFieldId = union(enum) {
     /// One numeric stat of the equipped item in `slot` (a stat the item
     /// kind doesn't carry commits nothing).
     item_stat: struct { slot: GearSlot, stat: ItemStatField },
-    /// The edited mission's name (settings sidebar). Target: `.mission`.
+    /// The edited mission's name (metadata sidebar). Target: `.mission`.
     mission_name: void,
-    /// The edited level's name (settings sidebar, the tab it was focused
+    /// The edited level's name (metadata sidebar, the tab it was focused
     /// on). Target: `.level` carries the level index.
     level_name: void,
 };
 
 /// What a focused text field edits: an entity template (inspector), the
-/// mission's name, or a level's name (settings sidebar — the level index
+/// mission's name, or a level's name (metadata sidebar — the level index
 /// rides the target so a mid-edit tab switch can't retarget the commit).
 pub const TextEditTarget = union(enum) {
     entity: EntityEditTarget,
@@ -1265,12 +1265,15 @@ pub const EditorSpritePickerTab = enum {
     official,
 };
 
-/// One section of the editor inspector's content (enemy or player). The
-/// id is the section's IDENTITY across both contents (Weapons expanded
-/// while editing an enemy stays expanded on the player) and the key into
-/// `UiState.editor_inspector_section_expanded` — collapse is a VIEW
-/// affordance (off the undo timeline, like the palette accordion), not
-/// GameState. Labels via `ui.editorInspectorSectionLabel`.
+/// One collapsible section of the editor's side panels. The ids key BOTH
+/// the inspector's content (enemy or player) and the METADATA sidebar's
+/// Mission / Current-level sections — one shared expansion-state array
+/// (`UiState.editor_inspector_section_expanded`), one toggle action. The
+/// id is the section's IDENTITY across contents (Weapons expanded while
+/// editing an enemy stays expanded on the player) and the key into that
+/// array — collapse is a VIEW affordance (off the undo timeline, like the
+/// palette accordion), not GameState. Labels via
+/// `ui.editorInspectorSectionLabel`.
 pub const EditorInspectorSectionId = enum {
     identity,
     stats,
@@ -1285,6 +1288,11 @@ pub const EditorInspectorSectionId = enum {
     /// The layer stack (enemy + decoration types; the player loadout has
     /// no layers).
     layers,
+    /// The metadata sidebar's Mission section (the mission's name).
+    mission,
+    /// The metadata sidebar's Current-level section (the active level's
+    /// name + gradient rows).
+    current_level,
 };
 
 pub const EditorToolId = union(enum) {
@@ -1400,11 +1408,11 @@ pub const Editor = struct {
     /// `editor_add_*_type` handlers, and replay reproduces it. Mutated only
     /// via `editor_toggle_inspector`.
     inspector_open: bool = true,
-    /// The settings sidebar's open state (the top-right toggle button;
+    /// The metadata sidebar's open state (the top-right toggle button;
     /// open by default). Same convention as the inspector flag: on the
-    /// Editor, mutated only via `editor_toggle_settings_sidebar`, so the
+    /// Editor, mutated only via `editor_toggle_metadata_sidebar`, so the
     /// toggle rides the undo timeline and replay reproduces it.
-    settings_sidebar_open: bool = true,
+    metadata_sidebar_open: bool = true,
     mode: EditorMode = .edit,
 };
 
@@ -1482,7 +1490,7 @@ pub const Level = struct {
     name: []const u8 = &.{},
     color_wheel_index: u32 = 0,
     /// Optional per-role gradient override (same semantics as
-    /// EditorLevel's). Set by the editor's settings sidebar; serialized as
+    /// EditorLevel's). Set by the editor's metadata sidebar; serialized as
     /// level-file Metadata keys.
     enemy_gradient_index: ?u32 = null,
     player_gradient_index: ?u32 = null,

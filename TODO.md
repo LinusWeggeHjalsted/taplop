@@ -453,11 +453,11 @@ yet implemented. Remaining work:
   the handlers is part of the UI slice.
 - Editor input/UI: the settled layout/interaction design (DESIGN →
   Architecture → Level Editor → Editor UI layout — four zones: tabs,
-  left inspector, viewport, right settings sidebar + bottom tool palette;
+  left inspector, viewport, right metadata sidebar + bottom tool palette;
   plus the centered sprite picker, the gradient-picking level-theme model,
   and the editor drawable projection for the viewport). Build as a
   vertical slice — static shell first (tabs + viewport + bottom bar +
-  inspector + settings sidebar rendering with real data, no interaction),
+  inspector + metadata sidebar rendering with real data, no interaction),
   then wire input per tool + the edit-verb handlers. Landed so far:
   the bottom tool palette (static shell — fixed tools + palette groups +
   plus cells + `Image.source_rectangle`), palette window scrolling
@@ -666,7 +666,7 @@ yet implemented. Remaining work:
         read — discovery silently dropped on every save/load round
         trip). History in DONE.md; design in DESIGN → Level Editor →
         Player loadout.
-  - [x] **11 — settings sidebar (right bar), slice 1 — gradient-override
+  - [x] **11 — metadata sidebar (right bar), slice 1 — gradient-override
         model:** DONE — `CustomColorTheme`/`custom_theme` removed (dead
         scaffolding), `enemy_gradient_index`/`player_gradient_index: ?u32`
         on Level + EditorLevel, level-file Metadata keys + parser
@@ -674,14 +674,14 @@ yet implemented. Remaining work:
         previews the active level's full theme now), the two gradient
         EditorEvents + five player wrappers + handlers +
         `validatePlayerAction` arms, tests. History in DONE.md.
-  - [x] **11 — settings sidebar (right bar), slice 2 — shell + name
-        fields:** DONE — `Editor.settings_sidebar_open` +
-        `editor_toggle_settings_sidebar` (top-right toggle at the
+  - [x] **11 — metadata sidebar (right bar), slice 2 — shell + name
+        fields:** DONE — `Editor.metadata_metadata_sidebar_open` +
+        `editor_toggle_metadata_sidebar` (top-right toggle at the
         inspector toggle's height, flush right), right-edge panel,
         `TextEditTarget` union widening + shared `emitTextFieldUi`,
         mission + level name fields with would-change gates, M2
         arbitration extended, tests. History in DONE.md.
-  - [x] **11 — settings sidebar (right bar), slice 3 — gradient rows +
+  - [x] **11 — metadata sidebar (right bar), slice 3 — gradient rows +
         theme picker:** DONE — the three single-line gradient rows
         (label + Auto + full-gradient swatch strip, one button opening
         the picker), the `.level_gradient` picker target (level + role
@@ -689,6 +689,23 @@ yet implemented. Remaining work:
         index incl. derived-while-auto), `autoDerivedGradientIndex` as
         the spacing-rule single source, per-role pick commits with
         auto→manual flip + same-value no-ops, tests. History in DONE.md.
+        (Superseded within the session: the rows are two-unit field
+        entries now — see slice 4.)
+  - [x] **11 — metadata sidebar (right bar), slice 4 — mirror the
+        inspector UI exactly (author request):** DONE — renamed Settings →
+        METADATA (events, flags, builder, action) + the section header
+        "Current level"; the two sections are the shared collapsible
+        strips (`EditorInspectorSectionId` += `.mission` /
+        `.current_level`, collapsed by default, the existing toggle
+        action + expansion array); the content is the inspector's exact
+        entry/windowing/scrollbar model (`EditorMetadataEntry` +
+        `editor_metadata_scroll` + wheel routing over the open panel);
+        the gradient rows are two-unit entries (label line above, AUTO +
+        swatch on the control line below). History in DONE.md.
+        OPEN (asked, awaiting answer): all pickers to fit exactly within
+        the open inspector/metadata sidebars (a ui_gap each side) —
+        overlay-the-source-sidebar vs centered-but-sidebar-sized is
+        undecided.
   Deferred: drag-painting. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved

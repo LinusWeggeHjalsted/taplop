@@ -1934,7 +1934,7 @@ pub fn handleAnytimeInput(
                     .value = footprint.items,
                 } });
             },
-            // The settings sidebar's gradient swatch: open the centered
+            // The metadata sidebar's gradient swatch: open the centered
             // theme picker for that role. The target snapshots the ACTIVE
             // level index — a mid-edit tab switch can't retarget the pick
             // (the footprint editor's convention).
@@ -2315,9 +2315,9 @@ pub fn handleAnytimeInput(
             // Settings-sidebar toggle button (editor top-right, at the
             // inspector toggle's height): same shape — push the orchestrator
             // and drain.
-            .toggle_editor_settings_sidebar => {
+            .toggle_editor_metadata_sidebar => {
                 if (current.editor == null) return;
-                pushPlayerActionAndDrain(history, .player_toggle_editor_settings_sidebar);
+                pushPlayerActionAndDrain(history, .player_toggle_editor_metadata_sidebar);
             },
             // Player inspector Import button: copy the session's player
             // data (or the new-game default, with none) into the editor
@@ -2587,6 +2587,19 @@ pub fn handleAnytimeInput(
             history.session.ui_state.editor_inspector_scroll -= delta_rows;
             if (history.session.ui_state.editor_inspector_scroll < 0) {
                 history.session.ui_state.editor_inspector_scroll = 0;
+            }
+        } else if (history.current_state.screen == .editor and
+            history.current_state.editor != null and
+            history.current_state.editor.?.metadata_sidebar_open and
+            ui.editorMetadataSidebarPanelRect().contains(pointer_position))
+        {
+            // The metadata sidebar's content scroll — the inspector's exact
+            // model: one wheel notch = one row, lower clamp here, the
+            // builder clamps the upper bound (authoritative).
+            const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+            history.session.ui_state.editor_metadata_scroll -= delta_rows;
+            if (history.session.ui_state.editor_metadata_scroll < 0) {
+                history.session.ui_state.editor_metadata_scroll = 0;
             }
         } else if (skillsSlotUnderPointer(ui_elements, pointer_position)) {
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);

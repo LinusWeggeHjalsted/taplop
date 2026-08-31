@@ -119,8 +119,8 @@ fn update(
                     editor.inspector_open
                 else
                     false;
-                const sidebar_open = if (history.current_state.editor) |editor|
-                    editor.settings_sidebar_open
+                const metadata_sidebar_open = if (history.current_state.editor) |editor|
+                    editor.metadata_sidebar_open
                 else
                     false;
                 const pressed_button = if (ui.buttonAt(ui_elements, pointer_position)) |button|
@@ -129,7 +129,7 @@ fn update(
                     null;
                 consumed_by_text_edit = !ui.textEditPressProceeds(
                     inspector_open,
-                    sidebar_open,
+                    metadata_sidebar_open,
                     pointer_position,
                     pressed_button,
                 );

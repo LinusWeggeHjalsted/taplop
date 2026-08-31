@@ -1123,7 +1123,7 @@ pub const GameStateHistory = struct {
     /// would-change gate). Item VALUES are unrestricted (stats are clamped
     /// at the UI; a crafted out-of-range value is a harmless gameplay
     /// number, same class as an unbalanced base stat).
-    /// Shared legality check for the settings sidebar's level-indexed
+    /// Shared legality check for the metadata sidebar's level-indexed
     /// commits: the editor screen, an editor present, and the level index
     /// in range (the live path addresses the active tab).
     fn validateEditorLevelMetadataCommit(
@@ -1290,12 +1290,12 @@ pub const GameStateHistory = struct {
                 },
                 // Structural legality: same shape — the live path is the
                 // editor's top-right toggle button.
-                .player_toggle_editor_settings_sidebar => {
+                .player_toggle_editor_metadata_sidebar => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_toggle_editor_settings_sidebar outside editor screen");
+                        @panic("replay validation: player_toggle_editor_metadata_sidebar outside editor screen");
                     }
                     if (self.current_state.editor == null) {
-                        @panic("replay validation: player_toggle_editor_settings_sidebar with no editor");
+                        @panic("replay validation: player_toggle_editor_metadata_sidebar with no editor");
                     }
                 },
                 // Structural legality: same shape as the inspector toggle —

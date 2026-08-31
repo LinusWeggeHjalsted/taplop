@@ -333,15 +333,15 @@ pub fn view(
                 editor.inspector_open,
                 &session.ui_state,
             ) catch @panic("failed to build editor inspector panel");
-            ui.buildEditorSettingsSidebar(
+            ui.buildEditorMetadataSidebar(
                 &ui_elements,
                 frame_allocator,
                 font_metrics,
                 editor,
                 active_theme,
-                editor.settings_sidebar_open,
+                editor.metadata_sidebar_open,
                 &session.ui_state,
-            ) catch @panic("failed to build editor settings sidebar");
+            ) catch @panic("failed to build editor metadata sidebar");
             ui.buildEditorBottomBar(
                 &ui_elements,
                 frame_allocator,
@@ -392,7 +392,7 @@ pub fn view(
                         type_id,
                         &session.ui_state,
                     ) catch @panic("failed to build editor footprint editor"),
-                    // The settings sidebar's theme picker: every gradient
+                    // The metadata sidebar's theme picker: every gradient
                     // as a full-width strip (the level index + role ride
                     // the picker target).
                     .level_gradient => |gradient_target| ui.buildEditorThemePicker(

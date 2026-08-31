@@ -4000,7 +4000,7 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
     // DEFAULT: every section collapsed — the panel shows only headers.
     input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
-        [_]bool{false} ** 9,
+        [_]bool{false} ** 11,
         history.session.ui_state.editor_inspector_section_expanded,
     );
 
@@ -4428,7 +4428,7 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.decoration_types[0].footprint.len);
 }
 
-test "settings sidebar metadata commits: names, color wheel, gradient overrides" {
+test "metadata sidebar metadata commits: names, color wheel, gradient overrides" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -4504,7 +4504,7 @@ test "settings sidebar metadata commits: names, color wheel, gradient overrides"
     try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.levels[0].color_wheel_index);
 }
 
-test "player_toggle_editor_settings_sidebar: flips the open state, undo restores" {
+test "player_toggle_editor_metadata_sidebar: flips the open state, undo restores" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -4513,23 +4513,23 @@ test "player_toggle_editor_settings_sidebar: flips the open state, undo restores
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
     // Open by default, like the inspector.
-    try testing.expect(history.current_state.editor.?.settings_sidebar_open);
+    try testing.expect(history.current_state.editor.?.metadata_sidebar_open);
 
     event_handlers.pushEvents(
         &history.current_state,
-        &.{.{ .player_input_event = .player_toggle_editor_settings_sidebar }},
+        &.{.{ .player_input_event = .player_toggle_editor_metadata_sidebar }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
 
-    try testing.expect(!history.current_state.editor.?.settings_sidebar_open);
+    try testing.expect(!history.current_state.editor.?.metadata_sidebar_open);
 
     // The toggle rides the undo timeline (the flag lives on the Editor).
     try testing.expect(history.undo(event_handlers.processEvent));
-    try testing.expect(history.current_state.editor.?.settings_sidebar_open);
+    try testing.expect(history.current_state.editor.?.metadata_sidebar_open);
 }
 
-test "settings sidebar name fields: mission + level commits, no-op gates" {
+test "metadata sidebar name fields: mission + level commits, no-op gates" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -4722,4 +4722,40 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.levels[1].color_wheel_index);
     try testing.expectEqual(history_len_before_crafted, history.event_history.items.len);
+}
+
+test "metadata sidebar wheel routing: scrolls over the open panel, not elsewhere" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+
+    // Inside the open panel (default open): one wheel-down notch = one
+    // row down; wheel-up at the top clamps at 0.
+    const inside: types.ScreenPosition = .{
+        .x = ui.editorMetadataSidebarPanelRect().x + 100,
+        .y = ui.editorMetadataSidebarPanelRect().y + 100,
+    };
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, inside, &.{});
+    try testing.expectEqual(@as(i32, 1), history.session.ui_state.editor_metadata_scroll);
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, inside, &.{});
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_metadata_scroll);
+
+    // Outside the panel (over the viewport): the wheel belongs to the
+    // camera-zoom branch — the metadata offset is untouched.
+    input_handlers.handleAnytimeInput(
+        &history,
+        .{ .scroll_delta = -1 },
+        .{ .x = 1920, .y = 1080 },
+        &.{},
+    );
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_metadata_scroll);
+
+    // Panel closed: the routing falls through even inside the rect.
+    history.current_state.editor.?.metadata_sidebar_open = false;
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, inside, &.{});
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_metadata_scroll);
 }
