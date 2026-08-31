@@ -75,16 +75,49 @@ pub fn writePlayerSave(
         }
     }
 
+    // MainHandWeapon .. UtilitySkills: the shared loadout sections (also
+    // the editor mission's player.txt — see writePlayerLoadout).
+    try writeLoadoutSections(player_data, &buffer, allocator);
+
+    // CloneData
+    try buffer.appendSlice(allocator, "\nCloneData\n");
+    for (player_data.clones, 0..) |clone, index| {
+        try buffer.print(allocator, "mission_uuid {s}\n", .{clone.mission_uuid});
+        try buffer.print(allocator, "clone_name {s}\n", .{clone.name});
+        try buffer.print(allocator, "wood {d}\n", .{clone.materials_collected.wood});
+        try buffer.print(allocator, "metal {d}\n", .{clone.materials_collected.metal});
+        try buffer.print(allocator, "leather {d}\n", .{clone.materials_collected.leather});
+        try buffer.print(allocator, "cloth {d}\n", .{clone.materials_collected.cloth});
+        try buffer.print(allocator, "knowledge {d}\n", .{clone.materials_collected.knowledge});
+        try buffer.print(allocator, "turns_to_complete {d}\n", .{clone.turns_to_complete});
+        if (index < player_data.clones.len - 1) {
+            try buffer.appendSlice(allocator, "\n");
+        }
+    }
+
+    return try buffer.toOwnedSlice(allocator);
+}
+
+/// The loadout sections shared by the player SAVE and the editor mission's
+/// player.txt (the PlayerLoadout format — `parsePlayerLoadoutFields` is the
+/// shared reader; see DESIGN → Level Editor → Player loadout). The save
+/// embeds these between UnlockedSkills and CloneData; the mission player.txt
+/// is exactly these sections under its own Metadata.
+fn writeLoadoutSections(
+    player_data: PlayerData,
+    buffer: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+) !void {
     // MainHandWeapon
     try buffer.appendSlice(allocator, "\nMainHandWeapon\n");
     if (player_data.main_hand_weapon) |weapon| {
-        try writeWeapon(&buffer, allocator, weapon);
+        try writeWeapon(buffer, allocator, weapon);
     }
 
     // OffHandWeapon
     try buffer.appendSlice(allocator, "\nOffHandWeapon\n");
     if (player_data.off_hand_weapon) |weapon| {
-        try writeWeapon(&buffer, allocator, weapon);
+        try writeWeapon(buffer, allocator, weapon);
     }
 
     // Amulet
@@ -134,7 +167,7 @@ pub fn writePlayerSave(
             if (wrote_inventory_item) {
                 try buffer.appendSlice(allocator, "\n");
             }
-            try writeInventoryItem(&buffer, allocator, item, @intCast(slot_index));
+            try writeInventoryItem(buffer, allocator, item, @intCast(slot_index));
             wrote_inventory_item = true;
         }
     }
@@ -149,24 +182,6 @@ pub fn writePlayerSave(
             try buffer.print(allocator, "slot_{d} {s}\n", .{ slot_number, @tagName(skill_id) });
         }
     }
-
-    // CloneData
-    try buffer.appendSlice(allocator, "\nCloneData\n");
-    for (player_data.clones, 0..) |clone, index| {
-        try buffer.print(allocator, "mission_uuid {s}\n", .{clone.mission_uuid});
-        try buffer.print(allocator, "clone_name {s}\n", .{clone.name});
-        try buffer.print(allocator, "wood {d}\n", .{clone.materials_collected.wood});
-        try buffer.print(allocator, "metal {d}\n", .{clone.materials_collected.metal});
-        try buffer.print(allocator, "leather {d}\n", .{clone.materials_collected.leather});
-        try buffer.print(allocator, "cloth {d}\n", .{clone.materials_collected.cloth});
-        try buffer.print(allocator, "knowledge {d}\n", .{clone.materials_collected.knowledge});
-        try buffer.print(allocator, "turns_to_complete {d}\n", .{clone.turns_to_complete});
-        if (index < player_data.clones.len - 1) {
-            try buffer.appendSlice(allocator, "\n");
-        }
-    }
-
-    return try buffer.toOwnedSlice(allocator);
 }
 
 fn writeWeapon(
@@ -303,6 +318,483 @@ pub fn writePlayerSaveToFile(
     const save_data = try writePlayerSave(player_data, allocator);
     defer allocator.free(save_data);
     try file_source.writeFile(file_path, save_data);
+}
+
+// ============================================================
+// Editor mission writer
+// ============================================================
+//
+// The pure projection of an `Editor` into mission-directory file contents —
+// the inverse of loadLevel/loadMission/loadPlayerLoadout + buildEditorMission.
+// The SAVE HANDLER owns the uuid resolution + the IO; this writer is
+// deterministic + side-effect free (directly round-trip-testable).
+// See DESIGN → Level Editor → Mission identity + Editor UI layout.
+
+/// Everything the editor save writes for one mission.
+pub const WrittenEditorMission = struct {
+    mission_txt: []const u8,
+    player_txt: []const u8,
+    /// One per editor level, in tab order — the handler writes them as
+    /// level_1.txt .. level_N.txt.
+    level_txts: []const []const u8,
+};
+
+/// Layout char-code assignment order: digits, lowercase, uppercase, then
+/// the remaining printable ASCII. The reserved layout chars (' ', '.',
+/// '!', '=') are never assigned — 91 codes available per level.
+const layout_code_order: [91]u8 = blk: {
+    var codes: [91]u8 = undefined;
+    var length: usize = 0;
+    // The primary sequence in assignment order: digits 1-9, lowercase,
+    // uppercase.
+    var code: u8 = '1';
+    while (code <= '9') : (code += 1) {
+        codes[length] = code;
+        length += 1;
+    }
+    code = 'a';
+    while (code <= 'z') : (code += 1) {
+        codes[length] = code;
+        length += 1;
+    }
+    code = 'A';
+    while (code <= 'Z') : (code += 1) {
+        codes[length] = code;
+        length += 1;
+    }
+    // Then the remaining printable ASCII (reserved layout chars ' ', '.',
+    // '!', '=' are never assignable — ' ' isn't in this range to begin
+    // with).
+    code = 0x21;
+    while (code <= 0x7e) : (code += 1) {
+        const is_primary = (code >= '1' and code <= '9') or
+            (code >= 'a' and code <= 'z') or (code >= 'A' and code <= 'Z');
+        if (is_primary or code == '!' or code == '.' or code == '=') continue;
+        codes[length] = code;
+        length += 1;
+    }
+    break :blk codes;
+};
+
+/// One per-level char-code assignment: a tool the level places → its
+/// layout char. Codes are assigned PER LEVEL (a level file only defines
+/// the tools it uses), in palette order — entities, then decorations,
+/// then items.
+const LayoutCodeAssignment = struct {
+    type_id: u32,
+    code: u8,
+};
+
+/// Write the whole mission: mission.txt, player.txt, and one level file
+/// per level. `mission_uuid` is passed in — the write-only mint lives at
+/// the save site (a fresh mission's uuid is minted at first save and
+/// never held in GameState; see DESIGN → Level Editor → Mission
+/// identity). Fails with error.TooManyLayoutCodes when a single level
+/// places more tools than the char-code set provides.
+pub fn writeEditorMission(
+    editor: types.Editor,
+    mission_uuid: []const u8,
+    allocator: std.mem.Allocator,
+) !WrittenEditorMission {
+    var mission_buffer: std.ArrayList(u8) = .empty;
+    try mission_buffer.appendSlice(allocator, "Metadata\n");
+    try mission_buffer.print(allocator, "file_format_version {d}\n", .{parser.mission_file_format_version});
+    try mission_buffer.print(allocator, "mission_uuid {s}\n", .{mission_uuid});
+    try mission_buffer.print(allocator, "name {s}\n", .{editor.mission.name});
+    try mission_buffer.print(allocator, "level_count {d}\n", .{editor.levels.len});
+
+    const player_txt = try writePlayerLoadout(editor.player_def.template, allocator);
+
+    var level_txts: std.ArrayList([]const u8) = .empty;
+    for (editor.levels) |level| {
+        try level_txts.append(allocator, try writeEditorLevel(
+            level,
+            editor.entity_types,
+            editor.decoration_types,
+            editor.item_types,
+            allocator,
+        ));
+    }
+
+    return .{
+        .mission_txt = try mission_buffer.toOwnedSlice(allocator),
+        .player_txt = player_txt,
+        .level_txts = try level_txts.toOwnedSlice(allocator),
+    };
+}
+
+/// Write the mission's player.txt — the PlayerLoadout format (the loadout
+/// sections of a player save; no Info/stats/hubs — base stats aren't
+/// authorable and the NAME is not part of the format, so a reloaded
+/// loadout reads back as "Player" regardless of the template's name).
+pub fn writePlayerLoadout(
+    template: types.Entity,
+    allocator: std.mem.Allocator,
+) ![]const u8 {
+    const loadout_data = PlayerData{
+        .player_name = template.name,
+        .main_hand_weapon = template.main_hand_weapon,
+        .off_hand_weapon = template.off_hand_weapon,
+        .amulet = template.amulet,
+        .coat = template.coat,
+        .gloves = template.gloves,
+        .pants = template.pants,
+        .boots = template.boots,
+        .inventory = template.inventory,
+        .equipped_utility_skills = template.equipped_utility_skills,
+    };
+    var buffer: std.ArrayList(u8) = .empty;
+    try buffer.appendSlice(allocator, "Metadata\n");
+    try buffer.print(allocator, "file_format_version {d}\n", .{parser.player_loadout_file_format_version});
+    try writeLoadoutSections(loadout_data, &buffer, allocator);
+    return try buffer.toOwnedSlice(allocator);
+}
+
+/// Does any placement in `placements` reference `type_id`? (All three
+/// placement types carry `type_id`.)
+fn levelUsesType(placements: anytype, type_id: u32) bool {
+    for (placements) |placement| {
+        if (placement.type_id == type_id) return true;
+    }
+    return false;
+}
+
+/// The code assigned to `type_id`, or null when the type isn't placed in
+/// this level.
+fn codeForType(assignments: []const LayoutCodeAssignment, type_id: u32) ?u8 {
+    for (assignments) |assignment| {
+        if (assignment.type_id == type_id) return assignment.code;
+    }
+    return null;
+}
+
+/// Assign per-level layout codes to the tools `level` places, in palette
+/// order (entities → decorations → items). Only used tools get codes +
+/// definitions — a level file never carries a tool it doesn't place.
+fn assignLayoutCodes(
+    level: types.EditorLevel,
+    entity_types: []const types.EntityTypeDef,
+    decoration_types: []const types.DecorationTypeDef,
+    item_types: []const types.ItemTypeDef,
+    allocator: std.mem.Allocator,
+) !struct {
+    entity: []const LayoutCodeAssignment,
+    decoration: []const LayoutCodeAssignment,
+    item: []const LayoutCodeAssignment,
+} {
+    var entity_codes: std.ArrayList(LayoutCodeAssignment) = .empty;
+    var decoration_codes: std.ArrayList(LayoutCodeAssignment) = .empty;
+    var item_codes: std.ArrayList(LayoutCodeAssignment) = .empty;
+
+    var next_code: usize = 0;
+    for (entity_types, 0..) |_, type_id| {
+        if (!levelUsesType(level.entity_placements, @intCast(type_id))) continue;
+        if (next_code >= layout_code_order.len) return error.TooManyLayoutCodes;
+        try entity_codes.append(allocator, .{
+            .type_id = @intCast(type_id),
+            .code = layout_code_order[next_code],
+        });
+        next_code += 1;
+    }
+    for (decoration_types, 0..) |_, type_id| {
+        if (!levelUsesType(level.decoration_placements, @intCast(type_id))) continue;
+        if (next_code >= layout_code_order.len) return error.TooManyLayoutCodes;
+        try decoration_codes.append(allocator, .{
+            .type_id = @intCast(type_id),
+            .code = layout_code_order[next_code],
+        });
+        next_code += 1;
+    }
+    for (item_types, 0..) |_, type_id| {
+        if (!levelUsesType(level.item_placements, @intCast(type_id))) continue;
+        if (next_code >= layout_code_order.len) return error.TooManyLayoutCodes;
+        try item_codes.append(allocator, .{
+            .type_id = @intCast(type_id),
+            .code = layout_code_order[next_code],
+        });
+        next_code += 1;
+    }
+
+    return .{
+        .entity = try entity_codes.toOwnedSlice(allocator),
+        .decoration = try decoration_codes.toOwnedSlice(allocator),
+        .item = try item_codes.toOwnedSlice(allocator),
+    };
+}
+
+/// Set one cell of the translated layout grid. `origin` is the bbox min;
+/// out-of-range cells (a footprint tile outside the bbox — impossible by
+/// construction, the bbox includes every footprint) trap in debug builds.
+fn setGridCell(
+    grid: []u8,
+    grid_width: i32,
+    origin: types.Vector2,
+    position: types.Vector2,
+    character: u8,
+) void {
+    const x = position.x - origin.x;
+    const y = position.y - origin.y;
+    std.debug.assert(x >= 0 and y >= 0);
+    std.debug.assert(x < grid_width and y * grid_width + x < @as(i32, @intCast(grid.len)));
+    grid[@intCast(y * grid_width + x)] = character;
+}
+
+/// Write one level file. The layout is TRANSLATED so the written grid is
+/// minimal: the bbox over everything placed (tiles, placements, whole
+/// decoration footprints, '!', '=') becomes the grid, each row trimmed to
+/// its own last used column. Enemy/item chars imply their tile on reload
+/// (the parser tiles under them), so a code overwrites the '.'; decoration
+/// anchors take no tile (the rest of the footprint stays spaces).
+fn writeEditorLevel(
+    level: types.EditorLevel,
+    entity_types: []const types.EntityTypeDef,
+    decoration_types: []const types.DecorationTypeDef,
+    item_types: []const types.ItemTypeDef,
+    allocator: std.mem.Allocator,
+) ![]const u8 {
+    const codes = try assignLayoutCodes(level, entity_types, decoration_types, item_types, allocator);
+
+    // The bbox over everything placed — the player start is always present
+    // (the '!' can't be deleted), so the bbox is never empty.
+    var min_x = level.player_start.x;
+    var min_y = level.player_start.y;
+    var max_x = level.player_start.x;
+    var max_y = level.player_start.y;
+    const expand = struct {
+        fn bounds(
+            bounds_min_x: *i32,
+            bounds_min_y: *i32,
+            bounds_max_x: *i32,
+            bounds_max_y: *i32,
+            position: types.Vector2,
+        ) void {
+            bounds_min_x.* = @min(bounds_min_x.*, position.x);
+            bounds_min_y.* = @min(bounds_min_y.*, position.y);
+            bounds_max_x.* = @max(bounds_max_x.*, position.x);
+            bounds_max_y.* = @max(bounds_max_y.*, position.y);
+        }
+    };
+    for (level.level_tiles) |tile| expand.bounds(&min_x, &min_y, &max_x, &max_y, tile);
+    if (level.level_end) |level_end| expand.bounds(&min_x, &min_y, &max_x, &max_y, level_end);
+    for (level.entity_placements) |placement| expand.bounds(&min_x, &min_y, &max_x, &max_y, placement.position);
+    for (level.item_placements) |placement| expand.bounds(&min_x, &min_y, &max_x, &max_y, placement.position);
+    for (level.decoration_placements) |placement| {
+        const footprint_tiles = loaders.decorationFootprintWorldTiles(
+            decoration_types[placement.type_id].footprint,
+            placement.position,
+            allocator,
+        );
+        defer allocator.free(footprint_tiles);
+        for (footprint_tiles) |tile| expand.bounds(&min_x, &min_y, &max_x, &max_y, tile);
+    }
+    const origin = types.Vector2{ .x = min_x, .y = min_y };
+    const grid_width: i32 = max_x - min_x + 1;
+    const grid_height: i32 = max_y - min_y + 1;
+
+    const grid = try allocator.alloc(u8, @intCast(grid_width * grid_height));
+    defer allocator.free(grid);
+    @memset(grid, ' ');
+    // Tiles first — the marker + code chars below overwrite their own
+    // tiles (each implies it on reload).
+    for (level.level_tiles) |tile| setGridCell(grid, grid_width, origin, tile, '.');
+    setGridCell(grid, grid_width, origin, level.player_start, '!');
+    if (level.level_end) |level_end| setGridCell(grid, grid_width, origin, level_end, '=');
+    for (level.entity_placements) |placement| {
+        setGridCell(grid, grid_width, origin, placement.position, codeForType(codes.entity, placement.type_id).?);
+    }
+    for (level.item_placements) |placement| {
+        setGridCell(grid, grid_width, origin, placement.position, codeForType(codes.item, placement.type_id).?);
+    }
+    for (level.decoration_placements) |placement| {
+        setGridCell(grid, grid_width, origin, placement.position, codeForType(codes.decoration, placement.type_id).?);
+    }
+
+    var buffer: std.ArrayList(u8) = .empty;
+
+    // Metadata
+    try buffer.appendSlice(allocator, "Metadata\n");
+    try buffer.print(allocator, "file_format_version {d}\n", .{parser.level_file_format_version});
+    if (level.name.len > 0) {
+        try buffer.print(allocator, "name {s}\n", .{level.name});
+    }
+    if (level.color_wheel_index != 0) {
+        try buffer.print(allocator, "color_wheel_index {d}\n", .{level.color_wheel_index});
+    }
+    if (level.enemy_gradient_index) |gradient_index| {
+        try buffer.print(allocator, "enemy_gradient_index {d}\n", .{gradient_index});
+    }
+    if (level.player_gradient_index) |gradient_index| {
+        try buffer.print(allocator, "player_gradient_index {d}\n", .{gradient_index});
+    }
+
+    // Layout — each row trimmed to its own last used column (no trailing
+    // spaces; interior all-space rows stay as empty lines, which the
+    // parser stores as empty raw rows).
+    try buffer.appendSlice(allocator, "\nLayout\n");
+    var row: i32 = 0;
+    while (row < grid_height) : (row += 1) {
+        const row_start: usize = @intCast(row * grid_width);
+        const row_cells = grid[row_start .. row_start + @as(usize, @intCast(grid_width))];
+        var row_length = row_cells.len;
+        while (row_length > 0 and row_cells[row_length - 1] == ' ') row_length -= 1;
+        try buffer.appendSlice(allocator, row_cells[0..row_length]);
+        try buffer.appendSlice(allocator, "\n");
+    }
+
+    // Enemies — used entity types, palette order, the full definition in
+    // the parser's exact key vocabulary (the coupling contract).
+    if (codes.entity.len > 0) {
+        try buffer.appendSlice(allocator, "\nEnemies\n");
+        for (codes.entity, 0..) |assignment, index| {
+            if (index > 0) try buffer.appendSlice(allocator, "\n");
+            try writeEntityDefinition(&buffer, allocator, assignment.code, entity_types[assignment.type_id].template);
+        }
+    }
+
+    // Decorations — used decoration types (sprite + footprint + layers).
+    if (codes.decoration.len > 0) {
+        try buffer.appendSlice(allocator, "\nDecorations\n");
+        for (codes.decoration, 0..) |assignment, index| {
+            if (index > 0) try buffer.appendSlice(allocator, "\n");
+            const definition = decoration_types[assignment.type_id];
+            try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{assignment.code}});
+            try buffer.print(allocator, "sprite {s}\n", .{definition.sprite});
+            try buffer.print(allocator, "color_index {d}\n", .{definition.color_index});
+            for (definition.footprint) |footprint_tile| {
+                try buffer.print(allocator, "footprint {d} {d}\n", .{ footprint_tile.x, footprint_tile.y });
+            }
+            for (definition.layers) |layer| {
+                try buffer.appendSlice(allocator, "layer\n");
+                try buffer.print(allocator, "sprite {s}\n", .{layer.sprite});
+                try buffer.print(allocator, "color_index {d}\n", .{layer.color_index});
+            }
+        }
+    }
+
+    // Items — used item types. Skill tomes are not level-authorable (the
+    // editor's item paths never create them); a tome here is a crafted
+    // state the editor's own invariants forbid — fail fast.
+    if (codes.item.len > 0) {
+        try buffer.appendSlice(allocator, "\nItems\n");
+        for (codes.item, 0..) |assignment, index| {
+            if (index > 0) try buffer.appendSlice(allocator, "\n");
+            try writeItemDefinition(&buffer, allocator, assignment.code, item_types[assignment.type_id].item);
+        }
+    }
+
+    return try buffer.toOwnedSlice(allocator);
+}
+
+/// One Enemies entry — every key `parseEntityDefinition` reads, in its
+/// vocabulary (weapons / gear / utility skills / layers only when
+/// present, so absent-on-reload equals absent-on-write).
+fn writeEntityDefinition(
+    buffer: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    code: u8,
+    template: types.Entity,
+) !void {
+    try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{code}});
+    try buffer.print(allocator, "name {s}\n", .{template.name});
+    try buffer.print(allocator, "sprite {s}\n", .{template.sprite});
+    try buffer.print(allocator, "color_index {d}\n", .{template.color_index});
+    try buffer.print(allocator, "displays_weapons {s}\n", .{if (template.displays_weapons) "true" else "false"});
+    try buffer.print(allocator, "max_health {d}\n", .{template.max_health});
+    try buffer.print(allocator, "defense {d}\n", .{template.defense});
+    try buffer.print(allocator, "speed {d}\n", .{template.speed});
+    try buffer.print(allocator, "aggro_range {d}\n", .{template.aggro_range});
+    if (template.main_hand_weapon) |weapon| {
+        try buffer.print(allocator, "main_hand_weapon_name {s}\n", .{weapon.name});
+        try buffer.print(allocator, "main_hand_weapon_type {s}\n", .{@tagName(weapon.weapon_type)});
+        try buffer.print(allocator, "main_hand_weapon_damage {d}\n", .{weapon.weapon_damage});
+    }
+    if (template.off_hand_weapon) |weapon| {
+        try buffer.print(allocator, "off_hand_weapon_name {s}\n", .{weapon.name});
+        try buffer.print(allocator, "off_hand_weapon_type {s}\n", .{@tagName(weapon.weapon_type)});
+        try buffer.print(allocator, "off_hand_weapon_damage {d}\n", .{weapon.weapon_damage});
+    }
+    if (template.amulet) |amulet| {
+        try buffer.print(allocator, "amulet_name {s}\n", .{amulet.name});
+        try buffer.print(allocator, "amulet_spell_damage {d}\n", .{amulet.spell_damage});
+    }
+    if (template.coat) |coat| {
+        try buffer.print(allocator, "coat_name {s}\n", .{coat.name});
+        try buffer.print(allocator, "coat_defense_bonus {d}\n", .{coat.defense_bonus});
+        try buffer.print(allocator, "coat_health_bonus {d}\n", .{coat.health_bonus});
+    }
+    if (template.gloves) |gloves| {
+        try buffer.print(allocator, "gloves_name {s}\n", .{gloves.name});
+        try buffer.print(allocator, "gloves_damage_bonus {d}\n", .{gloves.damage_bonus});
+        try buffer.print(allocator, "gloves_health_bonus {d}\n", .{gloves.health_bonus});
+    }
+    if (template.pants) |pants| {
+        try buffer.print(allocator, "pants_name {s}\n", .{pants.name});
+        try buffer.print(allocator, "pants_pickup_radius_bonus {d}\n", .{pants.pickup_radius_bonus});
+        try buffer.print(allocator, "pants_health_bonus {d}\n", .{pants.health_bonus});
+    }
+    if (template.boots) |boots| {
+        try buffer.print(allocator, "boots_name {s}\n", .{boots.name});
+        try buffer.print(allocator, "boots_speed_bonus {d}\n", .{boots.speed_bonus});
+        try buffer.print(allocator, "boots_health_bonus {d}\n", .{boots.health_bonus});
+    }
+    for (template.equipped_utility_skills, 0..) |slot, index| {
+        if (slot) |skill_id| {
+            try buffer.print(allocator, "slot_{d} {s}\n", .{ index + 4, @tagName(skill_id) });
+        }
+    }
+    for (template.layers) |layer| {
+        try buffer.appendSlice(allocator, "layer\n");
+        try buffer.print(allocator, "sprite {s}\n", .{layer.sprite});
+        try buffer.print(allocator, "color_index {d}\n", .{layer.color_index});
+    }
+}
+
+/// One Items entry — the keys `parseItemEntry` reads for the item's kind.
+fn writeItemDefinition(
+    buffer: *std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    code: u8,
+    item: types.Item,
+) !void {
+    try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{code}});
+    switch (item) {
+        .weapon => |weapon| {
+            try buffer.appendSlice(allocator, "item_type weapon\n");
+            try buffer.print(allocator, "item_name {s}\n", .{weapon.name});
+            try buffer.print(allocator, "weapon_type {s}\n", .{@tagName(weapon.weapon_type)});
+            try buffer.print(allocator, "damage {d}\n", .{weapon.weapon_damage});
+        },
+        .amulet => |amulet| {
+            try buffer.appendSlice(allocator, "item_type amulet\n");
+            try buffer.print(allocator, "item_name {s}\n", .{amulet.name});
+            try buffer.print(allocator, "spell_damage {d}\n", .{amulet.spell_damage});
+        },
+        .coat => |coat| {
+            try buffer.appendSlice(allocator, "item_type coat\n");
+            try buffer.print(allocator, "item_name {s}\n", .{coat.name});
+            try buffer.print(allocator, "defense {d}\n", .{coat.defense_bonus});
+            try buffer.print(allocator, "health {d}\n", .{coat.health_bonus});
+        },
+        .gloves => |gloves| {
+            try buffer.appendSlice(allocator, "item_type gloves\n");
+            try buffer.print(allocator, "item_name {s}\n", .{gloves.name});
+            try buffer.print(allocator, "damage {d}\n", .{gloves.damage_bonus});
+            try buffer.print(allocator, "health {d}\n", .{gloves.health_bonus});
+        },
+        .pants => |pants| {
+            try buffer.appendSlice(allocator, "item_type pants\n");
+            try buffer.print(allocator, "item_name {s}\n", .{pants.name});
+            try buffer.print(allocator, "pickup_radius {d}\n", .{pants.pickup_radius_bonus});
+            try buffer.print(allocator, "health {d}\n", .{pants.health_bonus});
+        },
+        .boots => |boots| {
+            try buffer.appendSlice(allocator, "item_type boots\n");
+            try buffer.print(allocator, "item_name {s}\n", .{boots.name});
+            try buffer.print(allocator, "speed {d}\n", .{boots.speed_bonus});
+            try buffer.print(allocator, "health {d}\n", .{boots.health_bonus});
+        },
+        .skill_tome => @panic("skill tomes are not level-authorable (the editor's item paths never create them)"),
+    }
 }
 
 test "writePlayerSave round-trips through loadPlayerSave" {
@@ -549,4 +1041,309 @@ test "loadPlayerSave utility gates: weapon skills dropped from slots and out of 
     try std.testing.expectEqual(types.SkillId.blink, loaded.inventory.slots[1].?.skill_tome.skill);
     try std.testing.expectEqual(@as(usize, 2), warnings.items.len);
     for (warnings.items) |w| allocator.free(w);
+}
+
+// ============================================================
+// Editor mission writer tests
+// ============================================================
+
+/// The round-trip fixture: a two-level mission exercising every written
+/// feature — translated layouts (everything offset from the origin), a rich
+/// enemy (weapon + gear + utility skill + layer), per-level tool filtering
+/// (Brute only in level 2, an unused item type in NO file), a decoration,
+/// and a loaded-out player. File-scope comptime: the Editor's palette +
+/// level slices borrow these arrays, so they must outlive the constructor
+/// (an fn-local fixture would dangle).
+const editor_write_fixture_levels = [_]types.EditorLevel{
+    .{
+        .level_tiles = &[_]types.Vector2{
+            .{ .x = 4, .y = 2 }, .{ .x = 5, .y = 2 }, .{ .x = 4, .y = 3 },
+            .{ .x = 5, .y = 3 }, .{ .x = 6, .y = 4 },
+        },
+        .player_start = .{ .x = 4, .y = 2 },
+        .level_end = .{ .x = 5, .y = 2 },
+        .entity_placements = &[_]types.EntityPlacement{
+            .{ .type_id = 0, .position = .{ .x = 4, .y = 3 } },
+        },
+        .decoration_placements = &[_]types.DecorationPlacement{
+            .{ .type_id = 0, .position = .{ .x = 6, .y = 2 } },
+        },
+        .item_placements = &[_]types.ItemPlacement{
+            .{ .type_id = 0, .position = .{ .x = 6, .y = 4 } },
+        },
+    },
+    .{
+        .name = "Second",
+        .color_wheel_index = 2,
+        .enemy_gradient_index = 5,
+        .level_tiles = &[_]types.Vector2{
+            .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 },
+        },
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 2, .y = 0 },
+        .entity_placements = &[_]types.EntityPlacement{
+            .{ .type_id = 1, .position = .{ .x = 1, .y = 0 } },
+        },
+    },
+};
+
+const editor_write_fixture: types.Editor = .{
+    .mission = .{ .name = "My Mission", .level_count = 2 },
+    .levels = &editor_write_fixture_levels,
+    .entity_types = &[_]types.EntityTypeDef{
+        .{ .id = "Archer", .template = .{
+            .name = "Archer",
+            .sprite = "skeleton_1",
+            .team = 1,
+            .color_index = 2,
+            .displays_weapons = false,
+            .max_health = 30,
+            .defense = 1,
+            .speed = 2,
+            .aggro_range = 4,
+            .main_hand_weapon = .{ .name = "Arc Sword", .weapon_type = .sword, .weapon_damage = 3 },
+            .coat = .{ .name = "Arc Coat", .defense_bonus = 1, .health_bonus = 2 },
+            .equipped_utility_skills = blk: {
+                var slots: [types.utility_skill_count]?types.SkillId = .{null} ** types.utility_skill_count;
+                slots[0] = .blink;
+                break :blk slots;
+            },
+            .layers = &[_]types.EntityLayer{
+                .{ .sprite = "wolf", .color_index = 1 },
+            },
+        } },
+        .{ .id = "Brute", .template = .{
+            .name = "Brute",
+            .sprite = "wolf",
+            .team = 1,
+        } },
+    },
+    .decoration_types = &[_]types.DecorationTypeDef{
+        .{ .id = "stone_1", .sprite = "stone_1", .color_index = 5, .footprint = &[_]types.Vector2{.{ .x = 0, .y = 0 }} },
+    },
+    .item_types = &[_]types.ItemTypeDef{
+        .{ .id = "New Sword", .item = .{ .weapon = .{
+            .name = "New Sword",
+            .weapon_type = .sword,
+            .weapon_damage = 2,
+        } } },
+        // Never placed anywhere — must appear in NO written file.
+        .{ .id = "Nice Coat", .item = .{ .coat = .{
+            .name = "Nice Coat",
+            .defense_bonus = 1,
+            .health_bonus = 2,
+        } } },
+    },
+    .player_def = .{ .id = "Player", .template = .{
+        .name = "New Player",
+        .sprite = "player",
+        .team = 0,
+        .main_hand_weapon = .{ .name = "Max Sword", .weapon_type = .sword, .weapon_damage = 3 },
+        .amulet = .{ .name = "Charm", .spell_damage = 2 },
+        .inventory = .{
+            .slots = blk: {
+                var slots: [types.inventory_slot_count]?types.Item = .{null} ** types.inventory_slot_count;
+                slots[0] = .{ .weapon = .{ .name = "Bag Sword", .weapon_type = .sword, .weapon_damage = 1 } };
+                break :blk slots;
+            },
+        },
+        .equipped_utility_skills = blk: {
+            var slots: [types.utility_skill_count]?types.SkillId = .{null} ** types.utility_skill_count;
+            slots[0] = .blink;
+            break :blk slots;
+        },
+    } },
+};
+
+test "writeEditorMission round-trips through the load path" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const editor = editor_write_fixture;
+    const written = try writeEditorMission(editor, "436ab363-3588-42ce-950a-0bc813069c3d", arena);
+
+    // mission.txt: the identity + shape; no hub fields (editor missions have
+    // no campaign context, and the loader treats them as optional).
+    {
+        const sections = try parseConfigFile(written.mission_txt, arena);
+        const mission = try loaders.loadMission(sections, arena);
+        try std.testing.expectEqualStrings("436ab363-3588-42ce-950a-0bc813069c3d", mission.uuid);
+        try std.testing.expectEqualStrings("My Mission", mission.name);
+        try std.testing.expectEqual(@as(u32, 2), mission.level_count);
+        try std.testing.expect(mission.start_hub == null);
+        try std.testing.expect(mission.end_hub == null);
+    }
+
+    // player.txt: the loadout round-trips (the NAME is not part of the
+    // format — a reloaded loadout reads back as "Player").
+    {
+        const sections = try parseConfigFile(written.player_txt, arena);
+        const loaded = try loaders.loadPlayerLoadout(sections, arena, "test/player.txt", null);
+        try std.testing.expectEqualStrings("Player", loaded.name);
+        try std.testing.expect(loaders.entityDefinitionsEqual(loaded, .{
+            .name = "Player",
+            .sprite = "player",
+            .team = 0,
+            .main_hand_weapon = editor.player_def.template.main_hand_weapon,
+            .amulet = editor.player_def.template.amulet,
+            .inventory = editor.player_def.template.inventory,
+            .equipped_utility_skills = editor.player_def.template.equipped_utility_skills,
+        }));
+    }
+
+    // The levels: the real reload path (buildEditorMission over the written
+    // files), then a SEMANTIC compare — the reload dedups placements into a
+    // fresh palette in layout-encounter order, so palette order/type ids can
+    // differ from the original; positions compare TRANSLATED (the written
+    // layout is normalized to the bbox origin).
+    var level_sections: [2][]const parser.Section = undefined;
+    for (written.level_txts, 0..) |level_txt, index| {
+        level_sections[index] = try parseConfigFile(level_txt, arena);
+    }
+    for (level_sections[0]) |section| {
+        std.debug.print("SECTION '{s}' groups={d} raw={d}\n", .{ section.header, section.entry_groups.len, section.raw_lines.len });
+        for (section.raw_lines) |line| std.debug.print("  RAW '{s}'\n", .{line});
+    }
+    const reloaded = try loaders.buildEditorMission(
+        .{ .name = "My Mission", .level_count = 2 },
+        editor.player_def.template,
+        &level_sections,
+        null,
+        arena,
+        "test/mission",
+        null,
+    );
+
+    try std.testing.expectEqual(@as(usize, 2), reloaded.levels.len);
+
+    // Level 1: translated by (4,2) — '!' (0,0), '=' (1,0), Archer '1' at
+    // (0,1) over its tile, the stone '2' at (2,0) (its footprint tile stays
+    // tile-free), the sword '3' at (2,2).
+    {
+        const level = reloaded.levels[0];
+        try std.testing.expectEqual(@as(usize, 0), level.name.len);
+        try std.testing.expectEqual(@as(u32, 0), level.color_wheel_index);
+        try std.testing.expect(level.enemy_gradient_index == null);
+        try std.testing.expect(level.player_gradient_index == null);
+        try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.player_start);
+        try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, level.level_end.?);
+        try std.testing.expectEqual(@as(usize, 5), level.level_tiles.len); // 2 markers + enemy + 2 bare
+        try std.testing.expectEqual(@as(usize, 1), level.entity_placements.len);
+        try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 1 }, level.entity_placements[0].position);
+        try std.testing.expect(loaders.entityDefinitionsEqual(
+            reloaded.entity_types[level.entity_placements[0].type_id].template,
+            editor.entity_types[0].template,
+        ));
+        try std.testing.expectEqual(@as(usize, 1), level.decoration_placements.len);
+        try std.testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, level.decoration_placements[0].position);
+        const reloaded_decoration = reloaded.decoration_types[level.decoration_placements[0].type_id];
+        try std.testing.expectEqualStrings("stone_1", reloaded_decoration.sprite);
+        try std.testing.expectEqual(@as(u32, 5), reloaded_decoration.color_index);
+        try std.testing.expect(loaders.decorationFootprintEqual(reloaded_decoration.footprint, editor.decoration_types[0].footprint));
+        try std.testing.expectEqual(@as(usize, 1), level.item_placements.len);
+        try std.testing.expectEqual(types.Vector2{ .x = 2, .y = 2 }, level.item_placements[0].position);
+        try std.testing.expect(deepCopyEqual(types.Item, reloaded.item_types[level.item_placements[0].type_id].item, editor.item_types[0].item));
+    }
+
+    // Level 2: already at the origin; the gradient override survives.
+    {
+        const level = reloaded.levels[1];
+        try std.testing.expectEqualStrings("Second", level.name);
+        try std.testing.expectEqual(@as(u32, 2), level.color_wheel_index);
+        try std.testing.expectEqual(@as(u32, 5), level.enemy_gradient_index.?);
+        try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, level.player_start);
+        try std.testing.expectEqual(types.Vector2{ .x = 2, .y = 0 }, level.level_end.?);
+        try std.testing.expectEqual(@as(usize, 1), level.entity_placements.len);
+        try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, level.entity_placements[0].position);
+        try std.testing.expect(loaders.entityDefinitionsEqual(
+            reloaded.entity_types[level.entity_placements[0].type_id].template,
+            editor.entity_types[1].template,
+        ));
+    }
+
+    // Per-level tool filtering: level 1's file defines only the Archer,
+    // level 2's only the Brute; the never-placed coat item appears in NO
+    // file.
+    {
+        const level_0_enemies = parser.findSection(level_sections[0], "Enemies").?;
+        try std.testing.expectEqual(@as(usize, 1), level_0_enemies.entry_groups.len);
+        const level_1_enemies = parser.findSection(level_sections[1], "Enemies").?;
+        try std.testing.expectEqual(@as(usize, 1), level_1_enemies.entry_groups.len);
+        try std.testing.expect(std.mem.indexOf(u8, written.level_txts[0], "Brute") == null);
+        try std.testing.expect(std.mem.indexOf(u8, written.level_txts[1], "Archer") == null);
+        for (written.level_txts) |level_txt| {
+            try std.testing.expect(std.mem.indexOf(u8, level_txt, "Nice Coat") == null);
+        }
+    }
+}
+
+/// deep_copy.deepEqual under a shorter alias (the tests compare Item values).
+const deepCopyEqual = @import("deep_copy.zig").deepEqual;
+
+test "writeEditorLevel layout is translated + row-trimmed" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const editor = editor_write_fixture;
+    const written = try writeEditorMission(editor, "u", arena);
+
+    // Level 1 (offset by (4,2)): the grid is the bbox, each row trimmed to
+    // its own last used column — interior alignment spaces stay, trailing
+    // spaces never.
+    const level_0_layout = parser.findSection(
+        try parseConfigFile(written.level_txts[0], arena),
+        "Layout",
+    ).?;
+    try std.testing.expectEqual(@as(usize, 3), level_0_layout.raw_lines.len);
+    try std.testing.expectEqualStrings("!=2", level_0_layout.raw_lines[0]);
+    try std.testing.expectEqualStrings("1.", level_0_layout.raw_lines[1]);
+    try std.testing.expectEqualStrings("  3", level_0_layout.raw_lines[2]);
+
+    // Level 2 (already at the origin): one compact row.
+    const level_1_layout = parser.findSection(
+        try parseConfigFile(written.level_txts[1], arena),
+        "Layout",
+    ).?;
+    try std.testing.expectEqual(@as(usize, 1), level_1_layout.raw_lines.len);
+    try std.testing.expectEqualStrings("!1=", level_1_layout.raw_lines[0]);
+}
+
+test "writeEditorMission fails when a level needs more codes than the ASCII set" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    // 92 distinct used entity types in ONE level — one more than the 91
+    // available layout chars.
+    const type_count = 92;
+    var entity_types: []types.EntityTypeDef = try arena.alloc(types.EntityTypeDef, type_count);
+    var placements: []types.EntityPlacement = try arena.alloc(types.EntityPlacement, type_count);
+    var tiles: []types.Vector2 = try arena.alloc(types.Vector2, type_count);
+    for (0..type_count) |index| {
+        entity_types[index] = .{ .id = "Type", .template = .{
+            .name = try std.fmt.allocPrint(arena, "Enemy {d}", .{index}),
+            .sprite = "skeleton_1",
+            .team = 1,
+        } };
+        placements[index] = .{ .type_id = @intCast(index), .position = .{ .x = @intCast(index), .y = 0 } };
+        tiles[index] = .{ .x = @intCast(index), .y = 0 };
+    }
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = tiles,
+        .player_start = .{ .x = 0, .y = 1 },
+        .level_end = .{ .x = 1, .y = 1 },
+        .entity_placements = placements,
+    }};
+    const editor = types.Editor{
+        .mission = .{ .name = "M", .level_count = 1 },
+        .levels = &levels,
+        .entity_types = entity_types,
+    };
+
+    try std.testing.expectError(
+        error.TooManyLayoutCodes,
+        writeEditorMission(editor, "u", arena),
+    );
 }
