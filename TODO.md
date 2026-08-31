@@ -567,14 +567,11 @@ yet implemented. Remaining work:
         picker migration onto the target union, tests. History in
         DONE.md; settled rule in DESIGN → Selection model (Inspector
         tool-type inference).
-  - [ ] **8 — utility-skill row (both inspectors):** replace the five
-        per-slot `.skill_slot` field rows with ONE `utility_skill_row`
-        entry: five adjacent 128×128 slots, the entity-inspect skill
-        look (`ui/skill_button` frame + full-size icon;
-        `ui/skill_slot_empty` diamond when null), label line above (2
-        row-units), each slot opens the centered picker (slot-index
-        payload), skill tooltip per slot. Built once; the player
-        inspector reuses it.
+  - [x] **8 — utility-skill row (both inspectors):** DONE — one
+        `utility_skill_row` entry (label "Skill bar" + five 128×128
+        slots, entity-inspect look, diamond when null, picker per slot),
+        `emitInspectorUtilitySkillRow` gradient-parametrized for the
+        player inspector's reuse. History in DONE.md.
   - [ ] **9 — player inspector:** entries over `player_def.template`
         with player-gradient coloring. Sections: an IMPORT button at
         the top (`player_import_editor_player` → `editor_import_player`

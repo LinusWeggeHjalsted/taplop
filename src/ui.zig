@@ -4546,9 +4546,6 @@ const EditorInspectorControl = union(enum) {
     swatches,
     /// The displays_weapons true/false toggle.
     toggle,
-    /// A utility-skill slot button: shows the slot's current skill (or
-    /// "None") and opens the centered skill picker (the slot index rides).
-    skill_slot: u32,
 };
 
 /// One line of inspector content — per the coupling contract in DESIGN →
@@ -4570,6 +4567,10 @@ const EditorInspectorEntry = union(enum) {
     /// A non-weapon gear slot: the label line + Add (while empty) / Delete
     /// (while equipped); a present item's name/stat field entries follow.
     gear_slot: types.GearSlot,
+    /// The utility-skill bar: the label line + ONE row of five 128×128
+    /// skill slots (occupied = skill button + icon, empty = the diamond
+    /// marker), each opening the centered picker.
+    utility_skill_row: void,
 };
 
 /// Row units an entry occupies: a section header is one; everything else
@@ -4577,7 +4578,7 @@ const EditorInspectorEntry = union(enum) {
 fn editorInspectorEntryUnits(entry: EditorInspectorEntry) i32 {
     return switch (entry) {
         .section, .spacer => 1,
-        .field, .weapon_slot, .gear_slot => 2,
+        .field, .weapon_slot, .gear_slot, .utility_skill_row => 2,
     };
 }
 
@@ -4683,16 +4684,11 @@ fn editorInspectorEntityEntries(
         }
     }
 
-    // Utility skills: one slot button per bar slot (opens the picker).
+    // Utility skills: ONE row of five skill slots (the entity-inspect
+    // look), each slot opening the centered picker.
     try entries.append(allocator, .spacer);
     try entries.append(allocator, .{ .section = "Utility skills" });
-    for (0..types.utility_skill_count) |slot_index| {
-        const label = try std.fmt.allocPrint(allocator, "Slot {d}", .{slot_index + 4});
-        try entries.append(allocator, .{ .field = .{
-            .label = label,
-            .control = .{ .skill_slot = @intCast(slot_index) },
-        } });
-    }
+    try entries.append(allocator, .{ .utility_skill_row = {} });
 
     return entries.items;
 }
@@ -4893,16 +4889,6 @@ fn buildEditorInspectorContent(
                         control_rect,
                         active_theme,
                     ),
-                    .skill_slot => |slot_index| try emitInspectorSkillSlot(
-                        elements,
-                        allocator,
-                        font_metrics,
-                        editor,
-                        type_index,
-                        slot_index,
-                        control_rect,
-                        active_theme,
-                    ),
                 }
             },
             // A weapon slot: the slot's label + the weapon-type row (create
@@ -4919,6 +4905,26 @@ fn buildEditorInspectorContent(
                     hand,
                     control_rect,
                     active_theme,
+                );
+            },
+            // The utility-skill bar: the label line + one row of five
+            // 128×128 skill slots — the entity-inspect look (skill-button
+            // frame + icon, the empty diamond), each opening the picker.
+            .utility_skill_row => {
+                try emitInspectorSlotLabel(elements, allocator, cell, "Skill bar", active_theme);
+                const slot_row: Rectangle = .{
+                    .x = cell.x,
+                    .y = cell.y + editor_inspector_row_height,
+                    .width = cell.width,
+                    .height = editor_inspector_row_height,
+                };
+                try emitInspectorUtilitySkillRow(
+                    elements,
+                    allocator,
+                    editor,
+                    type_index,
+                    slot_row,
+                    active_theme.enemy_gradient.colors,
                 );
             },
             // A gear slot: the slot's label + Add (while empty) / Delete
@@ -5324,95 +5330,74 @@ fn emitInspectorSlotButton(
 /// A utility-skill slot's control line: a half-width button showing the
 /// slot's current skill (or "None") — clicking opens the centered skill
 /// picker for that slot.
-fn emitInspectorSkillSlot(
+/// The utility-skill bar as ONE row of five 128×128 skill slots — the
+/// entity-inspect skill look: occupied = skill-button frame + full-size
+/// icon + skill tooltip; empty = the `ui/skill_slot_empty` diamond. Every
+/// slot opens the centered picker (the slot index rides the button). The
+/// team gradient is a parameter so the enemy + player inspectors share
+/// the row.
+fn emitInspectorUtilitySkillRow(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
-    font_metrics: FontMetrics,
     editor: types.Editor,
     type_index: u32,
-    slot_index: u32,
-    control_rect: Rectangle,
-    active_theme: types.ActiveColorTheme,
+    row_rect: Rectangle,
+    gradient_colors: [types.gradient_color_count]types.Color,
 ) !void {
-    // The enemy gradient + the entity-inspect skill coloring (frame 3,
-    // icon 1).
-    const enemy = active_theme.enemy_gradient.colors;
-    const skill_frame_color = enemy[@min(@as(u32, 3), types.gradient_color_count - 1)];
-    const skill_icon_color = enemy[@min(@as(u32, 1), types.gradient_color_count - 1)];
-    const button_color = enemy[@min(@as(u32, 5), types.gradient_color_count - 1)];
-
-    var current: ?types.SkillId = null;
-    if (type_index < editor.entity_types.len and slot_index < types.utility_skill_count) {
-        current = editor.entity_types[type_index].template.equipped_utility_skills[slot_index];
-    }
-
-    if (current) |skill_id| {
-        // Occupied: the actual SKILL (frame + full-size icon, the
-        // entity-inspect skill-button look) — the tooltip carries the
-        // name. Square, the control line's height.
-        const rect: Rectangle = .{
-            .x = control_rect.x,
-            .y = control_rect.y,
-            .width = control_rect.height,
-            .height = control_rect.height,
+    const skill_frame_color = gradient_colors[3];
+    const skill_icon_color = gradient_colors[1];
+    const cell_size = editor_inspector_row_height;
+    const cell_pitch = cell_size + ui_gap;
+    for (0..types.utility_skill_count) |loop_index| {
+        const slot_index: u32 = @intCast(loop_index);
+        const cell: Rectangle = .{
+            .x = row_rect.x + @as(i32, @intCast(loop_index)) * cell_pitch,
+            .y = row_rect.y,
+            .width = cell_size,
+            .height = cell_size,
         };
-        const tooltip: ?Tooltip = if (lookups.getSkillDefinition(skill_id)) |definition|
-            try buildSkillTooltip(allocator, definition)
+        const current: ?types.SkillId = if (type_index < editor.entity_types.len)
+            editor.entity_types[type_index].template.equipped_utility_skills[loop_index]
         else
             null;
-        try elements.append(allocator, .{ .button = .{
-            .sprite_id = "ui/skill_button",
-            .screen_position = rect.position(),
-            .width = rect.width,
-            .height = rect.height,
-            .action = .open_editor_skill_picker,
-            .editor_utility_slot = slot_index,
-            .color = skill_frame_color,
-            .tooltip = tooltip,
-        } });
-        try elements.append(allocator, .{ .image = .{
-            .sprite_id = skillIconSpriteId(skill_id),
-            .screen_position = rect.position(),
-            .width = rect.width,
-            .height = rect.height,
-            .color = skill_icon_color,
-            .blocks_input = false,
-        } });
-        return;
+        if (current) |skill_id| {
+            const tooltip: ?Tooltip = if (lookups.getSkillDefinition(skill_id)) |definition|
+                try buildSkillTooltip(allocator, definition)
+            else
+                null;
+            try elements.append(allocator, .{ .button = .{
+                .sprite_id = "ui/skill_button",
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .action = .open_editor_skill_picker,
+                .editor_utility_slot = slot_index,
+                .color = skill_frame_color,
+                .tooltip = tooltip,
+            } });
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = skillIconSpriteId(skill_id),
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .color = skill_icon_color,
+                .blocks_input = false,
+            } });
+        } else {
+            // Empty slot — the diamond marker (the skill-bar look); the
+            // tooltip names the pick target.
+            try elements.append(allocator, .{ .button = .{
+                .sprite_id = "ui/skill_slot_empty",
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .action = .open_editor_skill_picker,
+                .editor_utility_slot = slot_index,
+                .color = skill_frame_color,
+                .tooltip = .{ .header = try spanRow(allocator, text("None")) },
+            } });
+        }
     }
-
-    // Empty: the "None" text button (half width, the convention).
-    const rect: Rectangle = .{
-        .x = control_rect.x,
-        .y = control_rect.y,
-        .width = @divFloor(control_rect.width, 2),
-        .height = control_rect.height,
-    };
-    try elements.append(allocator, .{ .nine_slice_panel = .{
-        .sprite_id = "ui/panel",
-        .screen_position = rect.position(),
-        .width = rect.width,
-        .height = rect.height,
-        .color = button_color,
-    } });
-    try elements.append(allocator, .{ .button = .{
-        .screen_position = rect.position(),
-        .width = rect.width,
-        .height = rect.height,
-        .action = .open_editor_skill_picker,
-        .editor_utility_slot = slot_index,
-        .tooltip = .{ .header = try spanRow(allocator, text("None")) },
-    } });
-    const label_width = font_metrics.measureSpanWidth(text("None"), editor_group_header_font_size);
-    try elements.append(allocator, .{ .text_label = .{
-        .text = "None",
-        .screen_position = rect
-            .placeCenter(label_width, editor_group_header_font_size)
-            .position(),
-        .font_size = editor_group_header_font_size,
-        .color = active_theme.lightest,
-        .blocks_input = false,
-    } });
 }
 
 /// The centered utility-skill picker (the picker framework's first
@@ -7236,9 +7221,10 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // 45 row units (5 sections × 1 + 20 field entries × 2 — label line +
-    // control line); the panel fits 10 units, so 35 units scroll + the
-    // scrollbar shows.
+    // 41 row units (5 sections × 1 + 16 two-unit entries — 4 identity
+    // fields, 4 stats, 2 weapon slots, 5 gear slots, the utility-skill
+    // row — + 4 spacers); the panel fits 10 units, so 31 units scroll +
+    // the scrollbar shows.
     const visible_rows = @divFloor(
         editorInspectorPanelRect().height - 2 * ui_gap,
         editor_inspector_row_height,
@@ -7270,14 +7256,29 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         try expectInspectorLabels(&elements, &.{ "Sprite", "Color", "Displays weapons", "true", "Stats", "Max health" });
     }
 
-    // Out-of-range scroll clamps to max (49 − 10 = 39, the four spacers
-    // included): the window is the five utility slots.
+    // Out-of-range scroll clamps to max (41 − 10 = 31, the four spacers
+    // included): the window is the last three gear slots + the utility
+    // section + the skill row.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 999 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 39), ui_state.editor_inspector_scroll);
-        try expectInspectorLabels(&elements, &.{ "Slot 4", "None", "Slot 5", "None", "Slot 6", "None", "Slot 7", "None", "Slot 8", "None" });
+        try std.testing.expectEqual(@as(i32, 31), ui_state.editor_inspector_scroll);
+        try expectInspectorLabels(&elements, &.{
+            "Gloves", "Add", "Pants", "Add", "Boots", "Add", "Utility skills", "Skill bar",
+        });
+        // The skill row: five 128×128 picker buttons — three empty (the
+        // diamond sprite) and this template has no skills equipped, so
+        // all five are empty diamonds.
+        var picker_slot_buttons: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .open_editor_skill_picker) {
+                picker_slot_buttons += 1;
+                try std.testing.expectEqualStrings("ui/skill_slot_empty", button.sprite_id.?);
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 5), picker_slot_buttons);
     }
 
     // Negative scroll clamps to 0.
@@ -7307,6 +7308,83 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         );
         try std.testing.expectEqual(@as(usize, 0), countSolidRects(&elements));
     }
+}
+
+test "inspector utility-skill row: occupied slots show the skill, empty the diamond" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // Slot 1 carries blink, the rest are empty.
+    const entity_types = [_]types.EntityTypeDef{.{ .id = "Skeleton", .template = .{
+        .equipped_utility_skills = .{ null, .blink, null, null, null },
+    } }};
+    const editor: types.Editor = .{
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    };
+
+    // Scroll to the bottom — the window lands on the skill row.
+    var elements: UiElementList = .empty;
+    var ui_state: UiState = .{ .editor_inspector_scroll = 999 };
+    try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+
+    // Five picker buttons: blink's slot is the skill button, the rest
+    // the empty diamond. Every slot rides its index.
+    var slot_buttons: usize = 0;
+    var blink_slot: ?u32 = null;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .open_editor_skill_picker) {
+            slot_buttons += 1;
+            if (button.editor_utility_slot == 1) {
+                try std.testing.expectEqualStrings("ui/skill_button", button.sprite_id.?);
+                blink_slot = button.editor_utility_slot;
+            } else {
+                try std.testing.expectEqualStrings("ui/skill_slot_empty", button.sprite_id.?);
+            }
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 5), slot_buttons);
+    try std.testing.expectEqual(@as(?u32, 1), blink_slot);
+
+    // The occupied slot carries the full-size skill icon (the entity-
+    // inspect look) with the icon tint from the gradient's index 1 — and
+    // the row's geometry: 128×128 cells pitched 128 + ui_gap.
+    var saw_blink_icon = false;
+    for (elements.items) |element| switch (element) {
+        .image => |image| if (std.mem.eql(u8, image.sprite_id, skillIconSpriteId(.blink))) {
+            saw_blink_icon = true;
+            try std.testing.expectEqual(@as(i32, 128), image.width);
+            try std.testing.expectEqual(@as(i32, 128), image.height);
+        },
+        else => {},
+    };
+    try std.testing.expect(saw_blink_icon);
+
+    // Slot pitch: consecutive picker buttons advance by 128 + ui_gap.
+    var previous_x: ?i32 = null;
+    var pitches: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .open_editor_skill_picker) {
+            if (previous_x) |x| {
+                try std.testing.expectEqual(editor_inspector_row_height + ui_gap, button.screen_position.x - x);
+                pitches += 1;
+            }
+            previous_x = button.screen_position.x;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 4), pitches);
 }
 
 /// Assert the inspector's content labels, in order, skipping the toggle

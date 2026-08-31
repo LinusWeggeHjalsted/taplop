@@ -1930,8 +1930,12 @@ layout + a left inspector + a right settings sidebar:
   - other gear (amulet/coat/gloves/pants/boots, nullable): Add creates
     a default item, Delete clears to null; per-stat numeric inputs
     clamped to the gear `max_*` constants.
-  - utility skills (slot_4..slot_8, nullable): the centered picker
-    (below) — it is the picker framework's first consumer. Only UTILITY
+  - utility skills (slot_4..slot_8, nullable): ONE row of five 128×128
+    skill slots (the entity-inspect look: skill-button frame + full-size
+    icon; the `ui/skill_slot_empty` diamond when null), each opening the
+    centered picker (below) — it is the picker framework's first
+    consumer. The row emitter takes the team gradient as a parameter, so
+    the enemy + player inspectors share it. Only UTILITY
     skills (spells, cantrips, enchantments, curses — never weapon
     skills, which belong to the equipped weapon) may sit on the bar:
     the picker never offers them, the parser warns + drops them from

@@ -7846,3 +7846,31 @@ player shell (7 elements, header strip at index 4), and the picker test
 gained a player-target case (stone_form highlighted from player_def).
 DESIGN → Selection model (Inspector tool-type inference) rewritten to
 the settled rule.
+
+### Inspector slice 8 — the utility-skill row (DONE)
+
+The five per-slot field rows ("Slot 4".."Slot 8", half-width None
+buttons) are replaced by ONE `utility_skill_row` entry: the label line
+("Skill bar") + five adjacent 128×128 skill slots pitched 128 + ui_gap,
+the entity-inspect skill look — occupied = `ui/skill_button` frame +
+full-size icon + the skill tooltip, empty = the `ui/skill_slot_empty`
+diamond with a "None" tooltip. Every slot (occupied or empty) is a
+picker button carrying its slot index, so the interaction is unchanged:
+click → the centered picker opens on that slot.
+
+`emitInspectorUtilitySkillRow` takes the team gradient as a PARAMETER
+(frame = index 3, icon = index 1) instead of reading
+`active_theme.enemy_gradient` — the one change that makes the row
+reusable by the player inspector (slice 9 passes the player gradient).
+The old `emitInspectorSkillSlot` and the
+`EditorInspectorControl.skill_slot` variant are deleted; the entry union
+gains `.utility_skill_row` (2 row-units like every label+control entry,
+the slot row occupying the full lower unit so the slots are exactly
+128×128 rather than the control-line inset).
+
+Unit math: the utility section drops from 11 units (header + 5×2) to 3
+(header + row) — the full enemy entries list is now 41 units, max scroll
+31. The windowing test's bottom window now lands on the last three gear
+slots + the utility section + the skill row; a new test covers the
+occupied/empty mix (blink in slot 1: skill button + icon at 128×128,
+the other four diamonds) and the slot pitch.
