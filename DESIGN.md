@@ -1737,7 +1737,7 @@ buttons carry `Action`s that dispatch via `handleAnytimeInput` (before any
    open on undo. Prefer the GameState-derived approach when the trigger is
    already in undoable state.
 
-### Level Editor (core + UI landed; save-to-disk, drag-painting, level management pending)
+### Level Editor (core + UI landed; save-to-disk + drag-painting pending)
 
 A custom-mission editor. A mission is multiple sequential levels, so the
 editor is focused on a mission with per-level tabs (quick swap to edit each
@@ -1889,15 +1889,24 @@ layout + a left inspector + a right metadata sidebar:
 ```
 
 - **Tabs (top):** one per level, horizontally scrollable when too many for
-  the width. Each tab carries a close button (×) that deletes the level
-  (`editor_delete_level` event), shifts subsequent levels down, decrements
-  `mission.level_count`. Gated on `level_count > 1` (a mission always has
-  ≥1 level — deleting the last is disallowed). The "add level" button (`+`)
+  the width. Each tab carries a close button (×) — the shared
+  `ui/close_button` class, flush in the tab's top-right corner — that
+  deletes the level (`player_delete_editor_level` → `editor_delete_level`:
+  order-preserving removal, later levels shift down, `mission.level_count`
+  syncs to `levels.len`, and the active tab adjusts — a delete below it
+  shifts it down, deleting the ACTIVE level clamps + clears the selection,
+  the `editor_set_active_level` semantics). Offered only while the mission
+  has >1 level (a mission always has ≥1 — the handler PANICS on the
+  violated invariant; the UI, the input layer, and `validatePlayerAction`
+  all gate it first). The "add level" button (`+`)
   is pinned OUTSIDE the scroll region so it's always reachable; it creates
   a level from the default template (`data/default_level.txt` — a minimal
-  `!=` layout, `!` at (0,0), `=` at (1,0), no floor). `editor_add_level`
-  event. Tab label: the level's name or "Level N" if unnamed; a color
-  swatch from `color_wheel_index`.
+  `!=` layout, `!` at (0,0), `=` at (1,0); the markers carry their own
+  ground, so exactly those two tiles; unnamed — the author renames via the
+  metadata sidebar) via `editor_add_level`, read through the
+  reconstruction cache, and SWITCHES TO the new level (the author lands on
+  the thing they just created). Tab label: the level's name or "Level N" if
+  unnamed; a color swatch from `color_wheel_index`.
 - **Level viewport (center):** the active level rendered as in-game (tiles,
   decorations, entities, ground items, `!`, `=`). Click behavior is FULLY
   MODAL on the active tool (see below) — no dialogs, no mode-switching
@@ -2553,9 +2562,10 @@ runs handleIdleInput's editor arm (viewport clicks reach the world). Editor
 bar restyle: collapsed (or empty) groups sit flush against the bottom of the
 screen (expanded groups keep the hovering strip), and every editor `+`
 (palette add-new + the add-level cell right of the level tabs) is a square
-`ui/panel` cell; the palette `+` cells are WIRED (add-new-type from the
-shipped defaults — see the tool-palette bullet above), while the add-level
-`+` renders inert (tooltip only — its event wiring is a TODO). Enemy-tool clicks landed (see Placement tools above):
+`ui/panel` cell; BOTH are wired (palette add-new from the shipped
+palette defaults, add-level from the `data/default_level.txt` template),
+and the level tabs carry their × delete buttons (see the tabs bullet
+above). Enemy-tool clicks landed (see Placement tools above):
 `player_place_editor_entity` + the `editor_place_entity` /
 `editor_delete_item_placement` / `editor_set_entity_placement_type`
 handler arms, and `handleIdleInput`'s editor arm is now a tool switch (tile
@@ -2623,11 +2633,12 @@ chained `editor_commit_selection_move`), `editor_delete_type` (the
 palette-type orchestrator), `editor_set_tool` /
 `editor_toggle_inspector` / `editor_toggle_metadata_sidebar`, and the
 settings-sidebar metadata arms. `editor_set_active_level`,
-`editor_import_player`, and the `editor_add_*_type` trio are handled
-inline in `processEvent` (they need the reconstruction cache). The
-remaining six still `@panic` so an unhooked edit verb fails fast rather
-than silently no-op'ing: `editor_add_level` / `editor_delete_level`
-(the level-management UI is the TODO add-level "+" item), and the three
+`editor_import_player`, the `editor_add_*_type` trio, and
+`editor_add_level` (the template read) are handled
+inline in `processEvent` (they need the reconstruction cache);
+`editor_delete_level` is in `handleEditorEvent`. The
+remaining three still `@panic` so an unhooked edit verb fails fast rather
+than silently no-op'ing: the three
 `editor_move_*_placement` events (superseded by the selection move's
 chained commit — keep-or-remove is an open TODO question). Remaining
 handlers land with their UI slices.

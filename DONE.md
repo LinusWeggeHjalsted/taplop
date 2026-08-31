@@ -8758,3 +8758,53 @@ levels (the palette is mission-shared). Two slices:
   out-of-range guard), the input arm end-to-end (delete + undo + the
   fixed-tool no-op), and the bottom-bar emission test (per-cell delete
   button with the close visual, flush top-right, tool payload).
+
+## Level editor — level-tab × buttons + the wired add-level "+"
+
+Level management is wired: the top-bar "+" appends a new level from the
+shipped template and switches to it; each level tab carries a × (the
+shared `ui/close_button` class, flush top-right) that deletes the level.
+The template `data/default_level.txt` was authored in the same slice —
+it was specified in DESIGN since the beginning but never written. Two
+slices:
+
+- **Template + handlers**: `data/default_level.txt` is the minimal `!=`
+  layout ('!' at (0,0), '=' at (1,0)) — the markers carry their own
+  ground (the layout walk tiles under '!' and '='; DESIGN's "no floor"
+  means no ADDITIONAL floor), unnamed so a new tab reads "Level N".
+  `loaders.loadEditorDefaultLevel` wraps `loadLevel` with a STRICT
+  template contract: a level end must be present and no
+  enemies/decorations/items may be authored into it (placements belong
+  to the palette + viewport — anything more is a content error surfaced
+  at the read site, never silently dropped). `editor_add_level` is
+  handled inline in `processEvent` (the `addEditorPaletteType` pattern:
+  reconstruction-cache read, recoverable failure → revert + popup);
+  it appends the level, SWITCHES the active tab to it (the author lands
+  on the thing they just created), clears the selection
+  (the `editor_set_active_level` semantics), and syncs
+  `mission.level_count = levels.len`. `editor_delete_level` lives in
+  `handleEditorEvent`: order-preserving removal + level_count sync +
+  active-tab adjustment (a delete below shifts the tab down; deleting
+  the ACTIVE level clamps + clears the selection). Its guards PANIC
+  (fail-fast): the ≥1-level invariant is the event's documented
+  contract, and the UI, the input layer, and `validatePlayerAction`
+  (screen + editor + index range + ≥1 level) all gate it first — a
+  crafted log that reaches the panics has bypassed three gates.
+  One undo step reverts each operation (the delete restores levels,
+  tabs, and selection).
+- **UI + input**: the × per tab (only while `levels.len > 1` — a
+  mission always keeps ≥1) with the tab index on the EXISTING
+  `editor_level` payload (no main.zig change, the established trick);
+  the "+" cell is a button now (`.add_editor_level`, spriteless over
+  the panel). The input arms push + drain the orchestrators; the
+  delete arm re-gates (single-level or out-of-range → no-op) so a
+  crafted click can never reach the handler's invariant panic.
+- **Tests**: the add handler (template shape asserted field-by-field —
+  one correction mid-flight: the test first asserted "no floor tiles"
+  but the markers carry their own ground, so the minimal layout has
+  exactly the two marker tiles), the delete handler (all three
+  active-tab adjustment cases + level_count + selection + two-step
+  undo), the input arms end-to-end (add → switch, delete → shift, the
+  single-level gate), and the tabs emission test (× per tab with
+  payload/visual/flush position, no × on a single-level mission, the
+  "+" as a button).

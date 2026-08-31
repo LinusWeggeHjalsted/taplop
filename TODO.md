@@ -449,14 +449,12 @@ paragraph). Remaining work:
   `editor_set_active_level`; exit guard in `end_level` / `end_mission`;
   round-trip test). See DESIGN → Architecture → Level Editor.
 - Edit-verb events: every verb's struct exists in events.zig and almost
-  all are handled — the remaining unhandled five still `@panic` in
-  `handleEditorEvent` (fail-fast): the level-management pair
-  (`editor_add_level` / `editor_delete_level` — the add-level "+" and
-  the tab × buttons are the UI; the add-level handler needs the
-  `data/default_level.txt` template) and the three
-  `editor_move_*_placement` events.
+  all are handled — the remaining unhandled three still `@panic` in
+  `handleEditorEvent` (fail-fast): the `editor_move_*_placement` events.
   (`editor_delete_type` is DONE — the palette tool cells' delete
-  buttons; see DONE.md.) OPEN: those move events look superseded by the selection move's
+  buttons; `editor_add_level` / `editor_delete_level` are DONE — the
+  add-level "+" + the tab × buttons + `data/default_level.txt`; see
+  DONE.md.) OPEN: those move events look superseded by the selection move's
   chained `editor_commit_selection_move` (delete + re-place via the
   placement planners — no per-placement move verb is ever pushed);
   decide keep-or-remove when the drag-painting / move slices revisit
@@ -729,8 +727,7 @@ paragraph). Remaining work:
         emission, pick/commit handlers, session-log round-trip with a
         multi-word name). Design: DESIGN → Level Editor → Editor UI
         layout (Inspector fields, item types); history in DONE.md.
-  Deferred: drag-painting. Default level template
-  (`data/default_level.txt`). The `.editor` screen renders the top row +
+  Deferred: drag-painting. The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved
   placements, `!`/`=` markers; camera centered on the active level's
   player_start, right-drag pan) — reachable via the main-menu "Editor"
@@ -768,12 +765,12 @@ paragraph). Remaining work:
   (no undo/replay pollution); exact-duplicate decoration placements
   (same type + anchor) no-op too. See DESIGN → Level Editor →
   Active-tool model; history in DONE.md.
-- **Hook up the add-level "+" (top bar, right of the level tabs).** The
-  square panel cell renders (inert, tooltip "Add level"); wiring it is a
-  `player_add_editor_level` orchestrator + the `editor_add_level` handler
-  (default template `data/default_level.txt` — which itself is still to
-  be written) + `validatePlayerAction` arm. Same pattern as
-  `player_set_editor_level`.
+- **Hook up the add-level "+" (top bar, right of the level tabs).** DONE —
+  `player_add_editor_level` orchestrator → the `editor_add_level` handler
+  reading the template through the reconstruction cache, + the tab ×
+  buttons (`player_delete_editor_level` → `editor_delete_level`). The
+  template `data/default_level.txt` is written (the minimal `!=` layout).
+  History in DONE.md.
 - **Hook up the palette "+" cells (add-new type).** DONE — click →
   `player_add_editor_*_type` orchestrator → the `editor_add_*_type`
   handler building the type from `data/editor_defaults.txt` (the shipped
