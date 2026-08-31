@@ -1995,7 +1995,10 @@ layout + a left inspector + a right settings sidebar:
     is focused counts as PROCEEDS in the M2 arbitration (the picker
     floats outside the inspector rect) — the field commits and the pick
     fires in the same click.
-  - entity layers: deferred with the sprite picker (they share it).
+  - entity layers: LANDED — the shared Layers section (see the
+    decoration bullet below for the row/picker model; entity layers have
+    NO dims constraint — the fixed 512×640 frame — and no authored color
+    source, so a new layer starts at color 0).
 - **Inspector fields (decoration types — LANDED):** the Identity section
   (shared section id with the enemy content — collapse state persists
   across kinds) holds the Sprite row (the centered picker — see below)
@@ -2006,9 +2009,26 @@ layout + a left inspector + a right settings sidebar:
   Footprint section is a minimal placeholder: a read-only `<N> tiles`
   line; the footprint EDITOR (inline footprint-grid editing) is a later
   slice and will commit through `editor_set_decoration_footprint`,
-  sharing the def handler's placement-prune helper. Decoration LAYERS
-  are deferred (the layer editor); they arrive whole via a registry
-  prefab pick in the meantime.
+  sharing the def handler's placement-prune helper.
+- **The Layers sections (enemy + decoration, LANDED; the player loadout
+  has NO layers):** the LAST section of both contents. Per layer, two
+  rows — "Layer N" (the sprite-stem button, a re-pick opens the layer
+  picker for that index, + Delete) and "Layer N color" (a swatch row
+  over the content's gradient, committing the WHOLE layer via the set
+  event) — then an "Add layer" row (the picker in add mode). The layer
+  index rides the button payload (`AnytimeInput.clicked_editor_layer`,
+  null = add). Decoration layers carry the load-time invariant — layer
+  pixel dims MUST equal the base's (the level parser panics otherwise):
+  the picker's Official tab FILTERS to matching dims so mismatched art
+  is never offered, a custom pick resolves dims from its PNG at the
+  commit site, and a mismatch keeps the picker OPEN with nothing
+  recorded (the pick visibly didn't take). The handler + replay
+  validation reject mismatched payloads too, so the editor can never
+  hold a state its own load path would reject. A NEW layer's color
+  adopts a registry prefab's authored layer color when the picked stem
+  is one (tree_1's canopy is 2), else 0; a re-pick KEEPS the layer's
+  color (the weapon-retype semantics). Layers never affect placement
+  validity — no prune.
 - **Settings sidebar (right bar):** mission + active-level settings.
   User-toggleable like the inspector, open by default. Mission settings:
   mission name. Active-level settings: level name, theme settings
@@ -2021,14 +2041,18 @@ layout + a left inspector + a right settings sidebar:
   in-game bottom bar (the screen transition handles it; `view()` branches
   on screen). Upload/Publish UI is DEFERRED (lands with online services).
 
-**Centered sprite picker (enemy + decoration base sprites LANDED;
-entity/decoration LAYERS later).** Picking a base sprite for an enemy or
+**Centered sprite picker (enemy + decoration, base + layer modes
+LANDED).** Picking a base sprite or a layer sprite for an enemy or
 decoration tool opens the centered picker (the skill picker's framework,
 second consumer — dropdown semantics, blocks only where it sits, stays
 open until a pick or close) with TWO TABS top-left and close top-right.
-The picker KIND follows the inspector target (routed at the open site):
-`.entity_sprite` vs `.decoration_sprite` on UiState — the same panel,
-target-resolved inside the builder.
+The picker KIND follows the open site: base-sprite rows route by the
+inspector target (`.entity_sprite` / `.decoration_sprite`), the Layers
+sections' buttons open the layer modes (`.entity_layer` /
+`.decoration_layer` carrying the layer index, null = add-new — the skill
+picker's slot pattern; see the Layers bullet above for the layer rules:
+per-mode Official-tab lists, the decoration dims filter, tinting, and
+highlight targets).
 - **Mission** — the `.png`s in the mission directory (a flat scan,
   `FileSource.listPersistentPngFiles`; re-scanned at every OPEN from
   the idle-input site — interactive IO never in `view()`/handlers; the
@@ -2463,12 +2487,15 @@ were superseded and removed) / `editor_set_decoration_color_index`
 (LANDED) / `editor_set_decoration_footprint` (reserved for the future
 footprint editor; shares the prune helper) /
 `editor_set_item_*` / `editor_add_*_layer` / `editor_remove_*_layer` /
-`editor_set_*_layer`). `handleEditorEvent` implements the arms the landed UI
+`editor_set_*_layer` (the six layer arms LANDED)).
+`handleEditorEvent` implements the arms the landed UI
 slices need (`editor_set_tile` both directions, the `editor_delete_*_placement`
 trio, `editor_place_entity` / `editor_place_decoration` /
 `editor_place_item`, `editor_set_entity_placement_type` /
 `editor_set_item_placement_type`, `editor_set_decoration_def` +
-`editor_set_decoration_color_index`); the rest still `@panic` so an unhooked edit verb
+`editor_set_decoration_color_index`, the six LAYER arms —
+`editor_add/remove/set_entity_layer` + `editor_add/remove/set_decoration_layer`);
+the rest still `@panic` so an unhooked edit verb
 fails fast rather than silently no-op'ing. Remaining handlers land with
 their UI slices.
 

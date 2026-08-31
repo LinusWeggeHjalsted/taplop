@@ -8178,3 +8178,61 @@ IHDR accepted today), and the load-side resolution for
 produces a mission that panics on reload — part of the deferred
 custom-asset acquisition slice; entities don't hit it because they carry
 no pixel_dims).
+
+### Layer editors (DONE)
+
+The Layers sections for enemy + decoration types — the deferred "entity +
+decoration layer editors" item. No player layers (the player loadout has
+none — the section is enemy content only, and a player_def layer target
+is rejected at the replay seam, the utility-skill posture). Two commits:
+the verbs (six events + validation + handler tests), then the surface
+(sections + picker modes + commit paths + tests).
+
+- **The six verbs were already defined** — `editor_add/remove/set_entity_layer`
+  + `editor_add/remove/set_decoration_layer` existed as panic-stub arms;
+  wiring them was pure implementation. Layer-list mutation is
+  copy-and-reassign through three tiny generic helpers
+  (`layerListAppend/RemoveAt/ReplaceAt` over a `*[]const T` field — both
+  Entity.layers and DecorationTypeDef.layers are `[]const`).
+- **The dims invariant shaped everything**: the level parser PANICS on a
+  decoration layer whose pixel dims differ from its base, so the editor
+  must never author one. Three layers of defense: the picker's Official
+  tab FILTERS to matching dims (mismatched art is never offered), the
+  commit site resolves custom-stem dims from the PNG and a mismatch
+  keeps the picker OPEN with nothing recorded (the pick visibly didn't
+  take — better feedback than closing silently), and the handler +
+  validatePlayerAction both reject mismatched payloads. Entity layers
+  have no dims constraint (the fixed 512×640 frame) — no checks.
+- **Authored layer colors**: a NEW decoration layer adopts a registry
+  prefab's authored layer color when the picked stem is one (tree_1's
+  canopy is color 2) — a registry-layers scan at the commit site, else 0.
+  A re-pick KEEPS the layer's color (the weapon-retype semantics). A
+  color swap commits the WHOLE layer via the set event (one event, one
+  undo step).
+- **Picker restructure**: `buildEditorSpritePicker` now takes the picker
+  TARGET and resolves a four-way kind (entity/decoration × base/layer).
+  The per-tab cell list became a per-frame `PickerCell` array (stored id,
+  label, graphic, aspect-fit frame) — the old switch-in-loop couldn't
+  express per-kind lists (registry prefabs / entity stems / dims-filtered
+  decoration stems / namespaced mission files). A comptime
+  `official_decoration_sprites` list (stems + dims from the metadata
+  table; needed `@setEvalBranchQuota` for the comptime parseInt) feeds
+  the layer-mode Official tab + its filter.
+- **Stale-open posture**: the picker is a dropdown that stays open while
+  the tool/target switches, so the builder treats a kind/target mismatch
+  or out-of-range layer index defensively — base-tint, nothing
+  highlighted, "No sprites" for the dims filter — and every pick no-ops
+  at the commit gate (kind + target must match).
+- Tests: handler tests (add/set/remove ordering + compaction, player
+  target ignored, oor guards, dims-mismatch add/set ignored, undo), ui
+  tests (the Layers sections' rows/swatches/add for both contents; the
+  picker layer modes — entity stems with layer highlight, dims-filtered
+  decoration cells), input tests (entity: add → color 0, color swap,
+  edit re-pick keeps color, same-sprite no-op via event count, delete +
+  undo; decoration: registry-authored color on add, custom pick dims
+  from a 24-byte PNG header, mismatched custom pick keeps the picker
+  open + records nothing, edit re-pick, color swap, delete).
+
+Zig note along the way: comptime `std.fmt.parseInt` inside a comptime
+build block needs an explicit `@setEvalBranchQuota` (the default 1000
+backwards branches don't cover even ~23 table entries).

@@ -587,24 +587,30 @@ yet implemented. Remaining work:
         DESIGN → Level Editor → the centered sprite picker), the
         registry session-resident at open_editor, and the picker
         routing (kind by inspector target). History in DONE.md.
-  - [ ] **Later: entity + decoration layer editors** — the layer
-        editor (add/remove/edit layers, sprite via the same picker)
-        reuses the picker (decoration layers arrive whole via a
-        registry prefab pick in the meantime); mission-local art
-        RENDERING (the `custom/<mission>/` resolution at the renderer)
-        lands with custom-asset rendering. Open items from the
-        decoration slice:
+  - [x] **Layer editors (enemy + decoration)** — DONE: the shared
+        Layers section (per layer: "Layer N" sprite-row + Delete,
+        "Layer N color" swatches; an Add row), the picker's layer modes
+        (`.entity_layer` / `.decoration_layer` on the picker target, null
+        = add), the six layer verbs with the decoration dims-match
+        invariant (official tab filters to matching dims; a mismatched
+        custom pick keeps the picker open), registry-authored layer
+        colors on add, re-pick-keeps-color, and no player layers (the
+        player content has no Layers section; player_def layer targets
+        are rejected at the replay seam). See DESIGN → Level Editor →
+        Editor UI layout (the Layers sections) + the centered sprite
+        picker. History in DONE.md.
+  - [ ] **Remaining layer-adjacent opens:**
         - the footprint EDITOR (inline footprint-grid editing →
           `editor_set_decoration_footprint`, sharing the def handler's
           prune helper) replaces the placeholder row;
         - custom-sprite DIMS verification (multiples of 256, sane
           bounds) at the pick commit — currently any positive IHDR is
-          accepted;
+          accepted (base + layer picks);
         - the LOAD-side dims resolution for `custom/<mission>/`
-          decoration stems (a saved custom-sprite decoration panics on
-          reload until the custom-asset acquisition slice lands — see
-          DESIGN → Level Editor → the centered sprite picker, OPEN
-          GAP);
+          decoration stems, base AND layer (a saved custom-sprite
+          decoration panics on reload until the custom-asset acquisition
+          slice lands — see DESIGN → Level Editor → the centered sprite
+          picker, OPEN GAP);
         - picker scroll is a follow-up if real content overflows 4
           columns.
   - [x] **7 — inference: player as the fallback target:** DONE —
