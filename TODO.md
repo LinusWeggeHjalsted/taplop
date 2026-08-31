@@ -764,8 +764,12 @@ yet implemented. Remaining work:
   (default template `data/default_level.txt` — which itself is still to
   be written) + `validatePlayerAction` arm. Same pattern as
   `player_set_editor_level`.
-- **Hook up the palette "+" cells (add-new type).** Same shape: click →
-  orchestrator → `editor_add_*_type` handler (currently panics).
+- **Hook up the palette "+" cells (add-new type).** DONE — click →
+  `player_add_editor_*_type` orchestrator → the `editor_add_*_type`
+  handler building the type from `data/editor_defaults.txt` (the shipped
+  defaults, level-format sections), making it the active tool, opening
+  the inspector, and opening the base-sprite picker for enemies +
+  decorations. History in DONE.md.
 - **Mission metadata cleanup — derive start_hub / end_hub /
   level_count.** mission.txt's Metadata carries three fields that
   restate the campaign graph or the mission directory — drift-prone

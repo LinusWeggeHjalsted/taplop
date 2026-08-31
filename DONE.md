@@ -8659,3 +8659,61 @@ The standing rule (TODO → Tech Debt + DESIGN → Logging & Replay → String
 safety): strings inside single nested values flatten to top level;
 string-bearing struct slices take the indexed encoding; the comptime
 guards enforce both for future events.
+
+## Level editor — the palette "+" cells (add-new type)
+
+The three bottom-bar palette groups' "+" cells are wired: clicking one
+appends a new type to that group built from the SHIPPED DEFAULTS, makes
+it the active tool, opens the inspector, and (enemies + decorations)
+opens the base-sprite picker on the new type. Three slices:
+
+- **data/editor_defaults.txt (new shipped file)**: one entry per kind in
+  the level-file section formats (Enemies / Decorations / Items entries,
+  no character_code — the data/decorations.txt precedent; no Layout —
+  nothing is placed). Author decision: the decoration default DUPLICATES
+  the stone_1 prefab (footprint 0 0, color 5) rather than referencing
+  the registry — the defaults file is self-contained, mirroring the
+  level config exactly. Parsed by the new `loaders.loadEditorDefaults`:
+  the enemy via the shared `parseEntityDefinition` (team 1; the absent
+  keys are exactly the "no weapons / gear / utility skills / layers"
+  defaults), the decoration via the shared `parseDecorationEntry`, the
+  item via `parseItemEntry` — EXTRACTED from loadLevel's inline Items
+  parse so level files and the defaults file share one code path.
+  Validation reuses the level key map + a new `editor_defaults_sections`
+  whitelist (the level sections minus Layout) + its own
+  `editor_defaults_file_format_version` (1). A missing section or entry
+  is `error.MissingDefaultEntry` — the file is shipped content, so a
+  missing default is a content error surfaced at the read site, never a
+  silent fallback.
+- **Events + handlers**: three thin player wrappers
+  (`player_add_editor_*_type`, void payloads) → the existing
+  `editor_add_*_type` events, handled INLINE in processEvent
+  (`addEditorPaletteType` — the `editor_import_player` pattern) because
+  the defaults read needs the reconstruction cache: the add events are
+  recorded, so replay re-reads the same bytes and reproduces the
+  creation. A read/parse failure takes the recoverable in-event-read
+  path (`failReconstructionRead` → revert + popup). The handler appends
+  the type, sets the active tool to it (carrying the `editor_set_tool`
+  selection-clear invariant), and opens the inspector — one undo step
+  reverts the whole creation. `validatePlayerAction` arms: editor screen
+  + editor present.
+- **UI + input**: the "+" cells are buttons now (spriteless over the
+  `ui/panel` cell, the group-header visual class) carrying the new
+  `Action.add_editor_palette_type` + the group index on the EXISTING
+  `editor_group` payload — main.zig's release dispatch needed no change.
+  The input arm pushes + drains the per-kind orchestrator, then opens
+  the base-sprite picker for enemies (`.entity_sprite`) and decorations
+  (`.decoration_sprite`) — mission rescan + Mission-tab-first, the
+  inspector Sprite row's open path; the picker's commit targets the new
+  type through the active tool the handler set. Items open nothing (no
+  sprite to pick). Any already-open picker CLOSES first: the tool switch
+  retargets the inspector, so a stale picker is a mismatched-target
+  hazard. The add-level "+" stays inert (its own TODO).
+- **Tests**: a shipped-file loader test (the registry-test read-the-real-
+  file pattern — guards the file against drift, asserts every default
+  field), loader error paths (missing entries / version gate /
+  unexpected section), handler tests (per-kind creation + defaults +
+  tool + inspector + undo; auto-open from closed + the selection clear),
+  and the anytime-input arm end-to-end (creation + per-group picker
+  routing + the stale-picker close + the crafted out-of-range group
+  no-op).

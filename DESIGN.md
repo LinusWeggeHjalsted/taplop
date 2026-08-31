@@ -1910,8 +1910,14 @@ layout + a left inspector + a right metadata sidebar:
   `UiState.editor_palette_scroll`, clamped in the builder). Each slot
   renders the type's graphic on the shared `ui/button_background`
   (aspect-preserved, centered). Each group has an "add new" button (`+`)
-  at its tail that creates a new empty type via an `editor_add_*_type`
-  event; the `+` and the group header stay fixed while the window scrolls.
+  at its tail that appends a new type built from the SHIPPED DEFAULTS
+  (`data/editor_defaults.txt` — one entry per kind in the level-file
+  section formats; the decoration default duplicates the stone_1 prefab)
+  via an `editor_add_*_type` event; the same handler makes the new type
+  the active tool + opens the inspector, and the input layer opens the
+  base-sprite picker on it for enemies + decorations (items have no
+  sprite to pick). One undo step reverts the whole creation. The `+` and
+  the group header stay fixed while the window scrolls.
   An EXPANDED group's header + `+` sit in the strip above the bar
   (labeling the cells below); a COLLAPSED (or empty) group's header + `+`
   drop flush against the bottom of the screen — visible content to
@@ -1934,8 +1940,8 @@ layout + a left inspector + a right metadata sidebar:
   one `ui_gap` above the palette groups' header strip (the bottom bar is
   flush left, so an expanded group's header x-range overlaps the panel —
   the gap keeps them visually separate). Auto-opens on new
-  enemy/decoration/item creation (an empty type isn't useful until
-  populated). Field editing is inline within the inspector: skill
+  enemy/decoration/item creation (the author lands on the new type's
+  fields immediately). Field editing is inline within the inspector: skill
   assignment, gear equip, stat fields, footprint editing (decorations),
   etc. Base-sprite selection is the one exception — it goes through the
   centered sprite picker (below); decoration layers added via the
@@ -2541,8 +2547,9 @@ runs handleIdleInput's editor arm (viewport clicks reach the world). Editor
 bar restyle: collapsed (or empty) groups sit flush against the bottom of the
 screen (expanded groups keep the hovering strip), and every editor `+`
 (palette add-new + the add-level cell right of the level tabs) is a square
-`ui/panel` cell; the add-level `+` renders inert (tooltip only — its event
-wiring is a TODO). Enemy-tool clicks landed (see Placement tools above):
+`ui/panel` cell; the palette `+` cells are WIRED (add-new-type from the
+shipped defaults — see the tool-palette bullet above), while the add-level
+`+` renders inert (tooltip only — its event wiring is a TODO). Enemy-tool clicks landed (see Placement tools above):
 `player_place_editor_entity` + the `editor_place_entity` /
 `editor_delete_item_placement` / `editor_set_entity_placement_type`
 handler arms, and `handleIdleInput`'s editor arm is now a tool switch (tile
