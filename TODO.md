@@ -666,33 +666,33 @@ yet implemented. Remaining work:
         read — discovery silently dropped on every save/load round
         trip). History in DONE.md; design in DESIGN → Level Editor →
         Player loadout.
-  - [ ] **11 — settings sidebar (right bar):** mission + active-level
-        metadata. Toggle button top-right (mirrors the inspector's
-        top-left one), open by default; panel on the right edge, the
-        inspector's visual class. Mission section: name text field
-        (commits `editor_set_mission_name` — event exists, handler
-        pending). Level section: name text field (commits
-        `editor_set_level_name` on the active tab) + three gradient rows
-        — world / enemy / player. Each row's FULL-GRADIENT swatch (all 6
-        colors, one strip) is a single button opening the centered THEME
-        PICKER (every gradient from color_themes.txt, one full-width
-        swatch per row, current pick highlighted; a pick sets the level's
-        index). Enemy + player rows carry an AUTO-DERIVE toggle (DESIGN →
-        Level Editor → Level theme): auto = derived from the world index
-        (`world + N/3` / `world + 2N/3`), manual = the picked index
-        overrides. This slice also lands the MODEL CHANGE that design
-        calls for: `CustomColorTheme` / `custom_theme` scaffolding REMOVED
-        (dead — nothing reads it; the index model supersedes it) and the
-        enemy/player override fields + events land
-        (`editor_set_level_enemy_gradient` / `..._player_gradient`, null
-        payload = revert to auto). Settled decisions: sidebar toggle =
-        Editor flag + `editor_toggle_settings_sidebar` event (the
-        inspector pattern; toggle button at the inspector toggle's height,
-        flush to the right screen edge); TextFieldRef target widened to a
-        `TextEditTarget` union (entity / mission_name / level_name);
-        AUTO-mode swatches stay clickable — a pick in the picker flips
-        that role to manual and sets the index in one commit; picker rows
-        are bare full-width gradient strips (no labels).
+  - [x] **11 — settings sidebar (right bar), slice 1 — gradient-override
+        model:** DONE — `CustomColorTheme`/`custom_theme` removed (dead
+        scaffolding), `enemy_gradient_index`/`player_gradient_index: ?u32`
+        on Level + EditorLevel, level-file Metadata keys + parser
+        whitelist, `deriveActiveColorTheme` overrides (editor viewport
+        previews the active level's full theme now), the two gradient
+        EditorEvents + five player wrappers + handlers +
+        `validatePlayerAction` arms, tests. History in DONE.md.
+  - [ ] **11 — settings sidebar (right bar), slice 2 — shell + name
+        fields:** toggle button top-right (same height as the inspector
+        toggle, flush to the right screen edge; `Editor` flag +
+        `editor_toggle_settings_sidebar`), right-edge panel, mission name
+        + level name text fields — needs the settled `TextFieldRef`
+        widening (`TextEditTarget` union: entity / mission_name /
+        level_name).
+  - [ ] **11 — settings sidebar (right bar), slice 3 — gradient rows +
+        theme picker:** three gradient rows (world / enemy / player).
+        Each row's FULL-GRADIENT swatch (all 6 colors, one strip) is a
+        single button opening the centered THEME PICKER (every gradient
+        from color_themes.txt, one full-width swatch per row, current
+        pick highlighted; a pick sets the level's index). Enemy + player
+        rows carry an AUTO-DERIVE toggle: auto = derived from the world
+        index, manual = the picked index overrides. AUTO-mode swatches
+        stay clickable — a pick in the picker flips that role to manual
+        and sets the index in one commit (the `?u32` gradient events,
+        null = revert to auto). Picker rows are bare full-width gradient
+        strips (no labels).
   Deferred: drag-painting. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved
