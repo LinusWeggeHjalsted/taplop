@@ -353,6 +353,10 @@ pub const AnytimeInput = struct {
     /// `options_action == .open_editor_skill_picker` (an inspector slot
     /// button).
     clicked_editor_utility_slot: ?u32 = null,
+    /// Editor layer index, set alongside the Layers sections' actions
+    /// (a layer's sprite/color/delete controls; null on the add-layer
+    /// button = the picker's add mode).
+    clicked_editor_layer: ?u32 = null,
     /// Editor skill pick, set alongside
     /// `options_action == .select_editor_utility_skill` (a picker cell).
     /// No payload = the picker's None cell.
@@ -471,6 +475,14 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .import_editor_player => player_input.anytime.options_action = action,
         .select_editor_entity_color => player_input.anytime.options_action = action,
         .select_editor_decoration_color => player_input.anytime.options_action = action,
+        .open_editor_entity_layer_picker => player_input.anytime.options_action = action,
+        .open_editor_decoration_layer_picker => player_input.anytime.options_action = action,
+        .select_editor_entity_layer => player_input.anytime.options_action = action,
+        .select_editor_decoration_layer => player_input.anytime.options_action = action,
+        .delete_editor_entity_layer => player_input.anytime.options_action = action,
+        .delete_editor_decoration_layer => player_input.anytime.options_action = action,
+        .select_editor_entity_layer_color => player_input.anytime.options_action = action,
+        .select_editor_decoration_layer_color => player_input.anytime.options_action = action,
         .toggle_editor_entity_displays_weapons => player_input.anytime.options_action = action,
         .select_editor_weapon_type => player_input.anytime.options_action = action,
         .add_editor_item => player_input.anytime.options_action = action,

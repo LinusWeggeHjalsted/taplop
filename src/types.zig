@@ -196,6 +196,20 @@ pub const Action = enum {
     // decoration type's color_index — the gradient index into the WORLD
     // gradient). The index rides in `AnytimeInput.clicked_editor_color`.
     select_editor_decoration_color,
+    // The Layers sections' controls (enemy + decoration types). The layer
+    // index rides in `AnytimeInput.clicked_editor_layer` (null on the
+    // add-layer button — the picker's add mode).
+    open_editor_entity_layer_picker,
+    open_editor_decoration_layer_picker,
+    // A layer-picker cell: the stem rode in
+    // `AnytimeInput.clicked_editor_sprite`; the layer identity (add vs
+    // edit index) rides in the open picker's UiState target.
+    select_editor_entity_layer,
+    select_editor_decoration_layer,
+    delete_editor_entity_layer,
+    delete_editor_decoration_layer,
+    select_editor_entity_layer_color,
+    select_editor_decoration_layer_color,
     // The inspector's displays-weapons toggle (flip the edited entity
     // type's flag). No payload — the handler reads + flips live state.
     toggle_editor_entity_displays_weapons,
@@ -1228,6 +1242,9 @@ pub const EditorInspectorSectionId = enum {
     /// The decoration type's footprint (tile count summary + the future
     /// footprint editor's home). Decoration content only.
     footprint,
+    /// The layer stack (enemy + decoration types; the player loadout has
+    /// no layers).
+    layers,
 };
 
 pub const EditorToolId = union(enum) {

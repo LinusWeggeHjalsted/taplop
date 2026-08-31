@@ -142,6 +142,20 @@ pub fn resolveMissionSpriteDimensions(
     return parsePngDimensions(bytes);
 }
 
+/// Resolve a SHIPPED decoration sprite's dims from the comptime metadata
+/// table (the layer picker's official-stem commit path — no IO). Returns
+/// null when the stem isn't shipped decoration art.
+pub fn resolveShippedDecorationSpriteDimensions(
+    stem: []const u8,
+    allocator: std.mem.Allocator,
+) ?types.Vector2 {
+    const full_id = std.fmt.allocPrint(allocator, "decorations/{s}", .{stem}) catch
+        @panic("failed to build decoration sprite id for dims");
+    defer allocator.free(full_id);
+    const dims_str = sprite_metadata.map.get(full_id) orelse return null;
+    return parseDimsString(dims_str);
+}
+
 /// Parse a `"w h"` string (as emitted by generated_sprite_metadata.zig) into a
 /// Vector2. Panics on malformed input — the table is build-generated, so a
 /// bad value is a build bug.

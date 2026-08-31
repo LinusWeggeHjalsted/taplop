@@ -4000,7 +4000,7 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
     // DEFAULT: every section collapsed — the panel shows only headers.
     input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
-        [_]bool{false} ** 8,
+        [_]bool{false} ** 9,
         history.session.ui_state.editor_inspector_section_expanded,
     );
 
@@ -4021,4 +4021,229 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
         .clicked_editor_section = .weapons,
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(!history.session.ui_state.editor_inspector_section_expanded[@intFromEnum(types.EditorInspectorSectionId.weapons)]);
+}
+
+test "entity layer picker: add via pick, re-pick keeps color, same-sprite no-op, delete, color swap" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+        .mission = .{ .path = "missions/artists_den" },
+    }));
+    runToIdle(&history);
+
+    // Open in ADD mode (no layer payload) → the entity-layer picker.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_entity_layer_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(
+        ui.EditorPickerTarget{ .entity_layer = null },
+        history.session.ui_state.editor_picker.?,
+    );
+
+    // Pick: a new layer, color 0 (no authored source for entity layers).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_entity_layer,
+        .clicked_editor_sprite = "bear",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    var template = history.current_state.editor.?.entity_types[0].template;
+    try testing.expectEqual(@as(usize, 1), template.layers.len);
+    try testing.expectEqualStrings("bear", template.layers[0].sprite);
+    try testing.expectEqual(@as(u32, 0), template.layers[0].color_index);
+
+    // Color swap: the whole layer value commits with the color swapped.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_entity_layer_color,
+        .clicked_editor_layer = 0,
+        .clicked_editor_color = 4,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    template = history.current_state.editor.?.entity_types[0].template;
+    try testing.expectEqual(@as(u32, 4), template.layers[0].color_index);
+
+    // Open in EDIT mode (layer 0) → re-pick another stem; the layer's
+    // color is KEPT (the weapon-retype semantics).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_entity_layer_picker,
+        .clicked_editor_layer = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(
+        ui.EditorPickerTarget{ .entity_layer = 0 },
+        history.session.ui_state.editor_picker.?,
+    );
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_entity_layer,
+        .clicked_editor_sprite = "wolf",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    template = history.current_state.editor.?.entity_types[0].template;
+    try testing.expectEqualStrings("wolf", template.layers[0].sprite);
+    try testing.expectEqual(@as(u32, 4), template.layers[0].color_index);
+
+    // Same-sprite re-pick closes without recording.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_entity_layer_picker,
+        .clicked_editor_layer = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    const events_before = history.event_history.items.len;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_entity_layer,
+        .clicked_editor_sprite = "wolf",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(events_before, history.event_history.items.len);
+
+    // Delete: the layer is removed, one undo restores it.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_entity_layer,
+        .clicked_editor_layer = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.entity_types[0].template.layers.len);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.entity_types[0].template.layers.len);
+}
+
+test "decoration layer picker: registry-authored color, custom dims check keeps the picker open on mismatch" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A 768x768 PNG (matching the base's dims) + a 256x256 one (mismatch).
+    const png_header = struct {
+        fn make(width: u32, height: u32) [24]u8 {
+            var bytes = [_]u8{
+                0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
+            } ++ [_]u8{0} ** 8 ++ [_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 };
+            std.mem.writeInt(u32, bytes[16..20], width, .big);
+            std.mem.writeInt(u32, bytes[20..24], height, .big);
+            return bytes;
+        }
+    }.make;
+    try harness.file_source.writeFile("missions/artists_den/banner.png", &png_header(768, 768));
+    try harness.file_source.writeFile("missions/artists_den/small.png", &png_header(256, 256));
+
+    // The base type is 768x768 (tree_1's real dims); the registry's
+    // tree_1 prefab carries a canopy layer (color 2) at the same dims.
+    const footprint = [_]types.Vector2{.{ .x = 1, .y = 2 }};
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "tree_1",
+        .sprite = "tree_1",
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 768, .y = 768 },
+    }};
+    const registry_layers = [_]types.DecorationLayer{.{
+        .sprite = "tree_1_canopy",
+        .color_index = 2,
+        .pixel_dims = .{ .x = 768, .y = 768 },
+    }};
+    const registry = [_]types.DecorationTypeDef{.{
+        .id = "tree_1",
+        .sprite = "tree_1",
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 768, .y = 768 },
+        .layers = &registry_layers,
+    }};
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .decoration_types = &decoration_types,
+        .active_tool = .{ .decoration_type = 0 },
+        .mission = .{ .path = "missions/artists_den" },
+    }));
+    history.session.editor_decoration_registry = &registry;
+    runToIdle(&history);
+
+    // ADD via an official stem that is a registry prefab's authored layer:
+    // the color adopts the authored value (2), dims match the base.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_decoration_layer_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(
+        ui.EditorPickerTarget{ .decoration_layer = null },
+        history.session.ui_state.editor_picker.?,
+    );
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_decoration_layer,
+        .clicked_editor_sprite = "tree_1_canopy",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    var definition = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqual(@as(usize, 1), definition.layers.len);
+    try testing.expectEqualStrings("tree_1_canopy", definition.layers[0].sprite);
+    try testing.expectEqual(@as(u32, 2), definition.layers[0].color_index);
+    try testing.expectEqual(types.Vector2{ .x = 768, .y = 768 }, definition.layers[0].pixel_dims);
+
+    // ADD via a custom stem with MATCHING dims: resolved from the PNG,
+    // color 0 (no registry match).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_decoration_layer_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_decoration_layer,
+        .clicked_editor_sprite = "custom/artists_den/banner",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    definition = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqual(@as(usize, 2), definition.layers.len);
+    try testing.expectEqualStrings("custom/artists_den/banner", definition.layers[1].sprite);
+    try testing.expectEqual(types.Vector2{ .x = 768, .y = 768 }, definition.layers[1].pixel_dims);
+
+    // A custom stem with MISMATCHED dims: the picker STAYS OPEN and
+    // nothing records (the load-time layer invariant).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_decoration_layer_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    const events_before = history.event_history.items.len;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_decoration_layer,
+        .clicked_editor_sprite = "custom/artists_den/small",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.session.ui_state.editor_picker != null);
+    try testing.expectEqual(events_before, history.event_history.items.len);
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.decoration_types[0].layers.len);
+
+    // EDIT re-pick keeps the layer's color; the color swatch commits the
+    // whole layer; delete compacts.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .close_editor_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_decoration_layer_picker,
+        .clicked_editor_layer = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_decoration_layer,
+        .clicked_editor_sprite = "tree_1",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    definition = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqualStrings("tree_1", definition.layers[0].sprite);
+    try testing.expectEqual(@as(u32, 2), definition.layers[0].color_index);
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_decoration_layer_color,
+        .clicked_editor_layer = 0,
+        .clicked_editor_color = 5,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_decoration_layer,
+        .clicked_editor_layer = 1,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    definition = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqual(@as(usize, 1), definition.layers.len);
+    try testing.expectEqual(@as(u32, 5), definition.layers[0].color_index);
 }

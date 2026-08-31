@@ -1781,16 +1781,36 @@ pub fn handleAnytimeInput(
                 };
                 history.session.ui_state.editor_picker_sprite_tab = .mission_local;
             },
+            // A Layers-section sprite button (add + per-layer re-pick): the
+            // same open path — the mission rescan, the Mission-tab reset —
+            // with the picker kind fixed by the button's content and the
+            // layer index riding the payload (null = add mode).
+            .open_editor_entity_layer_picker => {
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                rescanEditorMissionSprites(history, editor.*);
+                history.session.ui_state.editor_picker = .{
+                    .entity_layer = anytime.clicked_editor_layer,
+                };
+                history.session.ui_state.editor_picker_sprite_tab = .mission_local;
+            },
+            .open_editor_decoration_layer_picker => {
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                rescanEditorMissionSprites(history, editor.*);
+                history.session.ui_state.editor_picker = .{
+                    .decoration_layer = anytime.clicked_editor_layer,
+                };
+                history.session.ui_state.editor_picker_sprite_tab = .mission_local;
+            },
             // A sprite picker cell: set the edited type's base sprite (the
             // stem rode in `anytime.clicked_editor_sprite`) and close the
             // picker. Same-value picks close without recording.
             .select_editor_entity_sprite => {
                 // Gate: only a pick while the ENTITY sprite picker is open
-                // (crafted clicks with no picker — or the decoration
-                // picker — are a no-op, the skill arm's posture).
+                // (crafted clicks with no picker — or another picker kind —
+                // are a no-op, the skill arm's posture).
                 switch (history.session.ui_state.editor_picker orelse return) {
                     .entity_sprite => {},
-                    .utility_skill_slot, .decoration_sprite => return,
+                    .utility_skill_slot, .decoration_sprite, .entity_layer, .decoration_layer => return,
                 }
                 const sprite = anytime.clicked_editor_sprite orelse return;
                 history.session.ui_state.editor_picker = null;
@@ -1823,11 +1843,11 @@ pub fn handleAnytimeInput(
             // (it re-adopts the authored color).
             .select_editor_decoration_sprite => {
                 // Gate: only a pick while the DECORATION picker is open
-                // (crafted clicks with no picker — or the entity picker —
+                // (crafted clicks with no picker — or another picker kind —
                 // are a no-op, the skill arm's posture).
                 switch (history.session.ui_state.editor_picker orelse return) {
                     .decoration_sprite => {},
-                    .entity_sprite, .utility_skill_slot => return,
+                    .entity_sprite, .utility_skill_slot, .entity_layer, .decoration_layer => return,
                 }
                 const sprite = anytime.clicked_editor_sprite orelse return;
                 history.session.ui_state.editor_picker = null;
@@ -1918,6 +1938,123 @@ pub fn handleAnytimeInput(
                     .layers = layers_value,
                 } });
             },
+            // An ENTITY layer picker cell: add a new layer (add mode) or
+            // re-pick the edited layer's sprite (edit mode — the layer's
+            // color is kept, the weapon-retype semantics). A new layer
+            // starts at color 0 (no authored source for entity layers).
+            // Same-layer picks close without recording. Entities share the
+            // fixed 512×640 frame — no dims to check.
+            .select_editor_entity_layer => {
+                // Gate: only a pick while the ENTITY LAYER picker is open.
+                const layer_index = switch (history.session.ui_state.editor_picker orelse return) {
+                    .entity_layer => |index| index,
+                    else => return,
+                };
+                const sprite = anytime.clicked_editor_sprite orelse return;
+                history.session.ui_state.editor_picker = null;
+                if (history.current_state.editor == null) return;
+                const editor: *types.Editor = &history.current_state.editor.?;
+                const target = editorEntityEditTarget(editor.*) orelse return;
+                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                const arena = history.current_arena.allocator();
+                const sprite_value = arena.dupe(u8, sprite) catch
+                    @panic("failed to allocate layer sprite commit value");
+                if (layer_index) |index| {
+                    if (index >= template.layers.len) return;
+                    const current_layer = template.layers[index];
+                    if (std.mem.eql(u8, current_layer.sprite, sprite)) return;
+                    pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_layer = .{
+                        .target = target,
+                        .layer_index = index,
+                        .layer = .{ .sprite = sprite_value, .color_index = current_layer.color_index },
+                    } });
+                } else {
+                    pushPlayerActionAndDrain(history, .{ .player_add_editor_entity_layer = .{
+                        .target = target,
+                        .layer = .{ .sprite = sprite_value, .color_index = 0 },
+                    } });
+                }
+            },
+            // A DECORATION layer picker cell — the entity arm's shape plus
+            // the dims invariant: the layer's pixel dims must equal the
+            // base type's (the level parser panics otherwise). A custom
+            // stem's dims come from its PNG; an official stem's from the
+            // comptime metadata table. A MISMATCH (or a vanished/corrupt
+            // file) keeps the picker OPEN and records nothing — the pick
+            // visibly didn't take (the official tab already filters to
+            // matching dims, so this only guards mission-local picks).
+            // A new layer's color adopts a registry prefab's authored
+            // layer color when the stem is one (tree_1's canopy is 2),
+            // else 0; a re-pick keeps the layer's color.
+            .select_editor_decoration_layer => {
+                // Gate: only a pick while the DECORATION LAYER picker is
+                // open.
+                const layer_index = switch (history.session.ui_state.editor_picker orelse return) {
+                    .decoration_layer => |index| index,
+                    else => return,
+                };
+                const sprite = anytime.clicked_editor_sprite orelse return;
+                if (history.current_state.editor == null) return;
+                const editor: *types.Editor = &history.current_state.editor.?;
+                const type_id = switch (ui.editorInspectorTarget(editor.*)) {
+                    .decoration_type => |resolved_type_id| resolved_type_id,
+                    .entity_type, .player => return,
+                };
+                const current_definition = editor.decoration_types[type_id];
+                const arena = history.current_arena.allocator();
+
+                // Resolve the picked sprite's dims.
+                const pixel_dims = blk: {
+                    if (std.mem.startsWith(u8, sprite, "custom/")) {
+                        const slash = std.mem.lastIndexOfScalar(u8, sprite, '/') orelse return;
+                        break :blk loaders.resolveMissionSpriteDimensions(
+                            history.file_source,
+                            editor.mission.path,
+                            sprite[slash + 1 ..],
+                            arena,
+                        ) orelse return;
+                    }
+                    break :blk loaders.resolveShippedDecorationSpriteDimensions(sprite, arena) orelse return;
+                };
+                if (pixel_dims.x != current_definition.pixel_dims.x or
+                    pixel_dims.y != current_definition.pixel_dims.y) return;
+
+                history.session.ui_state.editor_picker = null;
+                const color_index: u32 = if (layer_index) |index| blk: {
+                    if (index >= current_definition.layers.len) return;
+                    break :blk current_definition.layers[index].color_index;
+                } else blk: {
+                    // A registry prefab's authored layer color, if the stem
+                    // is one; else 0.
+                    for (history.session.editor_decoration_registry) |definition| {
+                        for (definition.layers) |layer| {
+                            if (std.mem.eql(u8, layer.sprite, sprite)) break :blk layer.color_index;
+                        }
+                    }
+                    break :blk 0;
+                };
+                const sprite_value = arena.dupe(u8, sprite) catch
+                    @panic("failed to allocate layer sprite commit value");
+                const new_layer: types.DecorationLayer = .{
+                    .sprite = sprite_value,
+                    .color_index = color_index,
+                    .pixel_dims = pixel_dims,
+                };
+                if (layer_index) |index| {
+                    const current_layer = current_definition.layers[index];
+                    if (std.mem.eql(u8, current_layer.sprite, sprite)) return;
+                    pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_layer = .{
+                        .type_id = type_id,
+                        .layer_index = index,
+                        .layer = new_layer,
+                    } });
+                } else {
+                    pushPlayerActionAndDrain(history, .{ .player_add_editor_decoration_layer = .{
+                        .type_id = type_id,
+                        .layer = new_layer,
+                    } });
+                }
+            },
             // A sprite picker tab button (Mission / Official): switch tabs —
             // a direct UiState write (view affordance).
             .select_editor_sprite_tab => {
@@ -1991,6 +2128,74 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_color_index = .{
                     .type_id = type_id,
                     .value = color_index,
+                } });
+            },
+            // A layer's Delete button (enemy + decoration): remove the
+            // layer. The index rode in `anytime.clicked_editor_layer`.
+            .delete_editor_entity_layer => {
+                const layer_index = anytime.clicked_editor_layer orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const target = editorEntityEditTarget(editor.*) orelse return;
+                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                if (layer_index >= template.layers.len) return;
+                pushPlayerActionAndDrain(history, .{ .player_remove_editor_entity_layer = .{
+                    .target = target,
+                    .layer_index = layer_index,
+                } });
+            },
+            .delete_editor_decoration_layer => {
+                const layer_index = anytime.clicked_editor_layer orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_id = switch (ui.editorInspectorTarget(editor.*)) {
+                    .decoration_type => |resolved_type_id| resolved_type_id,
+                    .entity_type, .player => return,
+                };
+                if (layer_index >= editor.decoration_types[type_id].layers.len) return;
+                pushPlayerActionAndDrain(history, .{ .player_remove_editor_decoration_layer = .{
+                    .type_id = type_id,
+                    .layer_index = layer_index,
+                } });
+            },
+            // A layer's color swatch (enemy + decoration): swap the layer's
+            // color_index, committing the WHOLE layer value through the set
+            // event (sprite + dims kept). Same-color picks never fire.
+            .select_editor_entity_layer_color => {
+                const layer_index = anytime.clicked_editor_layer orelse return;
+                const color_index = anytime.clicked_editor_color orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const target = editorEntityEditTarget(editor.*) orelse return;
+                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                if (layer_index >= template.layers.len) return;
+                const current_layer = template.layers[layer_index];
+                if (current_layer.color_index == color_index) return;
+                const sprite_value = history.current_arena.allocator().dupe(u8, current_layer.sprite) catch
+                    @panic("failed to allocate layer sprite commit value");
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_layer = .{
+                    .target = target,
+                    .layer_index = layer_index,
+                    .layer = .{ .sprite = sprite_value, .color_index = color_index },
+                } });
+            },
+            .select_editor_decoration_layer_color => {
+                const layer_index = anytime.clicked_editor_layer orelse return;
+                const color_index = anytime.clicked_editor_color orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_id = switch (ui.editorInspectorTarget(editor.*)) {
+                    .decoration_type => |resolved_type_id| resolved_type_id,
+                    .entity_type, .player => return,
+                };
+                const definition = editor.decoration_types[type_id];
+                if (layer_index >= definition.layers.len) return;
+                const current_layer = definition.layers[layer_index];
+                if (current_layer.color_index == color_index) return;
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_layer = .{
+                    .type_id = type_id,
+                    .layer_index = layer_index,
+                    .layer = .{
+                        .sprite = current_layer.sprite,
+                        .color_index = color_index,
+                        .pixel_dims = current_layer.pixel_dims,
+                    },
                 } });
             },
             // Inspector displays-weapons toggle: flip the edited type's flag.
@@ -2076,7 +2281,7 @@ pub fn handleAnytimeInput(
                     .utility_skill_slot => |index| index,
                     // The sprite pickers' picks route through their own
                     // arms — not a skill-slot assignment.
-                    .entity_sprite, .decoration_sprite => return,
+                    .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer => return,
                 };
                 history.session.ui_state.editor_picker = null;
                 if (history.current_state.editor == null) return;

@@ -258,6 +258,12 @@ fn update(
                         if (button.editor_utility_slot) |utility_slot| {
                             player_input.anytime.clicked_editor_utility_slot = utility_slot;
                         }
+                        // Layers-section controls: the layer index rides
+                        // alongside the action (null on the add-layer
+                        // button = the picker's add mode).
+                        if (button.editor_layer) |layer_index| {
+                            player_input.anytime.clicked_editor_layer = layer_index;
+                        }
                         if (button.editor_skill) |skill_id| {
                             player_input.anytime.clicked_editor_skill = skill_id;
                         }

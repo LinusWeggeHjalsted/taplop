@@ -356,11 +356,11 @@ pub fn view(
                         picker_target,
                         active_theme,
                     ) catch @panic("failed to build editor skill picker"),
-                    // The entity + decoration sprite pickers: the SAME
-                    // panel — the builder resolves the inspector target
-                    // (official-tab list, tinting, pick action) from the
-                    // editor state.
-                    .entity_sprite, .decoration_sprite => ui.buildEditorSpritePicker(
+                    // The entity + decoration sprite pickers (base +
+                    // layer modes): the SAME panel — the builder resolves
+                    // the picker kind from the target + the inspector
+                    // target from the editor state.
+                    .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer => ui.buildEditorSpritePicker(
                         &ui_elements,
                         frame_allocator,
                         font_metrics,
@@ -368,6 +368,7 @@ pub fn view(
                         active_theme,
                         session.editor_mission_sprites,
                         session.editor_decoration_registry,
+                        picker_target,
                         session.ui_state.editor_picker_sprite_tab,
                     ) catch @panic("failed to build editor sprite picker"),
                 }

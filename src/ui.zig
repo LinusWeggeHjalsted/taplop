@@ -59,6 +59,13 @@ pub const EditorPickerTarget = union(enum) {
     /// inspector's Sprite row — official tab adopts a registry prefab,
     /// mission tab picks a custom stem).
     decoration_sprite: void,
+    /// An ENTITY layer sprite (the enemy content's Layers section): the
+    /// layer index being edited, null = add-new (the skill picker's slot
+    /// pattern).
+    entity_layer: ?u32,
+    /// A DECORATION layer sprite — same shape; the official tab filters
+    /// to the base type's dims (the load-time layer invariant).
+    decoration_layer: ?u32,
 };
 
 /// The OFFICIAL enemy sprites (shipped `assets/entities/*.png`) as bare
@@ -78,6 +85,39 @@ const official_entity_sprite_stems: []const []const u8 = build: {
         stems = stems[0..insert_index] ++ [_][]const u8{stem} ++ stems[insert_index..];
     }
     break :build stems;
+};
+
+/// One shipped decoration sprite (stem + pixel dims) for the picker's
+/// layer-mode Official tab.
+const OfficialDecorationSprite = struct {
+    stem: []const u8,
+    width: i32,
+    height: i32,
+};
+
+/// The OFFICIAL decoration sprites (shipped `assets/decorations/*.png`) as
+/// stems + pixel dims — the sprite picker's LAYER-mode Official tab (the
+/// base-sprite mode lists the registry prefabs instead). Comptime from
+/// the sprite-metadata table; a malformed dims string is a build bug.
+const official_decoration_sprites: []const OfficialDecorationSprite = build: {
+    @setEvalBranchQuota(20000);
+    var list: []const OfficialDecorationSprite = &.{};
+    for (sprite_metadata.map.kvs.keys[0..sprite_metadata.map.kvs.len]) |key| {
+        if (!std.mem.startsWith(u8, key, "decorations/")) continue;
+        const stem = key["decorations/".len..];
+        const dims = sprite_metadata.map.get(key).?;
+        const space = std.mem.indexOfScalar(u8, dims, ' ').?;
+        const width = std.fmt.parseInt(i32, dims[0..space], 10) catch
+            @compileError("malformed sprite dims string");
+        const height = std.fmt.parseInt(i32, dims[space + 1 ..], 10) catch
+            @compileError("malformed sprite dims string");
+        var insert_index: usize = 0;
+        while (insert_index < list.len and std.mem.lessThan(u8, list[insert_index].stem, stem)) : (insert_index += 1) {}
+        list = list[0..insert_index] ++
+            [_]OfficialDecorationSprite{.{ .stem = stem, .width = width, .height = height }} ++
+            list[insert_index..];
+    }
+    break :build list;
 };
 
 const editor_inspector_section_count: usize =
@@ -2268,6 +2308,11 @@ pub const Button = struct {
     /// utility-slot button (opens the skill picker). Rides in
     /// `AnytimeInput.clicked_editor_utility_slot`.
     editor_utility_slot: ?u32 = null,
+    /// Editor LAYER index, if this button is a Layers-section control (a
+    /// layer's sprite button, its color swatches, its Delete, or the
+    /// add-layer button — null there = the picker's add mode). Rides in
+    /// `AnytimeInput.clicked_editor_layer` alongside its action.
+    editor_layer: ?u32 = null,
     /// Editor skill pick, if this button is a skill-picker cell. Rides in
     /// `AnytimeInput.clicked_editor_skill`; null on the None cell (clears).
     editor_skill: ?types.SkillId = null,
@@ -4805,6 +4850,21 @@ const EditorInspectorEntry = union(enum) {
     /// The player loadout's inventory — a read-only item count (the
     /// editable inventory UI is its own slice).
     inventory_summary: void,
+    /// One ENEMY layer's slot row (label "Layer N"): the sprite-stem
+    /// button (re-pick via the layer picker) + Delete. The Layers section
+    /// is enemy content only — the player loadout has no layers.
+    entity_layer: u32,
+    /// One enemy layer's color swatch row (the enemy gradient).
+    entity_layer_color: u32,
+    /// The enemy content's add-layer row (opens the picker in add mode).
+    add_entity_layer: void,
+    /// One DECORATION layer's slot row — the entity_layer shape over the
+    /// decoration context.
+    decoration_layer: u32,
+    /// One decoration layer's color swatch row (the world gradient).
+    decoration_layer_color: u32,
+    /// The decoration content's add-layer row.
+    add_decoration_layer: void,
 };
 
 /// A section's display label.
@@ -4818,6 +4878,7 @@ fn editorInspectorSectionLabel(section: types.EditorInspectorSectionId) []const 
         .inventory => "Inventory",
         .player => "Player",
         .footprint => "Footprint",
+        .layers => "Layers",
     };
 }
 
@@ -4826,7 +4887,20 @@ fn editorInspectorSectionLabel(section: types.EditorInspectorSectionId) []const 
 fn editorInspectorEntryUnits(entry: EditorInspectorEntry) i32 {
     return switch (entry) {
         .section, .spacer => 1,
-        .field, .weapon_slot, .gear_slot, .utility_skill_row, .player_name_line, .import_player, .inventory_summary => 2,
+        .field,
+        .weapon_slot,
+        .gear_slot,
+        .utility_skill_row,
+        .player_name_line,
+        .import_player,
+        .inventory_summary,
+        .entity_layer,
+        .entity_layer_color,
+        .add_entity_layer,
+        .decoration_layer,
+        .decoration_layer_color,
+        .add_decoration_layer,
+        => 2,
     };
 }
 
@@ -4962,6 +5036,23 @@ fn editorInspectorEntityEntries(
         try entries.append(allocator, .{ .utility_skill_row = {} });
     }
 
+    // Layers: per layer a slot row (sprite re-pick + delete) + a color
+    // row, then the add button. The LAST section — the spacer above it
+    // belongs to utility_skills.
+    if (expanded[@intFromEnum(types.EditorInspectorSectionId.utility_skills)]) {
+        try entries.append(allocator, .spacer);
+    }
+    try entries.append(allocator, .{ .section = .layers });
+    if (expanded[@intFromEnum(types.EditorInspectorSectionId.layers)]) {
+        for (0..template.layers.len) |layer_index| {
+            try entries.appendSlice(allocator, &.{
+                .{ .entity_layer = @intCast(layer_index) },
+                .{ .entity_layer_color = @intCast(layer_index) },
+            });
+        }
+        try entries.append(allocator, .{ .add_entity_layer = {} });
+    }
+
     return entries.items;
 }
 
@@ -5039,6 +5130,20 @@ fn editorInspectorDecorationEntries(
             .{ .field = .{ .label = "Footprint", .control = .{ .static_text = tile_count } } },
         });
         try entries.append(allocator, .spacer);
+    }
+
+    // Layers: per layer a slot row (sprite re-pick + delete) + a color
+    // row, then the add button. The LAST section — the spacer above it
+    // belongs to footprint.
+    try entries.append(allocator, .{ .section = .layers });
+    if (expanded[@intFromEnum(types.EditorInspectorSectionId.layers)]) {
+        for (0..definition.layers.len) |layer_index| {
+            try entries.appendSlice(allocator, &.{
+                .{ .decoration_layer = @intCast(layer_index) },
+                .{ .decoration_layer_color = @intCast(layer_index) },
+            });
+        }
+        try entries.append(allocator, .{ .add_decoration_layer = {} });
     }
 
     return entries.items;
@@ -5285,6 +5390,7 @@ fn buildEditorInspectorContent(
                         entity_context.?.gradient_colors,
                         entity_context.?.template.color_index,
                         .select_editor_entity_color,
+                        null,
                         control_rect,
                     ),
                     // The decoration content's swatch row — the WORLD
@@ -5295,6 +5401,7 @@ fn buildEditorInspectorContent(
                         active_theme.world_gradient.colors,
                         decoration_context.?.type_definition.color_index,
                         .select_editor_decoration_color,
+                        null,
                         control_rect,
                     ),
                     // A read-only value line (the footprint placeholder).
@@ -5443,6 +5550,137 @@ fn buildEditorInspectorContent(
                     .blocks_input = false,
                 } });
             },
+            // One ENEMY layer: the slot row — the sprite-stem button (a
+            // re-pick opens the layer picker for this index) + Delete.
+            .entity_layer => |layer_index| {
+                try emitInspectorSlotLabel(
+                    elements,
+                    allocator,
+                    cell,
+                    try inspectorLayerLabel(allocator, layer_index, false),
+                    active_theme,
+                );
+                const control_rect = inspectorControlRect(cell);
+                try emitInspectorLayerRow(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    entity_context.?.template.layers[layer_index].sprite,
+                    layer_index,
+                    .open_editor_entity_layer_picker,
+                    .delete_editor_entity_layer,
+                    button_color,
+                    control_rect,
+                    active_theme,
+                );
+            },
+            // One enemy layer's color swatch row (the enemy gradient).
+            .entity_layer_color => |layer_index| {
+                try emitInspectorSlotLabel(
+                    elements,
+                    allocator,
+                    cell,
+                    try inspectorLayerLabel(allocator, layer_index, true),
+                    active_theme,
+                );
+                const control_rect = inspectorControlRect(cell);
+                try emitInspectorColorSwatches(
+                    elements,
+                    allocator,
+                    entity_context.?.gradient_colors,
+                    entity_context.?.template.layers[layer_index].color_index,
+                    .select_editor_entity_layer_color,
+                    layer_index,
+                    control_rect,
+                );
+            },
+            // The enemy content's add-layer row: a Pick-sprite button that
+            // opens the layer picker in ADD mode (no layer payload).
+            .add_entity_layer => {
+                try emitInspectorSlotLabel(elements, allocator, cell, "Add layer", active_theme);
+                const control_rect = inspectorControlRect(cell);
+                const rect: Rectangle = .{
+                    .x = control_rect.x,
+                    .y = control_rect.y,
+                    .width = @divFloor(control_rect.width, 2),
+                    .height = control_rect.height,
+                };
+                try emitInspectorLayerButton(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    rect,
+                    "Pick sprite",
+                    .open_editor_entity_layer_picker,
+                    null,
+                    button_color,
+                    active_theme.lightest,
+                );
+            },
+            // One DECORATION layer — the entity arms' shape over the
+            // decoration context (world gradient, decoration actions).
+            .decoration_layer => |layer_index| {
+                try emitInspectorSlotLabel(
+                    elements,
+                    allocator,
+                    cell,
+                    try inspectorLayerLabel(allocator, layer_index, false),
+                    active_theme,
+                );
+                const control_rect = inspectorControlRect(cell);
+                try emitInspectorLayerRow(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    decoration_context.?.type_definition.layers[layer_index].sprite,
+                    layer_index,
+                    .open_editor_decoration_layer_picker,
+                    .delete_editor_decoration_layer,
+                    button_color,
+                    control_rect,
+                    active_theme,
+                );
+            },
+            .decoration_layer_color => |layer_index| {
+                try emitInspectorSlotLabel(
+                    elements,
+                    allocator,
+                    cell,
+                    try inspectorLayerLabel(allocator, layer_index, true),
+                    active_theme,
+                );
+                const control_rect = inspectorControlRect(cell);
+                try emitInspectorColorSwatches(
+                    elements,
+                    allocator,
+                    active_theme.world_gradient.colors,
+                    decoration_context.?.type_definition.layers[layer_index].color_index,
+                    .select_editor_decoration_layer_color,
+                    layer_index,
+                    control_rect,
+                );
+            },
+            .add_decoration_layer => {
+                try emitInspectorSlotLabel(elements, allocator, cell, "Add layer", active_theme);
+                const control_rect = inspectorControlRect(cell);
+                const rect: Rectangle = .{
+                    .x = control_rect.x,
+                    .y = control_rect.y,
+                    .width = @divFloor(control_rect.width, 2),
+                    .height = control_rect.height,
+                };
+                try emitInspectorLayerButton(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    rect,
+                    "Pick sprite",
+                    .open_editor_decoration_layer_picker,
+                    null,
+                    button_color,
+                    active_theme.lightest,
+                );
+            },
         }
     }
 
@@ -5583,19 +5821,22 @@ fn emitInspectorTextField(
     try elements.append(allocator, .{ .text_field = field });
 }
 
-/// The color_index control (entity + decoration content): one swatch per
-/// gradient index (the settings screen's player-color row is the precedent
-/// — colored fill + invisible payload button + highlighted selection).
-/// The gradient source + commit action differ per content kind (enemy /
-/// player team gradient via `.select_editor_entity_color`, world gradient
-/// via `.select_editor_decoration_color`). A swatch click commits the
-/// index (same-value picks never fire).
+/// The color_index control (base + layer rows, entity + decoration
+/// content): one swatch per gradient index (the settings screen's
+/// player-color row is the precedent — colored fill + invisible payload
+/// button + highlighted selection). The gradient source + commit action
+/// differ per content kind (enemy / player team gradient via
+/// `.select_editor_entity_color`, world gradient via
+/// `.select_editor_decoration_color`; the `_layer_color` actions for layer
+/// rows, with `layer_index` riding the payload). A swatch click commits
+/// the index (same-value picks never fire).
 fn emitInspectorColorSwatches(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     gradient: [types.gradient_color_count]types.Color,
     current_index: u32,
     action: types.Action,
+    layer_index: ?u32,
     control_rect: Rectangle,
 ) !void {
     for (0..types.gradient_color_count) |index| {
@@ -5612,13 +5853,15 @@ fn emitInspectorColorSwatches(
             .height = swatch_rect.height,
             .color = gradient[@min(@as(u32, @intCast(index)), types.gradient_color_count - 1)],
         } });
-        // Invisible hit-test button over it, carrying the index.
+        // Invisible hit-test button over it, carrying the index (+ the
+        // layer index on a layer row).
         try elements.append(allocator, .{ .button = .{
             .screen_position = swatch_rect.position(),
             .width = swatch_rect.width,
             .height = swatch_rect.height,
             .action = action,
             .editor_color = @intCast(index),
+            .editor_layer = layer_index,
             .highlighted = current_index == index,
         } });
     }
@@ -5852,6 +6095,129 @@ fn emitInspectorSlotButton(
         .blocks_input = false,
     } });
 }
+
+/// A layer row's label (1-based for display): "Layer N" / "Layer N color".
+fn inspectorLayerLabel(
+    allocator: std.mem.Allocator,
+    layer_index: u32,
+    with_color_suffix: bool,
+) ![]const u8 {
+    const number = layer_index + 1;
+    return if (with_color_suffix)
+        std.fmt.allocPrint(allocator, "Layer {d} color", .{number})
+    else
+        std.fmt.allocPrint(allocator, "Layer {d}", .{number});
+}
+
+/// One layer's slot row (the Layers section): the control line holds the
+/// sprite-stem button (a re-pick opens the layer picker for this index) +
+/// a Delete button — the weapon-slot row's layout, entity + decoration
+/// content alike (the actions + button color differ per kind).
+fn emitInspectorLayerRow(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    sprite: []const u8,
+    layer_index: u32,
+    open_action: types.Action,
+    delete_action: types.Action,
+    button_color: Color,
+    control_rect: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    // The sprite-stem button (half width, the base sprite button's look).
+    const sprite_rect: Rectangle = .{
+        .x = control_rect.x,
+        .y = control_rect.y,
+        .width = @divFloor(control_rect.width, 2),
+        .height = control_rect.height,
+    };
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = sprite_rect.position(),
+        .width = sprite_rect.width,
+        .height = sprite_rect.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = sprite_rect.position(),
+        .width = sprite_rect.width,
+        .height = sprite_rect.height,
+        .action = open_action,
+        .editor_layer = layer_index,
+        .tooltip = .{ .header = try spanRow(allocator, text("Pick sprite")) },
+    } });
+    const label = if (sprite.len > 0) sprite else "(none)";
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = sprite_rect
+            .placeCenter(label_width, editor_group_header_font_size)
+            .position(),
+        .font_size = editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+
+    // The Delete button (quarter width, flush right of the stem button).
+    const delete_rect: Rectangle = .{
+        .x = sprite_rect.x + sprite_rect.width + ui_gap,
+        .y = control_rect.y,
+        .width = @divFloor(control_rect.width, 4),
+        .height = control_rect.height,
+    };
+    try emitInspectorLayerButton(
+        elements,
+        allocator,
+        font_metrics,
+        delete_rect,
+        "Delete",
+        delete_action,
+        layer_index,
+        button_color,
+        active_theme.lightest,
+    );
+}
+
+/// A panel-backed layer button with a centered label (Delete / Pick
+/// sprite) carrying the layer-index payload — `emitInspectorSlotButton`'s
+/// visual class (null layer index = the add-layer button).
+fn emitInspectorLayerButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    rect: Rectangle,
+    label: []const u8,
+    action: types.Action,
+    layer_index: ?u32,
+    button_color: Color,
+    label_color: Color,
+) !void {
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .action = action,
+        .editor_layer = layer_index,
+    } });
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = rect
+            .placeCenter(label_width, editor_group_header_font_size)
+            .position(),
+        .font_size = editor_group_header_font_size,
+        .color = label_color,
+        .blocks_input = false,
+    } });
+}
 /// A utility-skill slot's control line: a half-width button showing the
 /// slot's current skill (or "None") — clicking opens the centered skill
 /// picker for that slot.
@@ -5940,7 +6306,7 @@ pub fn buildEditorSkillPicker(
         .utility_skill_slot => |index| index,
         // The sprite targets aren't this picker's (the view dispatches on
         // the target); defensive for crafted calls.
-        .entity_sprite, .decoration_sprite => return,
+        .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer => return,
     };
     var current: ?types.SkillId = null;
     if (slot_index < types.utility_skill_count) {
@@ -6046,14 +6412,35 @@ pub fn buildEditorSpritePicker(
     active_theme: types.ActiveColorTheme,
     mission_sprites: []const []const u8,
     decoration_registry: []const types.DecorationTypeDef,
+    picker_target: EditorPickerTarget,
     tab: types.EditorSpritePickerTab,
 ) !void {
+    // What the picker is picking: a BASE sprite (entity / decoration) or
+    // a LAYER sprite (entity / decoration — the layer index rides the
+    // picker target, null = add-new; the skill picker's slot pattern).
+    // The base modes resolve through the inspector target; a skill-slot
+    // target is the skill picker's own builder (the view dispatches).
+    const PickerKind = enum { entity_base, decoration_base, entity_layer, decoration_layer };
+    const picker_kind: PickerKind = switch (picker_target) {
+        .utility_skill_slot => return,
+        .entity_sprite => .entity_base,
+        .decoration_sprite => .decoration_base,
+        .entity_layer => .entity_layer,
+        .decoration_layer => .decoration_layer,
+    };
+    const layer_mode = picker_kind == .entity_layer or picker_kind == .decoration_layer;
+    const layer_index: ?u32 = switch (picker_target) {
+        .entity_layer => |index| index,
+        .decoration_layer => |index| index,
+        else => null,
+    };
+
     // The edited definition (highlight target + tint source) — the target
     // resolution's single seam, same as the skill picker. Entity content
     // tints with the enemy gradient; decoration content with the WORLD
     // gradient (the in-game decoration tinting). The player target keeps
-    // the entity shape (the player has no sprite row, so the picker only
-    // opens on it via a stale open — picks commit nothing).
+    // the entity shape (the player has no sprite/layer rows, so the
+    // picker only opens on it via a stale open — picks commit nothing).
     const target = editorInspectorTarget(editor);
     const entity_context: ?InspectorEntityContext = switch (target) {
         .entity_type => |index| .{
@@ -6074,43 +6461,147 @@ pub fn buildEditorSpritePicker(
         },
         .entity_type, .player => null,
     };
-    // The Official tab's list: the registry prefabs for a decoration
-    // target (each pick adopts the whole prefab — footprint, color,
-    // layers), the shipped entity sprites otherwise. Mission-local art is
-    // the same list for both (the mission directory's PNGs).
-    var registry_stems: std.ArrayList([]const u8) = .empty;
-    if (decoration_context != null and tab == .official) {
-        for (decoration_registry) |definition| {
-            try registry_stems.append(allocator, definition.sprite);
-        }
-    }
-    const stems: []const []const u8 = switch (tab) {
-        .mission_local => mission_sprites,
-        .official => if (decoration_context != null)
-            registry_stems.items
-        else
-            official_entity_sprite_stems,
-    };
-    const gradient = if (decoration_context != null)
-        active_theme.world_gradient.colors
-    else
-        active_theme.enemy_gradient.colors;
-    const current_sprite = if (decoration_context) |context|
+    const base_sprite: []const u8 = if (decoration_context) |context|
         context.type_definition.sprite
     else
         entity_context.?.template.sprite;
-    const current_color_index = if (decoration_context) |context|
+    const base_color_index: u32 = if (decoration_context) |context|
         context.type_definition.color_index
     else
         entity_context.?.template.color_index;
+    // In layer-EDIT mode the edited layer is the highlight target + tint
+    // source; ADD mode highlights nothing and tints with the base. A
+    // stale state — the layer index out of range, or the picker kind
+    // mismatched with the target (the tool switched mid-open; the
+    // dropdown stays open by design) — also falls back to the base
+    // values, and every pick no-ops at the commit gate.
+    const edited_layer_sprite: ?[]const u8 = blk: {
+        const index = layer_index orelse break :blk null;
+        if (picker_kind == .entity_layer) {
+            const context = entity_context orelse break :blk null;
+            if (index >= context.template.layers.len) break :blk null;
+            break :blk context.template.layers[index].sprite;
+        }
+        const context = decoration_context orelse break :blk null;
+        if (index >= context.type_definition.layers.len) break :blk null;
+        break :blk context.type_definition.layers[index].sprite;
+    };
+    const edited_layer_color_index: ?u32 = blk: {
+        const index = layer_index orelse break :blk null;
+        if (picker_kind == .entity_layer) {
+            const context = entity_context orelse break :blk null;
+            if (index >= context.template.layers.len) break :blk null;
+            break :blk context.template.layers[index].color_index;
+        }
+        const context = decoration_context orelse break :blk null;
+        if (index >= context.type_definition.layers.len) break :blk null;
+        break :blk context.type_definition.layers[index].color_index;
+    };
+    const gradient = if (picker_kind == .decoration_base or picker_kind == .decoration_layer)
+        active_theme.world_gradient.colors
+    else
+        active_theme.enemy_gradient.colors;
+    const current_sprite: ?[]const u8 = if (layer_mode) edited_layer_sprite else base_sprite;
+    const current_color_index: u32 = edited_layer_color_index orelse base_color_index;
     const graphic_color = gradient[@min(current_color_index, types.gradient_color_count - 1)];
     const button_color = gradient[@min(@as(u32, 5), types.gradient_color_count - 1)];
-    const pick_action: types.Action = if (decoration_context != null)
-        .select_editor_decoration_sprite
-    else
-        .select_editor_entity_sprite;
+    const pick_action: types.Action = switch (picker_kind) {
+        .entity_base => .select_editor_entity_sprite,
+        .decoration_base => .select_editor_decoration_sprite,
+        .entity_layer => .select_editor_entity_layer,
+        .decoration_layer => .select_editor_decoration_layer,
+    };
+
+    // One cell per offered sprite, built per frame into the frame arena:
+    // the stored id (a bare stem or a namespaced `custom/<mission>/<stem>`),
+    // the cell label, the renderable graphic (null = a text-only cell —
+    // custom art isn't renderable yet), and the graphic's aspect-fit
+    // frame. The Official tab's list differs per kind: the shipped entity
+    // sprites (base + layer — a layer may be any entity art, the fixed
+    // 512×640 frame), the registry prefabs (decoration base — each pick
+    // adopts the whole prefab), or the shipped decoration sprites
+    // FILTERED to the base type's dims (decoration layers must match
+    // their base — the load-time invariant; mismatched art is never
+    // offered). Mission-local art is the same list for every kind (dims
+    // are checked at the pick commit).
+    const PickerCell = struct {
+        stored_id: []const u8,
+        label: []const u8,
+        graphic_id: ?[]const u8,
+        frame_width: i32,
+        frame_height: i32,
+    };
+    var cells: std.ArrayList(PickerCell) = .empty;
+    const mission_directory = missionDirectoryName(editor.mission.path);
+    switch (tab) {
+        .mission_local => {
+            for (mission_sprites) |file_name| {
+                const stem = file_name[0 .. std.mem.lastIndexOfScalar(u8, file_name, '.') orelse file_name.len];
+                try cells.append(allocator, .{
+                    .stored_id = try std.fmt.allocPrint(
+                        allocator,
+                        "custom/{s}/{s}",
+                        .{ mission_directory, stem },
+                    ),
+                    .label = stem,
+                    .graphic_id = null,
+                    .frame_width = editor_entity_frame_width,
+                    .frame_height = editor_entity_frame_height,
+                });
+            }
+        },
+        .official => switch (picker_kind) {
+            .entity_base, .entity_layer => {
+                for (official_entity_sprite_stems) |stem| {
+                    try cells.append(allocator, .{
+                        .stored_id = stem,
+                        .label = stem,
+                        .graphic_id = try std.fmt.allocPrint(allocator, "entities/{s}", .{stem}),
+                        .frame_width = editor_entity_frame_width,
+                        .frame_height = editor_entity_frame_height,
+                    });
+                }
+            },
+            .decoration_base => {
+                for (decoration_registry) |definition| {
+                    try cells.append(allocator, .{
+                        .stored_id = definition.sprite,
+                        .label = definition.sprite,
+                        .graphic_id = try std.fmt.allocPrint(
+                            allocator,
+                            "decorations/{s}",
+                            .{definition.sprite},
+                        ),
+                        .frame_width = definition.pixel_dims.x,
+                        .frame_height = definition.pixel_dims.y,
+                    });
+                }
+            },
+            .decoration_layer => {
+                // A stale open on a non-decoration target: no base dims to
+                // match against — no cells ("No sprites"), picks no-op.
+                if (decoration_context) |context| {
+                    const base_dims = context.type_definition.pixel_dims;
+                    for (official_decoration_sprites) |sprite| {
+                        if (sprite.width != base_dims.x or sprite.height != base_dims.y) continue;
+                        try cells.append(allocator, .{
+                            .stored_id = sprite.stem,
+                            .label = sprite.stem,
+                            .graphic_id = try std.fmt.allocPrint(
+                                allocator,
+                                "decorations/{s}",
+                                .{sprite.stem},
+                            ),
+                            .frame_width = sprite.width,
+                            .frame_height = sprite.height,
+                        });
+                    }
+                }
+            },
+        },
+    }
     const columns: i32 = 4;
-    const rows: i32 = @max(@divTrunc(@as(i32, @intCast(stems.len)) + columns - 1, columns), 1);
+    const rows: i32 = @max(@divTrunc(@as(i32, @intCast(cells.items.len)) + columns - 1, columns), 1);
     const cell = slot_size;
     const width = columns * cell + (columns - 1) * ui_gap + 2 * ui_gap;
     const height = middle_panel_header_height + rows * cell + (rows - 1) * ui_gap + 2 * ui_gap;
@@ -6189,7 +6680,7 @@ pub fn buildEditorSpritePicker(
         .y = content.y + ui_gap,
     };
 
-    if (stems.len == 0) {
+    if (cells.items.len == 0) {
         try elements.append(allocator, .{ .text_label = .{
             .text = "No sprites",
             .screen_position = grid_origin,
@@ -6200,8 +6691,7 @@ pub fn buildEditorSpritePicker(
         return;
     }
 
-    const mission_directory = missionDirectoryName(editor.mission.path);
-    for (stems, 0..) |stem, index| {
+    for (cells.items, 0..) |picker_cell, index| {
         const column: i32 = @intCast(index % @as(usize, @intCast(columns)));
         const row: i32 = @intCast(index / @as(usize, @intCast(columns)));
         const cell_rect: Rectangle = .{
@@ -6210,85 +6700,28 @@ pub fn buildEditorSpritePicker(
             .width = cell,
             .height = cell,
         };
-        switch (tab) {
-            .official => {
-                if (decoration_context) |context| {
-                    // A registry prefab cell: the graphic is the shipped
-                    // decoration sprite, aspect-fit at its OWN pixel dims
-                    // (decoration art has no fixed frame convention —
-                    // unlike entities' 512×640). The pick adopts the whole
-                    // prefab (see the commit site).
-                    const full_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{stem});
-                    const definition = decoration_registry[index];
-                    try emitPickerSpriteCell(
-                        elements,
-                        allocator,
-                        font_metrics,
-                        cell_rect,
-                        stem,
-                        stem,
-                        full_id,
-                        graphic_color,
-                        button_color,
-                        std.mem.eql(u8, context.type_definition.sprite, stem),
-                        active_theme.lightest,
-                        pick_action,
-                        definition.pixel_dims.x,
-                        definition.pixel_dims.y,
-                    );
-                } else {
-                    // The stored id is the bare stem; the graphic is the
-                    // shipped sprite (aspect-fit at the entity-frame
-                    // convention, enemy-gradient tint at the type's color).
-                    const full_id = try std.fmt.allocPrint(allocator, "entities/{s}", .{stem});
-                    try emitPickerSpriteCell(
-                        elements,
-                        allocator,
-                        font_metrics,
-                        cell_rect,
-                        stem,
-                        stem,
-                        full_id,
-                        graphic_color,
-                        button_color,
-                        std.mem.eql(u8, current_sprite, stem),
-                        active_theme.lightest,
-                        pick_action,
-                        editor_entity_frame_width,
-                        editor_entity_frame_height,
-                    );
-                }
-            },
-            .mission_local => {
-                // The stored id is namespaced (`custom/<mission-dir>/<stem>`)
-                // so it can't collide with official stems; the file stays
-                // where the author put it (the mission directory). The art
-                // isn't renderable until custom-asset rendering lands —
-                // the cell shows the stem as a text label.
-                const stem_without_extension = stem[0 .. std.mem.lastIndexOfScalar(u8, stem, '.') orelse stem.len];
-                const namespaced = try std.fmt.allocPrint(
-                    allocator,
-                    "custom/{s}/{s}",
-                    .{ mission_directory, stem_without_extension },
-                );
-                try emitPickerSpriteCell(
-                    elements,
-                    allocator,
-                    font_metrics,
-                    cell_rect,
-                    namespaced,
-                    stem_without_extension,
-                    null,
-                    graphic_color,
-                    button_color,
-                    std.mem.eql(u8, current_sprite, namespaced),
-                    active_theme.lightest,
-                    pick_action,
-                    editor_entity_frame_width,
-                    editor_entity_frame_height,
-                );
-            },
-        }
+        // Nothing highlighted in layer-ADD mode (no current layer); a
+        // stale layer index likewise highlights nothing.
+        const highlighted = if (current_sprite) |sprite|
+            std.mem.eql(u8, sprite, picker_cell.stored_id)
+        else
+            false;
+        try emitPickerSpriteCell(
+            elements,
+            allocator,
+            font_metrics,
+            cell_rect,
+            picker_cell.stored_id,
+            picker_cell.label,
+            picker_cell.graphic_id,
+            graphic_color,
+            button_color,
+            highlighted,
+            active_theme.lightest,
+            pick_action,
+            picker_cell.frame_width,
+            picker_cell.frame_height,
+        );
     }
 }
 
@@ -8076,10 +8509,10 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // 41 row units (5 sections × 1 + 16 two-unit entries — 4 identity
+    // 45 row units (6 sections × 1 + 17 two-unit entries — 4 identity
     // fields, 4 stats, 2 weapon slots, 5 gear slots, the utility-skill
-    // row — + 4 spacers); the panel fits 10 units, so 31 units scroll +
-    // the scrollbar shows.
+    // row, the add-layer row — + 5 spacers); the panel fits 10 units, so
+    // 35 units scroll + the scrollbar shows.
     const visible_rows = @divFloor(
         editorInspectorPanelRect().height - 2 * ui_gap,
         editor_inspector_row_height,
@@ -8113,16 +8546,16 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         try expectInspectorLabels(&elements, &.{ "Sprite", "(none)", "Color", "Displays weapons", "true", "- Stats", "Max health" });
     }
 
-    // Out-of-range scroll clamps to max (41 − 10 = 31, the four spacers
-    // included): the window is the last three gear slots + the utility
-    // section + the skill row.
+    // Out-of-range scroll clamps to max (45 − 10 = 35, the five spacers
+    // included): the window is the last gear slot + the utility section +
+    // the skill row + the Layers tail.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 999, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 31), ui_state.editor_inspector_scroll);
+        try std.testing.expectEqual(@as(i32, 35), ui_state.editor_inspector_scroll);
         try expectInspectorLabels(&elements, &.{
-            "Gloves", "Add", "Pants", "Add", "Boots", "Add", "- Utility skills", "Skill bar",
+            "Boots", "Add", "- Utility skills", "Skill bar", "- Layers", "Add layer", "Pick sprite",
         });
         // The skill row: five 128×128 picker buttons — three empty (the
         // diamond sprite) and this template has no skills equipped, so
@@ -10685,7 +11118,7 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
     // its stem payload + the shipped sprite graphic.
     {
         var elements: UiElementList = .empty;
-        try buildEditorSpritePicker(&elements, arena.allocator(), metrics, editor, theme, &.{}, &.{}, .official);
+        try buildEditorSpritePicker(&elements, arena.allocator(), metrics, editor, theme, &.{}, &.{}, .entity_sprite, .official);
         var pick_buttons: usize = 0;
         var highlighted: ?[]const u8 = null;
         var saw_player = false;
@@ -10728,6 +11161,7 @@ test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-l
             theme,
             &mission_sprites,
             &.{},
+            .entity_sprite,
             .mission_local,
         );
         var payloads: [2][]const u8 = .{ "", "" };
@@ -10815,6 +11249,7 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
             theme,
             &.{},
             &registry,
+            .decoration_sprite,
             .official,
         );
         var pick_buttons: usize = 0;
@@ -10851,6 +11286,7 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
             theme,
             &mission_sprites,
             &registry,
+            .decoration_sprite,
             .mission_local,
         );
         var pick_buttons: usize = 0;
@@ -10864,5 +11300,227 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
         };
         try std.testing.expectEqual(@as(usize, 1), pick_buttons);
         try std.testing.expectEqualStrings("custom/artists_den/banner", payload.?);
+    }
+}
+
+test "inspector Layers sections: per-layer rows + add button (enemy + decoration)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // ENEMY content with one layer: the clamped window lands on the
+    // utility row + the whole Layers section.
+    {
+        const entity_layers = [_]types.EntityLayer{.{ .sprite = "hood", .color_index = 2 }};
+        const entity_types = [_]types.EntityTypeDef{.{
+            .id = "Skeleton",
+            .template = .{
+                .name = "Skeleton",
+                .sprite = "skeleton_1",
+                .team = 1,
+                .layers = &entity_layers,
+            },
+        }};
+        const editor: types.Editor = .{
+            .entity_types = &entity_types,
+            .active_tool = .{ .entity_type = 0 },
+        };
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{
+            .editor_inspector_scroll = 999,
+            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
+        };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try expectInspectorLabels(&elements, &.{
+            "Skill bar", "- Layers", "Layer 1", "hood", "Delete", "Layer 1 color", "Add layer", "Pick sprite",
+        });
+
+        // The layer slot row: the stem button opens the ENTITY layer
+        // picker for index 0; Delete carries the same payload. The color
+        // swatches carry the layer index + the layer-color action, the
+        // current index (2) highlighted.
+        var saw_stem_button = false;
+        var saw_delete = false;
+        var swatch_count: usize = 0;
+        var highlighted_count: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .open_editor_entity_layer_picker and
+                    button.editor_layer != null and button.editor_layer.? == 0)
+                {
+                    saw_stem_button = true;
+                }
+                if (button.action == .delete_editor_entity_layer and
+                    button.editor_layer != null and button.editor_layer.? == 0)
+                {
+                    saw_delete = true;
+                }
+                if (button.action == .select_editor_entity_layer_color) {
+                    try std.testing.expectEqual(@as(u32, 0), button.editor_layer.?);
+                    swatch_count += 1;
+                    if (button.highlighted) highlighted_count += 1;
+                }
+            },
+            else => {},
+        };
+        try std.testing.expect(saw_stem_button);
+        try std.testing.expect(saw_delete);
+        try std.testing.expectEqual(@as(usize, 6), swatch_count);
+        try std.testing.expectEqual(@as(usize, 1), highlighted_count);
+    }
+
+    // DECORATION content with one layer: the clamped window lands on the
+    // footprint row + the whole Layers section (world-gradient swatches).
+    {
+        const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+        const decoration_layers = [_]types.DecorationLayer{.{
+            .sprite = "tree_1_canopy",
+            .color_index = 2,
+            .pixel_dims = .{ .x = 512, .y = 256 },
+        }};
+        const decoration_types = [_]types.DecorationTypeDef{.{
+            .id = "stone_2",
+            .sprite = "stone_2",
+            .footprint = &footprint,
+            .pixel_dims = .{ .x = 512, .y = 256 },
+            .layers = &decoration_layers,
+        }};
+        const editor: types.Editor = .{
+            .decoration_types = &decoration_types,
+            .active_tool = .{ .decoration_type = 0 },
+        };
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{
+            .editor_inspector_scroll = 999,
+            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
+        };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try expectInspectorLabels(&elements, &.{
+            "Footprint", "2 tiles", "- Layers", "Layer 1", "tree_1_canopy", "Delete", "Layer 1 color", "Add layer", "Pick sprite",
+        });
+
+        var swatch_count: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_decoration_layer_color) {
+                try std.testing.expectEqual(@as(u32, 0), button.editor_layer.?);
+                swatch_count += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 6), swatch_count);
+    }
+}
+
+test "buildEditorSpritePicker: layer modes — entity stems, dims-filtered decoration stems" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // ENTITY layer mode (editing layer 0, sprite "bear"): the Official
+    // tab lists the shipped entity sprites (player excluded) with the
+    // entity-layer pick action; the edited layer's sprite highlights.
+    {
+        const entity_layers = [_]types.EntityLayer{.{ .sprite = "bear", .color_index = 2 }};
+        const entity_types = [_]types.EntityTypeDef{.{
+            .id = "Skeleton",
+            .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1, .layers = &entity_layers },
+        }};
+        const editor: types.Editor = .{
+            .entity_types = &entity_types,
+            .active_tool = .{ .entity_type = 0 },
+        };
+        var elements: UiElementList = .empty;
+        try buildEditorSpritePicker(
+            &elements,
+            arena.allocator(),
+            metrics,
+            editor,
+            theme,
+            &.{},
+            &.{},
+            .{ .entity_layer = 0 },
+            .official,
+        );
+        var pick_buttons: usize = 0;
+        var highlighted: ?[]const u8 = null;
+        var saw_player = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_entity_layer) {
+                pick_buttons += 1;
+                if (std.mem.eql(u8, button.editor_sprite.?, "player")) saw_player = true;
+                if (button.highlighted) highlighted = button.editor_sprite;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 9), pick_buttons);
+        try std.testing.expect(!saw_player);
+        try std.testing.expectEqualStrings("bear", highlighted.?);
+    }
+
+    // DECORATION layer mode (add — null index): the Official tab lists
+    // ONLY the shipped decoration sprites whose dims match the base
+    // type's (512x256 here) — the load-time layer invariant — with the
+    // decoration-layer pick action; nothing highlights in add mode.
+    {
+        const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+        const decoration_types = [_]types.DecorationTypeDef{.{
+            .id = "stone_2",
+            .sprite = "stone_2",
+            .footprint = &footprint,
+            .pixel_dims = .{ .x = 512, .y = 256 },
+        }};
+        const editor: types.Editor = .{
+            .decoration_types = &decoration_types,
+            .active_tool = .{ .decoration_type = 0 },
+        };
+        var elements: UiElementList = .empty;
+        try buildEditorSpritePicker(
+            &elements,
+            arena.allocator(),
+            metrics,
+            editor,
+            theme,
+            &.{},
+            &.{},
+            .{ .decoration_layer = null },
+            .official,
+        );
+        var pick_buttons: usize = 0;
+        var highlighted_count: usize = 0;
+        var saw_mismatched_dims = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_decoration_layer) {
+                pick_buttons += 1;
+                if (button.highlighted) highlighted_count += 1;
+            },
+            .image => |image| {
+                // The cells' graphics all aspect-fit at 512x256 (the
+                // entity-frame convention is 512x640 — a mismatched
+                // filter leak would show up as a taller fit).
+                if (image.height > @divFloor(slot_size * 256, 512)) saw_mismatched_dims = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(pick_buttons > 0);
+        try std.testing.expectEqual(@as(usize, 0), highlighted_count);
+        try std.testing.expect(!saw_mismatched_dims);
     }
 }
