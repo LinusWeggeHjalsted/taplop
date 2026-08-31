@@ -270,6 +270,254 @@ test "player_add_editor_entity_type: opens a closed inspector, clears the select
     try testing.expectEqual(@as(usize, 0), editor.selection.len);
 }
 
+test "editor_delete_type (entity): removes the type + placements across levels, remaps ids, fixes the tool, undo restores" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Archer" },
+        .{ .id = "Brute" },
+        .{ .id = "Cadaver" },
+    };
+    const level_0_placements = [_]types.EntityPlacement{
+        .{ .type_id = 1, .position = .{ .x = 1, .y = 1 } }, // Brute
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } }, // Archer
+        .{ .type_id = 1, .position = .{ .x = 2, .y = 2 } }, // Brute
+        .{ .type_id = 2, .position = .{ .x = 3, .y = 3 } }, // Cadaver
+    };
+    const level_1_placements = [_]types.EntityPlacement{
+        .{ .type_id = 1, .position = .{ .x = 0, .y = 0 } }, // Brute
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 0 } }, // Archer
+    };
+    const levels = [_]types.EditorLevel{
+        .{ .entity_placements = &level_0_placements },
+        .{ .entity_placements = &level_1_placements },
+    };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_level_index = 0,
+        .active_tool = .{ .entity_type = 2 }, // Cadaver — above the deleted index
+    }));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_delete_editor_type = .{
+            .type_kind = .entity,
+            .type_id = 1, // Brute
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The type is gone; both levels lost their Brute placements; the
+    // Cadaver references (type 2) remapped down to 1; the active tool
+    // (entity_type 2) decremented with them.
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expectEqual(@as(usize, 2), editor.entity_types.len);
+        try testing.expectEqualStrings("Archer", editor.entity_types[0].id);
+        try testing.expectEqualStrings("Cadaver", editor.entity_types[1].id);
+
+        const level_0 = editor.levels[0];
+        try testing.expectEqual(@as(usize, 2), level_0.entity_placements.len);
+        try testing.expectEqual(@as(u32, 0), level_0.entity_placements[0].type_id);
+        try testing.expectEqual(@as(u32, 1), level_0.entity_placements[1].type_id);
+        const level_1 = editor.levels[1];
+        try testing.expectEqual(@as(usize, 1), level_1.entity_placements.len);
+        try testing.expectEqual(@as(u32, 0), level_1.entity_placements[0].type_id);
+
+        try testing.expect(std.meta.eql(
+            types.EditorToolId{ .entity_type = 1 },
+            editor.active_tool,
+        ));
+    }
+
+    // One undo step restores the type, every placement, and the tool.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expectEqual(@as(usize, 3), editor.entity_types.len);
+        try testing.expectEqual(@as(usize, 4), editor.levels[0].entity_placements.len);
+        try testing.expectEqual(@as(usize, 2), editor.levels[1].entity_placements.len);
+        try testing.expect(std.meta.eql(
+            types.EditorToolId{ .entity_type = 2 },
+            editor.active_tool,
+        ));
+    }
+}
+
+test "editor_delete_type: deleting the active tool resets to select; the selection is pruned" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Archer" },
+        .{ .id = "Brute" },
+    };
+    const placements = [_]types.EntityPlacement{
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+        .{ .type_id = 1, .position = .{ .x = 1, .y = 0 } }, // Brute
+    };
+    const levels = [_]types.EditorLevel{.{ .entity_placements = &placements }};
+    const selection = [_]types.Selectable{.{ .entity_placement = 1 }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 1 }, // Brute — the deleted tool
+        .selection = &selection,
+    }));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_delete_editor_type = .{
+            .type_kind = .entity,
+            .type_id = 1,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The tool resets to select (a dangling type pointer is never created),
+    // and the selection entry referencing the deleted placement is pruned
+    // by the placement-delete arm.
+    const editor = history.current_state.editor.?;
+    try testing.expectEqual(@as(usize, 1), editor.entity_types.len);
+    try testing.expectEqual(@as(usize, 1), editor.levels[0].entity_placements.len);
+    try testing.expect(std.meta.eql(types.EditorToolId.select, editor.active_tool));
+    try testing.expectEqual(@as(usize, 0), editor.selection.len);
+
+    // Undo restores the tool + selection together with the type.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(std.meta.eql(
+        types.EditorToolId{ .entity_type = 1 },
+        history.current_state.editor.?.active_tool,
+    ));
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.selection.len);
+}
+
+test "editor_delete_type (decoration + item kinds): placements across levels, other kinds untouched" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const decoration_types = [_]types.DecorationTypeDef{
+        .{ .id = "stone_1", .sprite = "stone_1" },
+        .{ .id = "tree_1", .sprite = "tree_1" },
+    };
+    const item_types = [_]types.ItemTypeDef{
+        .{ .id = "New Sword", .item = .{ .weapon = .{} } },
+        .{ .id = "New Amulet", .item = .{ .amulet = .{} } },
+    };
+    const level_0_decorations = [_]types.DecorationPlacement{
+        .{ .type_id = 1, .position = .{ .x = 0, .y = 0 } }, // tree
+        .{ .type_id = 0, .position = .{ .x = 2, .y = 0 } }, // stone
+    };
+    const level_1_decorations = [_]types.DecorationPlacement{
+        .{ .type_id = 1, .position = .{ .x = 1, .y = 1 } }, // tree
+    };
+    const level_0_items = [_]types.ItemPlacement{
+        .{ .type_id = 1, .position = .{ .x = 0, .y = 1 } }, // amulet
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 1 } }, // sword
+    };
+    const level_1_items = [_]types.ItemPlacement{
+        .{ .type_id = 1, .position = .{ .x = 2, .y = 1 } }, // amulet
+    };
+    const levels = [_]types.EditorLevel{
+        .{
+            .decoration_placements = &level_0_decorations,
+            .item_placements = &level_0_items,
+        },
+        .{
+            .decoration_placements = &level_1_decorations,
+            .item_placements = &level_1_items,
+        },
+    };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .decoration_types = &decoration_types,
+        .item_types = &item_types,
+    }));
+    runToIdle(&history);
+
+    // Delete the tree type: both levels' tree placements go, the item
+    // placements are untouched (separate palettes).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_delete_editor_type = .{
+            .type_kind = .decoration,
+            .type_id = 1,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expectEqual(@as(usize, 1), editor.decoration_types.len);
+        try testing.expectEqual(@as(usize, 1), editor.levels[0].decoration_placements.len);
+        try testing.expectEqual(@as(usize, 0), editor.levels[1].decoration_placements.len);
+        try testing.expectEqual(@as(usize, 2), editor.levels[0].item_placements.len);
+        try testing.expectEqual(@as(usize, 1), editor.levels[1].item_placements.len);
+    }
+
+    // Delete the amulet type: both levels' amulet placements go.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_delete_editor_type = .{
+            .type_kind = .item,
+            .type_id = 1,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expectEqual(@as(usize, 1), editor.item_types.len);
+        try testing.expectEqual(@as(usize, 1), editor.levels[0].item_placements.len);
+        try testing.expectEqual(@as(u32, 0), editor.levels[0].item_placements[0].type_id);
+        try testing.expectEqual(@as(usize, 0), editor.levels[1].item_placements.len);
+    }
+
+    // Two undos restore both deletions.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.item_types.len);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.decoration_types.len);
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.levels[0].decoration_placements.len);
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.levels[1].decoration_placements.len);
+}
+
+test "editor_delete_type: out-of-range type id is a no-op (handler guard)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{ .id = "Archer" }};
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+    }));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_delete_type = .{
+            .type_kind = .entity,
+            .type_id = 99,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.entity_types.len);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
 test "player_paint_editor_tile: paints a tile on empty space, sorted into the list" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

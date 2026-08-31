@@ -517,6 +517,128 @@ fn handleEditorEvent(
             // (same event, so one undo step reverts both).
             if (set.tool != .select) editor.selection = &.{};
         },
+        // Delete a palette type + every placement referencing it across ALL
+        // levels (the palette is mission-shared). The orchestrator of the
+        // editor set: it fans out into `editor_delete_*_placement` sub-
+        // events (they own the order-preserving removal + the active-level
+        // selection prune/remap), then removes the type + decrements every
+        // same-kind type id above it + reconciles the active tool. All the
+        // events share the triggering player action's idle point — one
+        // undo step restores everything. Defensive against crafted logs: an
+        // out-of-range type id is ignored (the editor_set_tool posture).
+        .editor_delete_type => |delete| {
+            const type_valid = switch (delete.type_kind) {
+                .entity => delete.type_id < editor.entity_types.len,
+                .decoration => delete.type_id < editor.decoration_types.len,
+                .item => delete.type_id < editor.item_types.len,
+            };
+            if (!type_valid) return;
+
+            // The fan-out plan: one delete sub-event per referencing
+            // placement, pushed in ascending (level, placement) order. The
+            // stack is LIFO, so they PROCESS high-before-low within each
+            // level — every planned index is valid at its turn (removing a
+            // higher index never shifts a lower one). Type-id remapping
+            // below doesn't shift placement indices, so the plan stays
+            // addressable even though it runs after this handler returns.
+            var deletes: std.ArrayList(Event) = .empty;
+            for (editor.levels, 0..) |level, level_index| {
+                const level_index_u32: u32 = @intCast(level_index);
+                switch (delete.type_kind) {
+                    .entity => for (level.entity_placements, 0..) |placement, placement_index| {
+                        if (placement.type_id == delete.type_id) {
+                            deletes.append(allocator, .{ .editor_event = .{ .editor_delete_entity_placement = .{
+                                .level_index = level_index_u32,
+                                .placement_index = @intCast(placement_index),
+                            } } }) catch @panic("failed to allocate type-delete plan");
+                        }
+                    },
+                    .decoration => for (level.decoration_placements, 0..) |placement, placement_index| {
+                        if (placement.type_id == delete.type_id) {
+                            deletes.append(allocator, .{ .editor_event = .{ .editor_delete_decoration_placement = .{
+                                .level_index = level_index_u32,
+                                .placement_index = @intCast(placement_index),
+                            } } }) catch @panic("failed to allocate type-delete plan");
+                        }
+                    },
+                    .item => for (level.item_placements, 0..) |placement, placement_index| {
+                        if (placement.type_id == delete.type_id) {
+                            deletes.append(allocator, .{ .editor_event = .{ .editor_delete_item_placement = .{
+                                .level_index = level_index_u32,
+                                .placement_index = @intCast(placement_index),
+                            } } }) catch @panic("failed to allocate type-delete plan");
+                        }
+                    },
+                }
+            }
+            pushEvents(current, deletes.items, allocator);
+
+            // Remove the type + decrement every same-kind reference above
+            // it (palette indices shift down). Placements of OTHER kinds
+            // and the player_def are untouched (separate palettes).
+            switch (delete.type_kind) {
+                .entity => {
+                    layerListRemoveAt(types.EntityTypeDef, &editor.entity_types, delete.type_id, allocator);
+                    for (@constCast(editor.levels)) |*level| {
+                        for (@constCast(level.entity_placements)) |*placement| {
+                            if (placement.type_id > delete.type_id) placement.type_id -= 1;
+                        }
+                    }
+                },
+                .decoration => {
+                    layerListRemoveAt(types.DecorationTypeDef, &editor.decoration_types, delete.type_id, allocator);
+                    for (@constCast(editor.levels)) |*level| {
+                        for (@constCast(level.decoration_placements)) |*placement| {
+                            if (placement.type_id > delete.type_id) placement.type_id -= 1;
+                        }
+                    }
+                },
+                .item => {
+                    layerListRemoveAt(types.ItemTypeDef, &editor.item_types, delete.type_id, allocator);
+                    for (@constCast(editor.levels)) |*level| {
+                        for (@constCast(level.item_placements)) |*placement| {
+                            if (placement.type_id > delete.type_id) placement.type_id -= 1;
+                        }
+                    }
+                },
+            }
+
+            // Active-tool reconciliation: the deleted tool → select; a
+            // higher same-kind index → decremented. The selection is NOT
+            // force-cleared — the placement deletes prune entries
+            // referencing removed placements, and select + a surviving
+            // selection is a legal state.
+            switch (editor.active_tool) {
+                .entity_type => |type_id| {
+                    if (delete.type_kind == .entity) {
+                        if (type_id == delete.type_id) {
+                            editor.active_tool = .select;
+                        } else if (type_id > delete.type_id) {
+                            editor.active_tool = .{ .entity_type = type_id - 1 };
+                        }
+                    }
+                },
+                .decoration_type => |type_id| {
+                    if (delete.type_kind == .decoration) {
+                        if (type_id == delete.type_id) {
+                            editor.active_tool = .select;
+                        } else if (type_id > delete.type_id) {
+                            editor.active_tool = .{ .decoration_type = type_id - 1 };
+                        }
+                    }
+                },
+                .item_type => |type_id| {
+                    if (delete.type_kind == .item) {
+                        if (type_id == delete.type_id) {
+                            editor.active_tool = .select;
+                        } else if (type_id > delete.type_id) {
+                            editor.active_tool = .{ .item_type = type_id - 1 };
+                        }
+                    }
+                },
+                .select, .tile => {},
+            }
+        },
         .editor_toggle_inspector => {
             editor.inspector_open = !editor.inspector_open;
         },
@@ -2066,6 +2188,16 @@ fn handlePlayerInputEvent(
         },
         .player_add_editor_item_type => {
             pushEvents(current, &.{.{ .editor_event = .editor_add_item_type }}, allocator);
+        },
+        // Palette tool-cell delete-button click: push the machinery
+        // orchestrator — the editor_delete_type handler fans out into the
+        // per-placement deletes + removes the type + remaps ids + fixes
+        // the active tool, all as one undo step.
+        .player_delete_editor_type => |delete| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_delete_type = .{
+                .type_kind = delete.type_kind,
+                .type_id = delete.type_id,
+            } } }}, allocator);
         },
         // Settings-sidebar commits (mission + active-level metadata): thin
         // forwards — the EditorEvents own the mutations. The level-indexed

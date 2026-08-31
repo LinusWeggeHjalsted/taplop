@@ -1313,6 +1313,26 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_add_editor_type with no editor");
                     }
                 },
+                // Structural legality: same shape — the live path is a
+                // palette tool cell's delete button. The type id must be in
+                // range for its kind (the editor_set_tool range-check
+                // posture; the handler ignores out-of-range defensively).
+                .player_delete_editor_type => |delete| {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_delete_editor_type outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_delete_editor_type with no editor");
+                    };
+                    const type_valid = switch (delete.type_kind) {
+                        .entity => delete.type_id < editor.entity_types.len,
+                        .decoration => delete.type_id < editor.decoration_types.len,
+                        .item => delete.type_id < editor.item_types.len,
+                    };
+                    if (!type_valid) {
+                        @panic("replay validation: player_delete_editor_type type id out of range");
+                    }
+                },
                 // Structural legality: same shape — the live path is the
                 // editor's top-right toggle button.
                 .player_toggle_editor_metadata_sidebar => {

@@ -305,9 +305,16 @@ pub const EditorEvent = union(enum) {
     editor_add_entity_type: void,
     editor_add_decoration_type: void,
     editor_add_item_type: void,
-    // Delete a palette type AND every placement referencing it (the handler
-    // pushes editor_delete_*_placement sub-events for each referencing
-    // placement, then removes the type — the one orchestrator in this set).
+    // Delete a palette type AND every placement referencing it, across ALL
+    // levels (the palette is mission-shared). The handler fans out into
+    // `editor_delete_*_placement` sub-events for every referencing
+    // placement (they own the order-preserving removal + the active-level
+    // selection prune/remap), then removes the type and decrements every
+    // same-kind type id above it (palette indices shift down) — the one
+    // orchestrator in this set. The active tool is reconciled in the same
+    // event: the deleted type → select, a higher same-kind index →
+    // decremented. All the events share the triggering player action's
+    // idle point — one undo step restores the type and every placement.
     editor_delete_type: struct {
         type_kind: EditorTypeKind,
         type_id: u32,
@@ -671,6 +678,15 @@ pub const PlayerInputEvent = union(enum) {
     player_add_editor_entity_type: void,
     player_add_editor_decoration_type: void,
     player_add_editor_item_type: void,
+    // Palette tool-cell delete-button click: delete that palette type and
+    // every placement referencing it across all levels. Thin orchestrator
+    // — the `editor_delete_type` handler owns the fan-out (per-placement
+    // deletes + the type removal + id remap + active-tool reconciliation),
+    // all on the undo timeline as one step.
+    player_delete_editor_type: struct {
+        type_kind: EditorTypeKind,
+        type_id: u32,
+    },
     // Settings-sidebar commits (mission + active-level metadata — see
     // DESIGN → Architecture → Level Editor → Editor UI layout (Settings
     // sidebar)). Thin orchestrators: the EditorEvents own the mutations.
