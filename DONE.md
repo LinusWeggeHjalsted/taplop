@@ -7920,3 +7920,39 @@ copied, undo reverts, redo + start_playtest carries the inventory into
 entity 0) and the empty-session fallback (imports the real
 `data/new_player.txt`: "New Player", Starter Sword, replenish; the
 session's player_data stays empty).
+
+### Playtest PlayerData — all skills learned + dormancy (DONE, TODO slice 9b)
+
+Playtests now carry their OWN player_data. The seam that forced this:
+`use_skill_tome` and skill-tome salvage read + mutate
+`current.player_data` DIRECTLY during a level (not the entity), so a
+playtest sharing the session's real data would corrupt campaign
+progress — and an empty player_data (the fresh-editor-launch case)
+would leave tome pickups writing into a ghost save.
+
+`start_playtest` / `start_validation` (entering from `.edit` only — see
+below) back the session's real data up onto the Editor
+(`pre_playtest_player_data`, on the undo timeline with the rest of it)
+and BUILD the run's from `player_def`'s loadout: the
+`build_player_from_data` field set (name, gear, inventory, utility
+skills) as deep copies, plus `learned_skills` = every utility skill —
+learned is IMPLIED for the editor player (player.txt never carries it),
+so tome pickups read already-learned and any learned-gated path is
+permissive. `end_playtest` / `end_validation` restore the backup and
+clear it (null backup = the fresh-session default, defensive).
+
+The mode guard is the subtle part: a VALIDATION run chains its later
+levels through `start_playtest` (end_level's exit guard) while
+`editor.mode == .validate`, so the backup/build must fire only on the
+`.edit` → run transition — a re-back-up mid-run would capture the run's
+own mutated data and the campaign backup would be lost. The guard
+piggybacks on the existing `if (editor.mode == .edit)` shape the mode
+flip already used.
+
+Tests: the playtest build (name from the loadout, learned = every
+utility skill via `isSkillLearned`, the campaign backup held on the
+Editor, a simulated in-level mutation, end_playtest restoring the
+campaign data + clearing the backup) and the validation chain
+(start_validation builds; a mid-run mutation SURVIVES the chained
+level's start_playtest — no rebuild — and the backup still holds the
+campaign data; end_validation restores).

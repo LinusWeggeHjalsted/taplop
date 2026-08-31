@@ -1263,6 +1263,16 @@ pub const Editor = struct {
     /// `editor_select` / `editor_deselect` events; the placement-delete
     /// arms keep it consistent within the same event (prune + remap).
     selection: []const Selectable = &.{},
+    /// The session's real PlayerData, backed up while a playtest/validate
+    /// run is active. The run BUILDS its own player_data (from
+    /// `player_def`, all utility skills learned) because in-level events
+    /// (use_skill_tome, salvage) mutate player_data directly — without the
+    /// backup a playtest would corrupt campaign progress. Null while in
+    /// edit mode (set on enter from .edit, restored + cleared by
+    /// end_playtest / end_validation). On the undo timeline with the rest
+    /// of the Editor. See DESIGN → Architecture → Level Editor →
+    /// Playtest/validate framing.
+    pre_playtest_player_data: ?PlayerData = null,
     /// The inspector sidebar's open state (the top-left toggle button;
     /// open by default). Lives on the Editor — not UiState — so the settled
     /// auto-open-on-new-type behavior can mutate it from the

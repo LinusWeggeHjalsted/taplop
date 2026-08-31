@@ -588,20 +588,13 @@ yet implemented. Remaining work:
         `instantiateEditorLevel` keeps `player_def.template.inventory` for
         entity 0 (loadout data, not runtime). History in DONE.md; design
         in DESIGN → Selection model (Inspector tool-type inference).
-  - [ ] **9b — playtest PlayerData: all skills learned + dormancy:**
-        `start_playtest` / `start_validation` BUILD a playtest
-        player_data from player_def (name / gear / inventory / equipped
-        utility skills) with learned_skills = ALL utility skills — the
-        editor player knows everything, so tome pickups read
-        already-learned, skill-tome salvage is consistent, and any
-        future learned-gated path is permissive (learned is NOT stored
-        in player.txt — it's implied for the editor player). In-level
-        events (use_skill_tome / salvage_item) mutate player_data
-        DIRECTLY, so the session's real campaign data must survive:
-        back it up on enter (`Editor.pre_playtest_player_data:
-        ?PlayerData` — the dormancy pattern, snapshots carry it) and
-        restore on `end_playtest` / `end_validation` (null backup =
-        the fresh-session default).
+  - [x] **9b — playtest PlayerData: all skills learned + dormancy:**
+        DONE — `Editor.pre_playtest_player_data` + the enter-from-edit
+        backup/build (the run's data from the loadout with
+        learned_skills = every utility skill) + restore on
+        end_playtest / end_validation; the chained validation level
+        starts never re-back-up (mode guard). History in DONE.md;
+        design in DESIGN → Level Editor → Playtest/validate framing.
   - [ ] **10 — player.txt format + max_player.txt:** player.txt becomes
         SAVE-SHAPED (MainHandWeapon/OffHandWeapon/Amulet/Coat/Gloves/
         Pants/Boots/Inventory/UtilitySkills + Metadata; no Info / stats

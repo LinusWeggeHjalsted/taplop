@@ -3181,3 +3181,114 @@ test "player_import_editor_player: no session data imports the new-game default 
     // a READ source, not a session load.
     try testing.expectEqual(@as(usize, 0), history.current_state.player_data.player_name.len);
 }
+
+test "start_playtest builds its own player_data (all skills learned), end_playtest restores the session's" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const utility_skills = @import("utility_skills.zig");
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{
+            .name = "Editor Player",
+            .equipped_utility_skills = .{ .blink, null, null, null, null },
+        } },
+    }));
+    runToIdle(&history);
+
+    // The session's real campaign data.
+    var campaign: types.PlayerData = .{ .player_name = "Campaign Player" };
+    campaign.learned_skills = &.{.replenish};
+    history.current_state.player_data = campaign;
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .start_playtest = .{ .level_index = 0 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The run's player_data is BUILT from the loadout: the editor player's
+    // name + every utility skill learned (tome pickups read
+    // already-learned; nothing is gated).
+    try testing.expectEqualStrings("Editor Player", history.current_state.player_data.player_name);
+    try testing.expectEqual(
+        @as(usize, utility_skills.utility_skill_ids.len),
+        history.current_state.player_data.learned_skills.len,
+    );
+    for (utility_skills.utility_skill_ids) |skill_id| {
+        try testing.expect(event_handlers.isSkillLearned(
+            history.current_state.player_data.learned_skills,
+            skill_id,
+        ));
+    }
+    // The session's real data is backed up on the Editor.
+    try testing.expectEqualStrings(
+        "Campaign Player",
+        history.current_state.editor.?.pre_playtest_player_data.?.player_name,
+    );
+
+    // In-level events mutate player_data directly (use_skill_tome,
+    // salvage) — simulate one, then end the playtest.
+    history.current_state.player_data.player_name = "Mutated In Playtest";
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .end_playtest }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+    try testing.expect(history.current_state.editor.?.pre_playtest_player_data == null);
+    try testing.expect(history.current_state.editor.?.mode == .edit);
+}
+
+test "a validation run's chained level start_playtest does not re-back-up" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+
+    // Level 1 of the validation run: backs up + builds.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .start_validation }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqualStrings("Editor Player", history.current_state.player_data.player_name);
+
+    // Mid-run mutation (an in-level event), then the chained next-level
+    // start_playtest (mode is .validate, not .edit).
+    history.current_state.player_data.player_name = "Mutated In Run";
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .start_playtest = .{ .level_index = 1 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The chained start neither rebuilt the run's data (the mutation
+    // survives) nor re-captured the backup (still the campaign data).
+    try testing.expectEqualStrings("Mutated In Run", history.current_state.player_data.player_name);
+    try testing.expectEqualStrings(
+        "Campaign Player",
+        history.current_state.editor.?.pre_playtest_player_data.?.player_name,
+    );
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .end_validation = .{ .success = true } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+}

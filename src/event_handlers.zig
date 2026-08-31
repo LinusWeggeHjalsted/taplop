@@ -196,6 +196,51 @@ pub fn pushPlayerAction(
 /// failure during replay is unexpected; in-session replay has cached bytes,
 /// cross-session replay of changed content is the known accepted fail-fast).
 /// See DESIGN → Error Handling → three contexts.
+/// Build the playtest PlayerData from the editor player loadout: the
+/// entity fields a level reads (name, gear, inventory, utility skills)
+/// plus learned_skills = EVERY utility skill — the editor player knows
+/// everything, so tome pickups read already-learned, skill-tome salvage
+/// is consistent, and any future learned-gated path is permissive.
+/// Deep copies (the template's slices stay owned by the editor graph).
+/// Learned is implied, not authored — player.txt never carries it.
+fn buildPlaytestPlayerData(
+    allocator: std.mem.Allocator,
+    template: types.Entity,
+) types.PlayerData {
+    var player_data: types.PlayerData = .{
+        .player_name = deepCopy([]const u8, template.name, allocator),
+        .main_hand_weapon = deepCopy(?types.Weapon, template.main_hand_weapon, allocator),
+        .off_hand_weapon = deepCopy(?types.Weapon, template.off_hand_weapon, allocator),
+        .amulet = deepCopy(?types.Amulet, template.amulet, allocator),
+        .coat = deepCopy(?types.Coat, template.coat, allocator),
+        .gloves = deepCopy(?types.Gloves, template.gloves, allocator),
+        .pants = deepCopy(?types.Pants, template.pants, allocator),
+        .boots = deepCopy(?types.Boots, template.boots, allocator),
+        .equipped_utility_skills = template.equipped_utility_skills,
+        .inventory = deepCopy(types.Inventory, template.inventory, allocator),
+    };
+    player_data.learned_skills = deepCopy(
+        []const types.SkillId,
+        utility_skills.utility_skill_ids,
+        allocator,
+    );
+    return player_data;
+}
+
+/// Restore the session's real PlayerData after a playtest/validate run
+/// (the run's own data was built on enter + mutated by in-level events).
+fn restorePrePlaytestPlayerData(current: *GameState) void {
+    const editor = &(current.editor orelse @panic("editor event with no editor"));
+    if (editor.pre_playtest_player_data) |backed_up| {
+        current.player_data = backed_up;
+        editor.pre_playtest_player_data = null;
+    } else {
+        // Defensive (the enter arms always set the backup): a null backup
+        // means the run began with the fresh-session default.
+        current.player_data = .{};
+    }
+}
+
 fn failReconstructionRead(history: *GameStateHistory, message: []const u8) void {
     if (history.replaying) @panic("replay: reconstruction read failed (content changed?)");
     history.session.setPendingError(history.history_arena.allocator(), message);
@@ -3408,6 +3453,15 @@ pub fn processEvent(
                     current.level = loaders.instantiateEditorLevel(editor.*, start.level_index, allocator);
                     current.mission = deepCopy(types.Mission, editor.mission, allocator);
                     current.mission.?.current_level_index = start.level_index + 1; // 1-based for gameplay handlers
+                    // Dormancy (only when ENTERING from edit mode — a
+                    // validation run chains later levels via start_playtest
+                    // in .validate mode, and re-backing-up would capture the
+                    // run's own data): back up the session's real player
+                    // data, build the run's (all utility skills learned).
+                    if (editor.mode == .edit) {
+                        editor.pre_playtest_player_data = deepCopy(types.PlayerData, current.player_data, allocator);
+                        current.player_data = buildPlaytestPlayerData(allocator, editor.player_def.template);
+                    }
                     if (editor.mode == .edit) editor.mode = .playtest;
                     current.world_generation +%= 1;
                     current.transitionScreen(.level);
@@ -3418,6 +3472,7 @@ pub fn processEvent(
                     // transitionScreen(.editor) clears level + mission (out of
                     // scope) but keeps editor (.level scope includes editor).
                     current.editor.?.mode = .edit;
+                    restorePrePlaytestPlayerData(current);
                     current.transitionScreen(.editor);
                 },
                 .start_validation => {
@@ -3428,6 +3483,11 @@ pub fn processEvent(
                     current.level = loaders.instantiateEditorLevel(editor.*, 0, allocator);
                     current.mission = deepCopy(types.Mission, editor.mission, allocator);
                     current.mission.?.current_level_index = 1;
+                    // Dormancy — same as start_playtest (the run's own
+                    // player_data, all skills learned; the real data backed
+                    // up for restore on end_validation).
+                    editor.pre_playtest_player_data = deepCopy(types.PlayerData, current.player_data, allocator);
+                    current.player_data = buildPlaytestPlayerData(allocator, editor.player_def.template);
                     editor.mode = .validate;
                     current.world_generation +%= 1;
                     current.transitionScreen(.level);
@@ -3438,6 +3498,7 @@ pub fn processEvent(
                     // edit mode; validation result + replay attachment are
                     // not wired.
                     current.editor.?.mode = .edit;
+                    restorePrePlaytestPlayerData(current);
                     current.transitionScreen(.editor);
                 },
                 .start_mission => |start| {

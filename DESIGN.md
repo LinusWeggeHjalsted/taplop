@@ -1800,7 +1800,20 @@ continuation via `start_playtest` stays `.validate`), transitions to `.level`,
 and pushes `pushGameplayStartEvents(sync_player=false)` — **the player sync is
 skipped** because the player is already fully instantiated from `player_def`
 (normal gameplay's `build_player_from_data` would clobber it with the
-campaign's PlayerData). `end_playtest` / `end_validation` discard
+campaign's PlayerData). **Playtest player_data (dormancy).** In-level
+events (`use_skill_tome`, skill-tome salvage) read + mutate
+`current.player_data` DIRECTLY, so a run can't share the session's real
+data: on ENTER (only from `.edit` — a validation run chains later levels
+via `start_playtest` in `.validate` mode, and re-backing-up would capture
+the run's own data) the real data is backed up onto the Editor
+(`Editor.pre_playtest_player_data`, on the undo timeline) and the run's
+is BUILT from `player_def`'s loadout — the `build_player_from_data` field
+set (name, gear, inventory, utility skills) — with `learned_skills` =
+EVERY utility skill (implied, never authored in player.txt): the editor
+player knows everything, so tome pickups read already-learned and any
+learned-gated path is permissive. `end_playtest` / `end_validation`
+restore the backup (null = the fresh-session default) and clear it.
+`end_playtest` / `end_validation` discard
 `current.level` + `current.mission` (discard semantics — playtest/validate
 never write back to the editor's levels) and restore `screen = .editor`,
 `mode = .edit`. Validation is the same shape but starts at level 1 and forces
