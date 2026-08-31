@@ -681,18 +681,14 @@ yet implemented. Remaining work:
         `TextEditTarget` union widening + shared `emitTextFieldUi`,
         mission + level name fields with would-change gates, M2
         arbitration extended, tests. History in DONE.md.
-  - [ ] **11 — settings sidebar (right bar), slice 3 — gradient rows +
-        theme picker:** three gradient rows (world / enemy / player).
-        Each row's FULL-GRADIENT swatch (all 6 colors, one strip) is a
-        single button opening the centered THEME PICKER (every gradient
-        from color_themes.txt, one full-width swatch per row, current
-        pick highlighted; a pick sets the level's index). Enemy + player
-        rows carry an AUTO-DERIVE toggle: auto = derived from the world
-        index, manual = the picked index overrides. AUTO-mode swatches
-        stay clickable — a pick in the picker flips that role to manual
-        and sets the index in one commit (the `?u32` gradient events,
-        null = revert to auto). Picker rows are bare full-width gradient
-        strips (no labels).
+  - [x] **11 — settings sidebar (right bar), slice 3 — gradient rows +
+        theme picker:** DONE — the three single-line gradient rows
+        (label + Auto + full-gradient swatch strip, one button opening
+        the picker), the `.level_gradient` picker target (level + role
+        snapshot), `buildEditorThemePicker` (bare strips, framed current
+        index incl. derived-while-auto), `autoDerivedGradientIndex` as
+        the spacing-rule single source, per-role pick commits with
+        auto→manual flip + same-value no-ops, tests. History in DONE.md.
   Deferred: drag-painting. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved
