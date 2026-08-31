@@ -2497,8 +2497,14 @@ pub fn handleAnytimeInput(
             },
             // Level-tab click: push the orchestrator (the EditorEvent owns
             // the mutation; the switch rides the undo timeline) and drain.
+            // Re-clicking the ACTIVE tab fires nothing — beyond the dead
+            // undo step, the same-value event would also clear the
+            // selection as a side effect (the select_editor_tool
+            // same-value gate).
             .select_editor_level => {
                 const level_index = anytime.clicked_editor_level orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                if (level_index == editor.active_level_index) return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_level = .{
                     .level_index = level_index,
                 } });

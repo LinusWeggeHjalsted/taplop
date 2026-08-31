@@ -96,6 +96,44 @@ test "player_set_editor_level: out-of-range index is a no-op (handler guard)" {
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.active_level_index);
 }
 
+test "level-tab click on the active tab fires nothing (no dead undo step)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 } };
+    const levels = [_]types.EditorLevel{
+        .{ .level_tiles = &tiles },
+        .{},
+    };
+    const selection = [_]types.Selectable{.{ .tile = .{ .x = 0, .y = 0 } }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .active_level_index = 0,
+        .selection = &selection,
+    }));
+    runToIdle(&history);
+
+    // Re-clicking the active tab: no event, no undo step — and the
+    // selection survives (a same-value event would have cleared it as a
+    // side effect).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_level,
+        .clicked_editor_level = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.selection.len);
+
+    // Positive control: clicking the OTHER tab fires the switch.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_level,
+        .clicked_editor_level = 1,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.active_level_index);
+}
+
 test "player_toggle_editor_inspector: flips the open state, undo/redo restores" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
