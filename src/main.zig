@@ -1595,6 +1595,96 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     try std.testing.expect(history.current_state.editor == null);
 }
 
+test "fresh editor open: empty New Mission, template level, playtest round-trip" {
+    const allocator = std.testing.allocator;
+
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    runToIdle(&history);
+
+    // The main-menu Editor button's flow: null mission_path = a FRESH
+    // empty mission (no uuid — identity is minted at save time, never
+    // held in state; see DESIGN → Level Editor → Mission identity).
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{
+        .open_editor = .{ .mission_path = null },
+    } }}, history.current_arena.allocator());
+    runToIdle(&history);
+
+    try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
+    const editor = &history.current_state.editor.?;
+    try std.testing.expectEqual(types.EditorMode.edit, editor.mode);
+    try std.testing.expectEqualStrings("New Mission", editor.mission.name);
+    try std.testing.expectEqualStrings("missions/New Mission", editor.mission.path);
+    try std.testing.expectEqual(@as(u32, 1), editor.mission.level_count);
+    try std.testing.expectEqual(@as(usize, 0), editor.mission.uuid.len);
+
+    // One default-template level: the minimal `!=` layout (the markers
+    // carry their own ground — exactly two tiles), unnamed, no placements.
+    try std.testing.expectEqual(@as(usize, 1), editor.levels.len);
+    const template_level = editor.levels[0];
+    try std.testing.expectEqual(@as(usize, 0), template_level.name.len);
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, template_level.player_start);
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, template_level.level_end.?);
+    try std.testing.expectEqual(@as(usize, 2), template_level.level_tiles.len);
+    try std.testing.expectEqual(@as(usize, 0), template_level.entity_placements.len);
+    try std.testing.expectEqual(@as(usize, 0), template_level.decoration_placements.len);
+    try std.testing.expectEqual(@as(usize, 0), template_level.item_placements.len);
+
+    // Empty palettes — no tools in any group.
+    try std.testing.expectEqual(@as(usize, 0), editor.entity_types.len);
+    try std.testing.expectEqual(@as(usize, 0), editor.decoration_types.len);
+    try std.testing.expectEqual(@as(usize, 0), editor.item_types.len);
+
+    // player_def is the max-player seed (max_player.txt's player_name).
+    try std.testing.expectEqualStrings("New Player", editor.player_def.template.name);
+    try std.testing.expectEqualStrings("player", editor.player_def.template.sprite);
+
+    // Playtest the template level: just the player at the '!', the '=' at
+    // (1,0), nothing else.
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
+        .level_index = 0,
+    } } }}, history.current_arena.allocator());
+    runToIdle(&history);
+    try std.testing.expectEqual(state.Screen.level, history.current_state.screen);
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.level.?.entities.len);
+    try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.current_state.level.?.level_end.?);
+
+    // End + close round-trip.
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
+    runToIdle(&history);
+    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .close_editor }}, history.current_arena.allocator());
+    runToIdle(&history);
+    try std.testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
+    try std.testing.expect(history.current_state.editor == null);
+}
+
 test "turn counters: per-mission increments, cumulative skipped in editor mode" {
     // The player's turn_end (entity_index == 0) increments the per-mission
     // turns_spent (scoped to the current playthrough) and the cumulative

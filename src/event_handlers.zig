@@ -342,6 +342,54 @@ fn addEditorPaletteType(
     editor.inspector_open = true;
 }
 
+/// Read + parse the shipped new-level template (data/default_level.txt)
+/// through the reconstruction cache. Shared by the add-level handler and
+/// the fresh-mission editor open. Returns null after surfacing the
+/// recoverable error (the caller aborts).
+fn readEditorDefaultLevel(
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+) ?types.EditorLevel {
+    const bytes = history.readReconstructionFile("data/default_level.txt") catch {
+        failReconstructionRead(history, "failed to read data/default_level.txt");
+        return null;
+    };
+    const sections = parser.parseConfigFile(bytes, allocator) catch {
+        failReconstructionRead(history, "failed to parse data/default_level.txt");
+        return null;
+    };
+    validateConfigKeys(history, sections, parser.level_key_map, "data/default_level.txt", allocator);
+    return loaders.loadEditorDefaultLevel(sections, history.file_source, allocator, "data/default_level.txt", null) catch {
+        failReconstructionRead(history, "failed to parse data/default_level.txt (the template must be the minimal != layout)");
+        return null;
+    };
+}
+
+/// The maxed default loadout (data/max_player.txt) as an editor player
+/// template — the fallback when a mission carries no player.txt AND the
+/// fresh-mission seed (DESIGN → Level Editor → Player loadout). Returns
+/// null after surfacing the recoverable error (the caller aborts).
+fn loadMaxPlayerLoadout(
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+    warnings: *std.ArrayList([]const u8),
+) ?types.Entity {
+    const bytes = history.readReconstructionFile("data/max_player.txt") catch {
+        failReconstructionRead(history, "failed to read max_player.txt");
+        return null;
+    };
+    const sections = parser.parseConfigFile(bytes, allocator) catch {
+        failReconstructionRead(history, "failed to parse max_player.txt");
+        return null;
+    };
+    validateConfigKeys(history, sections, parser.player_save_key_map, "data/max_player.txt", allocator);
+    const default_data = loaders.loadPlayerSave(sections, allocator, "data/max_player.txt", warnings) catch {
+        failReconstructionRead(history, "failed to parse max_player.txt");
+        return null;
+    };
+    return loaders.playerLoadoutEntity(default_data);
+}
+
 /// Append a new level built from the shipped template
 /// (data/default_level.txt — the minimal `!=` layout), switch the active
 /// tab to it, and sync mission.level_count. The template read goes through
@@ -355,19 +403,7 @@ fn addEditorLevel(
     current: *GameState,
     allocator: std.mem.Allocator,
 ) void {
-    const bytes = history.readReconstructionFile("data/default_level.txt") catch {
-        failReconstructionRead(history, "failed to read data/default_level.txt");
-        return;
-    };
-    const sections = parser.parseConfigFile(bytes, allocator) catch {
-        failReconstructionRead(history, "failed to parse data/default_level.txt");
-        return;
-    };
-    validateConfigKeys(history, sections, parser.level_key_map, "data/default_level.txt", allocator);
-    const template = loaders.loadEditorDefaultLevel(sections, history.file_source, allocator, "data/default_level.txt", null) catch {
-        failReconstructionRead(history, "failed to parse data/default_level.txt (the template must be the minimal != layout)");
-        return;
-    };
+    const template = readEditorDefaultLevel(history, allocator) orelse return;
 
     const editor = &(current.editor orelse @panic("editor event with no editor"));
     layerListAppend(types.EditorLevel, &editor.levels, template, allocator);
@@ -376,6 +412,35 @@ fn addEditorLevel(
     editor.active_level_index = editor.levels.len - 1;
     editor.selection = &.{};
     editor.mission.level_count = @intCast(editor.levels.len);
+}
+
+/// The fresh-mission branch of open_editor (null mission_path — the
+/// main-menu Editor button): "New Mission" with one default-template
+/// level, empty palettes, and the max-player loadout. The mission uuid
+/// stays EMPTY — identity is minted at save time, write-only, never held
+/// in state (a random value in GameState would diverge on every replay;
+/// see DESIGN → Level Editor → Mission identity). Sets `current.editor`;
+/// a failed read surfaces the recoverable error and returns with the
+/// editor unset (the arm's null check skips the transition).
+fn openFreshEditorMission(
+    history: *GameStateHistory,
+    current: *GameState,
+    allocator: std.mem.Allocator,
+    balance_warnings: *std.ArrayList([]const u8),
+) void {
+    const template = readEditorDefaultLevel(history, allocator) orelse return;
+    const player_entity = loadMaxPlayerLoadout(history, allocator, balance_warnings) orelse return;
+    var level_list: std.ArrayList(types.EditorLevel) = .empty;
+    level_list.append(allocator, template) catch @panic("failed to append editor level");
+    current.editor = .{
+        .mission = .{
+            .name = "New Mission",
+            .path = "missions/New Mission",
+            .level_count = 1,
+        },
+        .levels = level_list.toOwnedSlice(allocator) catch @panic("failed to own editor levels slice"),
+        .player_def = .{ .id = "Player", .template = player_entity },
+    };
 }
 
 /// Run key validation on `sections` and, if any unknown keys are found,
@@ -2061,10 +2126,26 @@ fn handlePlayerInputEvent(
         // --- Meta: open editor ---
         .open_editor => |start| {
             var balance_warnings: std.ArrayList([]const u8) = .empty;
+            // Null path = the fresh empty mission (the main-menu Editor
+            // button) — the short-circuit branch below; a path = the
+            // mission-directory open (the future mission browser + the
+            // round-trip tests).
+            if (start.mission_path == null) {
+                openFreshEditorMission(history, current, allocator, &balance_warnings);
+                // A failed open surfaced the recoverable error and left
+                // the editor unset — skip the transition (the drain loop
+                // reverts).
+                if (current.editor == null) return;
+                loadEditorDecorationRegistry(history, allocator);
+                surfaceWarnings(history, &balance_warnings, allocator);
+                current.transitionScreen(.editor);
+                return;
+            }
+            const mission_path = start.mission_path.?;
             const mission_file_path = std.fmt.allocPrint(
                 allocator,
                 "{s}/mission.txt",
-                .{start.mission_path},
+                .{mission_path},
             ) catch @panic("failed to allocate mission path");
             const mission_sections = blk: {
                 const bytes = history.readReconstructionFile(mission_file_path) catch {
@@ -2087,7 +2168,7 @@ fn handlePlayerInputEvent(
             const player_file_path = std.fmt.allocPrint(
                 allocator,
                 "{s}/player.txt",
-                .{start.mission_path},
+                .{mission_path},
             ) catch @panic("failed to allocate player path");
             const player_entity: types.Entity = blk: {
                 const bytes = history.readReconstructionFile(player_file_path) catch |read_error| {
@@ -2096,23 +2177,10 @@ fn handlePlayerInputEvent(
                         return;
                     }
                     // No player.txt in the mission — the maxed default
-                    // loadout (data/max_player.txt, a full player save;
-                    // its loadout sections map onto the template — see
-                    // loaders.playerLoadoutEntity).
-                    const default_bytes = history.readReconstructionFile("data/max_player.txt") catch {
-                        failReconstructionRead(history, "failed to read max_player.txt");
-                        return;
-                    };
-                    const default_sections = parser.parseConfigFile(default_bytes, allocator) catch {
-                        failReconstructionRead(history, "failed to parse max_player.txt");
-                        return;
-                    };
-                    validateConfigKeys(history, default_sections, parser.player_save_key_map, "data/max_player.txt", allocator);
-                    const default_data = loaders.loadPlayerSave(default_sections, allocator, "data/max_player.txt", &balance_warnings) catch {
-                        failReconstructionRead(history, "failed to parse max_player.txt");
-                        return;
-                    };
-                    break :blk loaders.playerLoadoutEntity(default_data);
+                    // loadout (the shared fresh-mission seed helper —
+                    // data/max_player.txt, a full player save; its loadout
+                    // sections map onto the template).
+                    break :blk loadMaxPlayerLoadout(history, allocator, &balance_warnings) orelse return;
                 };
                 const sections = parser.parseConfigFile(bytes, allocator) catch {
                     failReconstructionRead(history, "failed to parse player.txt");
@@ -2130,7 +2198,7 @@ fn handlePlayerInputEvent(
                 const level_path = std.fmt.allocPrint(
                     allocator,
                     "{s}/level_{d}.txt",
-                    .{ start.mission_path, level_index },
+                    .{ mission_path, level_index },
                 ) catch @panic("failed to allocate level path");
                 const sections = blk: {
                     const bytes = history.readReconstructionFile(level_path) catch {
@@ -2151,7 +2219,7 @@ fn handlePlayerInputEvent(
                 level_sections.items,
                 history.file_source,
                 allocator,
-                start.mission_path,
+                mission_path,
                 &balance_warnings,
             ) catch {
                 failReconstructionRead(history, "failed to build editor mission");
@@ -2160,7 +2228,7 @@ fn handlePlayerInputEvent(
             // The mission's own path (the payload slice — same borrow as
             // start_mission's): the sprite picker's mission-local scan +
             // the editor save read it.
-            current.editor.?.mission.path = start.mission_path;
+            current.editor.?.mission.path = mission_path;
             loadEditorDecorationRegistry(history, allocator);
             surfaceWarnings(history, &balance_warnings, allocator);
             current.transitionScreen(.editor);

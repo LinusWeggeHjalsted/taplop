@@ -3104,11 +3104,13 @@ pub fn handleIdleInput(
         if (idle.menu_action) |action| {
             switch (action) {
                 .new_game => event_handlers.pushPlayerAction(current, .start_new_game, allocator),
-                // Dev entry point: open the editor on the shipped beginnings
-                // mission (hardcoded path so the editor building blocks are
-                // reachable).
+                // Main-menu Editor button: open a FRESH empty mission
+                // (New Mission, one default-template level, empty
+                // palettes). Opening an EXISTING mission (custom from the
+                // persistent dir, or official) is the deferred mission
+                // browser (TODO) — it will push open_editor with a path.
                 .open_editor => event_handlers.pushPlayerAction(current, .{ .open_editor = .{
-                    .mission_path = "data/campaigns/main_campaign/missions/beginnings",
+                    .mission_path = null,
                 } }, allocator),
                 // Continue: resume the last game. Two branches in the handler
                 // (populated PlayerData → resume from memory; empty → load the

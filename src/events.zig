@@ -617,8 +617,14 @@ pub const PlayerEvent = union(enum) {
 pub const PlayerInputEvent = union(enum) {
     // --- Meta: scope transitions + save + overlay dismiss ---
     start_new_game: void,
+    // Open the editor. Null mission_path = create a FRESH empty mission
+    // ("New Mission", one default-template level, empty palettes — the
+    // main-menu Editor button; the mission uuid is minted at SAVE time,
+    // never held in state — see DESIGN → Level Editor → Mission
+    // identity). A path = open that mission directory (the future mission
+    // browser + the round-trip tests).
     open_editor: struct {
-        mission_path: []const u8,
+        mission_path: ?[]const u8,
     },
     // Orchestrates a save: syncs PlayerData from the working entity (in a
     // hub/level) via build_data_from_player, then writes via write_save.
