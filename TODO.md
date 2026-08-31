@@ -702,10 +702,13 @@ yet implemented. Remaining work:
         `editor_metadata_scroll` + wheel routing over the open panel);
         the gradient rows are two-unit entries (label line above, AUTO +
         swatch on the control line below). History in DONE.md.
-        OPEN (asked, awaiting answer): all pickers to fit exactly within
-        the open inspector/metadata sidebars (a ui_gap each side) —
-        overlay-the-source-sidebar vs centered-but-sidebar-sized is
-        undecided.
+        The picker OVERLAY question settled same-session: every centered
+        picker renders in ONE fixed rect — the band BETWEEN the sidebars
+        (full sidebar-panel height, a ui_gap each side), constant
+        regardless of open state; fixed-size contents (6-column grids,
+        fixed theme strips), the footprint editor scaling down oversized
+        art. See DESIGN → Level Editor → Editor UI layout (the picker
+        overlay). Landed with slice 4's follow-up commit.
   Deferred: drag-painting. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved

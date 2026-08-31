@@ -1985,7 +1985,7 @@ layout + a left inspector + a right metadata sidebar:
     slot_4..8 (entity definitions AND player saves), a weapon-skill
     TOME is dropped entirely, and the player equip path gates the same
     way (src/utility_skills.zig is the single source). The picker is a
-    DROPDOWN, not a modal: a centered floating panel (None + one cell
+    DROPDOWN, not a modal: a panel in the fixed picker overlay band (None + one cell
     per eligible skill, flat enum order, the current pick highlighted,
     close button top-right) that blocks input only where it physically
     sits — everything around it stays live (placing enemies, undo,
@@ -2146,12 +2146,26 @@ session-log reader doesn't regroup nested non-u8 slices):
 Ground items always render as the shared ground-bag sprite — there is
 no sprite to pick for them. The sprite picker + the footprint editor
 (see the Inspector fields above) + the THEME PICKER (the metadata
-sidebar's gradient rows — every gradient as a bare full-width strip,
-one pick per row, the current index framed in lightest; a pick while an
-enemy/player role is on AUTO flips it to manual in the same commit, and
-an auto-role picker highlights its DERIVED index) are the editor's
-centered panels; everything else stays inline in the inspector /
-metadata sidebar.
+sidebar's gradient rows — every gradient as a fixed-size strip of
+6 × `slot_size` blocks, one pick per row, the current index framed in
+lightest; a pick while an enemy/player role is on AUTO flips it to
+manual in the same commit, and an auto-role picker highlights its
+DERIVED index) are the editor's centered panels; everything else stays
+inline in the inspector / metadata sidebar.
+
+**The picker OVERLAY (settled):** every centered picker renders in ONE
+FIXED rect — `ui.editorPickerOverlayRect`, the band between the two
+sidebars (full sidebar-panel height, a `ui_gap` in from each sidebar
+panel's edge; 1760×1328 at the current reference size), mirroring the
+gameplay scenes' middle-panel band. CONSTANT regardless of the
+sidebars' open state, and independent of the picker's content: the
+CONTENTS are fixed-size (256px cells, fixed strips — 6-column grids,
+the theme picker's fixed strips) laid out centered inside it, so the
+overlay never resizes when content grows (more gradients in the wheel,
+more sprites). The footprint editor is the one scaler: its grid keeps
+1:1 (256 screen px per sprite-grid tile) for whatever fits and SCALES
+DOWN (never up) for oversized custom art; the Confirm button is pinned
+bottom-center.
 
 **Level theme (gradient picking).** A level's theme is composed from the
 authoritative gradient list in `color_themes.txt` (currently 3 gradients;

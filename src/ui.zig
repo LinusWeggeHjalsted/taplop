@@ -4700,6 +4700,25 @@ pub fn buildEditorInspectorPanel(
     }
 }
 
+/// The editor's centered picker OVERLAY: the band between the two
+/// sidebars — full sidebar-panel height, a `ui_gap` in from each sidebar
+/// panel's edge. CONSTANT (independent of the sidebars' open state — the
+/// pickers keep their rect regardless; the gameplay scenes' middle-panel
+/// band is the model). The pickers' CONTENTS are fixed-size (256px cells,
+/// fixed strips) laid out inside it — the overlay never resizes with its
+/// content. See DESIGN → Architecture → Level Editor → Editor UI layout.
+pub fn editorPickerOverlayRect() Rectangle {
+    const top = top_bar_height + ui_gap + editor_header_strip_height + ui_gap;
+    const bottom = types.reference_height -
+        bottom_bar_height - 2 * ui_gap - editor_header_strip_height;
+    return .{
+        .x = editor_metadata_sidebar_width + ui_gap,
+        .y = top,
+        .width = types.reference_width - 2 * editor_metadata_sidebar_width - 2 * ui_gap,
+        .height = bottom - top,
+    };
+}
+
 /// Width of the editor metadata sidebar's background panel (mirrors the
 /// inspector's placeholder width).
 pub const editor_metadata_sidebar_width: i32 = 1024;
@@ -6874,19 +6893,22 @@ pub fn buildEditorSkillPicker(
         };
     }
 
+    // The FIXED picker overlay (the band between the sidebars) + a
+    // FIXED-SIZE grid: 6 columns of `slot_size` cells, centered in the
+    // area below the header (top-aligned if it ever outgrows it). The
+    // overlay never resizes with its content — see
+    // `editorPickerOverlayRect`.
     const options: i32 = @intCast(1 + utility_skills.utility_skill_ids.len); // None + skills
-    const columns: i32 = 4;
+    const columns: i32 = 6;
     const rows: i32 = @divTrunc(options + columns - 1, columns);
     const cell = slot_size;
-    const width = columns * cell + (columns - 1) * ui_gap + 2 * ui_gap;
-    const height = middle_panel_header_height + rows * cell + (rows - 1) * ui_gap + 2 * ui_gap;
-    const bounds = screenRect().placeCenter(width, height);
+    const bounds = editorPickerOverlayRect();
 
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
         .screen_position = bounds.position(),
-        .width = width,
-        .height = height,
+        .width = bounds.width,
+        .height = bounds.height,
         .color = active_theme.darkest,
     } });
     const title = try std.fmt.allocPrint(allocator, "Assign Slot {d}", .{slot_index + 4});
@@ -6898,9 +6920,11 @@ pub fn buildEditorSkillPicker(
     const enemy = active_theme.enemy_gradient.colors;
     const skill_frame_color = enemy[@min(@as(u32, 3), types.gradient_color_count - 1)];
     const skill_icon_color = enemy[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    const grid_width = columns * cell + (columns - 1) * ui_gap;
+    const grid_height = rows * cell + (rows - 1) * ui_gap;
     const grid_origin: ScreenPosition = .{
-        .x = content.x + ui_gap,
-        .y = content.y + ui_gap,
+        .x = content.x + @divFloor(content.width - grid_width, 2),
+        .y = content.y + @max(ui_gap, @divFloor(content.height - grid_height, 2)),
     };
 
     // Cell 0: the None option (clears the slot) — no editor_skill payload;
@@ -6954,8 +6978,8 @@ pub fn buildEditorSkillPicker(
 /// sprites, minus the player body); close top-right. One 256×256 cell per
 /// option (the palette tool-cell look). Dropdown semantics like the skill
 /// picker: blocks only where it sits, stays open until a pick or close.
-/// No scrolling — 4 columns, all rows (overflow is a follow-up if real
-/// content needs it).
+/// No scrolling — 6 fixed columns, all rows (overflow is a follow-up if
+/// real content needs it).
 pub fn buildEditorSpritePicker(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -7152,18 +7176,21 @@ pub fn buildEditorSpritePicker(
             },
         },
     }
-    const columns: i32 = 4;
+    // The FIXED picker overlay (the band between the sidebars) + a
+    // FIXED-SIZE grid: 6 columns of `slot_size` cells, centered in the
+    // area below the header (top-aligned if it ever outgrows it). The
+    // overlay never resizes with its content — see
+    // `editorPickerOverlayRect`.
+    const columns: i32 = 6;
     const rows: i32 = @max(@divTrunc(@as(i32, @intCast(cells.items.len)) + columns - 1, columns), 1);
     const cell = slot_size;
-    const width = columns * cell + (columns - 1) * ui_gap + 2 * ui_gap;
-    const height = middle_panel_header_height + rows * cell + (rows - 1) * ui_gap + 2 * ui_gap;
-    const bounds = screenRect().placeCenter(width, height);
+    const bounds = editorPickerOverlayRect();
 
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
         .screen_position = bounds.position(),
-        .width = width,
-        .height = height,
+        .width = bounds.width,
+        .height = bounds.height,
         .color = active_theme.darkest,
     } });
 
@@ -7226,10 +7253,14 @@ pub fn buildEditorSpritePicker(
     };
 
     // The edited template's colors were resolved above (the target's
-    // single seam) — nothing further to derive here.
+    // single seam) — nothing further to derive here. The grid is centered
+    // horizontally (fixed 6-column width), top-anchored below the header
+    // with the vertical centering clamp.
+    const grid_width = columns * cell + (columns - 1) * ui_gap;
+    const grid_height = rows * cell + (rows - 1) * ui_gap;
     const grid_origin: ScreenPosition = .{
-        .x = content.x + ui_gap,
-        .y = content.y + ui_gap,
+        .x = content.x + @divFloor(content.width - grid_width, 2),
+        .y = content.y + @max(ui_gap, @divFloor(content.height - grid_height, 2)),
     };
 
     if (cells.items.len == 0) {
@@ -7308,18 +7339,22 @@ pub fn buildEditorThemePicker(
 ) !void {
     _ = font_metrics;
     const gradients = color_theme_definitions.gradients;
-    const row_height = editor_header_strip_height;
-    const width: i32 = 2048;
+    // FIXED-SIZE rows: full-gradient strips at 6 × `slot_size` blocks
+    // (1536 wide, one row of `slot_size` height), centered in the FIXED
+    // picker overlay (the band between the sidebars) — the overlay never
+    // resizes with the wheel's gradient count. See
+    // `editorPickerOverlayRect`.
+    const row_height = slot_size;
+    const strip_width = types.gradient_color_count * slot_size;
     const rows: i32 = @intCast(gradients.len);
-    const height = middle_panel_header_height +
-        rows * row_height + @max(rows - 1, 0) * ui_gap + 2 * ui_gap;
-    const bounds = screenRect().placeCenter(width, height);
+    const grid_height = rows * row_height + @max(rows - 1, 0) * ui_gap;
+    const bounds = editorPickerOverlayRect();
 
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
         .screen_position = bounds.position(),
-        .width = width,
-        .height = height,
+        .width = bounds.width,
+        .height = bounds.height,
         .color = active_theme.darkest,
     } });
     const title = try std.fmt.allocPrint(allocator, "Pick {s} Gradient", .{switch (target.role) {
@@ -7328,6 +7363,7 @@ pub fn buildEditorThemePicker(
         .player => "Player",
     }});
     const content = try emitPanelHeader(elements, allocator, bounds, title, .close_editor_picker);
+    const rows_origin_y = content.y + @max(ui_gap, @divFloor(content.height - grid_height, 2));
 
     // The level's current index for the role (the DERIVED one while an
     // enemy/player role is on auto — it's what's in effect). A stale
@@ -7347,9 +7383,9 @@ pub fn buildEditorThemePicker(
 
     for (gradients, 0..) |gradient, index| {
         const row_rect: Rectangle = .{
-            .x = content.x + ui_gap,
-            .y = content.y + ui_gap + @as(i32, @intCast(index)) * (row_height + ui_gap),
-            .width = content.width - 2 * ui_gap,
+            .x = content.x + @divFloor(content.width - strip_width, 2),
+            .y = rows_origin_y + @as(i32, @intCast(index)) * (row_height + ui_gap),
+            .width = strip_width,
             .height = row_height,
         };
         const block_width = @divFloor(row_rect.width, types.gradient_color_count);
@@ -7426,20 +7462,32 @@ pub fn buildEditorFootprintEditor(
     const cell_count: usize = @intCast(grid_width * grid_height);
     if (cell_count > editor_footprint_grid_cell_limit) return;
 
+    // The FIXED picker overlay (the band between the sidebars). The grid
+    // SCALES DOWN to fit the area between the header and the Confirm
+    // button (never upscaled — 1:1 is the design size; an 8×8 custom
+    // sprite is the case that shrinks). See `editorPickerOverlayRect`.
     const tile: i32 = 256;
-    const grid_width_pixels = grid_width * tile;
-    const grid_height_pixels = grid_height * tile;
     const header_height = middle_panel_header_height;
     const confirm_height = editor_inspector_row_height;
-    const width = grid_width_pixels + 2 * ui_gap;
-    const height = header_height + grid_height_pixels + confirm_height + 3 * ui_gap;
-    const bounds = screenRect().placeCenter(width, height);
+    const bounds = editorPickerOverlayRect();
+    const avail_width = bounds.width - 2 * ui_gap;
+    const avail_height = bounds.height - header_height - confirm_height - 3 * ui_gap;
+    const scale: f32 = @min(
+        @as(f32, 1.0),
+        @min(
+            @as(f32, @floatFromInt(avail_width)) / @as(f32, @floatFromInt(grid_width * tile)),
+            @as(f32, @floatFromInt(avail_height)) / @as(f32, @floatFromInt(grid_height * tile)),
+        ),
+    );
+    const scaled_tile: i32 = @max(1, @as(i32, @intFromFloat(@as(f32, @floatFromInt(tile)) * scale)));
+    const grid_width_pixels = grid_width * scaled_tile;
+    const grid_height_pixels = grid_height * scaled_tile;
 
     try elements.append(allocator, .{ .nine_slice_panel = .{
         .sprite_id = "ui/panel",
         .screen_position = bounds.position(),
-        .width = width,
-        .height = height,
+        .width = bounds.width,
+        .height = bounds.height,
         .color = active_theme.darkest,
     } });
 
@@ -7466,12 +7514,13 @@ pub fn buildEditorFootprintEditor(
         .action = .close_editor_picker,
     } });
 
-    // The sprite grid: the art at its TRUE pixel dims anchored top-left
-    // of the (ceil-rounded) grid area; custom stems get a dark fill per
+    // The sprite grid: the art SCALED, centered in the area between the
+    // header and the Confirm button; custom stems get a dark fill per
     // cell so the grid stays visible without art.
     const grid_origin: ScreenPosition = .{
-        .x = origin.x + ui_gap,
-        .y = origin.y + header_height + ui_gap,
+        .x = origin.x + @divFloor(bounds.width - grid_width_pixels, 2),
+        .y = origin.y + header_height + ui_gap +
+            @divFloor(avail_height - grid_height_pixels, 2),
     };
     if (std.mem.startsWith(u8, definition.sprite, "custom/")) {
         for (0..cell_count) |cell_index| {
@@ -7489,11 +7538,17 @@ pub fn buildEditorFootprintEditor(
         }
     } else {
         const graphic_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{definition.sprite});
+        const scaled_width: i32 = @max(1, @as(i32, @intFromFloat(
+            @as(f32, @floatFromInt(definition.pixel_dims.x)) * scale,
+        )));
+        const scaled_height: i32 = @max(1, @as(i32, @intFromFloat(
+            @as(f32, @floatFromInt(definition.pixel_dims.y)) * scale,
+        )));
         try elements.append(allocator, .{ .image = .{
             .sprite_id = graphic_id,
             .screen_position = grid_origin,
-            .width = definition.pixel_dims.x,
-            .height = definition.pixel_dims.y,
+            .width = scaled_width,
+            .height = scaled_height,
             .color = default_tint,
             .blocks_input = false,
         } });
@@ -7506,11 +7561,11 @@ pub fn buildEditorFootprintEditor(
         const row: i32 = @intCast(cell_index / @as(usize, @intCast(grid_width)));
         try elements.append(allocator, .{ .button = .{
             .screen_position = .{
-                .x = grid_origin.x + column * tile,
-                .y = grid_origin.y + row * tile,
+                .x = grid_origin.x + column * scaled_tile,
+                .y = grid_origin.y + row * scaled_tile,
             },
-            .width = tile,
-            .height = tile,
+            .width = scaled_tile,
+            .height = scaled_tile,
             .action = .toggle_editor_footprint_tile,
             .editor_footprint_tile = @intCast(cell_index),
         } });
@@ -7538,21 +7593,21 @@ pub fn buildEditorFootprintEditor(
         if (!ui_state.editor_footprint_draft[cell_index]) continue;
         const column: i32 = @intCast(cell_index % @as(usize, @intCast(grid_width)));
         const row: i32 = @intCast(cell_index / @as(usize, @intCast(grid_width)));
-        const cell_x = grid_origin.x + column * tile;
-        const cell_y = grid_origin.y + row * tile;
+        const cell_x = grid_origin.x + column * scaled_tile;
+        const cell_y = grid_origin.y + row * scaled_tile;
         const draft = &ui_state.editor_footprint_draft;
         if (!draftSelected(draft, grid_width, grid_height, column, row - 1)) {
             try elements.append(allocator, .{ .solid_rect = .{
                 .screen_position = .{ .x = cell_x, .y = cell_y - half_thickness },
-                .width = tile,
+                .width = scaled_tile,
                 .height = outline_thickness,
                 .color = default_tint,
             } });
         }
         if (!draftSelected(draft, grid_width, grid_height, column, row + 1)) {
             try elements.append(allocator, .{ .solid_rect = .{
-                .screen_position = .{ .x = cell_x, .y = cell_y + tile - half_thickness },
-                .width = tile,
+                .screen_position = .{ .x = cell_x, .y = cell_y + scaled_tile - half_thickness },
+                .width = scaled_tile,
                 .height = outline_thickness,
                 .color = default_tint,
             } });
@@ -7561,24 +7616,25 @@ pub fn buildEditorFootprintEditor(
             try elements.append(allocator, .{ .solid_rect = .{
                 .screen_position = .{ .x = cell_x - half_thickness, .y = cell_y },
                 .width = outline_thickness,
-                .height = tile,
+                .height = scaled_tile,
                 .color = default_tint,
             } });
         }
         if (!draftSelected(draft, grid_width, grid_height, column + 1, row)) {
             try elements.append(allocator, .{ .solid_rect = .{
-                .screen_position = .{ .x = cell_x + tile - half_thickness, .y = cell_y },
+                .screen_position = .{ .x = cell_x + scaled_tile - half_thickness, .y = cell_y },
                 .width = outline_thickness,
-                .height = tile,
+                .height = scaled_tile,
                 .color = default_tint,
             } });
         }
     }
 
-    // The Confirm button (bottom-center, the layer-button visual class).
+    // The Confirm button (bottom-center of the overlay, the layer-button
+    // visual class) — a FIXED position now (the grid scales above it).
     const confirm_rect: Rectangle = .{
         .x = origin.x + @divFloor(bounds.width - @divFloor(bounds.width, 2), 2),
-        .y = origin.y + header_height + grid_height_pixels + 2 * ui_gap,
+        .y = origin.y + bounds.height - confirm_height - ui_gap,
         .width = @divFloor(bounds.width, 2),
         .height = confirm_height,
     };
@@ -11893,6 +11949,21 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
     var elements: UiElementList = .empty;
     try buildEditorSkillPicker(&elements, arena.allocator(), metrics, editor, .{ .utility_skill_slot = 1 }, theme);
 
+    // The panel is the FIXED picker overlay — the band between the
+    // sidebars (full sidebar-panel height, a ui_gap in from each).
+    const panel = elements.items[0].nine_slice_panel;
+    try std.testing.expectEqual(
+        editorPickerOverlayRect(),
+        Rectangle{
+            .x = panel.screen_position.x,
+            .y = panel.screen_position.y,
+            .width = panel.width,
+            .height = panel.height,
+        },
+    );
+    try std.testing.expectEqual(@as(i32, 1760), editorPickerOverlayRect().width);
+    try std.testing.expectEqual(@as(i32, 1328), editorPickerOverlayRect().height);
+
     // Panel + header label + close + None (button + label) + 7 ×
     // (button + full-size icon) = 19 — real skills are icon-only.
     try std.testing.expectEqual(@as(usize, 19), elements.items.len);
@@ -12517,6 +12588,46 @@ test "buildEditorFootprintEditor: tile cells, white region outline, confirm; ins
         };
         try std.testing.expect(saw_footprint_button);
     }
+
+    // An oversized sprite SCALES DOWN to fit the fixed overlay: a
+    // 4096×256 (16×1-grid) sprite scales to 1728/4096 of 1:1 — the
+    // toggle cells shrink to 108px, the fixed overlay unchanged.
+    {
+        const wide_types = [_]types.DecorationTypeDef{.{
+            .id = "wide",
+            .sprite = "wide",
+            .footprint = &.{.{ .x = 0, .y = 0 }},
+            .pixel_dims = .{ .x = 4096, .y = 256 },
+        }};
+        const wide_editor: types.Editor = .{
+            .decoration_types = &wide_types,
+            .active_tool = .{ .decoration_type = 0 },
+        };
+        var wide_elements: UiElementList = .empty;
+        var wide_ui_state: UiState = .{};
+        try buildEditorFootprintEditor(&wide_elements, arena.allocator(), metrics, wide_editor, theme, 0, &wide_ui_state);
+        var saw_scaled_cell = false;
+        for (wide_elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .toggle_editor_footprint_tile) {
+                    try std.testing.expectEqual(@as(i32, 108), button.width);
+                    saw_scaled_cell = true;
+                }
+            },
+            else => {},
+        };
+        try std.testing.expect(saw_scaled_cell);
+        const panel = wide_elements.items[0].nine_slice_panel;
+        try std.testing.expectEqual(
+            editorPickerOverlayRect(),
+            Rectangle{
+                .x = panel.screen_position.x,
+                .y = panel.screen_position.y,
+                .width = panel.width,
+                .height = panel.height,
+            },
+        );
+    }
 }
 
 test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar" {
@@ -12707,9 +12818,26 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
             theme,
             .{ .level_index = 0, .role = .world },
         );
-        // Panel + header label + close + 3 rows × (6 blocks + button) +
-        // 4 frame rects on the current row = 28.
+        // The FIXED picker overlay + header label + close + 3 rows ×
+        // (6 blocks + button) + 4 frame rects on the current row = 28.
+        const panel = elements.items[0].nine_slice_panel;
+        try std.testing.expectEqual(
+            editorPickerOverlayRect(),
+            Rectangle{
+                .x = panel.screen_position.x,
+                .y = panel.screen_position.y,
+                .width = panel.width,
+                .height = panel.height,
+            },
+        );
         try std.testing.expectEqual(@as(usize, 28), elements.items.len);
+        // The strips are FIXED-SIZE (6 × slot_size wide, slot_size tall),
+        // not stretched to the overlay — the row's button spans the whole
+        // strip (the 6 blocks beneath it are slot_size/6 each).
+        try std.testing.expectEqual(@as(?u32, 0), elements.items[9].button.editor_gradient);
+        try std.testing.expectEqual(6 * slot_size, elements.items[9].button.width);
+        try std.testing.expectEqual(slot_size, elements.items[9].button.height);
+        try std.testing.expectEqual(@as(i32, 256), elements.items[3].solid_rect.width);
 
         var pick_buttons: usize = 0;
         var current_button: ?Button = null;

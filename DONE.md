@@ -8451,3 +8451,31 @@ inspector exactly, plus renames. Changes:
   default = two headers only; expanded = windowed rows + scrollbar;
   scrolled-to-bottom windowing), a metadata wheel-routing test, the
   section-count assertions updated (9 → 11 sections).
+
+## Level editor — the fixed picker overlay (author request)
+
+The author asked for all pickers to render as a centered overlay that
+"fits exactly between the two sidebars, full height of a sidebar, full
+width minus the panels minus the ui_gaps" — mirroring the gameplay
+middle-panel band — with fixed-size contents.
+
+- **`ui.editorPickerOverlayRect`**: the ONE fixed rect every centered
+  picker renders in — x = sidebar width + ui_gap, full sidebar-panel
+  height (416..1744), width 3840 − 2×1024 − 2×16 = 1760. CONSTANT:
+  independent of the sidebars' open state AND of the picker's content —
+  pickers no longer size their panel to their rows (the old skill/sprite
+  pickers computed width from column count; the theme picker was
+  hardcoded 2048; the footprint editor sized to the sprite).
+- **Contents stay FIXED-SIZE**, centered in the area below the header
+  (top-aligned when they outgrow it): skill + sprite pickers are
+  6-column grids of `slot_size` cells (was 4 — the wide overlay earns
+  two more columns per row); the theme picker's gradient strips are
+  fixed 6 × `slot_size` (1536×256) rows; the footprint editor keeps 1:1
+  for whatever fits and SCALES DOWN (never up) for oversized custom art
+  (cells + image + outline all at the scaled tile; the earlier draft
+  left the toggle buttons at 256 — caught on review), Confirm pinned
+  bottom-center of the overlay.
+- Tests: the skill-picker/theme-picker/footprint tests assert the
+  overlay rect verbatim (the panel IS `editorPickerOverlayRect`), the
+  fixed strip size, 1:1 for small sprites, and a 4096×256 sprite scaling
+  to 108px cells.
