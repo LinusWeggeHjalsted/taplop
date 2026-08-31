@@ -2213,15 +2213,27 @@ event, so the set stays consistent across edits AND across undo/redo).
 The click resolution (see the
 selection tool above) is the landed hit-testing: '!' / '=' singletons,
 first covering decoration, else tile + occupants; the render-order
-priority below is the future selection-op refinement. **Inspector tool-type inference:** when
-the selection contains only placements (entity/decoration/item) that all
-share one `type_id`, the inspector switches to that palette tool and shows
-its type fields (editing the type updates all placements of it). When the
-selection spans multiple types, or includes tiles / `player_start` /
-`level_end`, no single type is inferred → the inspector shows selection
-info (count, bounds) instead of type fields. Selecting `player_start` shows
-the player loadout fields (`player_def`, reached by clicking the `!`, NOT by
-a palette entry — the player isn't a placed type, it's a singleton spawn).
+priority below is the future selection-op refinement. **Inspector tool-type
+inference (LANDED):** the inspector's target is resolved by
+`editorInspectorTool` (ui.zig): the ACTIVE placement tool passes through;
+while the SELECT tool is active the selection is scanned — each selected
+placement resolves to its palette tool (kind + type_id, resolved against
+the ACTIVE level; an out-of-range placement index is ignored, defensive
+only), while tiles / `player_start` / `level_end` contribute nothing
+(nothing to inspect on them). Exactly one distinct referenced tool → the
+inspector shows that tool's type fields (editing the type updates every
+placement of it — selecting several tiles whose enemies are all the same
+type shows that enemy tool's fields). Zero or ≥2 distinct tools (including
+mixed kinds: an enemy placement and a ground-item placement are different
+tools even at equal indices) → no tool is inferred → the "No tool
+selected" hint (a selection-info panel — count, bounds — is a possible
+later nicety, not committed). Only the enemy fields are BUILT so far; an
+inferred decoration/item tool falls to the same hint until its inspector
+slice lands. Selecting `player_start` will eventually show the player
+loadout fields (`player_def`, reached by clicking the `!`, NOT by a
+palette entry — the player isn't a placed type, it's a singleton spawn) —
+that lands with the player-inspector slice, widening `editorInspectorTool`
+from `?EditorToolId` to a target union that also carries `player_loadout`.
 `player_start` and `level_end` are NEVER deletable, only movable (updating
 the level's `player_start`/`level_end` via an editor event). Multi-select
 that includes them is allowed for move/bounds but they have no type to edit.

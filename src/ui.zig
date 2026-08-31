@@ -1446,6 +1446,147 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
     }
 }
 
+test "editorInspectorTool: active placement tool passes through, select/tile infer or null" {
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 },
+    }};
+    const decoration_types = [_]types.DecorationTypeDef{.{ .id = "Tree" }};
+    const levels = [_]types.EditorLevel{.{} };
+    const editor: types.Editor = .{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .decoration_types = &decoration_types,
+        .active_tool = .{ .entity_type = 0 },
+    };
+    try std.testing.expectEqual(@as(?types.EditorToolId, .{ .entity_type = 0 }), editorInspectorTool(editor));
+
+    var tile_tool = editor;
+    tile_tool.active_tool = .tile;
+    try std.testing.expectEqual(@as(?types.EditorToolId, null), editorInspectorTool(tile_tool));
+
+    var decoration_tool = editor;
+    decoration_tool.active_tool = .{ .decoration_type = 0 };
+    try std.testing.expectEqual(
+        @as(?types.EditorToolId, .{ .decoration_type = 0 }),
+        editorInspectorTool(decoration_tool),
+    );
+
+    // An empty selection under the select tool infers nothing.
+    var select_tool = editor;
+    select_tool.active_tool = .select;
+    try std.testing.expectEqual(@as(?types.EditorToolId, null), editorInspectorTool(select_tool));
+}
+
+test "editorInspectorTool: selection of one shared type infers that tool; tiles and markers are ignored" {
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .team = 1 } },
+        .{ .id = "Bat", .template = .{ .name = "Bat", .team = 1 } },
+    };
+    const levels = [_]types.EditorLevel{.{ .entity_placements = &.{
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+        .{ .type_id = 0, .position = .{ .x = 3, .y = 1 } },
+        .{ .type_id = 1, .position = .{ .x = 5, .y = 2 } },
+    } }};
+
+    // One enemy → its tool.
+    const one: []const types.Selectable = &.{.{ .entity_placement = 0 }};
+    try std.testing.expectEqual(
+        @as(?types.EditorToolId, .{ .entity_type = 0 }),
+        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .active_tool = .select, .selection = one }),
+    );
+
+    // Several enemies of the SAME type, mixed with tiles and the markers
+    // (nothing to inspect on those) → still that one tool.
+    const mixed: []const types.Selectable = &.{
+        .{ .tile = .{ .x = 1, .y = 1 } },
+        .{ .entity_placement = 1 },
+        .{ .player_start = {} },
+        .{ .level_end = {} },
+        .{ .entity_placement = 0 },
+    };
+    try std.testing.expectEqual(
+        @as(?types.EditorToolId, .{ .entity_type = 0 }),
+        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .active_tool = .select, .selection = mixed }),
+    );
+
+    // Two different enemy types → no single tool.
+    const two_types: []const types.Selectable = &.{ .{ .entity_placement = 0 }, .{ .entity_placement = 2 } };
+    try std.testing.expectEqual(
+        @as(?types.EditorToolId, null),
+        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .active_tool = .select, .selection = two_types }),
+    );
+
+    // Tiles / markers only → nothing to inspect.
+    const bare: []const types.Selectable = &.{ .{ .tile = .{ .x = 0, .y = 0 } }, .{ .player_start = {} } };
+    try std.testing.expectEqual(
+        @as(?types.EditorToolId, null),
+        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .active_tool = .select, .selection = bare }),
+    );
+}
+
+test "editorInspectorTool: mixed kinds never infer; stale indices are ignored" {
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton", .team = 1 },
+    }};
+    const item_types = [_]types.ItemTypeDef{.{ .id = "Gold" }};
+    const levels = [_]types.EditorLevel{.{ .entity_placements = &.{
+        .{ .type_id = 0, .position = .{ .x = 1, .y = 0 } },
+    }, .item_placements = &.{
+        .{ .type_id = 0, .position = .{ .x = 2, .y = 2 } },
+    } }};
+
+    // An enemy placement and an item placement are two tools even at the
+    // same palette index.
+    const mixed_kinds: []const types.Selectable = &.{ .{ .entity_placement = 0 }, .{ .ground_item_placement = 0 } };
+    try std.testing.expectEqual(
+        @as(?types.EditorToolId, null),
+        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .item_types = &item_types, .active_tool = .select, .selection = mixed_kinds }),
+    );
+
+    // Two item placements of one type → that tool.
+    const items: []const types.Selectable = &.{ .{ .ground_item_placement = 0 }, .{ .ground_item_placement = 0 } };
+    try std.testing.expectEqual(
+        @as(?types.EditorToolId, .{ .item_type = 0 }),
+        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .item_types = &item_types, .active_tool = .select, .selection = items }),
+    );
+
+    // An out-of-range placement index (defensive only — the delete arms
+    // keep the selection consistent) is ignored, not fatal.
+    const stale: []const types.Selectable = &.{ .{ .entity_placement = 99 }, .{ .ground_item_placement = 0 } };
+    try std.testing.expectEqual(
+        @as(?types.EditorToolId, .{ .item_type = 0 }),
+        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .item_types = &item_types, .active_tool = .select, .selection = stale }),
+    );
+}
+
+test "editorInspectorEntityTarget: selection inference routes edits; stale type ids fall to the hint" {
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .team = 1 } },
+    };
+    const levels = [_]types.EditorLevel{.{ .entity_placements = &.{
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+    } }};
+    const selection: []const types.Selectable = &.{.{ .entity_placement = 0 }};
+    const inferred: types.Editor = .{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_tool = .select,
+        .selection = selection,
+    };
+    try std.testing.expectEqual(@as(?u32, 0), editorInspectorEntityTarget(inferred));
+
+    // An inferred type id outside the palette (defensive) shows the hint.
+    const stale_levels = [_]types.EditorLevel{.{ .entity_placements = &.{
+        .{ .type_id = 7, .position = .{ .x = 0, .y = 0 } },
+    } }};
+    try std.testing.expectEqual(
+        @as(?u32, null),
+        editorInspectorEntityTarget(.{ .levels = &stale_levels, .entity_types = &entity_types, .active_tool = .select, .selection = selection }),
+    );
+}
+
 test "textEditPressProceeds: M2 region is the open inspector panel + its toggle" {
     const rect = editorInspectorPanelRect();
     try std.testing.expectEqual(@as(i32, 0), rect.x);
@@ -4231,12 +4372,77 @@ fn inspectorLabelY(cell: Rectangle) i32 {
     return cell.y + editor_inspector_row_height - editor_group_header_font_size;
 }
 
-/// The entity type the inspector currently edits (the ACTIVE enemy tool),
-/// or null for every other tool — select/tile have no fields, and the
-/// decoration/item inspectors are later slices. Range-guarded (a stale
-/// tool id after a type deletion shows the empty state, not a panic).
+/// The tool the inspector edits: the ACTIVE placement tool, or — while
+/// the select tool is active — the tool INFERRED from the selection
+/// (every selected placement that resolves to the same tool; tiles and
+/// the '!' / '=' markers contribute nothing — there is nothing to
+/// inspect on them). Two or more distinct referenced tools infer none.
+/// Kinds matter: an entity placement and an item placement are different
+/// tools even at equal indices. Placement indices are resolved against
+/// the ACTIVE level; out-of-range entries are ignored (the delete arms
+/// keep the selection consistent, so this is defensive only — see
+/// `Selectable`). Palette-type range guarding is the CONSUMER's job
+/// (`editorInspectorEntityTarget` guards the entity arm).
+pub fn editorInspectorTool(editor: types.Editor) ?types.EditorToolId {
+    switch (editor.active_tool) {
+        // The select tool infers from the selection below.
+        .select => {},
+        // No tool fields to inspect.
+        .tile => return null,
+        .entity_type,
+        .decoration_type,
+        .item_type,
+        => return editor.active_tool,
+    }
+    if (editor.active_level_index >= editor.levels.len) return null;
+    const level = editor.levels[editor.active_level_index];
+    var inferred: ?types.EditorToolId = null;
+    for (editor.selection) |selected| {
+        const referenced: ?types.EditorToolId = switch (selected) {
+            .tile, .player_start, .level_end => null,
+            .entity_placement => |index| if (index < level.entity_placements.len)
+                .{ .entity_type = level.entity_placements[index].type_id }
+            else
+                null,
+            .decoration_placement => |index| if (index < level.decoration_placements.len)
+                .{ .decoration_type = level.decoration_placements[index].type_id }
+            else
+                null,
+            .ground_item_placement => |index| if (index < level.item_placements.len)
+                .{ .item_type = level.item_placements[index].type_id }
+            else
+                null,
+        };
+        const tool = referenced orelse continue;
+        if (inferred) |existing| {
+            if (!editorToolIdsEqual(existing, tool)) return null;
+        } else {
+            inferred = tool;
+        }
+    }
+    return inferred;
+}
+
+fn editorToolIdsEqual(
+    first: types.EditorToolId,
+    second: types.EditorToolId,
+) bool {
+    if (std.meta.activeTag(first) != std.meta.activeTag(second)) return false;
+    return switch (first) {
+        .select, .tile => true,
+        .entity_type => |type_id| type_id == second.entity_type,
+        .decoration_type => |type_id| type_id == second.decoration_type,
+        .item_type => |type_id| type_id == second.item_type,
+    };
+}
+
+/// The entity (enemy) type the inspector currently edits, or null when
+/// the resolved tool (see `editorInspectorTool`) is anything else —
+/// select-with-no-inference, tile, decoration, item. Range-guarded (a
+/// stale type id after a type deletion shows the empty state, not a
+/// panic).
 pub fn editorInspectorEntityTarget(editor: types.Editor) ?u32 {
-    return switch (editor.active_tool) {
+    return switch (editorInspectorTool(editor) orelse return null) {
         .entity_type => |type_id| if (type_id < editor.entity_types.len) type_id else null,
         else => null,
     };
@@ -4432,12 +4638,13 @@ fn buildEditorInspectorContent(
     const visible_rows = @divFloor(content.height, editor_inspector_row_height);
     const scroll_offset = &ui_state.editor_inspector_scroll;
 
-    // Target resolution: the active enemy tool's type, else the empty
-    // state (a hint — the inspector edits the ACTIVE TOOL's type).
+    // Target resolution: the resolved tool's entity type (active enemy
+    // tool, or a selection of placements that all reference one enemy
+    // type — see editorInspectorTool), else the empty state hint.
     const type_index = editorInspectorEntityTarget(editor) orelse {
         scroll_offset.* = 0;
         try elements.append(allocator, .{ .text_label = .{
-            .text = "Select an enemy tool to edit its type",
+            .text = "No tool selected",
             .screen_position = content.position(),
             .font_size = material_count_font_size,
             .color = active_theme.lightest,
@@ -6942,7 +7149,7 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, stale_editor, theme, true, &ui_state);
         try std.testing.expectEqual(@as(i32, 0), ui_state.editor_inspector_scroll);
         try std.testing.expectEqualStrings(
-            "Select an enemy tool to edit its type",
+            "No tool selected",
             elements.items[4].text_label.text,
         );
         try std.testing.expectEqual(@as(usize, 0), countSolidRects(&elements));

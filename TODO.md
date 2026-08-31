@@ -546,6 +546,17 @@ yet implemented. Remaining work:
         (only its own actions run while open), close button top-right;
         the inspector's five slot rows are half-width current-skill
         buttons that open it; same-value picks close without recording.
+  - [x] **Selection-inferred inspector target** — DONE: `editorInspectorTool`
+        (ui.zig) resolves the inspector's tool from the active placement
+        tool OR (select tool active) from the selection — every selected
+        placement that references the SAME tool (kind + type_id); tiles /
+        the '!' / '=' contribute nothing; ≥2 distinct tools (or mixed
+        kinds) infer none → the "No tool selected" hint. `editorInspectorEntityTarget`
+        is now a wrapper over it, so the inspector content AND every
+        edit-action routing (input_handlers' commit sites, the skill
+        picker) re-target automatically. Only enemy fields are built;
+        inferred decoration/item tools fall to the hint until their
+        inspector slices. History in DONE.md.
   - [ ] **6 — later: sprite picker + entity layers:** replaces the interim
         sprite-id text field; sprite resolution must PRIORITIZE `.png`s
         in the mission folder being edited (custom assets) over shipped

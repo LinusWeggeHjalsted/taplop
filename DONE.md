@@ -7755,3 +7755,43 @@ fires in the same click. Escape → options menu stacks ABOVE the picker
 Tests: the interaction test's modal assertion flipped (the inspector
 toggle now fires under the picker AND the picker survives it); the M2
 test gained the picker-surface cases.
+
+### Inspector selection-inferred target (DONE)
+
+The inspector now shows while SELECTING: `editorInspectorTool` (ui.zig)
+resolves the tool the inspector should edit — the active placement tool
+passes through, and while the SELECT tool is active the selection is
+scanned: each selected placement resolves to its palette tool (kind +
+type_id against the ACTIVE level's placement lists; out-of-range indices
+ignored, defensive only), while tiles / `player_start` / `level_end`
+contribute nothing (nothing to inspect on them). Exactly one distinct
+referenced tool → that tool's fields; zero or ≥2 distinct (mixed kinds
+count as distinct: an enemy placement and a ground-item placement are
+different tools even at equal indices) → the "No tool selected" hint
+(simplified from "Select an enemy tool to edit its type" — same meaning,
+shorter).
+
+`editorInspectorEntityTarget` became a thin wrapper
+(`editorInspectorTool` → entity arm, palette-range-guarded), so the
+inspector content AND every edit-action routing site — the input_handlers
+commit paths, the centered skill picker — re-target automatically with
+zero call-site changes. This is why the inference lives inside the
+existing resolution seam rather than a parallel function: display and
+commits can't disagree about what's being edited.
+
+The return type is `?EditorToolId` for now; the future
+player-start→loadout inspection (the '!' isn't a palette tool) lands by
+widening to a target union that also carries `player_loadout` — noted in
+DESIGN → Selection model (Inspector tool-type inference), which this
+slice rewrote to the implemented rule (the old text had tiles/markers
+DISQUALIFYING inference; the author's rule is that they're IGNORED —
+a selection of tiles + identical enemies should still show the enemy).
+
+Only enemy fields are built; an inferred decoration/item tool falls to
+the hint until those inspector slices land — the inference itself is
+already general over all three placement kinds.
+
+Tests: four unit tests on the pure function (active-tool passthrough;
+same-type + mixed-with-tiles/markers inference; two-types and
+mixed-kinds nulling; stale-index ignoring) plus the stale-entity-target
+wrapper case; the content test's hint string updated.
