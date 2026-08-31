@@ -561,6 +561,61 @@ yet implemented. Remaining work:
         sprite-id text field; sprite resolution must PRIORITIZE `.png`s
         in the mission folder being edited (custom assets) over shipped
         sprites.
+  - [ ] **7 — inference: player as the fallback target:** widen
+        `editorInspectorTool` → `editorInspectorTarget` returning
+        `EditorInspectorTarget = { entity_type: u32, player: void }`
+        (NON-optional — the player is the fallback). Rules: active enemy
+        tool (valid index) → enemy; tile tool, decoration/item tools
+        (until their inspectors land), empty or ambiguous selection →
+        player; select tool scans the selection where `player_start`
+        now contributes a `.player` REFERENCE (tiles / `level_end` still
+        contribute nothing) — player-start alone, player-start mixed
+        with anything, ≥2 distinct tools, or nothing referenced →
+        player; exactly one distinct placement tool → that tool. The
+        "No tool selected" hint disappears (the player inspector IS the
+        default inspector content). `editorInspectorEntityTarget`
+        becomes the entity arm of the wrapper; the input-handler commit
+        sites + skill picker switch to the target union (player arm →
+        `EntityEditTarget.player_def` — the entity-edit events already
+        carry it).
+  - [ ] **8 — utility-skill row (both inspectors):** replace the five
+        per-slot `.skill_slot` field rows with ONE `utility_skill_row`
+        entry: five adjacent 128×128 slots, the entity-inspect skill
+        look (`ui/skill_button` frame + full-size icon;
+        `ui/skill_slot_empty` diamond when null), label line above (2
+        row-units), each slot opens the centered picker (slot-index
+        payload), skill tooltip per slot. Built once; the player
+        inspector reuses it.
+  - [ ] **9 — player inspector:** entries over `player_def.template`
+        with player-gradient coloring. Sections: an IMPORT button at
+        the top (`player_import_editor_player` → `editor_import_player`
+        — copy the session's PlayerData gear/inventory/equipped utility
+        skills into player_def; NO PlayerData (fresh editor session) →
+        parse `data/new_player.txt` and import that instead), gear
+        (identical to the enemy section), the utility-skill row, an
+        inventory placeholder (UI design open — deferred slice). NO
+        name / sprite / base-stat sections — base stats are strictly
+        enemy-authorable; the player template keeps the Entity
+        defaults. `instantiateEditorLevel` resets inventory as a
+        runtime field — entity 0 must carry
+        `player_def.template.inventory` into the playtest player
+        (equipped skills already survive).
+  - [ ] **10 — player.txt format + max_player.txt:** player.txt becomes
+        SAVE-SHAPED (MainHandWeapon/OffHandWeapon/Amulet/Coat/Gloves/
+        Pants/Boots/Inventory/UtilitySkills + Metadata; no Info / stats
+        / hubs / clones / UnlockedSkills — not authorable): rewrite
+        `loadPlayerLoadout` + all four mission player.txt files
+        (beginnings keeps its starter loadout). Author
+        `data/max_player.txt` — a FULL player save (the future
+        "start at endgame" option loads it as one): the 5 armor slots
+        equipped at the `max_*` bounds, weapon slots + utility bar
+        empty, Inventory = 2 of each of the 6 weapon types at
+        `max_weapon_damage`, UnlockedSkills = all utility skills,
+        DiscoveredHubs = every hub in main_campaign. `new_player.txt`
+        stays as-is (both ship). `open_editor` load order: mission
+        player.txt if present, else max_player.txt (loadout sections
+        extracted from it). Future, with new-mission creation: a new
+        mission's player loads max_player.txt.
   Deferred: drag-painting. Still-needed event
   structs: gradient-override setters. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
