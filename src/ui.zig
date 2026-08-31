@@ -5025,9 +5025,11 @@ fn editorMetadataEntries(
 /// geometry): the role label line above, the control line below — the
 /// AUTO toggle (enemy/player roles only) then the full-gradient swatch
 /// strip, ONE button over the whole strip opening the theme picker.
-/// `gradient_override` is null while the role auto-derives (the AUTO
-/// button's highlighted state); the swatch colors are the EFFECTIVE
-/// gradient either way (the active theme already resolved them).
+/// `gradient_override` is null while the role auto-derives. The outline
+/// marks the mode: the AUTO button while deriving, the SWATCH while an
+/// explicit pick is in force (the world row's swatch always). The swatch
+/// colors are the EFFECTIVE gradient either way (the active theme
+/// already resolved them).
 fn emitSidebarGradientRow(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -5116,6 +5118,11 @@ fn emitSidebarGradientRow(
         .height = swatch_rect.height,
         .action = .open_editor_level_gradient_picker,
         .editor_gradient_role = role,
+        // The outline marks the row's mode: the AUTO button carries it
+        // while deriving, the SWATCH while an explicit pick is in force
+        // (the world row's swatch always — its index is always picked).
+        // The backend renders it as the lightest stroked rect.
+        .highlighted = role == .world or gradient_override != null,
         .tooltip = .{ .header = try spanRow(allocator, text("Pick gradient")) },
     } });
 }
@@ -12645,7 +12652,12 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         .player_gradient = .{ .colors = .{black} ** 5 ++ .{player_five} },
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
-    const levels = [_]types.EditorLevel{ .{ .name = "First" }, .{ .name = "Second" } };
+    const levels = [_]types.EditorLevel{
+        .{ .name = "First" },
+        // Player colors on MANUAL (an explicit override) so the scrolled
+        // case covers both outline modes.
+        .{ .name = "Second", .player_gradient_index = 2 },
+    };
     const editor: types.Editor = .{
         .levels = &levels,
         .mission = .{ .name = "My Mission" },
@@ -12748,6 +12760,9 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         try std.testing.expect(open_buttons[0] != null);
         try std.testing.expect(open_buttons[1] == null);
         try std.testing.expect(open_buttons[2] == null);
+        // The WORLD swatch is ALWAYS outlined (its index is always an
+        // explicit pick — no Auto state to carry the outline instead).
+        try std.testing.expect(open_buttons[0].?.highlighted);
         try std.testing.expectEqual(@as(usize, 2), scrollbar_rects);
     }
 
@@ -12762,18 +12777,37 @@ test "buildEditorMetadataSidebar: collapsible sections, windowed rows, scrollbar
         try buildEditorMetadataSidebar(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         var mission_field_seen = false;
         var player_button: ?Button = null;
+        var enemy_auto_button: ?Button = null;
+        var enemy_swatch_button: ?Button = null;
+        var player_auto_button: ?Button = null;
         for (elements.items) |element| switch (element) {
             .text_field => |field| {
                 if (field.ref.id == .mission_name) mission_field_seen = true;
             },
-            .button => |button| {
-                if (button.action == .open_editor_level_gradient_picker and
-                    button.editor_gradient_role.? == .player) player_button = button;
+            .button => |button| switch (button.action) {
+                .open_editor_level_gradient_picker => switch (button.editor_gradient_role.?) {
+                    .enemy => enemy_swatch_button = button,
+                    .player => player_button = button,
+                    else => {},
+                },
+                .toggle_editor_level_gradient_auto => switch (button.editor_gradient_role.?) {
+                    .enemy => enemy_auto_button = button,
+                    .player => player_auto_button = button,
+                    else => {},
+                },
+                else => {},
             },
             else => {},
         };
         try std.testing.expect(!mission_field_seen);
         try std.testing.expect(player_button != null);
+        // The outline marks the mode: enemy (auto) → the AUTO button
+        // outlined, the swatch not; player (manual, override 2) → the
+        // SWATCH outlined, the Auto button not.
+        try std.testing.expect(enemy_auto_button.?.highlighted);
+        try std.testing.expect(!enemy_swatch_button.?.highlighted);
+        try std.testing.expect(!player_auto_button.?.highlighted);
+        try std.testing.expect(player_button.?.highlighted);
         // The scroll CLAMPED to the content max (13 units - 10 visible).
         try std.testing.expectEqual(@as(i32, 3), ui_state.editor_metadata_scroll);
     }

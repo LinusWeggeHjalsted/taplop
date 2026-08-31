@@ -8491,3 +8491,24 @@ middle-panel band — with fixed-size contents.
   "Enemy colors" / "Player colors" (the gradient rows' labels), and the
   theme picker's title follows ("Pick World colors" — was "Pick World
   Gradient").
+
+## Level editor metadata sidebar — the two-way Auto toggle (author request)
+
+The Auto button was one-way (manual → revert; auto → no-op) and the
+author wanted a true toggle with the outline following the mode:
+
+- **Auto → manual now commits**: the toggle FREEZES the currently-derived
+  index as the explicit override (visually identical — the point is the
+  mode change; a later pick replaces the frozen index). Manual → auto
+  keeps the null-revert. Both directions are always real state changes,
+  so both record one undo step.
+- **The outline marks the mode:** the AUTO button stays outlined while
+  deriving; when manual, the SWATCH button is outlined instead (the
+  backend's lightest stroked rect for highlighted spriteless buttons —
+  the same mechanism that was drawing the Auto outline). The world row's
+  swatch is ALWAYS outlined (its index is always an explicit pick —
+  there's no Auto state to carry the outline).
+- Tests: the input test's auto-while-auto case now expects the freeze
+  (derived index 0 at wheel 2 / 3 gradients) + one undo; the sidebar
+  builder test covers both outline modes (enemy auto → Auto outlined,
+  player manual → swatch outlined) and the always-outlined world swatch.

@@ -2060,7 +2060,13 @@ layout + a left inspector + a right metadata sidebar:
   name. Current-level section: the level name + the three gradient rows
   (World colors / Enemy colors / Player colors — label line above, AUTO
   toggle + full-gradient swatch on the control line below — see "Level
-  theme" below).
+  theme" below). The AUTO toggle works BOTH WAYS: while manual it
+  reverts to auto-derivation (the null override); while auto it flips to
+  manual by FREEZING the currently-derived index as the explicit pick
+  (visually identical — only the outline moves). The outline marks the
+  row's mode: the AUTO button while deriving, the SWATCH while an
+  explicit pick is in force (the world row's swatch always — its index
+  is always picked).
 - **Primary actions (top-right):** Test + Validate buttons. Test =
   `start_playtest` on the active level (single-level); Validate =
   `start_validation` (full playthrough from level 1). Both transition to

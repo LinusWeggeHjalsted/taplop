@@ -4683,15 +4683,19 @@ test "theme picker: open targets the active level, picks commit per role, auto f
     try testing.expect(history.redo(event_handlers.processEvent));
     try testing.expectEqual(@as(?u32, null), history.current_state.editor.?.levels[1].enemy_gradient_index);
 
-    // The Auto button while ALREADY auto is a no-op (never fires).
-    const history_len_before_auto_noop = history.event_history.items.len;
+    // The Auto button while ALREADY auto flips to manual by FREEZING the
+    // derived index (wheel 2, 3 gradients → derived enemy = 0) — a real
+    // commit, one undo back to auto.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .toggle_editor_level_gradient_auto,
         .clicked_editor_gradient_role = .enemy,
     }, .{ .x = 0, .y = 0 }, &.{});
     runToIdle(&history);
+    try testing.expectEqual(@as(?u32, 0), history.current_state.editor.?.levels[1].enemy_gradient_index.?);
+    try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqual(@as(?u32, null), history.current_state.editor.?.levels[1].enemy_gradient_index);
-    try testing.expectEqual(history_len_before_auto_noop, history.event_history.items.len);
+    try testing.expect(history.redo(event_handlers.processEvent));
+    try testing.expectEqual(@as(?u32, 0), history.current_state.editor.?.levels[1].enemy_gradient_index.?);
 
     // The WORLD role: a pick sets the wheel index; the world row has no
     // Auto semantics (a crafted world Auto click never fires).

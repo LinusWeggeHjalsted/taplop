@@ -1991,11 +1991,14 @@ pub fn handleAnytimeInput(
                     },
                 }
             },
-            // An enemy/player gradient row's Auto button: revert that role
-            // to auto-derivation (the null override). A no-op while
-            // already auto — same-value picks never fire (the button
-            // renders highlighted in that state). The world row has no
-            // Auto button (its index is always picked).
+            // An enemy/player gradient row's Auto button — a TRUE toggle
+            // both ways: while MANUAL it reverts to auto-derivation (the
+            // null override); while AUTO it flips to manual by FREEZING
+            // the currently-derived index as the explicit pick (the
+            // visuals don't change — the outline moves from the Auto
+            // button to the swatch; a later pick replaces the frozen
+            // index). The world row has no Auto button (its index is
+            // always picked).
             .toggle_editor_level_gradient_auto => {
                 if (current.editor == null) return;
                 const editor: *types.Editor = &current.editor.?;
@@ -2003,20 +2006,35 @@ pub fn handleAnytimeInput(
                 if (editor.levels.len == 0) return;
                 const level_index: u32 =
                     @intCast(@min(editor.active_level_index, editor.levels.len - 1));
+                const level = editor.levels[level_index];
                 switch (role) {
                     .world => return,
                     .enemy => {
-                        if (editor.levels[level_index].enemy_gradient_index == null) return;
+                        const gradient_index: ?u32 = if (level.enemy_gradient_index != null)
+                            null
+                        else
+                            loaders.autoDerivedGradientIndex(
+                                history.color_theme_definitions,
+                                level.color_wheel_index,
+                                .enemy,
+                            );
                         pushPlayerActionAndDrain(history, .{ .player_set_editor_level_enemy_gradient = .{
                             .level_index = level_index,
-                            .gradient_index = null,
+                            .gradient_index = gradient_index,
                         } });
                     },
                     .player => {
-                        if (editor.levels[level_index].player_gradient_index == null) return;
+                        const gradient_index: ?u32 = if (level.player_gradient_index != null)
+                            null
+                        else
+                            loaders.autoDerivedGradientIndex(
+                                history.color_theme_definitions,
+                                level.color_wheel_index,
+                                .player,
+                            );
                         pushPlayerActionAndDrain(history, .{ .player_set_editor_level_player_gradient = .{
                             .level_index = level_index,
-                            .gradient_index = null,
+                            .gradient_index = gradient_index,
                         } });
                     },
                 }
