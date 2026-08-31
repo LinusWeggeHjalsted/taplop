@@ -1889,7 +1889,7 @@ layout + a left inspector + a right metadata sidebar:
   prompts; the active tool determines what a viewport click does.
 - **Tool palette (bottom bar):** mirrors the in-game bottom bar's slot
   style. Fixed tools first ([Select] [Tile]), then three collapsible groups:
-  Enemies, Decorations, Ground Items. Each group shows at most 8 type
+  Enemies, Decorations, Items. Each group shows at most 8 type
   cells (the visible window); scrolling the wheel with the pointer over a
   group shifts its window left/right (one cell per notch; state on
   `UiState.editor_palette_scroll`, clamped in the builder). Each slot
@@ -2467,7 +2467,7 @@ that includes them is allowed for move/bounds but they have no type to edit.
 
 **Ground items (new editor palette).** Levels already support loose floor
 items via the `Items` section + layout char code (`GroundItems{position,
-items}`). The editor gains a third palette group (Ground Items) for placing
+items}`). The editor gains a third palette group (Items) for placing
 single items not tied to an enemy — the level designer's custom loot.
 Placements store `(type_id, position)` into an `item_types` palette, same
 reference model as enemies/decorations. (The `Item` union's shape means the

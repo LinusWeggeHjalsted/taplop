@@ -709,6 +709,26 @@ yet implemented. Remaining work:
         fixed theme strips), the footprint editor scaling down oversized
         art. See DESIGN → Level Editor → Editor UI layout (the picker
         overlay). Landed with slice 4's follow-up commit.
+  - [ ] **12 — item inspector (the Items palette group):** rename the
+        bottom-bar group "Ground Items" → "Items"; the
+        `EditorInspectorTarget.item_type` arm goes real (active item tool +
+        ground-item selection inference resolve to the palette type); one
+        collapsible "Item" section: a Type label + TWO pick rows (top =
+        the six weapon types, second = the five non-weapon kinds — skill
+        tomes EXCLUDED, not authorable in the level-file Items section),
+        then the Name field + one numeric field per stat the kind carries
+        (clamped to `itemStatMax`). RESET-EVERYTHING semantics on any type
+        change (author decision): a differing pick replaces the item with
+        "New <Kind>" zeroed stats — no retype-keeps-identity special case;
+        same pick = no-op. Events: `editor_set_item_def` REDEFINED
+        FLATTENED (kind + weapon_type + name + the seven stat fields at
+        top level — a nested `Item` payload's name string can't round-trip
+        the session log once it contains a space; the
+        `editor_set_decoration_def` precedent) + `editor_set_item_name`,
+        both with player wrappers + validation arms; the palette label
+        (`id`) tracks the item's display name. Stat + name commits reuse
+        the text-field machinery (`TextFieldId.item_def_name` /
+        `.item_def_stat`, `TextEditTarget.item_type`).
   Deferred: drag-painting. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved
@@ -1087,6 +1107,20 @@ Done items in DONE.md. Open:
   check) call `.toScreenPosition()` at the UI seam. The rename made this
   visible (the type name now clearly says i32 where f32 was intended).
 
+- **Nested string fields break session-log round-trips (pre-existing).**
+  `appendEventScalar` flattens nested struct/union fields as
+  space-separated tokens, so a `[]const u8` INSIDE a nested payload can't
+  contain spaces: `player_set_editor_entity_main_hand_weapon` with a
+  weapon named "New Sword" (the weapon-slot create default!) writes
+  `value New Sword sword 0`, and `parseScalarTokens` reads name="New",
+  weapon_type="Sword" → MalformedSessionLog on reload. Only hit via
+  `--replay` / crash-dump restore today (the log-load paths), so it sat
+  unnoticed. Surfaced by the item-inspector slice (its new events are
+  flattened top-level by design — see TODO → Level Editor slice 12);
+  the FIX is to flatten the equipped-slot events the same way
+  (`weapon_type`/`name`/`damage` as top-level fields, kind on the
+  variant) — a mechanical slice, pre-release-free (session logs are
+  session-scoped; no persisted logs exist).
 - **`WorldOverlayDrawable` variant consistency.** `floating_icon` uses a
   named `FloatingIconDrawable` type; `floating_text` is an inline anonymous
   struct. Pure consistency nit — extract a `FloatingTextDrawable` named

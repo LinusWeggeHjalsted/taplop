@@ -213,7 +213,7 @@ pub const UiState = struct {
     skills_scroll_offset: i32 = 0,
 
     /// Editor palette group scroll offsets, in TOOL CELLS — one wheel notch
-    /// = one cell. Index 0 = Enemies, 1 = Decorations, 2 = Ground Items.
+    /// = one cell. Index 0 = Enemies, 1 = Decorations, 2 = Items.
     /// A group shows at most `editor_palette_max_tools` type cells; scrolling
     /// shifts the visible window left/right. Clamped in place by
     /// `buildEditorBottomBar` (authoritative — it knows the group size) and
@@ -7816,7 +7816,7 @@ pub fn textEditPressProceeds(
 }
 
 /// Editor bottom bar: the tool palette. Fixed tools first
-/// (Select, Tile), then three groups — Enemies, Decorations, Ground Items —
+/// (Select, Tile), then three groups — Enemies, Decorations, Items —
 /// each a header toggle + a square panel "+" (add-new) cell + one slot per
 /// palette type. Expanded groups put their header + "+" in the strip above
 /// the bar; collapsed (or empty) groups put them flush against the bottom
@@ -7850,7 +7850,7 @@ pub fn buildEditorBottomBar(
     const world = active_theme.world_gradient.colors;
     const enemy = active_theme.enemy_gradient.colors;
 
-    const group_labels = [_][]const u8{ "Enemies", "Decorations", "Ground Items" };
+    const group_labels = [_][]const u8{ "Enemies", "Decorations", "Items" };
     const group_sizes = [3]usize{
         editor.entity_types.len,
         editor.decoration_types.len,
@@ -9886,7 +9886,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
                 try std.testing.expect(!label.blocks_input);
             } else if (std.mem.eql(u8, label.text, "+") or
                 std.mem.eql(u8, label.text, "Decorations") or
-                std.mem.eql(u8, label.text, "Ground Items"))
+                std.mem.eql(u8, label.text, "Items"))
             {
                 header_count += 1;
                 try std.testing.expect(!label.blocks_input);
@@ -9926,7 +9926,7 @@ test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover ab
 
     var elements: UiElementList = .empty;
     var scroll_offsets: [3]i32 = .{ 0, 0, 0 };
-    // Enemies (group 0) expanded; Decorations + Ground Items collapsed.
+    // Enemies (group 0) expanded; Decorations + Items collapsed.
     var collapsed: [3]bool = .{ false, true, true };
     try buildEditorBottomBar(
         &elements,
