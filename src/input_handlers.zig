@@ -1234,6 +1234,17 @@ fn parseBoundedStatValue(value: []const u8, max: u32) ?u32 {
     return @min(parsed, max);
 }
 
+/// The inspector's current edit target as the entity-edit events carry
+/// it: the enemy type the inspector is showing, or `player_def` when the
+/// player (the fallback target) is showing. See
+/// `ui.editorInspectorTarget` — the resolution's single seam.
+fn editorEntityEditTarget(editor: types.Editor) types.EntityEditTarget {
+    return switch (ui.editorInspectorTarget(editor)) {
+        .entity_type => |type_index| .{ .entity_type = type_index },
+        .player => .player_def,
+    };
+}
+
 /// Build the per-slot player wrapper carrying a WHOLE item (one event per
 /// slot — create / retype / field-edit / delete all push the full value,
 /// so one undo step covers any of them). The item's kind must match the
@@ -1763,13 +1774,12 @@ pub fn handleAnytimeInput(
             },
             // Inspector color swatch: set the edited type's color_index. The
             // gradient index rode in `anytime.clicked_editor_color`; the
-            // target is the ACTIVE enemy tool's type (the swatches only
-            // render for it). Same-value picks never fire.
+            // target is the inspector's resolved target (the swatches only
+            // render for the enemy content). Same-value picks never fire.
             .select_editor_entity_color => {
                 const color_index = anytime.clicked_editor_color orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
-                const target: types.EntityEditTarget = .{ .entity_type = type_index };
+                const target = editorEntityEditTarget(editor.*);
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (template.color_index == color_index) return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_color_index = .{
@@ -1781,8 +1791,7 @@ pub fn handleAnytimeInput(
             // Always changes (a flip), so no would-change gate.
             .toggle_editor_entity_displays_weapons => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
-                const target: types.EntityEditTarget = .{ .entity_type = type_index };
+                const target = editorEntityEditTarget(editor.*);
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_displays_weapons = .{
                     .target = target,
@@ -1797,8 +1806,7 @@ pub fn handleAnytimeInput(
                 const weapon_type = anytime.clicked_editor_weapon_type orelse return;
                 if (hand != .main_hand and hand != .off_hand) return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
-                const target: types.EntityEditTarget = .{ .entity_type = type_index };
+                const target = editorEntityEditTarget(editor.*);
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 const equipped: ?types.Weapon = switch (hand) {
                     .main_hand => template.main_hand_weapon,
@@ -1832,8 +1840,7 @@ pub fn handleAnytimeInput(
             .add_editor_item => {
                 const slot = anytime.clicked_editor_gear_slot orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
-                const target: types.EntityEditTarget = .{ .entity_type = type_index };
+                const target = editorEntityEditTarget(editor.*);
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (template.gearSlotItem(slot) != null) return;
                 const item = defaultItemForSlot(history, slot) orelse return;
@@ -1865,8 +1872,7 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.editor_picker = null;
                 if (history.current_state.editor == null) return;
                 const editor: *types.Editor = &history.current_state.editor.?;
-                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
-                const entity_target: types.EntityEditTarget = .{ .entity_type = type_index };
+                const entity_target = editorEntityEditTarget(editor.*);
                 if (slot_index >= types.utility_skill_count) return;
                 const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
                 const picked = anytime.clicked_editor_skill;
@@ -1882,8 +1888,7 @@ pub fn handleAnytimeInput(
             .delete_editor_item => {
                 const slot = anytime.clicked_editor_gear_slot orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                const type_index = ui.editorInspectorEntityTarget(editor.*) orelse return;
-                const target: types.EntityEditTarget = .{ .entity_type = type_index };
+                const target = editorEntityEditTarget(editor.*);
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (template.gearSlotItem(slot) == null) return;
                 const clear_action = editorSlotClearAction(target, slot);

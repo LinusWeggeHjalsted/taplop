@@ -7795,3 +7795,54 @@ Tests: four unit tests on the pure function (active-tool passthrough;
 same-type + mixed-with-tiles/markers inference; two-types and
 mixed-kinds nulling; stale-index ignoring) plus the stale-entity-target
 wrapper case; the content test's hint string updated.
+
+### Inspector slice 7 — player as the fallback target (DONE)
+
+The inference widened to its final shape: `editorInspectorTarget`
+(ui.zig) returns a non-optional `EditorInspectorTarget = { entity_type |
+player }` where the PLAYER is the fallback — the active enemy tool (valid
+index) wins; the tile tool, the decoration/item tools (no content yet),
+an empty selection, and every ambiguous resolution land on the player.
+Under the select tool the scan now treats the '!' as a `.player`
+REFERENCE (so the spawn alone — or mixed with an enemy — resolves to the
+player, fixing the old behavior where player-start + enemy showed the
+enemy), keeps tiles / the '=' as legitimately-uninspectable nothing
+(mixing them with enemies still shows the enemy), and treats
+out-of-range placement indices, stale palette type ids, and
+decoration/ground-item placements as unresolvable references that force
+the fallback. The "No tool selected" hint is GONE — the player shell
+(a "Player" header strip in the player gradient + the loadout name line)
+is the inspector's default content; the section-strip emission was
+extracted into `emitInspectorSectionStrip` shared by both contents.
+
+Why the target union instead of keeping `?EditorToolId`: the player
+loadout isn't a palette tool at all (`player_def`, reached by the '!',
+never a palette entry), so it needs its own arm — and a non-optional
+return makes "fallback" structural rather than a null-check every
+consumer must remember.
+
+The commit routing migrated with it: a new `editorEntityEditTarget`
+helper (input_handlers) maps the target to `EntityEditTarget` (player →
+`.player_def`), replacing the six two-line
+`editorInspectorEntityTarget` resolutions — the entity-edit events
+already carried `.player_def`, so the player arm of every commit
+(swatches, gear add/delete/retype, utility-skill picks) works with zero
+new event plumbing. The picker's current-skill resolution reads the
+full target too. `editorInspectorEntityTarget` survives as a
+file-private entity-arm helper for the content builder (no longer pub —
+its input-side callers are gone, per the minimize-pub discipline).
+
+One shape note: the enemy prong of the selection scan CONTRIBUTES via a
+labeled block (`break :blk`) rather than returning — an early `return`
+on the valid path would have resolved a two-enemy-types selection to
+whichever came first, silently breaking the ambiguity rule. The
+fallback paths (unresolvable references) return early on purpose.
+
+Tests: the four inference tests rewritten to the new semantics (active
+tool passthrough + tile/decoration/item fallback; shared-type wins with
+tiles/'=' mixed in; the '!' reference rules; unresolvable-reference
+fallbacks + the entity-arm wrapper), the two panel tests updated for the
+player shell (7 elements, header strip at index 4), and the picker test
+gained a player-target case (stone_form highlighted from player_def).
+DESIGN → Selection model (Inspector tool-type inference) rewritten to
+the settled rule.

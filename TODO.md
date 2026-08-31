@@ -561,23 +561,12 @@ yet implemented. Remaining work:
         sprite-id text field; sprite resolution must PRIORITIZE `.png`s
         in the mission folder being edited (custom assets) over shipped
         sprites.
-  - [ ] **7 — inference: player as the fallback target:** widen
-        `editorInspectorTool` → `editorInspectorTarget` returning
-        `EditorInspectorTarget = { entity_type: u32, player: void }`
-        (NON-optional — the player is the fallback). Rules: active enemy
-        tool (valid index) → enemy; tile tool, decoration/item tools
-        (until their inspectors land), empty or ambiguous selection →
-        player; select tool scans the selection where `player_start`
-        now contributes a `.player` REFERENCE (tiles / `level_end` still
-        contribute nothing) — player-start alone, player-start mixed
-        with anything, ≥2 distinct tools, or nothing referenced →
-        player; exactly one distinct placement tool → that tool. The
-        "No tool selected" hint disappears (the player inspector IS the
-        default inspector content). `editorInspectorEntityTarget`
-        becomes the entity arm of the wrapper; the input-handler commit
-        sites + skill picker switch to the target union (player arm →
-        `EntityEditTarget.player_def` — the entity-edit events already
-        carry it).
+  - [x] **7 — inference: player as the fallback target:** DONE —
+        `editorInspectorTarget` + `EditorInspectorTarget` (ui.zig), the
+        player shell as the default inspector content, the commit-site +
+        picker migration onto the target union, tests. History in
+        DONE.md; settled rule in DESIGN → Selection model (Inspector
+        tool-type inference).
   - [ ] **8 — utility-skill row (both inspectors):** replace the five
         per-slot `.skill_slot` field rows with ONE `utility_skill_row`
         entry: five adjacent 128×128 slots, the entity-inspect skill

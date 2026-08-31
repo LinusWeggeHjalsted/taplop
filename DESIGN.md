@@ -2214,29 +2214,36 @@ The click resolution (see the
 selection tool above) is the landed hit-testing: '!' / '=' singletons,
 first covering decoration, else tile + occupants; the render-order
 priority below is the future selection-op refinement. **Inspector tool-type
-inference (LANDED):** the inspector's target is resolved by
-`editorInspectorTool` (ui.zig): the ACTIVE placement tool passes through;
-while the SELECT tool is active the selection is scanned — each selected
-placement resolves to its palette tool (kind + type_id, resolved against
-the ACTIVE level; an out-of-range placement index is ignored, defensive
-only), while tiles / `player_start` / `level_end` contribute nothing
-(nothing to inspect on them). Exactly one distinct referenced tool → the
-inspector shows that tool's type fields (editing the type updates every
-placement of it — selecting several tiles whose enemies are all the same
-type shows that enemy tool's fields). Zero or ≥2 distinct tools (including
-mixed kinds: an enemy placement and a ground-item placement are different
-tools even at equal indices) → no tool is inferred → the "No tool
-selected" hint (a selection-info panel — count, bounds — is a possible
-later nicety, not committed). Only the enemy fields are BUILT so far; an
-inferred decoration/item tool falls to the same hint until its inspector
-slice lands. Selecting `player_start` will eventually show the player
-loadout fields (`player_def`, reached by clicking the `!`, NOT by a
-palette entry — the player isn't a placed type, it's a singleton spawn) —
-that lands with the player-inspector slice, widening `editorInspectorTool`
-from `?EditorToolId` to a target union that also carries `player_loadout`.
-`player_start` and `level_end` are NEVER deletable, only movable (updating
-the level's `player_start`/`level_end` via an editor event). Multi-select
-that includes them is allowed for move/bounds but they have no type to edit.
+inference (LANDED, player-as-fallback):** the inspector's target is
+resolved by `editorInspectorTarget` (ui.zig) — a non-optional
+`EditorInspectorTarget = { entity_type | player }` where the PLAYER is
+the FALLBACK (the '!' spawn's loadout): the active enemy tool (valid
+index) wins; the tile tool, the decoration/item tools (no inspector
+content yet), an empty selection, and every ambiguous resolution land on
+the player. While the SELECT tool is active the selection is scanned:
+tiles / the '=' contribute NOTHING (legitimately uninspectable — mixing
+them with enemies still shows the enemy); the '!' contributes a
+`.player` REFERENCE (so the spawn alone — or mixed with anything —
+resolves to the player, never to an enemy selected alongside it); entity
+placements contribute their type, resolved against the ACTIVE level (an
+out-of-range placement index or a stale palette type id is an
+unresolvable bug-state reference that forces the fallback — defensive
+only, the delete arms keep both valid); decoration / ground-item
+placements can't resolve to a showable target yet and force the fallback
+too (they become real references when the union widens with their
+inspector slices). Exactly one distinct reference → that enemy type's
+fields (editing the type updates every placement of it — selecting
+several tiles whose enemies are all the same type shows that enemy
+tool's fields); two or more distinct (two enemy types, or an enemy plus
+the player start) → the player. The input-side commit sites map the
+target to `EntityEditTarget` (player → `player_def`) through one helper,
+so display and commits agree by construction. Selecting `player_start`
+shows the player loadout fields (`player_def`, reached by clicking the
+`!`, NOT by a palette entry — the player isn't a placed type, it's a
+singleton spawn). `player_start` and `level_end` are NEVER deletable, only
+movable (updating the level's `player_start`/`level_end` via an editor
+event). Multi-select that includes them is allowed for move/bounds but
+they have no type to edit.
 
 **Ground items (new editor palette).** Levels already support loose floor
 items via the `Items` section + layout char code (`GroundItems{position,

@@ -1446,39 +1446,47 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
     }
 }
 
-test "editorInspectorTool: active placement tool passes through, select/tile infer or null" {
+test "editorInspectorTarget: active enemy tool passes through; tile/decoration/item fall back to the player" {
     const entity_types = [_]types.EntityTypeDef{.{
         .id = "Skeleton",
         .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 },
     }};
     const decoration_types = [_]types.DecorationTypeDef{.{ .id = "Tree" }};
-    const levels = [_]types.EditorLevel{.{} };
-    const editor: types.Editor = .{
+    const item_types = [_]types.ItemTypeDef{.{ .id = "Gold" }};
+    const levels = [_]types.EditorLevel{.{}};
+    const base: types.Editor = .{
         .levels = &levels,
         .entity_types = &entity_types,
         .decoration_types = &decoration_types,
+        .item_types = &item_types,
         .active_tool = .{ .entity_type = 0 },
     };
-    try std.testing.expectEqual(@as(?types.EditorToolId, .{ .entity_type = 0 }), editorInspectorTool(editor));
+    try std.testing.expectEqual(EditorInspectorTarget{ .entity_type = 0 }, editorInspectorTarget(base));
 
-    var tile_tool = editor;
+    var tile_tool = base;
     tile_tool.active_tool = .tile;
-    try std.testing.expectEqual(@as(?types.EditorToolId, null), editorInspectorTool(tile_tool));
+    try std.testing.expectEqual(EditorInspectorTarget.player, editorInspectorTarget(tile_tool));
 
-    var decoration_tool = editor;
+    var decoration_tool = base;
     decoration_tool.active_tool = .{ .decoration_type = 0 };
-    try std.testing.expectEqual(
-        @as(?types.EditorToolId, .{ .decoration_type = 0 }),
-        editorInspectorTool(decoration_tool),
-    );
+    try std.testing.expectEqual(EditorInspectorTarget.player, editorInspectorTarget(decoration_tool));
 
-    // An empty selection under the select tool infers nothing.
-    var select_tool = editor;
+    var item_tool = base;
+    item_tool.active_tool = .{ .item_type = 0 };
+    try std.testing.expectEqual(EditorInspectorTarget.player, editorInspectorTarget(item_tool));
+
+    // A stale active tool id (defensive) can't show anything.
+    var stale_tool = base;
+    stale_tool.active_tool = .{ .entity_type = 7 };
+    try std.testing.expectEqual(EditorInspectorTarget.player, editorInspectorTarget(stale_tool));
+
+    // An empty selection under the select tool → the player fallback.
+    var select_tool = base;
     select_tool.active_tool = .select;
-    try std.testing.expectEqual(@as(?types.EditorToolId, null), editorInspectorTool(select_tool));
+    try std.testing.expectEqual(EditorInspectorTarget.player, editorInspectorTarget(select_tool));
 }
 
-test "editorInspectorTool: selection of one shared type infers that tool; tiles and markers are ignored" {
+test "editorInspectorTarget: one shared enemy type wins; tiles and the '=' are ignored" {
     const entity_types = [_]types.EntityTypeDef{
         .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .team = 1 } },
         .{ .id = "Bat", .template = .{ .name = "Bat", .team = 1 } },
@@ -1488,44 +1496,89 @@ test "editorInspectorTool: selection of one shared type infers that tool; tiles 
         .{ .type_id = 0, .position = .{ .x = 3, .y = 1 } },
         .{ .type_id = 1, .position = .{ .x = 5, .y = 2 } },
     } }};
+    const resolve = struct {
+        fn check(
+            selection: []const types.Selectable,
+        ) EditorInspectorTarget {
+            return editorInspectorTarget(.{
+                .levels = &levels,
+                .entity_types = &entity_types,
+                .active_tool = .select,
+                .selection = selection,
+            });
+        }
+    }.check;
 
-    // One enemy → its tool.
-    const one: []const types.Selectable = &.{.{ .entity_placement = 0 }};
+    // One enemy → its type.
     try std.testing.expectEqual(
-        @as(?types.EditorToolId, .{ .entity_type = 0 }),
-        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .active_tool = .select, .selection = one }),
+        EditorInspectorTarget{ .entity_type = 0 },
+        resolve(&.{.{ .entity_placement = 0 }}),
     );
 
-    // Several enemies of the SAME type, mixed with tiles and the markers
-    // (nothing to inspect on those) → still that one tool.
-    const mixed: []const types.Selectable = &.{
-        .{ .tile = .{ .x = 1, .y = 1 } },
-        .{ .entity_placement = 1 },
-        .{ .player_start = {} },
-        .{ .level_end = {} },
-        .{ .entity_placement = 0 },
-    };
+    // Several enemies of the SAME type, mixed with tiles and the '='
+    // (legitimately uninspectable — they contribute nothing) → still that
+    // one type.
     try std.testing.expectEqual(
-        @as(?types.EditorToolId, .{ .entity_type = 0 }),
-        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .active_tool = .select, .selection = mixed }),
+        EditorInspectorTarget{ .entity_type = 0 },
+        resolve(&.{
+            .{ .tile = .{ .x = 1, .y = 1 } },
+            .{ .entity_placement = 1 },
+            .{ .level_end = {} },
+            .{ .entity_placement = 0 },
+        }),
     );
 
-    // Two different enemy types → no single tool.
-    const two_types: []const types.Selectable = &.{ .{ .entity_placement = 0 }, .{ .entity_placement = 2 } };
+    // Two different enemy types → the player fallback.
     try std.testing.expectEqual(
-        @as(?types.EditorToolId, null),
-        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .active_tool = .select, .selection = two_types }),
+        EditorInspectorTarget.player,
+        resolve(&.{ .{ .entity_placement = 0 }, .{ .entity_placement = 2 } }),
     );
 
-    // Tiles / markers only → nothing to inspect.
-    const bare: []const types.Selectable = &.{ .{ .tile = .{ .x = 0, .y = 0 } }, .{ .player_start = {} } };
+    // Tiles / the '=' only → nothing referenced → the player fallback.
     try std.testing.expectEqual(
-        @as(?types.EditorToolId, null),
-        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .active_tool = .select, .selection = bare }),
+        EditorInspectorTarget.player,
+        resolve(&.{ .{ .tile = .{ .x = 0, .y = 0 } }, .{ .level_end = {} } }),
     );
 }
 
-test "editorInspectorTool: mixed kinds never infer; stale indices are ignored" {
+test "editorInspectorTarget: the '!' contributes a player reference" {
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .team = 1 } },
+    };
+    const levels = [_]types.EditorLevel{.{ .entity_placements = &.{
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+    } }};
+    const resolve = struct {
+        fn check(
+            selection: []const types.Selectable,
+        ) EditorInspectorTarget {
+            return editorInspectorTarget(.{
+                .levels = &levels,
+                .entity_types = &entity_types,
+                .active_tool = .select,
+                .selection = selection,
+            });
+        }
+    }.check;
+
+    // The '!' alone → the player.
+    try std.testing.expectEqual(EditorInspectorTarget.player, resolve(&.{.{ .player_start = {} }}));
+
+    // The '!' + an enemy → two distinct references → the player (the
+    // enemy does NOT win over the spawn).
+    try std.testing.expectEqual(
+        EditorInspectorTarget.player,
+        resolve(&.{ .{ .entity_placement = 0 }, .{ .player_start = {} } }),
+    );
+
+    // The '!' mixed with tiles / the '=' → still the player.
+    try std.testing.expectEqual(
+        EditorInspectorTarget.player,
+        resolve(&.{ .{ .tile = .{ .x = 2, .y = 2 } }, .{ .player_start = {} } }),
+    );
+}
+
+test "editorInspectorTarget: unresolvable references force the player fallback" {
     const entity_types = [_]types.EntityTypeDef{.{
         .id = "Skeleton",
         .template = .{ .name = "Skeleton", .team = 1 },
@@ -1536,54 +1589,65 @@ test "editorInspectorTool: mixed kinds never infer; stale indices are ignored" {
     }, .item_placements = &.{
         .{ .type_id = 0, .position = .{ .x = 2, .y = 2 } },
     } }};
+    const resolve = struct {
+        fn check(
+            selection: []const types.Selectable,
+        ) EditorInspectorTarget {
+            return editorInspectorTarget(.{
+                .levels = &levels,
+                .entity_types = &entity_types,
+                .item_types = &item_types,
+                .active_tool = .select,
+                .selection = selection,
+            });
+        }
+    }.check;
 
-    // An enemy placement and an item placement are two tools even at the
-    // same palette index.
-    const mixed_kinds: []const types.Selectable = &.{ .{ .entity_placement = 0 }, .{ .ground_item_placement = 0 } };
+    // A selected ground item has no inspector content — fallback (alone
+    // or mixed with a valid enemy).
+    try std.testing.expectEqual(EditorInspectorTarget.player, resolve(&.{.{ .ground_item_placement = 0 }}));
     try std.testing.expectEqual(
-        @as(?types.EditorToolId, null),
-        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .item_types = &item_types, .active_tool = .select, .selection = mixed_kinds }),
+        EditorInspectorTarget.player,
+        resolve(&.{ .{ .entity_placement = 0 }, .{ .ground_item_placement = 0 } }),
     );
 
-    // Two item placements of one type → that tool.
-    const items: []const types.Selectable = &.{ .{ .ground_item_placement = 0 }, .{ .ground_item_placement = 0 } };
-    try std.testing.expectEqual(
-        @as(?types.EditorToolId, .{ .item_type = 0 }),
-        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .item_types = &item_types, .active_tool = .select, .selection = items }),
-    );
+    // An out-of-range placement index or a stale palette type id is an
+    // unresolvable bug-state reference — fallback, not a crash (the
+    // delete arms keep the selection consistent, so this is defensive).
+    try std.testing.expectEqual(EditorInspectorTarget.player, resolve(&.{.{ .entity_placement = 99 }}));
 
-    // An out-of-range placement index (defensive only — the delete arms
-    // keep the selection consistent) is ignored, not fatal.
-    const stale: []const types.Selectable = &.{ .{ .entity_placement = 99 }, .{ .ground_item_placement = 0 } };
-    try std.testing.expectEqual(
-        @as(?types.EditorToolId, .{ .item_type = 0 }),
-        editorInspectorTool(.{ .levels = &levels, .entity_types = &entity_types, .item_types = &item_types, .active_tool = .select, .selection = stale }),
-    );
-}
-
-test "editorInspectorEntityTarget: selection inference routes edits; stale type ids fall to the hint" {
-    const entity_types = [_]types.EntityTypeDef{
-        .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .team = 1 } },
-    };
-    const levels = [_]types.EditorLevel{.{ .entity_placements = &.{
-        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
-    } }};
-    const selection: []const types.Selectable = &.{.{ .entity_placement = 0 }};
-    const inferred: types.Editor = .{
-        .levels = &levels,
-        .entity_types = &entity_types,
-        .active_tool = .select,
-        .selection = selection,
-    };
-    try std.testing.expectEqual(@as(?u32, 0), editorInspectorEntityTarget(inferred));
-
-    // An inferred type id outside the palette (defensive) shows the hint.
     const stale_levels = [_]types.EditorLevel{.{ .entity_placements = &.{
         .{ .type_id = 7, .position = .{ .x = 0, .y = 0 } },
     } }};
     try std.testing.expectEqual(
+        EditorInspectorTarget.player,
+        editorInspectorTarget(.{
+            .levels = &stale_levels,
+            .entity_types = &entity_types,
+            .active_tool = .select,
+            .selection = &.{.{ .entity_placement = 0 }},
+        }),
+    );
+
+    // The entity arm the content builder consumes: a valid inference
+    // resolves, everything else nulls.
+    try std.testing.expectEqual(
+        @as(?u32, 0),
+        editorInspectorEntityTarget(.{
+            .levels = &levels,
+            .entity_types = &entity_types,
+            .active_tool = .select,
+            .selection = &.{.{ .entity_placement = 0 }},
+        }),
+    );
+    try std.testing.expectEqual(
         @as(?u32, null),
-        editorInspectorEntityTarget(.{ .levels = &stale_levels, .entity_types = &entity_types, .active_tool = .select, .selection = selection }),
+        editorInspectorEntityTarget(.{
+            .levels = &levels,
+            .entity_types = &entity_types,
+            .active_tool = .select,
+            .selection = &.{.{ .player_start = {} }},
+        }),
     );
 }
 
@@ -4372,79 +4436,102 @@ fn inspectorLabelY(cell: Rectangle) i32 {
     return cell.y + editor_inspector_row_height - editor_group_header_font_size;
 }
 
-/// The tool the inspector edits: the ACTIVE placement tool, or — while
-/// the select tool is active — the tool INFERRED from the selection
-/// (every selected placement that resolves to the same tool; tiles and
-/// the '!' / '=' markers contribute nothing — there is nothing to
-/// inspect on them). Two or more distinct referenced tools infer none.
-/// Kinds matter: an entity placement and an item placement are different
-/// tools even at equal indices. Placement indices are resolved against
-/// the ACTIVE level; out-of-range entries are ignored (the delete arms
-/// keep the selection consistent, so this is defensive only — see
-/// `Selectable`). Palette-type range guarding is the CONSUMER's job
-/// (`editorInspectorEntityTarget` guards the entity arm).
-pub fn editorInspectorTool(editor: types.Editor) ?types.EditorToolId {
+/// What the editor inspector is currently showing. The player is the
+/// FALLBACK: any state that doesn't resolve to exactly one enemy type
+/// shows the player (the '!' spawn's loadout). Decoration/item arms
+/// join when their inspector slices land.
+pub const EditorInspectorTarget = union(enum) {
+    entity_type: u32,
+    player: void,
+};
+
+/// The inspector's target: the ACTIVE enemy tool, or — while the select
+/// tool is active — the tool INFERRED from the selection. The player is
+/// the fallback for everything else: the tile tool, the decoration/item
+/// tools (no inspector content yet), an empty or ambiguous selection,
+/// an unresolvable reference. Inference rules: tiles and the '='
+/// contribute NOTHING (legitimately uninspectable — mixing them with
+/// enemies still shows the enemy); the '!' contributes a `.player`
+/// REFERENCE (so player-start + anything — or alone — resolves to the
+/// player); entity placements contribute their type, resolved against
+/// the ACTIVE level — an out-of-range placement index or a stale palette
+/// type id is an unresolvable bug-state reference and forces the
+/// fallback (the delete arms keep the selection consistent, so this is
+/// defensive only — see `Selectable`); decoration / ground-item
+/// placements can't resolve to a showable target yet — they force the
+/// fallback too. Exactly one distinct reference wins; two or more (e.g.
+/// two enemy types, or an enemy plus the player start) fall back to the
+/// player. See DESIGN → Architecture → Level Editor → Selection model
+/// (Inspector tool-type inference).
+pub fn editorInspectorTarget(editor: types.Editor) EditorInspectorTarget {
     switch (editor.active_tool) {
         // The select tool infers from the selection below.
         .select => {},
-        // No tool fields to inspect.
-        .tile => return null,
-        .entity_type,
-        .decoration_type,
-        .item_type,
-        => return editor.active_tool,
+        .entity_type => |type_id| return if (type_id < editor.entity_types.len)
+            .{ .entity_type = type_id }
+        else
+            .player,
+        // The tile tool has no fields; the decoration/item inspectors
+        // are later slices — the player is the fallback.
+        .tile, .decoration_type, .item_type => return .player,
     }
-    if (editor.active_level_index >= editor.levels.len) return null;
+    if (editor.active_level_index >= editor.levels.len) return .player;
     const level = editor.levels[editor.active_level_index];
-    var inferred: ?types.EditorToolId = null;
+    var inferred: ?EditorInspectorTarget = null;
     for (editor.selection) |selected| {
-        const referenced: ?types.EditorToolId = switch (selected) {
-            .tile, .player_start, .level_end => null,
-            .entity_placement => |index| if (index < level.entity_placements.len)
-                .{ .entity_type = level.entity_placements[index].type_id }
-            else
-                null,
-            .decoration_placement => |index| if (index < level.decoration_placements.len)
-                .{ .decoration_type = level.decoration_placements[index].type_id }
-            else
-                null,
-            .ground_item_placement => |index| if (index < level.item_placements.len)
-                .{ .item_type = level.item_placements[index].type_id }
-            else
-                null,
+        const referenced: ?EditorInspectorTarget = switch (selected) {
+            // Legitimately uninspectable — contributes nothing (mixing
+            // tiles / the '=' with enemies still shows the enemy).
+            .tile, .level_end => null,
+            .player_start => .player,
+            .entity_placement => |index| blk: {
+                // An out-of-range placement index or a stale palette type
+                // id is an unresolvable bug-state reference — it can't
+                // show anything, so it forces the fallback (defensive
+                // only; the placement arms keep both valid). A VALID
+                // reference contributes below (break) so later entries
+                // still get compared against it.
+                if (index >= level.entity_placements.len) return .player;
+                const type_id = level.entity_placements[index].type_id;
+                if (type_id >= editor.entity_types.len) return .player;
+                break :blk .{ .entity_type = type_id };
+            },
+            // No decoration/item inspector content yet — a selected
+            // decoration or ground item can't resolve to a showable
+            // target, so it forces the fallback (these arms become real
+            // references when the union widens with their slices).
+            .decoration_placement, .ground_item_placement => return .player,
         };
-        const tool = referenced orelse continue;
+        const target = referenced orelse continue;
         if (inferred) |existing| {
-            if (!editorToolIdsEqual(existing, tool)) return null;
+            if (!editorInspectorTargetsEqual(existing, target)) return .player;
         } else {
-            inferred = tool;
+            inferred = target;
         }
     }
-    return inferred;
+    return inferred orelse .player;
 }
 
-fn editorToolIdsEqual(
-    first: types.EditorToolId,
-    second: types.EditorToolId,
+fn editorInspectorTargetsEqual(
+    first: EditorInspectorTarget,
+    second: EditorInspectorTarget,
 ) bool {
     if (std.meta.activeTag(first) != std.meta.activeTag(second)) return false;
     return switch (first) {
-        .select, .tile => true,
+        .player => true,
         .entity_type => |type_id| type_id == second.entity_type,
-        .decoration_type => |type_id| type_id == second.decoration_type,
-        .item_type => |type_id| type_id == second.item_type,
     };
 }
 
 /// The entity (enemy) type the inspector currently edits, or null when
-/// the resolved tool (see `editorInspectorTool`) is anything else —
-/// select-with-no-inference, tile, decoration, item. Range-guarded (a
-/// stale type id after a type deletion shows the empty state, not a
-/// panic).
-pub fn editorInspectorEntityTarget(editor: types.Editor) ?u32 {
-    return switch (editorInspectorTool(editor) orelse return null) {
+/// the resolved target (see `editorInspectorTarget`) is the player.
+/// File-private: the inspector content builder is the only consumer —
+/// the input-side commit sites map the full target instead (the player
+/// arm edits `player_def`).
+fn editorInspectorEntityTarget(editor: types.Editor) ?u32 {
+    return switch (editorInspectorTarget(editor)) {
         .entity_type => |type_id| if (type_id < editor.entity_types.len) type_id else null,
-        else => null,
+        .player => null,
     };
 }
 
@@ -4620,6 +4707,68 @@ fn editorInspectorEntityEntries(
 /// routes here from handleAnytimeInput when the pointer is inside the panel
 /// rect; while a text field is focused the wheel still flows (only key
 /// bindings are suppressed).
+/// A section-header strip: panel-backed, the label left-padded and
+/// vertically centered (the group-header visual class).
+fn emitInspectorSectionStrip(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    label: []const u8,
+    strip_color: types.Color,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .color = strip_color,
+    } });
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = .{
+            .x = cell.x + ui_gap,
+            .y = cell.y + @divFloor(cell.height - editor_group_header_font_size, 2),
+        },
+        .font_size = editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+}
+
+/// The player-inspector content — the inspector's FALLBACK target (every
+/// resolution that isn't exactly one enemy type lands here; see
+/// `editorInspectorTarget`). Shows the '!' spawn's loadout: a "Player"
+/// header strip + the loadout's name line, player gradient throughout
+/// (the enemy content uses the enemy gradient).
+fn emitEditorInspectorPlayerShell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    editor: types.Editor,
+    active_theme: types.ActiveColorTheme,
+    content: Rectangle,
+) !void {
+    const player_gradient = active_theme.player_gradient.colors;
+    const strip_color = player_gradient[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const header: Rectangle = .{
+        .x = content.x,
+        .y = content.y,
+        .width = content.width,
+        .height = editor_inspector_row_height,
+    };
+    try emitInspectorSectionStrip(elements, allocator, header, "Player", strip_color, active_theme);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = editor.player_def.template.name,
+        .screen_position = .{
+            .x = content.x,
+            .y = content.y + editor_inspector_row_height,
+        },
+        .font_size = editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+}
+
 fn buildEditorInspectorContent(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -4638,19 +4787,22 @@ fn buildEditorInspectorContent(
     const visible_rows = @divFloor(content.height, editor_inspector_row_height);
     const scroll_offset = &ui_state.editor_inspector_scroll;
 
-    // Target resolution: the resolved tool's entity type (active enemy
-    // tool, or a selection of placements that all reference one enemy
-    // type — see editorInspectorTool), else the empty state hint.
-    const type_index = editorInspectorEntityTarget(editor) orelse {
-        scroll_offset.* = 0;
-        try elements.append(allocator, .{ .text_label = .{
-            .text = "No tool selected",
-            .screen_position = content.position(),
-            .font_size = material_count_font_size,
-            .color = active_theme.lightest,
-            .blocks_input = false,
-        } });
-        return;
+    // Target resolution: the active enemy tool, a selection of placements
+    // that all reference one enemy type, or the PLAYER fallback (the '!'
+    // spawn's loadout) — see editorInspectorTarget.
+    const type_index: u32 = switch (editorInspectorTarget(editor)) {
+        .entity_type => |index| index,
+        .player => {
+            scroll_offset.* = 0;
+            try emitEditorInspectorPlayerShell(
+                elements,
+                allocator,
+                editor,
+                active_theme,
+                content,
+            );
+            return;
+        },
     };
 
     const entries = try editorInspectorEntityEntries(allocator, editor, type_index);
@@ -4692,25 +4844,14 @@ fn buildEditorInspectorContent(
             .spacer => {},
             // Section header: a panel-backed strip (the group-header visual
             // class), label left-padded + vertically centered.
-            .section => |label| {
-                try elements.append(allocator, .{ .nine_slice_panel = .{
-                    .sprite_id = "ui/panel",
-                    .screen_position = cell.position(),
-                    .width = cell.width,
-                    .height = cell.height,
-                    .color = button_color,
-                } });
-                try elements.append(allocator, .{ .text_label = .{
-                    .text = label,
-                    .screen_position = .{
-                        .x = cell.x + ui_gap,
-                        .y = cell.y + @divFloor(cell.height - editor_group_header_font_size, 2),
-                    },
-                    .font_size = editor_group_header_font_size,
-                    .color = active_theme.lightest,
-                    .blocks_input = false,
-                } });
-            },
+            .section => |label| try emitInspectorSectionStrip(
+                elements,
+                allocator,
+                cell,
+                label,
+                button_color,
+                active_theme,
+            ),
             // Field entry (two lines): the label line on top, the editable
             // value below it — full content width, one thing per line.
             .field => |row| {
@@ -5294,10 +5435,14 @@ pub fn buildEditorSkillPicker(
         .utility_skill_slot => |index| index,
     };
     var current: ?types.SkillId = null;
-    if (editorInspectorEntityTarget(editor)) |type_index| {
-        if (slot_index < types.utility_skill_count) {
-            current = editor.entity_types[type_index].template.equipped_utility_skills[slot_index];
-        }
+    if (slot_index < types.utility_skill_count) {
+        current = switch (editorInspectorTarget(editor)) {
+            .entity_type => |type_index| if (type_index < editor.entity_types.len)
+                editor.entity_types[type_index].template.equipped_utility_skills[slot_index]
+            else
+                null,
+            .player => editor.player_def.template.equipped_utility_skills[slot_index],
+        };
     }
 
     const options: i32 = @intCast(1 + utility_skills.utility_skill_ids.len); // None + skills
@@ -7008,19 +7153,25 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
         .player_gradient = .{ .colors = .{ black, player_one, black, black, black, player_five } },
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
-    // Select tool (no enemy target): the open panel carries the EMPTY
-    // STATE hint — this test covers the shell; the content test below
+    // Select tool, empty selection: the open panel carries the PLAYER
+    // FALLBACK shell — this test covers the shell; the content test below
     // covers the enemy-tool rows.
     const editor: types.Editor = .{};
 
     // Open (the default): panel + spriteless button + label + background
-    // panel + empty-state hint = 5 elements.
+    // panel + the player shell (header strip panel + its "Player" label
+    // + the loadout name line) = 7 elements.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 5), elements.items.len);
+        try std.testing.expectEqual(@as(usize, 7), elements.items.len);
         try expectInspectorToggleShape(&elements);
+        // The player shell: a "Player" header strip + the (default-empty)
+        // loadout name line.
+        try std.testing.expectEqualStrings("ui/panel", elements.items[4].nine_slice_panel.sprite_id);
+        try std.testing.expectEqualStrings("Player", elements.items[5].text_label.text);
+        try std.testing.expectEqualStrings("", elements.items[6].text_label.text);
 
         // The background panel: flush left, below the button, down to one
         // ui_gap above the expanded palette groups' header strip, tinted
@@ -7137,8 +7288,8 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         try std.testing.expectEqual(@as(i32, 0), ui_state.editor_inspector_scroll);
     }
 
-    // A stale tool id (the type deleted mid-edit) is the empty state, and
-    // it RESETS the scroll.
+    // A stale tool id (the type deleted mid-edit) falls back to the
+    // player shell, which RESETS the scroll.
     {
         const stale_editor: types.Editor = .{
             .entity_types = &entity_types,
@@ -7147,10 +7298,12 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 5 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, stale_editor, theme, true, &ui_state);
+        // A stale tool id can't show anything — the PLAYER fallback shell
+        // (the header strip's label is element 5).
         try std.testing.expectEqual(@as(i32, 0), ui_state.editor_inspector_scroll);
         try std.testing.expectEqualStrings(
-            "No tool selected",
-            elements.items[4].text_label.text,
+            "Player",
+            elements.items[5].text_label.text,
         );
         try std.testing.expectEqual(@as(usize, 0), countSolidRects(&elements));
     }
@@ -9448,4 +9601,36 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
         ),
         else => {},
     };
+
+    // The PLAYER fallback target: the picker reads the player loadout's
+    // slots (the '!' selected under the select tool resolves to the
+    // player).
+    {
+        const player_editor: types.Editor = .{
+            .player_def = .{ .id = "Player", .template = .{
+                .equipped_utility_skills = .{ null, .stone_form, null, null, null },
+            } },
+            .active_tool = .select,
+            .selection = &.{.{ .player_start = {} }},
+        };
+        var player_elements: UiElementList = .empty;
+        try buildEditorSkillPicker(
+            &player_elements,
+            arena.allocator(),
+            metrics,
+            player_editor,
+            .{ .utility_skill_slot = 1 },
+            theme,
+        );
+        var player_highlighted: ?types.SkillId = null;
+        for (player_elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_utility_skill and
+                button.highlighted and button.editor_skill != null)
+            {
+                player_highlighted = button.editor_skill;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(types.SkillId.stone_form, player_highlighted.?);
+    }
 }
