@@ -600,6 +600,20 @@ yet implemented. Remaining work:
         runtime field — entity 0 must carry
         `player_def.template.inventory` into the playtest player
         (equipped skills already survive).
+  - [ ] **9b — playtest PlayerData: all skills learned + dormancy:**
+        `start_playtest` / `start_validation` BUILD a playtest
+        player_data from player_def (name / gear / inventory / equipped
+        utility skills) with learned_skills = ALL utility skills — the
+        editor player knows everything, so tome pickups read
+        already-learned, skill-tome salvage is consistent, and any
+        future learned-gated path is permissive (learned is NOT stored
+        in player.txt — it's implied for the editor player). In-level
+        events (use_skill_tome / salvage_item) mutate player_data
+        DIRECTLY, so the session's real campaign data must survive:
+        back it up on enter (`Editor.pre_playtest_player_data:
+        ?PlayerData` — the dormancy pattern, snapshots carry it) and
+        restore on `end_playtest` / `end_validation` (null backup =
+        the fresh-session default).
   - [ ] **10 — player.txt format + max_player.txt:** player.txt becomes
         SAVE-SHAPED (MainHandWeapon/OffHandWeapon/Amulet/Coat/Gloves/
         Pants/Boots/Inventory/UtilitySkills + Metadata; no Info / stats
