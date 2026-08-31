@@ -291,6 +291,57 @@ fn importEditorPlayer(
     template.inventory = deepCopy(types.Inventory, source.inventory, allocator);
 }
 
+/// Append a new palette type built from the shipped defaults
+/// (data/editor_defaults.txt) to `kind`'s palette group, make it the active
+/// tool, and open the inspector. The defaults read goes through the
+/// reconstruction cache — the add events are recorded, so replay re-reads
+/// the same bytes and reproduces the creation. The read is a recoverable
+/// failure (the in-event-read pattern): a missing/corrupt defaults file
+/// reverts the event + surfaces the popup instead of failing the editor.
+/// One event = one undo step covering the append + the tool switch + the
+/// inspector open (and the selection clear the tool switch carries — the
+/// editor_set_tool invariant).
+fn addEditorPaletteType(
+    history: *GameStateHistory,
+    current: *GameState,
+    allocator: std.mem.Allocator,
+    kind: events.EditorTypeKind,
+) void {
+    const bytes = history.readReconstructionFile("data/editor_defaults.txt") catch {
+        failReconstructionRead(history, "failed to read data/editor_defaults.txt");
+        return;
+    };
+    const sections = parser.parseConfigFile(bytes, allocator) catch {
+        failReconstructionRead(history, "failed to parse data/editor_defaults.txt");
+        return;
+    };
+    validateConfigKeys(history, sections, parser.level_key_map, "data/editor_defaults.txt", allocator);
+    const defaults = loaders.loadEditorDefaults(sections, history.file_source, allocator, "data/editor_defaults.txt", null) catch {
+        failReconstructionRead(history, "failed to parse data/editor_defaults.txt (a palette default entry is missing)");
+        return;
+    };
+
+    const editor = &(current.editor orelse @panic("editor event with no editor"));
+    switch (kind) {
+        .entity => {
+            layerListAppend(types.EntityTypeDef, &editor.entity_types, defaults.enemy, allocator);
+            editor.active_tool = .{ .entity_type = @intCast(editor.entity_types.len - 1) };
+        },
+        .decoration => {
+            layerListAppend(types.DecorationTypeDef, &editor.decoration_types, defaults.decoration, allocator);
+            editor.active_tool = .{ .decoration_type = @intCast(editor.decoration_types.len - 1) };
+        },
+        .item => {
+            layerListAppend(types.ItemTypeDef, &editor.item_types, defaults.item, allocator);
+            editor.active_tool = .{ .item_type = @intCast(editor.item_types.len - 1) };
+        },
+    }
+    // The tool switch carries the selection clear (the editor_set_tool
+    // invariant: selection nonempty ⇔ active tool is select).
+    editor.selection = &.{};
+    editor.inspector_open = true;
+}
+
 /// Run key validation on `sections` and, if any unknown keys are found,
 /// surface them as a pending_error popup. Advisory — the load continues
 /// regardless (unknown keys are dropped, not fatal). Gated on !replaying
@@ -2003,6 +2054,18 @@ fn handlePlayerInputEvent(
         // (the loadout fields ride GameState — the import is undoable).
         .player_import_editor_player => {
             pushEvents(current, &.{.{ .editor_event = .editor_import_player }}, allocator);
+        },
+        // Palette group "+" clicks: push the machinery event (the handler
+        // builds the type from the shipped defaults, makes it the active
+        // tool, and opens the inspector — one undo step covers it all).
+        .player_add_editor_entity_type => {
+            pushEvents(current, &.{.{ .editor_event = .editor_add_entity_type }}, allocator);
+        },
+        .player_add_editor_decoration_type => {
+            pushEvents(current, &.{.{ .editor_event = .editor_add_decoration_type }}, allocator);
+        },
+        .player_add_editor_item_type => {
+            pushEvents(current, &.{.{ .editor_event = .editor_add_item_type }}, allocator);
         },
         // Settings-sidebar commits (mission + active-level metadata): thin
         // forwards — the EditorEvents own the mutations. The level-indexed
@@ -4683,6 +4746,12 @@ pub fn processEvent(
                 .editor_import_player => {
                     if (current.editor != null) importEditorPlayer(history, current, allocator);
                 },
+                // The palette add-type events need the reconstruction cache
+                // too (the defaults read) — same inline-handling reason as
+                // the import above.
+                .editor_add_entity_type => addEditorPaletteType(history, current, allocator, .entity),
+                .editor_add_decoration_type => addEditorPaletteType(history, current, allocator, .decoration),
+                .editor_add_item_type => addEditorPaletteType(history, current, allocator, .item),
                 // The remaining editor events are handled in the dedicated
                 // editor handler block below (handleEditorEvent). They are
                 // pure state transforms on current.editor.?.levels[] or the

@@ -1300,6 +1300,19 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_toggle_editor_inspector with no editor");
                     }
                 },
+                // Structural legality: same shape — the live path is a
+                // palette group's "+" cell (the editor's bottom bar).
+                .player_add_editor_entity_type,
+                .player_add_editor_decoration_type,
+                .player_add_editor_item_type,
+                => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_add_editor_type outside editor screen");
+                    }
+                    if (self.current_state.editor == null) {
+                        @panic("replay validation: player_add_editor_type with no editor");
+                    }
+                },
                 // Structural legality: same shape — the live path is the
                 // editor's top-right toggle button.
                 .player_toggle_editor_metadata_sidebar => {

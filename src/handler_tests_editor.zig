@@ -125,6 +125,151 @@ test "player_toggle_editor_inspector: flips the open state, undo/redo restores" 
     try testing.expect(!history.current_state.editor.?.inspector_open);
 }
 
+test "player_add_editor_entity_type: default creation, tool + inspector, undo reverts" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.entity_types.len);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_add_editor_entity_type }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The shipped default (data/editor_defaults.txt): New Enemy on
+    // skeleton_1, color 4, base stats 20/0/1/3, nothing equipped.
+    const editor = history.current_state.editor.?;
+    try testing.expectEqual(@as(usize, 1), editor.entity_types.len);
+    try testing.expectEqualStrings("New Enemy", editor.entity_types[0].id);
+    try testing.expectEqualStrings("New Enemy", editor.entity_types[0].template.name);
+    try testing.expectEqualStrings("skeleton_1", editor.entity_types[0].template.sprite);
+    try testing.expectEqual(@as(u32, 1), editor.entity_types[0].template.team);
+    try testing.expectEqual(@as(u32, 4), editor.entity_types[0].template.color_index);
+    try testing.expectEqual(@as(u32, 20), editor.entity_types[0].template.max_health);
+    try testing.expectEqual(@as(u32, 3), editor.entity_types[0].template.aggro_range);
+    try testing.expect(editor.entity_types[0].template.main_hand_weapon == null);
+
+    // The new type becomes the active tool + the inspector auto-opens —
+    // one undo step reverts the whole creation.
+    try testing.expect(std.meta.eql(
+        types.EditorToolId{ .entity_type = 0 },
+        editor.active_tool,
+    ));
+    try testing.expect(editor.inspector_open);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.entity_types.len);
+    try testing.expect(std.meta.eql(
+        types.EditorToolId.select,
+        history.current_state.editor.?.active_tool,
+    ));
+}
+
+test "player_add_editor_decoration_type: stone_1 default, undo reverts" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_add_editor_decoration_type }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The shipped default: the stone_1 prefab duplicated — footprint (0,0),
+    // color 5, 256x256 dims, no layers; the palette id tracks the sprite.
+    const editor = history.current_state.editor.?;
+    try testing.expectEqual(@as(usize, 1), editor.decoration_types.len);
+    const definition = editor.decoration_types[0];
+    try testing.expectEqualStrings("stone_1", definition.id);
+    try testing.expectEqualStrings("stone_1", definition.sprite);
+    try testing.expectEqual(@as(usize, 1), definition.footprint.len);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, definition.footprint[0]);
+    try testing.expectEqual(@as(u32, 5), definition.color_index);
+    try testing.expectEqual(@as(i32, 256), definition.pixel_dims.x);
+    try testing.expect(std.meta.eql(
+        types.EditorToolId{ .decoration_type = 0 },
+        editor.active_tool,
+    ));
+
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.decoration_types.len);
+}
+
+test "player_add_editor_item_type: New Sword default, undo reverts" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_add_editor_item_type }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The shipped default: a New Sword (sword, 0 damage); the palette id is
+    // the item name.
+    const editor = history.current_state.editor.?;
+    try testing.expectEqual(@as(usize, 1), editor.item_types.len);
+    try testing.expectEqualStrings("New Sword", editor.item_types[0].id);
+    try testing.expectEqualStrings("New Sword", editor.item_types[0].item.weapon.name);
+    try testing.expectEqual(types.WeaponType.sword, editor.item_types[0].item.weapon.weapon_type);
+    try testing.expectEqual(@as(u32, 0), editor.item_types[0].item.weapon.weapon_damage);
+    try testing.expect(std.meta.eql(
+        types.EditorToolId{ .item_type = 0 },
+        editor.active_tool,
+    ));
+
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.item_types.len);
+}
+
+test "player_add_editor_entity_type: opens a closed inspector, clears the selection" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
+    const selection = [_]types.Selectable{.{ .tile = .{ .x = 0, .y = 0 } }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .inspector_open = false,
+        .active_tool = .select,
+        .selection = &selection,
+    }));
+    runToIdle(&history);
+    try testing.expect(history.current_state.editor.?.selection.len > 0);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_add_editor_entity_type }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The creation auto-opens a closed inspector, and the tool switch it
+    // carries clears the selection (the editor_set_tool invariant).
+    const editor = history.current_state.editor.?;
+    try testing.expect(editor.inspector_open);
+    try testing.expectEqual(@as(usize, 0), editor.selection.len);
+}
+
 test "player_paint_editor_tile: paints a tile on empty space, sorted into the list" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

@@ -295,8 +295,13 @@ pub const EditorEvent = union(enum) {
     },
 
     // ── Palette type management ──
-    // Append an empty type to the corresponding palette group. No payload —
-    // the author populates it via the inspector (field-edit events below).
+    // Append a new type to the corresponding palette group, built from the
+    // shipped defaults (data/editor_defaults.txt — one entry per kind in
+    // the level-file formats). No payload — the default is fixed shipped
+    // content; the handler reads it through the reconstruction cache so
+    // replay reproduces the creation. The same handler makes the new type
+    // the active tool and opens the inspector (the auto-open-on-creation
+    // behavior), so one undo step reverts the whole creation.
     editor_add_entity_type: void,
     editor_add_decoration_type: void,
     editor_add_item_type: void,
@@ -657,6 +662,15 @@ pub const PlayerInputEvent = union(enum) {
     // loadout. The handler pushes `editor_import_player` — the loadout
     // fields ride GameState, so the import is on the undo timeline.
     player_import_editor_player: void,
+    // Palette group "+" click: append a new type to that group's palette
+    // (Enemies / Decorations / Items). Thin orchestrator — the handler for
+    // the `editor_add_*_type` event builds the type from the shipped
+    // defaults (data/editor_defaults.txt, read through the reconstruction
+    // cache), makes it the active tool, and opens the inspector. No payload
+    // — the group is named by the event variant.
+    player_add_editor_entity_type: void,
+    player_add_editor_decoration_type: void,
+    player_add_editor_item_type: void,
     // Settings-sidebar commits (mission + active-level metadata — see
     // DESIGN → Architecture → Level Editor → Editor UI layout (Settings
     // sidebar)). Thin orchestrators: the EditorEvents own the mutations.
