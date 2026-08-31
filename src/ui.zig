@@ -4571,6 +4571,12 @@ const EditorInspectorEntry = union(enum) {
     /// skill slots (occupied = skill button + icon, empty = the diamond
     /// marker), each opening the centered picker.
     utility_skill_row: void,
+    /// The player loadout's name — a READ-ONLY value line (the name comes
+    /// with the imported player data, it isn't hand-edited).
+    player_name_line: void,
+    /// The player loadout's inventory — a read-only item count (the
+    /// editable inventory UI is its own slice).
+    inventory_summary: void,
 };
 
 /// Row units an entry occupies: a section header is one; everything else
@@ -4578,7 +4584,7 @@ const EditorInspectorEntry = union(enum) {
 fn editorInspectorEntryUnits(entry: EditorInspectorEntry) i32 {
     return switch (entry) {
         .section, .spacer => 1,
-        .field, .weapon_slot, .gear_slot, .utility_skill_row => 2,
+        .field, .weapon_slot, .gear_slot, .utility_skill_row, .player_name_line, .inventory_summary => 2,
     };
 }
 
@@ -4610,6 +4616,49 @@ fn itemStatLabel(stat: types.ItemStatField) []const u8 {
     };
 }
 
+/// One gear slot's entries: the slot row + the equipped item's Name +
+/// stat field rows (nothing extra while the slot is empty).
+fn appendInspectorSlotEntries(
+    allocator: std.mem.Allocator,
+    template: types.Entity,
+    entries: *std.ArrayList(EditorInspectorEntry),
+    slot_row: EditorInspectorEntry,
+    slot: types.GearSlot,
+) !void {
+    try entries.append(allocator, slot_row);
+    if (template.gearSlotItem(slot) == null) return;
+    const slot_label = types.gearSlotLabel(slot);
+    try entries.append(allocator, .{ .field = .{
+        .label = try std.fmt.allocPrint(allocator, "{s} name", .{slot_label}),
+        .control = .{ .text = .{ .item_name = slot } },
+    } });
+    for (gearSlotStatSet(slot)) |stat| {
+        try entries.append(allocator, .{ .field = .{
+            .label = try std.fmt.allocPrint(allocator, "{s} {s}", .{ slot_label, itemStatLabel(stat) }),
+            .control = .{ .text = .{ .item_stat = .{ .slot = slot, .stat = stat } } },
+        } });
+    }
+}
+
+/// The Weapons + Gear sections (shared by the enemy + player content):
+/// each slot's row followed by the equipped item's fields.
+fn appendInspectorGearSections(
+    allocator: std.mem.Allocator,
+    template: types.Entity,
+    entries: *std.ArrayList(EditorInspectorEntry),
+) !void {
+    try entries.append(allocator, .spacer);
+    try entries.append(allocator, .{ .section = "Weapons" });
+    for ([_]types.GearSlot{ .main_hand, .off_hand }) |hand| {
+        try appendInspectorSlotEntries(allocator, template, entries, .{ .weapon_slot = hand }, hand);
+    }
+    try entries.append(allocator, .spacer);
+    try entries.append(allocator, .{ .section = "Gear" });
+    for ([_]types.GearSlot{ .amulet, .coat, .gloves, .pants, .boots }) |slot| {
+        try appendInspectorSlotEntries(allocator, template, entries, .{ .gear_slot = slot }, slot);
+    }
+}
+
 /// The enemy-type inspector's content plan: five sections over every
 /// field `parseEntityDefinition` reads (the coupling contract — anything
 /// editable by text-editing the level file is a row here). The Weapons +
@@ -4617,8 +4666,7 @@ fn itemStatLabel(stat: types.ItemStatField) []const u8 {
 /// equipped item's Name + stat rows (nothing when the slot is empty).
 fn editorInspectorEntityEntries(
     allocator: std.mem.Allocator,
-    editor: types.Editor,
-    type_index: u32,
+    template: types.Entity,
 ) ![]const EditorInspectorEntry {
     var entries: std.ArrayList(EditorInspectorEntry) = .empty;
 
@@ -4637,52 +4685,7 @@ fn editorInspectorEntityEntries(
         .{ .field = .{ .label = "Aggro range", .control = .{ .text = .{ .entity_stat = .aggro_range } } } },
     });
 
-    const has_item = struct {
-        fn check(some_editor: types.Editor, index: u32, slot: types.GearSlot) bool {
-            if (index >= some_editor.entity_types.len) return false;
-            return some_editor.entity_types[index].template.gearSlotItem(slot) != null;
-        }
-    }.check;
-
-    // Weapons: each hand's slot row + the equipped weapon's fields.
-    try entries.append(allocator, .spacer);
-    try entries.append(allocator, .{ .section = "Weapons" });
-    for ([_]types.GearSlot{ .main_hand, .off_hand }) |hand| {
-        try entries.append(allocator, .{ .weapon_slot = hand });
-        if (has_item(editor, type_index, hand)) {
-            const slot_label = types.gearSlotLabel(hand);
-            try entries.append(allocator, .{ .field = .{
-                .label = try std.fmt.allocPrint(allocator, "{s} name", .{slot_label}),
-                .control = .{ .text = .{ .item_name = hand } },
-            } });
-            for (gearSlotStatSet(hand)) |stat| {
-                try entries.append(allocator, .{ .field = .{
-                    .label = try std.fmt.allocPrint(allocator, "{s} {s}", .{ slot_label, itemStatLabel(stat) }),
-                    .control = .{ .text = .{ .item_stat = .{ .slot = hand, .stat = stat } } },
-                } });
-            }
-        }
-    }
-
-    // Gear: each slot's row + the equipped item's fields.
-    try entries.append(allocator, .spacer);
-    try entries.append(allocator, .{ .section = "Gear" });
-    for ([_]types.GearSlot{ .amulet, .coat, .gloves, .pants, .boots }) |slot| {
-        try entries.append(allocator, .{ .gear_slot = slot });
-        if (has_item(editor, type_index, slot)) {
-            const slot_label = types.gearSlotLabel(slot);
-            try entries.append(allocator, .{ .field = .{
-                .label = try std.fmt.allocPrint(allocator, "{s} name", .{slot_label}),
-                .control = .{ .text = .{ .item_name = slot } },
-            } });
-            for (gearSlotStatSet(slot)) |stat| {
-                try entries.append(allocator, .{ .field = .{
-                    .label = try std.fmt.allocPrint(allocator, "{s} {s}", .{ slot_label, itemStatLabel(stat) }),
-                    .control = .{ .text = .{ .item_stat = .{ .slot = slot, .stat = stat } } },
-                } });
-            }
-        }
-    }
+    try appendInspectorGearSections(allocator, template, &entries);
 
     // Utility skills: ONE row of five skill slots (the entity-inspect
     // look), each slot opening the centered picker.
@@ -4693,9 +4696,38 @@ fn editorInspectorEntityEntries(
     return entries.items;
 }
 
+/// The PLAYER content's entries (the fallback target — the '!' spawn's
+/// loadout): the loadout header + read-only name line, the shared
+/// Weapons / Gear / Utility sections, and the inventory summary. No
+/// Identity / Stats sections — base stats are enemy-authorable only; the
+/// player template keeps its defaults.
+fn editorInspectorPlayerEntries(
+    allocator: std.mem.Allocator,
+    template: types.Entity,
+) ![]const EditorInspectorEntry {
+    var entries: std.ArrayList(EditorInspectorEntry) = .empty;
+
+    try entries.appendSlice(allocator, &.{
+        .{ .section = "Player" },
+        .{ .player_name_line = {} },
+    });
+    try appendInspectorGearSections(allocator, template, &entries);
+
+    try entries.append(allocator, .spacer);
+    try entries.append(allocator, .{ .section = "Utility skills" });
+    try entries.append(allocator, .{ .utility_skill_row = {} });
+
+    try entries.append(allocator, .spacer);
+    try entries.append(allocator, .{ .section = "Inventory" });
+    try entries.append(allocator, .{ .inventory_summary = {} });
+
+    return entries.items;
+}
+
 /// Build the inspector's content inside the open panel (called by
-/// `buildEditorInspectorPanel`): the active enemy tool's fields — section
-/// headers + one row per format field. View-relative windowed emission
+/// `buildEditorInspectorPanel`): the resolved target's entries — the
+/// active enemy tool's field rows, or the player loadout (the fallback
+/// target). View-relative windowed emission
 /// (the skills-panel model): only FULLY visible rows are emitted at the top
 /// of the content region, so nothing half-draws or overflows the panel; the
 /// scrollbar thumb conveys the position. `scroll_offset` (rows) is clamped
@@ -4732,38 +4764,17 @@ fn emitInspectorSectionStrip(
     } });
 }
 
-/// The player-inspector content — the inspector's FALLBACK target (every
-/// resolution that isn't exactly one enemy type lands here; see
-/// `editorInspectorTarget`). Shows the '!' spawn's loadout: a "Player"
-/// header strip + the loadout's name line, player gradient throughout
-/// (the enemy content uses the enemy gradient).
-fn emitEditorInspectorPlayerShell(
-    elements: *UiElementList,
-    allocator: std.mem.Allocator,
-    editor: types.Editor,
-    active_theme: types.ActiveColorTheme,
-    content: Rectangle,
-) !void {
-    const player_gradient = active_theme.player_gradient.colors;
-    const strip_color = player_gradient[@min(@as(u32, 5), types.gradient_color_count - 1)];
-    const header: Rectangle = .{
-        .x = content.x,
-        .y = content.y,
-        .width = content.width,
-        .height = editor_inspector_row_height,
-    };
-    try emitInspectorSectionStrip(elements, allocator, header, "Player", strip_color, active_theme);
-    try elements.append(allocator, .{ .text_label = .{
-        .text = editor.player_def.template.name,
-        .screen_position = .{
-            .x = content.x,
-            .y = content.y + editor_inspector_row_height,
-        },
-        .font_size = editor_group_header_font_size,
-        .color = active_theme.lightest,
-        .blocks_input = false,
-    } });
-}
+/// The entity template an inspector content path edits, resolved from
+/// the inspector target (enemy type vs player loadout): the template its
+/// controls read, the `EntityEditTarget` its commits carry (text-field
+/// refs), and the team gradient its controls tint with (enemy content =
+/// enemy gradient, player content = player gradient — matching the
+/// entity-inspect panel's team-gradient coloring).
+const InspectorEntityContext = struct {
+    template: types.Entity,
+    edit_target: types.EntityEditTarget,
+    gradient_colors: [types.gradient_color_count]types.Color,
+};
 
 fn buildEditorInspectorContent(
     elements: *UiElementList,
@@ -4785,23 +4796,27 @@ fn buildEditorInspectorContent(
 
     // Target resolution: the active enemy tool, a selection of placements
     // that all reference one enemy type, or the PLAYER fallback (the '!'
-    // spawn's loadout) — see editorInspectorTarget.
-    const type_index: u32 = switch (editorInspectorTarget(editor)) {
-        .entity_type => |index| index,
-        .player => {
-            scroll_offset.* = 0;
-            try emitEditorInspectorPlayerShell(
-                elements,
-                allocator,
-                editor,
-                active_theme,
-                content,
-            );
-            return;
+    // spawn's loadout) — see editorInspectorTarget. Both paths share the
+    // windowing machinery below; they differ only in entries + context.
+    const context: InspectorEntityContext = switch (editorInspectorTarget(editor)) {
+        .entity_type => |index| .{
+            .template = editor.entity_types[index].template,
+            .edit_target = .{ .entity_type = index },
+            .gradient_colors = active_theme.enemy_gradient.colors,
+        },
+        .player => .{
+            .template = editor.player_def.template,
+            .edit_target = .player_def,
+            .gradient_colors = active_theme.player_gradient.colors,
         },
     };
-
-    const entries = try editorInspectorEntityEntries(allocator, editor, type_index);
+    const entries: []const EditorInspectorEntry = switch (editorInspectorTarget(editor)) {
+        .entity_type => |index| try editorInspectorEntityEntries(
+            allocator,
+            editor.entity_types[index].template,
+        ),
+        .player => try editorInspectorPlayerEntries(allocator, editor.player_def.template),
+    };
     // Unit math: a section header is 1 row unit, a field entry 2 (label
     // line + control line). Scroll + windowing are in units, so every line
     // stays on the 128px grid at any offset.
@@ -4811,9 +4826,10 @@ fn buildEditorInspectorContent(
     if (scroll_offset.* < 0) scroll_offset.* = 0;
     if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
 
-    // The inspector edits an ENEMY type — enemy gradient throughout
-    // (matching the entity-inspect panel's team-gradient coloring).
-    const button_color = active_theme.enemy_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    // Team gradient throughout — the context's gradient (enemy content
+    // enemy, player content player; matching the entity-inspect panel's
+    // team-gradient coloring).
+    const button_color = context.gradient_colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const text_edit: ?*const TextEditState =
         if (ui_state.text_edit != null) &ui_state.text_edit.? else null;
 
@@ -4866,8 +4882,7 @@ fn buildEditorInspectorContent(
                         allocator,
                         font_metrics,
                         text_edit,
-                        editor,
-                        type_index,
+                        context,
                         control_rect,
                         field_id,
                         active_theme,
@@ -4875,17 +4890,14 @@ fn buildEditorInspectorContent(
                     .swatches => try emitInspectorColorSwatches(
                         elements,
                         allocator,
-                        editor,
-                        type_index,
+                        context,
                         control_rect,
-                        active_theme,
                     ),
                     .toggle => try emitInspectorToggle(
                         elements,
                         allocator,
                         font_metrics,
-                        editor,
-                        type_index,
+                        context,
                         control_rect,
                         active_theme,
                     ),
@@ -4900,8 +4912,7 @@ fn buildEditorInspectorContent(
                     elements,
                     allocator,
                     font_metrics,
-                    editor,
-                    type_index,
+                    context,
                     hand,
                     control_rect,
                     active_theme,
@@ -4921,10 +4932,8 @@ fn buildEditorInspectorContent(
                 try emitInspectorUtilitySkillRow(
                     elements,
                     allocator,
-                    editor,
-                    type_index,
+                    context,
                     slot_row,
-                    active_theme.enemy_gradient.colors,
                 );
             },
             // A gear slot: the slot's label + Add (while empty) / Delete
@@ -4937,12 +4946,45 @@ fn buildEditorInspectorContent(
                     elements,
                     allocator,
                     font_metrics,
-                    editor,
-                    type_index,
+                    context,
                     slot,
                     control_rect,
                     active_theme,
                 );
+            },
+            // The player loadout's name — a read-only value line (the
+            // name arrives with the imported player data).
+            .player_name_line => {
+                try emitInspectorSlotLabel(elements, allocator, cell, "Name", active_theme);
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = context.template.name,
+                    .screen_position = .{
+                        .x = cell.x,
+                        .y = cell.y + editor_inspector_row_height,
+                    },
+                    .font_size = editor_group_header_font_size,
+                    .color = active_theme.lightest,
+                    .blocks_input = false,
+                } });
+            },
+            // The player loadout's inventory — a read-only item count.
+            .inventory_summary => {
+                try emitInspectorSlotLabel(elements, allocator, cell, "Items", active_theme);
+                var item_count: u32 = 0;
+                for (context.template.inventory.slots) |maybe_item| {
+                    if (maybe_item != null) item_count += 1;
+                }
+                const value = try std.fmt.allocPrint(allocator, "{d}", .{item_count});
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = value,
+                    .screen_position = .{
+                        .x = cell.x,
+                        .y = cell.y + editor_inspector_row_height,
+                    },
+                    .font_size = editor_group_header_font_size,
+                    .color = active_theme.lightest,
+                    .blocks_input = false,
+                } });
             },
         }
     }
@@ -4976,20 +5018,6 @@ fn buildEditorInspectorContent(
     }
 }
 
-/// The current value of an entity-type field (the display text of its
-/// unfocused text field, and the seed `beginFocusedTextEdit` reads) —
-/// delegated to `Entity.textFieldValue`, the single source shared with the
-/// commit path (strings verbatim, numbers decimal-formatted).
-fn entityFieldValue(
-    allocator: std.mem.Allocator,
-    editor: types.Editor,
-    type_index: u32,
-    field_id: types.TextFieldId,
-) []const u8 {
-    if (type_index >= editor.entity_types.len) return "";
-    return editor.entity_types[type_index].template.textFieldValue(allocator, field_id) catch
-        @panic("failed to format entity field value");
-}
 
 /// Emit one inspector text field in the row's control column. The builder
 /// computes ALL render data (it owns the metrics + the focused buffer):
@@ -5004,13 +5032,12 @@ fn emitInspectorTextField(
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     text_edit: ?*const TextEditState,
-    editor: types.Editor,
-    type_index: u32,
+    context: InspectorEntityContext,
     control_rect: Rectangle,
     field_id: types.TextFieldId,
     active_theme: types.ActiveColorTheme,
 ) !void {
-    const ref: types.TextFieldRef = .{ .id = field_id, .target = .{ .entity_type = type_index } };
+    const ref: types.TextFieldRef = .{ .id = field_id, .target = context.edit_target };
     const field_rect = control_rect;
     const font_size = editor_group_header_font_size;
     var field: TextFieldUi = .{
@@ -5021,7 +5048,11 @@ fn emitInspectorTextField(
             .x = field_rect.x + ui_gap,
             .y = field_rect.y + @divFloor(field_rect.height - font_size, 2),
         },
-        .text = try allocator.dupe(u8, entityFieldValue(allocator, editor, type_index, field_id)),
+        .text = try allocator.dupe(
+            u8,
+            context.template.textFieldValue(allocator, field_id) catch
+                @panic("failed to format entity field value"),
+        ),
         .font_size = font_size,
         // The field reads as an editable paper strip: a lightest frame
         // with PURE-BLACK text (literal 0,0,0 — not theme darkest; the
@@ -5057,14 +5088,11 @@ fn emitInspectorTextField(
 fn emitInspectorColorSwatches(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
-    editor: types.Editor,
-    type_index: u32,
+    context: InspectorEntityContext,
     control_rect: Rectangle,
-    active_theme: types.ActiveColorTheme,
 ) !void {
-    if (type_index >= editor.entity_types.len) return;
-    const current_index = editor.entity_types[type_index].template.color_index;
-    const enemy = active_theme.enemy_gradient.colors;
+    const current_index = context.template.color_index;
+    const gradient = context.gradient_colors;
     for (0..types.gradient_color_count) |index| {
         const swatch_rect: Rectangle = .{
             .x = control_rect.x + @as(i32, @intCast(index)) * (control_rect.height + ui_gap),
@@ -5077,7 +5105,7 @@ fn emitInspectorColorSwatches(
             .screen_position = swatch_rect.position(),
             .width = swatch_rect.width,
             .height = swatch_rect.height,
-            .color = enemy[@min(@as(u32, @intCast(index)), types.gradient_color_count - 1)],
+            .color = gradient[@min(@as(u32, @intCast(index)), types.gradient_color_count - 1)],
         } });
         // Invisible hit-test button over it, carrying the index.
         try elements.append(allocator, .{ .button = .{
@@ -5099,14 +5127,12 @@ fn emitInspectorToggle(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
-    editor: types.Editor,
-    type_index: u32,
+    context: InspectorEntityContext,
     control_rect: Rectangle,
     active_theme: types.ActiveColorTheme,
 ) !void {
-    if (type_index >= editor.entity_types.len) return;
-    const current = editor.entity_types[type_index].template.displays_weapons;
-    const button_color = active_theme.enemy_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const current = context.template.displays_weapons;
+    const button_color = context.gradient_colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const label: []const u8 = if (current) "true" else "false";
     // Half the panel width — full-width reads as a section header; the
     // value vocabulary ("true"/"false") carries the state, no highlight.
@@ -5169,22 +5195,18 @@ fn emitInspectorWeaponSlot(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
-    editor: types.Editor,
-    type_index: u32,
+    context: InspectorEntityContext,
     hand: types.GearSlot,
     control_rect: Rectangle,
     active_theme: types.ActiveColorTheme,
 ) !void {
-    const button_color = active_theme.enemy_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
-    const item_icon_color = active_theme.enemy_gradient.colors[@min(@as(u32, 1), types.gradient_color_count - 1)];
-    const equipped_weapon: ?types.Weapon = if (type_index < editor.entity_types.len)
-        switch (hand) {
-            .main_hand => editor.entity_types[type_index].template.main_hand_weapon,
-            .off_hand => editor.entity_types[type_index].template.off_hand_weapon,
-            else => null,
-        }
-    else
-        null;
+    const button_color = context.gradient_colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const item_icon_color = context.gradient_colors[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    const equipped_weapon: ?types.Weapon = switch (hand) {
+        .main_hand => context.template.main_hand_weapon,
+        .off_hand => context.template.off_hand_weapon,
+        else => null,
+    };
 
     const cell_size = control_rect.height;
     const cell_pitch = cell_size + ui_gap;
@@ -5258,15 +5280,13 @@ fn emitInspectorGearSlot(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
-    editor: types.Editor,
-    type_index: u32,
+    context: InspectorEntityContext,
     slot: types.GearSlot,
     control_rect: Rectangle,
     active_theme: types.ActiveColorTheme,
 ) !void {
-    const button_color = active_theme.enemy_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
-    const occupied = type_index < editor.entity_types.len and
-        editor.entity_types[type_index].template.gearSlotItem(slot) != null;
+    const button_color = context.gradient_colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const occupied = context.template.gearSlotItem(slot) != null;
     const label: []const u8 = if (occupied) "Delete" else "Add";
     const action: types.Action = if (occupied) .delete_editor_item else .add_editor_item;
     // Half the panel width — full-width reads as a section header.
@@ -5334,18 +5354,16 @@ fn emitInspectorSlotButton(
 /// entity-inspect skill look: occupied = skill-button frame + full-size
 /// icon + skill tooltip; empty = the `ui/skill_slot_empty` diamond. Every
 /// slot opens the centered picker (the slot index rides the button). The
-/// team gradient is a parameter so the enemy + player inspectors share
-/// the row.
+/// context carries the team gradient, so the enemy + player inspectors
+/// share the row.
 fn emitInspectorUtilitySkillRow(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
-    editor: types.Editor,
-    type_index: u32,
+    context: InspectorEntityContext,
     row_rect: Rectangle,
-    gradient_colors: [types.gradient_color_count]types.Color,
 ) !void {
-    const skill_frame_color = gradient_colors[3];
-    const skill_icon_color = gradient_colors[1];
+    const skill_frame_color = context.gradient_colors[3];
+    const skill_icon_color = context.gradient_colors[1];
     const cell_size = editor_inspector_row_height;
     const cell_pitch = cell_size + ui_gap;
     for (0..types.utility_skill_count) |loop_index| {
@@ -5356,10 +5374,7 @@ fn emitInspectorUtilitySkillRow(
             .width = cell_size,
             .height = cell_size,
         };
-        const current: ?types.SkillId = if (type_index < editor.entity_types.len)
-            editor.entity_types[type_index].template.equipped_utility_skills[loop_index]
-        else
-            null;
+        const current: ?types.SkillId = context.template.equipped_utility_skills[loop_index];
         if (current) |skill_id| {
             const tooltip: ?Tooltip = if (lookups.getSkillDefinition(skill_id)) |definition|
                 try buildSkillTooltip(allocator, definition)
@@ -7139,24 +7154,25 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
     };
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     // Select tool, empty selection: the open panel carries the PLAYER
-    // FALLBACK shell — this test covers the shell; the content test below
-    // covers the enemy-tool rows.
+    // content (the fallback target) — windowed from scroll 0. The first
+    // window (10 units): Player header + name line + Weapons (both
+    // hands). The content test below covers the enemy-tool rows.
     const editor: types.Editor = .{};
 
-    // Open (the default): panel + spriteless button + label + background
-    // panel + the player shell (header strip panel + its "Player" label
-    // + the loadout name line) = 7 elements.
+    // Open (the default): toggle 3 + background panel + the player
+    // window — Player strip (2) + Name line (2 labels) + Weapons strip
+    // (2) + Main hand (label + 6 type cells ×2 elements) + Off hand
+    // (same) + scrollbar (2) = 38 elements.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 7), elements.items.len);
+        try std.testing.expectEqual(@as(usize, 38), elements.items.len);
         try expectInspectorToggleShape(&elements);
-        // The player shell: a "Player" header strip + the (default-empty)
-        // loadout name line.
-        try std.testing.expectEqualStrings("ui/panel", elements.items[4].nine_slice_panel.sprite_id);
-        try std.testing.expectEqualStrings("Player", elements.items[5].text_label.text);
-        try std.testing.expectEqualStrings("", elements.items[6].text_label.text);
+        try expectInspectorLabels(&elements, &.{ "Player", "Name", "", "Weapons", "Main hand", "Off hand" });
+        // The player content tints with the PLAYER gradient (the strip at
+        // element 4 uses gradient[5]).
+        try std.testing.expectEqual(player_five, elements.items[4].nine_slice_panel.color);
 
         // The background panel: flush left, below the button, down to one
         // ui_gap above the expanded palette groups' header strip, tinted
@@ -7289,24 +7305,21 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         try std.testing.expectEqual(@as(i32, 0), ui_state.editor_inspector_scroll);
     }
 
-    // A stale tool id (the type deleted mid-edit) falls back to the
-    // player shell, which RESETS the scroll.
+    // A stale tool id (the type deleted mid-edit) falls back to the PLAYER
+    // content — its scroll CLAMPS (29 units − 10 visible = 19), no reset;
+    // the bottom window lands on the last gear slot + utility + inventory.
     {
         const stale_editor: types.Editor = .{
             .entity_types = &entity_types,
             .active_tool = .{ .entity_type = 7 },
         };
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 5 };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 999 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, stale_editor, theme, true, &ui_state);
-        // A stale tool id can't show anything — the PLAYER fallback shell
-        // (the header strip's label is element 5).
-        try std.testing.expectEqual(@as(i32, 0), ui_state.editor_inspector_scroll);
-        try std.testing.expectEqualStrings(
-            "Player",
-            elements.items[5].text_label.text,
-        );
-        try std.testing.expectEqual(@as(usize, 0), countSolidRects(&elements));
+        try std.testing.expectEqual(@as(i32, 19), ui_state.editor_inspector_scroll);
+        try expectInspectorLabels(&elements, &.{ "Boots", "Add", "Utility skills", "Skill bar", "Inventory", "Items", "0" });
+        // No swatches in the window — only the scrollbar rects are solid.
+        try std.testing.expectEqual(@as(usize, 2), countSolidRects(&elements));
     }
 }
 
@@ -7385,6 +7398,87 @@ test "inspector utility-skill row: occupied slots show the skill, empty the diam
         else => {},
     };
     try std.testing.expectEqual(@as(usize, 4), pitches);
+}
+
+test "inspector player content: gear + skills + inventory over player_def, commits target player_def" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const player_five: types.Color = .{ .r = 40, .g = 40, .b = 40 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{ black, black, black, black, black, player_five } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // An equipped loadout: a main-hand weapon, an amulet, blink in slot 0,
+    // two inventory items.
+    var inventory: types.Inventory = .{};
+    inventory.slots[3] = .{ .weapon = .{ .name = "Spare Sword", .weapon_type = .sword, .weapon_damage = 2 } };
+    inventory.slots[4] = .{ .weapon = .{ .name = "Spare Axe", .weapon_type = .axe, .weapon_damage = 2 } };
+    const editor: types.Editor = .{
+        .player_def = .{ .id = "Player", .template = .{
+            .name = "New Player",
+            .main_hand_weapon = .{ .name = "Starter Sword", .weapon_type = .sword, .weapon_damage = 3 },
+            .amulet = .{ .name = "Starter Amulet", .spell_damage = 3 },
+            .equipped_utility_skills = .{ .blink, null, null, null, null },
+            .inventory = inventory,
+        } },
+        .active_tool = .select,
+        .selection = &.{.{ .player_start = {} }},
+    };
+
+    // Window [5,15): the main hand's slot row + its item fields + the
+    // off-hand row + the Gear header. The weapon's text fields carry
+    // `.player_def` — the player content's commits route there.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_inspector_scroll = 5 };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try expectInspectorLabels(&elements, &.{ "Main hand", "Delete", "Main hand name", "Main hand damage", "Off hand", "Gear" });
+        const name_field = findTextField(&elements, .{ .item_name = .main_hand }).?;
+        try std.testing.expectEqualStrings("Starter Sword", name_field.text);
+        try std.testing.expectEqual(types.EntityEditTarget.player_def, name_field.ref.target);
+        const damage_field = findTextField(&elements, .{ .item_stat = .{ .slot = .main_hand, .stat = .weapon_damage } }).?;
+        try std.testing.expectEqualStrings("3", damage_field.text);
+        // The equipped hand shows its Delete (not Add).
+        var main_hand_delete = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .delete_editor_item and
+                button.editor_gear_slot.? == .main_hand)
+            {
+                main_hand_delete = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(main_hand_delete);
+    }
+
+    // Bottom window: the skill row (blink occupied in slot 0, the rest
+    // diamonds) + the inventory summary counting the two items.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_inspector_scroll = 999 };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try expectInspectorLabels(&elements, &.{ "Boots", "Add", "Utility skills", "Skill bar", "Inventory", "Items", "2" });
+        var occupied_slots: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .open_editor_skill_picker) {
+                if (button.editor_utility_slot == 0) {
+                    try std.testing.expectEqualStrings("ui/skill_button", button.sprite_id.?);
+                    occupied_slots += 1;
+                } else {
+                    try std.testing.expectEqualStrings("ui/skill_slot_empty", button.sprite_id.?);
+                }
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 1), occupied_slots);
+    }
 }
 
 /// Assert the inspector's content labels, in order, skipping the toggle
