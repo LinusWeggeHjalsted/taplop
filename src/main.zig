@@ -274,6 +274,16 @@ fn update(
                         if (button.editor_footprint_tile) |cell_index| {
                             player_input.anytime.clicked_editor_footprint_tile = cell_index;
                         }
+                        // Settings-sidebar gradient rows + theme-picker
+                        // rows: the role (swatch / Auto buttons) or the
+                        // gradient index (picker rows) rides alongside the
+                        // action.
+                        if (button.editor_gradient_role) |role| {
+                            player_input.anytime.clicked_editor_gradient_role = role;
+                        }
+                        if (button.editor_gradient) |gradient_index| {
+                            player_input.anytime.clicked_editor_gradient = gradient_index;
+                        }
                         if (button.editor_skill) |skill_id| {
                             player_input.anytime.clicked_editor_skill = skill_id;
                         }

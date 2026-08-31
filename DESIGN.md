@@ -2138,8 +2138,13 @@ session-log reader doesn't regroup nested non-u8 slices):
   carry no pixel_dims).
 Ground items always render as the shared ground-bag sprite — there is
 no sprite to pick for them. The sprite picker + the footprint editor
-(see the Inspector fields above) are the editor's only centered panels;
-everything else stays inline in the inspector / settings sidebar.
+(see the Inspector fields above) + the THEME PICKER (the settings
+sidebar's gradient rows — every gradient as a bare full-width strip,
+one pick per row, the current index framed in lightest; a pick while an
+enemy/player role is on AUTO flips it to manual in the same commit, and
+an auto-role picker highlights its DERIVED index) are the editor's
+centered panels; everything else stays inline in the inspector /
+settings sidebar.
 
 **Level theme (gradient picking).** A level's theme is composed from the
 authoritative gradient list in `color_themes.txt` (currently 3 gradients;

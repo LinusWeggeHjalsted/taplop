@@ -360,6 +360,13 @@ pub const AnytimeInput = struct {
     /// Footprint-editor grid cell (row-major), set alongside
     /// `options_action == .toggle_editor_footprint_tile`.
     clicked_editor_footprint_tile: ?u32 = null,
+    /// Settings-sidebar gradient role (world / enemy / player), set
+    /// alongside `options_action == .open_editor_level_gradient_picker` /
+    /// `.toggle_editor_level_gradient_auto` by the release dispatch.
+    clicked_editor_gradient_role: ?types.LevelGradientRole = null,
+    /// Theme-picker gradient index, set alongside
+    /// `options_action == .select_editor_level_gradient`.
+    clicked_editor_gradient: ?u32 = null,
     /// Editor skill pick, set alongside
     /// `options_action == .select_editor_utility_skill` (a picker cell).
     /// No payload = the picker's None cell.
@@ -490,6 +497,9 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .open_editor_footprint_picker => player_input.anytime.options_action = action,
         .toggle_editor_footprint_tile => player_input.anytime.options_action = action,
         .confirm_editor_footprint => player_input.anytime.options_action = action,
+        .open_editor_level_gradient_picker => player_input.anytime.options_action = action,
+        .select_editor_level_gradient => player_input.anytime.options_action = action,
+        .toggle_editor_level_gradient_auto => player_input.anytime.options_action = action,
         .toggle_editor_entity_displays_weapons => player_input.anytime.options_action = action,
         .select_editor_weapon_type => player_input.anytime.options_action = action,
         .add_editor_item => player_input.anytime.options_action = action,

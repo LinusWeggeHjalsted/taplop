@@ -12,6 +12,7 @@ const types = @import("types.zig");
 const state = @import("state.zig");
 const lookups = @import("generated_lookups.zig");
 const utility_skills = @import("utility_skills.zig");
+const loaders = @import("loaders.zig");
 const sprite_metadata = @import("generated_sprite_metadata");
 const Skill = @import("skills/skill.zig").Skill;
 const Effect = @import("effects/effect.zig").Effect;
@@ -73,6 +74,12 @@ pub const EditorPickerTarget = union(enum) {
     /// mid-edit (the dropdown convention), and toggles/confirm can never
     /// silently apply to a different type.
     decoration_footprint: u32,
+    /// The settings sidebar's THEME PICKER (a gradient row's swatch):
+    /// every gradient as a full-width strip, one pick per row. Carries
+    /// the LEVEL INDEX it was opened on + the ROLE being picked (the
+    /// world index, or an enemy/player override) — a mid-edit tab switch
+    /// can't retarget the pick.
+    level_gradient: struct { level_index: u32, role: types.LevelGradientRole },
 };
 
 /// The footprint editor's draft-grid capacity: 8×8 sprite-grid tiles
@@ -2348,6 +2355,15 @@ pub const Button = struct {
     /// the editor's sprite-grid tile cells. Rides in
     /// `AnytimeInput.clicked_editor_footprint_tile`.
     editor_footprint_tile: ?u32 = null,
+    /// Settings-sidebar gradient ROLE (world / enemy / player), if this
+    /// button is a gradient row's swatch (opens the theme picker) or its
+    /// Auto button (reverts to derivation). Rides in
+    /// `AnytimeInput.clicked_editor_gradient_role` alongside the action.
+    editor_gradient_role: ?types.LevelGradientRole = null,
+    /// Theme-picker gradient index, if this button is a picker row. Rides
+    /// in `AnytimeInput.clicked_editor_gradient` alongside
+    /// `.select_editor_level_gradient`.
+    editor_gradient: ?u32 = null,
     /// Editor skill pick, if this button is a skill-picker cell. Rides in
     /// `AnytimeInput.clicked_editor_skill`; null on the None cell (clears).
     editor_skill: ?types.SkillId = null,
@@ -4831,6 +4847,60 @@ pub fn buildEditorSettingsSidebar(
         .{ .x = content.x, .y = cursor_y, .width = content.width, .height = 2 * editor_inspector_row_height },
         active_theme,
     );
+
+    // The Level section's THEME rows: world / enemy / player gradient
+    // picks (see DESIGN → Level Editor → Level theme). The swatches show
+    // the EFFECTIVE gradients — the active theme already derives them
+    // from this level's settings, so no re-derivation here. The enemy /
+    // player rows carry the AUTO toggle (highlighted while deriving;
+    // clicking while manual reverts, the same-value-picks-never-fire
+    // rule makes the auto-state click a no-op).
+    // The gradient rows are SINGLE-LINE (the settings-screen row pattern:
+    // role label + Auto button + swatch on one line) so the three rows
+    // fit the panel alongside the two name entries — the two-unit
+    // field-entry geometry would overflow the panel bottom by ~2 rows.
+    cursor_y += 2 * editor_inspector_row_height + ui_gap;
+    try emitSidebarGradientRow(
+        elements,
+        allocator,
+        "World",
+        active_theme.world_gradient.colors,
+        .world,
+        null,
+        button_color,
+        .{ .x = content.x, .y = cursor_y, .width = content.width, .height = editor_header_strip_height },
+        active_theme,
+    );
+    cursor_y += editor_header_strip_height + ui_gap;
+    try emitSidebarGradientRow(
+        elements,
+        allocator,
+        "Enemy",
+        active_theme.enemy_gradient.colors,
+        .enemy,
+        if (active_level < editor.levels.len)
+            editor.levels[active_level].enemy_gradient_index
+        else
+            null,
+        button_color,
+        .{ .x = content.x, .y = cursor_y, .width = content.width, .height = editor_header_strip_height },
+        active_theme,
+    );
+    cursor_y += editor_header_strip_height + ui_gap;
+    try emitSidebarGradientRow(
+        elements,
+        allocator,
+        "Player",
+        active_theme.player_gradient.colors,
+        .player,
+        if (active_level < editor.levels.len)
+            editor.levels[active_level].player_gradient_index
+        else
+            null,
+        button_color,
+        .{ .x = content.x, .y = cursor_y, .width = content.width, .height = editor_header_strip_height },
+        active_theme,
+    );
 }
 
 /// A sidebar section strip: the group-header visual class (panel-backed,
@@ -4860,6 +4930,114 @@ fn emitSidebarSectionStrip(
         .font_size = editor_group_header_font_size,
         .color = active_theme.lightest,
         .blocks_input = false,
+    } });
+}
+
+/// A sidebar gradient row (SINGLE LINE — the settings-screen row pattern,
+/// so three rows fit the panel alongside the name entries): the role
+/// label, then (for the enemy/player roles) the AUTO toggle, then the
+/// full-gradient swatch strip — ONE button over the whole strip, opening
+/// the theme picker. `gradient_override` is null while the role
+/// auto-derives (the AUTO button's highlighted state); the swatch colors
+/// are the EFFECTIVE gradient either way (passed in — the active theme
+/// already resolved them).
+fn emitSidebarGradientRow(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    label: []const u8,
+    gradient: [types.gradient_color_count]types.Color,
+    role: types.LevelGradientRole,
+    gradient_override: ?u32,
+    button_color: types.Color,
+    row: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = .{
+            .x = row.x,
+            .y = row.y + @divFloor(row.height - editor_group_header_font_size, 2),
+        },
+        .font_size = editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+    const label_width: i32 = 320;
+    const control_rect: Rectangle = .{
+        .x = row.x + label_width,
+        .y = row.y,
+        .width = row.width - label_width,
+        .height = row.height,
+    };
+
+    // The AUTO toggle (enemy/player rows only): highlighted while
+    // deriving; a click while manual reverts (the input layer no-ops it
+    // while auto — the same-value rule).
+    var swatch_rect = control_rect;
+    if (role != .world) {
+        const auto_rect: Rectangle = .{
+            .x = control_rect.x,
+            .y = control_rect.y,
+            .width = @divFloor(control_rect.width, 4),
+            .height = control_rect.height,
+        };
+        try elements.append(allocator, .{ .nine_slice_panel = .{
+            .sprite_id = "ui/panel",
+            .screen_position = auto_rect.position(),
+            .width = auto_rect.width,
+            .height = auto_rect.height,
+            .color = button_color,
+        } });
+        try elements.append(allocator, .{ .button = .{
+            .screen_position = auto_rect.position(),
+            .width = auto_rect.width,
+            .height = auto_rect.height,
+            .action = .toggle_editor_level_gradient_auto,
+            .editor_gradient_role = role,
+            .highlighted = gradient_override == null,
+            .tooltip = .{ .header = try spanRow(allocator, text(
+                "Derive from world gradient",
+            )) },
+        } });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "Auto",
+            .screen_position = .{
+                .x = auto_rect.x + ui_gap,
+                .y = auto_rect.y + @divFloor(auto_rect.height - editor_group_header_font_size, 2),
+            },
+            .font_size = editor_group_header_font_size,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+        swatch_rect = .{
+            .x = control_rect.x + auto_rect.width + ui_gap,
+            .y = control_rect.y,
+            .width = control_rect.width - auto_rect.width - ui_gap,
+            .height = control_rect.height,
+        };
+    }
+
+    // The full-gradient swatch strip: 6 equal color blocks + ONE
+    // invisible button over the whole strip (opens the theme picker).
+    const block_width = @divFloor(swatch_rect.width, types.gradient_color_count);
+    for (0..types.gradient_color_count) |index| {
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{
+                .x = swatch_rect.x + @as(i32, @intCast(index)) * block_width,
+                .y = swatch_rect.y,
+            },
+            .width = block_width,
+            .height = swatch_rect.height,
+            .color = gradient[index],
+        } });
+    }
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = swatch_rect.position(),
+        .width = swatch_rect.width,
+        .height = swatch_rect.height,
+        .action = .open_editor_level_gradient_picker,
+        .editor_gradient_role = role,
+        .tooltip = .{ .header = try spanRow(allocator, text("Pick gradient")) },
     } });
 }
 
@@ -6616,9 +6794,9 @@ pub fn buildEditorSkillPicker(
 ) !void {
     const slot_index = switch (target) {
         .utility_skill_slot => |index| index,
-        // The sprite/footprint targets aren't this picker's (the view
-        // dispatches on the target); defensive for crafted calls.
-        .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint => return,
+        // The sprite/footprint/theme targets aren't this picker's (the
+        // view dispatches on the target); defensive for crafted calls.
+        .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient => return,
     };
     var current: ?types.SkillId = null;
     if (slot_index < types.utility_skill_count) {
@@ -6734,7 +6912,7 @@ pub fn buildEditorSpritePicker(
     // target is the skill picker's own builder (the view dispatches).
     const PickerKind = enum { entity_base, decoration_base, entity_layer, decoration_layer };
     const picker_kind: PickerKind = switch (picker_target) {
-        .utility_skill_slot, .decoration_footprint => return,
+        .utility_skill_slot, .decoration_footprint, .level_gradient => return,
         .entity_sprite => .entity_base,
         .decoration_sprite => .decoration_base,
         .entity_layer => .entity_layer,
@@ -7047,6 +7225,124 @@ pub fn buildEditorSpritePicker(
 /// `UiState.editor_footprint_draft`; the type id rides the picker target
 /// (see the union). Custom-stem art isn't renderable yet — its cells get
 /// a dark fill so the grid stays visible.
+/// The settings sidebar's THEME PICKER (the `.level_gradient` target):
+/// a centered panel listing every gradient in `color_themes.txt` as a
+/// full-width swatch strip — one row per gradient, bare strips (no
+/// labels — the colors ARE the content), a close button top-right. The
+/// row for the level's CURRENT index (the world pick, or the override —
+/// the DERIVED index while a role is on auto) carries a lightest frame
+/// (the unified 8px outline convention). A pick commits through the
+/// slice-1 player wrappers (same-value picks close without recording;
+/// an auto-role pick flips it to manual — see the input arm). Dropdown
+/// semantics like every editor picker: blocks only where it sits.
+pub fn buildEditorThemePicker(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    editor: types.Editor,
+    color_theme_definitions: types.ColorThemeDefinitions,
+    active_theme: types.ActiveColorTheme,
+    target: struct { level_index: u32, role: types.LevelGradientRole },
+) !void {
+    _ = font_metrics;
+    const gradients = color_theme_definitions.gradients;
+    const row_height = editor_header_strip_height;
+    const width: i32 = 2048;
+    const rows: i32 = @intCast(gradients.len);
+    const height = middle_panel_header_height +
+        rows * row_height + @max(rows - 1, 0) * ui_gap + 2 * ui_gap;
+    const bounds = screenRect().placeCenter(width, height);
+
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = bounds.position(),
+        .width = width,
+        .height = height,
+        .color = active_theme.darkest,
+    } });
+    const title = try std.fmt.allocPrint(allocator, "Pick {s} Gradient", .{switch (target.role) {
+        .world => "World",
+        .enemy => "Enemy",
+        .player => "Player",
+    }});
+    const content = try emitPanelHeader(elements, allocator, bounds, title, .close_editor_picker);
+
+    // The level's current index for the role (the DERIVED one while an
+    // enemy/player role is on auto — it's what's in effect). A stale
+    // level index (defensive; picks gate at the input layer) highlights
+    // nothing.
+    var current_index: ?u32 = null;
+    if (target.level_index < editor.levels.len) {
+        const level = editor.levels[target.level_index];
+        current_index = switch (target.role) {
+            .world => level.color_wheel_index,
+            .enemy => level.enemy_gradient_index orelse
+                loaders.autoDerivedGradientIndex(color_theme_definitions, level.color_wheel_index, .enemy),
+            .player => level.player_gradient_index orelse
+                loaders.autoDerivedGradientIndex(color_theme_definitions, level.color_wheel_index, .player),
+        };
+    }
+
+    for (gradients, 0..) |gradient, index| {
+        const row_rect: Rectangle = .{
+            .x = content.x + ui_gap,
+            .y = content.y + ui_gap + @as(i32, @intCast(index)) * (row_height + ui_gap),
+            .width = content.width - 2 * ui_gap,
+            .height = row_height,
+        };
+        const block_width = @divFloor(row_rect.width, types.gradient_color_count);
+        for (0..types.gradient_color_count) |color_index| {
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{
+                    .x = row_rect.x + @as(i32, @intCast(color_index)) * block_width,
+                    .y = row_rect.y,
+                },
+                .width = block_width,
+                .height = row_rect.height,
+                .color = gradient.colors[color_index],
+            } });
+        }
+        try elements.append(allocator, .{ .button = .{
+            .screen_position = row_rect.position(),
+            .width = row_rect.width,
+            .height = row_rect.height,
+            .action = .select_editor_level_gradient,
+            .editor_gradient = @intCast(index),
+            .highlighted = current_index != null and current_index.? == index,
+        } });
+        // A VISIBLE current marker (Button.highlighted doesn't render —
+        // see TODO): a lightest frame around the current row, the unified
+        // 8px outline convention.
+        if (current_index != null and current_index.? == index) {
+            const thickness: i32 = 8;
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = row_rect.x, .y = row_rect.y },
+                .width = row_rect.width,
+                .height = thickness,
+                .color = active_theme.lightest,
+            } });
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = row_rect.x, .y = row_rect.y + row_rect.height - thickness },
+                .width = row_rect.width,
+                .height = thickness,
+                .color = active_theme.lightest,
+            } });
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = row_rect.x, .y = row_rect.y },
+                .width = thickness,
+                .height = row_rect.height,
+                .color = active_theme.lightest,
+            } });
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = row_rect.x + row_rect.width - thickness, .y = row_rect.y },
+                .width = thickness,
+                .height = row_rect.height,
+                .color = active_theme.lightest,
+            } });
+        }
+    }
+}
+
 pub fn buildEditorFootprintEditor(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -12185,12 +12481,14 @@ test "buildEditorSettingsSidebar: toggle always, panel + name fields when open" 
 
     // Open (the default): toggle (panel + button + label) + background
     // panel + two section strips (panel + label each) + two name entries
-    // (label + text field each) = 12 elements.
+    // (label + text field each) + the three gradient rows (world: label +
+    // 6 blocks + button = 8; enemy/player: label + Auto panel + button +
+    // label + 6 blocks + button = 11 each) = 42 elements.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         try buildEditorSettingsSidebar(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 12), elements.items.len);
+        try std.testing.expectEqual(@as(usize, 42), elements.items.len);
 
         // The toggle button: flush RIGHT at the inspector toggle's height.
         const toggle_panel = elements.items[0].nine_slice_panel;
@@ -12233,6 +12531,39 @@ test "buildEditorSettingsSidebar: toggle always, panel + name fields when open" 
         try std.testing.expect(level_field != null);
         try std.testing.expectEqualStrings("Second", level_field.?.text);
         try std.testing.expectEqual(types.TextEditTarget{ .level = 1 }, level_field.?.ref.target);
+
+        // The gradient rows: one open-picker button per role (the world
+        // row full-width, the enemy/player rows beside their Auto
+        // buttons), the Auto buttons highlighted while the role is on
+        // auto (no overrides set on this editor).
+        var open_buttons: [3]?Button = .{null, null, null};
+        var auto_buttons: [2]?Button = .{null, null};
+        for (elements.items) |element| switch (element) {
+            .button => |button| switch (button.action) {
+                .open_editor_level_gradient_picker => switch (button.editor_gradient_role.?) {
+                    .world => open_buttons[0] = button,
+                    .enemy => open_buttons[1] = button,
+                    .player => open_buttons[2] = button,
+                },
+                .toggle_editor_level_gradient_auto => switch (button.editor_gradient_role.?) {
+                    .world => {},
+                    .enemy => auto_buttons[0] = button,
+                    .player => auto_buttons[1] = button,
+                },
+                else => {},
+            },
+            else => {},
+        };
+        for (open_buttons) |maybe_button| try std.testing.expect(maybe_button != null);
+        // Every row reserves the 320px label column; the enemy/player
+        // swatches are narrowed further by their Auto buttons.
+        const content_width = editorSettingsSidebarPanelRect().width - 2 * ui_gap;
+        try std.testing.expectEqual(content_width - 320, open_buttons[0].?.width);
+        try std.testing.expect(open_buttons[1].?.width < open_buttons[0].?.width);
+        for (auto_buttons) |maybe_button| {
+            try std.testing.expect(maybe_button != null);
+            try std.testing.expect(maybe_button.?.highlighted);
+        }
     }
 
     // Closed: just the toggle (3 elements).
@@ -12242,5 +12573,98 @@ test "buildEditorSettingsSidebar: toggle always, panel + name fields when open" 
         try buildEditorSettingsSidebar(&elements, arena.allocator(), metrics, editor, theme, false, &ui_state);
         try std.testing.expectEqual(@as(usize, 3), elements.items.len);
         try std.testing.expectEqual(Action.toggle_editor_settings_sidebar, elements.items[1].button.action);
+    }
+}
+
+test "buildEditorThemePicker: one strip per gradient, current row framed, close button" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const lightest: types.Color = .{ .r = 1, .g = 1, .b = 1 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    var gradients: [3]types.ColorGradient = undefined;
+    for (&gradients, 0..) |*gradient, index| {
+        const value: u8 = @intCast(index * 40 + 10);
+        gradient.* = .{ .colors = .{types.Color{ .r = value, .g = value, .b = value }} ** types.gradient_color_count };
+    }
+    const definitions: types.ColorThemeDefinitions = .{
+        .lightest = lightest,
+        .darkest = black,
+        .gradients = &gradients,
+    };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = lightest,
+        .darkest = black,
+        .world_gradient = gradients[0],
+        .enemy_gradient = gradients[1],
+        .player_gradient = gradients[2],
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const levels = [_]types.EditorLevel{.{ .color_wheel_index = 2 }};
+    const editor: types.Editor = .{ .levels = &levels };
+
+    // World role: the current index is the wheel index (2) — row 2 framed.
+    {
+        var elements: UiElementList = .empty;
+        try buildEditorThemePicker(
+            &elements,
+            arena.allocator(),
+            metrics,
+            editor,
+            definitions,
+            theme,
+            .{ .level_index = 0, .role = .world },
+        );
+        // Panel + header label + close + 3 rows × (6 blocks + button) +
+        // 4 frame rects on the current row = 28.
+        try std.testing.expectEqual(@as(usize, 28), elements.items.len);
+
+        var pick_buttons: usize = 0;
+        var current_button: ?Button = null;
+        var close_seen = false;
+        var frame_rects: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| switch (button.action) {
+                .select_editor_level_gradient => {
+                    pick_buttons += 1;
+                    if (button.highlighted) current_button = button;
+                },
+                .close_editor_picker => close_seen = true,
+                else => {},
+            },
+            .solid_rect => |rect| {
+                if (std.meta.eql(rect.color, lightest)) frame_rects += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 3), pick_buttons);
+        try std.testing.expect(close_seen);
+        try std.testing.expectEqual(@as(usize, 4), frame_rects);
+        try std.testing.expect(current_button != null);
+        try std.testing.expectEqual(@as(?u32, 2), current_button.?.editor_gradient);
+    }
+
+    // Enemy role on auto: the current index is the DERIVED one (wheel 2,
+    // 3 gradients → enemy = 2 + 1 = 0 mod 3).
+    {
+        var elements: UiElementList = .empty;
+        try buildEditorThemePicker(
+            &elements,
+            arena.allocator(),
+            metrics,
+            editor,
+            definitions,
+            theme,
+            .{ .level_index = 0, .role = .enemy },
+        );
+        var current_button: ?Button = null;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_level_gradient and button.highlighted) {
+                current_button = button;
+            },
+            else => {},
+        };
+        try std.testing.expect(current_button != null);
+        try std.testing.expectEqual(@as(?u32, 0), current_button.?.editor_gradient);
     }
 }

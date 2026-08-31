@@ -2173,6 +2173,25 @@ pub fn loadColorThemeDefinitions(
     return theme;
 }
 
+/// The auto-derivation rule's gradient index for a role (world = the
+/// wheel index itself; enemy / player = evenly spaced at 1/3 and 2/3
+/// around the wheel). Single source for `deriveActiveColorTheme` + the
+/// editor UI's effective-index display (the sidebar swatch + the theme
+/// picker's current highlight while a role is on auto).
+pub fn autoDerivedGradientIndex(
+    color_theme_definitions: ColorThemeDefinitions,
+    color_wheel_index: u32,
+    role: types.LevelGradientRole,
+) u32 {
+    const gradient_count: u32 = @intCast(color_theme_definitions.gradients.len);
+    if (gradient_count == 0) return 0;
+    return switch (role) {
+        .world => color_wheel_index % gradient_count,
+        .enemy => (color_wheel_index + gradient_count / 3) % gradient_count,
+        .player => (color_wheel_index + 2 * gradient_count / 3) % gradient_count,
+    };
+}
+
 /// Derive the active color theme for a level or hub from the color wheel.
 /// The world gradient is at the given index; enemy and player gradients
 /// are evenly spaced around the wheel (at 1/3 and 2/3 offsets) unless an
@@ -2198,9 +2217,9 @@ pub fn deriveActiveColorTheme(
 
     const world_index = color_wheel_index % gradient_count;
     const enemy_index = if (enemy_gradient_override) |override| override % gradient_count else
-        (color_wheel_index + gradient_count / 3) % gradient_count;
+        autoDerivedGradientIndex(color_theme_definitions, color_wheel_index, .enemy);
     const player_index = if (player_gradient_override) |override| override % gradient_count else
-        (color_wheel_index + 2 * gradient_count / 3) % gradient_count;
+        autoDerivedGradientIndex(color_theme_definitions, color_wheel_index, .player);
 
     return .{
         .lightest = color_theme_definitions.lightest,

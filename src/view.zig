@@ -392,6 +392,18 @@ pub fn view(
                         type_id,
                         &session.ui_state,
                     ) catch @panic("failed to build editor footprint editor"),
+                    // The settings sidebar's theme picker: every gradient
+                    // as a full-width strip (the level index + role ride
+                    // the picker target).
+                    .level_gradient => |gradient_target| ui.buildEditorThemePicker(
+                        &ui_elements,
+                        frame_allocator,
+                        font_metrics,
+                        editor,
+                        color_theme_definitions,
+                        active_theme,
+                        .{ .level_index = gradient_target.level_index, .role = gradient_target.role },
+                    ) catch @panic("failed to build editor theme picker"),
                 }
             }
         }

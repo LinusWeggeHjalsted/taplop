@@ -4612,3 +4612,114 @@ test "settings sidebar name fields: mission + level commits, no-op gates" {
     try testing.expectEqualStrings("Level One", history.current_state.editor.?.levels[0].name);
     try testing.expectEqualStrings("Level Two", history.current_state.editor.?.levels[1].name);
 }
+
+test "theme picker: open targets the active level, picks commit per role, auto flips" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{
+        .{ .color_wheel_index = 0 },
+        .{ .color_wheel_index = 2 },
+    };
+    const editor = types.Editor{ .levels = &levels, .active_level_index = 1 };
+    var history = harness.newHistory(editorStateWith(editor));
+    runToIdle(&history);
+
+    // Open on the ENEMY row: the picker target snapshots the active tab
+    // (level 1) + the role. (handleAnytimeInput's committing arms drain
+    // + record their own idle points — no runToIdle needed after.)
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_level_gradient_picker,
+        .clicked_editor_gradient_role = .enemy,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(
+        ui.EditorPickerTarget{ .level_gradient = .{ .level_index = 1, .role = .enemy } },
+        history.session.ui_state.editor_picker.?,
+    );
+
+    // A pick commits the override (auto → manual in the same commit) and
+    // closes the picker.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_level_gradient,
+        .clicked_editor_gradient = 4,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expectEqual(@as(?u32, 4), history.current_state.editor.?.levels[1].enemy_gradient_index);
+    // Level 0 untouched (the index rode the target).
+    try testing.expectEqual(@as(?u32, null), history.current_state.editor.?.levels[0].enemy_gradient_index);
+
+    // Same-value pick while MANUAL: closes without RECORDING — the event
+    // history is the precise no-op proof (runToIdle's idle points don't
+    // dedupe, so undo-step counting can't distinguish a dead step from a
+    // duplicate point at an unchanged state).
+    const history_len_after_pick = history.event_history.items.len;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_level_gradient_picker,
+        .clicked_editor_gradient_role = .enemy,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_level_gradient,
+        .clicked_editor_gradient = 4,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expectEqual(@as(?u32, 4), history.current_state.editor.?.levels[1].enemy_gradient_index.?);
+    runToIdle(&history);
+    try testing.expectEqual(history_len_after_pick, history.event_history.items.len);
+
+    // The Auto button reverts the override to null (one undo step back to
+    // the manual pick).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_level_gradient_auto,
+        .clicked_editor_gradient_role = .enemy,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(?u32, null), history.current_state.editor.?.levels[1].enemy_gradient_index);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(?u32, 4), history.current_state.editor.?.levels[1].enemy_gradient_index.?);
+    try testing.expect(history.redo(event_handlers.processEvent));
+    try testing.expectEqual(@as(?u32, null), history.current_state.editor.?.levels[1].enemy_gradient_index);
+
+    // The Auto button while ALREADY auto is a no-op (never fires).
+    const history_len_before_auto_noop = history.event_history.items.len;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_level_gradient_auto,
+        .clicked_editor_gradient_role = .enemy,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(?u32, null), history.current_state.editor.?.levels[1].enemy_gradient_index);
+    try testing.expectEqual(history_len_before_auto_noop, history.event_history.items.len);
+
+    // The WORLD role: a pick sets the wheel index; the world row has no
+    // Auto semantics (a crafted world Auto click never fires).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_level_gradient_picker,
+        .clicked_editor_gradient_role = .world,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_level_gradient,
+        .clicked_editor_gradient = 1,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.levels[1].color_wheel_index);
+    const history_len_before_world_auto = history.event_history.items.len;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_level_gradient_auto,
+        .clicked_editor_gradient_role = .world,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.levels[1].color_wheel_index);
+    try testing.expectEqual(history_len_before_world_auto, history.event_history.items.len);
+
+    // A pick with no picker open (crafted click) is a no-op.
+    const history_len_before_crafted = history.event_history.items.len;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_level_gradient,
+        .clicked_editor_gradient = 3,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.levels[1].color_wheel_index);
+    try testing.expectEqual(history_len_before_crafted, history.event_history.items.len);
+}

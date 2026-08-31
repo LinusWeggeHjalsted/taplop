@@ -1934,6 +1934,93 @@ pub fn handleAnytimeInput(
                     .value = footprint.items,
                 } });
             },
+            // The settings sidebar's gradient swatch: open the centered
+            // theme picker for that role. The target snapshots the ACTIVE
+            // level index — a mid-edit tab switch can't retarget the pick
+            // (the footprint editor's convention).
+            .open_editor_level_gradient_picker => {
+                if (current.editor == null) return;
+                const editor: *types.Editor = &current.editor.?;
+                const role = anytime.clicked_editor_gradient_role orelse return;
+                if (editor.levels.len == 0) return;
+                history.session.ui_state.editor_picker = .{ .level_gradient = .{
+                    .level_index = @intCast(@min(editor.active_level_index, editor.levels.len - 1)),
+                    .role = role,
+                } };
+            },
+            // A theme-picker row: set the level's index for the picker's
+            // role and close. Same-value picks close without recording;
+            // a pick while an enemy/player role is on AUTO flips it to
+            // manual in the same commit (the explicit pick IS the manual
+            // choice — the state change null→index records even when the
+            // derived gradient was visually the same).
+            .select_editor_level_gradient => {
+                const target = switch (history.session.ui_state.editor_picker orelse return) {
+                    .level_gradient => |stored| stored,
+                    else => return,
+                };
+                const gradient_index = anytime.clicked_editor_gradient orelse return;
+                history.session.ui_state.editor_picker = null;
+                if (history.current_state.editor == null) return;
+                const editor: *types.Editor = &history.current_state.editor.?;
+                if (target.level_index >= editor.levels.len) return;
+                const level = editor.levels[target.level_index];
+                switch (target.role) {
+                    .world => {
+                        if (level.color_wheel_index == gradient_index) return;
+                        pushPlayerActionAndDrain(history, .{ .player_set_editor_level_color_wheel = .{
+                            .level_index = target.level_index,
+                            .color_wheel_index = gradient_index,
+                        } });
+                    },
+                    .enemy => {
+                        if (level.enemy_gradient_index != null and
+                            level.enemy_gradient_index.? == gradient_index) return;
+                        pushPlayerActionAndDrain(history, .{ .player_set_editor_level_enemy_gradient = .{
+                            .level_index = target.level_index,
+                            .gradient_index = gradient_index,
+                        } });
+                    },
+                    .player => {
+                        if (level.player_gradient_index != null and
+                            level.player_gradient_index.? == gradient_index) return;
+                        pushPlayerActionAndDrain(history, .{ .player_set_editor_level_player_gradient = .{
+                            .level_index = target.level_index,
+                            .gradient_index = gradient_index,
+                        } });
+                    },
+                }
+            },
+            // An enemy/player gradient row's Auto button: revert that role
+            // to auto-derivation (the null override). A no-op while
+            // already auto — same-value picks never fire (the button
+            // renders highlighted in that state). The world row has no
+            // Auto button (its index is always picked).
+            .toggle_editor_level_gradient_auto => {
+                if (current.editor == null) return;
+                const editor: *types.Editor = &current.editor.?;
+                const role = anytime.clicked_editor_gradient_role orelse return;
+                if (editor.levels.len == 0) return;
+                const level_index: u32 =
+                    @intCast(@min(editor.active_level_index, editor.levels.len - 1));
+                switch (role) {
+                    .world => return,
+                    .enemy => {
+                        if (editor.levels[level_index].enemy_gradient_index == null) return;
+                        pushPlayerActionAndDrain(history, .{ .player_set_editor_level_enemy_gradient = .{
+                            .level_index = level_index,
+                            .gradient_index = null,
+                        } });
+                    },
+                    .player => {
+                        if (editor.levels[level_index].player_gradient_index == null) return;
+                        pushPlayerActionAndDrain(history, .{ .player_set_editor_level_player_gradient = .{
+                            .level_index = level_index,
+                            .gradient_index = null,
+                        } });
+                    },
+                }
+            },
             // A sprite picker cell: set the edited type's base sprite (the
             // stem rode in `anytime.clicked_editor_sprite`) and close the
             // picker. Same-value picks close without recording.
@@ -1943,7 +2030,7 @@ pub fn handleAnytimeInput(
                 // are a no-op, the skill arm's posture).
                 switch (history.session.ui_state.editor_picker orelse return) {
                     .entity_sprite => {},
-                    .utility_skill_slot, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint => return,
+                    .utility_skill_slot, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient => return,
                 }
                 const sprite = anytime.clicked_editor_sprite orelse return;
                 history.session.ui_state.editor_picker = null;
@@ -1980,7 +2067,7 @@ pub fn handleAnytimeInput(
                 // are a no-op, the skill arm's posture).
                 switch (history.session.ui_state.editor_picker orelse return) {
                     .decoration_sprite => {},
-                    .entity_sprite, .utility_skill_slot, .entity_layer, .decoration_layer, .decoration_footprint => return,
+                    .entity_sprite, .utility_skill_slot, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient => return,
                 }
                 const sprite = anytime.clicked_editor_sprite orelse return;
                 history.session.ui_state.editor_picker = null;
@@ -2421,7 +2508,7 @@ pub fn handleAnytimeInput(
                     .utility_skill_slot => |index| index,
                     // The sprite/footprint pickers' picks route through
                     // their own arms — not a skill-slot assignment.
-                    .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint => return,
+                    .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint, .level_gradient => return,
                 };
                 history.session.ui_state.editor_picker = null;
                 if (history.current_state.editor == null) return;

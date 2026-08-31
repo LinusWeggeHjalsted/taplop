@@ -674,13 +674,13 @@ yet implemented. Remaining work:
         previews the active level's full theme now), the two gradient
         EditorEvents + five player wrappers + handlers +
         `validatePlayerAction` arms, tests. History in DONE.md.
-  - [ ] **11 — settings sidebar (right bar), slice 2 — shell + name
-        fields:** toggle button top-right (same height as the inspector
-        toggle, flush to the right screen edge; `Editor` flag +
-        `editor_toggle_settings_sidebar`), right-edge panel, mission name
-        + level name text fields — needs the settled `TextFieldRef`
-        widening (`TextEditTarget` union: entity / mission_name /
-        level_name).
+  - [x] **11 — settings sidebar (right bar), slice 2 — shell + name
+        fields:** DONE — `Editor.settings_sidebar_open` +
+        `editor_toggle_settings_sidebar` (top-right toggle at the
+        inspector toggle's height, flush right), right-edge panel,
+        `TextEditTarget` union widening + shared `emitTextFieldUi`,
+        mission + level name fields with would-change gates, M2
+        arbitration extended, tests. History in DONE.md.
   - [ ] **11 — settings sidebar (right bar), slice 3 — gradient rows +
         theme picker:** three gradient rows (world / enemy / player).
         Each row's FULL-GRADIENT swatch (all 6 colors, one strip) is a

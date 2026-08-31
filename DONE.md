@@ -8374,3 +8374,44 @@ Editor → Editor UI layout → Settings sidebar).
   commit, no-op gate, stale-index no-op), ui (toggle always + flush
   right, panel only when open + the shared rect fn, both fields with the
   right refs + seeded names, active-tab targeting).
+
+## Level editor settings sidebar — slice 3: gradient rows + theme picker
+
+The Level section's three gradient rows + the centered theme picker (see
+DESIGN → Level Editor → Level theme + Editor UI layout → the centered
+panels note).
+
+- **Rows:** SINGLE-LINE (the settings-screen row pattern — role label,
+  then the Auto button, then the swatch) because the inspector's
+  two-unit field-entry geometry overflows the panel bottom by ~2 rows
+  (1248px used of 1328 with single-line rows). The swatch is the
+  EFFECTIVE gradient (the active theme already resolves it from the
+  active level's settings — no re-derivation in the builder); the whole
+  strip is ONE invisible button (`.open_editor_level_gradient_picker`,
+  role payload). The enemy/player AUTO buttons are highlighted while
+  deriving; a click while manual commits the null revert, while auto is
+  a no-op (the same-value-picks-never-fire rule).
+- **Theme picker:** the `.level_gradient` EditorPickerTarget (level
+  index + role snapshot at open — the footprint editor's
+  mid-edit-can't-retarget convention) + `buildEditorThemePicker`: one
+  bare full-width strip per gradient, close top-right, dropdown
+  semantics. The current index (world = the wheel index; enemy/player =
+  the override, or the DERIVED index while auto) gets a visible
+  lightest 8px frame — Button.highlighted still renders nothing (the
+  tracked TODO). `loaders.autoDerivedGradientIndex` extracted as the
+  single source of the spacing rule (deriveActiveColorTheme refactored
+  onto it).
+- **Input:** three options_action arms — open (UiState picker write),
+  pick (routes by role to the slice-1 player wrappers; same-value picks
+  close without recording; an auto-role pick flips to manual in the same
+  commit — null→index records even when the derived gradient was
+  visually identical), Auto (null revert, no-op while auto). Payloads:
+  `editor_gradient_role` / `editor_gradient` Button fields folding into
+  `AnytimeInput`.
+- Tests: picker interaction end-to-end (open target snapshot, per-role
+  commits, auto flip + revert, no-ops proven via event_history LENGTH —
+  runToIdle's idle points don't dedupe, so undo-step counting can't
+  distinguish a dead step from a duplicate point at an unchanged state),
+  picker builder (strips, frame on the current row, derived-index
+  highlight on an auto role), sidebar row shape (label column, narrowed
+  enemy/player swatches, highlighted Auto buttons).

@@ -166,6 +166,22 @@ pub const Action = enum {
     // `player_toggle_editor_settings_sidebar` →
     // `editor_toggle_settings_sidebar` (undo timeline + replay).
     toggle_editor_settings_sidebar,
+    // A settings-sidebar gradient swatch (world / enemy / player row):
+    // open the centered theme picker for that role. The role rides in
+    // `AnytimeInput.clicked_editor_gradient_role`; the picker target
+    // snapshots the active level index (a mid-edit tab switch can't
+    // retarget the pick).
+    open_editor_level_gradient_picker,
+    // A theme-picker gradient row: set the level's index for the picker's
+    // role. The gradient index rides in
+    // `AnytimeInput.clicked_editor_gradient`. For enemy/player, a pick
+    // while on auto flips that role to manual in the same commit.
+    select_editor_level_gradient,
+    // An enemy/player gradient row's AUTO button: revert that role to
+    // auto-derivation (commits the null override). A no-op while already
+    // auto (same-value picks never fire). The role rides in
+    // `AnytimeInput.clicked_editor_gradient_role`.
+    toggle_editor_level_gradient_auto,
     // An inspector section header (expand/collapse that section). The
     // section id rides in `AnytimeInput.clicked_editor_section` — a
     // direct UiState write (view affordance, off the undo timeline, like
@@ -1277,6 +1293,16 @@ pub const EditorToolId = union(enum) {
     entity_type: u32,
     decoration_type: u32,
     item_type: u32,
+};
+
+/// Which gradient role a settings-sidebar gradient row (or its picker)
+/// addresses: the world index is always picked; enemy / player are
+/// optional overrides that auto-derive from it when unset (see DESIGN →
+/// Architecture → Level Editor → Level theme).
+pub const LevelGradientRole = enum {
+    world,
+    enemy,
+    player,
 };
 
 /// One selectable thing in the editor viewport (the select tool's click
