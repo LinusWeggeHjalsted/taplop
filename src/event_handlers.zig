@@ -342,6 +342,42 @@ fn addEditorPaletteType(
     editor.inspector_open = true;
 }
 
+/// Append a new level built from the shipped template
+/// (data/default_level.txt — the minimal `!=` layout), switch the active
+/// tab to it, and sync mission.level_count. The template read goes through
+/// the reconstruction cache — the add event is recorded, so replay re-reads
+/// the same bytes and reproduces the creation; a read/parse failure takes
+/// the recoverable in-event-read path (revert + popup). One event = one
+/// undo step covering the append + the tab switch (and the selection clear
+/// it carries — the editor_set_active_level semantics).
+fn addEditorLevel(
+    history: *GameStateHistory,
+    current: *GameState,
+    allocator: std.mem.Allocator,
+) void {
+    const bytes = history.readReconstructionFile("data/default_level.txt") catch {
+        failReconstructionRead(history, "failed to read data/default_level.txt");
+        return;
+    };
+    const sections = parser.parseConfigFile(bytes, allocator) catch {
+        failReconstructionRead(history, "failed to parse data/default_level.txt");
+        return;
+    };
+    validateConfigKeys(history, sections, parser.level_key_map, "data/default_level.txt", allocator);
+    const template = loaders.loadEditorDefaultLevel(sections, history.file_source, allocator, "data/default_level.txt", null) catch {
+        failReconstructionRead(history, "failed to parse data/default_level.txt (the template must be the minimal != layout)");
+        return;
+    };
+
+    const editor = &(current.editor orelse @panic("editor event with no editor"));
+    layerListAppend(types.EditorLevel, &editor.levels, template, allocator);
+    // The author lands on the thing they just created (the add-type
+    // behavior); the tab switch carries the selection clear.
+    editor.active_level_index = editor.levels.len - 1;
+    editor.selection = &.{};
+    editor.mission.level_count = @intCast(editor.levels.len);
+}
+
 /// Run key validation on `sections` and, if any unknown keys are found,
 /// surface them as a pending_error popup. Advisory — the load continues
 /// regardless (unknown keys are dropped, not fatal). Gated on !replaying
@@ -516,6 +552,33 @@ fn handleEditorEvent(
             // switch away from the select tool takes the selection with it
             // (same event, so one undo step reverts both).
             if (set.tool != .select) editor.selection = &.{};
+        },
+        // Delete a level: order-preserving removal + active-tab adjustment
+        // + level_count sync, one undo step. The guards PANIC (fail-fast):
+        // the ≥1-level invariant is the event's documented contract, the
+        // UI + the input layer + validatePlayerAction all gate it, and a
+        // crafted log that reaches these has bypassed three gates — the
+        // crash dump is the right response (the placement-delete posture).
+        .editor_delete_level => |delete| {
+            if (editor.levels.len <= 1) {
+                @panic("editor_delete_level: a mission always keeps at least one level");
+            }
+            if (delete.level_index >= editor.levels.len) {
+                @panic("editor_delete_level: level index out of range");
+            }
+            layerListRemoveAt(types.EditorLevel, &editor.levels, delete.level_index, allocator);
+            editor.mission.level_count = @intCast(editor.levels.len);
+            // The selection is active-level-relative: deleting the ACTIVE
+            // level switches content under it — clamp + clear (the
+            // editor_set_active_level semantics); a delete below the active
+            // tab shifts the tab down with its level; a delete above leaves
+            // both alone (the active level's placements are untouched).
+            if (delete.level_index == editor.active_level_index) {
+                editor.active_level_index = @min(editor.active_level_index, editor.levels.len - 1);
+                editor.selection = &.{};
+            } else if (delete.level_index < editor.active_level_index) {
+                editor.active_level_index -= 1;
+            }
         },
         // Delete a palette type + every placement referencing it across ALL
         // levels (the palette is mission-shared). The orchestrator of the
@@ -2197,6 +2260,21 @@ fn handlePlayerInputEvent(
             pushEvents(current, &.{.{ .editor_event = .{ .editor_delete_type = .{
                 .type_kind = delete.type_kind,
                 .type_id = delete.type_id,
+            } } }}, allocator);
+        },
+        // Add-level "+" click (top bar): push the machinery event — the
+        // handler reads the shipped template through the reconstruction
+        // cache, appends the level, switches to it, and syncs level_count;
+        // one undo step reverts the whole creation.
+        .player_add_editor_level => {
+            pushEvents(current, &.{.{ .editor_event = .editor_add_level }}, allocator);
+        },
+        // Level-tab × click: push the machinery event — the handler removes
+        // the level, shifts later levels down, syncs level_count, and
+        // adjusts the active tab; one undo step restores it.
+        .player_delete_editor_level => |delete| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_delete_level = .{
+                .level_index = delete.level_index,
             } } }}, allocator);
         },
         // Settings-sidebar commits (mission + active-level metadata): thin
@@ -4884,6 +4962,9 @@ pub fn processEvent(
                 .editor_add_entity_type => addEditorPaletteType(history, current, allocator, .entity),
                 .editor_add_decoration_type => addEditorPaletteType(history, current, allocator, .decoration),
                 .editor_add_item_type => addEditorPaletteType(history, current, allocator, .item),
+                // The add-level event needs the cache as well (the template
+                // read) — same inline-handling reason.
+                .editor_add_level => addEditorLevel(history, current, allocator),
                 // The remaining editor events are handled in the dedicated
                 // editor handler block below (handleEditorEvent). They are
                 // pure state transforms on current.editor.?.levels[] or the

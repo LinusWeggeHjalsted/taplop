@@ -3230,6 +3230,133 @@ test "palette tool delete button: input arm deletes the type + placements; fixed
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
+test "player_add_editor_level: appends the template level, switches to it, undo reverts" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .mission = .{ .level_count = 1 },
+    }));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_add_editor_level }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // The shipped template (data/default_level.txt): the minimal `!=`
+    // layout — '!' at (0,0), '=' at (1,0). The markers carry their own
+    // ground (the layout walk tiles under '!' and '='), so exactly those
+    // two tiles and nothing else; no entries, unnamed (the tab reads
+    // "Level N"). The new level becomes the active tab and level_count
+    // syncs.
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expectEqual(@as(usize, 2), editor.levels.len);
+        const template_level = editor.levels[1];
+        try testing.expectEqual(@as(usize, 0), template_level.name.len);
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, template_level.player_start);
+        try testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, template_level.level_end.?);
+        try testing.expectEqual(@as(usize, 2), template_level.level_tiles.len);
+        try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, template_level.level_tiles[0]);
+        try testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, template_level.level_tiles[1]);
+        try testing.expectEqual(@as(usize, 0), template_level.entity_placements.len);
+        try testing.expectEqual(@as(usize, 0), template_level.decoration_placements.len);
+        try testing.expectEqual(@as(usize, 0), template_level.item_placements.len);
+        try testing.expectEqual(@as(usize, 1), editor.active_level_index);
+        try testing.expectEqual(@as(u32, 2), editor.mission.level_count);
+    }
+
+    // One undo reverts the append + the tab switch.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expectEqual(@as(usize, 1), editor.levels.len);
+        try testing.expectEqual(@as(usize, 0), editor.active_level_index);
+        try testing.expectEqual(@as(u32, 1), editor.mission.level_count);
+    }
+}
+
+test "editor_delete_level: removal + active-tab adjustment + level_count sync, undo restores" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const level_0_tiles = [_]types.Vector2{.{ .x = 0, .y = 0 }};
+    const level_1_tiles = [_]types.Vector2{.{ .x = 1, .y = 0 }};
+    const level_2_tiles = [_]types.Vector2{.{ .x = 2, .y = 0 }};
+    const levels = [_]types.EditorLevel{
+        .{ .name = "A", .level_tiles = &level_0_tiles },
+        .{ .name = "B", .level_tiles = &level_1_tiles },
+        .{ .name = "C", .level_tiles = &level_2_tiles },
+    };
+    const selection = [_]types.Selectable{.{ .tile = .{ .x = 1, .y = 0 } }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .mission = .{ .level_count = 3 },
+        .active_level_index = 1, // B
+        .selection = &selection,
+    }));
+    runToIdle(&history);
+
+    // Delete BELOW the active tab (A): the active tab shifts down with its
+    // level, the selection survives (the active level's placements are
+    // untouched).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_delete_editor_level = .{
+            .level_index = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expectEqual(@as(usize, 2), editor.levels.len);
+        try testing.expectEqualStrings("B", editor.levels[0].name);
+        try testing.expectEqualStrings("C", editor.levels[1].name);
+        try testing.expectEqual(@as(usize, 0), editor.active_level_index);
+        try testing.expectEqual(@as(u32, 2), editor.mission.level_count);
+        try testing.expectEqual(@as(usize, 1), editor.selection.len);
+    }
+
+    // Delete the ACTIVE level (B, now index 0): the tab clamps onto C and
+    // the selection clears (the editor_set_active_level semantics).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_delete_editor_level = .{
+            .level_index = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expectEqual(@as(usize, 1), editor.levels.len);
+        try testing.expectEqualStrings("C", editor.levels[0].name);
+        try testing.expectEqual(@as(usize, 0), editor.active_level_index);
+        try testing.expectEqual(@as(usize, 0), editor.selection.len);
+    }
+
+    // Two undos restore both deletions (levels, tabs, selection).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expectEqual(@as(usize, 3), editor.levels.len);
+        try testing.expectEqualStrings("A", editor.levels[0].name);
+        try testing.expectEqual(@as(usize, 1), editor.active_level_index);
+        try testing.expectEqual(@as(u32, 3), editor.mission.level_count);
+        try testing.expectEqual(@as(usize, 1), editor.selection.len);
+    }
+}
+
 test "decoration sprite picker: open routing, official prefab adopt, same-def no-op, entity-picker gate" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

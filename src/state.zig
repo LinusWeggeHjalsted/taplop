@@ -1313,10 +1313,39 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_add_editor_type with no editor");
                     }
                 },
-                // Structural legality: same shape — the live path is a
-                // palette tool cell's delete button. The type id must be in
-                // range for its kind (the editor_set_tool range-check
-                // posture; the handler ignores out-of-range defensively).
+                // Structural legality: same shape — the live path is the
+                // top-bar add-level "+".
+                .player_add_editor_level => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_add_editor_level outside editor screen");
+                    }
+                    if (self.current_state.editor == null) {
+                        @panic("replay validation: player_add_editor_level with no editor");
+                    }
+                },
+                // Structural legality: same shape — the live path is a level
+                // tab's × button. The index must be in range AND the
+                // mission must keep ≥1 level (the handler enforces both as
+                // its documented invariant; this is the gate that keeps
+                // crafted logs away from those panics).
+                .player_delete_editor_level => |delete| {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_delete_editor_level outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: player_delete_editor_level with no editor");
+                    };
+                    if (editor.levels.len <= 1) {
+                        @panic("replay validation: player_delete_editor_level with a single-level mission");
+                    }
+                    if (delete.level_index >= editor.levels.len) {
+                        @panic("replay validation: player_delete_editor_level level index out of range");
+                    }
+                },
+                // Structural legality: the live path is a palette tool cell's
+                // delete button. The type id must be in range for its kind
+                // (the editor_set_tool range-check posture; the handler
+                // ignores out-of-range defensively).
                 .player_delete_editor_type => |delete| {
                     if (self.current_state.screen != .editor) {
                         @panic("replay validation: player_delete_editor_type outside editor screen");

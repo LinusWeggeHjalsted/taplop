@@ -236,13 +236,17 @@ pub const EditorEvent = union(enum) {
     },
     // Append a new level built from data/default_level.txt (the minimal `!=`
     // template). No payload — the template is fixed; the author renames /
-    // re-themes via the metadata events below.
+    // re-themes via the metadata events below. The same handler switches the
+    // active tab to the new level (the author lands on the thing they just
+    // created — the add-type behavior) and syncs mission.level_count.
     editor_add_level: void,
-    // Delete a level. Handler removes it, shifts later indices down,
-    // decrements mission.level_count, clamps active_level_index. Gated on
-    // levels.len > 1 (a mission always has ≥1 level — the handler panics
-    // if violated; the UI shouldn't offer the × on the last tab, but the
-    // event enforces the invariant).
+    // Delete a level. Handler removes it, shifts later indices down, syncs
+    // mission.level_count, adjusts active_level_index (a delete BELOW the
+    // active tab shifts it down; deleting the ACTIVE level clamps + clears
+    // the selection — the editor_set_active_level semantics; the selection
+    // is active-level-relative). Gated on levels.len > 1 (a mission always
+    // has ≥1 level — the handler panics if violated; the UI shouldn't offer
+    // the × on the last tab, but the event enforces the invariant).
     editor_delete_level: struct {
         level_index: u32,
     },
@@ -686,6 +690,21 @@ pub const PlayerInputEvent = union(enum) {
     player_delete_editor_type: struct {
         type_kind: EditorTypeKind,
         type_id: u32,
+    },
+    // Add-level "+" click (top bar, right of the level tabs): append a new
+    // level from the shipped template (data/default_level.txt) and switch
+    // to it. Thin orchestrator — the `editor_add_level` handler reads the
+    // template through the reconstruction cache (replay reproduces the
+    // creation), appends it, makes it the active tab, and syncs
+    // mission.level_count; one undo step reverts the whole creation.
+    player_add_editor_level: void,
+    // Level-tab × click: delete that level (gated on more than one — a
+    // mission always keeps ≥1). Thin orchestrator — the
+    // `editor_delete_level` handler removes it, shifts later levels down,
+    // syncs mission.level_count, and adjusts the active tab. One undo step
+    // restores the level.
+    player_delete_editor_level: struct {
+        level_index: u32,
     },
     // Settings-sidebar commits (mission + active-level metadata — see
     // DESIGN → Architecture → Level Editor → Editor UI layout (Settings

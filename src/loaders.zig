@@ -843,6 +843,37 @@ pub fn buildEditorMission(
     };
 }
 
+/// The editor's new-level template (data/default_level.txt): the minimal
+/// valid layout — '!' at (0,0), '=' at (1,0), no floor, no entries. Loaded
+/// by the `editor_add_level` handler through the reconstruction cache. The
+/// template contract is STRICT: a level end must be present (the `!=`
+/// shape) and no enemies / decorations / ground items may be authored into
+/// it — placements belong to the palette + the viewport, not the template,
+/// so anything more is a content error surfaced at the read site (the
+/// editor-defaults posture), never silently dropped.
+pub fn loadEditorDefaultLevel(
+    sections: []const Section,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+    file_path: []const u8,
+    warnings: ?*std.ArrayList([]const u8),
+) !types.EditorLevel {
+    const level = try loadLevel(sections, file_source, allocator, file_path, warnings);
+    if (level.level_end == null) return error.MissingDefaultLevelEnd;
+    if (level.entities.len != 1 or level.decorations.len != 0 or level.ground_items.len != 0) {
+        return error.DefaultLevelHasEntries;
+    }
+    return .{
+        .name = level.name,
+        .color_wheel_index = level.color_wheel_index,
+        .enemy_gradient_index = level.enemy_gradient_index,
+        .player_gradient_index = level.player_gradient_index,
+        .level_tiles = level.level_tiles,
+        .player_start = level.entities[0].position,
+        .level_end = level.level_end,
+    };
+}
+
 /// Compare two decoration footprints for palette dedup + the decoration
 /// picker's would-change gate (public: the input-side commit site compares
 /// the resolved pick against the current definition).
