@@ -371,6 +371,18 @@ pub fn view(
                         picker_target,
                         session.ui_state.editor_picker_sprite_tab,
                     ) catch @panic("failed to build editor sprite picker"),
+                    // The decoration footprint editor: its own panel —
+                    // the full-size sprite + the toggleable tile grid
+                    // (the type id rides the picker target).
+                    .decoration_footprint => |type_id| ui.buildEditorFootprintEditor(
+                        &ui_elements,
+                        frame_allocator,
+                        font_metrics,
+                        editor,
+                        active_theme,
+                        type_id,
+                        &session.ui_state,
+                    ) catch @panic("failed to build editor footprint editor"),
                 }
             }
         }

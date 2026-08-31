@@ -847,6 +847,14 @@ pub const PlayerInputEvent = union(enum) {
         type_id: u32,
         value: u32,
     },
+    // The footprint editor's confirm (the centered tile-grid picker —
+    // see DESIGN → Level Editor → Editor UI layout, the footprint
+    // editor): the resolved footprint in sprite-grid coords, row-major.
+    // The EditorEvent owns the mutation + the placement prune.
+    player_set_editor_decoration_footprint: struct {
+        type_id: u32,
+        value: []const Vector2,
+    },
     // Inspector layer commits (the Layers sections — enemy types +
     // decoration types; the player loadout has NO layers). The EditorEvents
     // own the mutations; set carries the WHOLE layer value (a sprite re-pick

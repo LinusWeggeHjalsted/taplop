@@ -1353,6 +1353,8 @@ pub const GameStateHistory = struct {
                     self.validateInspectorDecorationEdit(set.type_id),
                 .player_set_editor_decoration_color_index => |set|
                     self.validateInspectorDecorationEdit(set.type_id),
+                .player_set_editor_decoration_footprint => |set|
+                    self.validateInspectorDecorationEdit(set.type_id),
                 .player_add_editor_entity_layer => |set|
                     self.validateInspectorEntityLayerEdit(set.target, null),
                 .player_remove_editor_entity_layer => |set|

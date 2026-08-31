@@ -1801,6 +1801,98 @@ pub fn handleAnytimeInput(
                 };
                 history.session.ui_state.editor_picker_sprite_tab = .mission_local;
             },
+            // The Footprint row's button: open the centered footprint
+            // editor — seed the draft grid from the type's current
+            // footprint (a direct UiState write; the draft is transient
+            // view state, the confirm is what records). The picker target
+            // carries the TYPE ID, so a mid-edit tool switch can never
+            // silently retarget the draft. A grid beyond the draft
+            // capacity (custom art) doesn't open — custom dims
+            // verification is a TODO.
+            .open_editor_footprint_picker => {
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_id = switch (ui.editorInspectorTarget(editor.*)) {
+                    .decoration_type => |resolved_type_id| resolved_type_id,
+                    .entity_type, .player => return,
+                };
+                const definition = editor.decoration_types[type_id];
+                const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
+                const grid_height: i32 = @divTrunc(definition.pixel_dims.y + 255, 256);
+                if (grid_width <= 0 or grid_height <= 0) return;
+                if (@as(usize, @intCast(grid_width * grid_height)) > ui.editor_footprint_grid_cell_limit) return;
+                history.session.ui_state.editor_footprint_draft =
+                    .{false} ** ui.editor_footprint_grid_cell_limit;
+                for (definition.footprint) |tile| {
+                    if (tile.x < 0 or tile.y < 0 or tile.x >= grid_width or tile.y >= grid_height) continue;
+                    history.session.ui_state.editor_footprint_draft[
+                        @intCast(tile.y * grid_width + tile.x)
+                    ] = true;
+                }
+                history.session.ui_state.editor_picker = .{ .decoration_footprint = type_id };
+            },
+            // A footprint-editor tile cell: flip that draft cell — a
+            // direct UiState write (off the undo timeline; the confirm is
+            // the event). The cell index is bounds-checked against the
+            // stored type's CURRENT grid (a stale index can't come from
+            // the live buttons — the builder re-derives the grid every
+            // frame).
+            .toggle_editor_footprint_tile => {
+                const type_id = switch (history.session.ui_state.editor_picker orelse return) {
+                    .decoration_footprint => |stored_type_id| stored_type_id,
+                    else => return,
+                };
+                const cell_index = anytime.clicked_editor_footprint_tile orelse return;
+                if (history.current_state.editor == null) return;
+                const editor: *types.Editor = &history.current_state.editor.?;
+                if (type_id >= editor.decoration_types.len) return;
+                const definition = editor.decoration_types[type_id];
+                const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
+                const grid_height: i32 = @divTrunc(definition.pixel_dims.y + 255, 256);
+                if (cell_index >= @as(u32, @intCast(grid_width * grid_height))) return;
+                history.session.ui_state.editor_footprint_draft[cell_index] =
+                    !history.session.ui_state.editor_footprint_draft[cell_index];
+            },
+            // The footprint editor's Confirm: close the picker and commit
+            // the draft IF it differs (row-major sprite-grid coords). An
+            // UNCHANGED draft closes without recording; an EMPTY draft
+            // stays open — a footprint must reserve at least one tile
+            // (the load-time invariant), so the confirm visibly doesn't
+            // take. The handler prunes the type's now-invalid placements
+            // (an edited footprint re-anchors).
+            .confirm_editor_footprint => {
+                const type_id = switch (history.session.ui_state.editor_picker orelse return) {
+                    .decoration_footprint => |stored_type_id| stored_type_id,
+                    else => return,
+                };
+                if (history.current_state.editor == null) return;
+                const editor: *types.Editor = &history.current_state.editor.?;
+                if (type_id >= editor.decoration_types.len) return;
+                const definition = editor.decoration_types[type_id];
+                const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
+                const grid_height: i32 = @divTrunc(definition.pixel_dims.y + 255, 256);
+
+                var footprint: std.ArrayList(types.Vector2) = .empty;
+                for (0..@as(usize, @intCast(grid_height))) |row| {
+                    for (0..@as(usize, @intCast(grid_width))) |column| {
+                        if (history.session.ui_state.editor_footprint_draft[row * @as(usize, @intCast(grid_width)) + column]) {
+                            footprint.append(history.current_arena.allocator(), .{
+                                .x = @intCast(column),
+                                .y = @intCast(row),
+                            }) catch @panic("failed to allocate footprint draft");
+                        }
+                    }
+                }
+                if (footprint.items.len == 0) return;
+                if (loaders.decorationFootprintEqual(definition.footprint, footprint.items)) {
+                    history.session.ui_state.editor_picker = null;
+                    return;
+                }
+                history.session.ui_state.editor_picker = null;
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_footprint = .{
+                    .type_id = type_id,
+                    .value = footprint.items,
+                } });
+            },
             // A sprite picker cell: set the edited type's base sprite (the
             // stem rode in `anytime.clicked_editor_sprite`) and close the
             // picker. Same-value picks close without recording.
@@ -1810,7 +1902,7 @@ pub fn handleAnytimeInput(
                 // are a no-op, the skill arm's posture).
                 switch (history.session.ui_state.editor_picker orelse return) {
                     .entity_sprite => {},
-                    .utility_skill_slot, .decoration_sprite, .entity_layer, .decoration_layer => return,
+                    .utility_skill_slot, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint => return,
                 }
                 const sprite = anytime.clicked_editor_sprite orelse return;
                 history.session.ui_state.editor_picker = null;
@@ -1847,7 +1939,7 @@ pub fn handleAnytimeInput(
                 // are a no-op, the skill arm's posture).
                 switch (history.session.ui_state.editor_picker orelse return) {
                     .decoration_sprite => {},
-                    .entity_sprite, .utility_skill_slot, .entity_layer, .decoration_layer => return,
+                    .entity_sprite, .utility_skill_slot, .entity_layer, .decoration_layer, .decoration_footprint => return,
                 }
                 const sprite = anytime.clicked_editor_sprite orelse return;
                 history.session.ui_state.editor_picker = null;
@@ -2279,9 +2371,9 @@ pub fn handleAnytimeInput(
                 const target = history.session.ui_state.editor_picker orelse return;
                 const slot_index = switch (target) {
                     .utility_skill_slot => |index| index,
-                    // The sprite pickers' picks route through their own
-                    // arms — not a skill-slot assignment.
-                    .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer => return,
+                    // The sprite/footprint pickers' picks route through
+                    // their own arms — not a skill-slot assignment.
+                    .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint => return,
                 };
                 history.session.ui_state.editor_picker = null;
                 if (history.current_state.editor == null) return;

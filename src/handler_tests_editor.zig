@@ -4247,3 +4247,183 @@ test "decoration layer picker: registry-authored color, custom dims check keeps 
     try testing.expectEqual(@as(usize, 1), definition.layers.len);
     try testing.expectEqual(@as(u32, 5), definition.layers[0].color_index);
 }
+
+test "player_set_editor_decoration_footprint: adopts + prunes, empty/out-of-bounds/bad-type ignored" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A 512x512 type (a 2x2 sprite grid) starting WIDE ({(0,0),(1,0)} —
+    // a placement at P covers P and P+1x). The NEW tall footprint
+    // ({(0,0),(0,1)}, anchor (0,1)) covers (P.x, P.y-1) and P — the tile
+    // at (5,4) sits under the NEW footprint only → the (5,5) placement is
+    // pruned, the (0,0) one survives, the tile stays.
+    const wide_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "block",
+        .sprite = "ruin_1",
+        .footprint = &wide_footprint,
+        .pixel_dims = .{ .x = 512, .y = 512 },
+    }};
+    const tiles = [_]types.Vector2{.{ .x = 5, .y = 4 }};
+    const placements = [_]types.DecorationPlacement{
+        .{ .type_id = 0, .position = .{ .x = 5, .y = 5 } },
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+    };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .decoration_placements = &placements,
+    }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .decoration_types = &decoration_types,
+    }));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_footprint = .{
+            .type_id = 0,
+            .value = &tall_footprint,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const editor = history.current_state.editor.?;
+    try testing.expectEqual(@as(usize, 2), editor.decoration_types[0].footprint.len);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, editor.decoration_types[0].footprint[0]);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 1 }, editor.decoration_types[0].footprint[1]);
+    try testing.expectEqual(@as(usize, 1), editor.levels[0].decoration_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, editor.levels[0].decoration_placements[0].position);
+    try testing.expect(hasTile(editor.levels[0], .{ .x = 5, .y = 4 }));
+
+    // One event = one undo step (footprint + prune together).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.levels[0].decoration_placements.len);
+
+    // Crafted-log defense: an empty footprint, a tile outside the sprite
+    // grid, and a bad type id all record nothing.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_footprint = .{
+            .type_id = 0,
+            .value = &.{},
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    const out_of_bounds = [_]types.Vector2{.{ .x = 5, .y = 0 }};
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_footprint = .{
+            .type_id = 0,
+            .value = &out_of_bounds,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_footprint = .{
+            .type_id = 99,
+            .value = &tall_footprint,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.decoration_types[0].footprint.len);
+}
+
+test "footprint editor input: open seeds the draft, toggles flip, confirm commits or no-ops" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The wide type: a 2x1 sprite grid, footprint cells (0,0) + (1,0).
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .decoration_types = decorationTestEditor(&levels).decoration_types,
+        .active_tool = .{ .decoration_type = 0 },
+    }));
+    runToIdle(&history);
+
+    // Open: the draft seeds from the current footprint, the picker
+    // carries the type id.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_footprint_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(
+        ui.EditorPickerTarget{ .decoration_footprint = 0 },
+        history.session.ui_state.editor_picker.?,
+    );
+    try testing.expect(history.session.ui_state.editor_footprint_draft[0]);
+    try testing.expect(history.session.ui_state.editor_footprint_draft[1]);
+    try testing.expect(!history.session.ui_state.editor_footprint_draft[2]);
+
+    // Toggle (1,0) off and back on: the draft is a plain UiState flip.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_footprint_tile,
+        .clicked_editor_footprint_tile = 1,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(!history.session.ui_state.editor_footprint_draft[1]);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_footprint_tile,
+        .clicked_editor_footprint_tile = 1,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_footprint_draft[1]);
+
+    // An out-of-range cell (crafted) flips nothing.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_footprint_tile,
+        .clicked_editor_footprint_tile = 99,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_footprint_draft[1]);
+
+    // Confirm an UNCHANGED draft: closes, nothing records.
+    const events_before = history.event_history.items.len;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .confirm_editor_footprint,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expectEqual(events_before, history.event_history.items.len);
+
+    // Re-open, deselect everything: the confirm STAYS OPEN (a footprint
+    // needs >= 1 tile), nothing records.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_footprint_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_footprint_tile,
+        .clicked_editor_footprint_tile = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_footprint_tile,
+        .clicked_editor_footprint_tile = 1,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .confirm_editor_footprint,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.session.ui_state.editor_picker != null);
+    try testing.expectEqual(events_before, history.event_history.items.len);
+
+    // A CHANGED draft commits: select (0,0) only → footprint {(0,0)},
+    // row-major, on the undo timeline.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_footprint_tile,
+        .clicked_editor_footprint_tile = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .confirm_editor_footprint,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.session.ui_state.editor_picker == null);
+    const definition = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqual(@as(usize, 1), definition.footprint.len);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, definition.footprint[0]);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.decoration_types[0].footprint.len);
+}

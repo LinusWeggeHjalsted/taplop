@@ -210,6 +210,19 @@ pub const Action = enum {
     delete_editor_decoration_layer,
     select_editor_entity_layer_color,
     select_editor_decoration_layer_color,
+    // The decoration inspector's Footprint row: open the centered
+    // footprint editor (the tile-grid picker over the full-size sprite).
+    // No payload — the edited type resolves from the inspector target.
+    open_editor_footprint_picker,
+    // A footprint-editor tile cell: toggle that sprite-grid tile in/out
+    // of the draft footprint. The grid cell index (row-major) rode in
+    // `AnytimeInput.clicked_editor_footprint_tile` — a direct UiState
+    // write (the draft is transient view state, off the undo timeline).
+    toggle_editor_footprint_tile,
+    // The footprint editor's Confirm button: close the picker and commit
+    // the draft IF it differs (an unchanged draft closes without
+    // recording; an empty draft stays open — a footprint needs ≥1 tile).
+    confirm_editor_footprint,
     // The inspector's displays-weapons toggle (flip the edited entity
     // type's flag). No payload — the handler reads + flips live state.
     toggle_editor_entity_displays_weapons,

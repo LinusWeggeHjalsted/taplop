@@ -618,6 +618,31 @@ fn handleEditorEvent(
             if (!decorationLayerDimsMatch(definition, set.layer)) return;
             layerListReplaceAt(types.DecorationLayer, &definition.layers, set.layer_index, set.layer, allocator);
         },
+        // The footprint editor's confirm: adopt the new footprint (the
+        // draft grid resolves to sprite-grid coords), then prune the
+        // type's placements the new footprint invalidates — an edited
+        // footprint re-anchors (the anchor is derived bottom-most-then-
+        // left-most), so a placement's world tiles can shift onto level
+        // tiles or other decorations exactly like a sprite retype. Same
+        // event = one undo step covering both. Defensive against crafted
+        // logs: a type id outside the palette, an EMPTY footprint (the
+        // load-time invariant — a decoration must reserve at least one
+        // tile), or a tile outside the sprite grid (the parser's
+        // footprint-in-bbox check) is ignored — the live confirm site
+        // can't produce any of them.
+        .editor_set_decoration_footprint => |set| {
+            if (set.type_id >= editor.decoration_types.len) return;
+            if (set.value.len == 0) return;
+            const definition = &@constCast(editor.decoration_types)[set.type_id];
+            const grid_width = @divTrunc(definition.pixel_dims.x + 255, 256);
+            const grid_height = @divTrunc(definition.pixel_dims.y + 255, 256);
+            for (set.value) |tile| {
+                if (tile.x < 0 or tile.y < 0 or
+                    tile.x >= grid_width or tile.y >= grid_height) return;
+            }
+            definition.footprint = set.value;
+            pruneDecorationPlacementsForType(editor, set.type_id, allocator);
+        },
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
             // placement entries must address the active level's lists (a
@@ -2006,6 +2031,14 @@ fn handlePlayerInputEvent(
         },
         .player_set_editor_decoration_color_index => |set| {
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_color_index = .{
+                .type_id = set.type_id,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        // The footprint editor's confirm: thin forward (the EditorEvent
+        // owns the mutation + the placement prune).
+        .player_set_editor_decoration_footprint => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_footprint = .{
                 .type_id = set.type_id,
                 .value = set.value,
             } } }}, allocator);

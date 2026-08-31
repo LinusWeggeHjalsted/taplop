@@ -264,6 +264,11 @@ fn update(
                         if (button.editor_layer) |layer_index| {
                             player_input.anytime.clicked_editor_layer = layer_index;
                         }
+                        // Footprint-editor tile cells: the grid cell index
+                        // rides alongside the toggle action.
+                        if (button.editor_footprint_tile) |cell_index| {
+                            player_input.anytime.clicked_editor_footprint_tile = cell_index;
+                        }
                         if (button.editor_skill) |skill_id| {
                             player_input.anytime.clicked_editor_skill = skill_id;
                         }

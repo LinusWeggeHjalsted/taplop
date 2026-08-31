@@ -66,7 +66,20 @@ pub const EditorPickerTarget = union(enum) {
     /// A DECORATION layer sprite — same shape; the official tab filters
     /// to the base type's dims (the load-time layer invariant).
     decoration_layer: ?u32,
+    /// The decoration type's FOOTPRINT editor (the Footprint row): the
+    /// full-size sprite with toggleable 256×256 grid cells; the draft
+    /// rides `UiState.editor_footprint_draft`. Carries the TYPE ID it was
+    /// opened on — the editor stays self-contained while tools switch
+    /// mid-edit (the dropdown convention), and toggles/confirm can never
+    /// silently apply to a different type.
+    decoration_footprint: u32,
 };
+
+/// The footprint editor's draft-grid capacity: 8×8 sprite-grid tiles
+/// (2048px sprites). Shipped decoration art is 3×3 at most; a custom
+/// sprite beyond the limit doesn't open the editor (custom dims
+/// verification is a TODO). Public: the input layer's open gate reads it.
+pub const editor_footprint_grid_cell_limit: usize = 64;
 
 /// The OFFICIAL enemy sprites (shipped `assets/entities/*.png`) as bare
 /// stems — the sprite picker's Official tab. The player body is EXCLUDED
@@ -215,6 +228,17 @@ pub const UiState = struct {
     /// the picker's own actions (see handleAnytimeInput). Off the undo
     /// timeline — picking is what records, opening is an affordance.
     editor_picker: ?EditorPickerTarget = null,
+
+    /// The footprint editor's DRAFT grid (the `.decoration_footprint`
+    /// picker): one bool per sprite-grid tile, row-major. Seeded from the
+    /// type's current footprint at open, flipped per tile-cell click,
+    /// committed (or discarded) by Confirm/Close. A FIXED-size grid —
+    /// sprites larger than the cell limit don't open the editor (custom
+    /// dims verification is a TODO). Off the undo timeline — the confirm
+    /// is the event; the draft is transient view state like a text
+    /// buffer.
+    editor_footprint_draft: [editor_footprint_grid_cell_limit]bool =
+        .{false} ** editor_footprint_grid_cell_limit,
 
     /// Editor palette group collapse state: false = expanded, true =
     /// collapsed (header + "+" only, no type cells). Collapsed by DEFAULT
@@ -2313,6 +2337,10 @@ pub const Button = struct {
     /// add-layer button — null there = the picker's add mode). Rides in
     /// `AnytimeInput.clicked_editor_layer` alongside its action.
     editor_layer: ?u32 = null,
+    /// Footprint-editor grid cell (row-major), if this button is one of
+    /// the editor's sprite-grid tile cells. Rides in
+    /// `AnytimeInput.clicked_editor_footprint_tile`.
+    editor_footprint_tile: ?u32 = null,
     /// Editor skill pick, if this button is a skill-picker cell. Rides in
     /// `AnytimeInput.clicked_editor_skill`; null on the None cell (clears).
     editor_skill: ?types.SkillId = null,
@@ -4812,9 +4840,10 @@ const EditorInspectorControl = union(enum) {
     /// The decoration content's color swatch row (the WORLD gradient —
     /// decorations index into it, matching the in-game tinting).
     decoration_swatches: void,
-    /// A READ-ONLY value line (the footprint tile-count placeholder; the
-    /// footprint editor is a later slice).
-    static_text: []const u8,
+    /// The decoration content's footprint row: a button showing the tile
+    /// count that opens the centered footprint editor (the tile-grid
+    /// picker).
+    footprint_button: void,
 };
 
 /// One line of inspector content — per the coupling contract in DESIGN →
@@ -5121,13 +5150,8 @@ fn editorInspectorDecorationEntries(
     }
     try entries.append(allocator, .{ .section = .footprint });
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.footprint)]) {
-        const tile_count = try std.fmt.allocPrint(
-            allocator,
-            "{d} tiles",
-            .{definition.footprint.len},
-        );
         try entries.appendSlice(allocator, &.{
-            .{ .field = .{ .label = "Footprint", .control = .{ .static_text = tile_count } } },
+            .{ .field = .{ .label = "Footprint", .control = .footprint_button } },
         });
         try entries.append(allocator, .spacer);
     }
@@ -5404,21 +5428,24 @@ fn buildEditorInspectorContent(
                         null,
                         control_rect,
                     ),
-                    // A read-only value line (the footprint placeholder).
-                    .static_text => |value| {
-                        try elements.append(allocator, .{ .text_label = .{
-                            .text = value,
-                            .screen_position = .{
-                                .x = control_rect.x,
-                                .y = control_rect.y + @divFloor(
-                                    control_rect.height - editor_group_header_font_size,
-                                    2,
-                                ),
-                            },
-                            .font_size = editor_group_header_font_size,
-                            .color = active_theme.lightest,
-                            .blocks_input = false,
-                        } });
+                    // The decoration content's footprint row: a button
+                    // showing the tile count that opens the footprint
+                    // editor.
+                    .footprint_button => {
+                        const tile_count = try std.fmt.allocPrint(
+                            allocator,
+                            "{d} tiles",
+                            .{decoration_context.?.type_definition.footprint.len},
+                        );
+                        try emitInspectorFootprintButton(
+                            elements,
+                            allocator,
+                            font_metrics,
+                            tile_count,
+                            button_color,
+                            control_rect,
+                            active_theme,
+                        );
                     },
                     .toggle => try emitInspectorToggle(
                         elements,
@@ -6096,6 +6123,50 @@ fn emitInspectorSlotButton(
     } });
 }
 
+/// The decoration content's Footprint row's control: a half-width
+/// panel-backed button showing the tile count — clicking opens the
+/// centered footprint editor (the sprite button's look, its own action).
+fn emitInspectorFootprintButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    label: []const u8,
+    button_color: Color,
+    control_rect: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const rect: Rectangle = .{
+        .x = control_rect.x,
+        .y = control_rect.y,
+        .width = @divFloor(control_rect.width, 2),
+        .height = control_rect.height,
+    };
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .action = .open_editor_footprint_picker,
+        .tooltip = .{ .header = try spanRow(allocator, text("Edit footprint")) },
+    } });
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = rect
+            .placeCenter(label_width, editor_group_header_font_size)
+            .position(),
+        .font_size = editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+}
+
 /// A layer row's label (1-based for display): "Layer N" / "Layer N color".
 fn inspectorLayerLabel(
     allocator: std.mem.Allocator,
@@ -6304,9 +6375,9 @@ pub fn buildEditorSkillPicker(
 ) !void {
     const slot_index = switch (target) {
         .utility_skill_slot => |index| index,
-        // The sprite targets aren't this picker's (the view dispatches on
-        // the target); defensive for crafted calls.
-        .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer => return,
+        // The sprite/footprint targets aren't this picker's (the view
+        // dispatches on the target); defensive for crafted calls.
+        .entity_sprite, .decoration_sprite, .entity_layer, .decoration_layer, .decoration_footprint => return,
     };
     var current: ?types.SkillId = null;
     if (slot_index < types.utility_skill_count) {
@@ -6422,7 +6493,7 @@ pub fn buildEditorSpritePicker(
     // target is the skill picker's own builder (the view dispatches).
     const PickerKind = enum { entity_base, decoration_base, entity_layer, decoration_layer };
     const picker_kind: PickerKind = switch (picker_target) {
-        .utility_skill_slot => return,
+        .utility_skill_slot, .decoration_footprint => return,
         .entity_sprite => .entity_base,
         .decoration_sprite => .decoration_base,
         .entity_layer => .entity_layer,
@@ -6723,6 +6794,206 @@ pub fn buildEditorSpritePicker(
             picker_cell.frame_height,
         );
     }
+}
+
+/// The decoration FOOTPRINT editor (the `.decoration_footprint` picker):
+/// a centered panel showing the type's sprite FULL-SIZE (1:1 — 256 screen
+/// px per sprite-grid tile) with one toggleable cell per tile, a
+/// continuous WHITE outline around the draft-selected region (the
+/// placement preview's region-edge style — 8px bars centered on the
+/// boundary, seamless at corners), a close button top-right (discard),
+/// and a Confirm button bottom-center. The draft rides
+/// `UiState.editor_footprint_draft`; the type id rides the picker target
+/// (see the union). Custom-stem art isn't renderable yet — its cells get
+/// a dark fill so the grid stays visible.
+pub fn buildEditorFootprintEditor(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    editor: types.Editor,
+    active_theme: types.ActiveColorTheme,
+    type_id: u32,
+    ui_state: *const UiState,
+) !void {
+    // The type deleted mid-edit (or a stale open): nothing to edit —
+    // the panel vanishes; the close button is unreachable, so the input
+    // arms' own guards are the real defense (the toggle no-ops on an
+    // out-of-range type).
+    if (type_id >= editor.decoration_types.len) return;
+    const definition = editor.decoration_types[type_id];
+    const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
+    const grid_height: i32 = @divTrunc(definition.pixel_dims.y + 255, 256);
+    if (grid_width <= 0 or grid_height <= 0) return;
+    const cell_count: usize = @intCast(grid_width * grid_height);
+    if (cell_count > editor_footprint_grid_cell_limit) return;
+
+    const tile: i32 = 256;
+    const grid_width_pixels = grid_width * tile;
+    const grid_height_pixels = grid_height * tile;
+    const header_height = middle_panel_header_height;
+    const confirm_height = editor_inspector_row_height;
+    const width = grid_width_pixels + 2 * ui_gap;
+    const height = header_height + grid_height_pixels + confirm_height + 3 * ui_gap;
+    const bounds = screenRect().placeCenter(width, height);
+
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = bounds.position(),
+        .width = width,
+        .height = height,
+        .color = active_theme.darkest,
+    } });
+
+    // The header: title left, close right (the sprite picker's idiom).
+    const origin = bounds.position();
+    try elements.append(allocator, .{ .text_label = .{
+        .text = "Footprint",
+        .screen_position = .{
+            .x = origin.x + ui_gap,
+            .y = origin.y + @divFloor(header_height - middle_panel_header_font_size, 2),
+        },
+        .font_size = middle_panel_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = close_button_sprite_id,
+        .screen_position = .{
+            .x = origin.x + bounds.width - close_button_size,
+            .y = origin.y,
+        },
+        .width = close_button_size,
+        .height = close_button_size,
+        .action = .close_editor_picker,
+    } });
+
+    // The sprite grid: the art at its TRUE pixel dims anchored top-left
+    // of the (ceil-rounded) grid area; custom stems get a dark fill per
+    // cell so the grid stays visible without art.
+    const grid_origin: ScreenPosition = .{
+        .x = origin.x + ui_gap,
+        .y = origin.y + header_height + ui_gap,
+    };
+    if (std.mem.startsWith(u8, definition.sprite, "custom/")) {
+        for (0..cell_count) |cell_index| {
+            const column: i32 = @intCast(cell_index % @as(usize, @intCast(grid_width)));
+            const row: i32 = @intCast(cell_index / @as(usize, @intCast(grid_width)));
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{
+                    .x = grid_origin.x + column * tile,
+                    .y = grid_origin.y + row * tile,
+                },
+                .width = tile,
+                .height = tile,
+                .color = .{ .r = 40, .g = 40, .b = 40 },
+            } });
+        }
+    } else {
+        const graphic_id = try std.fmt.allocPrint(allocator, "decorations/{s}", .{definition.sprite});
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = graphic_id,
+            .screen_position = grid_origin,
+            .width = definition.pixel_dims.x,
+            .height = definition.pixel_dims.y,
+            .color = default_tint,
+            .blocks_input = false,
+        } });
+    }
+
+    // One invisible toggle button per grid cell (the draft flips at the
+    // input site — a direct UiState write, off the undo timeline).
+    for (0..cell_count) |cell_index| {
+        const column: i32 = @intCast(cell_index % @as(usize, @intCast(grid_width)));
+        const row: i32 = @intCast(cell_index / @as(usize, @intCast(grid_width)));
+        try elements.append(allocator, .{ .button = .{
+            .screen_position = .{
+                .x = grid_origin.x + column * tile,
+                .y = grid_origin.y + row * tile,
+            },
+            .width = tile,
+            .height = tile,
+            .action = .toggle_editor_footprint_tile,
+            .editor_footprint_tile = @intCast(cell_index),
+        } });
+    }
+
+    // The draft-selected region's outline: one 8px bar per boundary side
+    // (the neighbor across it unselected or off-grid), centered on the
+    // boundary — the editor's region-edge outline, in white, so corners
+    // join seamlessly for any shape.
+    const outline_thickness: i32 = 8;
+    const half_thickness: i32 = @divFloor(outline_thickness, 2);
+    const draftSelected = struct {
+        fn check(
+            draft: *const [editor_footprint_grid_cell_limit]bool,
+            grid_width_: i32,
+            grid_height_: i32,
+            x: i32,
+            y: i32,
+        ) bool {
+            if (x < 0 or y < 0 or x >= grid_width_ or y >= grid_height_) return false;
+            return draft[@intCast(y * grid_width_ + x)];
+        }
+    }.check;
+    for (0..cell_count) |cell_index| {
+        if (!ui_state.editor_footprint_draft[cell_index]) continue;
+        const column: i32 = @intCast(cell_index % @as(usize, @intCast(grid_width)));
+        const row: i32 = @intCast(cell_index / @as(usize, @intCast(grid_width)));
+        const cell_x = grid_origin.x + column * tile;
+        const cell_y = grid_origin.y + row * tile;
+        const draft = &ui_state.editor_footprint_draft;
+        if (!draftSelected(draft, grid_width, grid_height, column, row - 1)) {
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = cell_x, .y = cell_y - half_thickness },
+                .width = tile,
+                .height = outline_thickness,
+                .color = default_tint,
+            } });
+        }
+        if (!draftSelected(draft, grid_width, grid_height, column, row + 1)) {
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = cell_x, .y = cell_y + tile - half_thickness },
+                .width = tile,
+                .height = outline_thickness,
+                .color = default_tint,
+            } });
+        }
+        if (!draftSelected(draft, grid_width, grid_height, column - 1, row)) {
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = cell_x - half_thickness, .y = cell_y },
+                .width = outline_thickness,
+                .height = tile,
+                .color = default_tint,
+            } });
+        }
+        if (!draftSelected(draft, grid_width, grid_height, column + 1, row)) {
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = cell_x + tile - half_thickness, .y = cell_y },
+                .width = outline_thickness,
+                .height = tile,
+                .color = default_tint,
+            } });
+        }
+    }
+
+    // The Confirm button (bottom-center, the layer-button visual class).
+    const confirm_rect: Rectangle = .{
+        .x = origin.x + @divFloor(bounds.width - @divFloor(bounds.width, 2), 2),
+        .y = origin.y + header_height + grid_height_pixels + 2 * ui_gap,
+        .width = @divFloor(bounds.width, 2),
+        .height = confirm_height,
+    };
+    try emitInspectorLayerButton(
+        elements,
+        allocator,
+        font_metrics,
+        confirm_rect,
+        "Confirm",
+        .confirm_editor_footprint,
+        null,
+        active_theme.world_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)],
+        active_theme.lightest,
+    );
 }
 
 /// The mission directory's NAME (the last path segment) — the namespace
@@ -11522,5 +11793,125 @@ test "buildEditorSpritePicker: layer modes — entity stems, dims-filtered decor
         try std.testing.expect(pick_buttons > 0);
         try std.testing.expectEqual(@as(usize, 0), highlighted_count);
         try std.testing.expect(!saw_mismatched_dims);
+    }
+}
+
+test "buildEditorFootprintEditor: tile cells, white region outline, confirm; inspector row opens it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    const footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "stone_2",
+        .sprite = "stone_2",
+        .footprint = &footprint,
+        .pixel_dims = .{ .x = 512, .y = 256 },
+    }};
+    const editor: types.Editor = .{
+        .decoration_types = &decoration_types,
+        .active_tool = .{ .decoration_type = 0 },
+    };
+
+    // The editor panel with the draft selecting ONLY cell (0,0): two
+    // toggle cells, the shipped-sprite graphic, a 4-bar white outline
+    // around the lone selected cell (every side is a boundary — the
+    // neighbor (1,0) is unselected, the others off-grid), and the
+    // Confirm button.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        ui_state.editor_footprint_draft[0] = true;
+        try buildEditorFootprintEditor(&elements, arena.allocator(), metrics, editor, theme, 0, &ui_state);
+
+        var toggle_buttons: usize = 0;
+        var saw_graphic = false;
+        var saw_confirm = false;
+        var saw_close = false;
+        var white_bars: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .toggle_editor_footprint_tile) {
+                    toggle_buttons += 1;
+                    try std.testing.expect(button.editor_footprint_tile != null);
+                }
+                if (button.action == .confirm_editor_footprint) saw_confirm = true;
+                if (button.action == .close_editor_picker) saw_close = true;
+            },
+            .image => |image| {
+                if (std.mem.eql(u8, image.sprite_id, "decorations/stone_2")) saw_graphic = true;
+            },
+            .solid_rect => |rect| {
+                if (std.meta.eql(rect.color, default_tint)) white_bars += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 2), toggle_buttons);
+        try std.testing.expect(saw_graphic);
+        try std.testing.expect(saw_confirm);
+        try std.testing.expect(saw_close);
+        try std.testing.expectEqual(@as(usize, 4), white_bars);
+    }
+
+    // A custom-stem type: no renderable art — the cells get dark fills so
+    // the grid stays visible (2 fills, no image).
+    {
+        const custom_types = [_]types.DecorationTypeDef{.{
+            .id = "custom/x/banner",
+            .sprite = "custom/x/banner",
+            .footprint = &footprint,
+            .pixel_dims = .{ .x = 512, .y = 256 },
+        }};
+        const custom_editor: types.Editor = .{
+            .decoration_types = &custom_types,
+            .active_tool = .{ .decoration_type = 0 },
+        };
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        ui_state.editor_footprint_draft[0] = true;
+        ui_state.editor_footprint_draft[1] = true;
+        try buildEditorFootprintEditor(&elements, arena.allocator(), metrics, custom_editor, theme, 0, &ui_state);
+
+        var saw_image = false;
+        var dark_fills: usize = 0;
+        var white_bars: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .image => saw_image = true,
+            .solid_rect => |rect| {
+                if (std.meta.eql(rect.color, .{ .r = 40, .g = 40, .b = 40 })) dark_fills += 1;
+                if (std.meta.eql(rect.color, default_tint)) white_bars += 1;
+            },
+            else => {},
+        };
+        try std.testing.expect(!saw_image);
+        try std.testing.expectEqual(@as(usize, 2), dark_fills);
+        // Both cells selected: the region's boundary is the 2x1 block's
+        // outer rectangle — 6 bars (2 top + 2 bottom + 1 left + 1 right).
+        try std.testing.expectEqual(@as(usize, 6), white_bars);
+    }
+
+    // The inspector's Footprint row: a "<N> tiles" button that opens the
+    // editor.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        var saw_footprint_button = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .open_editor_footprint_picker) {
+                saw_footprint_button = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(saw_footprint_button);
     }
 }
