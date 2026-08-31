@@ -1244,7 +1244,72 @@ fn editorEntityEditTarget(editor: types.Editor) ?types.EntityEditTarget {
     return switch (ui.editorInspectorTarget(editor)) {
         .entity_type => |type_index| .{ .entity_type = type_index },
         .player => .player_def,
-        .decoration_type => null,
+        .decoration_type, .item_type => null,
+    };
+}
+
+/// The palette item type the inspector currently edits (the Items
+/// group's content), or null on any other target. The item commit sites'
+/// single seam — the entity-target wrapper's shape.
+fn editorItemEditTarget(editor: types.Editor) ?u32 {
+    return switch (ui.editorInspectorTarget(editor)) {
+        .item_type => |type_index| if (type_index < editor.item_types.len) type_index else null,
+        .entity_type, .decoration_type, .player => null,
+    };
+}
+
+/// The item-def player action carrying a WHOLE item (a type pick, a stat
+/// edit — one event, one undo step), flattened to the event's top-level
+/// fields. Null for a skill tome (not expressible as an `ItemKind` — the
+/// editor authoring surface excludes tomes; unreachable live, defensive
+/// for crafted state).
+fn editorItemDefAction(
+    type_id: u32,
+    item: types.Item,
+) ?events.PlayerInputEvent {
+    return switch (item) {
+        .weapon => |weapon| .{ .player_set_editor_item_def = .{
+            .type_id = type_id,
+            .item_kind = .weapon,
+            .weapon_type = weapon.weapon_type,
+            .name = weapon.name,
+            .weapon_damage = weapon.weapon_damage,
+        } },
+        .amulet => |amulet| .{ .player_set_editor_item_def = .{
+            .type_id = type_id,
+            .item_kind = .amulet,
+            .name = amulet.name,
+            .spell_damage = amulet.spell_damage,
+        } },
+        .coat => |coat| .{ .player_set_editor_item_def = .{
+            .type_id = type_id,
+            .item_kind = .coat,
+            .name = coat.name,
+            .health_bonus = coat.health_bonus,
+            .defense_bonus = coat.defense_bonus,
+        } },
+        .gloves => |gloves| .{ .player_set_editor_item_def = .{
+            .type_id = type_id,
+            .item_kind = .gloves,
+            .name = gloves.name,
+            .damage_bonus = gloves.damage_bonus,
+            .health_bonus = gloves.health_bonus,
+        } },
+        .pants => |pants| .{ .player_set_editor_item_def = .{
+            .type_id = type_id,
+            .item_kind = .pants,
+            .name = pants.name,
+            .pickup_radius_bonus = pants.pickup_radius_bonus,
+            .health_bonus = pants.health_bonus,
+        } },
+        .boots => |boots| .{ .player_set_editor_item_def = .{
+            .type_id = type_id,
+            .item_kind = .boots,
+            .name = boots.name,
+            .speed_bonus = boots.speed_bonus,
+            .health_bonus = boots.health_bonus,
+        } },
+        .skill_tome => null,
     };
 }
 
@@ -1469,6 +1534,50 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             ) orelse return;
             pushPlayerActionAndDrain(history, action);
         },
+        // The item content's fields (the Items palette group — target:
+        // `.item_type`). Same gates as the entity arms: would-change never
+        // records; a stat the kind doesn't carry, a stale palette index,
+        // or a skill tome commits nothing; stats clamp to `itemStatMax`.
+        .item_def_name => {
+            if (history.current_state.editor == null) return;
+            const editor: *types.Editor = &history.current_state.editor.?;
+            const type_id = switch (field.target) {
+                .item_type => |index| index,
+                else => return,
+            };
+            if (type_id >= editor.item_types.len) return;
+            const item = editor.item_types[type_id].item;
+            // A skill tome has no name (unreachable live — tomes are never
+            // offered; the gate holds for crafted state).
+            if (std.meta.activeTag(item) == .skill_tome) return;
+            if (std.mem.eql(u8, types.itemName(item), value)) return;
+            history.session.queueSound(history.backing_allocator, .button_click_up);
+            pushPlayerActionAndDrain(history, .{ .player_set_editor_item_name = .{
+                .type_id = type_id,
+                .value = value,
+            } });
+        },
+        .item_def_stat => |stat| {
+            if (history.current_state.editor == null) return;
+            const editor: *types.Editor = &history.current_state.editor.?;
+            const type_id = switch (field.target) {
+                .item_type => |index| index,
+                else => return,
+            };
+            if (type_id >= editor.item_types.len) return;
+            const item = editor.item_types[type_id].item;
+            const current = types.itemStatValue(item, stat) orelse return;
+            // Item stats are BOUNDED (the player can pick up exactly these
+            // items — the same max_* the parser clamps with).
+            const parsed = parseBoundedStatValue(value, types.itemStatMax(stat)) orelse return;
+            if (parsed == current) return;
+            history.session.queueSound(history.backing_allocator, .button_click_up);
+            const action = editorItemDefAction(
+                type_id,
+                types.itemWithStat(item, stat, parsed),
+            ) orelse return;
+            pushPlayerActionAndDrain(history, action);
+        },
         // Settings-sidebar name fields (mission + level). Same would-
         // change gate as the entity name; the level commit addresses the
         // tab the field was focused on (the index rides the ref target, so
@@ -1534,6 +1643,15 @@ pub fn beginFocusedTextEdit(
             .level => |level_index| {
                 if (level_index < editor.levels.len) {
                     current_value = editor.levels[level_index].name;
+                }
+            },
+            .item_type => |type_index| {
+                if (type_index < editor.item_types.len) {
+                    current_value = types.itemTextFieldValue(
+                        editor.item_types[type_index].item,
+                        history.current_arena.allocator(),
+                        field.id,
+                    ) catch @panic("failed to format item field value");
                 }
             },
         }
@@ -1819,6 +1937,9 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.editor_picker = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => .{ .decoration_sprite = {} },
                     .entity_type, .player => .{ .entity_sprite = {} },
+                    // No sprite row in the item content — a crafted click
+                    // opens nothing.
+                    .item_type => return,
                 };
                 history.session.ui_state.editor_picker_sprite_tab = .mission_local;
             },
@@ -1854,7 +1975,7 @@ pub fn handleAnytimeInput(
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
-                    .entity_type, .player => return,
+                    .entity_type, .item_type, .player => return,
                 };
                 const definition = editor.decoration_types[type_id];
                 const grid_width: i32 = @divTrunc(definition.pixel_dims.x + 255, 256);
@@ -2093,7 +2214,7 @@ pub fn handleAnytimeInput(
                 const editor: *types.Editor = &history.current_state.editor.?;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
-                    .entity_type, .player => return,
+                    .entity_type, .item_type, .player => return,
                 };
                 const current_definition = editor.decoration_types[type_id];
                 const arena = history.current_arena.allocator();
@@ -2236,7 +2357,7 @@ pub fn handleAnytimeInput(
                 const editor: *types.Editor = &history.current_state.editor.?;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
-                    .entity_type, .player => return,
+                    .entity_type, .item_type, .player => return,
                 };
                 const current_definition = editor.decoration_types[type_id];
                 const arena = history.current_arena.allocator();
@@ -2367,7 +2488,7 @@ pub fn handleAnytimeInput(
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
-                    .entity_type, .player => return,
+                    .entity_type, .item_type, .player => return,
                 };
                 if (editor.decoration_types[type_id].color_index == color_index) return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_color_index = .{
@@ -2393,7 +2514,7 @@ pub fn handleAnytimeInput(
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
-                    .entity_type, .player => return,
+                    .entity_type, .item_type, .player => return,
                 };
                 if (layer_index >= editor.decoration_types[type_id].layers.len) return;
                 pushPlayerActionAndDrain(history, .{ .player_remove_editor_decoration_layer = .{
@@ -2427,7 +2548,7 @@ pub fn handleAnytimeInput(
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const type_id = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => |resolved_type_id| resolved_type_id,
-                    .entity_type, .player => return,
+                    .entity_type, .item_type, .player => return,
                 };
                 const definition = editor.decoration_types[type_id];
                 if (layer_index >= definition.layers.len) return;
@@ -2490,6 +2611,45 @@ pub fn handleAnytimeInput(
                     const create_action = editorSlotItemAction(target, hand, .{ .weapon = weapon }) orelse return;
                     pushPlayerActionAndDrain(history, create_action);
                 }
+            },
+            // Item-TYPE pick cell (the Items group's inspector content):
+            // RESET-EVERYTHING semantics (author decision) — any pick that
+            // differs from the current item replaces it with a
+            // "New <Kind>" default (weapon: "New <WeaponType>"), zeroed
+            // stats. No retype-keeps-identity case (unlike the entity
+            // weapon slots); an identical pick never fires. A weapon cell
+            // without its weapon-type payload, or a tome-kind target
+            // item, commits nothing (defensive — the cells always carry
+            // both, tomes are never offered).
+            .select_editor_item_type => {
+                const kind = anytime.clicked_editor_item_kind orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_id = editorItemEditTarget(editor.*) orelse return;
+                const current_item = editor.item_types[type_id].item;
+                const same_pick = switch (current_item) {
+                    .weapon => |weapon| kind == .weapon and
+                        weapon.weapon_type == (anytime.clicked_editor_weapon_type orelse return),
+                    else => types.itemKindOf(current_item) == kind,
+                };
+                if (same_pick) return;
+                const arena = history.current_arena.allocator();
+                const item: types.Item = switch (kind) {
+                    .weapon => .{ .weapon = .{
+                        .name = std.fmt.allocPrint(
+                            arena,
+                            "New {s}",
+                            .{types.weaponTypeLabel(anytime.clicked_editor_weapon_type orelse return)},
+                        ) catch @panic("failed to allocate default item name"),
+                        .weapon_type = anytime.clicked_editor_weapon_type orelse return,
+                    } },
+                    else => types.itemOfKind(kind, std.fmt.allocPrint(
+                        arena,
+                        "New {s}",
+                        .{types.itemKindLabel(kind)},
+                    ) catch @panic("failed to allocate default item name")),
+                };
+                const item_action = editorItemDefAction(type_id, item) orelse return;
+                pushPlayerActionAndDrain(history, item_action);
             },
             // Gear Add: create a default item in the EMPTY slot (a
             // present item never re-adds — its fields edit in place).

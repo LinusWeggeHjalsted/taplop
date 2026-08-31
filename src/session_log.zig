@@ -498,6 +498,21 @@ test "writeEventLog serializes representative event shapes" {
             .{ .tile = .{ .x = 6, .y = 6 } },
             .{ .player_start = .{ .x = 7, .y = 7 } },
         }, .next_index = 1 } } },
+        // Item-def commits: FLATTENED top-level fields — the name is a
+        // top-level string, so multi-word names ("New Sword") round-trip
+        // (a nested Item payload's name would break the token regrouping —
+        // see the editor_set_item_def comment in events.zig).
+        .{ .player_input_event = .{ .player_set_editor_item_def = .{
+            .type_id = 1,
+            .item_kind = .weapon,
+            .weapon_type = .sword,
+            .name = "New Sword",
+            .weapon_damage = 3,
+        } } },
+        .{ .player_input_event = .{ .player_set_editor_item_name = .{
+            .type_id = 1,
+            .value = "Iron Sword of Doom",
+        } } },
     };
 
     const output = try writeEventLog(&history, "20260815_143022", allocator);
@@ -533,6 +548,10 @@ test "writeEventLog serializes representative event shapes" {
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_move_editor_selection\ndelta 2 -1\n") != null);
     // The worklist slice: each entry flattens as `<tag> <payload fields...>`.
     try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_commit_selection_move\nentries entity 0 5 5 tile 6 6 player_start 7 7\nnext_index 1\n") != null);
+    // The item-def commit: every field a top-level line — the multi-word
+    // name rides one `name` line verbatim (the flattening's whole point).
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_item_def\ntype_id 1\nitem_kind weapon\nweapon_type sword\nname New Sword\nweapon_damage 3\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_item_name\ntype_id 1\nvalue Iron Sword of Doom\n") != null);
 
     // The output round-trips through the generic config parser structurally:
     // Metadata + EventLog sections, with one entry group per event.
@@ -559,8 +578,8 @@ test "writeEventLog serializes representative event shapes" {
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer arena.deinit();
         const log = try loadEventLog(sections, arena.allocator());
-        for (0..6) |offset| {
-            try std.testing.expectEqualDeep(history[history.len - 6 + offset], log.events[log.events.len - 6 + offset]);
+        for (0..8) |offset| {
+            try std.testing.expectEqualDeep(history[history.len - 8 + offset], log.events[log.events.len - 8 + offset]);
         }
     }
 }

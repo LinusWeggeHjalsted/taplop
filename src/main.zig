@@ -257,6 +257,12 @@ fn update(
                         if (button.editor_weapon_type) |weapon_type| {
                             player_input.anytime.clicked_editor_weapon_type = weapon_type;
                         }
+                        // Item-type pick cells: the kind rides alongside
+                        // the action (weapon cells also carry the type via
+                        // `clicked_editor_weapon_type`).
+                        if (button.editor_item_kind) |item_kind| {
+                            player_input.anytime.clicked_editor_item_kind = item_kind;
+                        }
                         // Inspector utility-slot buttons + skill-picker
                         // cells: the slot / skill ride alongside the action
                         // (a missing skill payload = the picker's None cell).

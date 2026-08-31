@@ -347,8 +347,14 @@ pub const AnytimeInput = struct {
     /// by the release dispatch (the inspector's slot controls).
     clicked_editor_gear_slot: ?types.GearSlot = null,
     /// Editor weapon type, set alongside
-    /// `options_action == .select_editor_weapon_type` (a weapon-type cell).
+    /// `options_action == .select_editor_weapon_type` (a weapon-type cell)
+    /// or `.select_editor_item_type` (an item-type pick cell).
     clicked_editor_weapon_type: ?types.WeaponType = null,
+    /// Editor item KIND, set alongside
+    /// `options_action == .select_editor_item_type` (the item content's
+    /// type-pick rows; weapon cells pair it with
+    /// `clicked_editor_weapon_type`).
+    clicked_editor_item_kind: ?types.ItemKind = null,
     /// Editor utility-slot index, set alongside
     /// `options_action == .open_editor_skill_picker` (an inspector slot
     /// button).
@@ -502,6 +508,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_editor_level_gradient_auto => player_input.anytime.options_action = action,
         .toggle_editor_entity_displays_weapons => player_input.anytime.options_action = action,
         .select_editor_weapon_type => player_input.anytime.options_action = action,
+        .select_editor_item_type => player_input.anytime.options_action = action,
         .add_editor_item => player_input.anytime.options_action = action,
         .delete_editor_item => player_input.anytime.options_action = action,
         .open_editor_skill_picker => player_input.anytime.options_action = action,

@@ -556,9 +556,9 @@ yet implemented. Remaining work:
         kinds) infer none → the "No tool selected" hint. `editorInspectorEntityTarget`
         is now a wrapper over it, so the inspector content AND every
         edit-action routing (input_handlers' commit sites, the skill
-        picker) re-target automatically. Only enemy fields are built;
-        inferred decoration/item tools fall to the hint until their
-        inspector slices. History in DONE.md.
+        picker) re-target automatically. Only enemy fields were built at
+        the time; the decoration + item contents have since landed (see
+        their slices). History in DONE.md.
   - [x] **Collapsible inspector sections (author request):** DONE —
         every section header is a toggle (whole strip clickable, +/-
         marker prefix), ALL COLLAPSED by default, INDEPENDENT toggles (no
@@ -709,26 +709,16 @@ yet implemented. Remaining work:
         fixed theme strips), the footprint editor scaling down oversized
         art. See DESIGN → Level Editor → Editor UI layout (the picker
         overlay). Landed with slice 4's follow-up commit.
-  - [ ] **12 — item inspector (the Items palette group):** rename the
-        bottom-bar group "Ground Items" → "Items"; the
-        `EditorInspectorTarget.item_type` arm goes real (active item tool +
-        ground-item selection inference resolve to the palette type); one
-        collapsible "Item" section: a Type label + TWO pick rows (top =
-        the six weapon types, second = the five non-weapon kinds — skill
-        tomes EXCLUDED, not authorable in the level-file Items section),
-        then the Name field + one numeric field per stat the kind carries
-        (clamped to `itemStatMax`). RESET-EVERYTHING semantics on any type
-        change (author decision): a differing pick replaces the item with
-        "New <Kind>" zeroed stats — no retype-keeps-identity special case;
-        same pick = no-op. Events: `editor_set_item_def` REDEFINED
-        FLATTENED (kind + weapon_type + name + the seven stat fields at
-        top level — a nested `Item` payload's name string can't round-trip
-        the session log once it contains a space; the
-        `editor_set_decoration_def` precedent) + `editor_set_item_name`,
-        both with player wrappers + validation arms; the palette label
-        (`id`) tracks the item's display name. Stat + name commits reuse
-        the text-field machinery (`TextFieldId.item_def_name` /
-        `.item_def_stat`, `TextEditTarget.item_type`).
+  - [x] **12 — item inspector (the Items palette group):** DONE — the
+        group rename, the real `EditorInspectorTarget.item_type` arm
+        (active tool + ground-item selection inference), the "Item"
+        section (Type rows + name + stats), reset-everything pick
+        semantics, the flattened `editor_set_item_def` +
+        `editor_set_item_name` with wrappers + validation arms, id
+        tracking, the text-field machinery extension, tests (content
+        emission, pick/commit handlers, session-log round-trip with a
+        multi-word name). Design: DESIGN → Level Editor → Editor UI
+        layout (Inspector fields, item types); history in DONE.md.
   Deferred: drag-painting. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved

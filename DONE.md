@@ -8512,3 +8512,59 @@ author wanted a true toggle with the outline following the mode:
   (derived index 0 at wheel 2 / 3 gradients) + one undo; the sidebar
   builder test covers both outline modes (enemy auto → Auto outlined,
   player manual → swatch outlined) and the always-outlined world swatch.
+
+## Level editor item inspector (the Items palette group) — slice 12
+
+The bottom-bar "Ground Items" group renamed to **Items**, and the
+inspector grew its item-type content (the third real target arm —
+`EditorInspectorTarget.item_type`):
+
+- **Target resolution**: the active item tool + selected ground-item
+  placements now resolve to their palette type (the defensive
+  stale-index/stale-type-id fallbacks mirror the entity/decoration
+  arms); two distinct referenced types still fall back to the player.
+  The selection-inference tests were updated (a lone ground item used to
+  assert the player fallback).
+- **Content** (`editorInspectorItemEntries`): one collapsible "Item"
+  section (`EditorInspectorSectionId.item`) — a "Type" label + TWO pick
+  rows (the six weapon types, then the five non-weapon kinds; SKILL TOMES
+  EXCLUDED — not authorable in the level-file `Items` section, the
+  coupling contract), then the Name field + one numeric field per stat
+  the kind carries (`itemStatSet`; `itemTextFieldValue` is the item
+  content's single value source — display, focus seed, would-change —
+  mirroring `Entity.textFieldValue`). Item content tints with the PLAYER
+  gradient, matching the palette group. The pick cells reuse the
+  weapon-slot visual class (`ui/item_slot` + `items/<type>` icon).
+- **Reset-everything pick semantics (author decision)**: any pick that
+  differs from the current item replaces it with "New <Kind>" (weapons:
+  "New <WeaponType>") zeroed stats — NO retype-keeps-identity case
+  (deliberately unlike the entity weapon slots); an identical pick never
+  fires. Routed via the new `Action.select_editor_item_type` with the
+  kind on `AnytimeInput.clicked_editor_item_kind` (+ the existing
+  weapon-type field on weapon cells).
+- **Events — `editor_set_item_def` redefined FLATTENED**: the previously
+  defined-but-unhandled event carried a nested `Item`; its name string
+  can't round-trip the session log once it contains a space (nested
+  strings serialize as one space-separated token — see the new TODO
+  tech-debt item for the pre-existing instances of this bug class). The
+  redefined event (and its `player_set_editor_item_def` wrapper) carries
+  kind + weapon_type + name + the seven stat fields at top level — the
+  `editor_set_decoration_def` precedent. Name commits ride
+  `editor_set_item_name` (a top-level string, spaces fine). Both got
+  handlers (the def handler clamps stats to the `max_*` bounds so the
+  editor never holds a state its own load path would clamp away, and
+  syncs the palette label `id` to `itemDisplayName` — the
+  decoration id-tracks-the-sprite rule) + validation arms
+  (`validateInspectorItemEdit`).
+- **Text-field machinery**: `TextFieldId` += `item_def_name` /
+  `item_def_stat`, `TextEditTarget` += `item_type` (the palette index
+  rides the ref so a mid-edit tool switch can't retarget the commit);
+  commit arms + `beginFocusedTextEdit` seeding + the digits-only filter
+  follow the entity-field pattern.
+- **Tests**: target resolution (item arms + stale-id fallbacks), content
+  emission (11 pick cells, payloads, highlights, name/stat fields, the
+  per-kind field set, the defensive bare-rows tome case), pick handlers
+  (reset + no-op + undo + id tracking), text commits (end-to-end +
+  no-op gates + clamp), the handler's out-of-range/clamp guards, and a
+  session-log round-trip case locking the flattened multi-word name
+  ("New Sword" as a top-level `name` line).

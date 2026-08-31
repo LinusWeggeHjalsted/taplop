@@ -2008,6 +2008,33 @@ layout + a left inspector + a right metadata sidebar:
   name IS its sprite path (the palette label tracks the sprite). The
   Footprint section's row is a `<N> tiles` button that opens the
   FOOTPRINT EDITOR (below).
+- **Inspector fields (item types — LANDED):** one collapsible "Item"
+  section (`EditorInspectorSectionId.item`, the shared strip/expansion
+  machinery). The TYPE control is TWO pick rows (3 units: a "Type" label
+  line + the weapon row + the gear row) — the six weapon types on top,
+  the five non-weapon kinds (amulet/coat/gloves/pants/boots) below; SKILL
+  TOMES are EXCLUDED (not authorable — the level-file Items section has
+  no tome kind, the coupling contract). RESET-EVERYTHING semantics on
+  any pick that differs (author decision): the item is replaced by a
+  `"New <Kind>"` default (weapons: `"New <WeaponType>"`) with zeroed
+  stats — NO retype-keeps-identity case (unlike the entity weapon
+  slots); an identical pick never fires. Then the Name field + one
+  numeric stat field per stat the kind carries (`itemStatSet`, clamped
+  to `itemStatMax` — the parser's own bounds, single-sourced), via the
+  shared text-field machinery (`TextFieldId.item_def_name` /
+  `.item_def_stat`, target `TextEditTarget.item_type` — the index rides
+  the ref so a mid-edit tool switch can't retarget the commit). Event
+  routing: `editor_set_item_def` carries the item FLATTENED to top level
+  (kind + weapon_type + name + the seven stat fields — a nested `Item`
+  payload's name string can't round-trip the session log once it
+  contains a space; the `editor_set_decoration_def` precedent) and the
+  name commits ride `editor_set_item_name`; both take thin player
+  wrappers + validation arms (screen + editor + type-id range). The
+  handler clamps stats to the same bounds (the editor never holds a
+  state its own load path would clamp away) and keeps the palette label
+  (`id`) synced to `itemDisplayName` (the decoration id-tracks-the-sprite
+  rule). Item content tints with the PLAYER gradient (matching the Items
+  palette group).
 - **The footprint editor (LANDED):** a centered picker panel (the
   `.decoration_footprint` picker kind) showing the type's sprite
   FULL-SIZE (1:1 — 256 screen px per sprite-grid tile; custom stems get
@@ -2425,28 +2452,27 @@ first covering decoration, else tile + occupants; the render-order
 priority below is the future selection-op refinement. **Inspector tool-type
 inference (LANDED, player-as-fallback):** the inspector's target is
 resolved by `editorInspectorTarget` (ui.zig) — a non-optional
-`EditorInspectorTarget = { entity_type | decoration_type | player }` where
-the PLAYER is the FALLBACK (the '!' spawn's loadout): the active enemy or
-decoration tool (valid index) wins; the tile tool, the item tool (no
-inspector content yet), an empty selection, and every ambiguous resolution
+`EditorInspectorTarget = { entity_type | decoration_type | item_type |
+player }` where
+the PLAYER is the FALLBACK (the '!' spawn's loadout): the active enemy,
+decoration, or item tool (valid index) wins; the tile tool, an empty
+selection, and every ambiguous resolution
 land on the player. While the SELECT tool is active the selection is
 scanned: tiles / the '=' contribute NOTHING (legitimately uninspectable —
 mixing them with enemies still shows the enemy); the '!' contributes a
 `.player` REFERENCE (so the spawn alone — or mixed with anything —
-resolves to the player, never to an enemy selected alongside it); entity
-and decoration placements contribute their type, resolved against the
+resolves to the player, never to an enemy selected alongside it); entity,
+decoration, and ground-item placements contribute their type, resolved
+against the
 ACTIVE level (an out-of-range placement index or a stale palette type id
 is an unresolvable bug-state reference that forces the fallback —
-defensive only, the delete arms keep both valid); ground-item placements
-can't resolve to a showable target yet and force the fallback too (the
-arm becomes a real reference when the union widens with its inspector
-slice). Exactly one distinct reference → that type's fields (editing
+defensive only, the delete arms keep both valid). Exactly one distinct reference → that type's fields (editing
 the type updates every placement of it — selecting several tiles whose
 enemies are all the same type shows that enemy tool's fields); two or
 more distinct (two enemy types, an enemy plus a decoration, or either
 plus the player start) → the player. The input-side commit sites map
-the target to `EntityEditTarget` (player → `player_def`; decoration →
-null, the entity controls don't render for decoration content) through
+the target to `EntityEditTarget` (player → `player_def`; decoration /
+item → null, the entity controls don't render for their content) through
 one helper, so display and commits agree by construction. Selecting
 `player_start` shows the player loadout fields (`player_def`, reached
 by clicking the `!`, NOT by a palette entry — the player isn't a placed
@@ -2465,15 +2491,15 @@ copy; with no session data (an empty `player_name`) it parses
 the level's `player_start`/`level_end` via an editor event). Multi-select
 that includes them is allowed for move/bounds but they have no type to edit.
 
-**Ground items (new editor palette).** Levels already support loose floor
+**Ground items (the Items palette).** Levels already support loose floor
 items via the `Items` section + layout char code (`GroundItems{position,
-items}`). The editor gains a third palette group (Items) for placing
+items}`). The editor's third palette group (Items) places
 single items not tied to an enemy — the level designer's custom loot.
 Placements store `(type_id, position)` into an `item_types` palette, same
-reference model as enemies/decorations. (The `Item` union's shape means the
-item palette types are richer than entity/decoration types — weapon vs
-skill-tome vs material vs gear — to be fleshed out when the item palette is
-implemented.)
+reference model as enemies/decorations. The palette's item kinds are the
+authorable set exactly (weapon/amulet/coat/gloves/pants/boots — skill
+tomes are NOT level-authorable, so the palette + its inspector never
+offer them; see the Inspector fields bullet above for the item content).
 
 **Viewport hit-testing.** The selection tool needs click → `Selectable`.
 Priority follows the render order (topmost-drawn = topmost-selectable):

@@ -260,6 +260,14 @@ pub const Action = enum {
     // The inspector's item Delete button (clear the slot to null — the
     // slot rides in `AnytimeInput.clicked_editor_gear_slot`).
     delete_editor_item,
+    // An inspector item-TYPE cell was clicked (the Items group's content:
+    // the two type-pick rows). Any pick that differs from the current
+    // item RESETS it to a "New <Kind>" default with zeroed stats — no
+    // retype-keeps-identity case (author decision); an identical pick
+    // never fires. The kind rides in
+    // `AnytimeInput.clicked_editor_item_kind`; a weapon cell also sets
+    // `clicked_editor_weapon_type`.
+    select_editor_item_type,
     // An inspector utility-slot button was clicked (open the centered
     // skill picker for that slot). The slot index rides in
     // `AnytimeInput.clicked_editor_utility_slot`.
@@ -501,6 +509,63 @@ pub const ItemType = union(enum) {
     boots: void,
     skill_tome: SkillId,
 };
+
+/// The authorable item KINDS (everything `Item` carries except skill
+/// tomes — a tome is not level-authorable, so the level file's Items
+/// section and the editor's item palette both exclude it). The kind tag
+/// of the flattened `editor_set_item_def` event + the item-type pick
+/// payload.
+pub const ItemKind = enum {
+    weapon,
+    amulet,
+    coat,
+    gloves,
+    pants,
+    boots,
+};
+
+/// The kind's display name (the "New <Kind>" default item names). pub:
+/// shared by the input handler's default-item construction + the pick
+/// cells' tooltips.
+pub fn itemKindLabel(kind: ItemKind) []const u8 {
+    return switch (kind) {
+        .weapon => "Weapon",
+        .amulet => "Amulet",
+        .coat => "Coat",
+        .gloves => "Gloves",
+        .pants => "Pants",
+        .boots => "Boots",
+    };
+}
+
+/// The kind an item belongs to, or null for a skill tome (not expressible
+/// as an `ItemKind` — the editor authoring surface excludes tomes; the
+/// null is the defensive seam for crafted state).
+pub fn itemKindOf(item: Item) ?ItemKind {
+    return switch (item) {
+        .weapon => .weapon,
+        .amulet => .amulet,
+        .coat => .coat,
+        .gloves => .gloves,
+        .pants => .pants,
+        .boots => .boots,
+        .skill_tome => null,
+    };
+}
+
+/// A zeroed-stat item of `kind` carrying `name` (the pick-reset default
+/// the input handler commits, + the icon resolution for the kind's pick
+/// cell). Weapons take `sword` unless the caller overrides the type.
+pub fn itemOfKind(kind: ItemKind, name: []const u8) Item {
+    return switch (kind) {
+        .weapon => .{ .weapon = .{ .name = name } },
+        .amulet => .{ .amulet = .{ .name = name } },
+        .coat => .{ .coat = .{ .name = name } },
+        .gloves => .{ .gloves = .{ .name = name } },
+        .pants => .{ .pants = .{ .name = name } },
+        .boots => .{ .boots = .{ .name = name } },
+    };
+}
 
 /// The equippable gear slots on an entity. Weapons occupy main_hand/off_hand;
 /// the rest map one-to-one to their gear fields.
@@ -749,6 +814,51 @@ pub fn itemStatMax(stat: ItemStatField) u32 {
     };
 }
 
+/// The stats an item kind carries, in display order (the inspector's
+/// item content offers exactly these — a stat the kind doesn't carry
+/// commits nothing by construction). A skill tome carries none.
+pub fn itemStatSet(item: Item) []const ItemStatField {
+    return switch (item) {
+        .weapon => &.{.weapon_damage},
+        .amulet => &.{.spell_damage},
+        .coat => &.{ .health_bonus, .defense_bonus },
+        .gloves => &.{ .damage_bonus, .health_bonus },
+        .pants => &.{ .pickup_radius_bonus, .health_bonus },
+        .boots => &.{ .speed_bonus, .health_bonus },
+        .skill_tome => &.{},
+    };
+}
+
+/// A palette item type's field value as the text-input widget shows it
+/// (the item content's single value source — display text, focus seeding,
+/// and the commit path's would-change gate; mirrors `Entity.textFieldValue`).
+/// A skill tome shows empty for every field (tomes are not authorable —
+/// the editor item surface never offers them); ids that don't resolve
+/// against an item return empty too.
+pub fn itemTextFieldValue(
+    item: Item,
+    allocator: std.mem.Allocator,
+    field_id: TextFieldId,
+) ![]const u8 {
+    return switch (field_id) {
+        .item_def_name => itemName(item),
+        .item_def_stat => |stat| if (itemStatValue(item, stat)) |value|
+            try std.fmt.allocPrint(allocator, "{d}", .{value})
+        else
+            "",
+        // Entity/metadata ids never resolve against an item type (their
+        // targets are entities / the mission / levels); the arms exist so
+        // the switch stays exhaustive.
+        .entity_name,
+        .entity_stat,
+        .item_name,
+        .item_stat,
+        .mission_name,
+        .level_name,
+        => "",
+    };
+}
+
 pub const AdditiveEffectModifiers = struct {
     outgoing_damage: i32 = 0,
     incoming_damage: i32 = 0,
@@ -868,10 +978,10 @@ pub const Entity = struct {
                 )
             else
                 "",
-            // Settings-sidebar ids never resolve against an entity (their
-            // targets are `.mission` / `.level`); the arms exist so the
-            // switch stays exhaustive.
-            .mission_name, .level_name => "",
+            // Settings-sidebar + item-type ids never resolve against an
+            // entity (their targets are `.mission` / `.level` / `.item_type`);
+            // the arms exist so the switch stays exhaustive.
+            .mission_name, .level_name, .item_def_name, .item_def_stat => "",
         };
     }
 
@@ -1176,6 +1286,13 @@ pub const TextFieldId = union(enum) {
     /// One numeric stat of the equipped item in `slot` (a stat the item
     /// kind doesn't carry commits nothing).
     item_stat: struct { slot: GearSlot, stat: ItemStatField },
+    /// A palette item TYPE's name (the Items group's inspector content —
+    /// a skill tome commits nothing, tomes aren't authorable). Target:
+    /// `.item_type` carries the palette index.
+    item_def_name: void,
+    /// One numeric stat of a palette item type (same target + tome rule
+    /// as `item_def_name`; clamped to `itemStatMax` at commit).
+    item_def_stat: ItemStatField,
     /// The edited mission's name (metadata sidebar). Target: `.mission`.
     mission_name: void,
     /// The edited level's name (metadata sidebar, the tab it was focused
@@ -1188,6 +1305,10 @@ pub const TextFieldId = union(enum) {
 /// rides the target so a mid-edit tab switch can't retarget the commit).
 pub const TextEditTarget = union(enum) {
     entity: EntityEditTarget,
+    /// A palette item type (the Items group's inspector content). Carries
+    /// the palette index so a mid-edit tool switch can't retarget the
+    /// commit (the level-name pattern).
+    item_type: u32,
     mission: void,
     level: u32,
 };
@@ -1288,6 +1409,9 @@ pub const EditorInspectorSectionId = enum {
     /// The layer stack (enemy + decoration types; the player loadout has
     /// no layers).
     layers,
+    /// The item type's fields (the Items palette group's inspector
+    /// content: the type-pick rows + name + stats). Item content only.
+    item,
     /// The metadata sidebar's Mission section (the mission's name).
     mission,
     /// The metadata sidebar's Current-level section (the active level's

@@ -646,6 +646,31 @@ fn handleEditorEvent(
             definition.footprint = set.value;
             pruneDecorationPlacementsForType(editor, set.type_id, allocator);
         },
+        // Item-type whole-def commit (a type pick or a stat edit). Stats
+        // are clamped to the `max_*` bounds here too — the live path
+        // clamps before pushing, the handler clamps again so the editor
+        // can never hold a state its own load path (boundedU32) would
+        // clamp away (the utility-skill posture). The palette label
+        // (`id`) always tracks the item's display name (the decoration
+        // id-tracks-the-sprite rule). Defensive against crafted logs: a
+        // type id outside the palette is ignored.
+        .editor_set_item_def => |set| {
+            if (set.type_id >= editor.item_types.len) return;
+            const item = itemFromDefSet(set);
+            const definition = &@constCast(editor.item_types)[set.type_id];
+            definition.item = item;
+            definition.id = loaders.itemDisplayName(item, allocator);
+        },
+        // Item-type name commit: rename in place; the label tracks (same
+        // event, one undo step). A skill tome has no name — the rename is
+        // a no-op (itemWithName passes a tome through unchanged).
+        .editor_set_item_name => |set| {
+            if (set.type_id >= editor.item_types.len) return;
+            const definition = &@constCast(editor.item_types)[set.type_id];
+            const item = types.itemWithName(definition.item, set.value);
+            definition.item = item;
+            definition.id = loaders.itemDisplayName(item, allocator);
+        },
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
             // placement entries must address the active level's lists (a
@@ -2112,6 +2137,29 @@ fn handlePlayerInputEvent(
                 .value = set.value,
             } } }}, allocator);
         },
+        // Inspector item commits (the Items palette group): thin forwards
+        // — the EditorEvents own the mutations + the id sync.
+        .player_set_editor_item_def => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_item_def = .{
+                .type_id = set.type_id,
+                .item_kind = set.item_kind,
+                .weapon_type = set.weapon_type,
+                .name = set.name,
+                .weapon_damage = set.weapon_damage,
+                .spell_damage = set.spell_damage,
+                .health_bonus = set.health_bonus,
+                .defense_bonus = set.defense_bonus,
+                .damage_bonus = set.damage_bonus,
+                .pickup_radius_bonus = set.pickup_radius_bonus,
+                .speed_bonus = set.speed_bonus,
+            } } }}, allocator);
+        },
+        .player_set_editor_item_name => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_item_name = .{
+                .type_id = set.type_id,
+                .value = set.value,
+            } } }}, allocator);
+        },
         // Inspector layer commits (the Layers sections): thin forwards.
         // The player loadout has no layers — the handler ignores a
         // player_def entity-layer target (validation rejects it at the
@@ -2628,6 +2676,45 @@ pub fn editorEntityTemplate(
             break :blk &@constCast(editor.entity_types)[type_id].template;
         },
         .player_def => &editor.player_def.template,
+    };
+}
+
+/// Rebuild an `Item` from a flattened item-def event payload
+/// (`editor_set_item_def` / `player_set_editor_item_def` share the field
+/// set — hence `anytype`). Stats clamp to the `max_*` bounds (the editor
+/// never holds a state its own load path would clamp away); only the
+/// picked kind's fields are meaningful, the rest are ignored.
+fn itemFromDefSet(set: anytype) types.Item {
+    return switch (set.item_kind) {
+        .weapon => .{ .weapon = .{
+            .name = set.name,
+            .weapon_type = set.weapon_type,
+            .weapon_damage = @min(set.weapon_damage, types.max_weapon_damage),
+        } },
+        .amulet => .{ .amulet = .{
+            .name = set.name,
+            .spell_damage = @min(set.spell_damage, types.max_spell_damage),
+        } },
+        .coat => .{ .coat = .{
+            .name = set.name,
+            .health_bonus = @min(set.health_bonus, types.max_health_bonus),
+            .defense_bonus = @min(set.defense_bonus, types.max_defense_bonus),
+        } },
+        .gloves => .{ .gloves = .{
+            .name = set.name,
+            .damage_bonus = @min(set.damage_bonus, types.max_gloves_damage),
+            .health_bonus = @min(set.health_bonus, types.max_health_bonus),
+        } },
+        .pants => .{ .pants = .{
+            .name = set.name,
+            .pickup_radius_bonus = @min(set.pickup_radius_bonus, types.max_pickup_radius),
+            .health_bonus = @min(set.health_bonus, types.max_health_bonus),
+        } },
+        .boots => .{ .boots = .{
+            .name = set.name,
+            .speed_bonus = @min(set.speed_bonus, types.max_boots_speed),
+            .health_bonus = @min(set.health_bonus, types.max_health_bonus),
+        } },
     };
 }
 

@@ -940,8 +940,8 @@ fn textEditKey(text_edit: *TextEditState, key: []const u8, shift_held: bool) ?ty
 /// as it's typed). Numeric ids join here with their slices.
 fn textFieldIsNumeric(field_id: types.TextFieldId) bool {
     return switch (field_id) {
-        .entity_name, .item_name, .mission_name, .level_name => false,
-        .entity_stat, .item_stat => true,
+        .entity_name, .item_name, .item_def_name, .mission_name, .level_name => false,
+        .entity_stat, .item_stat, .item_def_stat => true,
     };
 }
 
@@ -1630,7 +1630,7 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
     }
 }
 
-test "editorInspectorTarget: active enemy/decoration tools pass through; tile/item fall back to the player" {
+test "editorInspectorTarget: active enemy/decoration/item tools pass through; tile falls back to the player" {
     const entity_types = [_]types.EntityTypeDef{.{
         .id = "Skeleton",
         .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 },
@@ -1660,7 +1660,7 @@ test "editorInspectorTarget: active enemy/decoration tools pass through; tile/it
 
     var item_tool = base;
     item_tool.active_tool = .{ .item_type = 0 };
-    try std.testing.expectEqual(EditorInspectorTarget.player, editorInspectorTarget(item_tool));
+    try std.testing.expectEqual(EditorInspectorTarget{ .item_type = 0 }, editorInspectorTarget(item_tool));
 
     // A stale active tool id (defensive) can't show anything.
     var stale_tool = base;
@@ -1669,6 +1669,9 @@ test "editorInspectorTarget: active enemy/decoration tools pass through; tile/it
     var stale_decoration_tool = base;
     stale_decoration_tool.active_tool = .{ .decoration_type = 7 };
     try std.testing.expectEqual(EditorInspectorTarget.player, editorInspectorTarget(stale_decoration_tool));
+    var stale_item_tool = base;
+    stale_item_tool.active_tool = .{ .item_type = 7 };
+    try std.testing.expectEqual(EditorInspectorTarget.player, editorInspectorTarget(stale_item_tool));
 
     // An empty selection under the select tool → the player fallback.
     var select_tool = base;
@@ -1860,9 +1863,13 @@ test "editorInspectorTarget: unresolvable references force the player fallback" 
         }
     }.check;
 
-    // A selected ground item has no inspector content — fallback (alone
-    // or mixed with a valid enemy).
-    try std.testing.expectEqual(EditorInspectorTarget.player, resolve(&.{.{ .ground_item_placement = 0 }}));
+    // A selected ground item resolves to its palette type (the item
+    // content's target); mixed with a valid enemy (two distinct targets)
+    // → the fallback.
+    try std.testing.expectEqual(
+        EditorInspectorTarget{ .item_type = 0 },
+        resolve(&.{.{ .ground_item_placement = 0 }}),
+    );
     try std.testing.expectEqual(
         EditorInspectorTarget.player,
         resolve(&.{ .{ .entity_placement = 0 }, .{ .ground_item_placement = 0 } }),
@@ -1872,6 +1879,7 @@ test "editorInspectorTarget: unresolvable references force the player fallback" 
     // unresolvable bug-state reference — fallback, not a crash (the
     // delete arms keep the selection consistent, so this is defensive).
     try std.testing.expectEqual(EditorInspectorTarget.player, resolve(&.{.{ .entity_placement = 99 }}));
+    try std.testing.expectEqual(EditorInspectorTarget.player, resolve(&.{.{ .ground_item_placement = 99 }}));
 
     const stale_levels = [_]types.EditorLevel{.{ .entity_placements = &.{
         .{ .type_id = 7, .position = .{ .x = 0, .y = 0 } },
@@ -1883,6 +1891,19 @@ test "editorInspectorTarget: unresolvable references force the player fallback" 
             .entity_types = &entity_types,
             .active_tool = .select,
             .selection = &.{.{ .entity_placement = 0 }},
+        }),
+    );
+
+    const stale_item_levels = [_]types.EditorLevel{.{ .item_placements = &.{
+        .{ .type_id = 7, .position = .{ .x = 0, .y = 0 } },
+    } }};
+    try std.testing.expectEqual(
+        EditorInspectorTarget.player,
+        editorInspectorTarget(.{
+            .levels = &stale_item_levels,
+            .item_types = &item_types,
+            .active_tool = .select,
+            .selection = &.{.{ .ground_item_placement = 0 }},
         }),
     );
 
@@ -1906,6 +1927,154 @@ test "editorInspectorTarget: unresolvable references force the player fallback" 
             .selection = &.{.{ .player_start = {} }},
         }),
     );
+}
+
+test "inspector item content: type rows, name + stat fields, ref targets" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{ black, .{ .r = 30, .g = 30, .b = 30 }, black, black, black, .{ .r = 40, .g = 40, .b = 40 } } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    const item_types = [_]types.ItemTypeDef{.{
+        .id = "Iron Sword",
+        .item = .{ .weapon = .{
+            .name = "Iron Sword",
+            .weapon_type = .sword,
+            .weapon_damage = 5,
+        } },
+    }};
+    const editor: types.Editor = .{
+        .item_types = &item_types,
+        .active_tool = .{ .item_type = 0 },
+    };
+
+    var elements: UiElementList = .empty;
+    var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+    try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+
+    // The name field: current value + the `.item_type` ref target.
+    const name_field = findTextField(&elements, .item_def_name).?;
+    try std.testing.expectEqualStrings("Iron Sword", name_field.text);
+    try std.testing.expectEqual(
+        types.TextFieldRef{ .id = .item_def_name, .target = .{ .item_type = 0 } },
+        name_field.ref,
+    );
+
+    // The weapon's stat field: decimal value + the same target.
+    const damage_field = findTextField(&elements, .{ .item_def_stat = .weapon_damage }).?;
+    try std.testing.expectEqualStrings("5", damage_field.text);
+    try std.testing.expectEqual(
+        types.TextFieldRef{ .id = .{ .item_def_stat = .weapon_damage }, .target = .{ .item_type = 0 } },
+        damage_field.ref,
+    );
+
+    // The type rows: 6 weapon cells + 5 gear cells, all carrying the
+    // `.select_editor_item_type` action; the sword cell (the current
+    // item) is the only highlighted one; weapon cells carry the weapon
+    // type payload, gear cells don't.
+    var pick_cells: usize = 0;
+    var highlighted_kinds: usize = 0;
+    var sword_icons: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .select_editor_item_type) {
+            pick_cells += 1;
+            try std.testing.expect(button.editor_item_kind != null);
+            if (button.editor_item_kind.? == .weapon) {
+                try std.testing.expect(button.editor_weapon_type != null);
+                if (button.highlighted) {
+                    highlighted_kinds += 1;
+                    try std.testing.expectEqual(types.WeaponType.sword, button.editor_weapon_type.?);
+                }
+            } else {
+                try std.testing.expect(button.editor_weapon_type == null);
+                try std.testing.expect(!button.highlighted);
+            }
+        },
+        .image => |image| {
+            if (std.mem.eql(u8, image.sprite_id, "items/sword")) sword_icons += 1;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(usize, 11), pick_cells);
+    try std.testing.expectEqual(@as(usize, 1), highlighted_kinds);
+    try std.testing.expectEqual(@as(usize, 1), sword_icons);
+}
+
+test "inspector item content: per-kind stat fields; a skill tome renders bare rows" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // A coat (two stats) — the field set follows the kind.
+    {
+        const item_types = [_]types.ItemTypeDef{.{
+            .id = "Leather Coat",
+            .item = .{ .coat = .{ .name = "Leather Coat", .health_bonus = 3, .defense_bonus = 2 } },
+        }};
+        const editor: types.Editor = .{
+            .item_types = &item_types,
+            .active_tool = .{ .item_type = 0 },
+        };
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try std.testing.expectEqualStrings(
+            "Leather Coat",
+            findTextField(&elements, .item_def_name).?.text,
+        );
+        try std.testing.expectEqualStrings(
+            "3",
+            findTextField(&elements, .{ .item_def_stat = .health_bonus }).?.text,
+        );
+        try std.testing.expectEqualStrings(
+            "2",
+            findTextField(&elements, .{ .item_def_stat = .defense_bonus }).?.text,
+        );
+        // A stat the kind doesn't carry is never offered.
+        try std.testing.expect(findTextField(&elements, .{ .item_def_stat = .weapon_damage }) == null);
+    }
+
+    // A skill tome (unreachable live — not authorable): no name field, no
+    // stat fields, but the type rows still render (11 cells).
+    {
+        const item_types = [_]types.ItemTypeDef{.{
+            .id = "Skill Tome",
+            .item = .{ .skill_tome = .{ .skill = .slice, .value = 5 } },
+        }};
+        const editor: types.Editor = .{
+            .item_types = &item_types,
+            .active_tool = .{ .item_type = 0 },
+        };
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try std.testing.expect(findTextField(&elements, .item_def_name) == null);
+        var pick_cells: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .select_editor_item_type) pick_cells += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 11), pick_cells);
+    }
 }
 
 test "textEditPressProceeds: M2 region is the open inspector panel + its toggle" {
@@ -2346,6 +2515,12 @@ pub const Button = struct {
     /// alongside `editor_gear_slot`). Rides in
     /// `AnytimeInput.clicked_editor_weapon_type`.
     editor_weapon_type: ?types.WeaponType = null,
+    /// Editor item KIND, if this button is an item-type pick cell (the
+    /// item content's type rows; a weapon cell also sets
+    /// `editor_weapon_type`). Rides in
+    /// `AnytimeInput.clicked_editor_item_kind` alongside
+    /// `.select_editor_item_type`.
+    editor_item_kind: ?types.ItemKind = null,
     /// Editor utility-slot index, if this button is an inspector
     /// utility-slot button (opens the skill picker). Rides in
     /// `AnytimeInput.clicked_editor_utility_slot`.
@@ -5192,33 +5367,31 @@ fn inspectorLabelY(cell: Rectangle) i32 {
 }
 
 /// What the editor inspector is currently showing. The player is the
-/// FALLBACK: any state that doesn't resolve to exactly one enemy or
-/// decoration type shows the player (the '!' spawn's loadout). The item
-/// arm joins when its inspector slice lands.
+/// FALLBACK: any state that doesn't resolve to exactly one enemy,
+/// decoration, or item type shows the player (the '!' spawn's loadout).
 pub const EditorInspectorTarget = union(enum) {
     entity_type: u32,
     decoration_type: u32,
+    item_type: u32,
     player: void,
 };
 
-/// The inspector's target: the ACTIVE placement tool (enemy or
-/// decoration), or — while the select tool is active — the tool INFERRED
+/// The inspector's target: the ACTIVE placement tool (enemy, decoration,
+/// or item), or — while the select tool is active — the tool INFERRED
 /// from the selection. The player is the fallback for everything else:
-/// the tile tool, the item tool (no inspector content yet), an empty or
-/// ambiguous selection, an unresolvable reference. Inference rules:
-/// tiles and the '=' contribute NOTHING (legitimately uninspectable —
-/// mixing them with enemies still shows the enemy); the '!' contributes a
-/// `.player` REFERENCE (so player-start + anything — or alone — resolves
-/// to the player); entity and decoration placements contribute their
-/// type, resolved against the ACTIVE level — an out-of-range placement
-/// index or a stale palette type id is an unresolvable bug-state reference
-/// and forces the fallback (the delete arms keep the selection
-/// consistent, so this is defensive only — see `Selectable`); ground-item
-/// placements can't resolve to a showable target yet — they force the
-/// fallback too. Exactly one distinct reference wins; two or more (e.g.
-/// two enemy types, or an enemy plus a decoration) fall back to the
-/// player. See DESIGN → Architecture → Level Editor → Selection model
-/// (Inspector tool-type inference).
+/// the tile tool, an empty or ambiguous selection, an unresolvable
+/// reference. Inference rules: tiles and the '=' contribute NOTHING
+/// (legitimately uninspectable — mixing them with enemies still shows the
+/// enemy); the '!' contributes a `.player` REFERENCE (so player-start +
+/// anything — or alone — resolves to the player); entity, decoration,
+/// and ground-item placements contribute their type, resolved against
+/// the ACTIVE level — an out-of-range placement index or a stale palette
+/// type id is an unresolvable bug-state reference and forces the fallback
+/// (the delete arms keep the selection consistent, so this is defensive
+/// only — see `Selectable`). Exactly one distinct reference wins; two or
+/// more (e.g. two enemy types, or an enemy plus a decoration) fall back
+/// to the player. See DESIGN → Architecture → Level Editor → Selection
+/// model (Inspector tool-type inference).
 pub fn editorInspectorTarget(editor: types.Editor) EditorInspectorTarget {
     switch (editor.active_tool) {
         // The select tool infers from the selection below.
@@ -5231,9 +5404,12 @@ pub fn editorInspectorTarget(editor: types.Editor) EditorInspectorTarget {
             .{ .decoration_type = type_id }
         else
             .player,
-        // The tile tool has no fields; the item inspector is a later
-        // slice — the player is the fallback.
-        .tile, .item_type => return .player,
+        .item_type => |type_id| return if (type_id < editor.item_types.len)
+            .{ .item_type = type_id }
+        else
+            .player,
+        // The tile tool has no fields — the player is the fallback.
+        .tile => return .player,
     }
     if (editor.active_level_index >= editor.levels.len) return .player;
     const level = editor.levels[editor.active_level_index];
@@ -5263,11 +5439,13 @@ pub fn editorInspectorTarget(editor: types.Editor) EditorInspectorTarget {
                 if (type_id >= editor.decoration_types.len) return .player;
                 break :blk .{ .decoration_type = type_id };
             },
-            // No item inspector content yet — a selected ground item
-            // can't resolve to a showable target, so it forces the
-            // fallback (the arm becomes a real reference when the union
-            // widens with its slice).
-            .ground_item_placement => return .player,
+            .ground_item_placement => |index| blk: {
+                // Same defensive posture as the entity arm.
+                if (index >= level.item_placements.len) return .player;
+                const type_id = level.item_placements[index].type_id;
+                if (type_id >= editor.item_types.len) return .player;
+                break :blk .{ .item_type = type_id };
+            },
         };
         const target = referenced orelse continue;
         if (inferred) |existing| {
@@ -5288,19 +5466,20 @@ fn editorInspectorTargetsEqual(
         .player => true,
         .entity_type => |type_id| type_id == second.entity_type,
         .decoration_type => |type_id| type_id == second.decoration_type,
+        .item_type => |type_id| type_id == second.item_type,
     };
 }
 
 /// The entity (enemy) type the inspector currently edits, or null when
-/// the resolved target (see `editorInspectorTarget`) is the player or a
-/// decoration type. File-private: the inspector content builder is the
-/// only consumer — the input-side commit sites map the full target
-/// instead (the player arm edits `player_def`, the decoration arm edits
-/// the decoration palette).
+/// the resolved target (see `editorInspectorTarget`) is the player, a
+/// decoration type, or an item type. File-private: the inspector content
+/// builder is the only consumer — the input-side commit sites map the
+/// full target instead (the player arm edits `player_def`, the
+/// decoration arm edits the decoration palette).
 fn editorInspectorEntityTarget(editor: types.Editor) ?u32 {
     return switch (editorInspectorTarget(editor)) {
         .entity_type => |type_id| if (type_id < editor.entity_types.len) type_id else null,
-        .decoration_type, .player => null,
+        .decoration_type, .item_type, .player => null,
     };
 }
 
@@ -5330,6 +5509,10 @@ const EditorInspectorControl = union(enum) {
     /// count that opens the centered footprint editor (the tile-grid
     /// picker).
     footprint_button: void,
+    /// A palette item TYPE's field (the Items group's content — name or
+    /// one stat): the shared text-field element, reading the item context
+    /// instead of an entity template.
+    item_text: types.TextFieldId,
 };
 
 /// One line of inspector content — per the coupling contract in DESIGN →
@@ -5380,6 +5563,11 @@ const EditorInspectorEntry = union(enum) {
     decoration_layer_color: u32,
     /// The decoration content's add-layer row.
     add_decoration_layer: void,
+    /// The item content's type-pick rows (3 units): the "Type" label line
+    /// + the weapon-type row + the non-weapon-kind row. A differing pick
+    /// resets the item ("New <Kind>", zeroed stats) — the pick handler's
+    /// job; the rows just render + carry payloads.
+    item_type_rows: void,
 };
 
 /// A section's display label.
@@ -5394,6 +5582,7 @@ fn editorInspectorSectionLabel(section: types.EditorInspectorSectionId) []const 
         .player => "Player",
         .footprint => "Footprint",
         .layers => "Layers",
+        .item => "Item",
         .mission => "Mission",
         .current_level => "Current level",
     };
@@ -5418,6 +5607,8 @@ fn editorInspectorEntryUnits(entry: EditorInspectorEntry) i32 {
         .decoration_layer_color,
         .add_decoration_layer,
         => 2,
+        // The type-pick rows: label line + TWO control rows.
+        .item_type_rows => 3,
     };
 }
 
@@ -5446,6 +5637,20 @@ fn itemStatLabel(stat: types.ItemStatField) []const u8 {
         .damage_bonus => "damage bonus",
         .pickup_radius_bonus => "pickup radius",
         .speed_bonus => "speed bonus",
+    };
+}
+
+/// The item content's standalone stat label (capitalized first letter —
+/// the enemy content's "Max health" convention).
+fn itemStatFieldLabel(stat: types.ItemStatField) []const u8 {
+    return switch (stat) {
+        .weapon_damage => "Damage",
+        .spell_damage => "Spell damage",
+        .health_bonus => "Health bonus",
+        .defense_bonus => "Defense bonus",
+        .damage_bonus => "Damage bonus",
+        .pickup_radius_bonus => "Pickup radius",
+        .speed_bonus => "Speed bonus",
     };
 }
 
@@ -5661,6 +5866,41 @@ fn editorInspectorDecorationEntries(
     return entries.items;
 }
 
+/// The ITEM content's entries (the Items palette group's target): one
+/// collapsible section — the type-pick rows (weapon types + non-weapon
+/// kinds; a differing pick resets the item), then the name field + one
+/// numeric field per stat the kind carries. Skill tomes carry neither a
+/// name nor stats (and are never offered by the pick rows — not
+/// level-authorable); a tome in the palette is unreachable in practice
+/// (buildEditorMission can't produce one) and renders bare rows here.
+fn editorInspectorItemEntries(
+    allocator: std.mem.Allocator,
+    item: types.Item,
+    expanded: *const [editor_inspector_section_count]bool,
+) ![]const EditorInspectorEntry {
+    var entries: std.ArrayList(EditorInspectorEntry) = .empty;
+
+    try entries.append(allocator, .{ .section = .item });
+    if (expanded[@intFromEnum(types.EditorInspectorSectionId.item)]) {
+        try entries.append(allocator, .{ .item_type_rows = {} });
+        // A skill tome has no name (it IS its skill) — no name row.
+        if (std.meta.activeTag(item) != .skill_tome) {
+            try entries.append(allocator, .{ .field = .{
+                .label = "Name",
+                .control = .{ .item_text = .item_def_name },
+            } });
+        }
+        for (types.itemStatSet(item)) |stat| {
+            try entries.append(allocator, .{ .field = .{
+                .label = itemStatFieldLabel(stat),
+                .control = .{ .item_text = .{ .item_def_stat = stat } },
+            } });
+        }
+    }
+
+    return entries.items;
+}
+
 /// Build the inspector's content inside the open panel (called by
 /// `buildEditorInspectorPanel`): the resolved target's entries — the
 /// active enemy tool's field rows, or the player loadout (the fallback
@@ -5739,6 +5979,15 @@ const InspectorDecorationContext = struct {
     type_definition: types.DecorationTypeDef,
 };
 
+/// The palette item type an inspector content path edits, resolved from
+/// the inspector target: the ItemTypeDef its controls read. Carries the
+/// palette index (the text-field refs' `.item_type` target). Coloring is
+/// the PLAYER gradient (matching the Items palette group's tinting).
+const InspectorItemContext = struct {
+    type_id: u32,
+    type_definition: types.ItemTypeDef,
+};
+
 fn buildEditorInspectorContent(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -5774,13 +6023,20 @@ fn buildEditorInspectorContent(
             .edit_target = .player_def,
             .gradient_colors = active_theme.player_gradient.colors,
         },
-        .decoration_type => null,
+        .decoration_type, .item_type => null,
     };
     const decoration_context: ?InspectorDecorationContext = switch (target) {
         .decoration_type => |index| .{
             .type_definition = editor.decoration_types[index],
         },
-        .entity_type, .player => null,
+        .entity_type, .player, .item_type => null,
+    };
+    const item_context: ?InspectorItemContext = switch (target) {
+        .item_type => |index| .{
+            .type_id = index,
+            .type_definition = editor.item_types[index],
+        },
+        .entity_type, .player, .decoration_type => null,
     };
     const entries: []const EditorInspectorEntry = switch (target) {
         .entity_type => |index| try editorInspectorEntityEntries(
@@ -5798,6 +6054,11 @@ fn buildEditorInspectorContent(
             editor.decoration_types[index],
             &ui_state.editor_inspector_section_expanded,
         ),
+        .item_type => |index| try editorInspectorItemEntries(
+            allocator,
+            editor.item_types[index].item,
+            &ui_state.editor_inspector_section_expanded,
+        ),
     };
     // Unit math: a section header is 1 row unit, a field entry 2 (label
     // line + control line). Scroll + windowing are in units, so every line
@@ -5812,11 +6073,20 @@ fn buildEditorInspectorContent(
     // enemy, player content player; matching the entity-inspect panel's
     // team-gradient coloring). Decoration content tints with the WORLD
     // gradient instead (the in-game decoration tinting) — one button
-    // color, resolved per target (the section strips read it too).
-    const button_color: Color = if (entity_context) |context|
-        context.gradient_colors[@min(@as(u32, 5), types.gradient_color_count - 1)]
-    else
-        active_theme.world_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    // color, resolved per target (the section strips read it too). Item
+    // content tints with the PLAYER gradient (matching the Items palette
+    // group's tinting).
+    const button_color: Color = switch (target) {
+        .entity_type, .player => entity_context.?.gradient_colors[
+            @min(@as(u32, 5), types.gradient_color_count - 1)
+        ],
+        .decoration_type => active_theme.world_gradient.colors[
+            @min(@as(u32, 5), types.gradient_color_count - 1)
+        ],
+        .item_type => active_theme.player_gradient.colors[
+            @min(@as(u32, 5), types.gradient_color_count - 1)
+        ],
+    };
     const text_edit: ?*const TextEditState =
         if (ui_state.text_edit != null) &ui_state.text_edit.? else null;
 
@@ -5892,6 +6162,19 @@ fn buildEditorInspectorContent(
                         font_metrics,
                         text_edit,
                         entity_context.?,
+                        control_rect,
+                        field_id,
+                        active_theme,
+                    ),
+                    // A palette item TYPE's field (name / stat) — the same
+                    // element, reading the item context (the `.item_type`
+                    // ref target).
+                    .item_text => |field_id| try emitInspectorItemTextField(
+                        elements,
+                        allocator,
+                        font_metrics,
+                        text_edit,
+                        item_context.?,
                         control_rect,
                         field_id,
                         active_theme,
@@ -6196,6 +6479,32 @@ fn buildEditorInspectorContent(
                     active_theme.lightest,
                 );
             },
+            // The item content's type-pick rows: the "Type" label line +
+            // the weapon-type row + the non-weapon-kind row (a differing
+            // pick resets the item — see emitInspectorItemTypeRows).
+            .item_type_rows => {
+                try emitInspectorSlotLabel(elements, allocator, cell, "Type", active_theme);
+                const weapon_row: Rectangle = .{
+                    .x = cell.x,
+                    .y = cell.y + editor_inspector_row_height,
+                    .width = cell.width,
+                    .height = editor_inspector_row_height,
+                };
+                const gear_row: Rectangle = .{
+                    .x = cell.x,
+                    .y = cell.y + 2 * editor_inspector_row_height,
+                    .width = cell.width,
+                    .height = editor_inspector_row_height,
+                };
+                try emitInspectorItemTypeRows(
+                    elements,
+                    allocator,
+                    item_context.?,
+                    weapon_row,
+                    gear_row,
+                    active_theme,
+                );
+            },
         }
     }
 
@@ -6301,6 +6610,33 @@ fn emitInspectorTextField(
         font_metrics,
         text_edit,
         .{ .id = field_id, .target = .{ .entity = context.edit_target } },
+        value,
+        control_rect,
+        active_theme,
+    );
+}
+
+/// The item content's text field (name / one stat): the entity field's
+/// exact shape over the item context — `itemTextFieldValue` is the value
+/// source, `.item_type` the ref target.
+fn emitInspectorItemTextField(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    text_edit: ?*const TextEditState,
+    context: InspectorItemContext,
+    control_rect: Rectangle,
+    field_id: types.TextFieldId,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const value = types.itemTextFieldValue(context.type_definition.item, allocator, field_id) catch
+        @panic("failed to format item field value");
+    try emitTextFieldUi(
+        elements,
+        allocator,
+        font_metrics,
+        text_edit,
+        .{ .id = field_id, .target = .{ .item_type = context.type_id } },
         value,
         control_rect,
         active_theme,
@@ -6553,6 +6889,118 @@ fn emitInspectorWeaponSlot(
             active_theme.lightest,
         );
     }
+}
+
+/// The item content's type-pick rows: the six weapon types on the first
+/// row, the five non-weapon kinds on the second (skill tomes excluded —
+/// not authorable as ground items). The weapon-slot cells' visual class
+/// (`ui/item_slot` button + the `items/<type>` icon, palette tinting).
+/// Any pick that DIFFERS from the current item resets it to a
+/// "New <Kind>" default with zeroed stats (author decision — no
+/// retype-keeps-identity case; the input handler owns that policy); an
+/// identical pick is a no-op. The current type/kind is highlighted.
+fn emitInspectorItemTypeRows(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    context: InspectorItemContext,
+    weapon_row: Rectangle,
+    gear_row: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const player = active_theme.player_gradient.colors;
+    const button_color = player[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const item_icon_color = player[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    const item = context.type_definition.item;
+
+    // Row 1: the weapon types (highlighted while the item is a weapon of
+    // that type).
+    inline for (std.meta.fields(types.WeaponType), 0..) |field, loop_index| {
+        const weapon_type: types.WeaponType = @enumFromInt(field.value);
+        const highlighted = switch (item) {
+            .weapon => |weapon| weapon.weapon_type == weapon_type,
+            else => false,
+        };
+        try emitInspectorItemTypeCell(
+            elements,
+            allocator,
+            weapon_row,
+            @intCast(loop_index),
+            .weapon,
+            weapon_type,
+            try std.fmt.allocPrint(allocator, "items/{s}", .{field.name}),
+            types.weaponTypeLabel(weapon_type),
+            highlighted,
+            button_color,
+            item_icon_color,
+        );
+    }
+
+    // Row 2: the non-weapon kinds (highlighted while the item is that
+    // kind). Skill tomes are never offered — not level-authorable.
+    const gear_kinds = [_]types.ItemKind{ .amulet, .coat, .gloves, .pants, .boots };
+    for (gear_kinds, 0..) |kind, loop_index| {
+        const highlighted = types.itemKindOf(item) == kind;
+        try emitInspectorItemTypeCell(
+            elements,
+            allocator,
+            gear_row,
+            @intCast(loop_index),
+            kind,
+            null,
+            itemIconSpriteId(types.itemOfKind(kind, "")),
+            types.itemKindLabel(kind),
+            highlighted,
+            button_color,
+            item_icon_color,
+        );
+    }
+}
+
+/// One type-pick cell (the weapon-slot cells' visual class): the
+/// `ui/item_slot` button carrying the pick payload (the kind + the
+/// weapon type on weapon cells) + the item icon overlay, aspect-fitted
+/// + tinted.
+fn emitInspectorItemTypeCell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    row: Rectangle,
+    ordinal: i32,
+    kind: types.ItemKind,
+    weapon_type: ?types.WeaponType,
+    icon_sprite_id: []const u8,
+    tooltip_label: []const u8,
+    highlighted: bool,
+    button_color: Color,
+    item_icon_color: Color,
+) !void {
+    const cell_size = row.height;
+    const cell: Rectangle = .{
+        .x = row.x + ordinal * (cell_size + ui_gap),
+        .y = row.y,
+        .width = cell_size,
+        .height = cell_size,
+    };
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = "ui/item_slot",
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = .select_editor_item_type,
+        .editor_item_kind = kind,
+        .editor_weapon_type = weapon_type,
+        .color = button_color,
+        .highlighted = highlighted,
+        .tooltip = .{ .header = try spanRow(allocator, text(tooltip_label)) },
+    } });
+    const fitted = scaleToFit(cell, inventory_slot_size, inventory_slot_size);
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = icon_sprite_id,
+        .screen_position = fitted.position(),
+        .width = fitted.width,
+        .height = fitted.height,
+        .color = item_icon_color,
+        .blocks_input = false,
+    } });
 }
 
 /// A gear slot's control line: Add while the slot is empty (creates a
@@ -6894,9 +7342,10 @@ pub fn buildEditorSkillPicker(
             else
                 null,
             .player => editor.player_def.template.equipped_utility_skills[slot_index],
-            // No utility-skill row in the decoration content — nothing to
-            // show as current (defensive; the picker never opens on it).
-            .decoration_type => null,
+            // No utility-skill row in the decoration or item content —
+            // nothing to show as current (defensive; the picker never
+            // opens on either).
+            .decoration_type, .item_type => null,
         };
     }
 
@@ -7024,7 +7473,10 @@ pub fn buildEditorSpritePicker(
     // gradient (the in-game decoration tinting). The player target keeps
     // the entity shape (the player has no sprite/layer rows, so the
     // picker only opens on it via a stale open — picks commit nothing).
+    // The item target has no sprite either — nothing to pick (defensive;
+    // the picker never opens on it).
     const target = editorInspectorTarget(editor);
+    if (target == .item_type) return;
     const entity_context: ?InspectorEntityContext = switch (target) {
         .entity_type => |index| .{
             .template = editor.entity_types[index].template,
@@ -7036,13 +7488,13 @@ pub fn buildEditorSpritePicker(
             .edit_target = .player_def,
             .gradient_colors = active_theme.player_gradient.colors,
         },
-        .decoration_type => null,
+        .decoration_type, .item_type => null,
     };
     const decoration_context: ?InspectorDecorationContext = switch (target) {
         .decoration_type => |index| .{
             .type_definition = editor.decoration_types[index],
         },
-        .entity_type, .player => null,
+        .entity_type, .player, .item_type => null,
     };
     const base_sprite: []const u8 = if (decoration_context) |context|
         context.type_definition.sprite

@@ -1175,6 +1175,18 @@ pub const GameStateHistory = struct {
         }
     }
 
+    fn validateInspectorItemEdit(self: *GameStateHistory, type_id: u32) void {
+        if (self.current_state.screen != .editor) {
+            @panic("replay validation: item inspector commit outside editor screen");
+        }
+        const editor = self.current_state.editor orelse {
+            @panic("replay validation: item inspector commit with no editor");
+        };
+        if (type_id >= editor.item_types.len) {
+            @panic("replay validation: item inspector commit type id out of range");
+        }
+    }
+
     /// Structural legality shared by the entity LAYER commits: the entity
     /// scalar checks + the player target rejected (the player loadout has
     /// no layers) + the layer index in range for remove/set (null = add).
@@ -1404,6 +1416,10 @@ pub const GameStateHistory = struct {
                     self.validateInspectorDecorationEdit(set.type_id),
                 .player_set_editor_decoration_footprint => |set|
                     self.validateInspectorDecorationEdit(set.type_id),
+                .player_set_editor_item_def => |set|
+                    self.validateInspectorItemEdit(set.type_id),
+                .player_set_editor_item_name => |set|
+                    self.validateInspectorItemEdit(set.type_id),
                 .player_add_editor_entity_layer => |set|
                     self.validateInspectorEntityLayerEdit(set.target, null),
                 .player_remove_editor_entity_layer => |set|

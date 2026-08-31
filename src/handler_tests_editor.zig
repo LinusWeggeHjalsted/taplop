@@ -3165,6 +3165,221 @@ test "inspector slot clicks: weapon create/retype/delete, gear add/delete" {
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
+test "inspector item-type clicks: reset-on-change, same-pick no-op, id tracks" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const item_types = [_]types.ItemTypeDef{.{
+        .id = "Iron Sword",
+        .item = .{ .weapon = .{
+            .name = "Iron Sword",
+            .weapon_type = .sword,
+            .weapon_damage = 5,
+        } },
+    }};
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .item_types = &item_types,
+        .active_tool = .{ .item_type = 0 },
+    }));
+    runToIdle(&history);
+
+    // A DIFFERENT weapon type RESETS everything (author decision — no
+    // retype-keeps-identity case, unlike the entity weapon slots):
+    // "New Axe", damage 0; the palette label tracks the display name.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_item_type,
+        .clicked_editor_item_kind = .weapon,
+        .clicked_editor_weapon_type = .axe,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    {
+        const definition = history.current_state.editor.?.item_types[0];
+        const weapon = definition.item.weapon;
+        try testing.expectEqualStrings("New Axe", weapon.name);
+        try testing.expectEqual(types.WeaponType.axe, weapon.weapon_type);
+        try testing.expectEqual(@as(u32, 0), weapon.weapon_damage);
+        try testing.expectEqualStrings("New Axe", definition.id);
+    }
+
+    // One undo restores the sword whole (name + type + damage + label).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const definition = history.current_state.editor.?.item_types[0];
+        try testing.expectEqualStrings("Iron Sword", definition.item.weapon.name);
+        try testing.expectEqual(types.WeaponType.sword, definition.item.weapon.weapon_type);
+        try testing.expectEqual(@as(u32, 5), definition.item.weapon.weapon_damage);
+        try testing.expectEqualStrings("Iron Sword", definition.id);
+    }
+
+    // The SAME pick never fires (no dead undo step).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_item_type,
+        .clicked_editor_item_kind = .weapon,
+        .clicked_editor_weapon_type = .sword,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // A KIND switch resets too — "New Amulet", zero stats.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_item_type,
+        .clicked_editor_item_kind = .amulet,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    {
+        const definition = history.current_state.editor.?.item_types[0];
+        try testing.expectEqualStrings("New Amulet", definition.item.amulet.name);
+        try testing.expectEqual(@as(u32, 0), definition.item.amulet.spell_damage);
+        try testing.expectEqualStrings("New Amulet", definition.id);
+    }
+
+    // A weapon-kind pick without its weapon-type payload (crafted input)
+    // commits nothing.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_item_type,
+        .clicked_editor_item_kind = .weapon,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
+test "item-type commits: name + stat fields end-to-end, no-op gates, bounds" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const item_types = [_]types.ItemTypeDef{.{
+        .id = "Leather Coat",
+        .item = .{ .coat = .{ .name = "Leather Coat", .health_bonus = 3, .defense_bonus = 2 } },
+    }};
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .item_types = &item_types,
+        .active_tool = .{ .item_type = 0 },
+    }));
+    runToIdle(&history);
+
+    const no_keys: [0]?[]const u8 = .{};
+
+    // NAME: commit through the real focus/type/Enter path; the label
+    // tracks; one undo restores name + label.
+    {
+        const field: types.TextFieldRef = .{ .id = .item_def_name, .target = .{ .item_type = 0 } };
+        ui.beginTextEdit(&history.session.ui_state, field, "Leather Coat");
+        _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, " of Wrath", &no_keys, &no_keys, false);
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        const definition = history.current_state.editor.?.item_types[0];
+        try testing.expectEqualStrings("Leather Coat of Wrath", definition.item.coat.name);
+        try testing.expectEqualStrings("Leather Coat of Wrath", definition.id);
+        // The other fields ride along untouched.
+        try testing.expectEqual(@as(u32, 3), definition.item.coat.health_bonus);
+        try testing.expectEqual(@as(u32, 2), definition.item.coat.defense_bonus);
+        try testing.expect(history.undo(event_handlers.processEvent));
+        try testing.expectEqualStrings(
+            "Leather Coat",
+            history.current_state.editor.?.item_types[0].item.coat.name,
+        );
+    }
+
+    // A name commit whose buffer equals the current value records nothing.
+    {
+        const field: types.TextFieldRef = .{ .id = .item_def_name, .target = .{ .item_type = 0 } };
+        ui.beginTextEdit(&history.session.ui_state, field, "Leather Coat");
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+        try testing.expect(history.session.ui_state.text_edit == null);
+    }
+
+    // A STAT: bounded — an out-of-range buffer clamps to the parser's own
+    // max (single-sourced `itemStatMax`).
+    {
+        const field: types.TextFieldRef = .{
+            .id = .{ .item_def_stat = .defense_bonus },
+            .target = .{ .item_type = 0 },
+        };
+        ui.beginTextEdit(&history.session.ui_state, field, "2");
+        _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "99", &no_keys, &no_keys, false);
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(
+            types.max_defense_bonus,
+            history.current_state.editor.?.item_types[0].item.coat.defense_bonus,
+        );
+        // Leading-zero numeric semantics: "03" == 3 records nothing.
+        ui.beginTextEdit(&history.session.ui_state, field, "5");
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    }
+
+    // A stat the kind doesn't carry commits nothing (a coat has no
+    // spell_damage); a stale palette index commits nothing (crafted
+    // focus).
+    {
+        const wrong_stat: types.TextFieldRef = .{
+            .id = .{ .item_def_stat = .spell_damage },
+            .target = .{ .item_type = 0 },
+        };
+        ui.beginTextEdit(&history.session.ui_state, wrong_stat, "");
+        _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "7", &no_keys, &no_keys, false);
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+        const stale_field: types.TextFieldRef = .{ .id = .item_def_name, .target = .{ .item_type = 9 } };
+        ui.beginTextEdit(&history.session.ui_state, stale_field, "Ghost");
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    }
+}
+
+test "editor_set_item_def: out-of-range type id is a no-op (handler guard)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const item_types = [_]types.ItemTypeDef{.{ .id = "Iron Sword" }};
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .item_types = &item_types,
+    }));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_item_def = .{
+            .type_id = 9,
+            .item_kind = .amulet,
+            .name = "Ghost Amulet",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqualStrings("Iron Sword", history.current_state.editor.?.item_types[0].id);
+
+    // The crafted-log clamp: stats beyond the max_* bounds are clamped by
+    // the handler (the editor never holds a state its own load path
+    // would clamp away).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_item_def = .{
+            .type_id = 0,
+            .item_kind = .weapon,
+            .weapon_type = .axe,
+            .name = "Ghost Axe",
+            .weapon_damage = 99,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const definition = history.current_state.editor.?.item_types[0];
+        try testing.expectEqualStrings("Ghost Axe", definition.item.weapon.name);
+        try testing.expectEqual(@as(u32, types.max_weapon_damage), definition.item.weapon.weapon_damage);
+        try testing.expectEqualStrings("Ghost Axe", definition.id);
+    }
+}
+
 test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
@@ -4000,7 +4215,7 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
     // DEFAULT: every section collapsed — the panel shows only headers.
     input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
-        [_]bool{false} ** 11,
+        [_]bool{false} ** @typeInfo(types.EditorInspectorSectionId).@"enum".fields.len,
         history.session.ui_state.editor_inspector_section_expanded,
     );
 

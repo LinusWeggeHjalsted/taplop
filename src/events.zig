@@ -23,6 +23,8 @@ const Boots = types.Boots;
 const EntityLayer = types.EntityLayer;
 const DecorationLayer = types.DecorationLayer;
 const EntityEditTarget = types.EntityEditTarget;
+const ItemKind = types.ItemKind;
+const WeaponType = types.WeaponType;
 const MissionCompleteInfo = types.MissionCompleteInfo;
 
 /// How `end_level` continues after syncing the player entity back into
@@ -487,13 +489,35 @@ pub const EditorEvent = union(enum) {
     },
 
     // ── Item type editing ──
-    // The Item union's variety (weapon/amulet/.../skill_tome, each with
-    // different fields) makes per-field granularity impractical — the
-    // inspector edits the whole item and pushes one event per commit. The
-    // log still reads cleanly (the serializer flattens the union).
+    // The whole definition commits in ONE event per edit (a type pick, a
+    // stat change — one undo step each). The item's fields are FLATTENED
+    // to top level (the `editor_set_decoration_def` precedent): a nested
+    // `Item` payload's name string can't round-trip the session log once
+    // it contains a space (nested strings serialize as one space-separated
+    // token — see session_log.zig parseScalarTokens), and the default
+    // names ("New Sword") carry spaces by design. `item_kind` picks the
+    // variant; only its fields are meaningful (the handler ignores the
+    // rest). Skill tomes are NOT expressible (not authorable as ground
+    // items — the level-file Items section has no tome kind); `name`
+    // commits ride `editor_set_item_name` instead (a top-level string,
+    // spaces fine). Stats are clamped to the `max_*` bounds by the live
+    // path AND the handler (the editor never holds a state its own load
+    // path would clamp away).
     editor_set_item_def: struct {
         type_id: u32,
-        value: Item,
+        item_kind: ItemKind,
+        // Only the picked kind's fields are meaningful (writer emits all,
+        // reader requires all — the session-log field-presence contract;
+        // the defaults just keep construction sites clean).
+        weapon_type: WeaponType = .sword,
+        name: []const u8 = &.{},
+        weapon_damage: u32 = 0,
+        spell_damage: u32 = 0,
+        health_bonus: u32 = 0,
+        defense_bonus: u32 = 0,
+        damage_bonus: u32 = 0,
+        pickup_radius_bonus: u32 = 0,
+        speed_bonus: u32 = 0,
     },
     editor_set_item_name: struct {
         type_id: u32,
@@ -883,6 +907,27 @@ pub const PlayerInputEvent = union(enum) {
     player_set_editor_decoration_color_index: struct {
         type_id: u32,
         value: u32,
+    },
+    // Inspector item-type commits (the Items palette group's content —
+    // see the editor_set_item_def block for the flattened shape + why).
+    // The def commit covers type picks (reset-to-default semantics) and
+    // stat edits; the name commit is its own event (a top-level string).
+    player_set_editor_item_def: struct {
+        type_id: u32,
+        item_kind: ItemKind,
+        weapon_type: WeaponType = .sword,
+        name: []const u8 = &.{},
+        weapon_damage: u32 = 0,
+        spell_damage: u32 = 0,
+        health_bonus: u32 = 0,
+        defense_bonus: u32 = 0,
+        damage_bonus: u32 = 0,
+        pickup_radius_bonus: u32 = 0,
+        speed_bonus: u32 = 0,
+    },
+    player_set_editor_item_name: struct {
+        type_id: u32,
+        value: []const u8,
     },
     // The footprint editor's confirm (the centered tile-grid picker —
     // see DESIGN → Level Editor → Editor UI layout, the footprint
