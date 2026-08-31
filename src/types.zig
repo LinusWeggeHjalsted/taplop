@@ -1252,11 +1252,11 @@ pub const DecorationTypeDef = struct {
 };
 
 /// A palette entry for a loose ground item (loot not tied to an enemy).
-/// The `item` carries the full Item union (weapon/amulet/.../skill_tome)
-/// since the union's variety makes per-field granularity impractical — the
-/// inspector edits the whole item and pushes one `editor_set_item_def`
-/// event per commit. See DESIGN → Architecture → Level Editor → Editor UI
-/// layout (Ground Items palette group).
+/// The `item` carries the full Item union (the authorable kinds — never
+/// a skill tome in practice); the inspector commits it via the FLATTENED
+/// `editor_set_item_def` event (whole item, one undo step) +
+/// `editor_set_item_name` for renames. See DESIGN → Architecture →
+/// Level Editor → Editor UI layout (Inspector fields, item types).
 pub const ItemTypeDef = struct {
     id: []const u8 = &.{}, // user-facing name, e.g. "Iron Sword"
     item: Item = .{ .weapon = .{} },
@@ -1343,10 +1343,10 @@ pub const EditorLevel = struct {
     level_end: ?Vector2 = null,
     entity_placements: []const EntityPlacement = &.{},
     decoration_placements: []const DecorationPlacement = &.{},
-    /// Loose floor items placed via the Ground Items palette (loot not tied
+    /// Loose floor items placed via the Items palette (loot not tied
     /// to an enemy). Mirrors Level.ground_items but reference-based: each
     /// placement points into Editor.item_types. See DESIGN → Architecture →
-    /// Level Editor → Editor UI layout (Ground Items palette group).
+    /// Level Editor → Editor UI layout (Ground items — the Items palette).
     item_placements: []const ItemPlacement = &.{},
 };
 
@@ -1497,8 +1497,8 @@ pub const Editor = struct {
     entity_types: []const EntityTypeDef = &.{},
     decoration_types: []const DecorationTypeDef = &.{},
     /// Palette of loose ground-item types (loot not tied to an enemy). See
-    /// DESIGN → Architecture → Level Editor → Editor UI layout (Ground Items
-    /// palette group).
+    /// DESIGN → Architecture → Level Editor → Editor UI layout (Ground
+    /// items — the Items palette).
     item_types: []const ItemTypeDef = &.{},
     // The editor-global player start loadout. Persistent as player.txt in the
     // mission directory (so a recorded validation replay is reproducible and
