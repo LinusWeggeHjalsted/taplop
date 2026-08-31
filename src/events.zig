@@ -11,7 +11,6 @@ const types = @import("types.zig");
 const Vector2 = types.Vector2;
 const SkillId = types.SkillId;
 const GearSlot = types.GearSlot;
-const Item = types.Item;
 const Materials = types.Materials;
 const EffectId = types.EffectId;
 const EntityLayer = types.EntityLayer;
