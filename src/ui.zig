@@ -5787,7 +5787,9 @@ pub fn buildEditorSpritePicker(
             .screen_position = .{ .x = tab_x, .y = origin.y },
             .width = tab_width,
             .height = middle_panel_header_height,
-            .color = if (active) active_theme.lightest else active_theme.darkest,
+            // Darkest always (the background-panel class) — the active
+            // tab's highlight outline is the indication, no tint change.
+            .color = active_theme.darkest,
         } });
         try elements.append(allocator, .{ .button = .{
             .screen_position = .{ .x = tab_x, .y = origin.y },
