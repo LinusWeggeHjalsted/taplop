@@ -440,17 +440,26 @@ Architecture is SETTLED — see DESIGN → Architecture → Level Editor for the
 `Editor` type, the event family, the Option-2 framing + minimal exit guard,
 the replay/cache story, AND the full UI layout + active-tool model +
 `Selectable`-union selection model (tabs + viewport + bottom-bar palette +
-left inspector; no dialogs; Test/Validate top-right; Upload deferred). Not
-yet implemented. Remaining work:
+left inspector; no dialogs; Test/Validate top-right; Upload deferred).
+Most of it is implemented (see the slices below + DESIGN's Implemented
+paragraph). Remaining work:
 
 - Types + framing event handlers DONE (`open_editor` / `close_editor` /
   `start_playtest` / `end_playtest` / `start_validation` / `end_validation` +
   `editor_set_active_level`; exit guard in `end_level` / `end_mission`;
   round-trip test). See DESIGN → Architecture → Level Editor.
-- Edit-verb event structs DEFINED, handlers PENDING: every edit verb exists
-  in events.zig but `handleEditorEvent` is a `@panic` stub (only
-  `editor_set_active_level` is handled, inline in `processEvent`). Wiring
-  the handlers is part of the UI slice.
+- Edit-verb events: every verb's struct exists in events.zig and almost
+  all are handled — the remaining unhandled six still `@panic` in
+  `handleEditorEvent` (fail-fast): the level-management trio
+  (`editor_add_level` / `editor_delete_level` — the add-level "+" and
+  the tab × buttons are the UI; the add-level handler needs the
+  `data/default_level.txt` template) + `editor_delete_type` (no
+  delete-type UI yet), and the three `editor_move_*_placement` events.
+  OPEN: those move events look superseded by the selection move's
+  chained `editor_commit_selection_move` (delete + re-place via the
+  placement planners — no per-placement move verb is ever pushed);
+  decide keep-or-remove when the drag-painting / move slices revisit
+  them.
 - Editor input/UI: the settled layout/interaction design (DESIGN →
   Architecture → Level Editor → Editor UI layout — four zones: tabs,
   left inspector, viewport, right metadata sidebar + bottom tool palette;

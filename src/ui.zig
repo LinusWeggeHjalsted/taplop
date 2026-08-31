@@ -8281,8 +8281,11 @@ pub fn textEditPressProceeds(
 /// template's color_index), decorations = base sprite (world gradient at
 /// the type's color_index), ground items = the item icon (ground items
 /// always render as the shared ground bag in-world, so the palette shows
-/// the ITEM's icon for authoring distinction). Interaction (active-tool
-/// selection, group collapse, click handling) is a later slice. Horizontal
+/// the ITEM's icon for authoring distinction). Interaction is wired: tool
+/// cells make themselves the active tool (`player_set_editor_tool`),
+/// headers toggle collapse, and the "+" cells append a new type from the
+/// shipped defaults (`player_add_editor_*_type`) — the enemy/decoration
+/// ones also open the base-sprite picker. Horizontal
 /// scrolling: a group shows at most `editor_palette_max_tools` type cells;
 /// `scroll_offsets[group]` (clamped in place here to `[0, size - max]`) is
 /// the first visible cell, and the wheel scrolls the window while the

@@ -1737,13 +1737,13 @@ buttons carry `Action`s that dispatch via `handleAnytimeInput` (before any
    open on undo. Prefer the GameState-derived approach when the trigger is
    already in undoable state.
 
-### Level Editor (building blocks implemented; UI pending)
+### Level Editor (core + UI landed; save-to-disk, drag-painting, level management pending)
 
 A custom-mission editor. A mission is multiple sequential levels, so the
 editor is focused on a mission with per-level tabs (quick swap to edit each
 level) + a mission-shared palette of enemies/decorations. Lives on
-`GameState.editor: ?Editor` (already a field, currently always null) — null
-outside the editor so normal gameplay snapshots pay nothing; when populated,
+`GameState.editor: ?Editor` — null outside the editor (populated by
+`open_editor`) so normal gameplay snapshots pay nothing; when populated,
 snapshots carry it (bounded ring, acceptable for now).
 
 ```zig
@@ -1870,7 +1870,7 @@ player.txt + all level_N.txt via `readReconstructionFile` (cache-deterministic).
 `GameState` — captured by `deepCopy`, deterministic by construction, no cache
 concern.
 
-**Editor UI layout (settled design; implementation pending).** Three-zone
+**Editor UI layout (settled design; landed in slices).** Three-zone
 layout + a left inspector + a right metadata sidebar:
 
 ```
@@ -2588,7 +2588,8 @@ struct exists in events.zig (`editor_add_level` / `editor_delete_level` /
 `editor_set_level_custom_theme`, see Level theme below) /
 `editor_set_mission_name` (LANDED) /
 `editor_set_player_start` / `editor_set_level_end` / `editor_add_entity_type`
-/ `editor_add_decoration_type` / `editor_add_item_type` /
+/ `editor_add_decoration_type` / `editor_add_item_type` (LANDED — built
+from the shipped defaults, data/editor_defaults.txt) /
 `editor_delete_type` / `editor_place_entity` / `editor_place_decoration` /
 `editor_place_item` / `editor_delete_*_placement` / `editor_move_*_placement`
 / `editor_set_entity_*` (the scalar field setters + the ONE unified
@@ -2600,19 +2601,29 @@ were superseded and removed) / `editor_set_decoration_color_index`
   editor's confirm; adopts + prunes via the shared helper) /
 `editor_set_item_*` / `editor_add_*_layer` / `editor_remove_*_layer` /
 `editor_set_*_layer` (the six layer arms LANDED)).
-`handleEditorEvent` implements the arms the landed UI
-slices need (`editor_set_tile` both directions, the `editor_delete_*_placement`
-trio, `editor_place_entity` / `editor_place_decoration` /
-`editor_place_item`, `editor_set_entity_placement_type` /
-`editor_set_item_placement_type`, `editor_set_decoration_def` +
-`editor_set_decoration_color_index`, the six LAYER arms —
-`editor_add/remove/set_entity_layer` + `editor_add/remove/set_decoration_layer`,
-`editor_set_decoration_footprint`, and the settings-sidebar metadata arms
-(`editor_set_level_name` / `editor_set_mission_name` /
-`editor_set_level_color_wheel` / `editor_set_level_enemy_gradient` /
-`editor_set_level_player_gradient`)); the rest still `@panic` so an unhooked edit verb
-fails fast rather than silently no-op'ing. Remaining handlers land with
-their UI slices.
+`handleEditorEvent` implements every landed arm:
+`editor_set_tile` both directions, the `editor_delete_*_placement` trio,
+the placement trio + the two retype verbs
+(`editor_set_entity_placement_type` / `editor_set_item_placement_type`),
+the full entity field set (name / sprite / color_index /
+displays_weapons / the four base stats / the unified
+`editor_set_entity_gear` / `editor_set_entity_utility_skill`),
+`editor_set_decoration_def` + `editor_set_decoration_color_index` +
+`editor_set_decoration_footprint`, `editor_set_item_def` /
+`editor_set_item_name`, the six LAYER arms, the selection set
+(`editor_select` / `editor_deselect` / `editor_clear_selection` / the
+chained `editor_commit_selection_move`), `editor_set_tool` /
+`editor_toggle_inspector` / `editor_toggle_metadata_sidebar`, and the
+settings-sidebar metadata arms. `editor_set_active_level`,
+`editor_import_player`, and the `editor_add_*_type` trio are handled
+inline in `processEvent` (they need the reconstruction cache). The
+remaining six still `@panic` so an unhooked edit verb fails fast rather
+than silently no-op'ing: `editor_add_level` / `editor_delete_level`
+(the level-management UI is the TODO add-level "+" item),
+`editor_delete_type` (no delete-type UI yet), and the three
+`editor_move_*_placement` events (superseded by the selection move's
+chained commit — keep-or-remove is an open TODO question). Remaining
+handlers land with their UI slices.
 
 **Pending:** editor UI/input — the layout + active-tool + selection model
 above, implemented as a vertical slice (static shell first: tabs + viewport +
