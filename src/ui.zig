@@ -11146,6 +11146,21 @@ pub fn buildOptionsMenu(
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(save_body))}) },
         };
         button_count += 1;
+
+        // The mission export: a .zip of the saved mission (save happens
+        // first as part of the export). Native: the file lands in
+        // <persistent dir>/exported_missions/; web: it's offered as a
+        // browser download.
+        const export_body = if (persistent_dir_path) |dir|
+            try std.fmt.allocPrint(allocator, "Zips the saved mission to {s}/exported_missions/", .{dir})
+        else
+            "Downloads the saved mission as a .zip";
+        buttons[button_count] = .{
+            .label = "Export Mission",
+            .action = .export_editor_mission,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(export_body))}) },
+        };
+        button_count += 1;
     }
 
     // Settings: opens the settings overlay on top of this one (drill-in).

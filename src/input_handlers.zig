@@ -22,6 +22,7 @@ const session_log = @import("session_log.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
+const zip_writer = @import("zip_writer.zig");
 const event_handlers = @import("event_handlers.zig");
 const functions = @import("functions.zig");
 const view_mod = @import("view.zig");
@@ -1504,6 +1505,138 @@ fn saveEditorMission(history: *GameStateHistory) void {
     };
 }
 
+/// Read one file from the persistent dir and append it to the export
+/// entries under `archive_name`. Errors propagate (the caller surfaces
+/// the popup).
+fn appendExportFile(
+    entries: *std.ArrayList(zip_writer.ZipEntry),
+    file_source: *const file_source_mod.FileSource,
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    archive_name: []const u8,
+) !void {
+    const bytes = try file_source.readFile(allocator, path);
+    try entries.append(allocator, .{ .name = archive_name, .bytes = bytes });
+}
+
+/// Export the edited mission as a .zip (the editor options menu's Export
+/// Mission button — button-only, no keybind): SAVE first (the settled
+/// order — the bundle is always the current state), then bundle the saved
+/// mission files + the mission directory's custom sprites (a fresh
+/// mission's pngs sit in its placeholder dir — they bundle even though the
+/// save itself writes elsewhere) + a validation_replay.txt when one
+/// exists (it lands with the validation slice) into a STORE archive at
+/// `exported_missions/<uuid>_<name>.zip` in the persistent dir. On web
+/// that file is then offered as a browser download (the Export Save seam —
+/// triggerBrowserDownload reads it back from the mounted FS; a comptime
+/// no-op on native). A pure side effect like the save (the dump_event_log
+/// class). See DESIGN → Level Editor (the export flow).
+fn exportEditorMission(history: *GameStateHistory) void {
+    saveEditorMission(history);
+    // The save failed (or no editor): its popup is already surfaced.
+    const saved = history.session.editor_saved_mission orelse return;
+    const editor = if (history.current_state.editor) |*some_editor| some_editor else return;
+    const scratch = history.current_arena.allocator();
+
+    const fail = struct {
+        fn note(history_arg: *GameStateHistory, reason: []const u8) void {
+            history_arg.session.setPendingError(
+                history_arg.history_arena.allocator(),
+                reason,
+            );
+        }
+    };
+
+    var entries: std.ArrayList(zip_writer.ZipEntry) = .empty;
+
+    // The generated mission files, read back from the save's directory.
+    appendExportFile(
+        &entries,
+        history.file_source,
+        scratch,
+        std.fmt.allocPrint(scratch, "{s}/mission.txt", .{saved.dir_path}) catch
+            @panic("failed to allocate export path"),
+        "mission.txt",
+    ) catch {
+        fail.note(history, "failed to export: could not read the saved mission.txt");
+        return;
+    };
+    appendExportFile(
+        &entries,
+        history.file_source,
+        scratch,
+        std.fmt.allocPrint(scratch, "{s}/player.txt", .{saved.dir_path}) catch
+            @panic("failed to allocate export path"),
+        "player.txt",
+    ) catch {
+        fail.note(history, "failed to export: could not read the saved player.txt");
+        return;
+    };
+    for (0..editor.levels.len) |level_index| {
+        const level_path = std.fmt.allocPrint(
+            scratch,
+            "{s}/level_{d}.txt",
+            .{ saved.dir_path, level_index + 1 },
+        ) catch @panic("failed to allocate export path");
+        const archive_name = std.fmt.allocPrint(
+            scratch,
+            "level_{d}.txt",
+            .{level_index + 1},
+        ) catch @panic("failed to allocate export archive name");
+        appendExportFile(&entries, history.file_source, scratch, level_path, archive_name) catch {
+            fail.note(history, "failed to export: could not read a saved level file");
+            return;
+        };
+    }
+
+    // Custom sprites from the editor's CURRENT mission dir.
+    const sprite_names = history.file_source.listPersistentPngFiles(
+        scratch,
+        editor.mission.path,
+    ) catch &[_][]const u8{};
+    for (sprite_names) |sprite_name| {
+        const sprite_path = std.fmt.allocPrint(
+            scratch,
+            "{s}/{s}",
+            .{ editor.mission.path, sprite_name },
+        ) catch @panic("failed to allocate sprite export path");
+        appendExportFile(&entries, history.file_source, scratch, sprite_path, sprite_name) catch {
+            fail.note(history, "failed to export: could not read a mission sprite");
+            return;
+        };
+    }
+
+    // A validation replay, when one exists in the saved dir (written by
+    // the validation flow once it lands). Absent or unreadable → not
+    // bundled.
+    if (appendExportFile(
+        &entries,
+        history.file_source,
+        scratch,
+        std.fmt.allocPrint(scratch, "{s}/validation_replay.txt", .{saved.dir_path}) catch
+            @panic("failed to allocate export path"),
+        "validation_replay.txt",
+    )) |_| {} else |_| {}
+
+    const archive = zip_writer.writeZipArchive(entries.items, scratch) catch {
+        fail.note(history, "failed to export: could not build the zip archive");
+        return;
+    };
+    const sanitized_name = sanitizeMissionNameForPath(editor.mission.name, scratch);
+    const zip_path = std.fmt.allocPrint(
+        scratch,
+        "exported_missions/{s}_{s}.zip",
+        .{ saved.uuid, sanitized_name },
+    ) catch @panic("failed to allocate export zip path");
+    history.file_source.writeFile(zip_path, archive) catch {
+        fail.note(history, "failed to export: could not write the zip file");
+        return;
+    };
+    // Web: offer it as a download (reads it back from the mounted FS);
+    // native: a comptime no-op.
+    file_source_mod.triggerBrowserDownload(scratch, zip_path);
+}
+
 /// The gear-slot player action (create / retype / field-edit / clear —
 /// one event, one undo step), carrying the FLATTENED item (a nested
 /// `?Weapon`-style value can't round-trip the session log once its name
@@ -1954,6 +2087,13 @@ pub fn handleAnytimeInput(
         // delete_editor_selection discipline).
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
             saveEditorMission(history);
+        }
+    }
+
+    if (anytime.export_editor_mission) {
+        // The mission export — same side-effect class + gates as the save.
+        if (history.current_state.screen == .editor and history.current_state.editor != null) {
+            exportEditorMission(history);
         }
     }
 

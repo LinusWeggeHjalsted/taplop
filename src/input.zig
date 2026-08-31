@@ -288,6 +288,10 @@ pub const AnytimeInput = struct {
     /// Editor-only: consumed in handleAnytimeInput's editor gate; a no-op
     /// on every other screen (the delete_editor_selection discipline).
     save_editor_mission: bool = false,
+    /// Export the edited mission as a .zip (the editor options-menu
+    /// button). Same consumption + no-op discipline as
+    /// `save_editor_mission`.
+    export_editor_mission: bool = false,
     /// Dismiss a recoverable error popup (see SessionState.pending_error).
     /// Modal: when a pending error is shown, handleAnytimeInput lets only
     /// this through and swallows everything else.
@@ -473,6 +477,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_options_menu => player_input.anytime.toggle_options_menu = true,
         .dump_event_log => player_input.anytime.dump_event_log = true,
         .save_editor_mission => player_input.anytime.save_editor_mission = true,
+        .export_editor_mission => player_input.anytime.export_editor_mission = true,
         .dismiss_error => player_input.anytime.dismiss_error = true,
         .error_scroll_up => player_input.anytime.error_scroll_up = true,
         .error_scroll_down => player_input.anytime.error_scroll_down = true,

@@ -3532,6 +3532,54 @@ test "editor save: writes the mission files, memoizes the uuid, re-save reuses i
     try testing.expectEqualStrings(first_dir_path, second_save.dir_path);
 }
 
+test "editor export: saves first, bundles configs + custom sprites into the zip" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+
+    // A fresh-mission editor + a custom sprite dropped into the placeholder
+    // mission dir (pre-save — the export must bundle it from there).
+    try harness.file_source.writeFile("missions/New Mission/boss.png", "pretend png bytes");
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 1, .y = 0 },
+    }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .mission = .{ .name = "New Mission", .path = "missions/New Mission", .level_count = 1 },
+        .player_def = .{ .id = "Player", .template = .{ .name = "New Player", .sprite = "player", .team = 0 } },
+    }));
+    runToIdle(&history);
+
+    // The options-button path (an anytime side effect; the save runs first).
+    input_handlers.handleAnytimeInput(&history, .{
+        .export_editor_mission = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+
+    // The save happened (memo set) + the zip landed at
+    // exported_missions/<uuid>_<name>.zip.
+    const saved = history.session.editor_saved_mission.?;
+    const zip_path = try std.fmt.allocPrint(
+        arena,
+        "exported_missions/{s}_New Mission.zip",
+        .{saved.uuid},
+    );
+    const zip_bytes = try harness.file_source.readFile(arena, zip_path);
+
+    // STORE entries keep names + contents verbatim in the archive — the
+    // configs, the custom sprite, and the mission text are all present.
+    try testing.expect(std.mem.indexOf(u8, zip_bytes, "mission.txt") != null);
+    try testing.expect(std.mem.indexOf(u8, zip_bytes, "player.txt") != null);
+    try testing.expect(std.mem.indexOf(u8, zip_bytes, "level_1.txt") != null);
+    try testing.expect(std.mem.indexOf(u8, zip_bytes, "boss.png") != null);
+    try testing.expect(std.mem.indexOf(u8, zip_bytes, "pretend png bytes") != null);
+    try testing.expect(std.mem.indexOf(u8, zip_bytes, "name New Mission") != null);
+}
+
 test "decoration sprite picker: open routing, official prefab adopt, same-def no-op, entity-picker gate" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
