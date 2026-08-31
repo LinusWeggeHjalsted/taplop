@@ -1909,7 +1909,13 @@ layout + a left inspector + a right metadata sidebar:
   group shifts its window left/right (one cell per notch; state on
   `UiState.editor_palette_scroll`, clamped in the builder). Each slot
   renders the type's graphic on the shared `ui/button_background`
-  (aspect-preserved, centered). Each group has an "add new" button (`+`)
+  (aspect-preserved, centered), with a small close-button
+  (`ui/close_button`, the shared close class) flush in the cell's
+  top-right corner: clicking it deletes the type AND every placement
+  referencing it across ALL levels (`player_delete_editor_type` →
+  `editor_delete_type`; one undo step restores everything — the active
+  tool resets to select when it pointed at the deleted type, and higher
+  same-kind tool/placement indices decrement with the palette shift). Each group has an "add new" button (`+`)
   at its tail that appends a new type built from the SHIPPED DEFAULTS
   (`data/editor_defaults.txt` — one entry per kind in the level-file
   section formats; the decoration default duplicates the stone_1 prefab)
@@ -2590,7 +2596,8 @@ struct exists in events.zig (`editor_add_level` / `editor_delete_level` /
 `editor_set_player_start` / `editor_set_level_end` / `editor_add_entity_type`
 / `editor_add_decoration_type` / `editor_add_item_type` (LANDED — built
 from the shipped defaults, data/editor_defaults.txt) /
-`editor_delete_type` / `editor_place_entity` / `editor_place_decoration` /
+`editor_delete_type` (LANDED — the palette tool cells' delete buttons;
+see the tool-palette bullet) / `editor_place_entity` / `editor_place_decoration` /
 `editor_place_item` / `editor_delete_*_placement` / `editor_move_*_placement`
 / `editor_set_entity_*` (the scalar field setters + the ONE unified
 `editor_set_entity_gear` equipped-slot commit — flattened item fields,
@@ -2612,15 +2619,15 @@ displays_weapons / the four base stats / the unified
 `editor_set_decoration_footprint`, `editor_set_item_def` /
 `editor_set_item_name`, the six LAYER arms, the selection set
 (`editor_select` / `editor_deselect` / `editor_clear_selection` / the
-chained `editor_commit_selection_move`), `editor_set_tool` /
+chained `editor_commit_selection_move`), `editor_delete_type` (the
+palette-type orchestrator), `editor_set_tool` /
 `editor_toggle_inspector` / `editor_toggle_metadata_sidebar`, and the
 settings-sidebar metadata arms. `editor_set_active_level`,
 `editor_import_player`, and the `editor_add_*_type` trio are handled
 inline in `processEvent` (they need the reconstruction cache). The
 remaining six still `@panic` so an unhooked edit verb fails fast rather
 than silently no-op'ing: `editor_add_level` / `editor_delete_level`
-(the level-management UI is the TODO add-level "+" item),
-`editor_delete_type` (no delete-type UI yet), and the three
+(the level-management UI is the TODO add-level "+" item), and the three
 `editor_move_*_placement` events (superseded by the selection move's
 chained commit — keep-or-remove is an open TODO question). Remaining
 handlers land with their UI slices.

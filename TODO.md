@@ -449,13 +449,14 @@ paragraph). Remaining work:
   `editor_set_active_level`; exit guard in `end_level` / `end_mission`;
   round-trip test). See DESIGN → Architecture → Level Editor.
 - Edit-verb events: every verb's struct exists in events.zig and almost
-  all are handled — the remaining unhandled six still `@panic` in
-  `handleEditorEvent` (fail-fast): the level-management trio
+  all are handled — the remaining unhandled five still `@panic` in
+  `handleEditorEvent` (fail-fast): the level-management pair
   (`editor_add_level` / `editor_delete_level` — the add-level "+" and
   the tab × buttons are the UI; the add-level handler needs the
-  `data/default_level.txt` template) + `editor_delete_type` (no
-  delete-type UI yet), and the three `editor_move_*_placement` events.
-  OPEN: those move events look superseded by the selection move's
+  `data/default_level.txt` template) and the three
+  `editor_move_*_placement` events.
+  (`editor_delete_type` is DONE — the palette tool cells' delete
+  buttons; see DONE.md.) OPEN: those move events look superseded by the selection move's
   chained `editor_commit_selection_move` (delete + re-place via the
   placement planners — no per-placement move verb is ever pushed);
   decide keep-or-remove when the drag-painting / move slices revisit

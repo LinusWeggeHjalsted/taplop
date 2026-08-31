@@ -8717,3 +8717,44 @@ opens the base-sprite picker on the new type. Three slices:
   and the anytime-input arm end-to-end (creation + per-group picker
   routing + the stale-picker close + the crafted out-of-range group
   no-op).
+
+## Level editor — palette tool-cell delete buttons
+
+Every palette tool cell (the Enemies / Decorations / Items groups — not
+the fixed Select/Tile tools) carries a small delete button flush in its
+top-right corner: the shared close-button visual (`ui/close_button`,
+80×80 — the picker-panel / in-game middle-panel close class). Clicking it
+deletes the palette type AND every placement referencing it across ALL
+levels (the palette is mission-shared). Two slices:
+
+- **Events + handler**: the wrapper `player_delete_editor_type
+  { type_kind, type_id }` → the previously-defined-but-panicking
+  `editor_delete_type`, now handled in `handleEditorEvent` as the
+  editor set's one orchestrator: it fans out into
+  `editor_delete_*_placement` sub-events for every referencing
+  placement (pushed ascending, so the LIFO stack processes them
+  high-before-low within each level — every planned index is valid at
+  its turn; the arms own the order-preserving removal + the
+  active-level selection prune/remap), then removes the type
+  (`layerListRemoveAt` on the palette array), decrements every
+  same-kind placement type_id above it (palette indices shift down),
+  and reconciles the active tool (the deleted type → `.select`; a
+  higher same-kind index → decremented — a dangling tool pointer is
+  never created). All the events share the player action's idle point:
+  ONE undo step restores the type, every placement, the tool, and the
+  selection. `validatePlayerAction` arm: editor screen + editor + type
+  id in range (the handler ignores out-of-range ids defensively — the
+  `editor_set_tool` posture).
+- **UI + input**: `emitEditorToolDeleteButton` after each palette
+  `emitEditorToolCell` — emitted AFTER the cell so hit-testing
+  (last-wins) prefers it where the two overlap; carries the new
+  `Action.delete_editor_palette_type` with the cell's tool on the
+  EXISTING `editor_tool` payload (no main.zig change, the
+  `editor_group` trick again). The input arm maps the EditorToolId →
+  (kind, id) and pushes + drains; a crafted select/tile-targeted click
+  does nothing (the fixed tools have no delete button).
+- **Tests**: handler tests per kind (multi-level placement removal, id
+  remap, active-tool reset + decrement, selection prune, one-step undo,
+  out-of-range guard), the input arm end-to-end (delete + undo + the
+  fixed-tool no-op), and the bottom-bar emission test (per-cell delete
+  button with the close visual, flush top-right, tool payload).
