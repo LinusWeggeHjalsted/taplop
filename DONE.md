@@ -8330,3 +8330,47 @@ Level theme called for): the per-role gradient overrides land and the dead
   (override keys, absent keys, loadLevel → buildEditorMission →
   instantiateEditorLevel round trip), handler (all five commits via the
   wrappers, null revert, five undos walk back to the start).
+
+## Level editor settings sidebar — slice 2: shell + name fields
+
+The right-bar shell + the mission/level name fields (see DESIGN → Level
+Editor → Editor UI layout → Settings sidebar).
+
+- **Toggle:** `Editor.settings_sidebar_open` (open by default, the
+  inspector's convention — on the Editor so the toggle rides the undo
+  timeline + replay reproduces it) + `editor_toggle_settings_sidebar` /
+  `player_toggle_editor_settings_sidebar` + handler + validatePlayerAction
+  arm + `.toggle_editor_settings_sidebar` Action routed through
+  `options_action`. Button: top-right, at the inspector toggle's height,
+  flush to the right screen edge, the inspector toggle's visual class.
+- **Panel:** `editorSettingsSidebarPanelRect()` — the inspector rect
+  mirrored to the right edge (width 1024 placeholder, same top/bottom
+  bounds); darkest-tinted background. Single source for layout + the M2
+  press arbitration, like the inspector's.
+- **TextFieldRef widening:** `TextEditTarget` union
+  (`entity: EntityEditTarget` / `mission` / `level: u32`) replaces the
+  bare `EntityEditTarget` on `TextFieldRef.target`; new ids
+  `.mission_name` / `.level_name`. The level index rides the target so a
+  mid-edit tab switch can't retarget the commit (the commit addresses the
+  tab the field was focused on). Fallout: the commit/focus sites
+  (input_handlers), `Entity.textFieldValue` (exhaustive-switch arms
+  returning ""), `textFieldIsNumeric` (the new ids are non-numeric), the
+  ref constructions + tests. `emitInspectorTextField` refactored: the
+  element construction extracted into a shared `emitTextFieldUi` (ref +
+  current value params) so the sidebar's name fields reuse it.
+- **Content:** Mission section (plain strip + name field) + Level section
+  (plain strip + name field, the ACTIVE tab's). Strips are the
+  group-header visual class but NOT collapsible (two fixed sections); the
+  field entries use the inspector's two-unit geometry (label line above,
+  paper-strip control below).
+- **Commits:** `commitFocusedTextEdit` arms — would-change gates (same
+  value records nothing), out-of-range level index commits nothing (a
+  stale focus), `queueSound` on real commits.
+- **M2 arbitration:** `textEditPressProceeds` takes the sidebar's open
+  state + rect too (a press inside the open sidebar, or on its toggle,
+  proceeds after committing — the sibling-control rule).
+- Tests: handler (toggle + undo), input (mission + level commits
+  end-to-end through routeTextInput/resolveTextEditOutcome, one undo per
+  commit, no-op gate, stale-index no-op), ui (toggle always + flush
+  right, panel only when open + the shared rect fn, both fields with the
+  right refs + seeded names, active-tab targeting).

@@ -333,6 +333,15 @@ pub fn view(
                 editor.inspector_open,
                 &session.ui_state,
             ) catch @panic("failed to build editor inspector panel");
+            ui.buildEditorSettingsSidebar(
+                &ui_elements,
+                frame_allocator,
+                font_metrics,
+                editor,
+                active_theme,
+                editor.settings_sidebar_open,
+                &session.ui_state,
+            ) catch @panic("failed to build editor settings sidebar");
             ui.buildEditorBottomBar(
                 &ui_elements,
                 frame_allocator,

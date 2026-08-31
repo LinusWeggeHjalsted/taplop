@@ -2533,7 +2533,7 @@ test "text field commit: entity name end-to-end, no-op gate, cancel" {
     const no_keys: [0]?[]const u8 = .{};
     const enter_pressed: [1]?[]const u8 = .{"Enter"};
     const escape_pressed: [1]?[]const u8 = .{"Escape"};
-    const field: types.TextFieldRef = .{ .id = .entity_name, .target = .{ .entity_type = 0 } };
+    const field: types.TextFieldRef = .{ .id = .entity_name, .target = .{ .entity = .{ .entity_type = 0 } } };
 
     // Focus (slice 3's field click does this via beginTextEdit), type
     // through the real routing path, resolve the Enter outcome.
@@ -2939,7 +2939,7 @@ test "inspector stat commits: numeric parse, unbounded clamp, empty no-op, leadi
 
     const no_keys: [0]?[]const u8 = .{};
     const backspace_pressed: [1]?[]const u8 = .{"Backspace"};
-    const field: types.TextFieldRef = .{ .id = .{ .entity_stat = .max_health }, .target = .{ .entity_type = 0 } };
+    const field: types.TextFieldRef = .{ .id = .{ .entity_stat = .max_health }, .target = .{ .entity = .{ .entity_type = 0 } } };
 
     // Edit 20 → 25 (backspace the 0, type 5): parsed + committed.
     ui.beginTextEdit(&history.session.ui_state, field, "20");
@@ -3008,7 +3008,7 @@ test "inspector item commits: weapon name + damage (bounded), empty-slot and wro
     // Weapon NAME: the whole-item event carries the edit (type + damage
     // ride along untouched); one undo restores.
     {
-        const field: types.TextFieldRef = .{ .id = .{ .item_name = .main_hand }, .target = target };
+        const field: types.TextFieldRef = .{ .id = .{ .item_name = .main_hand }, .target = .{ .entity = target } };
         ui.beginTextEdit(&history.session.ui_state, field, "Skeleton Sword");
         _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, " of Doom", &no_keys, &no_keys, false);
         input_handlers.resolveTextEditOutcome(&history, .commit);
@@ -3028,7 +3028,7 @@ test "inspector item commits: weapon name + damage (bounded), empty-slot and wro
     {
         const field: types.TextFieldRef = .{
             .id = .{ .item_stat = .{ .slot = .main_hand, .stat = .weapon_damage } },
-            .target = target,
+            .target = .{ .entity = target },
         };
         ui.beginTextEdit(&history.session.ui_state, field, "5");
         _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "99", &no_keys, &no_keys, false);
@@ -3044,7 +3044,7 @@ test "inspector item commits: weapon name + damage (bounded), empty-slot and wro
     {
         const field: types.TextFieldRef = .{
             .id = .{ .item_stat = .{ .slot = .coat, .stat = .weapon_damage } },
-            .target = target,
+            .target = .{ .entity = target },
         };
         ui.beginTextEdit(&history.session.ui_state, field, "");
         _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "7", &no_keys, &no_keys, false);
@@ -3055,7 +3055,7 @@ test "inspector item commits: weapon name + damage (bounded), empty-slot and wro
 
     // An EMPTY slot commits nothing (no amulet to rename).
     {
-        const field: types.TextFieldRef = .{ .id = .{ .item_name = .amulet }, .target = target };
+        const field: types.TextFieldRef = .{ .id = .{ .item_name = .amulet }, .target = .{ .entity = target } };
         ui.beginTextEdit(&history.session.ui_state, field, "");
         _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "Amulet", &no_keys, &no_keys, false);
         input_handlers.resolveTextEditOutcome(&history, .commit);
@@ -4502,4 +4502,113 @@ test "settings sidebar metadata commits: names, color wheel, gradient overrides"
     try testing.expectEqualStrings("Old Name", history.current_state.editor.?.mission.name);
     try testing.expectEqualStrings("First", history.current_state.editor.?.levels[0].name);
     try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.levels[0].color_wheel_index);
+}
+
+test "player_toggle_editor_settings_sidebar: flips the open state, undo restores" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+    // Open by default, like the inspector.
+    try testing.expect(history.current_state.editor.?.settings_sidebar_open);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_toggle_editor_settings_sidebar }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    try testing.expect(!history.current_state.editor.?.settings_sidebar_open);
+
+    // The toggle rides the undo timeline (the flag lives on the Editor).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.editor.?.settings_sidebar_open);
+}
+
+test "settings sidebar name fields: mission + level commits, no-op gates" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{
+        .{ .name = "Level One" },
+        .{ .name = "Level Two" },
+    };
+    const editor = types.Editor{
+        .levels = &levels,
+        .mission = .{ .name = "Old Mission" },
+        .active_level_index = 1,
+    };
+    var history = harness.newHistory(editorStateWith(editor));
+    runToIdle(&history);
+
+    const no_keys: [0]?[]const u8 = .{};
+    const enter_pressed: [1]?[]const u8 = .{"Enter"};
+
+    // Mission name: type through the real routing path, resolve Enter.
+    const mission_field: types.TextFieldRef = .{ .id = .mission_name, .target = .mission };
+    ui.beginTextEdit(&history.session.ui_state, mission_field, "Old Mission");
+    const outcome = ui.routeTextInput(
+        &history.session.ui_state.text_edit.?,
+        " Revised",
+        &enter_pressed,
+        &no_keys,
+        false,
+    );
+    try testing.expectEqual(types.TextEditOutcome.commit, outcome);
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    try testing.expectEqualStrings("Old Mission Revised", history.current_state.editor.?.mission.name);
+    try testing.expect(history.session.ui_state.text_edit == null);
+
+    // Level name: the active tab is 1 — the ref target carries the index.
+    const level_field: types.TextFieldRef = .{ .id = .level_name, .target = .{ .level = 1 } };
+    ui.beginTextEdit(&history.session.ui_state, level_field, "Level Two");
+    _ = ui.routeTextInput(
+        &history.session.ui_state.text_edit.?,
+        "!",
+        &enter_pressed,
+        &no_keys,
+        false,
+    );
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    try testing.expectEqualStrings("Level Two!", history.current_state.editor.?.levels[1].name);
+    // The OTHER level is untouched (the index rode the target).
+    try testing.expectEqualStrings("Level One", history.current_state.editor.?.levels[0].name);
+
+    // One undo per commit: two undos reach the original mission name.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqualStrings("Level Two", history.current_state.editor.?.levels[1].name);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqualStrings("Old Mission", history.current_state.editor.?.mission.name);
+
+    // No-op gate: an unchanged value never records (no dead undo step).
+    ui.beginTextEdit(&history.session.ui_state, mission_field, "Old Mission");
+    _ = ui.routeTextInput(
+        &history.session.ui_state.text_edit.?,
+        "",
+        &enter_pressed,
+        &no_keys,
+        false,
+    );
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    try testing.expectEqualStrings("Old Mission", history.current_state.editor.?.mission.name);
+    try testing.expect(!history.undo(event_handlers.processEvent));
+
+    // A stale level index (the level deleted mid-edit) commits nothing.
+    const stale_field: types.TextFieldRef = .{ .id = .level_name, .target = .{ .level = 9 } };
+    ui.beginTextEdit(&history.session.ui_state, stale_field, "Ghost");
+    _ = ui.routeTextInput(
+        &history.session.ui_state.text_edit.?,
+        " Level",
+        &enter_pressed,
+        &no_keys,
+        false,
+    );
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    try testing.expectEqualStrings("Level One", history.current_state.editor.?.levels[0].name);
+    try testing.expectEqualStrings("Level Two", history.current_state.editor.?.levels[1].name);
 }

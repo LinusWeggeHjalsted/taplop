@@ -1288,6 +1288,16 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_toggle_editor_inspector with no editor");
                     }
                 },
+                // Structural legality: same shape — the live path is the
+                // editor's top-right toggle button.
+                .player_toggle_editor_settings_sidebar => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_toggle_editor_settings_sidebar outside editor screen");
+                    }
+                    if (self.current_state.editor == null) {
+                        @panic("replay validation: player_toggle_editor_settings_sidebar with no editor");
+                    }
+                },
                 // Structural legality: same shape as the inspector toggle —
                 // the live path is the player inspector's Import button.
                 .player_import_editor_player => {

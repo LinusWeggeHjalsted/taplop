@@ -159,6 +159,13 @@ pub const Action = enum {
     // `editor_toggle_inspector`, so it rides the undo timeline. See DESIGN
     // → Architecture → Level Editor → Editor UI layout (inspector).
     toggle_editor_inspector,
+    // The editor's settings-sidebar toggle button (top-right, at the
+    // inspector toggle's height, flush to the right screen edge): flip the
+    // settings sidebar open/closed. Same convention as the inspector
+    // toggle — the flag lives on the Editor via
+    // `player_toggle_editor_settings_sidebar` →
+    // `editor_toggle_settings_sidebar` (undo timeline + replay).
+    toggle_editor_settings_sidebar,
     // An inspector section header (expand/collapse that section). The
     // section id rides in `AnytimeInput.clicked_editor_section` — a
     // direct UiState write (view affordance, off the undo timeline, like
@@ -845,6 +852,10 @@ pub const Entity = struct {
                 )
             else
                 "",
+            // Settings-sidebar ids never resolve against an entity (their
+            // targets are `.mission` / `.level`); the arms exist so the
+            // switch stays exhaustive.
+            .mission_name, .level_name => "",
         };
     }
 
@@ -1149,12 +1160,26 @@ pub const TextFieldId = union(enum) {
     /// One numeric stat of the equipped item in `slot` (a stat the item
     /// kind doesn't carry commits nothing).
     item_stat: struct { slot: GearSlot, stat: ItemStatField },
+    /// The edited mission's name (settings sidebar). Target: `.mission`.
+    mission_name: void,
+    /// The edited level's name (settings sidebar, the tab it was focused
+    /// on). Target: `.level` carries the level index.
+    level_name: void,
+};
+
+/// What a focused text field edits: an entity template (inspector), the
+/// mission's name, or a level's name (settings sidebar — the level index
+/// rides the target so a mid-edit tab switch can't retarget the commit).
+pub const TextEditTarget = union(enum) {
+    entity: EntityEditTarget,
+    mission: void,
+    level: u32,
 };
 
 /// Identity of one focused text field.
 pub const TextFieldRef = struct {
     id: TextFieldId,
-    target: EntityEditTarget,
+    target: TextEditTarget,
 };
 
 /// A focused text field's per-frame keyboard outcome (Enter commits,
@@ -1349,6 +1374,11 @@ pub const Editor = struct {
     /// `editor_add_*_type` handlers, and replay reproduces it. Mutated only
     /// via `editor_toggle_inspector`.
     inspector_open: bool = true,
+    /// The settings sidebar's open state (the top-right toggle button;
+    /// open by default). Same convention as the inspector flag: on the
+    /// Editor, mutated only via `editor_toggle_settings_sidebar`, so the
+    /// toggle rides the undo timeline and replay reproduces it.
+    settings_sidebar_open: bool = true,
     mode: EditorMode = .edit,
 };
 

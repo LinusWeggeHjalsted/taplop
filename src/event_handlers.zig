@@ -469,6 +469,9 @@ fn handleEditorEvent(
         .editor_toggle_inspector => {
             editor.inspector_open = !editor.inspector_open;
         },
+        .editor_toggle_settings_sidebar => {
+            editor.settings_sidebar_open = !editor.settings_sidebar_open;
+        },
         // Inspector field edit (entity name). The target's palette index
         // is guarded defensively (a crafted log could name a deleted
         // type; the live path resolves the target from the still-focused
@@ -1932,6 +1935,11 @@ fn handlePlayerInputEvent(
         // panel's open state rides the undo timeline with the edits).
         .player_toggle_editor_inspector => {
             pushEvents(current, &.{.{ .editor_event = .editor_toggle_inspector }}, allocator);
+        },
+        // Settings-sidebar toggle-button click: same shape (the flag
+        // lives on the Editor — the toggle is undoable).
+        .player_toggle_editor_settings_sidebar => {
+            pushEvents(current, &.{.{ .editor_event = .editor_toggle_settings_sidebar }}, allocator);
         },
         // Player inspector Import-button click: push the machinery event
         // (the loadout fields ride GameState — the import is undoable).

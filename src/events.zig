@@ -168,6 +168,10 @@ pub const EditorEvent = union(enum) {
     // the flag lives on the Editor). Undo flips it back with the edit
     // history, same posture as `editor_set_tool`.
     editor_toggle_inspector: void,
+    // Flip the settings sidebar's open state (the top-right toggle — same
+    // convention as `editor_toggle_inspector`: the flag lives on the
+    // Editor, the toggle rides the undo timeline).
+    editor_toggle_settings_sidebar: void,
     // Import a loadout into the editor player (the player inspector's
     // Import button): the session's player data, or the new-game default
     // save when the session has none. Handled INLINE in processEvent —
@@ -614,6 +618,10 @@ pub const PlayerInputEvent = union(enum) {
     // timeline. See DESIGN → Architecture → Level Editor → Editor UI
     // layout (inspector).
     player_toggle_editor_inspector: void,
+    // Settings-sidebar toggle-button click (editor top-right, at the
+    // inspector toggle's height, flush to the right screen edge): flip the
+    // settings sidebar. The handler pushes `editor_toggle_settings_sidebar`.
+    player_toggle_editor_settings_sidebar: void,
     // Player inspector Import-button click: copy the session's player data
     // (or, with none, the new-game default save) into the editor player
     // loadout. The handler pushes `editor_import_player` — the loadout

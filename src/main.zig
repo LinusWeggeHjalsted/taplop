@@ -119,12 +119,17 @@ fn update(
                     editor.inspector_open
                 else
                     false;
+                const sidebar_open = if (history.current_state.editor) |editor|
+                    editor.settings_sidebar_open
+                else
+                    false;
                 const pressed_button = if (ui.buttonAt(ui_elements, pointer_position)) |button|
                     button.action
                 else
                     null;
                 consumed_by_text_edit = !ui.textEditPressProceeds(
                     inspector_open,
+                    sidebar_open,
                     pointer_position,
                     pressed_button,
                 );
@@ -2221,7 +2226,7 @@ test "text field focus-on-click: press + release over a field focuses it; click 
         player_input.pointer.position = name_click;
         update(&history, player_input, view_state, 0, camera, 1.0, viewport);
         try std.testing.expectEqual(
-            types.TextFieldRef{ .id = .entity_name, .target = .{ .entity_type = 0 } },
+            types.TextFieldRef{ .id = .entity_name, .target = .{ .entity = .{ .entity_type = 0 } } },
             history.session.pressed_text_field.?,
         );
         try std.testing.expect(history.session.pressed_button == null);
@@ -2261,7 +2266,7 @@ test "text field focus-on-click: press + release over a field focuses it; click 
         try std.testing.expectEqual(@as(usize, 1), history.session.ui_state.text_edit.?.buffer.caret);
         // Still the same focused field (a caret move, not a refocus).
         try std.testing.expectEqual(
-            types.TextFieldRef{ .id = .entity_name, .target = .{ .entity_type = 0 } },
+            types.TextFieldRef{ .id = .entity_name, .target = .{ .entity = .{ .entity_type = 0 } } },
             history.session.ui_state.text_edit.?.field,
         );
     }

@@ -1384,21 +1384,23 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
         .entity_name => {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
-            const template = event_handlers.editorEntityTemplate(editor, field.target) orelse return;
+            const entity_target = field.target.entity;
+            const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
             const current_value = template.name;
             // Would-change gate: an unchanged value never records (no
             // dead undo step).
             if (std.mem.eql(u8, current_value, value)) return;
             history.session.queueSound(history.backing_allocator, .button_click_up);
             pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_name = .{
-                .target = field.target,
+                .target = entity_target,
                 .value = value,
             } });
         },
         .entity_stat => |stat| {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
-            const template = event_handlers.editorEntityTemplate(editor, field.target) orelse return;
+            const entity_target = field.target.entity;
+            const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
             // Base stats are UNBOUNDED by design — see DESIGN → Level
             // Editor → Inspector fields.
             const parsed = parseUnboundedStatValue(value) orelse return;
@@ -1412,19 +1414,19 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             history.session.queueSound(history.backing_allocator, .button_click_up);
             const action: events.PlayerInputEvent = switch (stat) {
                 .max_health => .{ .player_set_editor_entity_max_health = .{
-                    .target = field.target,
+                    .target = entity_target,
                     .value = parsed,
                 } },
                 .defense => .{ .player_set_editor_entity_defense = .{
-                    .target = field.target,
+                    .target = entity_target,
                     .value = parsed,
                 } },
                 .speed => .{ .player_set_editor_entity_speed = .{
-                    .target = field.target,
+                    .target = entity_target,
                     .value = parsed,
                 } },
                 .aggro_range => .{ .player_set_editor_entity_aggro_range = .{
-                    .target = field.target,
+                    .target = entity_target,
                     .value = parsed,
                 } },
             };
@@ -1433,13 +1435,14 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
         .item_name => |slot| {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
-            const template = event_handlers.editorEntityTemplate(editor, field.target) orelse return;
+            const entity_target = field.target.entity;
+            const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
             // An empty slot commits nothing (nothing to rename).
             const item = template.gearSlotItem(slot) orelse return;
             if (std.mem.eql(u8, types.itemName(item), value)) return;
             history.session.queueSound(history.backing_allocator, .button_click_up);
             const action = editorSlotItemAction(
-                field.target,
+                entity_target,
                 slot,
                 types.itemWithName(item, value),
             ) orelse return;
@@ -1448,7 +1451,8 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
         .item_stat => |item_field| {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
-            const template = event_handlers.editorEntityTemplate(editor, field.target) orelse return;
+            const entity_target = field.target.entity;
+            const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
             // An empty slot, or a stat the item kind doesn't carry, commits
             // nothing.
             const item = template.gearSlotItem(item_field.slot) orelse return;
@@ -1459,11 +1463,36 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             if (parsed == current) return;
             history.session.queueSound(history.backing_allocator, .button_click_up);
             const action = editorSlotItemAction(
-                field.target,
+                entity_target,
                 item_field.slot,
                 types.itemWithStat(item, item_field.stat, parsed),
             ) orelse return;
             pushPlayerActionAndDrain(history, action);
+        },
+        // Settings-sidebar name fields (mission + level). Same would-
+        // change gate as the entity name; the level commit addresses the
+        // tab the field was focused on (the index rides the ref target, so
+        // a mid-edit tab switch can't retarget it).
+        .mission_name => {
+            if (history.current_state.editor == null) return;
+            const editor: *types.Editor = &history.current_state.editor.?;
+            if (std.mem.eql(u8, editor.mission.name, value)) return;
+            history.session.queueSound(history.backing_allocator, .button_click_up);
+            pushPlayerActionAndDrain(history, .{ .player_set_editor_mission_name = .{
+                .name = value,
+            } });
+        },
+        .level_name => {
+            if (history.current_state.editor == null) return;
+            const level_index = field.target.level;
+            if (level_index >= history.current_state.editor.?.levels.len) return;
+            const current_name = history.current_state.editor.?.levels[level_index].name;
+            if (std.mem.eql(u8, current_name, value)) return;
+            history.session.queueSound(history.backing_allocator, .button_click_up);
+            pushPlayerActionAndDrain(history, .{ .player_set_editor_level_name = .{
+                .level_index = level_index,
+                .name = value,
+            } });
         },
     }
 
@@ -1490,11 +1519,23 @@ pub fn beginFocusedTextEdit(
     var current_value: []const u8 = "";
     if (history.current_state.editor != null) {
         const editor: *types.Editor = &history.current_state.editor.?;
-        if (event_handlers.editorEntityTemplate(editor, field.target)) |template| {
-            current_value = template.textFieldValue(
-                history.current_arena.allocator(),
-                field.id,
-            ) catch @panic("failed to format entity field value");
+        switch (field.target) {
+            .entity => |entity_target| {
+                if (event_handlers.editorEntityTemplate(editor, entity_target)) |template| {
+                    current_value = template.textFieldValue(
+                        history.current_arena.allocator(),
+                        field.id,
+                    ) catch @panic("failed to format entity field value");
+                }
+            },
+            .mission => {
+                current_value = editor.mission.name;
+            },
+            .level => |level_index| {
+                if (level_index < editor.levels.len) {
+                    current_value = editor.levels[level_index].name;
+                }
+            },
         }
     }
     ui.beginTextEdit(&history.session.ui_state, field, current_value);
@@ -2183,6 +2224,13 @@ pub fn handleAnytimeInput(
             .toggle_editor_inspector => {
                 if (current.editor == null) return;
                 pushPlayerActionAndDrain(history, .player_toggle_editor_inspector);
+            },
+            // Settings-sidebar toggle button (editor top-right, at the
+            // inspector toggle's height): same shape — push the orchestrator
+            // and drain.
+            .toggle_editor_settings_sidebar => {
+                if (current.editor == null) return;
+                pushPlayerActionAndDrain(history, .player_toggle_editor_settings_sidebar);
             },
             // Player inspector Import button: copy the session's player
             // data (or the new-game default, with none) into the editor
