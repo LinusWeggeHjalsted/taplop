@@ -1132,6 +1132,23 @@ pub const GameStateHistory = struct {
         }
     }
 
+    /// Structural legality shared by the decoration inspector commits:
+    /// editor screen + editor present + decoration type id in range. The
+    /// def commit's payload values are unrestricted at this seam (an empty
+    /// footprint is defensively ignored by the handler, the
+    /// editor_set_tool posture — the live path can't produce one).
+    fn validateInspectorDecorationEdit(self: *GameStateHistory, type_id: u32) void {
+        if (self.current_state.screen != .editor) {
+            @panic("replay validation: decoration inspector commit outside editor screen");
+        }
+        const editor = self.current_state.editor orelse {
+            @panic("replay validation: decoration inspector commit with no editor");
+        };
+        if (type_id >= editor.decoration_types.len) {
+            @panic("replay validation: decoration inspector commit type id out of range");
+        }
+    }
+
     fn validatePlayerAction(self: *GameStateHistory, event: Event) void {
         switch (event) {
             .player_input_event => |pi| switch (pi) {
@@ -1272,6 +1289,10 @@ pub const GameStateHistory = struct {
                         }
                     }
                 },
+                .player_set_editor_decoration_def => |set|
+                    self.validateInspectorDecorationEdit(set.type_id),
+                .player_set_editor_decoration_color_index => |set|
+                    self.validateInspectorDecorationEdit(set.type_id),
                 // Structural legality: the paint checks + the select tool
                 // active (the live path only toggles from the select tool's
                 // viewport arm; the handler no-ops otherwise as the

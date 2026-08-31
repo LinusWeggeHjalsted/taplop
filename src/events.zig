@@ -435,14 +435,26 @@ pub const EditorEvent = union(enum) {
         layer: EntityLayer,
     },
 
-    // ── Decoration type editing (per-field) ──
-    editor_set_decoration_name: struct {
+    // ── Decoration type editing ──
+    // The whole definition commits in ONE event (the editor_set_item_def
+    // precedent): the inspector's sprite pick adopts a full prefab (sprite,
+    // footprint, pixel dims, color index, layers) or a custom stem with a
+    // derived default footprint, and a footprint change can invalidate the
+    // type's placements — one event = one undo step covering the retype +
+    // the placement prune. The fields are FLATTENED to top level (the
+    // session-log reader doesn't regroup nested non-u8 slices — see
+    // session_log.zig parseScalarTokens). The palette label (`id`) always
+    // tracks the sprite (a decoration's name IS its sprite path). Per-field
+    // events remain for the verbs that don't retype: color_index (the
+    // swatch) and footprint (the future footprint editor; shares the prune
+    // helper).
+    editor_set_decoration_def: struct {
         type_id: u32,
-        value: []const u8,
-    },
-    editor_set_decoration_sprite: struct {
-        type_id: u32,
-        value: []const u8,
+        sprite: []const u8,
+        footprint: []const Vector2,
+        pixel_dims: Vector2,
+        color_index: u32,
+        layers: []const DecorationLayer,
     },
     editor_set_decoration_color_index: struct {
         type_id: u32,
@@ -818,6 +830,22 @@ pub const PlayerInputEvent = union(enum) {
         target: EntityEditTarget,
         slot_index: u32,
         value: ?SkillId,
+    },
+    // Inspector decoration commits (the decoration tool's fields — see the
+    // editor_set_decoration_* block for the whole-def shape). The def
+    // commit carries the resolved definition (prefab adopt or custom stem
+    // with derived footprint); the color commit is the swatch pick.
+    player_set_editor_decoration_def: struct {
+        type_id: u32,
+        sprite: []const u8,
+        footprint: []const Vector2,
+        pixel_dims: Vector2,
+        color_index: u32,
+        layers: []const DecorationLayer,
+    },
+    player_set_editor_decoration_color_index: struct {
+        type_id: u32,
+        value: u32,
     },
 
     // --- Meta: exit/skip orchestrators ---

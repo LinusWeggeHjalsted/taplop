@@ -467,6 +467,35 @@ fn handleEditorEvent(
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.equipped_utility_skills[set.slot_index] = set.value;
         },
+        // Decoration whole-def commit (a picker pick): adopt the full
+        // definition — sprite, footprint, pixel dims, color index, layers —
+        // with the palette label tracking the sprite (a decoration's name
+        // IS its sprite path), then prune the type's placements the new
+        // footprint invalidates (same event, so one undo step covers the
+        // retype + the prune). Defensive against crafted logs: a type id
+        // outside the palette is ignored (the live path resolves the
+        // target from the inspector; the delete arms keep it valid), and
+        // an empty footprint is ignored — every pick path derives a
+        // nonempty one (authored prefab or the custom-stem bottom-left
+        // default).
+        .editor_set_decoration_def => |set| {
+            if (set.type_id >= editor.decoration_types.len) return;
+            if (set.footprint.len == 0) return;
+            const definition = &@constCast(editor.decoration_types)[set.type_id];
+            definition.id = set.sprite;
+            definition.sprite = set.sprite;
+            definition.footprint = set.footprint;
+            definition.pixel_dims = set.pixel_dims;
+            definition.color_index = set.color_index;
+            definition.layers = set.layers;
+            pruneDecorationPlacementsForType(editor, set.type_id, allocator);
+        },
+        // Decoration color swatch commit (color never affects placement
+        // validity — no prune).
+        .editor_set_decoration_color_index => |set| {
+            if (set.type_id >= editor.decoration_types.len) return;
+            @constCast(editor.decoration_types)[set.type_id].color_index = set.value;
+        },
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
             // placement entries must address the active level's lists (a
@@ -1006,6 +1035,105 @@ fn reconcileSelectionAfterPlacementDelete(
         length += 1;
     }
     return rebuilt[0..length];
+}
+
+/// Delete the type's placements that its (already-updated) footprint
+/// invalidates: a placement goes when its translated footprint covers a
+/// level tile or ANOTHER decoration placement's footprint — the placement
+/// invariant `editor_place_decoration` enforces. Entity/item placements
+/// always sit ON level tiles, so the tile check subsumes them. The things
+/// under the new footprint are never touched — the decoration itself is
+/// deleted. Runs across EVERY level (the palette is mission-shared); the
+/// selection is reconciled for the active level's removals only
+/// (selection entries reference the active level — level-tab switches
+/// clear the selection inside their own events). Shared by
+/// editor_set_decoration_def (a picker pick retypes the footprint) and
+/// the future editor_set_decoration_footprint handler.
+fn pruneDecorationPlacementsForType(
+    editor: *types.Editor,
+    type_id: u32,
+    allocator: std.mem.Allocator,
+) void {
+    for (editor.levels, 0..) |*level, level_index| {
+        var removed_indices: std.ArrayList(u32) = .empty;
+        defer removed_indices.deinit(allocator);
+        var kept: usize = 0;
+        for (level.decoration_placements, 0..) |placement, placement_index| {
+            if (placement.type_id != type_id) {
+                kept += 1;
+                continue;
+            }
+            const footprint_tiles = loaders.decorationFootprintWorldTiles(
+                editor.decoration_types[type_id].footprint,
+                placement.position,
+                allocator,
+            );
+            var invalid = false;
+            for (footprint_tiles) |tile| {
+                if (functions.tileListContains(level.level_tiles, tile)) {
+                    invalid = true;
+                    break;
+                }
+            }
+            if (!invalid) {
+                for (level.decoration_placements, 0..) |other, other_index| {
+                    if (other_index == placement_index) continue;
+                    const other_definition = editor.decoration_types[other.type_id];
+                    for (footprint_tiles) |tile| {
+                        if (loaders.decorationFootprintCovers(
+                            other_definition.footprint,
+                            other.position,
+                            tile,
+                            allocator,
+                        )) {
+                            invalid = true;
+                            break;
+                        }
+                    }
+                    if (invalid) break;
+                }
+            }
+            if (invalid) {
+                removed_indices.append(allocator, @intCast(placement_index)) catch
+                    @panic("failed to allocate decoration prune list");
+            } else {
+                kept += 1;
+            }
+        }
+        if (removed_indices.items.len == 0) continue;
+
+        const placements = allocator.alloc(types.DecorationPlacement, kept) catch
+            @panic("failed to allocate decoration placements");
+        var write_index: usize = 0;
+        for (level.decoration_placements, 0..) |placement, placement_index| {
+            var was_removed = false;
+            for (removed_indices.items) |removed_index| {
+                if (removed_index == placement_index) {
+                    was_removed = true;
+                    break;
+                }
+            }
+            if (was_removed) continue;
+            placements[write_index] = placement;
+            write_index += 1;
+        }
+        @constCast(level).decoration_placements = placements;
+
+        // Selection reconcile: one pass per removed index, DESCENDING so
+        // earlier removals don't shift the indices still to process.
+        if (level_index == editor.active_level_index) {
+            var removal: usize = removed_indices.items.len;
+            while (removal > 0) {
+                removal -= 1;
+                editor.selection = reconcileSelectionAfterPlacementDelete(
+                    editor.selection,
+                    .decoration_placement,
+                    removed_indices.items[removal],
+                    allocator,
+                );
+            }
+        }
+    }
 }
 
 /// The selection without its tile entry at `position` (a tile entry is
@@ -1737,6 +1865,25 @@ fn handlePlayerInputEvent(
             pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_utility_skill = .{
                 .target = set.target,
                 .slot_index = set.slot_index,
+                .value = set.value,
+            } } }}, allocator);
+        },
+        // Inspector decoration commits: thin forwards (the EditorEvents own
+        // the mutations — the def event's handler also prunes the type's
+        // now-invalid placements).
+        .player_set_editor_decoration_def => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_def = .{
+                .type_id = set.type_id,
+                .sprite = set.sprite,
+                .footprint = set.footprint,
+                .pixel_dims = set.pixel_dims,
+                .color_index = set.color_index,
+                .layers = set.layers,
+            } } }}, allocator);
+        },
+        .player_set_editor_decoration_color_index => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_color_index = .{
+                .type_id = set.type_id,
                 .value = set.value,
             } } }}, allocator);
         },

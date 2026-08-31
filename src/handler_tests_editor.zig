@@ -841,6 +841,226 @@ test "player_place_editor_decoration: overlapping other decorations are deleted"
     try testing.expectEqual(types.Vector2{ .x = 7, .y = 7 }, level.decoration_placements[1].position);
 }
 
+test "player_set_editor_decoration_color_index: sets the type's color, out-of-range type is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_color_index = .{
+            .type_id = 1,
+            .value = 5,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    try testing.expectEqual(@as(u32, 5), history.current_state.editor.?.decoration_types[1].color_index);
+
+    // A crafted out-of-range type id records nothing (the handler's guard).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_color_index = .{
+            .type_id = 99,
+            .value = 3,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 5), history.current_state.editor.?.decoration_types[1].color_index);
+}
+
+/// Push a whole-def commit (a picker pick's resolved payload). The layers
+/// and color mirror the registry's tree_1 prefab; the footprint is a
+/// parameter because the prune tests need shapes whose world tiles differ
+/// from the type's current two-wide footprint. Payload slices are duped
+/// into the current arena before pushing (the real commit site's ordering
+/// rule — the payload must not point into a shorter-lived frame).
+fn pushDecorationDef(
+    history: *state.GameStateHistory,
+    type_id: u32,
+    footprint: []const types.Vector2,
+) void {
+    const layers = [_]types.DecorationLayer{.{
+        .sprite = "tree_1_canopy",
+        .color_index = 2,
+        .pixel_dims = .{ .x = 512, .y = 768 },
+    }};
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_def = .{
+            .type_id = type_id,
+            .sprite = "tree_1",
+            .footprint = history.current_arena.allocator().dupe(types.Vector2, footprint) catch unreachable,
+            .pixel_dims = .{ .x = 512, .y = 768 },
+            .color_index = 4,
+            .layers = history.current_arena.allocator().dupe(types.DecorationLayer, &layers) catch unreachable,
+        } } }},
+        history.current_arena.allocator(),
+    );
+}
+
+test "player_set_editor_decoration_def: adopts the whole definition, id tracks the sprite" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    const tree_footprint = [_]types.Vector2{.{ .x = 1, .y = 2 }};
+    pushDecorationDef(&history, 0, &tree_footprint);
+    runToIdle(&history);
+
+    const adopted = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqualStrings("tree_1", adopted.id);
+    try testing.expectEqualStrings("tree_1", adopted.sprite);
+    try testing.expectEqual(@as(usize, 1), adopted.footprint.len);
+    try testing.expectEqual(types.Vector2{ .x = 1, .y = 2 }, adopted.footprint[0]);
+    try testing.expectEqual(types.Vector2{ .x = 512, .y = 768 }, adopted.pixel_dims);
+    try testing.expectEqual(@as(u32, 4), adopted.color_index);
+    try testing.expectEqual(@as(usize, 1), adopted.layers.len);
+    try testing.expectEqualStrings("tree_1_canopy", adopted.layers[0].sprite);
+
+    // One event = one undo step: undo restores the original definition.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    const reverted = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqualStrings("ruin_1", reverted.sprite);
+    try testing.expectEqualStrings("wide", reverted.id);
+    try testing.expectEqual(@as(u32, 0), reverted.color_index);
+    try testing.expectEqual(@as(usize, 0), reverted.layers.len);
+}
+
+test "player_set_editor_decoration_def: placements covered by a level tile under the new footprint are pruned" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The type starts two-wide (placement P covers P and P+1x). The new
+    // footprint {(0,0),(0,1)} is two-TALL: anchor (0,1), so a placement at
+    // P covers (P.x, P.y-1) and P — the tile at (5,4) sits under the NEW
+    // footprint only, so the (5,5) placement is pruned while the (0,0)
+    // one (new tiles (0,-1),(0,0) — clear ground) survives. The same
+    // invalid placement exists on level 1: the prune runs across every
+    // level.
+    const tiles = [_]types.Vector2{.{ .x = 5, .y = 4 }};
+    const placements = [_]types.DecorationPlacement{
+        .{ .type_id = 0, .position = .{ .x = 5, .y = 5 } },
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+    };
+    const level_one_placements = [_]types.DecorationPlacement{
+        .{ .type_id = 0, .position = .{ .x = 5, .y = 5 } },
+    };
+    const levels = [_]types.EditorLevel{
+        .{ .level_tiles = &tiles, .decoration_placements = &placements },
+        .{ .level_tiles = &tiles, .decoration_placements = &level_one_placements },
+    };
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    pushDecorationDef(&history, 0, &tall_footprint);
+    runToIdle(&history);
+
+    const first_level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), first_level.decoration_placements.len);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 0 }, first_level.decoration_placements[0].position);
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.levels[1].decoration_placements.len);
+    // The things under the new footprint are never touched — the tile
+    // that invalidated the placement stays.
+    try testing.expect(hasTile(first_level, .{ .x = 5, .y = 4 }));
+}
+
+test "player_set_editor_decoration_def: placements overlapping another decoration under the new footprint are pruned" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A single-tile decoration of the OTHER type at (5,4): clear of the
+    // wide type's placement at (5,5) today (it covers (5,5),(6,5)), but
+    // under the new two-tall footprint's (5,4) tile → the type-0
+    // placement is pruned, the type-1 one stays.
+    const placements = [_]types.DecorationPlacement{
+        .{ .type_id = 0, .position = .{ .x = 5, .y = 5 } },
+        .{ .type_id = 1, .position = .{ .x = 5, .y = 4 } },
+    };
+    const levels = [_]types.EditorLevel{.{ .decoration_placements = &placements }};
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    pushDecorationDef(&history, 0, &tall_footprint);
+    runToIdle(&history);
+
+    const level = history.current_state.editor.?.levels[0];
+    try testing.expectEqual(@as(usize, 1), level.decoration_placements.len);
+    try testing.expectEqual(@as(u32, 1), level.decoration_placements[0].type_id);
+    try testing.expectEqual(types.Vector2{ .x = 5, .y = 4 }, level.decoration_placements[0].position);
+}
+
+test "player_set_editor_decoration_def: pruned placements are dropped from the selection, later indices remap" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Three placements on the active level: [0] type-0 at (5,5) (pruned
+    // by the tile at (5,4) under the new tall footprint), [1] type-1
+    // elsewhere, [2] type-0 on clear ground. The selection holds [0] and
+    // [2]; after the prune it holds the survivor at its remapped index 1.
+    const tiles = [_]types.Vector2{.{ .x = 5, .y = 4 }};
+    const placements = [_]types.DecorationPlacement{
+        .{ .type_id = 0, .position = .{ .x = 5, .y = 5 } },
+        .{ .type_id = 1, .position = .{ .x = 9, .y = 9 } },
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+    };
+    const selection = [_]types.Selectable{
+        .{ .decoration_placement = 0 },
+        .{ .decoration_placement = 2 },
+    };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .decoration_placements = &placements,
+    }};
+    var editor = decorationTestEditor(&levels);
+    editor.selection = &selection;
+    var history = harness.newHistory(editorStateWith(editor));
+    runToIdle(&history);
+
+    pushDecorationDef(&history, 0, &tall_footprint);
+    runToIdle(&history);
+
+    const pruned_editor = history.current_state.editor.?;
+    try testing.expectEqual(@as(usize, 2), pruned_editor.levels[0].decoration_placements.len);
+    try testing.expectEqual(@as(usize, 1), pruned_editor.selection.len);
+    try testing.expectEqual(@as(u32, 1), pruned_editor.selection[0].decoration_placement);
+}
+
+test "player_set_editor_decoration_def: empty footprint or out-of-range type records nothing" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    // Crafted-log defense: an empty footprint can't come from a pick
+    // (prefabs are authored nonempty, custom stems get the bottom-left
+    // default) — ignored, nothing changes.
+    pushDecorationDef(&history, 0, &.{});
+    runToIdle(&history);
+    try testing.expectEqualStrings("ruin_1", history.current_state.editor.?.decoration_types[0].sprite);
+
+    const tree_footprint = [_]types.Vector2{.{ .x = 1, .y = 2 }};
+    pushDecorationDef(&history, 99, &tree_footprint);
+    runToIdle(&history);
+    try testing.expectEqualStrings("ruin_1", history.current_state.editor.?.decoration_types[0].sprite);
+}
+
 test "editor_delete_entity_placement: removes the placement, order preserved" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
