@@ -41,6 +41,7 @@ const settings_file_format_version = parser.settings_file_format_version;
 const color_themes_file_format_version = parser.color_themes_file_format_version;
 const player_loadout_file_format_version = parser.player_loadout_file_format_version;
 const decorations_file_format_version = parser.decorations_file_format_version;
+const editor_defaults_file_format_version = parser.editor_defaults_file_format_version;
 /// camera_zoom valid range (hundredths). Mirrors `input_handlers`'s
 /// `min_camera_zoom`/`max_camera_zoom` — duplicated here because loaders
 /// must not import the input layer; the 4-choice values (25/50/75/100) are
@@ -1260,6 +1261,71 @@ pub fn loadDecorationRegistry(
     return list.toOwnedSlice(allocator) catch @panic("failed to own decoration registry slice");
 }
 
+/// The three editor palette "+" defaults (data/editor_defaults.txt): one
+/// entry per kind in the level-file section formats — Enemies (the shared
+/// parseEntityDefinition body, team 1), Decorations (a registry-shaped entry:
+/// sprite + footprint + color_index + layers), Items (an Items entry). No
+/// character_code anywhere — the code is a level-Layout concern (the
+/// data/decorations.txt precedent). The file is shipped content, so a missing
+/// section or entry is a CONTENT error surfaced as a load error (the
+/// add-type handler turns it into the recoverable popup), never a silent
+/// fallback. Key validation reuses the level key map — the sections are the
+/// level formats verbatim.
+pub const EditorDefaults = struct {
+    enemy: types.EntityTypeDef,
+    decoration: types.DecorationTypeDef,
+    item: types.ItemTypeDef,
+};
+
+pub fn loadEditorDefaults(
+    sections: []const Section,
+    file_source: ?*const FileSource,
+    allocator: std.mem.Allocator,
+    file_path: []const u8,
+    warnings: ?*std.ArrayList([]const u8),
+) !EditorDefaults {
+    try validateSections(sections, &parser.editor_defaults_sections);
+    try validateFileFormatVersion(sections, "Metadata", editor_defaults_file_format_version);
+
+    // Enemy: the first Enemies entry. name + sprite are required — the
+    // template's other absent keys are exactly the "none of it" defaults
+    // (no weapons / gear / utility skills / layers).
+    const enemies_section = findSection(sections, "Enemies") orelse return error.MissingDefaultEntry;
+    if (enemies_section.entry_groups.len == 0) return error.MissingDefaultEntry;
+    const enemy_pairs = enemies_section.entry_groups[0].pairs;
+    if (findValue(enemy_pairs, "name") == null or findValue(enemy_pairs, "sprite") == null) {
+        return error.MissingDefaultEntry;
+    }
+    const enemy_template = parseEntityDefinition(enemy_pairs, 1, "", "", allocator, file_path, warnings);
+
+    // Decoration: the first Decorations entry, registry shape (a `sprite`
+    // key is the entry's identity; footprint/color/layers as authored).
+    const decorations_section = findSection(sections, "Decorations") orelse return error.MissingDefaultEntry;
+    if (decorations_section.entry_groups.len == 0) return error.MissingDefaultEntry;
+    const decoration_pairs = decorations_section.entry_groups[0].pairs;
+    if (findValue(decoration_pairs, "sprite") == null) return error.MissingDefaultEntry;
+    const decoration_definition = parseDecorationEntry(decoration_pairs, file_source, allocator);
+
+    // Item: the first Items entry (a valid item_type is required).
+    const items_section = findSection(sections, "Items") orelse return error.MissingDefaultEntry;
+    if (items_section.entry_groups.len == 0) return error.MissingDefaultEntry;
+    const item = parseItemEntry(items_section.entry_groups[0].pairs, file_path, warnings, allocator)
+        orelse return error.MissingDefaultEntry;
+
+    return .{
+        .enemy = .{ .id = enemy_template.name, .template = enemy_template },
+        .decoration = .{
+            .id = decoration_definition.sprite,
+            .sprite = decoration_definition.sprite,
+            .footprint = decoration_definition.footprint,
+            .pixel_dims = decoration_definition.pixel_dims,
+            .color_index = decoration_definition.color_index,
+            .layers = decoration_definition.layers,
+        },
+        .item = .{ .id = itemDisplayName(item, allocator), .item = item },
+    };
+}
+
 /// Parse a `"x y"` pair of integers into a Vector2. Returns null on failure.
 fn parseVector2Pair(value: []const u8) ?types.Vector2 {
     var it = std.mem.tokenizeScalar(u8, value, ' ');
@@ -1457,6 +1523,57 @@ fn freeEnemyDefinitions(definitions: *std.AutoHashMap(u8, types.Entity), allocat
     definitions.deinit();
 }
 
+/// Parse one Items entry's pairs (item_type + item_name + the kind's stat
+/// keys) into an Item. Shared by the level Items parser (keyed by
+/// character_code) and the editor palette defaults (no character_code —
+/// nothing is placed). Returns null when the entry carries no valid
+/// `item_type` (the level parser skips such groups). Skill tomes are not
+/// level-authorable and have no entry shape here.
+fn parseItemEntry(
+    pairs: []const KeyValuePair,
+    file_path: []const u8,
+    warnings: ?*std.ArrayList([]const u8),
+    allocator: std.mem.Allocator,
+) ?types.Item {
+    const item_type = findValue(pairs, "item_type") orelse return null;
+
+    const ItemTypeId = enum { weapon, amulet, coat, gloves, pants, boots };
+    const item_type_id = parseEnum(ItemTypeId, item_type) orelse return null;
+    const item_name = findValue(pairs, "item_name") orelse &.{};
+
+    return switch (item_type_id) {
+        .weapon => .{ .weapon = .{
+            .name = item_name,
+            .weapon_type = parseEnum(types.WeaponType, findValue(pairs, "weapon_type") orelse "sword") orelse .sword,
+            .weapon_damage = boundedU32(findValue(pairs, "damage") orelse "0", types.max_weapon_damage, "damage", file_path, warnings, allocator),
+        } },
+        .amulet => .{ .amulet = .{
+            .name = item_name,
+            .spell_damage = boundedU32(findValue(pairs, "spell_damage") orelse "0", types.max_spell_damage, "spell_damage", file_path, warnings, allocator),
+        } },
+        .coat => .{ .coat = .{
+            .name = item_name,
+            .defense_bonus = boundedU32(findValue(pairs, "defense") orelse "0", types.max_defense_bonus, "defense", file_path, warnings, allocator),
+            .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", types.max_health_bonus, "health", file_path, warnings, allocator),
+        } },
+        .gloves => .{ .gloves = .{
+            .name = item_name,
+            .damage_bonus = boundedU32(findValue(pairs, "damage") orelse "0", types.max_gloves_damage, "damage", file_path, warnings, allocator),
+            .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", types.max_health_bonus, "health", file_path, warnings, allocator),
+        } },
+        .pants => .{ .pants = .{
+            .name = item_name,
+            .pickup_radius_bonus = boundedU32(findValue(pairs, "pickup_radius") orelse "0", types.max_pickup_radius, "pickup_radius", file_path, warnings, allocator),
+            .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", types.max_health_bonus, "health", file_path, warnings, allocator),
+        } },
+        .boots => .{ .boots = .{
+            .name = item_name,
+            .speed_bonus = boundedU32(findValue(pairs, "speed") orelse "0", types.max_boots_speed, "speed", file_path, warnings, allocator),
+            .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", types.max_health_bonus, "health", file_path, warnings, allocator),
+        } },
+    };
+}
+
 pub fn loadLevel(
     sections: []const Section,
     file_source: ?*const FileSource,
@@ -1513,43 +1630,7 @@ pub fn loadLevel(
             const pairs = group.pairs;
             const code_string = findValue(pairs, "character_code") orelse continue;
             if (code_string.len != 1) continue;
-            const item_type = findValue(pairs, "item_type") orelse continue;
-
-            const ItemTypeId = enum { weapon, amulet, coat, gloves, pants, boots };
-            const item_type_id = parseEnum(ItemTypeId, item_type) orelse continue;
-            const item_name = findValue(pairs, "item_name") orelse &.{};
-
-            const item: types.Item = switch (item_type_id) {
-                .weapon => .{ .weapon = .{
-                    .name = item_name,
-                    .weapon_type = parseEnum(types.WeaponType, findValue(pairs, "weapon_type") orelse "sword") orelse .sword,
-                    .weapon_damage = boundedU32(findValue(pairs, "damage") orelse "0", types.max_weapon_damage, "damage", file_path, warnings, allocator),
-                } },
-                .amulet => .{ .amulet = .{
-                    .name = item_name,
-                    .spell_damage = boundedU32(findValue(pairs, "spell_damage") orelse "0", types.max_spell_damage, "spell_damage", file_path, warnings, allocator),
-                } },
-                .coat => .{ .coat = .{
-                    .name = item_name,
-                    .defense_bonus = boundedU32(findValue(pairs, "defense") orelse "0", types.max_defense_bonus, "defense", file_path, warnings, allocator),
-                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", types.max_health_bonus, "health", file_path, warnings, allocator),
-                } },
-                .gloves => .{ .gloves = .{
-                    .name = item_name,
-                    .damage_bonus = boundedU32(findValue(pairs, "damage") orelse "0", types.max_gloves_damage, "damage", file_path, warnings, allocator),
-                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", types.max_health_bonus, "health", file_path, warnings, allocator),
-                } },
-                .pants => .{ .pants = .{
-                    .name = item_name,
-                    .pickup_radius_bonus = boundedU32(findValue(pairs, "pickup_radius") orelse "0", types.max_pickup_radius, "pickup_radius", file_path, warnings, allocator),
-                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", types.max_health_bonus, "health", file_path, warnings, allocator),
-                } },
-                .boots => .{ .boots = .{
-                    .name = item_name,
-                    .speed_bonus = boundedU32(findValue(pairs, "speed") orelse "0", types.max_boots_speed, "speed", file_path, warnings, allocator),
-                    .health_bonus = boundedU32(findValue(pairs, "health") orelse "0", types.max_health_bonus, "health", file_path, warnings, allocator),
-                } },
-            };
+            const item = parseItemEntry(pairs, file_path, warnings, allocator) orelse continue;
 
             try item_definitions.put(code_string[0], item);
         }
@@ -2583,6 +2664,135 @@ test "loadDecorationRegistry parses prefabs (no character_code)" {
     try std.testing.expectEqual(@as(i32, 1), s.footprint[0].y);
     try std.testing.expectEqual(@as(u32, 5), s.color_index);
     try std.testing.expectEqual(@as(usize, 0), s.layers.len);
+}
+
+test "loadEditorDefaults parses the shipped palette defaults" {
+    // The shipped data/editor_defaults.txt via the real FileSource — the
+    // registry test's read-the-shipped-file pattern, so the test guards the
+    // file's content against drift. Arena-wrapped: the parsed defs borrow
+    // the section strings (the loader-borrowing convention).
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var threaded_io = std.Io.Threaded.init(std.testing.allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = @import("file_source.zig").FileSource.init(io, std.Io.Dir.cwd());
+
+    const bytes = try file_source.readFile(allocator, "data/editor_defaults.txt");
+    const sections = try parseConfigFile(bytes, allocator);
+    const defaults = try loadEditorDefaults(sections, &file_source, allocator, "data/editor_defaults.txt", null);
+
+    // Enemy: "New Enemy" on skeleton_1, team 1, color 4, weapons shown,
+    // 20/0/1/3 stats, and nothing else — no weapons, gear, utility skills,
+    // or layers (the absent keys are the point).
+    try std.testing.expectEqualStrings("New Enemy", defaults.enemy.id);
+    try std.testing.expectEqualStrings("New Enemy", defaults.enemy.template.name);
+    try std.testing.expectEqualStrings("skeleton_1", defaults.enemy.template.sprite);
+    try std.testing.expectEqual(@as(u32, 1), defaults.enemy.template.team);
+    try std.testing.expectEqual(@as(u32, 4), defaults.enemy.template.color_index);
+    try std.testing.expect(defaults.enemy.template.displays_weapons);
+    try std.testing.expectEqual(@as(u32, 20), defaults.enemy.template.max_health);
+    try std.testing.expectEqual(@as(u32, 0), defaults.enemy.template.defense);
+    try std.testing.expectEqual(@as(u32, 1), defaults.enemy.template.speed);
+    try std.testing.expectEqual(@as(u32, 3), defaults.enemy.template.aggro_range);
+    try std.testing.expect(defaults.enemy.template.main_hand_weapon == null);
+    try std.testing.expect(defaults.enemy.template.off_hand_weapon == null);
+    try std.testing.expect(defaults.enemy.template.amulet == null);
+    try std.testing.expect(defaults.enemy.template.coat == null);
+    try std.testing.expect(defaults.enemy.template.gloves == null);
+    try std.testing.expect(defaults.enemy.template.pants == null);
+    try std.testing.expect(defaults.enemy.template.boots == null);
+    for (defaults.enemy.template.equipped_utility_skills) |slot| {
+        try std.testing.expect(slot == null);
+    }
+    try std.testing.expectEqual(@as(usize, 0), defaults.enemy.template.layers.len);
+
+    // Decoration: the stone_1 prefab duplicated — single (0,0) footprint,
+    // color 5, 256x256 dims, no layers; the palette id tracks the sprite.
+    try std.testing.expectEqualStrings("stone_1", defaults.decoration.id);
+    try std.testing.expectEqualStrings("stone_1", defaults.decoration.sprite);
+    try std.testing.expectEqual(@as(usize, 1), defaults.decoration.footprint.len);
+    try std.testing.expectEqual(@as(i32, 0), defaults.decoration.footprint[0].x);
+    try std.testing.expectEqual(@as(i32, 0), defaults.decoration.footprint[0].y);
+    try std.testing.expectEqual(@as(u32, 5), defaults.decoration.color_index);
+    try std.testing.expectEqual(@as(i32, 256), defaults.decoration.pixel_dims.x);
+    try std.testing.expectEqual(@as(i32, 256), defaults.decoration.pixel_dims.y);
+    try std.testing.expectEqual(@as(usize, 0), defaults.decoration.layers.len);
+
+    // Item: a New Sword (sword, 0 damage); the palette id is the item name.
+    try std.testing.expectEqualStrings("New Sword", defaults.item.id);
+    try std.testing.expectEqualStrings("New Sword", defaults.item.item.weapon.name);
+    try std.testing.expectEqual(types.WeaponType.sword, defaults.item.item.weapon.weapon_type);
+    try std.testing.expectEqual(@as(u32, 0), defaults.item.item.weapon.weapon_damage);
+}
+
+test "loadEditorDefaults rejects missing entries and format drift" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // Metadata only — every kind's entry is missing.
+    {
+        const sections = try parseConfigFile(
+            "Metadata\nfile_format_version 1\n",
+            allocator,
+        );
+        try std.testing.expectError(
+            error.MissingDefaultEntry,
+            loadEditorDefaults(sections, null, allocator, "test/editor_defaults.txt", null),
+        );
+    }
+    // An Enemies entry without a name — a sprite-only entry is not a
+    // usable enemy default.
+    {
+        const sections = try parseConfigFile(
+            \\Metadata
+            \\file_format_version 1
+            \\
+            \\Enemies
+            \\sprite skeleton_1
+            \\
+            \\Decorations
+            \\sprite stone_1
+            \\
+            \\Items
+            \\item_type weapon
+            \\item_name New Sword
+            \\
+        , allocator);
+        try std.testing.expectError(
+            error.MissingDefaultEntry,
+            loadEditorDefaults(sections, null, allocator, "test/editor_defaults.txt", null),
+        );
+    }
+    // A version mismatch is the standard hard gate.
+    {
+        const sections = try parseConfigFile(
+            "Metadata\nfile_format_version 2\n",
+            allocator,
+        );
+        try std.testing.expectError(
+            error.UnsupportedFileFormatVersion,
+            loadEditorDefaults(sections, null, allocator, "test/editor_defaults.txt", null),
+        );
+    }
+    // An unexpected section (a Layout snuck in) is rejected.
+    {
+        const sections = try parseConfigFile(
+            \\Metadata
+            \\file_format_version 1
+            \\
+            \\Layout
+            \\!
+            \\
+        , allocator);
+        try std.testing.expectError(
+            error.UnexpectedSection,
+            loadEditorDefaults(sections, null, allocator, "test/editor_defaults.txt", null),
+        );
+    }
 }
 
 test "instantiateEditorLevel regroups co-located item placements into one stack" {

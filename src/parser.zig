@@ -31,6 +31,7 @@ pub const settings_file_format_version: u32 = 2;
 pub const color_themes_file_format_version: u32 = 1;
 pub const player_loadout_file_format_version: u32 = 2;
 pub const decorations_file_format_version: u32 = 1;
+pub const editor_defaults_file_format_version: u32 = 1;
 
 
 const Color = types.Color;
@@ -400,6 +401,15 @@ pub const hub_sections = [_][]const u8{ "Metadata", "Layout", "NPCs", "Decoratio
 pub const campaign_sections = [_][]const u8{"Metadata"};
 pub const mission_sections = [_][]const u8{"Metadata"};
 pub const decoration_registry_sections = [_][]const u8{ "Metadata", "Decorations" };
+
+/// Section whitelist for the editor palette defaults (data/editor_defaults.txt):
+/// Metadata + one entry each in the level-file Enemies / Decorations / Items
+/// formats (no Layout — nothing is placed; no character_code — the code is a
+/// level-Layout concern, the decoration-registry precedent). Key validation
+/// reuses `level_key_map` — the sections use the level key sets verbatim.
+/// See loaders.loadEditorDefaults.
+pub const editor_defaults_sections = [_][]const u8{ "Metadata", "Enemies", "Decorations", "Items" };
+
 pub const player_save_sections = [_][]const u8{
     "Metadata",       "Info",           "DiscoveredHubs",  "UnlockedSkills", "MainHandWeapon",
     "OffHandWeapon",  "Amulet",          "Coat",           "Gloves",

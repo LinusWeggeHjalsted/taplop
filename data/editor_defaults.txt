@@ -1,0 +1,30 @@
+Metadata
+file_format_version 1
+
+# The editor palette "+" defaults — one entry per kind, in the level-file
+# section formats (Enemies / Decorations / Items entries, no
+# character_code — the code is a level-Layout concern; see
+# data/decorations.txt for the same precedent). Parsed by
+# loaders.loadEditorDefaults; see DESIGN → Architecture → Level Editor →
+# Editor UI layout (tool palette).
+
+Enemies
+name New Enemy
+sprite skeleton_1
+color_index 4
+displays_weapons true
+max_health 20
+defense 0
+speed 1
+aggro_range 3
+
+Decorations
+sprite stone_1
+footprint 0 0
+color_index 5
+
+Items
+item_type weapon
+item_name New Sword
+weapon_type sword
+damage 0
