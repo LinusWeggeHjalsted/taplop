@@ -4574,6 +4574,9 @@ const EditorInspectorEntry = union(enum) {
     /// The player loadout's name — a READ-ONLY value line (the name comes
     /// with the imported player data, it isn't hand-edited).
     player_name_line: void,
+    /// The player inspector's Import button: copy the session's player
+    /// data (or the new-game default, with none) into the loadout.
+    import_player: void,
     /// The player loadout's inventory — a read-only item count (the
     /// editable inventory UI is its own slice).
     inventory_summary: void,
@@ -4584,7 +4587,7 @@ const EditorInspectorEntry = union(enum) {
 fn editorInspectorEntryUnits(entry: EditorInspectorEntry) i32 {
     return switch (entry) {
         .section, .spacer => 1,
-        .field, .weapon_slot, .gear_slot, .utility_skill_row, .player_name_line, .inventory_summary => 2,
+        .field, .weapon_slot, .gear_slot, .utility_skill_row, .player_name_line, .import_player, .inventory_summary => 2,
     };
 }
 
@@ -4710,6 +4713,7 @@ fn editorInspectorPlayerEntries(
     try entries.appendSlice(allocator, &.{
         .{ .section = "Player" },
         .{ .player_name_line = {} },
+        .{ .import_player = {} },
     });
     try appendInspectorGearSections(allocator, template, &entries);
 
@@ -4962,6 +4966,43 @@ fn buildEditorInspectorContent(
                         .x = cell.x,
                         .y = cell.y + editor_inspector_row_height,
                     },
+                    .font_size = editor_group_header_font_size,
+                    .color = active_theme.lightest,
+                    .blocks_input = false,
+                } });
+            },
+            // The Import button: copy the session's player data (or the
+            // new-game default, with none) into the loadout.
+            .import_player => {
+                try emitInspectorSlotLabel(elements, allocator, cell, "Import", active_theme);
+                const control_rect = inspectorControlRect(cell);
+                const rect: Rectangle = .{
+                    .x = control_rect.x,
+                    .y = control_rect.y,
+                    .width = @divFloor(control_rect.width, 2),
+                    .height = control_rect.height,
+                };
+                const import_button_color = context.gradient_colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+                try elements.append(allocator, .{ .nine_slice_panel = .{
+                    .sprite_id = "ui/panel",
+                    .screen_position = rect.position(),
+                    .width = rect.width,
+                    .height = rect.height,
+                    .color = import_button_color,
+                } });
+                try elements.append(allocator, .{ .button = .{
+                    .screen_position = rect.position(),
+                    .width = rect.width,
+                    .height = rect.height,
+                    .action = .import_editor_player,
+                } });
+                const label = "Player data";
+                const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+                try elements.append(allocator, .{ .text_label = .{
+                    .text = label,
+                    .screen_position = rect
+                        .placeCenter(label_width, editor_group_header_font_size)
+                        .position(),
                     .font_size = editor_group_header_font_size,
                     .color = active_theme.lightest,
                     .blocks_input = false,
@@ -7160,16 +7201,17 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
     const editor: types.Editor = .{};
 
     // Open (the default): toggle 3 + background panel + the player
-    // window — Player strip (2) + Name line (2 labels) + Weapons strip
-    // (2) + Main hand (label + 6 type cells ×2 elements) + Off hand
-    // (same) + scrollbar (2) = 38 elements.
+    // window — Player strip (2) + Name line (2 labels) + Import row
+    // (label + panel + button + label) + Weapons strip (2) + Main hand
+    // (label + 6 type cells ×2 elements) + scrollbar (2) = 29 elements
+    // (the Off hand row no longer fits the first window).
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{};
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 38), elements.items.len);
+        try std.testing.expectEqual(@as(usize, 29), elements.items.len);
         try expectInspectorToggleShape(&elements);
-        try expectInspectorLabels(&elements, &.{ "Player", "Name", "", "Weapons", "Main hand", "Off hand" });
+        try expectInspectorLabels(&elements, &.{ "Player", "Name", "", "Import", "Player data", "Weapons", "Main hand" });
         // The player content tints with the PLAYER gradient (the strip at
         // element 4 uses gradient[5]).
         try std.testing.expectEqual(player_five, elements.items[4].nine_slice_panel.color);
@@ -7306,7 +7348,7 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
     }
 
     // A stale tool id (the type deleted mid-edit) falls back to the PLAYER
-    // content — its scroll CLAMPS (29 units − 10 visible = 19), no reset;
+    // content — its scroll CLAMPS (31 units − 10 visible = 21), no reset;
     // the bottom window lands on the last gear slot + utility + inventory.
     {
         const stale_editor: types.Editor = .{
@@ -7316,7 +7358,7 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 999 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, stale_editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 19), ui_state.editor_inspector_scroll);
+        try std.testing.expectEqual(@as(i32, 21), ui_state.editor_inspector_scroll);
         try expectInspectorLabels(&elements, &.{ "Boots", "Add", "Utility skills", "Skill bar", "Inventory", "Items", "0" });
         // No swatches in the window — only the scrollbar rects are solid.
         try std.testing.expectEqual(@as(usize, 2), countSolidRects(&elements));
@@ -7432,12 +7474,12 @@ test "inspector player content: gear + skills + inventory over player_def, commi
         .selection = &.{.{ .player_start = {} }},
     };
 
-    // Window [5,15): the main hand's slot row + its item fields + the
+    // Window [7,17): the main hand's slot row + its item fields + the
     // off-hand row + the Gear header. The weapon's text fields carry
     // `.player_def` — the player content's commits route there.
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 5 };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 7 };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{ "Main hand", "Delete", "Main hand name", "Main hand damage", "Off hand", "Gear" });
         const name_field = findTextField(&elements, .{ .item_name = .main_hand }).?;

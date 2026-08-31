@@ -1791,7 +1791,9 @@ exit guard).** `open_editor` / `close_editor` / `start_playtest` /
 own enter/exit; the gameplay events stay pristine. `start_playtest` calls
 `instantiateEditorLevel(editor, N)` → a concrete `Level` (entity 0 from
 `player_def` at `player_start`, each enemy from its palette type at its
-placement, runtime fields reset), copies `editor.mission` → `current.mission`
+placement, runtime fields reset — EXCEPT the player's INVENTORY, which is
+loadout data (imported or authored), not a combat-runtime field: entity 0
+keeps `player_def.template.inventory`), copies `editor.mission` → `current.mission`
 (so gameplay handlers read unmodified), preserves the editor mode (only flips
 to `.playtest` when entering from `.edit`, so validate's next-level
 continuation via `start_playtest` stays `.validate`), transitions to `.level`,
@@ -2244,10 +2246,20 @@ target to `EntityEditTarget` (player → `player_def`) through one helper,
 so display and commits agree by construction. Selecting `player_start`
 shows the player loadout fields (`player_def`, reached by clicking the
 `!`, NOT by a palette entry — the player isn't a placed type, it's a
-singleton spawn). `player_start` and `level_end` are NEVER deletable, only
-movable (updating the level's `player_start`/`level_end` via an editor
-event). Multi-select that includes them is allowed for move/bounds but
-they have no type to edit.
+singleton spawn). The player content (LANDED): a "Player" header + a
+READ-ONLY name line + an Import button + the shared Weapons / Gear /
+utility-skill-row sections + a read-only inventory item count — NO base
+stats / sprite / color sections (strictly enemy-authorable; the player
+template keeps its `player.txt` stats). The Import (`player_import_editor_player`
+→ `editor_import_player`, handled inline in processEvent — the default
+read needs the reconstruction cache) copies the session's PlayerData
+loadout — the exact `build_player_from_data` field set: name, gear,
+inventory, utility skills (PlayerData carries no base stats) — as a DEEP
+copy; with no session data (an empty `player_name`) it parses
+`data/new_player.txt` instead (a read source, not a session load).
+`player_start` and `level_end` are NEVER deletable, only movable (updating
+the level's `player_start`/`level_end` via an editor event). Multi-select
+that includes them is allowed for move/bounds but they have no type to edit.
 
 **Ground items (new editor palette).** Levels already support loose floor
 items via the `Items` section + layout char code (`GroundItems{position,

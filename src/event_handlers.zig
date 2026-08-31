@@ -202,6 +202,50 @@ fn failReconstructionRead(history: *GameStateHistory, message: []const u8) void 
     history.load_error = true;
 }
 
+/// The player inspector's Import: copy the session's player data — or,
+/// when the session has none (an empty `player_name` — a fresh editor
+/// launch from the main menu), the new-game default save — into the
+/// editor player loadout. The copied field set mirrors
+/// `build_player_from_data`'s (name, gear, inventory, utility skills;
+/// PlayerData carries no base stats, so the template keeps its own). The
+/// copy is a DEEP one: the source's name slices stay owned by their own
+/// graph. The default-save read goes through the reconstruction cache —
+/// the import event is recorded, so replay re-reads the same bytes.
+fn importEditorPlayer(
+    history: *GameStateHistory,
+    current: *GameState,
+    allocator: std.mem.Allocator,
+) void {
+    var source: types.PlayerData = current.player_data;
+    if (source.player_name.len == 0) {
+        const bytes = history.readReconstructionFile("data/new_player.txt") catch {
+            failReconstructionRead(history, "failed to read new_player.txt");
+            return;
+        };
+        const sections = parser.parseConfigFile(bytes, allocator) catch {
+            failReconstructionRead(history, "failed to parse new_player.txt");
+            return;
+        };
+        validateConfigKeys(history, sections, parser.player_save_key_map, "data/new_player.txt", allocator);
+        source = loaders.loadPlayerSave(sections, allocator, "data/new_player.txt", null) catch {
+            failReconstructionRead(history, "failed to parse new_player.txt");
+            return;
+        };
+    }
+    const editor = &(current.editor orelse @panic("editor event with no editor"));
+    const template = &editor.player_def.template;
+    template.name = deepCopy([]const u8, source.player_name, allocator);
+    template.main_hand_weapon = deepCopy(?types.Weapon, source.main_hand_weapon, allocator);
+    template.off_hand_weapon = deepCopy(?types.Weapon, source.off_hand_weapon, allocator);
+    template.amulet = deepCopy(?types.Amulet, source.amulet, allocator);
+    template.coat = deepCopy(?types.Coat, source.coat, allocator);
+    template.gloves = deepCopy(?types.Gloves, source.gloves, allocator);
+    template.pants = deepCopy(?types.Pants, source.pants, allocator);
+    template.boots = deepCopy(?types.Boots, source.boots, allocator);
+    template.equipped_utility_skills = source.equipped_utility_skills;
+    template.inventory = deepCopy(types.Inventory, source.inventory, allocator);
+}
+
 /// Run key validation on `sections` and, if any unknown keys are found,
 /// surface them as a pending_error popup. Advisory — the load continues
 /// regardless (unknown keys are dropped, not fatal). Gated on !replaying
@@ -1514,6 +1558,11 @@ fn handlePlayerInputEvent(
         // panel's open state rides the undo timeline with the edits).
         .player_toggle_editor_inspector => {
             pushEvents(current, &.{.{ .editor_event = .editor_toggle_inspector }}, allocator);
+        },
+        // Player inspector Import-button click: push the machinery event
+        // (the loadout fields ride GameState — the import is undoable).
+        .player_import_editor_player => {
+            pushEvents(current, &.{.{ .editor_event = .editor_import_player }}, allocator);
         },
         // Inspector entity-name commit: thin forward (the EditorEvent owns
         // the mutation; recordEvent deep-copies the value slice into the
@@ -3970,6 +4019,12 @@ pub fn processEvent(
                             editor.selection = &.{};
                         }
                     }
+                },
+                // The import needs the reconstruction cache (the
+                // default-save read) — handled inline here, not in
+                // handleEditorEvent.
+                .editor_import_player => {
+                    if (current.editor != null) importEditorPlayer(history, current, allocator);
                 },
                 // The remaining editor events are handled in the dedicated
                 // editor handler block below (handleEditorEvent). They are

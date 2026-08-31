@@ -7874,3 +7874,49 @@ Unit math: the utility section drops from 11 units (header + 5×2) to 3
 slots + the utility section + the skill row; a new test covers the
 occupied/empty mix (blink in slot 1: skill button + icon at 128×128,
 the other four diamonds) and the slot pitch.
+
+### Inspector slice 9 — the player inspector (DONE, 9a + 9b)
+
+9a — the player fallback target renders FULL content through the same
+windowed pipeline as the enemy type. The six content emitters (text
+field, swatches, toggle, weapon slot, gear slot, utility row) were
+generalized onto an `InspectorEntityContext` — the resolved template +
+the `EntityEditTarget` its commits carry + the team gradient — so both
+targets share them; the Weapons/Gear entry lists were extracted into
+`appendInspectorGearSections` (the enemy + player plans differ only in
+their headers). Player content: "Player" header, READ-ONLY name line,
+the shared gear sections, the utility-skill row, a read-only inventory
+item count. NO Identity/Stats/sprite/color sections — base stats are
+strictly enemy-authorable; the player template keeps its `player.txt`
+stats. The interim player shell (slice 7) is deleted. Text-field refs
+carry `.player_def`, so every commit routes to the player loadout
+through the slice-7 `editorEntityEditTarget` mapping with zero new
+event plumbing.
+
+9b — the Import button (`import_editor_player` action →
+`player_import_editor_player` → `editor_import_player`, handled INLINE
+in processEvent next to `editor_set_active_level` because the
+default-save read needs the reconstruction cache). The handler copies
+the session's PlayerData loadout — exactly `build_player_from_data`'s
+field set (name, gear, inventory, utility skills; PlayerData carries no
+base stats) — as a DEEP copy via the generic `deepCopy` (the source's
+name slices stay owned by their own graph). With no session data (the
+detection: an empty `player_name` — a fresh editor launch has none,
+every started/loaded game has one) it parses `data/new_player.txt`
+through `readReconstructionFile` — the import event is recorded, so
+replay re-reads the same bytes; the parsed default is a READ source,
+the session's empty player_data is untouched. A `validatePlayerAction`
+arm gates the orchestrator (editor screen + editor present). And
+`instantiateEditorLevel` now keeps `player_def.template.inventory` for
+entity 0 — the inventory is loadout data (imported or authored), not a
+combat-runtime field; `resetRuntimeFields` still clears it for enemies.
+
+Tests: the two panel tests re-windowed for the player content (the
+import row shifts the unit math: 31 units, max scroll 21); a dedicated
+player-content test (equipped loadout: Delete on the occupied hand,
+item fields with `.player_def` refs, blink in the skill row, inventory
+count 2); and two handler tests — the session-data import (fields
+copied, undo reverts, redo + start_playtest carries the inventory into
+entity 0) and the empty-session fallback (imports the real
+`data/new_player.txt`: "New Player", Starter Sword, replenish; the
+session's player_data stays empty).

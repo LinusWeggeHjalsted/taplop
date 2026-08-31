@@ -1772,6 +1772,13 @@ pub fn handleAnytimeInput(
                 if (current.editor == null) return;
                 pushPlayerActionAndDrain(history, .player_toggle_editor_inspector);
             },
+            // Player inspector Import button: copy the session's player
+            // data (or the new-game default, with none) into the editor
+            // player loadout.
+            .import_editor_player => {
+                if (current.editor == null) return;
+                pushPlayerActionAndDrain(history, .player_import_editor_player);
+            },
             // Inspector color swatch: set the edited type's color_index. The
             // gradient index rode in `anytime.clicked_editor_color`; the
             // target is the inspector's resolved target (the swatches only

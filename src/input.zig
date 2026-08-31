@@ -450,6 +450,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_tool => player_input.anytime.options_action = action,
         .select_editor_level => player_input.anytime.options_action = action,
         .toggle_editor_inspector => player_input.anytime.options_action = action,
+        .import_editor_player => player_input.anytime.options_action = action,
         .select_editor_entity_color => player_input.anytime.options_action = action,
         .toggle_editor_entity_displays_weapons => player_input.anytime.options_action = action,
         .select_editor_weapon_type => player_input.anytime.options_action = action,

@@ -169,6 +169,11 @@ pub const EditorEvent = union(enum) {
     // the flag lives on the Editor). Undo flips it back with the edit
     // history, same posture as `editor_set_tool`.
     editor_toggle_inspector: void,
+    // Import a loadout into the editor player (the player inspector's
+    // Import button): the session's player data, or the new-game default
+    // save when the session has none. Handled INLINE in processEvent —
+    // the default-save read needs the reconstruction cache.
+    editor_import_player: void,
 
     // ── Selection (the select tool) ──
     // Granular by design: a click toggles a GROUP (up to tile + entity +
@@ -593,6 +598,11 @@ pub const PlayerInputEvent = union(enum) {
     // timeline. See DESIGN → Architecture → Level Editor → Editor UI
     // layout (inspector).
     player_toggle_editor_inspector: void,
+    // Player inspector Import-button click: copy the session's player data
+    // (or, with none, the new-game default save) into the editor player
+    // loadout. The handler pushes `editor_import_player` — the loadout
+    // fields ride GameState, so the import is on the undo timeline.
+    player_import_editor_player: void,
     // Select-tool click in the editor viewport: toggle the clicked thing's
     // group in the selection (see the selection-tool bullet in DESIGN →
     // Architecture → Level Editor → Active-tool model). The SHIFT+CLICK

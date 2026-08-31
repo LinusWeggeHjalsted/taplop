@@ -1183,6 +1183,16 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_toggle_editor_inspector with no editor");
                     }
                 },
+                // Structural legality: same shape as the inspector toggle —
+                // the live path is the player inspector's Import button.
+                .player_import_editor_player => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_import_editor_player outside editor screen");
+                    }
+                    if (self.current_state.editor == null) {
+                        @panic("replay validation: player_import_editor_player with no editor");
+                    }
+                },
                 // Structural legality: the editor screen + editor + the
                 // target's palette index in range (the live path resolves
                 // the target from the focused field; a stale focus — its

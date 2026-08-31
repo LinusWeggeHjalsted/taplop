@@ -159,6 +159,10 @@ pub const Action = enum {
     // `editor_toggle_inspector`, so it rides the undo timeline. See DESIGN
     // → Architecture → Level Editor → Editor UI layout (inspector).
     toggle_editor_inspector,
+    // The player inspector's Import button: copy the session's player
+    // data (or, with none, the new-game default save) into the editor
+    // player loadout. No payload — the handler reads live state.
+    import_editor_player,
     // An inspector color swatch was clicked (set the edited entity type's
     // color_index — the gradient index into the enemy gradient). The index
     // rides in `AnytimeInput.clicked_editor_color`. Routed through

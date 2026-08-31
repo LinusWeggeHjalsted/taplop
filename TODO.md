@@ -572,20 +572,22 @@ yet implemented. Remaining work:
         slots, entity-inspect look, diamond when null, picker per slot),
         `emitInspectorUtilitySkillRow` gradient-parametrized for the
         player inspector's reuse. History in DONE.md.
-  - [ ] **9 — player inspector:** entries over `player_def.template`
-        with player-gradient coloring. Sections: an IMPORT button at
-        the top (`player_import_editor_player` → `editor_import_player`
-        — copy the session's PlayerData gear/inventory/equipped utility
-        skills into player_def; NO PlayerData (fresh editor session) →
-        parse `data/new_player.txt` and import that instead), gear
-        (identical to the enemy section), the utility-skill row, an
-        inventory placeholder (UI design open — deferred slice). NO
-        name / sprite / base-stat sections — base stats are strictly
-        enemy-authorable; the player template keeps the Entity
-        defaults. `instantiateEditorLevel` resets inventory as a
-        runtime field — entity 0 must carry
-        `player_def.template.inventory` into the playtest player
-        (equipped skills already survive).
+  - [x] **9 — player inspector:** DONE (9a + 9b). 9a: the player
+        fallback target renders full content through the shared windowed
+        pipeline — Player header, read-only name line, the shared
+        Weapons/Gear sections, the utility-skill row, a read-only
+        inventory count; the six content emitters generalized onto an
+        `InspectorEntityContext` (template + EntityEditTarget + team
+        gradient); player-gradient coloring; text-field refs carry
+        `.player_def`. NO name-editing/base stats (enemy-authorable only).
+        9b: the IMPORT button (`player_import_editor_player` →
+        `editor_import_player`, inline in processEvent — deep-copies the
+        session PlayerData loadout (name/gear/inventory/utility skills,
+        `build_player_from_data`'s set); empty session → parses
+        `data/new_player.txt` via the reconstruction cache) +
+        `instantiateEditorLevel` keeps `player_def.template.inventory` for
+        entity 0 (loadout data, not runtime). History in DONE.md; design
+        in DESIGN → Selection model (Inspector tool-type inference).
   - [ ] **9b — playtest PlayerData: all skills learned + dormancy:**
         `start_playtest` / `start_validation` BUILD a playtest
         player_data from player_def (name / gear / inventory / equipped

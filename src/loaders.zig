@@ -829,6 +829,9 @@ pub fn instantiateEditorLevel(
     // Entity 0: the player.
     var player = editor.player_def.template;
     resetRuntimeFields(&player);
+    // The player's inventory is LOADOUT data (imported or authored), not
+    // a combat-runtime field — entity 0 keeps the template's.
+    player.inventory = editor.player_def.template.inventory;
     player.position = editor_level.player_start;
     entities.append(allocator, player) catch @panic("failed to append player entity");
 

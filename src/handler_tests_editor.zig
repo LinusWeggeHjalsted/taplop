@@ -3096,3 +3096,88 @@ test "skill picker interaction: open, assign, same-value no-op, None clears, dro
     try testing.expect(history.session.ui_state.editor_picker == null);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
+
+test "player_import_editor_player: copies the session player data, undo reverts, playtest carries the inventory" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+
+    // The session's player data: a name, a main-hand weapon, one skill,
+    // one inventory item.
+    var player_data: types.PlayerData = .{ .player_name = "Tester" };
+    player_data.main_hand_weapon = .{
+        .name = "Test Sword",
+        .weapon_type = .sword,
+        .weapon_damage = 5,
+    };
+    player_data.equipped_utility_skills = .{ .replenish, null, null, null, null };
+    player_data.inventory.slots[0] = .{ .weapon = .{
+        .name = "Spare Dagger",
+        .weapon_type = .dagger,
+        .weapon_damage = 1,
+    } };
+    history.current_state.player_data = player_data;
+
+    // The Import button's orchestrator.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .import_editor_player,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+
+    const template = history.current_state.editor.?.player_def.template;
+    try testing.expectEqualStrings("Tester", template.name);
+    try testing.expectEqualStrings("Test Sword", template.main_hand_weapon.?.name);
+    try testing.expectEqual(types.SkillId.replenish, template.equipped_utility_skills[0]);
+    try testing.expectEqualStrings("Spare Dagger", template.inventory.slots[0].?.weapon.name);
+
+    // The import rides the undo timeline — undo restores the default
+    // loadout.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqualStrings("", history.current_state.editor.?.player_def.template.name);
+    try testing.expect(history.current_state.editor.?.player_def.template.main_hand_weapon == null);
+
+    // A playtest instantiates entity 0 from the template — the inventory
+    // (loadout data, not a runtime field) carries into the level.
+    try testing.expect(history.redo(event_handlers.processEvent));
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .start_playtest = .{ .level_index = 0 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    const player_entity = &history.current_state.level.?.entities[0];
+    try testing.expectEqualStrings("Tester", player_entity.name);
+    try testing.expectEqualStrings("Spare Dagger", player_entity.inventory.slots[0].?.weapon.name);
+}
+
+test "player_import_editor_player: no session data imports the new-game default save" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+    // Fresh session: player_data empty (no name) — the import falls back
+    // to data/new_player.txt.
+    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.player_name.len);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .editor_import_player }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    const template = history.current_state.editor.?.player_def.template;
+    try testing.expectEqualStrings("New Player", template.name);
+    try testing.expectEqualStrings("Starter Sword", template.main_hand_weapon.?.name);
+    try testing.expectEqual(types.SkillId.replenish, template.equipped_utility_skills[0]);
+    // The session's (empty) player data is untouched — the default save is
+    // a READ source, not a session load.
+    try testing.expectEqual(@as(usize, 0), history.current_state.player_data.player_name.len);
+}
