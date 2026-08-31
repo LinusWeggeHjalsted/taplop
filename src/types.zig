@@ -1409,10 +1409,12 @@ pub const Editor = struct {
     /// via `editor_toggle_inspector`.
     inspector_open: bool = true,
     /// The metadata sidebar's open state (the top-right toggle button;
-    /// open by default). Same convention as the inspector flag: on the
-    /// Editor, mutated only via `editor_toggle_metadata_sidebar`, so the
-    /// toggle rides the undo timeline and replay reproduces it.
-    metadata_sidebar_open: bool = true,
+    /// CLOSED on editor open — the metadata is a reference panel, not
+    /// the first thing an author needs, unlike the inspector). Same
+    /// convention as the inspector flag: on the Editor, mutated only via
+    /// `editor_toggle_metadata_sidebar`, so the toggle rides the undo
+    /// timeline and replay reproduces it.
+    metadata_sidebar_open: bool = false,
     mode: EditorMode = .edit,
 };
 

@@ -8479,3 +8479,15 @@ middle-panel band — with fixed-size contents.
   overlay rect verbatim (the panel IS `editorPickerOverlayRect`), the
   fixed strip size, 1:1 for small sprites, and a 4096×256 sprite scaling
   to 108px cells.
+
+## Level editor metadata sidebar — small author revisions
+
+- **Closed on editor open** (`Editor.metadata_sidebar_open` defaults
+  false): the metadata is a reference panel, not the first thing an
+  author needs — the inspector stays open-by-default (auto-open-on-new-
+  type behavior lives there). The wheel-routing test now opens the panel
+  explicitly; the toggle test's expectations flipped.
+- **Row renames:** "World" / "Enemy" / "Player" → "World colors" /
+  "Enemy colors" / "Player colors" (the gradient rows' labels), and the
+  theme picker's title follows ("Pick World colors" — was "Pick World
+  Gradient").

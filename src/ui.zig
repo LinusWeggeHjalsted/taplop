@@ -4992,13 +4992,13 @@ fn editorMetadataEntries(
         try entries.appendSlice(allocator, &.{
             .level_name,
             .{ .gradient = .{
-                .label = "World",
+                .label = "World colors",
                 .role = .world,
                 .colors = active_theme.world_gradient.colors,
                 .gradient_override = null,
             } },
             .{ .gradient = .{
-                .label = "Enemy",
+                .label = "Enemy colors",
                 .role = .enemy,
                 .colors = active_theme.enemy_gradient.colors,
                 .gradient_override = if (level) |some_level|
@@ -5007,7 +5007,7 @@ fn editorMetadataEntries(
                     null,
             } },
             .{ .gradient = .{
-                .label = "Player",
+                .label = "Player colors",
                 .role = .player,
                 .colors = active_theme.player_gradient.colors,
                 .gradient_override = if (level) |some_level|
@@ -7357,10 +7357,10 @@ pub fn buildEditorThemePicker(
         .height = bounds.height,
         .color = active_theme.darkest,
     } });
-    const title = try std.fmt.allocPrint(allocator, "Pick {s} Gradient", .{switch (target.role) {
-        .world => "World",
-        .enemy => "Enemy",
-        .player => "Player",
+    const title = try std.fmt.allocPrint(allocator, "Pick {s}", .{switch (target.role) {
+        .world => "World colors",
+        .enemy => "Enemy colors",
+        .player => "Player colors",
     }});
     const content = try emitPanelHeader(elements, allocator, bounds, title, .close_editor_picker);
     const rows_origin_y = content.y + @max(ui_gap, @divFloor(content.height - grid_height, 2));

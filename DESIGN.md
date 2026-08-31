@@ -2050,15 +2050,17 @@ layout + a left inspector + a right metadata sidebar:
   validity — no prune.
 - **Metadata sidebar (right bar):** mission + active-level metadata —
   the inspector's EXACT UI model: user-toggleable (top-right button at
-  the inspector toggle's height, flush to the right screen edge), open
-  by default; a per-frame entry list over the shared collapsible-section
+  the inspector toggle's height, flush to the right screen edge), CLOSED
+  on editor open (a reference panel, not the first thing an author
+  needs — unlike the inspector); a per-frame entry list over the shared collapsible-section
   state (both sections COLLAPSED by default, the shared
   `EditorInspectorSectionId` keying + toggle action), view-relative
   windowed emission (only fully-visible rows) + scrollbar + wheel
   routing when the content overflows. Mission section: the mission
   name. Current-level section: the level name + the three gradient rows
-  (label line above, AUTO toggle + full-gradient swatch on the control
-  line below — see "Level theme" below).
+  (World colors / Enemy colors / Player colors — label line above, AUTO
+  toggle + full-gradient swatch on the control line below — see "Level
+  theme" below).
 - **Primary actions (top-right):** Test + Validate buttons. Test =
   `start_playtest` on the active level (single-level); Validate =
   `start_validation` (full playthrough from level 1). Both transition to

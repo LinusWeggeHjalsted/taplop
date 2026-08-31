@@ -4512,8 +4512,9 @@ test "player_toggle_editor_metadata_sidebar: flips the open state, undo restores
     const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
-    // Open by default, like the inspector.
-    try testing.expect(history.current_state.editor.?.metadata_sidebar_open);
+    // CLOSED on editor open (unlike the inspector — the metadata is a
+    // reference panel, not the first thing an author needs).
+    try testing.expect(!history.current_state.editor.?.metadata_sidebar_open);
 
     event_handlers.pushEvents(
         &history.current_state,
@@ -4522,11 +4523,11 @@ test "player_toggle_editor_metadata_sidebar: flips the open state, undo restores
     );
     runToIdle(&history);
 
-    try testing.expect(!history.current_state.editor.?.metadata_sidebar_open);
+    try testing.expect(history.current_state.editor.?.metadata_sidebar_open);
 
     // The toggle rides the undo timeline (the flag lives on the Editor).
     try testing.expect(history.undo(event_handlers.processEvent));
-    try testing.expect(history.current_state.editor.?.metadata_sidebar_open);
+    try testing.expect(!history.current_state.editor.?.metadata_sidebar_open);
 }
 
 test "metadata sidebar name fields: mission + level commits, no-op gates" {
@@ -4732,9 +4733,11 @@ test "metadata sidebar wheel routing: scrolls over the open panel, not elsewhere
     const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
+    // The panel is CLOSED on editor open — open it for the routing check.
+    history.current_state.editor.?.metadata_sidebar_open = true;
 
-    // Inside the open panel (default open): one wheel-down notch = one
-    // row down; wheel-up at the top clamps at 0.
+    // Inside the open panel: one wheel-down notch = one row down;
+    // wheel-up at the top clamps at 0.
     const inside: types.ScreenPosition = .{
         .x = ui.editorMetadataSidebarPanelRect().x + 100,
         .y = ui.editorMetadataSidebarPanelRect().y + 100,
