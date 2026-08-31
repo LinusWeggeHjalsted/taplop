@@ -3353,3 +3353,46 @@ test "open_editor: a mission without player.txt falls back to the maxed default 
     }
     try testing.expectEqual(@as(u32, 12), inventory_items);
 }
+
+test "toggle_editor_inspector_section: default collapsed, independent expand/collapse" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton", .team = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    }));
+    runToIdle(&history);
+
+    // DEFAULT: every section collapsed — the panel shows only headers.
+    input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(
+        [_]bool{false} ** 7,
+        history.session.ui_state.editor_inspector_section_expanded,
+    );
+
+    // Expand Weapons (the section id rides the click payload).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_inspector_section,
+        .clicked_editor_section = .weapons,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_inspector_section_expanded[@intFromEnum(types.EditorInspectorSectionId.weapons)]);
+    // Independent: nothing else expanded, no event recorded (view state,
+    // off the undo timeline).
+    try testing.expect(!history.session.ui_state.editor_inspector_section_expanded[@intFromEnum(types.EditorInspectorSectionId.gear)]);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Collapse it back.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .toggle_editor_inspector_section,
+        .clicked_editor_section = .weapons,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(!history.session.ui_state.editor_inspector_section_expanded[@intFromEnum(types.EditorInspectorSectionId.weapons)]);
+}

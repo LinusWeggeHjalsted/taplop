@@ -1741,6 +1741,18 @@ pub fn handleAnytimeInput(
                     history.session.ui_state.editor_palette_collapsed[group_index] = true;
                 }
             },
+            // Inspector section header (expand/collapse). The section id
+            // rode in `anytime.clicked_editor_section`. View-side display
+            // state — a direct UiState write, off the undo timeline (same
+            // class as the palette accordion). INDEPENDENT toggles, no
+            // accordion — sections are per-topic and often wanted together
+            // (e.g. Weapons + Gear).
+            .toggle_editor_inspector_section => {
+                const section = anytime.clicked_editor_section orelse return;
+                const section_index: usize = @intFromEnum(section);
+                history.session.ui_state.editor_inspector_section_expanded[section_index] =
+                    !history.session.ui_state.editor_inspector_section_expanded[section_index];
+            },
             // Editor tool cell click (make it the active tool). The
             // EditorToolId rode in `anytime.clicked_editor_tool`. Push the
             // orchestrator and drain (same as level tabs): the tool pointer

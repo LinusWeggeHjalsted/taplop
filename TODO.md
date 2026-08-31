@@ -557,6 +557,14 @@ yet implemented. Remaining work:
         picker) re-target automatically. Only enemy fields are built;
         inferred decoration/item tools fall to the hint until their
         inspector slices. History in DONE.md.
+  - [x] **Collapsible inspector sections (author request):** DONE —
+        every section header is a toggle (whole strip clickable, +/-
+        marker prefix), ALL COLLAPSED by default, INDEPENDENT toggles (no
+        accordion), `UiState.editor_inspector_section_expanded` keyed by
+        `EditorInspectorSectionId` (shared across enemy + player
+        contents) — a direct UiState write off the undo timeline. History
+        in DONE.md; design in DESIGN → Level Editor → Editor UI layout
+        (inspector).
   - [ ] **6 — later: sprite picker + entity layers:** replaces the interim
         sprite-id text field; sprite resolution must PRIORITIZE `.png`s
         in the mission folder being edited (custom assets) over shipped

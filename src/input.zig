@@ -315,6 +315,11 @@ pub const AnytimeInput = struct {
     /// pattern as `clicked_setting`. Valid only in the same frame as the
     /// click.
     clicked_editor_group: ?usize = null,
+    /// Which inspector section header was clicked (expand/collapse), set
+    /// alongside `options_action == .toggle_editor_inspector_section` by
+    /// the button-release dispatch — same payload-rides-along pattern.
+    /// Valid only in the same frame as the click.
+    clicked_editor_section: ?types.EditorInspectorSectionId = null,
     /// Which editor tool was clicked (make it active), set alongside
     /// `options_action == .select_editor_tool` by the button-release
     /// dispatch in main.zig — same payload-rides-along pattern as
@@ -450,6 +455,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_tool => player_input.anytime.options_action = action,
         .select_editor_level => player_input.anytime.options_action = action,
         .toggle_editor_inspector => player_input.anytime.options_action = action,
+        .toggle_editor_inspector_section => player_input.anytime.options_action = action,
         .import_editor_player => player_input.anytime.options_action = action,
         .select_editor_entity_color => player_input.anytime.options_action = action,
         .toggle_editor_entity_displays_weapons => player_input.anytime.options_action = action,

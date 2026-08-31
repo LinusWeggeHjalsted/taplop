@@ -8006,3 +8006,42 @@ arsenal at 2-per-type, 7 learned, 1 discovered hub, the
 playerLoadoutEntity mapping); and an end-to-end open_editor fallback
 test — a scratch-dir mission without player.txt (written through the
 harness's own FileSource) yields the maxed player_def.
+
+### Collapsible inspector sections (DONE, author request)
+
+Every inspector section header is now an expand/collapse toggle: the
+whole strip is clickable (panel + spriteless button + label, the
+palette-group-header class), a "+ "/"- " marker prefix on the label
+carries the state (ASCII — no arrow glyphs ship in the font atlas; art
+can replace the marker later). ALL SECTIONS COLLAPSED by default — the
+panel opens as a compact list of headers; the entries builders guard
+each section's children on the expansion state, so the windowing, unit
+math, scrollbar, and scroll clamp all adapt automatically.
+
+State: `UiState.editor_inspector_section_expanded`, keyed by the new
+`types.EditorInspectorSectionId` (identity / stats / weapons / gear /
+utility_skills / inventory / player). The id — not the label string —
+is the section's identity: the entries carry it, the label is a lookup,
+and expansion is SHARED across the enemy + player contents (Weapons
+expanded on an enemy stays expanded on the player). Independent
+toggles, deliberately NOT the palette's accordion: sections are
+per-topic and often wanted together (Weapons + Gear). A direct UiState
+write in the options_action arm (`.toggle_editor_inspector_section` +
+`AnytimeInput.clicked_editor_section`, payload riding the button like
+`editor_group`) — off the undo timeline, the palette-accordion class.
+
+Riding along on the payload plumbing: a `Button.editor_section` field
++ the main.zig release-dispatch filler, mirroring the editor_group
+pattern exactly.
+
+Known-harmless edge: collapsing a section while one of its text fields
+is focused leaves the focus state live — the field isn't rendered, but
+the commit path reads GameState (the field's target), so a keyboard
+commit still lands correctly. Not worth auto-unfocusing.
+
+Tests: a dedicated toggle test (default all-collapsed, expand via
+handleAnytimeInput with the payload, independence, no event recorded)
+and the default-collapsed rendering (headers only, 19 elements, "+ "
+labels) in the panel test; every content test now seeds
+`allInspectorSectionsExpanded()` (pub for main.zig's focus-on-click
+test) and expects "- " prefixed section labels.

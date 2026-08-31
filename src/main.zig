@@ -211,6 +211,12 @@ fn update(
                         if (button.editor_group) |group_index| {
                             player_input.anytime.clicked_editor_group = group_index;
                         }
+                        // Inspector section headers: the section id rides
+                        // in `anytime.clicked_editor_section` alongside the
+                        // `.toggle_editor_inspector_section` action.
+                        if (button.editor_section) |section| {
+                            player_input.anytime.clicked_editor_section = section;
+                        }
                         // Editor tool cells: the tool identity rides in
                         // `anytime.clicked_editor_tool` alongside the
                         // `.select_editor_tool` action.
@@ -2126,6 +2132,10 @@ test "text field focus-on-click: press + release over a field focuses it; click 
         .hub = null,
     });
     runToIdle(&history);
+
+    // The inspector's sections start ALL COLLAPSED (the shipped default)
+    // — expand them so the fields render.
+    history.session.ui_state.editor_inspector_section_expanded = ui.allInspectorSectionsExpanded();
 
     const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
     const theme: types.ActiveColorTheme = .{

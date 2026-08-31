@@ -159,6 +159,11 @@ pub const Action = enum {
     // `editor_toggle_inspector`, so it rides the undo timeline. See DESIGN
     // → Architecture → Level Editor → Editor UI layout (inspector).
     toggle_editor_inspector,
+    // An inspector section header (expand/collapse that section). The
+    // section id rides in `AnytimeInput.clicked_editor_section` — a
+    // direct UiState write (view affordance, off the undo timeline, like
+    // the palette accordion).
+    toggle_editor_inspector_section,
     // The player inspector's Import button: copy the session's player
     // data (or, with none, the new-game default save) into the editor
     // player loadout. No payload — the handler reads live state.
@@ -1176,6 +1181,22 @@ pub const EditorMode = enum {
 /// depends on it (the click orchestrators) must read it from reconstructable
 /// state, and undo/redo of a tool switch restores what the author had
 /// active. Indices are into the corresponding Editor palette arrays.
+/// One section of the editor inspector's content (enemy or player). The
+/// id is the section's IDENTITY across both contents (Weapons expanded
+/// while editing an enemy stays expanded on the player) and the key into
+/// `UiState.editor_inspector_section_expanded` — collapse is a VIEW
+/// affordance (off the undo timeline, like the palette accordion), not
+/// GameState. Labels via `ui.editorInspectorSectionLabel`.
+pub const EditorInspectorSectionId = enum {
+    identity,
+    stats,
+    weapons,
+    gear,
+    utility_skills,
+    inventory,
+    player,
+};
+
 pub const EditorToolId = union(enum) {
     select: void,
     tile: void,

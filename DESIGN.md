@@ -1927,7 +1927,16 @@ layout + a left inspector + a right settings sidebar:
   inspector pick their sprite through the picker the same way. The
   panel scrolls: the wheel over it shifts `UiState.editor_inspector_scroll`
   (clamped in the builder), and only rows fitting the panel height are
-  emitted (offscreen rows can't be clicked).
+  emitted (offscreen rows can't be clicked). Every SECTION HEADER is
+  clickable — expand/collapse that section (a +/- marker prefix carries
+  the state); ALL COLLAPSED by default (the panel starts minimal),
+  INDEPENDENT toggles (no accordion — sections are per-topic, Weapons +
+  Gear often wanted together). Collapse is a view affordance:
+  `UiState.editor_inspector_section_expanded`, keyed by
+  `EditorInspectorSectionId` (shared across the enemy + player contents —
+  Weapons expanded on an enemy stays expanded on the player), a direct
+  UiState write off the undo timeline (the palette-accordion class, NOT
+  the one-at-a-time behavior).
 - **Inspector fields (enemy types — settled):** the COUPLING CONTRACT is
   the parser: every key `parseEntityDefinition` reads maps to exactly
   one inspector control, and field bounds are single-sourced from the
