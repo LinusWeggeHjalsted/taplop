@@ -575,12 +575,38 @@ yet implemented. Remaining work:
         field is REMOVED. Mission-local ids are namespaced
         `custom/<mission-dir>/<stem>` with the resolution rule in DESIGN.
         Entity LAYERS remain deferred (below).
-  - [ ] **Later: entity layers + decoration sprite tabs** — the layer
-        editor (add/remove/edit layers, sprite via the same picker) and
-        the decoration inspector's base-sprite/layer tabs reuse the
-        picker; mission-local art RENDERING (the `custom/<mission>/`
-        resolution at the renderer) lands with custom-asset rendering.
-        Picker scroll is a follow-up if real content overflows 4 columns.
+  - [x] **Decoration inspector + decoration sprite picker** — DONE:
+        the `decoration_type` arm on `EditorInspectorTarget` (active
+        decoration tool + selection inference; see DESIGN → Level Editor
+        → Selection model), the Identity section (sprite row + WORLD-
+        gradient color swatches) + the minimal Footprint placeholder
+        (read-only tile count), the `editor_set_decoration_def` whole-
+        definition commit (official pick = adopt the whole registry
+        prefab; mission pick = custom stem + PNG-derived dims +
+        bottom-left default footprint) with the placement PRUNE (see
+        DESIGN → Level Editor → the centered sprite picker), the
+        registry session-resident at open_editor, and the picker
+        routing (kind by inspector target). History in DONE.md.
+  - [ ] **Later: entity + decoration layer editors** — the layer
+        editor (add/remove/edit layers, sprite via the same picker)
+        reuses the picker (decoration layers arrive whole via a
+        registry prefab pick in the meantime); mission-local art
+        RENDERING (the `custom/<mission>/` resolution at the renderer)
+        lands with custom-asset rendering. Open items from the
+        decoration slice:
+        - the footprint EDITOR (inline footprint-grid editing →
+          `editor_set_decoration_footprint`, sharing the def handler's
+          prune helper) replaces the placeholder row;
+        - custom-sprite DIMS verification (multiples of 256, sane
+          bounds) at the pick commit — currently any positive IHDR is
+          accepted;
+        - the LOAD-side dims resolution for `custom/<mission>/`
+          decoration stems (a saved custom-sprite decoration panics on
+          reload until the custom-asset acquisition slice lands — see
+          DESIGN → Level Editor → the centered sprite picker, OPEN
+          GAP);
+        - picker scroll is a follow-up if real content overflows 4
+          columns.
   - [x] **7 — inference: player as the fallback target:** DONE —
         `editorInspectorTarget` + `EditorInspectorTarget` (ui.zig), the
         player shell as the default inspector content, the commit-site +

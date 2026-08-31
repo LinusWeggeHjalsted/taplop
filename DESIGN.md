@@ -1996,6 +1996,19 @@ layout + a left inspector + a right settings sidebar:
     floats outside the inspector rect) — the field commits and the pick
     fires in the same click.
   - entity layers: deferred with the sprite picker (they share it).
+- **Inspector fields (decoration types — LANDED):** the Identity section
+  (shared section id with the enemy content — collapse state persists
+  across kinds) holds the Sprite row (the centered picker — see below)
+  and the Color row (a swatch row over the WORLD gradient — decorations
+  index into it, matching the in-game tinting; commits via
+  `editor_set_decoration_color_index`). NO name row — a decoration's
+  name IS its sprite path (the palette label tracks the sprite). The
+  Footprint section is a minimal placeholder: a read-only `<N> tiles`
+  line; the footprint EDITOR (inline footprint-grid editing) is a later
+  slice and will commit through `editor_set_decoration_footprint`,
+  sharing the def handler's placement-prune helper. Decoration LAYERS
+  are deferred (the layer editor); they arrive whole via a registry
+  prefab pick in the meantime.
 - **Settings sidebar (right bar):** mission + active-level settings.
   User-toggleable like the inspector, open by default. Mission settings:
   mission name. Active-level settings: level name, theme settings
@@ -2008,11 +2021,14 @@ layout + a left inspector + a right settings sidebar:
   in-game bottom bar (the screen transition handles it; `view()` branches
   on screen). Upload/Publish UI is DEFERRED (lands with online services).
 
-**Centered sprite picker (enemy base sprite LANDED; decorations +
-layers later).** Picking a base sprite for an enemy tool opens the
-centered picker (the skill picker's framework, second consumer —
-dropdown semantics, blocks only where it sits, stays open until a pick
-or close) with TWO TABS top-left and close top-right:
+**Centered sprite picker (enemy + decoration base sprites LANDED;
+entity/decoration LAYERS later).** Picking a base sprite for an enemy or
+decoration tool opens the centered picker (the skill picker's framework,
+second consumer — dropdown semantics, blocks only where it sits, stays
+open until a pick or close) with TWO TABS top-left and close top-right.
+The picker KIND follows the inspector target (routed at the open site):
+`.entity_sprite` vs `.decoration_sprite` on UiState — the same panel,
+target-resolved inside the builder.
 - **Mission** — the `.png`s in the mission directory (a flat scan,
   `FileSource.listPersistentPngFiles`; re-scanned at every OPEN from
   the idle-input site — interactive IO never in `view()`/handlers; the
@@ -2035,12 +2051,51 @@ real content needs it). The tab state is UiState (a view affordance,
 reset to Mission on every open — custom assets take priority). Picking
 commits through the existing `player_set_editor_entity_sprite` event
 (on the undo timeline + replay-validated); same-value picks close
-without recording. Decoration base sprites + decoration layer sprites
-pick through the same panel later (their tabs land with the decoration
-inspector slice); ground items always render as the shared ground-bag
-sprite — there is no sprite to pick for them. The picker is the
-editor's only centered panel; everything else stays inline in the
-inspector / settings sidebar.
+without recording.
+
+**Decoration picks (LANDED) — the whole-definition commit.** A
+decoration pick commits ONE `editor_set_decoration_def` event (the
+`editor_set_item_def` precedent — the payload carries sprite, footprint,
+pixel dims, color_index, layers, FLATTENED to top level because the
+session-log reader doesn't regroup nested non-u8 slices):
+- **Official tab = the decoration REGISTRY** (`data/decorations.txt`
+  prefabs, session-resident on `SessionState.editor_decoration_registry`,
+  loaded at open_editor — gated `!replaying`, the `editor_mission_sprites`
+  pattern; a registry failure degrades to empty + popup, the editor
+  stays usable). A pick ADOPTS THE WHOLE PREFAB — sprite, authored
+  footprint, pixel dims, color_index, layers ("loading a prefab"); the
+  palette label (`id`) always tracks the sprite (a decoration's name IS
+  its sprite path). Cells render the shipped `decorations/{stem}` art
+  aspect-fit at the prefab's own pixel dims, world-gradient tint at the
+  type's color_index.
+- **Mission tab** — same scan + namespacing as entities. A custom pick
+  stores the namespaced stem, resolves pixel dims from the PNG bytes at
+  the commit site (`loaders.resolveMissionSpriteDimensions` — a
+  vanished/corrupt file commits nothing), and derives a DEFAULT
+  single-tile footprint at the sprite grid's BOTTOM-LEFT corner (the
+  authored footprint editor is a later slice). Custom picks keep the
+  type's current color_index + layers (nothing authored to adopt).
+- **Placement prune (the def handler):** a footprint change can
+  invalidate the type's existing placements — the handler deletes any
+  placement whose translated new footprint covers a level tile or
+  ANOTHER decoration's footprint (the `editor_place_decoration`
+  invariant; entity/item placements always sit ON level tiles, so the
+  tile check subsumes them). The things under the new footprint are
+  never touched — the decoration itself is deleted. Runs across every
+  level (the palette is mission-shared), one undo step covering retype +
+  prune; the selection is reconciled for the active level's removals.
+  The same helper serves the future `editor_set_decoration_footprint`
+  handler.
+- OPEN GAP: the LOAD-side dims resolution for `custom/<mission>/`
+  decoration stems is unwired (`resolveDecorationSpriteDimensions`
+  prefixes `decorations/` + falls back to `assets/...`, which misses
+  mission-local files) — a saved mission with a custom-sprite decoration
+  panics on reload until the custom-asset acquisition slice lands (see
+  TODO → Content Loading). Entity custom stems don't hit this (entities
+  carry no pixel_dims).
+Ground items always render as the shared ground-bag sprite — there is
+no sprite to pick for them. The picker is the editor's only centered
+panel; everything else stays inline in the inspector / settings sidebar.
 
 **Level theme (gradient picking).** A level's theme is composed from the
 authoritative gradient list in `color_themes.txt` (currently 3 gradients;
@@ -2286,31 +2341,32 @@ first covering decoration, else tile + occupants; the render-order
 priority below is the future selection-op refinement. **Inspector tool-type
 inference (LANDED, player-as-fallback):** the inspector's target is
 resolved by `editorInspectorTarget` (ui.zig) — a non-optional
-`EditorInspectorTarget = { entity_type | player }` where the PLAYER is
-the FALLBACK (the '!' spawn's loadout): the active enemy tool (valid
-index) wins; the tile tool, the decoration/item tools (no inspector
-content yet), an empty selection, and every ambiguous resolution land on
-the player. While the SELECT tool is active the selection is scanned:
-tiles / the '=' contribute NOTHING (legitimately uninspectable — mixing
-them with enemies still shows the enemy); the '!' contributes a
+`EditorInspectorTarget = { entity_type | decoration_type | player }` where
+the PLAYER is the FALLBACK (the '!' spawn's loadout): the active enemy or
+decoration tool (valid index) wins; the tile tool, the item tool (no
+inspector content yet), an empty selection, and every ambiguous resolution
+land on the player. While the SELECT tool is active the selection is
+scanned: tiles / the '=' contribute NOTHING (legitimately uninspectable —
+mixing them with enemies still shows the enemy); the '!' contributes a
 `.player` REFERENCE (so the spawn alone — or mixed with anything —
 resolves to the player, never to an enemy selected alongside it); entity
-placements contribute their type, resolved against the ACTIVE level (an
-out-of-range placement index or a stale palette type id is an
-unresolvable bug-state reference that forces the fallback — defensive
-only, the delete arms keep both valid); decoration / ground-item
-placements can't resolve to a showable target yet and force the fallback
-too (they become real references when the union widens with their
-inspector slices). Exactly one distinct reference → that enemy type's
-fields (editing the type updates every placement of it — selecting
-several tiles whose enemies are all the same type shows that enemy
-tool's fields); two or more distinct (two enemy types, or an enemy plus
-the player start) → the player. The input-side commit sites map the
-target to `EntityEditTarget` (player → `player_def`) through one helper,
-so display and commits agree by construction. Selecting `player_start`
-shows the player loadout fields (`player_def`, reached by clicking the
-`!`, NOT by a palette entry — the player isn't a placed type, it's a
-singleton spawn). The player content (LANDED): a "Player" header + a
+and decoration placements contribute their type, resolved against the
+ACTIVE level (an out-of-range placement index or a stale palette type id
+is an unresolvable bug-state reference that forces the fallback —
+defensive only, the delete arms keep both valid); ground-item placements
+can't resolve to a showable target yet and force the fallback too (the
+arm becomes a real reference when the union widens with its inspector
+slice). Exactly one distinct reference → that type's fields (editing
+the type updates every placement of it — selecting several tiles whose
+enemies are all the same type shows that enemy tool's fields); two or
+more distinct (two enemy types, an enemy plus a decoration, or either
+plus the player start) → the player. The input-side commit sites map
+the target to `EntityEditTarget` (player → `player_def`; decoration →
+null, the entity controls don't render for decoration content) through
+one helper, so display and commits agree by construction. Selecting
+`player_start` shows the player loadout fields (`player_def`, reached
+by clicking the `!`, NOT by a palette entry — the player isn't a placed
+type, it's a singleton spawn). The player content (LANDED): a "Player" header + a
 READ-ONLY name line + an Import button + the shared Weapons / Gear /
 utility-skill-row sections + a read-only inventory item count — NO base
 stats / sprite / color sections (strictly enemy-authorable; the player
@@ -2401,13 +2457,18 @@ events — see Level theme below) / `editor_set_mission_name` /
 / `editor_add_decoration_type` / `editor_add_item_type` /
 `editor_delete_type` / `editor_place_entity` / `editor_place_decoration` /
 `editor_place_item` / `editor_delete_*_placement` / `editor_move_*_placement`
-/ `editor_set_entity_*` (20+ field setters) / `editor_set_decoration_*` /
+/ `editor_set_entity_*` (20+ field setters) / `editor_set_decoration_def`
+(LANDED — the whole-definition commit; the per-field name/sprite setters
+were superseded and removed) / `editor_set_decoration_color_index`
+(LANDED) / `editor_set_decoration_footprint` (reserved for the future
+footprint editor; shares the prune helper) /
 `editor_set_item_*` / `editor_add_*_layer` / `editor_remove_*_layer` /
 `editor_set_*_layer`). `handleEditorEvent` implements the arms the landed UI
 slices need (`editor_set_tile` both directions, the `editor_delete_*_placement`
 trio, `editor_place_entity` / `editor_place_decoration` /
 `editor_place_item`, `editor_set_entity_placement_type` /
-`editor_set_item_placement_type`); the rest still `@panic` so an unhooked edit verb
+`editor_set_item_placement_type`, `editor_set_decoration_def` +
+`editor_set_decoration_color_index`); the rest still `@panic` so an unhooked edit verb
 fails fast rather than silently no-op'ing. Remaining handlers land with
 their UI slices.
 

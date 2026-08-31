@@ -8093,3 +8093,88 @@ with the .txt filtered, tab reset; pick → namespaced id on the
 timeline, one undo reverts; same-value no-op; tab switch + close).
 Zig-notes along the way: `openDir(.{ .iterate = true })`, and an
 assignment can't be an if-expression body in a switch prong.
+
+### Decoration inspector (DONE)
+
+The decoration tool's inspector surface — the sprite picker, world-
+gradient color swatches, and the whole-definition commit with the
+placement prune. Two commits: the verbs (events + validation + handlers
++ prune + handler tests), then the surface (target inference + content +
+picker + input routing + tests).
+
+- **Target resolution**: `EditorInspectorTarget` widened with
+  `decoration_type` — the active decoration tool wins; under the select
+  tool, decoration placements contribute their type (same defensive
+  oor/stale posture as entities); enemy+decoration mixed → the player
+  fallback. The input-side `editorEntityEditTarget` maps decoration →
+  null (the entity controls don't render for it — callers bail on
+  crafted clicks).
+- **No name field**: a decoration's name IS its sprite path — the
+  palette label (`id`) tracks `sprite` by handler invariant, so the
+  superseded `editor_set_decoration_name`/`editor_set_decoration_sprite`
+  per-field events were REMOVED rather than wired.
+- **Event shape**: `editor_set_decoration_def` carries the whole
+  definition (sprite, footprint, pixel_dims, color_index, layers),
+  FLATTENED to top-level fields — the session-log reader can't regroup
+  nested non-u8 slices (parseScalarTokens compileErrors by design), and
+  the writer/reader pair round-trips top-level struct slices. The
+  `editor_set_item_def` precedent. Color commits separately
+  (`editor_set_decoration_color_index` — color never affects placement
+  validity).
+- **Prefab adoption**: an Official-tab pick = "loading a prefab" — the
+  whole registry entry adopts (authored footprint, dims, color, layers —
+  tree_1 without its canopy layer is half the art, and picking a tree
+  with a ruin's color_index looks wrong). A Mission-tab pick stores the
+  namespaced stem, resolves dims from the PNG IHDR at the commit site
+  (a vanished/corrupt file commits nothing — the next open re-scans),
+  and derives a default single-tile footprint at the sprite grid's
+  bottom-left corner. Custom picks keep the current color + layers.
+- **Placement prune**: the def handler deletes any placement of the type
+  whose translated NEW footprint covers a level tile or another
+  decoration's footprint — the `editor_place_decoration` invariant. The
+  author's rule: never delete the things under the new footprint, delete
+  the decoration itself. Entities/items are subsumed by the tile check
+  (they always sit ON level tiles). Runs across every level; the
+  selection is reconciled per removed active-level index (descending, so
+  the remaps compose); one undo step covers retype + prune.
+- **Registry residency**: `data/decorations.txt` loads onto
+  `SessionState.editor_decoration_registry` at open_editor (gated
+  `!replaying` — the registry feeds input/view only, like
+  `editor_mission_sprites`), as an owned deep copy in the backing
+  allocator (`loadDecorationRegistry` returns section-borrowed strings,
+  so every string + array is duped before the event arena dies). A
+  registry failure degrades to empty + popup — the editor stays usable,
+  the Official tab shows "No sprites".
+- **Picker routing**: one open action; the input site resolves the
+  inspector target → `.entity_sprite` vs `.decoration_sprite` picker
+  kind. The decoration Official tab lists the REGISTRY prefabs (not the
+  raw assets dir — tree_1_canopy.png is a layer, not a base) with
+  world-gradient tint; cells aspect-fit at each prefab's own dims
+  (decoration art has no fixed frame convention, unlike the 512×640
+  entity frame). `emitInspectorSpriteCell` gained action + frame params;
+  the entity + decoration swatch/sprite-button emitters were
+  parametrized (gradient, current value, action) instead of duplicated.
+- **The empty-footprint gate already existed** — the placement planner
+  no-ops on zero footprint tiles, so the "custom picks must stay
+  placeable" concern was already handled by construction (the def
+  handler ALSO defensively ignores an empty-footprint payload; no pick
+  path can produce one anymore).
+- Tests: handler tests (color commit + oor guard; whole-def adopt +
+  id-tracks-sprite + one-undo revert; tile-overlap prune across two
+  levels; other-decoration-overlap prune; selection drop + remap;
+  crafted empty-footprint/oor no-ops), ui tests (decoration content
+  labels + swatches + placeholder; picker registry cells + namespaced
+  mission cells; inference: active decoration tool, selection inference,
+  stale-id fallbacks), input tests (open routing, prefab adopt, same-def
+  no-op via event-count, entity-picker gate; custom pick dims +
+  bottom-left footprint via a minimal 24-byte PNG header + vanished-file
+  no-op).
+
+Why deferred (tracked in TODO → Level editor → the layer-editor item):
+the footprint EDITOR UI (the placeholder row shows the tile count; the
+event + prune helper are ready), custom-dims verification (any positive
+IHDR accepted today), and the load-side resolution for
+`custom/<mission>/` decoration stems (saving a custom-sprite decoration
+produces a mission that panics on reload — part of the deferred
+custom-asset acquisition slice; entities don't hit it because they carry
+no pixel_dims).
