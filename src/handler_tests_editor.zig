@@ -2489,6 +2489,178 @@ test "sprite picker: open scans the mission dir, pick sets the base sprite, same
     try testing.expect(history.session.ui_state.editor_picker == null);
 }
 
+test "decoration sprite picker: open routing, official prefab adopt, same-def no-op, entity-picker gate" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const stone_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "stone_2",
+        .sprite = "stone_2",
+        .footprint = &stone_footprint,
+        .pixel_dims = .{ .x = 512, .y = 256 },
+        .color_index = 3,
+    }};
+    const tree_footprint = [_]types.Vector2{.{ .x = 1, .y = 2 }};
+    const tree_layers = [_]types.DecorationLayer{.{
+        .sprite = "tree_1_canopy",
+        .color_index = 2,
+        .pixel_dims = .{ .x = 512, .y = 768 },
+    }};
+    const registry = [_]types.DecorationTypeDef{.{
+        .id = "tree_1",
+        .sprite = "tree_1",
+        .footprint = &tree_footprint,
+        .pixel_dims = .{ .x = 512, .y = 768 },
+        .color_index = 4,
+        .layers = &tree_layers,
+    }};
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .decoration_types = &decoration_types,
+        .active_tool = .{ .decoration_type = 0 },
+        .mission = .{ .path = "missions/artists_den" },
+    }));
+    history.session.editor_decoration_registry = &registry;
+    runToIdle(&history);
+
+    // Open: the decoration target's sprite row opens the DECORATION picker.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_sprite_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(
+        ui.EditorPickerTarget.decoration_sprite,
+        history.session.ui_state.editor_picker.?,
+    );
+
+    // Official pick: the WHOLE prefab adopts — sprite, footprint, dims,
+    // color, layers — and the palette label tracks the sprite.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_decoration_sprite,
+        .clicked_editor_sprite = "tree_1",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.session.ui_state.editor_picker == null);
+    const adopted = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqualStrings("tree_1", adopted.id);
+    try testing.expectEqualStrings("tree_1", adopted.sprite);
+    try testing.expectEqual(@as(usize, 1), adopted.footprint.len);
+    try testing.expectEqual(types.Vector2{ .x = 1, .y = 2 }, adopted.footprint[0]);
+    try testing.expectEqual(types.Vector2{ .x = 512, .y = 768 }, adopted.pixel_dims);
+    try testing.expectEqual(@as(u32, 4), adopted.color_index);
+    try testing.expectEqual(@as(usize, 1), adopted.layers.len);
+
+    // One undo reverts the whole adoption.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqualStrings("stone_2", history.current_state.editor.?.decoration_types[0].sprite);
+
+    // Re-adopt (the post-undo state differs from the prefab), then a
+    // SAME-DEFINITION re-pick closes without recording (no dead undo
+    // step) — reopen first (the pick closed the picker).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_sprite_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_decoration_sprite,
+        .clicked_editor_sprite = "tree_1",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqualStrings("tree_1", history.current_state.editor.?.decoration_types[0].sprite);
+    const events_after_adopt = history.event_history.items.len;
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_sprite_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_decoration_sprite,
+        .clicked_editor_sprite = "tree_1",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expectEqual(events_after_adopt, history.event_history.items.len);
+
+    // Gate: the decoration action with the ENTITY picker open is a no-op
+    // (a crafted click — the cells never emit it).
+    history.session.ui_state.editor_picker = .{ .entity_sprite = {} };
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_decoration_sprite,
+        .clicked_editor_sprite = "tree_1",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.session.ui_state.editor_picker != null);
+    try testing.expectEqualStrings("tree_1", history.current_state.editor.?.decoration_types[0].sprite);
+}
+
+test "decoration sprite picker: mission-local pick derives dims + bottom-left default footprint" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A minimal PNG header (signature + IHDR width/height at the offsets
+    // parsePngDimensions reads): 512x768 → a 2x3 sprite grid → the default
+    // footprint reserves the bottom-left tile (0, 2).
+    const banner_png = [_]u8{
+        0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
+    } ++ [_]u8{0} ** 8 ++ [_]u8{
+        0, 0, 2, 0, // width 512
+        0, 0, 3, 0, // height 768
+    };
+    try harness.file_source.writeFile("missions/artists_den/banner.png", &banner_png);
+
+    const stone_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const decoration_types = [_]types.DecorationTypeDef{.{
+        .id = "stone_2",
+        .sprite = "stone_2",
+        .footprint = &stone_footprint,
+        .pixel_dims = .{ .x = 512, .y = 256 },
+        .color_index = 3,
+    }};
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .decoration_types = &decoration_types,
+        .active_tool = .{ .decoration_type = 0 },
+        .mission = .{ .path = "missions/artists_den" },
+    }));
+    runToIdle(&history);
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_sprite_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_decoration_sprite,
+        .clicked_editor_sprite = "custom/artists_den/banner",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+
+    // The namespaced stem + PNG-derived dims + the bottom-left default
+    // footprint; color stays (no authored values for a custom stem).
+    const adopted = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqualStrings("custom/artists_den/banner", adopted.sprite);
+    try testing.expectEqualStrings("custom/artists_den/banner", adopted.id);
+    try testing.expectEqual(types.Vector2{ .x = 512, .y = 768 }, adopted.pixel_dims);
+    try testing.expectEqual(@as(usize, 1), adopted.footprint.len);
+    try testing.expectEqual(types.Vector2{ .x = 0, .y = 2 }, adopted.footprint[0]);
+    try testing.expectEqual(@as(u32, 3), adopted.color_index);
+    try testing.expectEqual(@as(usize, 0), adopted.layers.len);
+
+    // A vanished file (the stem resolves to no PNG) commits nothing.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_sprite_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_decoration_sprite,
+        .clicked_editor_sprite = "custom/artists_den/gone",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqualStrings(
+        "custom/artists_den/banner",
+        history.current_state.editor.?.decoration_types[0].sprite,
+    );
+}
+
 test "inspector scalar clicks: color swatch + displays-weapons toggle ride the timeline" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
@@ -3628,7 +3800,7 @@ test "toggle_editor_inspector_section: default collapsed, independent expand/col
     // DEFAULT: every section collapsed — the panel shows only headers.
     input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
     try testing.expectEqual(
-        [_]bool{false} ** 7,
+        [_]bool{false} ** 8,
         history.session.ui_state.editor_inspector_section_expanded,
     );
 

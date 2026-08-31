@@ -173,6 +173,12 @@ pub const Action = enum {
     // stem rode in `AnytimeInput.clicked_editor_sprite`) and close the
     // picker. Same-value picks close without recording.
     select_editor_entity_sprite,
+    // The decoration picker's cell: adopt the picked prefab (official tab)
+    // or custom stem (mission tab) into the edited decoration type — see
+    // `editor_set_decoration_def`. The stem rode in
+    // `AnytimeInput.clicked_editor_sprite`. Same-value picks close without
+    // recording.
+    select_editor_decoration_sprite,
     // A sprite picker tab button (Mission / Official): switch the picker's
     // tab. The tab rode in `AnytimeInput.clicked_editor_sprite_tab` — a
     // direct UiState write (view affordance).
@@ -186,6 +192,10 @@ pub const Action = enum {
     // rides in `AnytimeInput.clicked_editor_color`. Routed through
     // `options_action` like the other payload-carrying editor clicks.
     select_editor_entity_color,
+    // The decoration inspector's color swatch was clicked (set the edited
+    // decoration type's color_index — the gradient index into the WORLD
+    // gradient). The index rides in `AnytimeInput.clicked_editor_color`.
+    select_editor_decoration_color,
     // The inspector's displays-weapons toggle (flip the edited entity
     // type's flag). No payload — the handler reads + flips live state.
     toggle_editor_entity_displays_weapons,
@@ -1215,6 +1225,9 @@ pub const EditorInspectorSectionId = enum {
     utility_skills,
     inventory,
     player,
+    /// The decoration type's footprint (tile count summary + the future
+    /// footprint editor's home). Decoration content only.
+    footprint,
 };
 
 pub const EditorToolId = union(enum) {

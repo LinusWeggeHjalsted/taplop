@@ -1236,12 +1236,15 @@ fn parseBoundedStatValue(value: []const u8, max: u32) ?u32 {
 
 /// The inspector's current edit target as the entity-edit events carry
 /// it: the enemy type the inspector is showing, or `player_def` when the
-/// player (the fallback target) is showing. See
+/// player (the fallback target) is showing — NULL when a decoration type
+/// is showing (the entity controls don't render for decoration content,
+/// so a null here is a crafted click; the caller bails). See
 /// `ui.editorInspectorTarget` — the resolution's single seam.
-fn editorEntityEditTarget(editor: types.Editor) types.EntityEditTarget {
+fn editorEntityEditTarget(editor: types.Editor) ?types.EntityEditTarget {
     return switch (ui.editorInspectorTarget(editor)) {
         .entity_type => |type_index| .{ .entity_type = type_index },
         .player => .player_def,
+        .decoration_type => null,
     };
 }
 
@@ -1765,29 +1768,35 @@ pub fn handleAnytimeInput(
             // list is cached on SessionState, re-scanned on every open so
             // a png dropped into the mission dir appears on the next
             // open). The tab resets to Mission (custom assets take
-            // priority over shipped ones).
+            // priority over shipped ones). The picker KIND follows the
+            // inspector target: the decoration content's row opens the
+            // decoration picker (registry-fed Official tab, prefab-adopting
+            // commits) — the same panel, target-resolved inside the builder.
             .open_editor_sprite_picker => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 rescanEditorMissionSprites(history, editor.*);
-                history.session.ui_state.editor_picker = .{ .entity_sprite = {} };
+                history.session.ui_state.editor_picker = switch (ui.editorInspectorTarget(editor.*)) {
+                    .decoration_type => .{ .decoration_sprite = {} },
+                    .entity_type, .player => .{ .entity_sprite = {} },
+                };
                 history.session.ui_state.editor_picker_sprite_tab = .mission_local;
             },
             // A sprite picker cell: set the edited type's base sprite (the
             // stem rode in `anytime.clicked_editor_sprite`) and close the
             // picker. Same-value picks close without recording.
             .select_editor_entity_sprite => {
-                // Gate: only a pick while the sprite picker is open (crafted
-                // clicks with no picker are a no-op, the skill arm's
-                // posture).
+                // Gate: only a pick while the ENTITY sprite picker is open
+                // (crafted clicks with no picker — or the decoration
+                // picker — are a no-op, the skill arm's posture).
                 switch (history.session.ui_state.editor_picker orelse return) {
                     .entity_sprite => {},
-                    .utility_skill_slot => return,
+                    .utility_skill_slot, .decoration_sprite => return,
                 }
                 const sprite = anytime.clicked_editor_sprite orelse return;
                 history.session.ui_state.editor_picker = null;
                 if (history.current_state.editor == null) return;
                 const editor: *types.Editor = &history.current_state.editor.?;
-                const target = editorEntityEditTarget(editor.*);
+                const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (std.mem.eql(u8, template.sprite, sprite)) return;
                 // Dupe into the current arena BEFORE pushing — the payload
@@ -1798,6 +1807,115 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_sprite = .{
                     .target = target,
                     .value = value,
+                } });
+            },
+            // A DECORATION picker cell: adopt the picked sprite into the
+            // edited decoration type and close the picker. An Official-tab
+            // pick (a registry stem) adopts the WHOLE prefab — footprint,
+            // pixel dims, color, layers ("loading a prefab"); a Mission-tab
+            // pick stores the namespaced stem with pixel dims read from the
+            // PNG and a default single-tile footprint at the sprite grid's
+            // BOTTOM-LEFT corner (the authored footprint editor is a later
+            // slice; dims verification for custom art is a TODO). The def
+            // commit prunes the type's now-invalid placements (see the
+            // handler). Same-definition picks close without recording — a
+            // re-pick of the current prefab AFTER a color tweak does record
+            // (it re-adopts the authored color).
+            .select_editor_decoration_sprite => {
+                // Gate: only a pick while the DECORATION picker is open
+                // (crafted clicks with no picker — or the entity picker —
+                // are a no-op, the skill arm's posture).
+                switch (history.session.ui_state.editor_picker orelse return) {
+                    .decoration_sprite => {},
+                    .entity_sprite, .utility_skill_slot => return,
+                }
+                const sprite = anytime.clicked_editor_sprite orelse return;
+                history.session.ui_state.editor_picker = null;
+                if (history.current_state.editor == null) return;
+                const editor: *types.Editor = &history.current_state.editor.?;
+                const type_id = switch (ui.editorInspectorTarget(editor.*)) {
+                    .decoration_type => |resolved_type_id| resolved_type_id,
+                    .entity_type, .player => return,
+                };
+                const current_definition = editor.decoration_types[type_id];
+                const arena = history.current_arena.allocator();
+
+                // Resolve the new definition from the pick: a registry
+                // stem adopts its prefab, anything else is a mission-local
+                // stem (`custom/<mission-dir>/<file-stem>` — the file stem
+                // is the last path segment; file names carry no '/').
+                var prefab: ?types.DecorationTypeDef = null;
+                for (history.session.editor_decoration_registry) |definition| {
+                    if (std.mem.eql(u8, definition.sprite, sprite)) {
+                        prefab = definition;
+                        break;
+                    }
+                }
+                const new_definition: types.DecorationTypeDef = if (prefab) |definition| .{
+                    .id = definition.sprite,
+                    .sprite = definition.sprite,
+                    .footprint = definition.footprint,
+                    .pixel_dims = definition.pixel_dims,
+                    .color_index = definition.color_index,
+                    .layers = definition.layers,
+                } else blk: {
+                    const slash = std.mem.lastIndexOfScalar(u8, sprite, '/') orelse return;
+                    const file_stem = sprite[slash + 1 ..];
+                    const pixel_dims = loaders.resolveMissionSpriteDimensions(
+                        history.file_source,
+                        editor.mission.path,
+                        file_stem,
+                        arena,
+                    ) orelse return;
+                    if (pixel_dims.x <= 0 or pixel_dims.y <= 0) return;
+                    // The sprite grid's tile rows (256px per tile); the
+                    // default footprint reserves the bottom-left tile.
+                    // Duped HERE (an arena slice) — a runtime-sized array
+                    // literal can't safely escape this block as a pointer.
+                    const sprite_grid_rows = @divTrunc(pixel_dims.y + 255, 256);
+                    const default_footprint = [_]types.Vector2{.{ .x = 0, .y = sprite_grid_rows - 1 }};
+                    break :blk .{
+                        .id = sprite,
+                        .sprite = sprite,
+                        .footprint = arena.dupe(types.Vector2, &default_footprint) catch
+                            @panic("failed to allocate default decoration footprint"),
+                        .pixel_dims = pixel_dims,
+                        // A custom stem has no authored values — the type's
+                        // current color + layers stay (the swatch adjusts
+                        // color; layer editing is deferred).
+                        .color_index = current_definition.color_index,
+                        .layers = current_definition.layers,
+                    };
+                };
+
+                // Same-definition picks never fire (the FULL definition —
+                // sprite, footprint, dims, color, layers).
+                const unchanged = std.mem.eql(u8, current_definition.sprite, new_definition.sprite) and
+                    loaders.decorationFootprintEqual(current_definition.footprint, new_definition.footprint) and
+                    current_definition.pixel_dims.x == new_definition.pixel_dims.x and
+                    current_definition.pixel_dims.y == new_definition.pixel_dims.y and
+                    current_definition.color_index == new_definition.color_index and
+                    loaders.decorationLayersEqual(current_definition.layers, new_definition.layers);
+                if (unchanged) return;
+
+                // Dupe into the current arena BEFORE pushing (the
+                // entity-sprite commit's ordering rule). The registry /
+                // current-state strings the struct slices point at outlive
+                // the push, and recordEvent + arena compaction deep-copy
+                // everything downstream.
+                const sprite_value = arena.dupe(u8, new_definition.sprite) catch
+                    @panic("failed to allocate decoration sprite commit value");
+                const footprint_value = arena.dupe(types.Vector2, new_definition.footprint) catch
+                    @panic("failed to allocate decoration footprint commit value");
+                const layers_value = arena.dupe(types.DecorationLayer, new_definition.layers) catch
+                    @panic("failed to allocate decoration layers commit value");
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_def = .{
+                    .type_id = type_id,
+                    .sprite = sprite_value,
+                    .footprint = footprint_value,
+                    .pixel_dims = new_definition.pixel_dims,
+                    .color_index = new_definition.color_index,
+                    .layers = layers_value,
                 } });
             },
             // A sprite picker tab button (Mission / Official): switch tabs —
@@ -1851,7 +1969,7 @@ pub fn handleAnytimeInput(
             .select_editor_entity_color => {
                 const color_index = anytime.clicked_editor_color orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                const target = editorEntityEditTarget(editor.*);
+                const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (template.color_index == color_index) return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_color_index = .{
@@ -1859,11 +1977,27 @@ pub fn handleAnytimeInput(
                     .value = color_index,
                 } });
             },
+            // The DECORATION inspector's color swatch: set the edited
+            // decoration type's color_index (the WORLD gradient index).
+            // Same-value picks never fire.
+            .select_editor_decoration_color => {
+                const color_index = anytime.clicked_editor_color orelse return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const type_id = switch (ui.editorInspectorTarget(editor.*)) {
+                    .decoration_type => |resolved_type_id| resolved_type_id,
+                    .entity_type, .player => return,
+                };
+                if (editor.decoration_types[type_id].color_index == color_index) return;
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_decoration_color_index = .{
+                    .type_id = type_id,
+                    .value = color_index,
+                } });
+            },
             // Inspector displays-weapons toggle: flip the edited type's flag.
             // Always changes (a flip), so no would-change gate.
             .toggle_editor_entity_displays_weapons => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                const target = editorEntityEditTarget(editor.*);
+                const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_displays_weapons = .{
                     .target = target,
@@ -1878,7 +2012,7 @@ pub fn handleAnytimeInput(
                 const weapon_type = anytime.clicked_editor_weapon_type orelse return;
                 if (hand != .main_hand and hand != .off_hand) return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                const target = editorEntityEditTarget(editor.*);
+                const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 const equipped: ?types.Weapon = switch (hand) {
                     .main_hand => template.main_hand_weapon,
@@ -1912,7 +2046,7 @@ pub fn handleAnytimeInput(
             .add_editor_item => {
                 const slot = anytime.clicked_editor_gear_slot orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                const target = editorEntityEditTarget(editor.*);
+                const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (template.gearSlotItem(slot) != null) return;
                 const item = defaultItemForSlot(history, slot) orelse return;
@@ -1940,14 +2074,14 @@ pub fn handleAnytimeInput(
                 const target = history.session.ui_state.editor_picker orelse return;
                 const slot_index = switch (target) {
                     .utility_skill_slot => |index| index,
-                    // The sprite picker's picks route through their own
-                    // arm — not a skill-slot assignment.
-                    .entity_sprite => return,
+                    // The sprite pickers' picks route through their own
+                    // arms — not a skill-slot assignment.
+                    .entity_sprite, .decoration_sprite => return,
                 };
                 history.session.ui_state.editor_picker = null;
                 if (history.current_state.editor == null) return;
                 const editor: *types.Editor = &history.current_state.editor.?;
-                const entity_target = editorEntityEditTarget(editor.*);
+                const entity_target = editorEntityEditTarget(editor.*) orelse return;
                 if (slot_index >= types.utility_skill_count) return;
                 const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
                 const picked = anytime.clicked_editor_skill;
@@ -1963,7 +2097,7 @@ pub fn handleAnytimeInput(
             .delete_editor_item => {
                 const slot = anytime.clicked_editor_gear_slot orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                const target = editorEntityEditTarget(editor.*);
+                const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (template.gearSlotItem(slot) == null) return;
                 const clear_action = editorSlotClearAction(target, slot);

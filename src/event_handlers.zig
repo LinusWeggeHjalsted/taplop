@@ -328,6 +328,84 @@ fn surfaceWarnings(
     history.session.setPendingError(history.history_arena.allocator(), message.items);
 }
 
+/// Load the decoration registry (`data/decorations.txt` prefabs) into
+/// `session.editor_decoration_registry` — the decoration sprite picker's
+/// Official tab + the commit site's prefab-adoption source. Called from
+/// the open_editor handler (gated `!replaying`: the registry feeds the
+/// input/view layers only — a replay never opens a picker — so it is a
+/// session-side asset like `editor_mission_sprites`, not replayed
+/// state). The owned deep copy lives in the backing allocator (strings +
+/// arrays); the previous list is freed on reload, so the only leak is the
+/// final list at process exit. A read/parse failure DEGRADES to an empty
+/// list + a popup rather than failing the editor open: the editor stays
+/// usable (the picker's Mission tab lists the mission's own art).
+fn loadEditorDecorationRegistry(history: *GameStateHistory, allocator: std.mem.Allocator) void {
+    if (history.replaying) return;
+    const backing = history.backing_allocator;
+    const session = &history.session;
+    const degrade = struct {
+        fn note(history_arg: *GameStateHistory, reason: []const u8) void {
+            history_arg.session.setPendingError(
+                history_arg.history_arena.allocator(),
+                reason,
+            );
+        }
+    };
+    const bytes = history.readReconstructionFile("data/decorations.txt") catch {
+        degrade.note(history, "failed to read data/decorations.txt — the decoration picker's Official tab is unavailable");
+        return;
+    };
+    const sections = parser.parseConfigFile(bytes, allocator) catch {
+        degrade.note(history, "failed to parse data/decorations.txt — the decoration picker's Official tab is unavailable");
+        return;
+    };
+    validateConfigKeys(history, sections, parser.decoration_registry_key_map, "data/decorations.txt", allocator);
+    const loaded = loaders.loadDecorationRegistry(sections, history.file_source, allocator) catch {
+        degrade.note(history, "failed to parse data/decorations.txt — the decoration picker's Official tab is unavailable");
+        return;
+    };
+
+    // The owned copy: `loadDecorationRegistry` returns defs whose strings
+    // BORROW the parsed sections (event-arena lifetime), so every string +
+    // array is duped into the backing allocator before the arena goes.
+    // `id` aliases `sprite` (one dupe — a decoration's name IS its sprite
+    // path; freed once below).
+    const owned = backing.alloc(types.DecorationTypeDef, loaded.len) catch
+        @panic("failed to allocate decoration registry");
+    for (loaded, 0..) |definition, index| {
+        const layers = backing.alloc(types.DecorationLayer, definition.layers.len) catch
+            @panic("failed to allocate decoration registry layers");
+        for (definition.layers, 0..) |layer, layer_index| {
+            layers[layer_index] = .{
+                .sprite = backing.dupe(u8, layer.sprite) catch
+                    @panic("failed to dupe decoration layer sprite"),
+                .color_index = layer.color_index,
+                .pixel_dims = layer.pixel_dims,
+            };
+        }
+        const sprite = backing.dupe(u8, definition.sprite) catch
+            @panic("failed to dupe decoration sprite");
+        owned[index] = .{
+            .id = sprite,
+            .sprite = sprite,
+            .footprint = backing.dupe(types.Vector2, definition.footprint) catch
+                @panic("failed to dupe decoration footprint"),
+            .pixel_dims = definition.pixel_dims,
+            .color_index = definition.color_index,
+            .layers = layers,
+        };
+    }
+
+    for (session.editor_decoration_registry) |definition| {
+        backing.free(definition.sprite);
+        for (definition.layers) |layer| backing.free(layer.sprite);
+        backing.free(definition.footprint);
+        backing.free(definition.layers);
+    }
+    backing.free(session.editor_decoration_registry);
+    session.editor_decoration_registry = owned;
+}
+
 /// sync_player=true — the level's bare player entity gets its loadout from
 /// PlayerData) and start_playtest / start_validation (editor, sync_player=
 /// false — the player is already fully instantiated from editor.player_def,
@@ -1688,6 +1766,7 @@ fn handlePlayerInputEvent(
             // start_mission's): the sprite picker's mission-local scan +
             // the editor save read it.
             current.editor.?.mission.path = start.mission_path;
+            loadEditorDecorationRegistry(history, allocator);
             surfaceWarnings(history, &balance_warnings, allocator);
             current.transitionScreen(.editor);
         },

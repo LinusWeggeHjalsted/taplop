@@ -148,6 +148,14 @@ pub const SessionState = struct {
     /// frees the previous list, so the only leak is the FINAL list at
     /// process exit (bounded, one slice).
     editor_mission_sprites: []const []const u8 = &.{},
+
+    /// The decoration registry (`data/decorations.txt` prefabs — the
+    /// decoration sprite picker's Official tab + the commit site's
+    /// prefab-adoption source). Loaded when the editor OPENS (never
+    /// `view()`, which stays file-free); owned by `backing_allocator`,
+    /// each load frees the previous list, so the only leak is the FINAL
+    /// list at process exit (the editor_mission_sprites pattern).
+    editor_decoration_registry: []const types.DecorationTypeDef = &.{},
     save_files_last_scan_us: u64 = save_files_never_scanned,
     // Camera pan (right-drag): offset in world pixels added to the player-
     // centered camera, plus the drag anchor. Transient view state — off the

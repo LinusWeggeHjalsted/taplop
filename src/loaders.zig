@@ -122,6 +122,26 @@ fn resolveSpriteDimensions(
     @panic("cannot resolve sprite dimensions: not a shipped sprite and no file source");
 }
 
+/// Resolve a mission-local sprite's pixel dims (the decoration picker's
+/// custom-stem commit path): read `<mission_path>/<file_stem>.png` via the
+/// file source and parse its IHDR. Returns null when the file is missing
+/// or not a valid PNG — the commit site degrades (nothing records; the
+/// next picker open re-scans the directory, so a vanished file stops
+/// being offered).
+pub fn resolveMissionSpriteDimensions(
+    file_source: *const FileSource,
+    mission_path: []const u8,
+    file_stem: []const u8,
+    allocator: std.mem.Allocator,
+) ?types.Vector2 {
+    const path = std.fmt.allocPrint(allocator, "{s}/{s}.png", .{ mission_path, file_stem }) catch
+        @panic("failed to build mission sprite path for dims resolution");
+    defer allocator.free(path);
+    const bytes = file_source.readFile(allocator, path) catch return null;
+    defer allocator.free(bytes);
+    return parsePngDimensions(bytes);
+}
+
 /// Parse a `"w h"` string (as emitted by generated_sprite_metadata.zig) into a
 /// Vector2. Panics on malformed input — the table is build-generated, so a
 /// bad value is a build bug.
@@ -806,7 +826,10 @@ pub fn buildEditorMission(
     };
 }
 
-fn decorationFootprintEqual(a: []const types.Vector2, b: []const types.Vector2) bool {
+/// Compare two decoration footprints for palette dedup + the decoration
+/// picker's would-change gate (public: the input-side commit site compares
+/// the resolved pick against the current definition).
+pub fn decorationFootprintEqual(a: []const types.Vector2, b: []const types.Vector2) bool {
     if (a.len != b.len) return false;
     for (a, b) |fa, fb| {
         if (fa.x != fb.x or fa.y != fb.y) return false;
