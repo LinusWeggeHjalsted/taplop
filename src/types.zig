@@ -150,6 +150,13 @@ pub const Action = enum {
     // the group-header toggle. See DESIGN → Architecture → Level Editor →
     // Editor UI layout (tool palette).
     add_editor_palette_type,
+    // An editor palette tool cell's delete button (the small close-button
+    // in the cell's top-right corner) was clicked: delete that palette
+    // type + every placement referencing it across all levels. The
+    // EditorToolId rides in `AnytimeInput.clicked_editor_tool` — the same
+    // payload field as the tool cells. See DESIGN → Architecture → Level
+    // Editor → Editor UI layout (tool palette).
+    delete_editor_palette_type,
     // An editor tool cell was clicked (make it the active tool). The
     // EditorToolId rides in `AnytimeInput.clicked_editor_tool`. See DESIGN
     // → Architecture → Level Editor (active-tool model).

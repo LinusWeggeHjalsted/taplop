@@ -3178,6 +3178,58 @@ test "palette + click: default type creation, tool switch, picker routing" {
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
+test "palette tool delete button: input arm deletes the type + placements; fixed tools no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{
+        .{ .id = "Archer" },
+        .{ .id = "Brute" },
+    };
+    const placements = [_]types.EntityPlacement{
+        .{ .type_id = 0, .position = .{ .x = 0, .y = 0 } },
+        .{ .type_id = 1, .position = .{ .x = 1, .y = 0 } }, // Brute
+    };
+    const levels = [_]types.EditorLevel{.{ .entity_placements = &placements }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 1 },
+    }));
+    runToIdle(&history);
+
+    // The Brute cell's delete button: the type + its placement go, the
+    // active tool (it WAS the deleted one) resets to select.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_palette_type,
+        .clicked_editor_tool = .{ .entity_type = 1 },
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expectEqual(@as(usize, 1), editor.entity_types.len);
+        try testing.expectEqualStrings("Archer", editor.entity_types[0].id);
+        try testing.expectEqual(@as(usize, 1), editor.levels[0].entity_placements.len);
+        try testing.expect(std.meta.eql(types.EditorToolId.select, editor.active_tool));
+    }
+
+    // One undo restores the deletion.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.entity_types.len);
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.levels[0].entity_placements.len);
+
+    // The fixed tools have no delete button — a crafted select/tile-
+    // targeted click does nothing.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_palette_type,
+        .clicked_editor_tool = .select,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.entity_types.len);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
 test "decoration sprite picker: open routing, official prefab adopt, same-def no-op, entity-picker gate" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

@@ -1918,6 +1918,29 @@ pub fn handleAnytimeInput(
                     history.session.ui_state.editor_picker_sprite_tab = .mission_local;
                 }
             },
+            // Palette tool-cell delete button: push the per-kind
+            // orchestrator + drain — the editor_delete_type handler fans
+            // out into the per-placement deletes (across ALL levels),
+            // removes the type, remaps the ids above it, and reconciles
+            // the active tool; one undo step restores everything. The
+            // fixed tools have no delete button — a crafted
+            // select/tile-targeted click does nothing.
+            .delete_editor_palette_type => {
+                const tool = anytime.clicked_editor_tool orelse return;
+                if (current.editor == null) return;
+                switch (tool) {
+                    .entity_type => |type_id| pushPlayerActionAndDrain(history, .{
+                        .player_delete_editor_type = .{ .type_kind = .entity, .type_id = type_id },
+                    }),
+                    .decoration_type => |type_id| pushPlayerActionAndDrain(history, .{
+                        .player_delete_editor_type = .{ .type_kind = .decoration, .type_id = type_id },
+                    }),
+                    .item_type => |type_id| pushPlayerActionAndDrain(history, .{
+                        .player_delete_editor_type = .{ .type_kind = .item, .type_id = type_id },
+                    }),
+                    .select, .tile => return,
+                }
+            },
             // Inspector section header (expand/collapse). The section id
             // rode in `anytime.clicked_editor_section`. View-side display
             // state — a direct UiState write, off the undo timeline (same

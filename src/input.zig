@@ -330,9 +330,11 @@ pub const AnytimeInput = struct {
     /// set alongside `options_action == .select_editor_sprite_tab`.
     clicked_editor_sprite_tab: ?types.EditorSpritePickerTab = null,
     /// Which editor tool was clicked (make it active), set alongside
-    /// `options_action == .select_editor_tool` by the button-release
-    /// dispatch in main.zig — same payload-rides-along pattern as
-    /// `clicked_setting`. Valid only in the same frame as the click.
+    /// `options_action == .select_editor_tool` (a tool cell) or
+    /// `.delete_editor_palette_type` (a tool cell's delete button) by the
+    /// button-release dispatch in main.zig — same payload-rides-along
+    /// pattern as `clicked_setting`. Valid only in the same frame as the
+    /// click.
     clicked_editor_tool: ?types.EditorToolId = null,
     /// Which editor level tab was clicked (make that level active), set
     /// alongside `options_action == .select_editor_level` by the button-
@@ -482,6 +484,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .change_setting => player_input.anytime.options_action = action,
         .toggle_editor_palette_group => player_input.anytime.options_action = action,
         .add_editor_palette_type => player_input.anytime.options_action = action,
+        .delete_editor_palette_type => player_input.anytime.options_action = action,
         .select_editor_tool => player_input.anytime.options_action = action,
         .select_editor_level => player_input.anytime.options_action = action,
         .toggle_editor_inspector => player_input.anytime.options_action = action,

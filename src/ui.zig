@@ -4697,6 +4697,36 @@ fn emitEditorToolCell(
     } });
 }
 
+/// The small delete button flush in a palette tool cell's top-right corner
+/// — the shared close-button visual (`close_button_sprite_id`, the picker
+/// panel / in-game middle-panel close class). Deletes the tool's palette
+/// type + every placement referencing it across all levels
+/// (`.delete_editor_palette_type`); the cell's tool rides the
+/// `editor_tool` payload. Emitted AFTER the tool cell so hit-testing
+/// (last-wins) prefers it where the two overlap.
+fn emitEditorToolDeleteButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    tool: types.EditorToolId,
+    type_name: []const u8,
+) !void {
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = close_button_sprite_id,
+        .screen_position = .{
+            .x = cell.x + cell.width - close_button_size,
+            .y = cell.y,
+        },
+        .width = close_button_size,
+        .height = close_button_size,
+        .action = .delete_editor_palette_type,
+        .editor_tool = tool,
+        .tooltip = .{ .header = try spanRow(allocator, text(
+            try std.fmt.allocPrint(allocator, "Delete {s} + its placements", .{type_name}),
+        )) },
+    } });
+}
+
 /// Editor top row: level tabs, emitted to the RIGHT of the top bar's
 /// options + undo buttons (those come from `buildTopBar` — same locations
 /// as levels/hubs). One 128-high panel-backed button per level (the
@@ -8486,6 +8516,13 @@ pub fn buildEditorBottomBar(
                         type_definition.id,
                         active_tool,
                     );
+                    try emitEditorToolDeleteButton(
+                        elements,
+                        allocator,
+                        cellAt(bar.y, group_left, ordinal),
+                        .{ .entity_type = @intCast(first_visible + ordinal) },
+                        type_definition.id,
+                    );
                 },
                 1 => for (editor.decoration_types[first_visible .. first_visible + visible], 0..) |type_definition, ordinal| {
                     const sprite_id = try std.fmt.allocPrint(
@@ -8509,6 +8546,13 @@ pub fn buildEditorBottomBar(
                         type_definition.id,
                         active_tool,
                     );
+                    try emitEditorToolDeleteButton(
+                        elements,
+                        allocator,
+                        cellAt(bar.y, group_left, ordinal),
+                        .{ .decoration_type = @intCast(first_visible + ordinal) },
+                        type_definition.id,
+                    );
                 },
                 else => for (editor.item_types[first_visible .. first_visible + visible], 0..) |type_definition, ordinal| {
                     try emitEditorToolCell(
@@ -8525,6 +8569,13 @@ pub fn buildEditorBottomBar(
                         button_color,
                         type_definition.id,
                         active_tool,
+                    );
+                    try emitEditorToolDeleteButton(
+                        elements,
+                        allocator,
+                        cellAt(bar.y, group_left, ordinal),
+                        .{ .item_type = @intCast(first_visible + ordinal) },
+                        type_definition.id,
                     );
                 },
             }
@@ -10279,9 +10330,9 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     );
 
     // 2 fixed tools x (bg + graphic) + 3 groups x (header panel + button
-    // + label + plus (panel + button + glyph) + type (bg + graphic)) = 4 +
-    // 24.
-    try std.testing.expectEqual(@as(usize, 28), elements.items.len);
+    // + label + plus (panel + button + glyph) + type (bg + graphic + delete
+    // button)) = 4 + 27.
+    try std.testing.expectEqual(@as(usize, 31), elements.items.len);
 
     // Every tool graphic sits on a button_background cell at the bottom of the
     // screen: 5 tool cells (2 fixed + 3 palette types) — the "+" cells are
@@ -10343,6 +10394,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     // their square panel cells beside the headers.
     var header_count: usize = 0;
     var plus_button_count: usize = 0;
+    var delete_button_count: usize = 0;
     var enemies_header: ?types.ScreenPosition = null;
     var enemies_header_button: ?types.ScreenPosition = null;
     var first_enemy_cell: ?types.ScreenPosition = null;
@@ -10359,6 +10411,20 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
                 plus_button_count += 1;
                 try std.testing.expect(button.editor_group != null);
                 try std.testing.expect(button.sprite_id == null); // spriteless over the panel
+            }
+            if (button.action == .delete_editor_palette_type) {
+                delete_button_count += 1;
+                // The shared close-button visual, flush in the tool cell's
+                // top-right corner (the cell's top = the bar band's top),
+                // carrying the cell's tool.
+                try std.testing.expectEqualStrings(close_button_sprite_id, button.sprite_id.?);
+                try std.testing.expectEqual(close_button_size, button.width);
+                try std.testing.expectEqual(close_button_size, button.height);
+                try std.testing.expectEqual(
+                    types.reference_height - bottom_bar_height,
+                    button.screen_position.y,
+                );
+                try std.testing.expect(button.editor_tool != null);
             }
             if (button.sprite_id != null and
                 std.mem.eql(u8, button.sprite_id.?, button_background_sprite_id) and
@@ -10385,6 +10451,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     };
     try std.testing.expectEqual(@as(usize, 5), header_count);
     try std.testing.expectEqual(@as(usize, 3), plus_button_count);
+    try std.testing.expectEqual(@as(usize, 3), delete_button_count);
     try std.testing.expect(enemies_header != null);
     try std.testing.expect(enemies_header_button != null);
     try std.testing.expect(first_enemy_cell != null);
