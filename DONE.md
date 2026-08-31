@@ -8808,3 +8808,42 @@ slices:
   single-level gate), and the tabs emission test (× per tab with
   payload/visual/flush position, no × on a single-level mission, the
   "+" as a button).
+
+## Level editor — fresh-mission open (the main-menu Editor button)
+
+The main-menu Editor button no longer opens the hardcoded `beginnings`
+mission — it opens a FRESH empty mission:
+
+- **Payload**: `open_editor.mission_path` became `?[]const u8` — null =
+  fresh mission, a path = open that mission directory. The path-open
+  branch is intact (no UI reaches it yet — the deferred mission browser
+  will — and the beginnings round-trip test keeps exercising it). The
+  session-log generic serializer already handles `?[]const u8`
+  (present-writes / absent-reads-null).
+- **Mission identity (uuid) — settled with the author, deferred
+  implementation**: the uuid is NOT generated at open (the first design
+  — uuid at the input site riding the payload — was rejected: no newly
+  randomly generated things held in state, ever). Mission uuids are file
+  content; identity is minted at SAVE time, which is gated `!replaying`
+  so randomness is safe there. The mint is WRITE-ONLY (never written
+  back into GameState — a random value in state diverges from the
+  replayed log; `verifyReplayMatch` would catch it), read-modify-write
+  preserves an existing file's uuid across repeated saves, and a renamed
+  mission saves into a NEW directory. Recorded in DESIGN → Level Editor
+  → Mission identity; lands with the save-to-disk slice. Empty-uuid
+  sessions are safe: the only runtime consumer of `mission.uuid` is the
+  clone keying in the end_mission / mission-complete paths, which the
+  editor's exit guard redirects before they run.
+- **Fresh shape**: `New Mission` at `missions/New Mission`
+  (persistent-dir-relative — anchors the sprite picker's mission-local
+  scan + the `custom/<mission>/` stem namespace; a missing dir scans as
+  empty, and an author can drop pngs there pre-save), one
+  default-template level, empty palettes, `player_def` seeded from
+  `data/max_player.txt` (the settled load-order fallback).
+- **Refactor**: `readEditorDefaultLevel` (the template read, shared with
+  addEditorLevel) + `loadMaxPlayerLoadout` (the max-player fallback,
+  shared with the path-open's missing-player.txt branch) extracted in
+  event_handlers.zig; the fresh branch is `openFreshEditorMission`.
+- **Tests**: a fresh-open round-trip test in main.zig (mission shape,
+  template level field-by-field, empty palettes, max-player seed name,
+  playtest instantiation of the bare template level, close round-trip).

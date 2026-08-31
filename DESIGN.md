@@ -1803,13 +1803,39 @@ the author's loadout). All official campaign missions ship a `player.txt`
 (`error.FileNotFound` specifically — a present-but-corrupt file errors,
 not silently replaced); a mission without one falls back to
 `data/max_player.txt` — the MAXED DEFAULT, a full player save (the
-future "start at endgame" option loads it as a save; new-mission
-creation will seed `player_def` from it too): the five armor slots
+future "start at endgame" option loads it as a save; fresh-mission
+creation seeds `player_def` from it): the five armor slots
 EQUIPPED at the `max_*` bounds, weapon slots + utility bar EMPTY,
 Inventory = two of each weapon type at `max_weapon_damage`, every
 utility skill learned, every hub in the campaign discovered.
 In-campaign play of a custom mission uses the campaign's PlayerData instead
 (separate path, doesn't change the editor design).
+
+**Fresh missions + Mission identity (uuid).** The main-menu Editor button
+opens a FRESH empty mission: `open_editor` with a NULL `mission_path` →
+"New Mission" at `missions/New Mission` (the persistent-dir-relative path
+— anchors the sprite picker's mission-local scan + the `custom/<mission>/`
+stem namespace; the dir usually doesn't exist yet, and the scan treats a
+missing dir as empty), ONE default-template level
+(`data/default_level.txt`), empty palettes, `player_def` from
+`max_player.txt`. A non-null path opens that mission directory (the
+deferred mission browser + tests) — the loading path is unchanged.
+
+The fresh mission's uuid stays EMPTY for the whole editing session:
+mission uuids are FILE CONTENT (authored in mission.txt), and identity is
+minted when the file is born — at SAVE time, gated `!replaying` (safe to
+be random there). The mint is WRITE-ONLY: the save writes the generated
+uuid into mission.txt but never writes it back into GameState — a random
+value in state would diverge from the replayed log on every replay
+(`verifyReplayMatch` would catch it). Repeated saves must not churn the
+identity: the save flow reads an existing mission.txt in the target dir
+first and reuses ITS uuid, minting only when there is no file. The uuid
+enters state only when a mission is LOADED from disk. Nothing in an
+editor session needs it meanwhile (the only runtime consumer is the clone
+keying in the end_mission / mission-complete paths, which the editor's
+exit guard redirects to end_playtest/end_validation before they run).
+On save with a RENAMED mission, a NEW directory is created for the new
+name (the directory follows the name; the old dir is left behind).
 
 **Editor edits ride the existing event system.** `EditorEvent` variants
 (`editor_set_active_level`, …) mutate `current.editor.?.levels[level_index]`
@@ -1863,7 +1889,8 @@ editor is active, suppress the `start_hub` continuation (defensive —
 `end_level`'s guard should redirect before `end_mission` is ever reached).
 No other gameplay handler knows about the editor.
 
-**Replay & the reconstruction cache.** `open_editor` reads mission.txt +
+**Replay & the reconstruction cache.** `open_editor` (the path-open
+branch) reads mission.txt +
 player.txt + all level_N.txt via `readReconstructionFile` (cache-deterministic).
 `buildEditorMission` (pure, no I/O) does the dedup. In-memory instantiation
 (`start_playtest` calling `instantiateEditorLevel`) is an event mutating

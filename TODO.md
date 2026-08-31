@@ -811,6 +811,23 @@ paragraph). Remaining work:
   custom mission dir) for re-validation before uploading to the online
   database. NOT important right now — deferred with online services.
 - Editor autosave: nice-to-have, not need-to-have (explicit save for now).
+- **Editor save-to-disk (the mission writer).** Flatten the Editor back
+  into mission.txt / player.txt / level_N.txt under
+  `missions/<mission-name>/` in the persistent dir. Settled identity
+  rules — see DESIGN → Level Editor → Mission identity: the uuid is
+  minted at save (write-only, never written back into GameState),
+  read-modify-write to preserve an existing file's uuid, and a RENAMED
+  mission saves into a NEW directory for the new name. Also the natural
+  landing point for the mission-metadata derivation cleanup below.
+- **Mission browser (options-menu button) — deferred by author request
+  (design not settled).** Open an EXISTING mission into the editor:
+  custom missions from the persistent dir + the official embedded
+  missions, split into tabs. The loading path is DONE and tested
+  (`open_editor` with a non-null `mission_path` — the beginnings
+  round-trip test exercises it); the browser is the picker UI on top
+  (the load-save-browser scan pattern is the precedent). Design sketch
+  to settle: presentation of the two tabs, what actions are offered
+  (open in editor / play), rescans.
 
 ## Logging & Replay
 
