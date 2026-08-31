@@ -7956,3 +7956,53 @@ campaign data + clearing the backup) and the validation chain
 (start_validation builds; a mid-run mutation SURVIVES the chained
 level's start_playtest — no rebuild — and the backup still holds the
 campaign data; end_validation restores).
+
+### Slice 10 — save-shaped player.txt + max_player.txt (DONE)
+
+player.txt is now SAVE-SHAPED: the loadout sections of a player save
+(MainHandWeapon .. Boots, Inventory, UtilitySkills; version 2; no
+Info/stats/hubs/clones/UnlockedSkills — base stats aren't authorable,
+the template keeps the Entity defaults, learned is implied). The
+save/loadout section parsing was EXTRACTED from loadPlayerSave into
+`parsePlayerLoadoutFields` (shared by both loaders — the formats can't
+drift), and `playerLoadoutEntity` maps the parsed PlayerData onto the
+editor player template via the `build_player_from_data` field set. The
+old `parseEntityDefinition`-based player.txt (with base stats +
+PlayerLoadout section) is gone; a v1 file is rejected at the section
+whitelist. All four mission player.txt files rewritten in the new
+format (identical starter loadouts, so nothing shifts behaviorally).
+
+`data/max_player.txt` — the maxed default, a full player save: the
+five armor slots equipped at the max_* bounds, weapon slots + utility
+bar EMPTY, two of each weapon type at max_weapon_damage in the
+inventory (12 items), every utility skill learned, every hub in the
+campaign discovered. It's the open_editor fallback (a mission without
+player.txt — the custom/new-mission case), the future "start at
+endgame" save, and the seed for new-mission creation. `new_player.txt`
+stays as-is; both ship.
+
+The open_editor load order: mission player.txt if present, else
+max_player.txt — the fallback triggers on `error.FileNotFound`
+SPECIFICALLY (readReconstructionFile propagates the FileSource error
+verbatim, verified); a present-but-corrupt player.txt still errors
+(fail-fast popup + revert) rather than silently becoming the maxed
+loadout, so an authoring typo isn't masked.
+
+Riding along: `loadPlayerSave` now PARSES DiscoveredHubs — the writer
+emitted it since the save writer landed but no loader ever read it, so
+hub discovery silently dropped on every save/load round trip (the
+asymmetry surfaced because max_player.txt actually needs the section).
+And a format gotcha worth remembering: UnlockedSkills/DiscoveredHubs
+entries are BLANK-LINE-separated groups — consecutive `name x` lines
+collapse into one group and the parser keeps only the first (the
+initial max_player.txt shipped that way until the learned-count test
+caught it: 1 instead of 7).
+
+Tests: loadPlayerLoadout parses the new format (loadout fields, default
+stats, name defaulting to "Player") + rejects v1; the shipped beginnings
+player.txt loads; max_player.txt parses with every maxed property
+asserted (equipped-at-max armor, empty hands + bar, the 12-weapon
+arsenal at 2-per-type, 7 learned, 1 discovered hub, the
+playerLoadoutEntity mapping); and an end-to-end open_editor fallback
+test — a scratch-dir mission without player.txt (written through the
+harness's own FileSource) yields the maxed player_def.

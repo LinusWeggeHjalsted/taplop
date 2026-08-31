@@ -1,0 +1,133 @@
+Metadata
+file_format_version 2
+
+Info
+player_name New Player
+current_campaign main_campaign
+current_hub camp_at_the_crossroads
+turns 0
+deaths 0
+defeated_enemies 0
+skills_used 0
+wood_salvage 0
+metal_salvage 0
+leather_salvage 0
+cloth_salvage 0
+knowledge 0
+
+DiscoveredHubs
+name camp_at_the_crossroads
+
+UnlockedSkills
+name blink
+
+name focus
+
+name howl
+
+name replenish
+
+name stone_form
+
+name swap
+
+name that_which_lingers
+
+Amulet
+item_name Max Amulet
+spell_damage 10
+
+Coat
+item_name Max Coat
+armor 5
+health 10
+
+Gloves
+item_name Max Gloves
+damage 5
+health 10
+
+Pants
+item_name Max Pants
+pickup_radius 5
+health 10
+
+Boots
+item_name Max Boots
+speed 2
+health 10
+
+Inventory
+slot 0
+item_type weapon
+item_name Max Sword
+weapon_type sword
+damage 10
+
+slot 1
+item_type weapon
+item_name Spare Max Sword
+weapon_type sword
+damage 10
+
+slot 2
+item_type weapon
+item_name Max Shield
+weapon_type shield
+damage 10
+
+slot 3
+item_type weapon
+item_name Spare Max Shield
+weapon_type shield
+damage 10
+
+slot 4
+item_type weapon
+item_name Max Spear
+weapon_type spear
+damage 10
+
+slot 5
+item_type weapon
+item_name Spare Max Spear
+weapon_type spear
+damage 10
+
+slot 6
+item_type weapon
+item_name Max Dagger
+weapon_type dagger
+damage 10
+
+slot 7
+item_type weapon
+item_name Spare Max Dagger
+weapon_type dagger
+damage 10
+
+slot 8
+item_type weapon
+item_name Max Axe
+weapon_type axe
+damage 10
+
+slot 9
+item_type weapon
+item_name Spare Max Axe
+weapon_type axe
+damage 10
+
+slot 10
+item_type weapon
+item_name Max Staff
+weapon_type staff
+damage 10
+
+slot 11
+item_type weapon
+item_name Spare Max Staff
+weapon_type staff
+damage 10
+
+CloneData

@@ -71,6 +71,7 @@ const campaign_sections = parser.campaign_sections;
 const mission_sections = parser.mission_sections;
 const decoration_registry_sections = parser.decoration_registry_sections;
 const player_save_sections = parser.player_save_sections;
+const player_loadout_sections = parser.player_loadout_sections;
 const color_theme_sections = parser.color_theme_sections;
 
 /// PNG signature (first 8 bytes) for validating image bytes before reading the
@@ -535,24 +536,49 @@ pub fn parseEntityDefinition(
     return entity;
 }
 
-/// Load a player start loadout from a player.txt's parsed sections. The player
-/// is team 0, defaults name "Player" / sprite "player". Reuses
-/// parseEntityDefinition so the loadout has the same field set as an enemy type
-/// template.
+/// Load a player start loadout from a mission's player.txt. The file is
+/// SAVE-SHAPED (the loadout sections of a player save: weapons, gear,
+/// inventory, utility skills — no Info / stats / hubs / clones /
+/// UnlockedSkills; base stats are NOT authorable, the template keeps the
+/// Entity defaults, and learned is implied for the editor player). The
+/// parsed fields map onto the player template exactly as
+/// `build_player_from_data` maps PlayerData onto the level player.
 pub fn loadPlayerLoadout(
     sections: []const Section,
     allocator: std.mem.Allocator,
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
 ) !types.Entity {
+    try validateSections(sections, &player_loadout_sections);
     try validateFileFormatVersion(sections, "Metadata", player_loadout_file_format_version);
-    for (sections) |section| {
-        for (section.entry_groups) |group| {
-            return parseEntityDefinition(group.pairs, 0, "Player", "player", allocator, file_path, warnings);
-        }
-    }
-    return .{ .name = "Player", .sprite = "player", .team = 0 };
+    var player_data: PlayerData = .{};
+    try parsePlayerLoadoutFields(sections, allocator, file_path, warnings, &player_data);
+    return playerLoadoutEntity(player_data);
 }
+
+/// Map a PlayerData's loadout onto the editor player template — the
+/// `build_player_from_data` field set (name, gear, inventory, utility
+/// skills). BORROWS the source's slices; the caller owns both graphs (the
+/// loaders parse into the same arena, the import handler deep-copies
+/// first). A nameless source (a mission player.txt — the loadout sections
+/// carry no name) defaults to "Player".
+pub fn playerLoadoutEntity(player_data: PlayerData) types.Entity {
+    return .{
+        .name = if (player_data.player_name.len > 0) player_data.player_name else "Player",
+        .sprite = "player",
+        .team = 0,
+        .main_hand_weapon = player_data.main_hand_weapon,
+        .off_hand_weapon = player_data.off_hand_weapon,
+        .amulet = player_data.amulet,
+        .coat = player_data.coat,
+        .gloves = player_data.gloves,
+        .pants = player_data.pants,
+        .boots = player_data.boots,
+        .equipped_utility_skills = player_data.equipped_utility_skills,
+        .inventory = player_data.inventory,
+    };
+}
+
 
 /// Compare two entity definitions for palette dedup. Compares the DEFINITION
 /// fields only (name, sprite, team, stats, weapons, gear, utility skills) —
@@ -1747,48 +1773,18 @@ pub fn loadMission(
     return mission;
 }
 
-pub fn loadPlayerSave(
+/// Parse the shared LOADOUT sections (MainHandWeapon .. UtilitySkills,
+/// including Inventory) into `player_data` — the sections a player save
+/// and a mission player.txt have in common. Used by `loadPlayerSave`
+/// (which adds Info / DiscoveredHubs / UnlockedSkills / CloneData) and
+/// `loadPlayerLoadout` (which maps the result onto the player template).
+fn parsePlayerLoadoutFields(
     sections: []const Section,
     allocator: std.mem.Allocator,
     file_path: []const u8,
     warnings: ?*std.ArrayList([]const u8),
-) !PlayerData {
-    try validateSections(sections, &player_save_sections);
-    try validateFileFormatVersion(sections, "Metadata", player_save_file_format_version);
-    var player_data: PlayerData = .{};
-
-    // Info
-    if (findSection(sections, "Info")) |section| {
-        if (section.entry_groups.len > 0) {
-            const pairs = section.entry_groups[0].pairs;
-            if (findValue(pairs, "player_name")) |value| player_data.player_name = value;
-            if (findValue(pairs, "current_campaign")) |value| player_data.current_campaign = value;
-            if (findValue(pairs, "current_hub")) |value| player_data.current_hub = value;
-            if (findValue(pairs, "turns")) |value| player_data.turns = asU32(value) orelse 0;
-            if (findValue(pairs, "deaths")) |value| player_data.deaths = asU32(value) orelse 0;
-            if (findValue(pairs, "defeated_enemies")) |value| player_data.defeated_enemies = asU32(value) orelse 0;
-            if (findValue(pairs, "skills_used")) |value| player_data.skills_used = asU32(value) orelse 0;
-            if (findValue(pairs, "wood_salvage")) |value| player_data.materials.wood = asU32(value) orelse 0;
-            if (findValue(pairs, "metal_salvage")) |value| player_data.materials.metal = asU32(value) orelse 0;
-            if (findValue(pairs, "leather_salvage")) |value| player_data.materials.leather = asU32(value) orelse 0;
-            if (findValue(pairs, "cloth_salvage")) |value| player_data.materials.cloth = asU32(value) orelse 0;
-            if (findValue(pairs, "knowledge")) |value| player_data.materials.knowledge = asU32(value) orelse 0;
-        }
-    }
-
-    // UnlockedSkills
-    if (findSection(sections, "UnlockedSkills")) |section| {
-        var skills: std.ArrayList(types.SkillId) = .empty;
-        for (section.entry_groups) |group| {
-            if (findValue(group.pairs, "name")) |value| {
-                if (parseEnum(types.SkillId, value)) |skill_id| {
-                    try skills.append(allocator, skill_id);
-                }
-            }
-        }
-        player_data.learned_skills = try skills.toOwnedSlice(allocator);
-    }
-
+    player_data: *PlayerData,
+) !void {
     // MainHandWeapon
     if (findSection(sections, "MainHandWeapon")) |section| {
         if (section.entry_groups.len > 0) {
@@ -1968,6 +1964,65 @@ pub fn loadPlayerSave(
             }
         }
     }
+
+}
+
+pub fn loadPlayerSave(
+    sections: []const Section,
+    allocator: std.mem.Allocator,
+    file_path: []const u8,
+    warnings: ?*std.ArrayList([]const u8),
+) !PlayerData {
+    try validateSections(sections, &player_save_sections);
+    try validateFileFormatVersion(sections, "Metadata", player_save_file_format_version);
+    var player_data: PlayerData = .{};
+
+    // Info
+    if (findSection(sections, "Info")) |section| {
+        if (section.entry_groups.len > 0) {
+            const pairs = section.entry_groups[0].pairs;
+            if (findValue(pairs, "player_name")) |value| player_data.player_name = value;
+            if (findValue(pairs, "current_campaign")) |value| player_data.current_campaign = value;
+            if (findValue(pairs, "current_hub")) |value| player_data.current_hub = value;
+            if (findValue(pairs, "turns")) |value| player_data.turns = asU32(value) orelse 0;
+            if (findValue(pairs, "deaths")) |value| player_data.deaths = asU32(value) orelse 0;
+            if (findValue(pairs, "defeated_enemies")) |value| player_data.defeated_enemies = asU32(value) orelse 0;
+            if (findValue(pairs, "skills_used")) |value| player_data.skills_used = asU32(value) orelse 0;
+            if (findValue(pairs, "wood_salvage")) |value| player_data.materials.wood = asU32(value) orelse 0;
+            if (findValue(pairs, "metal_salvage")) |value| player_data.materials.metal = asU32(value) orelse 0;
+            if (findValue(pairs, "leather_salvage")) |value| player_data.materials.leather = asU32(value) orelse 0;
+            if (findValue(pairs, "cloth_salvage")) |value| player_data.materials.cloth = asU32(value) orelse 0;
+            if (findValue(pairs, "knowledge")) |value| player_data.materials.knowledge = asU32(value) orelse 0;
+        }
+    }
+
+    // UnlockedSkills
+    if (findSection(sections, "UnlockedSkills")) |section| {
+        var skills: std.ArrayList(types.SkillId) = .empty;
+        for (section.entry_groups) |group| {
+            if (findValue(group.pairs, "name")) |value| {
+                if (parseEnum(types.SkillId, value)) |skill_id| {
+                    try skills.append(allocator, skill_id);
+                }
+            }
+        }
+        player_data.learned_skills = try skills.toOwnedSlice(allocator);
+    }
+
+    // DiscoveredHubs — one `name` per entry group (the writer's shape;
+    // parsing it here closes a writer/reader asymmetry that silently
+    // dropped discovery on every save/load round trip).
+    if (findSection(sections, "DiscoveredHubs")) |section| {
+        var hubs: std.ArrayList(types.Hub) = .empty;
+        for (section.entry_groups) |group| {
+            if (findValue(group.pairs, "name")) |name| {
+                try hubs.append(allocator, .{ .name = name });
+            }
+        }
+        player_data.discovered_hubs = try hubs.toOwnedSlice(allocator);
+    }
+
+    try parsePlayerLoadoutFields(sections, allocator, file_path, warnings, &player_data);
 
     // CloneData
     if (findSection(sections, "CloneData")) |section| {
@@ -3180,4 +3235,155 @@ test "entity utility slots: a weapon skill is warned + dropped, utility skills k
     try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
     try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "slice") != null);
     for (warnings.items) |w| allocator.free(w);
+}
+
+test "loadPlayerLoadout: save-shaped player.txt — loadout fields, default stats, name defaults to Player" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\MainHandWeapon
+        \\item_name Starter Sword
+        \\weapon_type sword
+        \\damage 3
+        \\
+        \\Inventory
+        \\slot 0
+        \\item_type weapon
+        \\item_name Spare Dagger
+        \\weapon_type dagger
+        \\damage 1
+        \\
+        \\UtilitySkills
+        \\slot_4 replenish
+        \\
+    ;
+
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    const template = try loadPlayerLoadout(sections, allocator, "player.txt", null);
+
+    // The loadout fields map onto the template (build_player_from_data's
+    // set); the name defaults (the loadout sections carry none).
+    try std.testing.expectEqualStrings("Player", template.name);
+    try std.testing.expectEqualStrings("player", template.sprite);
+    try std.testing.expectEqualStrings("Starter Sword", template.main_hand_weapon.?.name);
+    try std.testing.expectEqualStrings("Spare Dagger", template.inventory.slots[0].?.weapon.name);
+    try std.testing.expectEqual(types.SkillId.replenish, template.equipped_utility_skills[0]);
+    // Base stats are NOT authorable — the Entity defaults hold.
+    try std.testing.expectEqual(@as(u32, 20), template.max_health);
+    try std.testing.expectEqual(@as(u32, 0), template.defense);
+    try std.testing.expectEqual(@as(u32, 1), template.speed);
+    try std.testing.expectEqual(@as(u32, 3), template.aggro_range);
+}
+
+test "loadPlayerLoadout: the v1 PlayerLoadout format is rejected" {
+    const allocator = std.testing.allocator;
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\
+        \\PlayerLoadout
+        \\name Player
+        \\
+    ;
+
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    // The section validation fires first (PlayerLoadout is not a loadout
+    // section anymore) — the old format is rejected either way.
+    try std.testing.expectError(
+        error.UnexpectedSection,
+        loadPlayerLoadout(sections, allocator, "player.txt", null),
+    );
+}
+
+test "data/max_player.txt parses: max gear equipped, weapons in inventory, all skills learned, hub discovered" {
+    const allocator = std.testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    const parsed = try parseConfigFileFromPath(&file_source, "data/max_player.txt", allocator);
+    defer allocator.free(parsed.raw_text);
+    defer freeParsedSections(parsed.sections, allocator);
+
+    const player_data = try loadPlayerSave(parsed.sections, allocator, "", null);
+    defer allocator.free(player_data.learned_skills);
+    defer allocator.free(player_data.clones);
+    defer allocator.free(player_data.discovered_hubs);
+
+    try std.testing.expectEqualStrings("New Player", player_data.player_name);
+    // No weapons or utility skills EQUIPPED — the arsenal is inventory + learned.
+    try std.testing.expect(player_data.main_hand_weapon == null);
+    try std.testing.expect(player_data.off_hand_weapon == null);
+    for (player_data.equipped_utility_skills) |slot| try std.testing.expect(slot == null);
+    // The five armor slots at the max_* bounds.
+    try std.testing.expectEqual(types.max_spell_damage, player_data.amulet.?.spell_damage);
+    try std.testing.expectEqual(types.max_defense_bonus, player_data.coat.?.defense_bonus);
+    try std.testing.expectEqual(types.max_health_bonus, player_data.coat.?.health_bonus);
+    try std.testing.expectEqual(types.max_gloves_damage, player_data.gloves.?.damage_bonus);
+    try std.testing.expectEqual(types.max_pickup_radius, player_data.pants.?.pickup_radius_bonus);
+    try std.testing.expectEqual(types.max_boots_speed, player_data.boots.?.speed_bonus);
+    // Two of each weapon type in the inventory, all at max damage.
+    var weapon_counts: [std.meta.fields(types.WeaponType).len]u32 = .{0} ** std.meta.fields(types.WeaponType).len;
+    var inventory_items: u32 = 0;
+    for (player_data.inventory.slots) |maybe_item| {
+        const item = maybe_item orelse continue;
+        inventory_items += 1;
+        switch (item) {
+            .weapon => |weapon| {
+                try std.testing.expectEqual(types.max_weapon_damage, weapon.weapon_damage);
+                weapon_counts[@intCast(@intFromEnum(weapon.weapon_type))] += 1;
+            },
+            else => return error.TestUnexpectedItem,
+        }
+    }
+    try std.testing.expectEqual(@as(u32, 12), inventory_items);
+    for (weapon_counts) |count| try std.testing.expectEqual(@as(u32, 2), count);
+    // Every utility skill learned; the campaign's hub discovered.
+    try std.testing.expectEqual(@as(usize, 7), player_data.learned_skills.len);
+    try std.testing.expectEqual(@as(usize, 1), player_data.discovered_hubs.len);
+    try std.testing.expectEqualStrings("camp_at_the_crossroads", player_data.discovered_hubs[0].name);
+
+    // The editor fallback maps it onto the player template.
+    const template = playerLoadoutEntity(player_data);
+    try std.testing.expectEqualStrings("New Player", template.name);
+    try std.testing.expect(template.main_hand_weapon == null);
+    try std.testing.expectEqual(types.max_spell_damage, template.amulet.?.spell_damage);
+    try std.testing.expectEqual(@as(u32, 12), blk: {
+        var count: u32 = 0;
+        for (template.inventory.slots) |maybe_item| {
+            if (maybe_item != null) count += 1;
+        }
+        break :blk count;
+    });
+}
+
+test "the shipped beginnings player.txt loads in the save-shaped format" {
+    const allocator = std.testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, std.Io.Dir.cwd());
+
+    const parsed = try parseConfigFileFromPath(
+        &file_source,
+        "data/campaigns/main_campaign/missions/beginnings/player.txt",
+        allocator,
+    );
+    defer allocator.free(parsed.raw_text);
+    defer freeParsedSections(parsed.sections, allocator);
+
+    const template = try loadPlayerLoadout(parsed.sections, allocator, "player.txt", null);
+    try std.testing.expectEqualStrings("Player", template.name);
+    try std.testing.expectEqualStrings("Starter Sword", template.main_hand_weapon.?.name);
+    try std.testing.expectEqual(@as(u32, 3), template.main_hand_weapon.?.weapon_damage);
+    try std.testing.expectEqualStrings("Starter Shield", template.off_hand_weapon.?.name);
+    try std.testing.expectEqualStrings("Starter Amulet", template.amulet.?.name);
+    try std.testing.expectEqual(types.SkillId.replenish, template.equipped_utility_skills[0]);
 }

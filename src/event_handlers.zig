@@ -1488,20 +1488,40 @@ fn handlePlayerInputEvent(
                 "{s}/player.txt",
                 .{start.mission_path},
             ) catch @panic("failed to allocate player path");
-            const player_sections = blk: {
-                const bytes = history.readReconstructionFile(player_file_path) catch {
-                    failReconstructionRead(history, "failed to read player.txt");
-                    return;
+            const player_entity: types.Entity = blk: {
+                const bytes = history.readReconstructionFile(player_file_path) catch |read_error| {
+                    if (read_error != error.FileNotFound) {
+                        failReconstructionRead(history, "failed to read player.txt");
+                        return;
+                    }
+                    // No player.txt in the mission — the maxed default
+                    // loadout (data/max_player.txt, a full player save;
+                    // its loadout sections map onto the template — see
+                    // loaders.playerLoadoutEntity).
+                    const default_bytes = history.readReconstructionFile("data/max_player.txt") catch {
+                        failReconstructionRead(history, "failed to read max_player.txt");
+                        return;
+                    };
+                    const default_sections = parser.parseConfigFile(default_bytes, allocator) catch {
+                        failReconstructionRead(history, "failed to parse max_player.txt");
+                        return;
+                    };
+                    validateConfigKeys(history, default_sections, parser.player_save_key_map, "data/max_player.txt", allocator);
+                    const default_data = loaders.loadPlayerSave(default_sections, allocator, "data/max_player.txt", &balance_warnings) catch {
+                        failReconstructionRead(history, "failed to parse max_player.txt");
+                        return;
+                    };
+                    break :blk loaders.playerLoadoutEntity(default_data);
                 };
-                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                const sections = parser.parseConfigFile(bytes, allocator) catch {
                     failReconstructionRead(history, "failed to parse player.txt");
                     return;
                 };
-            };
-            validateConfigKeys(history, player_sections, parser.player_loadout_key_map, player_file_path, allocator);
-            const player_entity = loaders.loadPlayerLoadout(player_sections, allocator, player_file_path, &balance_warnings) catch {
-                failReconstructionRead(history, "failed to parse player.txt");
-                return;
+                validateConfigKeys(history, sections, parser.player_loadout_key_map, player_file_path, allocator);
+                break :blk loaders.loadPlayerLoadout(sections, allocator, player_file_path, &balance_warnings) catch {
+                    failReconstructionRead(history, "failed to parse player.txt");
+                    return;
+                };
             };
             var level_sections: std.ArrayList([]const parser.Section) = .empty;
             var level_index: u32 = 1;

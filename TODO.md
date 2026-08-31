@@ -595,22 +595,19 @@ yet implemented. Remaining work:
         end_playtest / end_validation; the chained validation level
         starts never re-back-up (mode guard). History in DONE.md;
         design in DESIGN → Level Editor → Playtest/validate framing.
-  - [ ] **10 — player.txt format + max_player.txt:** player.txt becomes
-        SAVE-SHAPED (MainHandWeapon/OffHandWeapon/Amulet/Coat/Gloves/
-        Pants/Boots/Inventory/UtilitySkills + Metadata; no Info / stats
-        / hubs / clones / UnlockedSkills — not authorable): rewrite
-        `loadPlayerLoadout` + all four mission player.txt files
-        (beginnings keeps its starter loadout). Author
-        `data/max_player.txt` — a FULL player save (the future
-        "start at endgame" option loads it as one): the 5 armor slots
-        equipped at the `max_*` bounds, weapon slots + utility bar
-        empty, Inventory = 2 of each of the 6 weapon types at
-        `max_weapon_damage`, UnlockedSkills = all utility skills,
-        DiscoveredHubs = every hub in main_campaign. `new_player.txt`
-        stays as-is (both ship). `open_editor` load order: mission
-        player.txt if present, else max_player.txt (loadout sections
-        extracted from it). Future, with new-mission creation: a new
-        mission's player loads max_player.txt.
+  - [x] **10 — player.txt format + max_player.txt:** DONE — save-shaped
+        player.txt (v2, loadout sections only; `parsePlayerLoadoutFields`
+        shared with `loadPlayerSave`, `playerLoadoutEntity` mapping), all
+        four mission files rewritten (starter loadout kept),
+        `data/max_player.txt` authored (max armor equipped, weapons +
+        utility bar empty, 2 of each weapon type at max damage, all
+        utility skills learned, all hubs discovered), open_editor load
+        order mission-player.txt → max_player.txt (FileNotFound-specific
+        fallback; a corrupt present file still errors). Includes the
+        `DiscoveredHubs` parse in `loadPlayerSave` (was written but never
+        read — discovery silently dropped on every save/load round
+        trip). History in DONE.md; design in DESIGN → Level Editor →
+        Player loadout.
   Deferred: drag-painting. Still-needed event
   structs: gradient-override setters. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +

@@ -1770,11 +1770,29 @@ since save is inline, a type with zero placements has no on-disk trace.
 
 **Player loadout: `player.txt` in the mission directory, persistent.** The
 player isn't part of the enemy palette (it's not placed; the `!` in each
-level's Layout is the spawn position, already parsed). The loadout persists as
-`player.txt` (an Entity definition, same shape as an `EntityTypeDef.template`,
-parsed via `parseEntityDefinition`). Editor-global: same player across all
+level's Layout is the spawn position, already parsed). The loadout persists
+as `player.txt`, SAVE-SHAPED (the loadout sections of a player save —
+MainHandWeapon / OffHandWeapon / Amulet / Coat / Gloves / Pants / Boots /
+Inventory / UtilitySkills, `player_loadout_file_format_version` 2; NO
+Info / stats / hubs / clones / UnlockedSkills — base stats aren't
+authorable (the template keeps the Entity defaults) and learned is
+implied for the editor player (see Playtest/validate framing). The
+shared section parsing lives in `parsePlayerLoadoutFields`, reused by
+`loadPlayerSave`; `loadPlayerLoadout` maps the result onto the template
+via `playerLoadoutEntity` — the `build_player_from_data` field set).
+Editor-global: same player across all
 level playtests. Visible metadata (someone picking up a custom mission sees
-the author's loadout). All official campaign missions ship a `player.txt` too.
+the author's loadout). All official campaign missions ship a `player.txt`
+(starter loadout) too.
+**Load order (open_editor):** the mission's `player.txt` if present
+(`error.FileNotFound` specifically — a present-but-corrupt file errors,
+not silently replaced); a mission without one falls back to
+`data/max_player.txt` — the MAXED DEFAULT, a full player save (the
+future "start at endgame" option loads it as a save; new-mission
+creation will seed `player_def` from it too): the five armor slots
+EQUIPPED at the `max_*` bounds, weapon slots + utility bar EMPTY,
+Inventory = two of each weapon type at `max_weapon_damage`, every
+utility skill learned, every hub in the campaign discovered.
 In-campaign play of a custom mission uses the campaign's PlayerData instead
 (separate path, doesn't change the editor design).
 

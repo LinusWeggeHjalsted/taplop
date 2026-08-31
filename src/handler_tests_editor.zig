@@ -3292,3 +3292,64 @@ test "a validation run's chained level start_playtest does not re-back-up" {
     runToIdle(&history);
     try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
 }
+
+test "open_editor: a mission without player.txt falls back to the maxed default loadout" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // A minimal mission in the harness's persistent scratch dir, WITHOUT a
+    // player.txt (the custom/new-mission case).
+    try harness.file_source.writeFile("missions/no_player/mission.txt",
+        \\Metadata
+        \\file_format_version 2
+        \\mission_uuid 00000000-0000-0000-0000-000000000000
+        \\name No Player Mission
+        \\level_count 1
+        \\
+    );
+    try harness.file_source.writeFile("missions/no_player/level_1.txt",
+        \\Metadata
+        \\file_format_version 1
+        \\name No Player Level
+        \\
+        \\Layout
+        \\!=
+        \\
+        \\Enemies
+        \\
+        \\Decorations
+        \\
+        \\Items
+        \\
+    );
+
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .open_editor = .{
+            .mission_path = "missions/no_player",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    try testing.expect(history.current_state.editor != null);
+    const template = history.current_state.editor.?.player_def.template;
+    // The maxed default (data/max_player.txt): the save's name, armor at
+    // the max bounds, no equipped weapons or skills, the 12-weapon
+    // arsenal in the inventory.
+    try testing.expectEqualStrings("New Player", template.name);
+    try testing.expect(template.main_hand_weapon == null);
+    try testing.expect(template.off_hand_weapon == null);
+    try testing.expectEqual(types.max_spell_damage, template.amulet.?.spell_damage);
+    try testing.expectEqual(types.max_health_bonus, template.coat.?.health_bonus);
+    for (template.equipped_utility_skills) |slot| try testing.expect(slot == null);
+    var inventory_items: u32 = 0;
+    for (template.inventory.slots) |maybe_item| {
+        if (maybe_item != null) inventory_items += 1;
+    }
+    try testing.expectEqual(@as(u32, 12), inventory_items);
+}

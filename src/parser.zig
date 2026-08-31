@@ -29,7 +29,7 @@ pub const campaign_file_format_version: u32 = 1;
 pub const player_save_file_format_version: u32 = 2;
 pub const settings_file_format_version: u32 = 2;
 pub const color_themes_file_format_version: u32 = 1;
-pub const player_loadout_file_format_version: u32 = 1;
+pub const player_loadout_file_format_version: u32 = 2;
 pub const decorations_file_format_version: u32 = 1;
 
 
@@ -407,6 +407,17 @@ pub const player_save_sections = [_][]const u8{
     "CloneData",
 };
 
+/// A mission player.txt: the LOADOUT sections of a player save (weapons,
+/// gear, inventory, utility skills). No Info / stats / hubs / clones /
+/// UnlockedSkills — base stats aren't authorable (the template keeps the
+/// Entity defaults) and learned is implied for the editor player. See
+/// DESIGN → Architecture → Level Editor → Selection model (playtest
+/// player_data).
+pub const player_loadout_sections = [_][]const u8{
+    "Metadata",      "MainHandWeapon", "OffHandWeapon", "Amulet", "Coat",
+    "Gloves",        "Pants",          "Boots",          "Inventory", "UtilitySkills",
+};
+
 // ============================================================
 // Key validation (approach A — see DESIGN → Error Handling)
 // ============================================================
@@ -680,28 +691,20 @@ pub const player_save_key_map = std.StaticStringMap([]const []const u8).initComp
 
 // --- Player loadout (player.txt) key whitelists ---
 //
-// Uses parseEntityDefinition (same key set as level Enemies, minus
-// character_code — the player isn't placed by char code). The file has a
-// Metadata section + a PlayerLoadout section whose entry group is the
-// entity definition.
-
-const player_loadout_def_keys = [_][]const u8{
-    "name", "sprite", "color_index", "displays_weapons",
-    "max_health", "defense", "speed", "aggro_range",
-    "main_hand_weapon_type", "main_hand_weapon_name", "main_hand_weapon_damage",
-    "off_hand_weapon_type", "off_hand_weapon_name", "off_hand_weapon_damage",
-    "amulet_name", "amulet_spell_damage",
-    "coat_name", "coat_health_bonus", "coat_defense_bonus",
-    "gloves_name", "gloves_health_bonus", "gloves_damage_bonus",
-    "pants_name", "pants_health_bonus", "pants_pickup_radius_bonus",
-    "boots_name", "boots_health_bonus", "boots_speed_bonus",
-    "slot_4", "slot_5", "slot_6", "slot_7", "slot_8",
-    "layer",
-};
+// The file is SAVE-SHAPED (the loadout sections of a player save) — the
+// same per-section keys the save carries.
 
 pub const player_loadout_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &level_metadata_keys },
-    .{ "PlayerLoadout", &player_loadout_def_keys },
+    .{ "MainHandWeapon", &save_weapon_keys },
+    .{ "OffHandWeapon", &save_weapon_keys },
+    .{ "Amulet", &save_amulet_keys },
+    .{ "Coat", &save_coat_keys },
+    .{ "Gloves", &save_gloves_keys },
+    .{ "Pants", &save_pants_keys },
+    .{ "Boots", &save_boots_keys },
+    .{ "Inventory", &save_inventory_keys },
+    .{ "UtilitySkills", &save_utility_skills_keys },
 });
 
 /// Validate that every key in every entry group of every section is in the
