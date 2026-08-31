@@ -1947,11 +1947,10 @@ layout + a left inspector + a right settings sidebar:
   orchestrator convention; the replay whitelist requires a
   PlayerInputEvent at the top of every stack — see Determinism &
   Tiebreaking). Controls per field:
-  - name, sprite id: text inputs (see UI Framework → Text input
-    widget). The sprite id is a plain text field in v1 — the centered
-    sprite picker replaces it later, and sprite RESOLUTION must then
-    prioritize `.png`s in the mission folder being edited (custom
-    assets) over shipped sprites.
+  - name: a text input (see UI Framework → Text input widget). sprite
+    id: the centered sprite picker (LANDED — the interim v1 text field
+    is gone); the Mission tab takes priority over Official (custom
+    assets over shipped ones) — see the centered sprite picker below.
   - color_index: inline swatch row (the settings screen's 6-swatch
     player-color row is the precedent) — not a picker.
   - displays_weapons: toggle.
@@ -2007,15 +2006,38 @@ layout + a left inspector + a right settings sidebar:
   in-game bottom bar (the screen transition handles it; `view()` branches
   on screen). Upload/Publish UI is DEFERRED (lands with online services).
 
-**Centered sprite picker.** Picking a base sprite for an enemy or
-decoration tool opens a centered modal panel with two sections:
-(a) the custom `.png`s in the mission directory, (b) the officially
-shipped sprites for that domain (enemy sprites for enemy tools,
-decoration sprites for decoration tools). Clicking an option closes the
-picker and sets the tool's sprite id. Decoration layer sprites pick
-through the same panel. Ground items always render as the shared
-ground-bag sprite — there is no sprite to pick for them. The picker is
-the editor's only centered panel; everything else stays inline in the
+**Centered sprite picker (enemy base sprite LANDED; decorations +
+layers later).** Picking a base sprite for an enemy tool opens the
+centered picker (the skill picker's framework, second consumer —
+dropdown semantics, blocks only where it sits, stays open until a pick
+or close) with TWO TABS top-left and close top-right:
+- **Mission** — the `.png`s in the mission directory (a flat scan,
+  `FileSource.listPersistentPngFiles`; re-scanned at every OPEN from
+  the idle-input site — interactive IO never in `view()`/handlers; the
+  list is cached on `SessionState.editor_mission_sprites`, the
+  `save_files` ownership pattern). A picked `boss.png` in mission
+  `artists_den` stores the stem **`custom/artists_den/boss`** —
+  namespaced (no collision with official stems) + self-describing in
+  the level file. Resolution rule: a stem starting `custom/<mission>/`
+  → `{mission_path}/<name>.png` (the mission being played/edited);
+  anything else → `entities/{stem}.png` embedded. The art isn't
+  RENDERABLE yet (custom-asset rendering is unwired) — those cells show
+  the stem as a text label until it lands.
+- **Official** — the shipped `assets/entities/*.png` (comptime from
+  the sprite-metadata table), the player body EXCLUDED. Cells draw the
+  sprite aspect-fit at the 512×640 entity-frame convention, tinted with
+  the enemy gradient at the type's color_index; the current sprite is
+  highlighted.
+Cells are 256×256, 4 columns, no scrolling (overflow is a follow-up if
+real content needs it). The tab state is UiState (a view affordance,
+reset to Mission on every open — custom assets take priority). Picking
+commits through the existing `player_set_editor_entity_sprite` event
+(on the undo timeline + replay-validated); same-value picks close
+without recording. Decoration base sprites + decoration layer sprites
+pick through the same panel later (their tabs land with the decoration
+inspector slice); ground items always render as the shared ground-bag
+sprite — there is no sprite to pick for them. The picker is the
+editor's only centered panel; everything else stays inline in the
 inspector / settings sidebar.
 
 **Level theme (gradient picking).** A level's theme is composed from the

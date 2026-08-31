@@ -12,6 +12,7 @@ const types = @import("types.zig");
 const state = @import("state.zig");
 const lookups = @import("generated_lookups.zig");
 const utility_skills = @import("utility_skills.zig");
+const sprite_metadata = @import("generated_sprite_metadata");
 const Skill = @import("skills/skill.zig").Skill;
 const Effect = @import("effects/effect.zig").Effect;
 
@@ -52,6 +53,27 @@ pub const max_full_screen_overlays = 2;
 /// consumer).
 pub const EditorPickerTarget = union(enum) {
     utility_skill_slot: u32,
+    /// The edited entity type's base sprite (the inspector's Sprite row).
+    entity_sprite: void,
+};
+
+/// The OFFICIAL enemy sprites (shipped `assets/entities/*.png`) as bare
+/// stems — the sprite picker's Official tab. The player body is EXCLUDED
+/// (the player sprite isn't an enemy base-sprite option). Comptime from
+/// the sprite-metadata table; sorted for a stable picker order.
+const official_entity_sprite_stems: []const []const u8 = build: {
+    var stems: []const []const u8 = &.{};
+    for (sprite_metadata.map.kvs.keys[0..sprite_metadata.map.kvs.len]) |key| {
+        if (!std.mem.startsWith(u8, key, "entities/")) continue;
+        if (std.mem.eql(u8, key, "entities/player")) continue;
+        const stem = key["entities/".len..];
+        // Insert in sorted position (comptime slices have const elements —
+        // no in-place sort).
+        var insert_index: usize = 0;
+        while (insert_index < stems.len and std.mem.lessThan(u8, stems[insert_index], stem)) : (insert_index += 1) {}
+        stems = stems[0..insert_index] ++ [_][]const u8{stem} ++ stems[insert_index..];
+    }
+    break :build stems;
 };
 
 const editor_inspector_section_count: usize =
@@ -168,6 +190,12 @@ pub const UiState = struct {
     /// shared across the enemy + player contents.
     editor_inspector_section_expanded: [editor_inspector_section_count]bool =
         .{false} ** editor_inspector_section_count,
+
+    /// Which tab the sprite picker is showing (Mission / Official). View
+    /// affordance — a direct UiState write, off the undo timeline. Reset
+    /// to `.mission_local` on every open (custom assets take priority over
+    /// shipped ones).
+    editor_picker_sprite_tab: types.EditorSpritePickerTab = .mission_local,
 
     /// Combat log scroll offset (for full combat log view).
     combat_log_scroll_offset: i32 = 0,
@@ -833,7 +861,7 @@ fn textEditKey(text_edit: *TextEditState, key: []const u8, shift_held: bool) ?ty
 /// as it's typed). Numeric ids join here with their slices.
 fn textFieldIsNumeric(field_id: types.TextFieldId) bool {
     return switch (field_id) {
-        .entity_name, .entity_sprite, .item_name => false,
+        .entity_name, .item_name => false,
         .entity_stat, .item_stat => true,
     };
 }
@@ -1211,8 +1239,6 @@ test "emitInspectorTextField via the content builder: current value unfocused, b
             editorInspectorPanelRect().x + ui_gap,
             name_field.screen_position.x,
         );
-        const sprite_field = findTextField(&elements, .entity_sprite).?;
-        try std.testing.expectEqualStrings("skeleton_1", sprite_field.text);
     }
 
     // Focused (name), with a selection + mid-string caret: the field shows
@@ -1241,10 +1267,6 @@ test "emitInspectorTextField via the content builder: current value unfocused, b
         try std.testing.expectEqual(expected_selection_x, name_field.selection.?.x);
         try std.testing.expectEqual(expected_selection_width, name_field.selection.?.width);
         try std.testing.expectEqual(expected_selection_x, name_field.caret.?.x);
-        // The sprite field is unfocused: still the current value, no caret.
-        const sprite_field = findTextField(&elements, .entity_sprite).?;
-        try std.testing.expectEqualStrings("skeleton_1", sprite_field.text);
-        try std.testing.expect(sprite_field.caret == null);
     }
 }
 
@@ -2065,6 +2087,16 @@ pub const Button = struct {
     /// (expand/collapse). The `.toggle_editor_inspector_section` action +
     /// `AnytimeInput.clicked_editor_section` fold this into the handler.
     editor_section: ?types.EditorInspectorSectionId = null,
+    /// Sprite picker cell identity, if this button is a sprite option (the
+    /// stem — for mission-local picks the namespaced
+    /// `custom/<mission>/<stem>` id). The `.select_editor_entity_sprite`
+    /// action + `AnytimeInput.clicked_editor_sprite` fold this into the
+    /// handler.
+    editor_sprite: ?[]const u8 = null,
+    /// Sprite picker tab identity, if this button is a tab (Mission /
+    /// Official). The `.select_editor_sprite_tab` action +
+    /// `AnytimeInput.clicked_editor_sprite_tab` fold this into the handler.
+    editor_sprite_tab: ?types.EditorSpritePickerTab = null,
     /// Editor tool identity, if this button is a tool cell (make it the
     /// active tool). The `.select_editor_tool` action +
     /// `AnytimeInput.clicked_editor_tool` fold this into the handler.
@@ -4559,6 +4591,11 @@ fn editorInspectorEntityTarget(editor: types.Editor) ?u32 {
 const EditorInspectorControl = union(enum) {
     none,
     text: types.TextFieldId,
+    /// The base-sprite row (enemy identity): a button showing the current
+    /// stem that opens the centered sprite picker (mission-local +
+    /// official tabs — see DESIGN → Level Editor → Editor UI layout, the
+    /// centered sprite picker).
+    sprite_button: void,
     /// The color_index swatch row (the enemy gradient, one swatch per
     /// index — the settings screen's player-color row is the precedent).
     swatches,
@@ -4720,7 +4757,7 @@ fn editorInspectorEntityEntries(
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.identity)]) {
         try entries.appendSlice(allocator, &.{
             .{ .field = .{ .label = "Name", .control = .{ .text = .entity_name } } },
-            .{ .field = .{ .label = "Sprite", .control = .{ .text = .entity_sprite } } },
+            .{ .field = .{ .label = "Sprite", .control = .sprite_button } },
             .{ .field = .{ .label = "Color", .control = .swatches } },
             .{ .field = .{ .label = "Displays weapons", .control = .toggle } },
         });
@@ -4962,6 +4999,14 @@ fn buildEditorInspectorContent(
                 const control_rect = inspectorControlRect(cell);
                 switch (row.control) {
                     .none => {},
+                    .sprite_button => try emitInspectorSpriteButton(
+                        elements,
+                        allocator,
+                        font_metrics,
+                        context,
+                        control_rect,
+                        active_theme,
+                    ),
                     .text => |field_id| try emitInspectorTextField(
                         elements,
                         allocator,
@@ -5149,6 +5194,51 @@ fn buildEditorInspectorContent(
 /// element slice must never point into UiState (it mutates between
 /// frames, and the previous frame's elements are hit-tested a frame
 /// later).
+/// The base-sprite row's control: a half-width panel-backed button showing
+/// the current stem — clicking opens the centered sprite picker (the
+/// mission-local + official tabs).
+fn emitInspectorSpriteButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    context: InspectorEntityContext,
+    control_rect: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const button_color = context.gradient_colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const rect: Rectangle = .{
+        .x = control_rect.x,
+        .y = control_rect.y,
+        .width = @divFloor(control_rect.width, 2),
+        .height = control_rect.height,
+    };
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .action = .open_editor_sprite_picker,
+        .tooltip = .{ .header = try spanRow(allocator, text("Pick sprite")) },
+    } });
+    const label = if (context.template.sprite.len > 0) context.template.sprite else "(none)";
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = rect
+            .placeCenter(label_width, editor_group_header_font_size)
+            .position(),
+        .font_size = editor_group_header_font_size,
+        .color = active_theme.lightest,
+        .blocks_input = false,
+    } });
+}
+
 fn emitInspectorTextField(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -5555,6 +5645,9 @@ pub fn buildEditorSkillPicker(
 ) !void {
     const slot_index = switch (target) {
         .utility_skill_slot => |index| index,
+        // The sprite target isn't this picker's (the view dispatches on
+        // the target); defensive for crafted calls.
+        .entity_sprite => return,
     };
     var current: ?types.SkillId = null;
     if (slot_index < types.utility_skill_count) {
@@ -5640,6 +5733,254 @@ pub fn buildEditorSkillPicker(
     }
 }
 
+/// The centered SPRITE picker (the picker framework's second consumer):
+/// pick the edited entity type's base sprite. Two tabs top-left — Mission
+/// (the .pngs scanned from the mission directory, stored as namespaced
+/// `custom/<mission-dir>/<stem>` ids) and Official (the shipped entity
+/// sprites, minus the player body); close top-right. One 256×256 cell per
+/// option (the palette tool-cell look). Dropdown semantics like the skill
+/// picker: blocks only where it sits, stays open until a pick or close.
+/// No scrolling — 4 columns, all rows (overflow is a follow-up if real
+/// content needs it).
+pub fn buildEditorSpritePicker(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    editor: types.Editor,
+    active_theme: types.ActiveColorTheme,
+    mission_sprites: []const []const u8,
+    tab: types.EditorSpritePickerTab,
+) !void {
+    const stems = switch (tab) {
+        .mission_local => mission_sprites,
+        .official => official_entity_sprite_stems,
+    };
+    const columns: i32 = 4;
+    const rows: i32 = @max(@divTrunc(@as(i32, @intCast(stems.len)) + columns - 1, columns), 1);
+    const cell = slot_size;
+    const width = columns * cell + (columns - 1) * ui_gap + 2 * ui_gap;
+    const height = middle_panel_header_height + rows * cell + (rows - 1) * ui_gap + 2 * ui_gap;
+    const bounds = screenRect().placeCenter(width, height);
+
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = bounds.position(),
+        .width = width,
+        .height = height,
+        .color = active_theme.darkest,
+    } });
+
+    // The header: tab buttons top-left, close top-right (no title — the
+    // tabs ARE the header). Tab state is UiState (a view affordance).
+    const origin = bounds.position();
+    const tab_specs = [_]struct { tab: types.EditorSpritePickerTab, label: []const u8 }{
+        .{ .tab = .mission_local, .label = "Mission" },
+        .{ .tab = .official, .label = "Official" },
+    };
+    var tab_x = origin.x + ui_gap;
+    for (tab_specs) |spec| {
+        const label_width = font_metrics.measureSpanWidth(text(spec.label), middle_panel_header_font_size);
+        const tab_width = label_width + 2 * ui_gap;
+        const active = spec.tab == tab;
+        try elements.append(allocator, .{ .nine_slice_panel = .{
+            .sprite_id = "ui/panel",
+            .screen_position = .{ .x = tab_x, .y = origin.y },
+            .width = tab_width,
+            .height = middle_panel_header_height,
+            .color = if (active) active_theme.lightest else active_theme.darkest,
+        } });
+        try elements.append(allocator, .{ .button = .{
+            .screen_position = .{ .x = tab_x, .y = origin.y },
+            .width = tab_width,
+            .height = middle_panel_header_height,
+            .action = .select_editor_sprite_tab,
+            .editor_sprite_tab = spec.tab,
+            .highlighted = active,
+        } });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = spec.label,
+            .screen_position = .{
+                .x = tab_x + ui_gap,
+                .y = origin.y + @divFloor(middle_panel_header_height - middle_panel_header_font_size, 2),
+            },
+            .font_size = middle_panel_header_font_size,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+        tab_x += tab_width + ui_gap;
+    }
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = close_button_sprite_id,
+        .screen_position = .{
+            .x = origin.x + bounds.width - close_button_size,
+            .y = origin.y,
+        },
+        .width = close_button_size,
+        .height = close_button_size,
+        .action = .close_editor_picker,
+    } });
+    const content: Rectangle = .{
+        .x = bounds.x,
+        .y = bounds.y + middle_panel_header_height,
+        .width = bounds.width,
+        .height = bounds.height - middle_panel_header_height,
+    };
+
+    // The edited template (highlight target + tint source) — the target
+    // resolution's single seam, same as the skill picker.
+    const context: InspectorEntityContext = switch (editorInspectorTarget(editor)) {
+        .entity_type => |index| .{
+            .template = editor.entity_types[index].template,
+            .edit_target = .{ .entity_type = index },
+            .gradient_colors = active_theme.enemy_gradient.colors,
+        },
+        .player => .{
+            .template = editor.player_def.template,
+            .edit_target = .player_def,
+            .gradient_colors = active_theme.player_gradient.colors,
+        },
+    };
+    const enemy = active_theme.enemy_gradient.colors;
+    const color_index = @min(context.template.color_index, types.gradient_color_count - 1);
+    const graphic_color = enemy[color_index];
+    const button_color = enemy[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const grid_origin: ScreenPosition = .{
+        .x = content.x + ui_gap,
+        .y = content.y + ui_gap,
+    };
+
+    if (stems.len == 0) {
+        try elements.append(allocator, .{ .text_label = .{
+            .text = "No sprites",
+            .screen_position = grid_origin,
+            .font_size = editor_group_header_font_size,
+            .color = active_theme.lightest,
+            .blocks_input = false,
+        } });
+        return;
+    }
+
+    const mission_directory = missionDirectoryName(editor.mission.path);
+    for (stems, 0..) |stem, index| {
+        const column: i32 = @intCast(index % @as(usize, @intCast(columns)));
+        const row: i32 = @intCast(index / @as(usize, @intCast(columns)));
+        const cell_rect: Rectangle = .{
+            .x = grid_origin.x + column * (cell + ui_gap),
+            .y = grid_origin.y + row * (cell + ui_gap),
+            .width = cell,
+            .height = cell,
+        };
+        switch (tab) {
+            .official => {
+                // The stored id is the bare stem; the graphic is the
+                // shipped sprite (aspect-fit at the entity-frame
+                // convention, enemy-gradient tint at the type's color).
+                const full_id = try std.fmt.allocPrint(allocator, "entities/{s}", .{stem});
+                try emitPickerSpriteCell(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    cell_rect,
+                    stem,
+                    stem,
+                    full_id,
+                    graphic_color,
+                    button_color,
+                    std.mem.eql(u8, context.template.sprite, stem),
+                    active_theme.lightest,
+                );
+            },
+            .mission_local => {
+                // The stored id is namespaced (`custom/<mission-dir>/<stem>`)
+                // so it can't collide with official stems; the file stays
+                // where the author put it (the mission directory). The art
+                // isn't renderable until custom-asset rendering lands —
+                // the cell shows the stem as a text label.
+                const stem_without_extension = stem[0 .. std.mem.lastIndexOfScalar(u8, stem, '.') orelse stem.len];
+                const namespaced = try std.fmt.allocPrint(
+                    allocator,
+                    "custom/{s}/{s}",
+                    .{ mission_directory, stem_without_extension },
+                );
+                try emitPickerSpriteCell(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    cell_rect,
+                    namespaced,
+                    stem_without_extension,
+                    null,
+                    graphic_color,
+                    button_color,
+                    std.mem.eql(u8, context.template.sprite, namespaced),
+                    active_theme.lightest,
+                );
+            },
+        }
+    }
+}
+
+/// The mission directory's NAME (the last path segment) — the namespace
+/// for mission-local sprite ids.
+fn missionDirectoryName(mission_path: []const u8) []const u8 {
+    if (std.mem.lastIndexOfScalar(u8, mission_path, '/')) |slash| {
+        return mission_path[slash + 1 ..];
+    }
+    return mission_path;
+}
+
+/// One sprite-picker cell: the button background (carrying the pick + the
+/// stored-id payload) + the option's graphic. Official options draw the
+/// sprite; mission-local options carry a text label (their art isn't
+/// renderable until custom-asset rendering lands).
+fn emitPickerSpriteCell(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell_rect: Rectangle,
+    sprite_id: []const u8,
+    label: []const u8,
+    graphic_sprite_id: ?[]const u8,
+    graphic_color: Color,
+    button_color: Color,
+    highlighted: bool,
+    label_color: Color,
+) !void {
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = button_background_sprite_id,
+        .screen_position = cell_rect.position(),
+        .width = cell_rect.width,
+        .height = cell_rect.height,
+        .action = .select_editor_entity_sprite,
+        .editor_sprite = sprite_id,
+        .color = button_color,
+        .highlighted = highlighted,
+        .tooltip = .{ .header = try spanRow(allocator, text(label)) },
+    } });
+    if (graphic_sprite_id) |graphic_id| {
+        const fitted = scaleToFit(cell_rect, editor_entity_frame_width, editor_entity_frame_height);
+        try elements.append(allocator, .{ .image = .{
+            .sprite_id = graphic_id,
+            .screen_position = fitted.position(),
+            .width = fitted.width,
+            .height = fitted.height,
+            .color = graphic_color,
+            .blocks_input = false,
+        } });
+    } else {
+        const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = label,
+            .screen_position = cell_rect
+                .placeCenter(label_width, editor_group_header_font_size)
+                .position(),
+            .font_size = editor_group_header_font_size,
+            .color = label_color,
+            .blocks_input = false,
+        } });
+    }
+}
+
 /// One picker cell: the frame button (carrying the pick; null skill_id =
 /// the None cell) + the skill icon at FULL cell size. Real skills are
 /// icon-only (the tooltip carries the name); the None cell keeps its text
@@ -5715,11 +6056,15 @@ pub fn textEditPressProceeds(
 ) bool {
     if (pressed_button) |action| {
         if (action == .toggle_editor_inspector) return true;
-        // A picker surface (a skill cell or its close button): the picker
-        // is the ACTIVE interaction — commit the field and let the pick
-        // fire in the same click (it floats outside the inspector rect,
-        // so the region check below wouldn't cover it).
-        if (action == .select_editor_utility_skill or action == .close_editor_picker) return true;
+        // A picker surface (a skill cell, a sprite cell, a picker tab, or
+        // the close button): the picker is the ACTIVE interaction — commit
+        // the field and let the pick fire in the same click (it floats
+        // outside the inspector rect, so the region check below wouldn't
+        // cover it).
+        if (action == .select_editor_utility_skill or
+            action == .select_editor_entity_sprite or
+            action == .select_editor_sprite_tab or
+            action == .close_editor_picker) return true;
     }
     if (!inspector_open) return false;
     return editorInspectorPanelRect().contains(position);
@@ -7370,15 +7715,16 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
     // weapons, then the section-break spacer (the Stats header starts at
     // 10 and needs the spacer's unit too → next window).
     // Elements: toggle 3 + bg 1 + Identity 3 (panel + button + label) +
-    // Name 2 + Sprite 2 + Color
+    // Name 1 (text field) + Sprite 3 (panel + picker button + label) +
+    // Color
     // (label + 6 swatch fills + 6 swatch buttons = 13) + Displays weapons
     // (label + panel + button + value label = 4) + scrollbar 2 = 29.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 30), elements.items.len);
-        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Sprite", "Color", "Displays weapons", "true" });
+        try std.testing.expectEqual(@as(usize, 32), elements.items.len);
+        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Sprite", "(none)", "Color", "Displays weapons", "true" });
         // 6 swatch fills + the 2 scrollbar rects.
         try std.testing.expectEqual(@as(usize, 8), countSolidRects(&elements));
     }
@@ -7389,7 +7735,7 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 3, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Sprite", "Color", "Displays weapons", "true", "- Stats", "Max health" });
+        try expectInspectorLabels(&elements, &.{ "Sprite", "(none)", "Color", "Displays weapons", "true", "- Stats", "Max health" });
     }
 
     // Out-of-range scroll clamps to max (41 − 10 = 31, the four spacers
@@ -9933,4 +10279,103 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
         };
         try std.testing.expectEqual(types.SkillId.stone_form, player_highlighted.?);
     }
+}
+
+test "buildEditorSpritePicker: tabs, official cells (player excluded), mission-local namespaced cells" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Bear",
+        .template = .{ .name = "Bear", .sprite = "bear", .team = 1 },
+    }};
+    const editor: types.Editor = .{
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+        .mission = .{ .path = "missions/artists_den" },
+    };
+
+    // Official tab: one cell per shipped enemy sprite, the player body
+    // excluded; the current sprite (bear) highlighted; every cell carries
+    // its stem payload + the shipped sprite graphic.
+    {
+        var elements: UiElementList = .empty;
+        try buildEditorSpritePicker(&elements, arena.allocator(), metrics, editor, theme, &.{}, .official);
+        var pick_buttons: usize = 0;
+        var highlighted: ?[]const u8 = null;
+        var saw_player = false;
+        var saw_bear_graphic = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_entity_sprite) {
+                pick_buttons += 1;
+                if (std.mem.eql(u8, button.editor_sprite.?, "player")) saw_player = true;
+                if (button.highlighted) highlighted = button.editor_sprite;
+            } else if (button.action == .select_editor_sprite_tab) {
+                // Tabs: Mission + Official, the active one highlighted.
+                if (button.editor_sprite_tab.? == .official) {
+                    try std.testing.expect(button.highlighted);
+                } else {
+                    try std.testing.expect(!button.highlighted);
+                }
+            },
+            .image => |image| if (std.mem.eql(u8, image.sprite_id, "entities/bear")) {
+                saw_bear_graphic = true;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 9), pick_buttons); // 10 shipped minus player
+        try std.testing.expect(!saw_player);
+        try std.testing.expectEqualStrings("bear", highlighted.?);
+        try std.testing.expect(saw_bear_graphic);
+    }
+
+    // Mission tab: the scanned file names become namespaced
+    // `custom/<mission-dir>/<stem>` payloads, shown as TEXT cells (the art
+    // isn't renderable until custom-asset rendering lands).
+    {
+        const mission_sprites = [_][]const u8{ "boss.png", "minion.png" };
+        var elements: UiElementList = .empty;
+        try buildEditorSpritePicker(
+            &elements,
+            arena.allocator(),
+            metrics,
+            editor,
+            theme,
+            &mission_sprites,
+            .mission_local,
+        );
+        var payloads: [2][]const u8 = .{ "", "" };
+        var pick_buttons: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_entity_sprite) {
+                payloads[pick_buttons] = button.editor_sprite.?;
+                pick_buttons += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 2), pick_buttons);
+        try std.testing.expectEqualStrings("custom/artists_den/boss", payloads[0]);
+        try std.testing.expectEqualStrings("custom/artists_den/minion", payloads[1]);
+        // The mission tab's cells carry text labels, no sprite graphics.
+        try std.testing.expectEqualStrings("boss", findLabel(&elements, "boss").text);
+    }
+}
+
+/// Find the first text label with exactly `label_text` (test helper).
+fn findLabel(elements: *const UiElementList, label_text: []const u8) TextLabel {
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| if (std.mem.eql(u8, label.text, label_text)) return label,
+        else => {},
+    };
+    @panic("label not found");
 }

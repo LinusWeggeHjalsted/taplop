@@ -217,6 +217,14 @@ fn update(
                         if (button.editor_section) |section| {
                             player_input.anytime.clicked_editor_section = section;
                         }
+                        // Sprite picker cells + tabs: the stem / tab ride
+                        // alongside their actions.
+                        if (button.editor_sprite) |sprite| {
+                            player_input.anytime.clicked_editor_sprite = sprite;
+                        }
+                        if (button.editor_sprite_tab) |tab| {
+                            player_input.anytime.clicked_editor_sprite_tab = tab;
+                        }
                         // Editor tool cells: the tool identity rides in
                         // `anytime.clicked_editor_tool` alongside the
                         // `.select_editor_tool` action.
@@ -2173,11 +2181,13 @@ test "text field focus-on-click: press + release over a field focuses it; click 
     };
 
     var name_field: ?ui.TextFieldUi = null;
-    var sprite_field: ?ui.TextFieldUi = null;
+    var sprite_button: ?ui.Button = null;
     for (elements.items) |element| switch (element) {
         .text_field => |field| {
             if (field.ref.id == .entity_name) name_field = field;
-            if (field.ref.id == .entity_sprite) sprite_field = field;
+        },
+        .button => |button| {
+            if (button.action == .open_editor_sprite_picker) sprite_button = button;
         },
         else => {},
     };
@@ -2186,8 +2196,8 @@ test "text field focus-on-click: press + release over a field focuses it; click 
         .y = name_field.?.screen_position.y + 40,
     };
     const sprite_click = types.ScreenPosition{
-        .x = sprite_field.?.screen_position.x + 40,
-        .y = sprite_field.?.screen_position.y + 40,
+        .x = sprite_button.?.screen_position.x + 40,
+        .y = sprite_button.?.screen_position.y + 40,
     };
 
     const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -2245,9 +2255,10 @@ test "text field focus-on-click: press + release over a field focuses it; click 
         );
     }
 
-    // Press on the SPRITE field while the name field is focused: M2 commits
-    // the name (unchanged → records nothing) + the press proceeds; release
-    // focuses the sprite field, seeded with its current value.
+    // Press on the SPRITE row's button while the name field is focused:
+    // M2 commits the name (unchanged → records nothing) + the press
+    // proceeds; release OPENS the centered sprite picker (the Sprite row's
+    // action).
     {
         var player_input = input.PlayerInput{};
         player_input.pointer.pressed = true;
@@ -2257,16 +2268,17 @@ test "text field focus-on-click: press + release over a field focuses it; click 
         player_input.pointer.released = true;
         player_input.pointer.position = sprite_click;
         update(&history, player_input, view_state, 0, camera, 1.0, viewport);
-        try std.testing.expect(history.session.ui_state.text_edit != null);
+        try std.testing.expect(history.session.ui_state.editor_picker != null);
         try std.testing.expectEqual(
-            types.TextFieldRef{ .id = .entity_sprite, .target = .{ .entity_type = 0 } },
-            history.session.ui_state.text_edit.?.field,
-        );
-        try std.testing.expectEqualStrings(
-            "skeleton_1",
-            history.session.ui_state.text_edit.?.buffer.currentText(),
+            ui.EditorPickerTarget.entity_sprite,
+            history.session.ui_state.editor_picker.?,
         );
         try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+        // Close it — the drag-off block below needs a clean slate.
+        player_input = .{};
+        player_input.pointer.pressed = true;
+        player_input.pointer.position = .{ .x = 2400, .y = 2400 };
+        update(&history, player_input, view_state, 0, camera, 1.0, viewport);
     }
 
     // Drag-off: press on the name field, release far away. The PRESS

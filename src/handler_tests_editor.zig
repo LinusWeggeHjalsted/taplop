@@ -2187,52 +2187,86 @@ test "text field commit: entity name end-to-end, no-op gate, cancel" {
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
 }
 
-test "text field commit: entity sprite edits ride the same path (v1 text field, picker later)" {
+test "sprite picker: open scans the mission dir, pick sets the base sprite, same-value no-ops" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
 
+    // A png + a non-png in the harness's persistent scratch dir (the scan
+    // filters by extension; content is irrelevant — no dims are parsed for
+    // entities).
+    try harness.file_source.writeFile("missions/artists_den/boss.png", "png");
+    try harness.file_source.writeFile("missions/artists_den/notes.txt", "not a sprite");
+
     const entity_types = [_]types.EntityTypeDef{
         .{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } },
     };
-    const levels = [_]types.EditorLevel{.{} };
+    const levels = [_]types.EditorLevel{.{}};
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+        .mission = .{ .path = "missions/artists_den" },
     }));
     runToIdle(&history);
 
-    const no_keys: [0]?[]const u8 = .{};
-    const enter_pressed: [1]?[]const u8 = .{"Enter"};
-    const field: types.TextFieldRef = .{ .id = .entity_sprite, .target = .{ .entity_type = 0 } };
+    // Open the picker: the mission dir scan lands on SessionState (the
+    // .txt is filtered out), the tab resets to Mission, the target rides
+    // UiState.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_sprite_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_picker != null);
+    try testing.expectEqual(ui.EditorPickerTarget.entity_sprite, history.session.ui_state.editor_picker.?);
+    try testing.expectEqual(types.EditorSpritePickerTab.mission_local, history.session.ui_state.editor_picker_sprite_tab);
+    try testing.expectEqual(@as(usize, 1), history.session.editor_mission_sprites.len);
+    try testing.expectEqualStrings("boss.png", history.session.editor_mission_sprites[0]);
 
-    ui.beginTextEdit(&history.session.ui_state, field, "skeleton_1");
-    const outcome = ui.routeTextInput(
-        &history.session.ui_state.text_edit.?,
-        "_elite",
-        &enter_pressed,
-        &no_keys,
-        false,
-    );
-    try testing.expectEqual(types.TextEditOutcome.commit, outcome);
-    input_handlers.resolveTextEditOutcome(&history, .commit);
-
+    // Pick the mission-local sprite: the namespaced id
+    // (`custom/<mission-dir>/<stem>`) commits through the existing
+    // player_set_editor_entity_sprite event (on the undo timeline).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_entity_sprite,
+        .clicked_editor_sprite = "custom/artists_den/boss",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.session.ui_state.editor_picker == null);
     try testing.expectEqualStrings(
-        "skeleton_1_elite",
+        "custom/artists_den/boss",
         history.current_state.editor.?.entity_types[0].template.sprite,
     );
-    try testing.expect(history.session.ui_state.text_edit == null);
 
-    // One undo reverts the sprite (name untouched).
+    // One undo reverts the sprite.
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqualStrings(
         "skeleton_1",
         history.current_state.editor.?.entity_types[0].template.sprite,
     );
-    try testing.expectEqualStrings(
-        "Skeleton",
-        history.current_state.editor.?.entity_types[0].template.name,
-    );
+
+    // Same-value pick closes without recording (no dead undo step).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_sprite_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_entity_sprite,
+        .clicked_editor_sprite = "skeleton_1",
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Tab switch: a direct UiState write.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_sprite_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_sprite_tab,
+        .clicked_editor_sprite_tab = .official,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(types.EditorSpritePickerTab.official, history.session.ui_state.editor_picker_sprite_tab);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .close_editor_picker,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_picker == null);
 }
 
 test "inspector scalar clicks: color swatch + displays-weapons toggle ride the timeline" {

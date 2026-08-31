@@ -1556,6 +1556,10 @@ fn handlePlayerInputEvent(
                 failReconstructionRead(history, "failed to build editor mission");
                 return;
             };
+            // The mission's own path (the payload slice — same borrow as
+            // start_mission's): the sprite picker's mission-local scan +
+            // the editor save read it.
+            current.editor.?.mission.path = start.mission_path;
             surfaceWarnings(history, &balance_warnings, allocator);
             current.transitionScreen(.editor);
         },

@@ -320,6 +320,14 @@ pub const AnytimeInput = struct {
     /// the button-release dispatch — same payload-rides-along pattern.
     /// Valid only in the same frame as the click.
     clicked_editor_section: ?types.EditorInspectorSectionId = null,
+    /// Which sprite picker cell was clicked (the sprite stem — for a
+    /// mission-local pick, the namespaced `custom/<mission>/<stem>` id),
+    /// set alongside `options_action == .select_editor_entity_sprite`.
+    /// Valid only in the same frame as the click.
+    clicked_editor_sprite: ?[]const u8 = null,
+    /// Which sprite picker tab button was clicked (Mission / Official),
+    /// set alongside `options_action == .select_editor_sprite_tab`.
+    clicked_editor_sprite_tab: ?types.EditorSpritePickerTab = null,
     /// Which editor tool was clicked (make it active), set alongside
     /// `options_action == .select_editor_tool` by the button-release
     /// dispatch in main.zig — same payload-rides-along pattern as
@@ -456,6 +464,9 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_level => player_input.anytime.options_action = action,
         .toggle_editor_inspector => player_input.anytime.options_action = action,
         .toggle_editor_inspector_section => player_input.anytime.options_action = action,
+        .open_editor_sprite_picker => player_input.anytime.options_action = action,
+        .select_editor_entity_sprite => player_input.anytime.options_action = action,
+        .select_editor_sprite_tab => player_input.anytime.options_action = action,
         .import_editor_player => player_input.anytime.options_action = action,
         .select_editor_entity_color => player_input.anytime.options_action = action,
         .toggle_editor_entity_displays_weapons => player_input.anytime.options_action = action,

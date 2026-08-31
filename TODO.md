@@ -565,10 +565,22 @@ yet implemented. Remaining work:
         contents) — a direct UiState write off the undo timeline. History
         in DONE.md; design in DESIGN → Level Editor → Editor UI layout
         (inspector).
-  - [ ] **6 — later: sprite picker + entity layers:** replaces the interim
-        sprite-id text field; sprite resolution must PRIORITIZE `.png`s
-        in the mission folder being edited (custom assets) over shipped
-        sprites.
+  - [x] **6 — sprite picker (enemy base sprite):** DONE — the centered
+        picker's second consumer: Mission / Official tabs top-left
+        (mission-local scan at open time via
+        `FileSource.listPersistentPngFiles`, cached on SessionState;
+        official = comptime from the metadata table, player excluded),
+        256×256 cells, pick commits through the existing
+        `player_set_editor_entity_sprite`; the interim sprite-id text
+        field is REMOVED. Mission-local ids are namespaced
+        `custom/<mission-dir>/<stem>` with the resolution rule in DESIGN.
+        Entity LAYERS remain deferred (below).
+  - [ ] **Later: entity layers + decoration sprite tabs** — the layer
+        editor (add/remove/edit layers, sprite via the same picker) and
+        the decoration inspector's base-sprite/layer tabs reuse the
+        picker; mission-local art RENDERING (the `custom/<mission>/`
+        resolution at the renderer) lands with custom-asset rendering.
+        Picker scroll is a follow-up if real content overflows 4 columns.
   - [x] **7 — inference: player as the fallback target:** DONE —
         `editorInspectorTarget` + `EditorInspectorTarget` (ui.zig), the
         player shell as the default inspector content, the commit-site +

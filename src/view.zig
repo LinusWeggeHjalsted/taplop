@@ -347,14 +347,25 @@ pub fn view(
             // The centered picker draws LAST, above every editor surface
             // (modal — see handleAnytimeInput's gate).
             if (session.ui_state.editor_picker) |picker_target| {
-                ui.buildEditorSkillPicker(
-                    &ui_elements,
-                    frame_allocator,
-                    font_metrics,
-                    editor,
-                    picker_target,
-                    active_theme,
-                ) catch @panic("failed to build editor skill picker");
+                switch (picker_target) {
+                    .utility_skill_slot => ui.buildEditorSkillPicker(
+                        &ui_elements,
+                        frame_allocator,
+                        font_metrics,
+                        editor,
+                        picker_target,
+                        active_theme,
+                    ) catch @panic("failed to build editor skill picker"),
+                    .entity_sprite => ui.buildEditorSpritePicker(
+                        &ui_elements,
+                        frame_allocator,
+                        font_metrics,
+                        editor,
+                        active_theme,
+                        session.editor_mission_sprites,
+                        session.ui_state.editor_picker_sprite_tab,
+                    ) catch @panic("failed to build editor sprite picker"),
+                }
             }
         }
     } else if (current_state.screen == .main_menu) {

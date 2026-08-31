@@ -8045,3 +8045,51 @@ and the default-collapsed rendering (headers only, 19 elements, "+ "
 labels) in the panel test; every content test now seeds
 `allInspectorSectionsExpanded()` (pub for main.zig's focus-on-click
 test) and expects "- " prefixed section labels.
+
+### The centered sprite picker — enemy base sprite (DONE, slice 6)
+
+The picker framework's second consumer: the inspector's Sprite row (a
+button showing the current stem — the interim v1 sprite-id TEXT FIELD is
+removed, along with its TextFieldId arm, commit path, and text-field
+tests) opens the centered picker with two TABS top-left (Mission /
+Official, panel-backed, the active one highlighted; tab state is UiState,
+reset to Mission on every open — custom assets take priority) and close
+top-right. Dropdown semantics like the skill picker: blocks only where
+it sits, stays open until a pick or close; picking commits through the
+EXISTING `player_set_editor_entity_sprite` event (already on the undo
+timeline + replay-validated), same-value picks close without recording.
+The M2 arbitration treats sprite cells + tabs + close as picker
+surfaces (commit + pick in one click).
+
+**Official tab**: comptime from the sprite-metadata table's keys
+(`entities/*` minus `entities/player` — the player body isn't an enemy
+option; 9 shipped sprites), sorted via comptime insertion (a comptime
+slice's elements are const — no in-place sort). Cells draw the sprite
+aspect-fit at the 512×640 entity-frame convention, enemy-gradient tint
+at the type's color_index, current highlighted.
+
+**Mission tab**: a flat `.png` scan of the mission directory —
+`FileSource.listPersistentPngFiles` (new; `openDir` needs
+`.{ .iterate = true }` in 0.16 — iterating a default-opened dir is
+Illegal Behavior and surfaced as EBADF). The scan runs at the
+picker-OPEN site (idle input — interactive IO lives there, never in
+view()/handlers), cached on `SessionState.editor_mission_sprites` with
+the save_files ownership pattern (each scan frees the previous). A
+picked `boss.png` in mission `artists_den` stores the namespaced stem
+`custom/artists_den/boss` (no collision with official stems,
+self-describing in the level file); resolution rule documented in
+DESIGN (`custom/<mission>/` → the mission dir, else embedded
+`entities/{stem}`). The art isn't renderable until custom-asset
+rendering lands — mission-local cells show the stem as a text label.
+
+`open_editor` now sets `editor.mission.path` (the payload-slice borrow,
+same as start_mission) — the scan's source; empty for editors built
+without a mission, degrading to an empty Mission tab.
+
+Tests: a builder test (official: 9 cells, player excluded, bear
+highlighted + its graphic; mission: namespaced payloads + text cells;
+tab highlight) and a handler test (open → scan lands on SessionState
+with the .txt filtered, tab reset; pick → namespaced id on the
+timeline, one undo reverts; same-value no-op; tab switch + close).
+Zig-notes along the way: `openDir(.{ .iterate = true })`, and an
+assignment can't be an if-expression body in a switch prong.

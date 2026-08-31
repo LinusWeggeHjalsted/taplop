@@ -164,6 +164,19 @@ pub const Action = enum {
     // direct UiState write (view affordance, off the undo timeline, like
     // the palette accordion).
     toggle_editor_inspector_section,
+    // The inspector's Sprite row (enemy identity): open the centered
+    // sprite picker for the base sprite. The mission-local scan happens
+    // at this site (idle input — interactive IO lives here, never in the
+    // view or handlers).
+    open_editor_sprite_picker,
+    // A sprite picker cell: set the edited entity type's base sprite (the
+    // stem rode in `AnytimeInput.clicked_editor_sprite`) and close the
+    // picker. Same-value picks close without recording.
+    select_editor_entity_sprite,
+    // A sprite picker tab button (Mission / Official): switch the picker's
+    // tab. The tab rode in `AnytimeInput.clicked_editor_sprite_tab` — a
+    // direct UiState write (view affordance).
+    select_editor_sprite_tab,
     // The player inspector's Import button: copy the session's player
     // data (or, with none, the new-game default save) into the editor
     // player loadout. No payload — the handler reads live state.
@@ -791,7 +804,6 @@ pub const Entity = struct {
     ) ![]const u8 {
         return switch (field_id) {
             .entity_name => self.name,
-            .entity_sprite => self.sprite,
             .entity_stat => |stat| switch (stat) {
                 .max_health => try std.fmt.allocPrint(allocator, "{d}", .{self.max_health}),
                 .defense => try std.fmt.allocPrint(allocator, "{d}", .{self.defense}),
@@ -1109,7 +1121,6 @@ pub const EntityEditTarget = union(enum) {
 /// (the events carry values).
 pub const TextFieldId = union(enum) {
     entity_name,
-    entity_sprite,
     entity_stat: EntityStatField,
     /// The equipped item's name in `slot` (an empty slot commits nothing).
     item_name: GearSlot,
@@ -1181,6 +1192,15 @@ pub const EditorMode = enum {
 /// depends on it (the click orchestrators) must read it from reconstructable
 /// state, and undo/redo of a tool switch restores what the author had
 /// active. Indices are into the corresponding Editor palette arrays.
+/// Which tab the editor's centered sprite picker is showing (see
+/// DESIGN → Architecture → Level Editor → Editor UI layout — the centered
+/// sprite picker). Mission-local first: custom assets take priority over
+/// shipped ones.
+pub const EditorSpritePickerTab = enum {
+    mission_local,
+    official,
+};
+
 /// One section of the editor inspector's content (enemy or player). The
 /// id is the section's IDENTITY across both contents (Weapons expanded
 /// while editing an enemy stays expanded on the player) and the key into

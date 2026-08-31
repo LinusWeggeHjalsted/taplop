@@ -1245,7 +1245,25 @@ fn editorEntityEditTarget(editor: types.Editor) types.EntityEditTarget {
     };
 }
 
-/// Build the per-slot player wrapper carrying a WHOLE item (one event per
+/// Scan the mission directory's .pngs into `session.editor_mission_sprites`
+/// (the sprite picker's mission-local tab). Frees the previous scan — the
+/// list is session-owned (backing allocator); the final list's leak at
+/// process exit is bounded (the save_files pattern). An IO failure degrades
+/// to an empty list — the Mission tab shows "No sprites" while the
+/// Official tab stays usable (recoverable-degrade; a popup would interrupt
+/// the click flow for a dev tool).
+fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Editor) void {
+    const allocator = history.backing_allocator;
+    const session = &history.session;
+    for (session.editor_mission_sprites) |name| allocator.free(name);
+    allocator.free(session.editor_mission_sprites);
+    session.editor_mission_sprites = history.file_source.listPersistentPngFiles(
+        allocator,
+        editor.mission.path,
+    ) catch &[_][]const u8{};
+}
+
+/// The per-slot player wrapper carrying a WHOLE item (one event per
 /// slot — create / retype / field-edit / delete all push the full value,
 /// so one undo step covers any of them). The item's kind must match the
 /// slot (it always does — items are read from the slot itself); a mismatch
@@ -1360,31 +1378,19 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
     history.session.ui_state.text_edit = null;
 
     switch (field.id) {
-        .entity_name, .entity_sprite => {
+        .entity_name => {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
             const template = event_handlers.editorEntityTemplate(editor, field.target) orelse return;
-            const current_value = switch (field.id) {
-                .entity_name => template.name,
-                .entity_sprite => template.sprite,
-                else => unreachable,
-            };
+            const current_value = template.name;
             // Would-change gate: an unchanged value never records (no
             // dead undo step).
             if (std.mem.eql(u8, current_value, value)) return;
             history.session.queueSound(history.backing_allocator, .button_click_up);
-            const action: events.PlayerInputEvent = switch (field.id) {
-                .entity_name => .{ .player_set_editor_entity_name = .{
-                    .target = field.target,
-                    .value = value,
-                } },
-                .entity_sprite => .{ .player_set_editor_entity_sprite = .{
-                    .target = field.target,
-                    .value = value,
-                } },
-                else => unreachable,
-            };
-            pushPlayerActionAndDrain(history, action);
+            pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_name = .{
+                .target = field.target,
+                .value = value,
+            } });
         },
         .entity_stat => |stat| {
             if (history.current_state.editor == null) return;
@@ -1753,6 +1759,53 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.editor_inspector_section_expanded[section_index] =
                     !history.session.ui_state.editor_inspector_section_expanded[section_index];
             },
+            // The inspector's Sprite row: open the centered sprite picker.
+            // The mission-local scan happens HERE (idle input — interactive
+            // IO lives at open time, never in the view or handlers; the
+            // list is cached on SessionState, re-scanned on every open so
+            // a png dropped into the mission dir appears on the next
+            // open). The tab resets to Mission (custom assets take
+            // priority over shipped ones).
+            .open_editor_sprite_picker => {
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                rescanEditorMissionSprites(history, editor.*);
+                history.session.ui_state.editor_picker = .{ .entity_sprite = {} };
+                history.session.ui_state.editor_picker_sprite_tab = .mission_local;
+            },
+            // A sprite picker cell: set the edited type's base sprite (the
+            // stem rode in `anytime.clicked_editor_sprite`) and close the
+            // picker. Same-value picks close without recording.
+            .select_editor_entity_sprite => {
+                // Gate: only a pick while the sprite picker is open (crafted
+                // clicks with no picker are a no-op, the skill arm's
+                // posture).
+                switch (history.session.ui_state.editor_picker orelse return) {
+                    .entity_sprite => {},
+                    .utility_skill_slot => return,
+                }
+                const sprite = anytime.clicked_editor_sprite orelse return;
+                history.session.ui_state.editor_picker = null;
+                if (history.current_state.editor == null) return;
+                const editor: *types.Editor = &history.current_state.editor.?;
+                const target = editorEntityEditTarget(editor.*);
+                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                if (std.mem.eql(u8, template.sprite, sprite)) return;
+                // Dupe into the current arena BEFORE pushing — the payload
+                // slice must not point into the view's frame allocation
+                // (the text-commit path's ordering rule).
+                const value = history.current_arena.allocator().dupe(u8, sprite) catch
+                    @panic("failed to allocate sprite commit value");
+                pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_sprite = .{
+                    .target = target,
+                    .value = value,
+                } });
+            },
+            // A sprite picker tab button (Mission / Official): switch tabs —
+            // a direct UiState write (view affordance).
+            .select_editor_sprite_tab => {
+                const tab = anytime.clicked_editor_sprite_tab orelse return;
+                history.session.ui_state.editor_picker_sprite_tab = tab;
+            },
             // Editor tool cell click (make it the active tool). The
             // EditorToolId rode in `anytime.clicked_editor_tool`. Push the
             // orchestrator and drain (same as level tabs): the tool pointer
@@ -1887,6 +1940,9 @@ pub fn handleAnytimeInput(
                 const target = history.session.ui_state.editor_picker orelse return;
                 const slot_index = switch (target) {
                     .utility_skill_slot => |index| index,
+                    // The sprite picker's picks route through their own
+                    // arm — not a skill-slot assignment.
+                    .entity_sprite => return,
                 };
                 history.session.ui_state.editor_picker = null;
                 if (history.current_state.editor == null) return;

@@ -138,6 +138,16 @@ pub const SessionState = struct {
     /// `backing_allocator`; each rescan frees the previous slice, so the
     /// only leak is the FINAL list at process exit (bounded, one slice).
     save_files: []file_source_mod.SaveFileEntry = &.{},
+
+    /// The mission-local `.png` file names for the editor sprite picker's
+    /// Mission tab (see DESIGN → Architecture → Level Editor → Editor UI
+    /// layout — the centered sprite picker). Scanned from the input path
+    /// when the picker OPENS (never `view()`, which stays file-free);
+    /// re-scanned on every open, so a png dropped into the mission dir
+    /// appears on the next open. Owned by `backing_allocator`; each scan
+    /// frees the previous list, so the only leak is the FINAL list at
+    /// process exit (bounded, one slice).
+    editor_mission_sprites: []const []const u8 = &.{},
     save_files_last_scan_us: u64 = save_files_never_scanned,
     // Camera pan (right-drag): offset in world pixels added to the player-
     // centered camera, plus the drag anchor. Transient view state — off the

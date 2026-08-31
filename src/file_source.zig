@@ -100,6 +100,42 @@ pub const FileSource = struct {
         return true;
     }
 
+    /// List the `.png` FILE NAMES (sorted, extension included) directly
+    /// inside `dir_path` under the persistent dir — the mission-local
+    /// sprite picker's source list (a flat scan of the mission directory;
+    /// see DESIGN → Architecture → Level Editor → Editor UI layout — the
+    /// centered sprite picker). Empty when the dir doesn't exist. Shipped
+    /// (embedded) dirs are NOT scanned — shipped missions carry no PNGs,
+    /// so the mission-local tab is empty for them by construction.
+    pub fn listPersistentPngFiles(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+        dir_path: []const u8,
+    ) ![][]const u8 {
+        var sub_dir = self.persistent_dir.openDir(self.io, dir_path, .{ .iterate = true }) catch |open_error| switch (open_error) {
+            error.FileNotFound => return &[_][]const u8{},
+            else => return open_error,
+        };
+        var names: std.ArrayList([]const u8) = .empty;
+        errdefer {
+            for (names.items) |name| allocator.free(name);
+            names.deinit(allocator);
+        }
+        var iterator = sub_dir.iterate();
+        while (iterator.next(self.io) catch |iterate_error| return iterate_error) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.name, ".png")) continue;
+            try names.append(allocator, try allocator.dupe(u8, entry.name));
+        }
+        const SortContext = struct {
+            fn lessThan(_: void, first: []const u8, second: []const u8) bool {
+                return std.mem.lessThan(u8, first, second);
+            }
+        };
+        std.mem.sort([]const u8, names.items, {}, SortContext.lessThan);
+        return names.toOwnedSlice(allocator);
+    }
+
     /// Write a file to the persistent dir only. Rejects `data/`/`assets/`
     /// prefixes — shipped content is immutable from the game's perspective
     /// (players may still drop override files into the persistent dir by hand;
