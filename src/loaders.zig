@@ -821,6 +821,8 @@ pub fn buildEditorMission(
         editor_levels.append(allocator, .{
             .name = level.name,
             .color_wheel_index = level.color_wheel_index,
+            .enemy_gradient_index = level.enemy_gradient_index,
+            .player_gradient_index = level.player_gradient_index,
             .level_tiles = level.level_tiles,
             .player_start = level.entities[0].position,
             .level_end = level.level_end,
@@ -956,6 +958,8 @@ pub fn instantiateEditorLevel(
     return .{
         .name = editor_level.name,
         .color_wheel_index = editor_level.color_wheel_index,
+        .enemy_gradient_index = editor_level.enemy_gradient_index,
+        .player_gradient_index = editor_level.player_gradient_index,
         .level_tiles = editor_level.level_tiles,
         .entities = entities.items,
         .decorations = decorations.items,
@@ -1468,6 +1472,15 @@ pub fn loadLevel(
             }
             if (findValue(pairs, "color_wheel_index")) |value| {
                 level.color_wheel_index = asU32(value) orelse 0;
+            }
+            // Optional per-role gradient overrides; absent (or unparsable)
+            // = auto-derive from the world index. See DESIGN → Level Editor
+            // → Level theme.
+            if (findValue(pairs, "enemy_gradient_index")) |value| {
+                level.enemy_gradient_index = asU32(value);
+            }
+            if (findValue(pairs, "player_gradient_index")) |value| {
+                level.player_gradient_index = asU32(value);
             }
         }
     }
@@ -2161,11 +2174,16 @@ pub fn loadColorThemeDefinitions(
 }
 
 /// Derive the active color theme for a level or hub from the color wheel.
-/// The world gradient is at the given index, enemy and player gradients
-/// are evenly spaced around the wheel (at 1/3 and 2/3 offsets).
+/// The world gradient is at the given index; enemy and player gradients
+/// are evenly spaced around the wheel (at 1/3 and 2/3 offsets) unless an
+/// optional override index names a specific gradient (the editor's
+/// per-role manual picks — null = auto-derive). See DESIGN → Level Editor
+/// → Level theme.
 pub fn deriveActiveColorTheme(
     color_theme_definitions: ColorThemeDefinitions,
     color_wheel_index: u32,
+    enemy_gradient_override: ?u32,
+    player_gradient_override: ?u32,
 ) ActiveColorTheme {
     const gradient_count: u32 = @intCast(color_theme_definitions.gradients.len);
     if (gradient_count == 0) {
@@ -2179,8 +2197,10 @@ pub fn deriveActiveColorTheme(
     }
 
     const world_index = color_wheel_index % gradient_count;
-    const enemy_index = (color_wheel_index + gradient_count / 3) % gradient_count;
-    const player_index = (color_wheel_index + 2 * gradient_count / 3) % gradient_count;
+    const enemy_index = if (enemy_gradient_override) |override| override % gradient_count else
+        (color_wheel_index + gradient_count / 3) % gradient_count;
+    const player_index = if (player_gradient_override) |override| override % gradient_count else
+        (color_wheel_index + 2 * gradient_count / 3) % gradient_count;
 
     return .{
         .lightest = color_theme_definitions.lightest,
@@ -2946,11 +2966,18 @@ test "deriveActiveColorTheme picks evenly spaced gradients" {
         .gradients = &gradients,
     };
 
-    // With world at index 0, enemy at 3, player at 6
-    const active = deriveActiveColorTheme(theme, 0);
-    try std.testing.expectEqual(10, active.world_gradient.colors[0].r); // gradient 0
-    try std.testing.expectEqual(70, active.enemy_gradient.colors[0].r); // gradient 3
-    try std.testing.expectEqual(130, active.player_gradient.colors[0].r); // gradient 6
+    // With world at index 0, enemy at 3, player at 6 (auto-derivation)
+    const auto = deriveActiveColorTheme(theme, 0, null, null);
+    try std.testing.expectEqual(10, auto.world_gradient.colors[0].r); // gradient 0
+    try std.testing.expectEqual(70, auto.enemy_gradient.colors[0].r); // gradient 3
+    try std.testing.expectEqual(130, auto.player_gradient.colors[0].r); // gradient 6
+
+    // Overrides name specific gradients (enemy 8, player 1); indices wrap
+    // modulo the gradient count like the world index does.
+    const overridden = deriveActiveColorTheme(theme, 2, 8, 1);
+    try std.testing.expectEqual(50, overridden.world_gradient.colors[0].r); // gradient 2
+    try std.testing.expectEqual(170, overridden.enemy_gradient.colors[0].r); // gradient 8
+    try std.testing.expectEqual(30, overridden.player_gradient.colors[0].r); // gradient 1
 }
 
 test "color_themes.txt parses from disk" {
@@ -3423,4 +3450,76 @@ test "the shipped beginnings player.txt loads in the save-shaped format" {
     try std.testing.expectEqualStrings("Starter Shield", template.off_hand_weapon.?.name);
     try std.testing.expectEqualStrings("Starter Amulet", template.amulet.?.name);
     try std.testing.expectEqual(types.SkillId.replenish, template.equipped_utility_skills[0]);
+}
+
+test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {
+    // Arena-wrapped: buildEditorMission borrows into its allocator (the
+    // editor is not yet self-owned — see AGENTS → Testing discipline).
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const allocator = backing.allocator();
+    const raw_text =
+        \\Metadata
+        \\file_format_version 1
+        \\name Themed
+        \\color_wheel_index 2
+        \\enemy_gradient_index 5
+        \\player_gradient_index 0
+        \\
+        \\Layout
+        \\!.
+        \\.=
+        \\
+        \\Enemies
+        \\
+        \\Decorations
+        \\
+        \\Items
+    ;
+
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    const level = try loadLevel(sections, null, allocator, "", null);
+    defer freeLevel(level, allocator);
+
+    try std.testing.expectEqual(@as(u32, 2), level.color_wheel_index);
+    try std.testing.expectEqual(@as(?u32, 5), level.enemy_gradient_index);
+    try std.testing.expectEqual(@as(?u32, 0), level.player_gradient_index);
+
+    // Absent keys = null (auto-derive from the world index).
+    const plain_text =
+        \\Metadata
+        \\file_format_version 1
+        \\name Plain
+        \\
+        \\Layout
+        \\!.
+        \\.=
+        \\
+        \\Enemies
+        \\
+        \\Decorations
+        \\
+        \\Items
+    ;
+    const plain_sections = try parseConfigFile(plain_text, allocator);
+    defer freeParsedSections(plain_sections, allocator);
+    const plain_level = try loadLevel(plain_sections, null, allocator, "", null);
+    defer freeLevel(plain_level, allocator);
+    try std.testing.expectEqual(@as(?u32, null), plain_level.enemy_gradient_index);
+    try std.testing.expectEqual(@as(?u32, null), plain_level.player_gradient_index);
+
+    // The overrides round-trip through the editor shapes: loadLevel →
+    // buildEditorMission's EditorLevel → instantiateEditorLevel's Level.
+    const mission = types.Mission{ .name = "M", .level_count = 1 };
+    const parsed_levels = [_][]const Section{sections};
+    const editor = try buildEditorMission(mission, .{}, parsed_levels[0..], null, allocator, "", null);
+    try std.testing.expectEqual(@as(?u32, 5), editor.levels[0].enemy_gradient_index);
+    try std.testing.expectEqual(@as(?u32, 0), editor.levels[0].player_gradient_index);
+
+    const instantiated = instantiateEditorLevel(editor, 0, allocator);
+    try std.testing.expectEqual(@as(?u32, 5), instantiated.enemy_gradient_index);
+    try std.testing.expectEqual(@as(?u32, 0), instantiated.player_gradient_index);
+    try std.testing.expectEqual(@as(u32, 2), instantiated.color_wheel_index);
 }

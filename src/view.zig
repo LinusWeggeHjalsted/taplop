@@ -647,17 +647,19 @@ fn activeThemeFor(
     color_theme_definitions: types.ColorThemeDefinitions,
 ) types.ActiveColorTheme {
     // In edit mode the editor screen has no live level/hub, so the theme
-    // follows the ACTIVE level tab's wheel index. (During playtest/validate
+    // follows the ACTIVE level tab's settings. (During playtest/validate
     // the instantiated `current.level` exists and takes precedence above.)
-    const color_wheel_index = if (current_state.level) |level|
-        level.color_wheel_index
+    // Hubs carry no per-role overrides (wheel-only derivation).
+    const world_index: u32, const enemy_override: ?u32, const player_override: ?u32 = if (current_state.level) |level|
+        .{ level.color_wheel_index, level.enemy_gradient_index, level.player_gradient_index }
     else if (current_state.hub) |hub|
-        hub.color_wheel_index
+        .{ hub.color_wheel_index, null, null }
     else if (current_state.editor) |editor| blk: {
-        if (editor.levels.len == 0) break :blk 0;
-        break :blk editor.levels[@min(editor.active_level_index, editor.levels.len - 1)].color_wheel_index;
-    } else 0;
-    return loaders.deriveActiveColorTheme(color_theme_definitions, color_wheel_index);
+        if (editor.levels.len == 0) break :blk .{ 0, null, null };
+        const level = editor.levels[@min(editor.active_level_index, editor.levels.len - 1)];
+        break :blk .{ level.color_wheel_index, level.enemy_gradient_index, level.player_gradient_index };
+    } else .{ 0, null, null };
+    return loaders.deriveActiveColorTheme(color_theme_definitions, world_index, enemy_override, player_override);
 }
 
 /// Layout region for the middle panels: the horizontal band between the top

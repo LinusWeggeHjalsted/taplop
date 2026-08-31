@@ -1123,6 +1123,24 @@ pub const GameStateHistory = struct {
     /// would-change gate). Item VALUES are unrestricted (stats are clamped
     /// at the UI; a crafted out-of-range value is a harmless gameplay
     /// number, same class as an unbalanced base stat).
+    /// Shared legality check for the settings sidebar's level-indexed
+    /// commits: the editor screen, an editor present, and the level index
+    /// in range (the live path addresses the active tab).
+    fn validateEditorLevelMetadataCommit(
+        self: *GameStateHistory,
+        level_index: u32,
+    ) void {
+        if (self.current_state.screen != .editor) {
+            @panic("replay validation: editor level-metadata commit outside editor screen");
+        }
+        const editor = self.current_state.editor orelse {
+            @panic("replay validation: editor level-metadata commit with no editor");
+        };
+        if (level_index >= editor.levels.len) {
+            @panic("replay validation: editor level-metadata commit index out of range");
+        }
+    }
+
     fn validateInspectorEntityEdit(self: *GameStateHistory, target: types.EntityEditTarget) void {
         if (self.current_state.screen != .editor) {
             @panic("replay validation: inspector scalar commit outside editor screen");
@@ -1280,6 +1298,27 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_import_editor_player with no editor");
                     }
                 },
+                // Settings-sidebar commits. The mission-name commit needs
+                // only the editor context; the level-indexed commits bound
+                // the level index (the live path addresses the active tab;
+                // a crafted log could name any level — the bound still
+                // holds because the sidebar only ever renders real tabs).
+                .player_set_editor_mission_name => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: player_set_editor_mission_name outside editor screen");
+                    }
+                    if (self.current_state.editor == null) {
+                        @panic("replay validation: player_set_editor_mission_name with no editor");
+                    }
+                },
+                .player_set_editor_level_name => |set|
+                    self.validateEditorLevelMetadataCommit(set.level_index),
+                .player_set_editor_level_color_wheel => |set|
+                    self.validateEditorLevelMetadataCommit(set.level_index),
+                .player_set_editor_level_enemy_gradient => |set|
+                    self.validateEditorLevelMetadataCommit(set.level_index),
+                .player_set_editor_level_player_gradient => |set|
+                    self.validateEditorLevelMetadataCommit(set.level_index),
                 // Structural legality: the editor screen + editor + the
                 // target's palette index in range (the live path resolves
                 // the target from the focused field; a stale focus — its

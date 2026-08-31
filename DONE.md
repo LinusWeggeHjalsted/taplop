@@ -8289,3 +8289,44 @@ scenario used the 2-tall `tall_footprint` against the test editor's
 correctly rejected it. The guard isn't test friction; it's the parser's
 footprint-in-bbox invariant doing its job. The scenario was rebuilt on
 a 512×512 (2×2-grid) type.
+
+## Level editor settings sidebar — slice 1: gradient-override model
+
+The settings sidebar's data model (the slice that DESIGN → Level Editor →
+Level theme called for): the per-role gradient overrides land and the dead
+`CustomColorTheme` scaffolding goes.
+
+- **Removed:** `types.CustomColorTheme`, the `custom_theme` fields on
+  Level/EditorLevel/Hub, and `editor_set_level_custom_theme`. The
+  scaffolding was never wired (nothing outside types.zig/events.zig read
+  it) — the index model supersedes it by design.
+- **Added:** `enemy_gradient_index` / `player_gradient_index: ?u32` on
+  Level + EditorLevel (null = auto-derive). Level-file Metadata keys
+  `enemy_gradient_index` / `player_gradient_index` (absent/unparsable =
+  null); a level-only metadata key list in parser.zig (the shared
+  `level_metadata_keys` is used by settings/saves/themes too, so the keys
+  can't go there — hubs + those types never carry them). Hubs keep
+  wheel-only derivation.
+- **`deriveActiveColorTheme`** now takes the two optional overrides
+  (modulo-wrapped like the world index); `activeThemeFor` threads them
+  from the live level / the editor's ACTIVE TAB — so the editor viewport
+  now previews the active level's full theme (enemy/player tinting
+  included), not just the world gradient.
+- **Events:** `editor_set_level_enemy_gradient` /
+  `editor_set_level_player_gradient` (null payload = revert to auto) +
+  the five settings-sidebar player wrappers
+  (`player_set_editor_mission_name` / `player_set_editor_level_name` /
+  `player_set_editor_level_color_wheel` / the two gradient wrappers).
+  Handlers for all five EditorEvent arms (level-index guards match
+  `editor_set_level_end`'s panic convention); thin player-arm forwards;
+  `validatePlayerAction` arms (editor screen + level-index bounds via a
+  shared `validateEditorLevelMetadataCommit` helper — the multi-variant
+  switch capture doesn't typecheck across the different payload structs,
+  so it's four one-line arms).
+- The session-log writer/reader + deep_copy are comptime-generic over the
+  Event union, so the new events + the removed one needed no serializer
+  edits.
+- Tests: derive (auto spacing + overrides + wrap), level-file parse
+  (override keys, absent keys, loadLevel → buildEditorMission →
+  instantiateEditorLevel round trip), handler (all five commits via the
+  wrappers, null revert, five undos walk back to the start).

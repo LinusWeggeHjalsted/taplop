@@ -2153,11 +2153,17 @@ will grow to a full handpicked color wheel). The level stores:
   gradients in the theme). Disabling the auto-derivation (per role) and
   picking a specific gradient is the override.
 
-This index-based model SUPERSEDES `CustomColorTheme` (raw 18-color
-granular authoring): per-color control is deliberately out of scope —
-authors pick from the handpicked wheel. The `custom_theme` scaffolding
-(types.zig + `editor_set_level_custom_theme`) is replaced by the override
-fields + their events when the editor theme slice lands.
+This index-based model SUPERSEDED `CustomColorTheme` (raw 18-color granular
+authoring): per-color control is deliberately out of scope — authors pick
+from the handpicked wheel. The scaffolding is REMOVED (the type, the
+`custom_theme` fields, and `editor_set_level_custom_theme`); Level +
+EditorLevel carry `enemy_gradient_index` / `player_gradient_index: ?u32`
+(null = auto-derive), serialized as level-file Metadata keys
+`enemy_gradient_index` / `player_gradient_index` (absent = auto). Hubs keep
+wheel-only derivation (no override fields — hubs aren't editor-authored).
+`deriveActiveColorTheme` takes the two optional overrides; `activeThemeFor`
+threads them from the live level / the editor's active tab, so the editor
+viewport previews the active level's full theme live.
 
 **Editor viewport rendering (drawable projection).** The editor playfield
 never builds a concrete `Level`; `view()` gains an editor-mode branch that
@@ -2495,8 +2501,10 @@ viewport input: drag-painting.
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
 struct exists in events.zig (`editor_add_level` / `editor_delete_level` /
 `editor_set_tile` / `editor_set_level_name` / `editor_set_level_color_wheel`
-/ `editor_set_level_custom_theme` (superseded by the gradient-override
-events — see Level theme below) / `editor_set_mission_name` /
+/ `editor_set_level_enemy_gradient` + `editor_set_level_player_gradient`
+(LANDED — the per-role gradient overrides; they superseded + removed
+`editor_set_level_custom_theme`, see Level theme below) /
+`editor_set_mission_name` (LANDED) /
 `editor_set_player_start` / `editor_set_level_end` / `editor_add_entity_type`
 / `editor_add_decoration_type` / `editor_add_item_type` /
 `editor_delete_type` / `editor_place_entity` / `editor_place_decoration` /
@@ -2515,7 +2523,10 @@ trio, `editor_place_entity` / `editor_place_decoration` /
 `editor_set_item_placement_type`, `editor_set_decoration_def` +
 `editor_set_decoration_color_index`, the six LAYER arms —
 `editor_add/remove/set_entity_layer` + `editor_add/remove/set_decoration_layer`,
-and `editor_set_decoration_footprint`); the rest still `@panic` so an unhooked edit verb
+`editor_set_decoration_footprint`, and the settings-sidebar metadata arms
+(`editor_set_level_name` / `editor_set_mission_name` /
+`editor_set_level_color_wheel` / `editor_set_level_enemy_gradient` /
+`editor_set_level_player_gradient`)); the rest still `@panic` so an unhooked edit verb
 fails fast rather than silently no-op'ing. Remaining handlers land with
 their UI slices.
 
@@ -2524,9 +2535,9 @@ above, implemented as a vertical slice (static shell first: tabs + viewport +
 bottom bar + inspector + settings sidebar rendering with real data, no
 interaction; then wire input per tool + the edit-verb handlers). The
 viewport shell includes the editor drawable projection (see Editor viewport
-rendering above). Still-needed event structs: `editor_toggle_inspector` /
-the gradient-override setters (see Level theme above).
-Default level template (`data/default_level.txt`). Validation result +
+rendering above). Still-needed event structs: none — the gradient-override
+setters landed with the settings-sidebar slice. Remaining: default level
+template (`data/default_level.txt`), drag-painting. Validation result +
 replay attachment (deferred with online services), editor autosave
 (nice-to-have).
 

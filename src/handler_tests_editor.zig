@@ -4427,3 +4427,79 @@ test "footprint editor input: open seeds the draft, toggles flip, confirm commit
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqual(@as(usize, 2), history.current_state.editor.?.decoration_types[0].footprint.len);
 }
+
+test "settings sidebar metadata commits: names, color wheel, gradient overrides" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    var levels = [_]types.EditorLevel{ .{ .name = "First", .color_wheel_index = 1 } };
+    const editor = types.Editor{ .levels = &levels, .mission = .{ .name = "Old Name" } };
+    var history = harness.newHistory(editorStateWith(editor));
+    runToIdle(&history);
+
+    // Mission name (mission-scoped, no level index).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_mission_name = .{
+            .name = "New Name",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqualStrings("New Name", history.current_state.editor.?.mission.name);
+
+    // Level name + world gradient index (level-indexed, tab 0).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_level_name = .{
+            .level_index = 0,
+            .name = "Renamed",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqualStrings("Renamed", history.current_state.editor.?.levels[0].name);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_level_color_wheel = .{
+            .level_index = 0,
+            .color_wheel_index = 4,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 4), history.current_state.editor.?.levels[0].color_wheel_index);
+
+    // Gradient overrides: a pick sets the manual index; null reverts to
+    // auto-derivation (the Auto toggle). Both ride the undo timeline.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_level_enemy_gradient = .{
+            .level_index = 0,
+            .gradient_index = 2,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(?u32, 2), history.current_state.editor.?.levels[0].enemy_gradient_index);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_level_player_gradient = .{
+            .level_index = 0,
+            .gradient_index = null,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(?u32, null), history.current_state.editor.?.levels[0].player_gradient_index);
+
+    // One undo per commit: walking back all five reaches the state
+    // before the mission-name commit (the original name).
+    for (0..5) |_| try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqualStrings("Old Name", history.current_state.editor.?.mission.name);
+    try testing.expectEqualStrings("First", history.current_state.editor.?.levels[0].name);
+    try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.levels[0].color_wheel_index);
+}

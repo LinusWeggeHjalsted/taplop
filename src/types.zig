@@ -409,21 +409,6 @@ pub const ActiveColorTheme = struct {
     player_gradient: ColorGradient,
 };
 
-/// A fully custom per-level/per-hub color theme: the 3 gradients (18 colors)
-/// that `ActiveColorTheme` derives from the color wheel when
-/// `color_wheel_index` is used. Stored as an OPTIONAL override on
-/// Level/Hub/EditorLevel (`custom_theme: ?CustomColorTheme`); when null,
-/// `activeThemeFor` derives from `color_wheel_index` as before (backward
-/// compatible). `lightest`/`darkest` stay from the global
-/// ColorThemeDefinitions: `lightest` is the tile-cursor color and the UI
-/// text-default; `darkest` tints 9-slice panel backgrounds. See DESIGN →
-/// Architecture → Level Editor → Level theme (gradient picking).
-pub const CustomColorTheme = struct {
-    world_gradient: ColorGradient,
-    enemy_gradient: ColorGradient,
-    player_gradient: ColorGradient,
-};
-
 /// One overlay layer of a decoration: a sprite drawn over the base at the same
 /// position, colored independently. Must be the same pixel dimensions as the
 /// base (validated at load). See DESIGN → Decorations & Footprint.
@@ -1185,11 +1170,12 @@ pub const TextEditOutcome = enum { none, commit, cancel };
 pub const EditorLevel = struct {
     name: []const u8 = &.{},
     color_wheel_index: u32 = 0,
-    /// Optional per-level theme override. When non-null, `activeThemeFor`
-    /// builds the ActiveColorTheme from this instead of deriving from
-    /// `color_wheel_index`. Backward compatible (null on older files). See
-    /// DESIGN → Architecture → Level Editor → Editor UI layout.
-    custom_theme: ?CustomColorTheme = null,
+    /// Optional per-role gradient override. Null (the default) = derived
+    /// from `color_wheel_index` (enemy = world + N/3, player = world +
+    /// 2·N/3, N = gradients in the theme — the `deriveActiveColorTheme`
+    /// rule). See DESIGN → Architecture → Level Editor → Level theme.
+    enemy_gradient_index: ?u32 = null,
+    player_gradient_index: ?u32 = null,
     level_tiles: []const Vector2 = &.{},
     player_start: Vector2 = .{ .x = 0, .y = 0 }, // the '!' position
     level_end: ?Vector2 = null,
@@ -1439,10 +1425,11 @@ pub const TurnPhase = enum {
 pub const Level = struct {
     name: []const u8 = &.{},
     color_wheel_index: u32 = 0,
-    /// Optional per-level theme override. When non-null, `activeThemeFor`
-    /// builds the ActiveColorTheme from this instead of deriving from
-    /// `color_wheel_index`. Backward compatible (null on older files).
-    custom_theme: ?CustomColorTheme = null,
+    /// Optional per-role gradient override (same semantics as
+    /// EditorLevel's). Set by the editor's settings sidebar; serialized as
+    /// level-file Metadata keys.
+    enemy_gradient_index: ?u32 = null,
+    player_gradient_index: ?u32 = null,
     level_tiles: []const Vector2 = &.{},
     entities: []const Entity = &.{},
     ground_items: []const GroundItems = &.{},
@@ -1461,8 +1448,6 @@ pub const MissionExit = struct {
 pub const Hub = struct {
     name: []const u8 = &.{},
     color_wheel_index: u32 = 0,
-    /// Optional per-hub theme override. Same semantics as Level.custom_theme.
-    custom_theme: ?CustomColorTheme = null,
     hub_tiles: []const Vector2 = &.{},
     player: Entity = .{},
     npcs: []const NPC = &.{},

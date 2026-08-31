@@ -22,7 +22,6 @@ const Pants = types.Pants;
 const Boots = types.Boots;
 const EntityLayer = types.EntityLayer;
 const DecorationLayer = types.DecorationLayer;
-const CustomColorTheme = types.CustomColorTheme;
 const EntityEditTarget = types.EntityEditTarget;
 const MissionCompleteInfo = types.MissionCompleteInfo;
 
@@ -243,18 +242,23 @@ pub const EditorEvent = union(enum) {
         level_index: u32,
         name: []const u8,
     },
-    // Switch the level's theme source to the color wheel (clears
-    // custom_theme → null; activeThemeFor derives from color_wheel_index).
+    // Set the level's world gradient index (the role `color_wheel_index`
+    // plays in the level file). Enemy/player gradients auto-derive from it
+    // unless overridden below. See DESIGN → Architecture → Level Editor →
+    // Level theme (gradient picking).
     editor_set_level_color_wheel: struct {
         level_index: u32,
         color_wheel_index: u32,
     },
-    // Set a fully custom per-level theme (or null to revert to the wheel).
-    // See DESIGN → Architecture → Level Editor → Level theme (gradient
-    // picking).
-    editor_set_level_custom_theme: struct {
+    // Set a per-role gradient override, or null to revert to auto-deriving
+    // from the world index (world + N/3 / world + 2·N/3).
+    editor_set_level_enemy_gradient: struct {
         level_index: u32,
-        custom_theme: ?CustomColorTheme,
+        gradient_index: ?u32,
+    },
+    editor_set_level_player_gradient: struct {
+        level_index: u32,
+        gradient_index: ?u32,
     },
     editor_set_mission_name: struct {
         name: []const u8,
@@ -615,6 +619,31 @@ pub const PlayerInputEvent = union(enum) {
     // loadout. The handler pushes `editor_import_player` — the loadout
     // fields ride GameState, so the import is on the undo timeline.
     player_import_editor_player: void,
+    // Settings-sidebar commits (mission + active-level metadata — see
+    // DESIGN → Architecture → Level Editor → Editor UI layout (Settings
+    // sidebar)). Thin orchestrators: the EditorEvents own the mutations.
+    player_set_editor_mission_name: struct {
+        name: []const u8,
+    },
+    player_set_editor_level_name: struct {
+        level_index: u32,
+        name: []const u8,
+    },
+    player_set_editor_level_color_wheel: struct {
+        level_index: u32,
+        color_wheel_index: u32,
+    },
+    // A gradient pick for the enemy/player row (or the row's Auto toggle
+    // reverting to null). Picking while the role is on auto flips it to
+    // manual in the same commit — one undo step per pick.
+    player_set_editor_level_enemy_gradient: struct {
+        level_index: u32,
+        gradient_index: ?u32,
+    },
+    player_set_editor_level_player_gradient: struct {
+        level_index: u32,
+        gradient_index: ?u32,
+    },
     // Select-tool click in the editor viewport: toggle the clicked thing's
     // group in the selection (see the selection-tool bullet in DESIGN →
     // Architecture → Level Editor → Active-tool model). The SHIFT+CLICK

@@ -942,6 +942,35 @@ fn handleEditorEvent(
             }
             @constCast(editor.levels)[set.level_index].level_end = set.position;
         },
+        // Settings-sidebar commits (mission + level metadata). Level-index
+        // guards match the other level-addressed verbs.
+        .editor_set_level_name => |set| {
+            if (set.level_index >= editor.levels.len) {
+                @panic("editor_set_level_name: level index out of range");
+            }
+            @constCast(editor.levels)[set.level_index].name = set.name;
+        },
+        .editor_set_mission_name => |set| {
+            editor.mission.name = set.name;
+        },
+        .editor_set_level_color_wheel => |set| {
+            if (set.level_index >= editor.levels.len) {
+                @panic("editor_set_level_color_wheel: level index out of range");
+            }
+            @constCast(editor.levels)[set.level_index].color_wheel_index = set.color_wheel_index;
+        },
+        .editor_set_level_enemy_gradient => |set| {
+            if (set.level_index >= editor.levels.len) {
+                @panic("editor_set_level_enemy_gradient: level index out of range");
+            }
+            @constCast(editor.levels)[set.level_index].enemy_gradient_index = set.gradient_index;
+        },
+        .editor_set_level_player_gradient => |set| {
+            if (set.level_index >= editor.levels.len) {
+                @panic("editor_set_level_player_gradient: level index out of range");
+            }
+            @constCast(editor.levels)[set.level_index].player_gradient_index = set.gradient_index;
+        },
         .editor_commit_selection_move => |commit| {
             // Final link: the worklist is exhausted — a move deselects
             // (nothing is reselected; the clear phase's reconcile already
@@ -1908,6 +1937,38 @@ fn handlePlayerInputEvent(
         // (the loadout fields ride GameState — the import is undoable).
         .player_import_editor_player => {
             pushEvents(current, &.{.{ .editor_event = .editor_import_player }}, allocator);
+        },
+        // Settings-sidebar commits (mission + active-level metadata): thin
+        // forwards — the EditorEvents own the mutations. The level-indexed
+        // wrappers address the level the sidebar showed at click time.
+        .player_set_editor_mission_name => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_mission_name = .{
+                .name = set.name,
+            } } }}, allocator);
+        },
+        .player_set_editor_level_name => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_level_name = .{
+                .level_index = set.level_index,
+                .name = set.name,
+            } } }}, allocator);
+        },
+        .player_set_editor_level_color_wheel => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_level_color_wheel = .{
+                .level_index = set.level_index,
+                .color_wheel_index = set.color_wheel_index,
+            } } }}, allocator);
+        },
+        .player_set_editor_level_enemy_gradient => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_level_enemy_gradient = .{
+                .level_index = set.level_index,
+                .gradient_index = set.gradient_index,
+            } } }}, allocator);
+        },
+        .player_set_editor_level_player_gradient => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_level_player_gradient = .{
+                .level_index = set.level_index,
+                .gradient_index = set.gradient_index,
+            } } }}, allocator);
         },
         // Inspector entity-name commit: thin forward (the EditorEvent owns
         // the mutation; recordEvent deep-copies the value slice into the

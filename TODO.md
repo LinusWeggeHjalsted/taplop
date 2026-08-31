@@ -666,8 +666,34 @@ yet implemented. Remaining work:
         read — discovery silently dropped on every save/load round
         trip). History in DONE.md; design in DESIGN → Level Editor →
         Player loadout.
-  Deferred: drag-painting. Still-needed event
-  structs: gradient-override setters. Default level template
+  - [ ] **11 — settings sidebar (right bar):** mission + active-level
+        metadata. Toggle button top-right (mirrors the inspector's
+        top-left one), open by default; panel on the right edge, the
+        inspector's visual class. Mission section: name text field
+        (commits `editor_set_mission_name` — event exists, handler
+        pending). Level section: name text field (commits
+        `editor_set_level_name` on the active tab) + three gradient rows
+        — world / enemy / player. Each row's FULL-GRADIENT swatch (all 6
+        colors, one strip) is a single button opening the centered THEME
+        PICKER (every gradient from color_themes.txt, one full-width
+        swatch per row, current pick highlighted; a pick sets the level's
+        index). Enemy + player rows carry an AUTO-DERIVE toggle (DESIGN →
+        Level Editor → Level theme): auto = derived from the world index
+        (`world + N/3` / `world + 2N/3`), manual = the picked index
+        overrides. This slice also lands the MODEL CHANGE that design
+        calls for: `CustomColorTheme` / `custom_theme` scaffolding REMOVED
+        (dead — nothing reads it; the index model supersedes it) and the
+        enemy/player override fields + events land
+        (`editor_set_level_enemy_gradient` / `..._player_gradient`, null
+        payload = revert to auto). Settled decisions: sidebar toggle =
+        Editor flag + `editor_toggle_settings_sidebar` event (the
+        inspector pattern; toggle button at the inspector toggle's height,
+        flush to the right screen edge); TextFieldRef target widened to a
+        `TextEditTarget` union (entity / mission_name / level_name);
+        AUTO-mode swatches stay clickable — a pick in the picker flips
+        that role to manual and sets the index in one commit; picker rows
+        are bare full-width gradient strips (no labels).
+  Deferred: drag-painting. Default level template
   (`data/default_level.txt`). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved
   placements, `!`/`=` markers; camera centered on the active level's
@@ -714,6 +740,35 @@ yet implemented. Remaining work:
   `player_set_editor_level`.
 - **Hook up the palette "+" cells (add-new type).** Same shape: click →
   orchestrator → `editor_add_*_type` handler (currently panics).
+- **Mission metadata cleanup — derive start_hub / end_hub /
+  level_count.** mission.txt's Metadata carries three fields that
+  restate the campaign graph or the mission directory — drift-prone
+  duplicates (a mission exit moved to another hub, or a level_4.txt
+  added, leaves them stale). All three should be DERIVED, not authored;
+  the editor's mission-writer slice is the natural landing point:
+  - `level_count` — count the `level_N.txt` files in the mission dir.
+    Needs embedded-map enumeration (FileSource lists persistent dirs
+    already; embedded keys are comptime-known) or a sequential
+    load-until-missing probe. Consumers reading the authored value
+    today: start_mission's level loop, FileSource's mission-browser
+    scan, content_hash.
+  - `start_hub` — derivable from the campaign graph (the hub whose
+    `mission_exits` name this mission). OPEN: a mission referenced by
+    multiple hubs has no single start hub; the runtime already knows the
+    entering hub (`player_data.current_hub`; the exit_mission path
+    already falls back to it). Decide: always entering-hub (drop the
+    field) vs keep an authored fallback for the multi-hub case.
+  - `end_hub` — the return hub after completion; NOT derivable from the
+    current graph shape (`mission_exits` are hub→mission only, no
+    mission→hub edge). All four shipped missions start + end at the
+    same hub. OPEN: (a) return-to-entering-hub semantics (drop the
+    field; the `start_mission.end_hub_id` runtime override stays for
+    dreams), or (b) the graph gains a return edge if progression
+    missions ending at a NEW hub are wanted. Decide before the
+    mission-writer slice.
+  Dropping the keys: remove from the shipped files + the parser
+  whitelist (an old file still carrying them would warn — free
+  pre-release, official data ships embedded with the exe).
 - Validation result + replay attachment: on successful validation, attach a
   saved mission replay to the custom mission (next save writes it into the
   custom mission dir) for re-validation before uploading to the online

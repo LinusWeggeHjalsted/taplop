@@ -443,6 +443,14 @@ pub const player_loadout_sections = [_][]const u8{
 
 const level_metadata_keys = [_][]const u8{ "file_format_version", "name", "color_wheel_index" };
 
+// A LEVEL file's Metadata adds the optional per-role gradient overrides
+// (hubs + the other file types sharing `level_metadata_keys` don't carry
+// them). See DESIGN → Level Editor → Level theme.
+const level_file_metadata_keys = [_][]const u8{
+    "file_format_version", "name", "color_wheel_index",
+    "enemy_gradient_index", "player_gradient_index",
+};
+
 const level_enemies_keys = [_][]const u8{
     "character_code",
     "name",
@@ -511,7 +519,7 @@ const level_items_keys = [_][]const u8{
 /// not in the map (e.g. Layout, which has no key-value pairs) are skipped by
 /// validateKeys. Pass this to validateKeys when loading a level file.
 pub const level_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
-    .{ "Metadata", &level_metadata_keys },
+    .{ "Metadata", &level_file_metadata_keys },
     .{ "Enemies", &level_enemies_keys },
     .{ "Decorations", &level_decorations_keys },
     .{ "Items", &level_items_keys },
