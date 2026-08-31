@@ -847,6 +847,36 @@ pub const PlayerInputEvent = union(enum) {
         type_id: u32,
         value: u32,
     },
+    // Inspector layer commits (the Layers sections — enemy types +
+    // decoration types; the player loadout has NO layers). The EditorEvents
+    // own the mutations; set carries the WHOLE layer value (a sprite re-pick
+    // or a color swap — one event, one undo step).
+    player_add_editor_entity_layer: struct {
+        target: EntityEditTarget,
+        layer: EntityLayer,
+    },
+    player_remove_editor_entity_layer: struct {
+        target: EntityEditTarget,
+        layer_index: u32,
+    },
+    player_set_editor_entity_layer: struct {
+        target: EntityEditTarget,
+        layer_index: u32,
+        layer: EntityLayer,
+    },
+    player_add_editor_decoration_layer: struct {
+        type_id: u32,
+        layer: DecorationLayer,
+    },
+    player_remove_editor_decoration_layer: struct {
+        type_id: u32,
+        layer_index: u32,
+    },
+    player_set_editor_decoration_layer: struct {
+        type_id: u32,
+        layer_index: u32,
+        layer: DecorationLayer,
+    },
 
     // --- Meta: exit/skip orchestrators ---
     // Dev-only skip (ctrl+Enter). Gated to dev builds in `isPlayerAction`;

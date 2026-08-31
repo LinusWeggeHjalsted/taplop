@@ -1157,6 +1157,58 @@ pub const GameStateHistory = struct {
         }
     }
 
+    /// Structural legality shared by the entity LAYER commits: the entity
+    /// scalar checks + the player target rejected (the player loadout has
+    /// no layers) + the layer index in range for remove/set (null = add).
+    fn validateInspectorEntityLayerEdit(
+        self: *GameStateHistory,
+        target: types.EntityEditTarget,
+        layer_index: ?u32,
+    ) void {
+        self.validateInspectorEntityEdit(target);
+        const editor = self.current_state.editor.?;
+        switch (target) {
+            .entity_type => |type_id| {
+                const template = editor.entity_types[type_id].template;
+                if (layer_index) |index| {
+                    if (index >= template.layers.len) {
+                        @panic("replay validation: entity layer commit layer index out of range");
+                    }
+                }
+            },
+            // The player loadout has no layers — the live path never
+            // targets it (the Layers section is enemy content only).
+            .player_def => @panic("replay validation: entity layer commit on the player loadout"),
+        }
+    }
+
+    /// Structural legality shared by the decoration LAYER commits: the
+    /// decoration scalar checks + the load-time invariant (a layer's pixel
+    /// dims must equal the base's — add/set only; remove carries no layer)
+    /// + the layer index in range for remove/set (null = add).
+    fn validateInspectorDecorationLayerEdit(
+        self: *GameStateHistory,
+        type_id: u32,
+        layer: ?types.DecorationLayer,
+        layer_index: ?u32,
+    ) void {
+        self.validateInspectorDecorationEdit(type_id);
+        const editor = self.current_state.editor.?;
+        const definition = editor.decoration_types[type_id];
+        if (layer) |value| {
+            if (value.pixel_dims.x != definition.pixel_dims.x or
+                value.pixel_dims.y != definition.pixel_dims.y)
+            {
+                @panic("replay validation: decoration layer commit dims differ from the base");
+            }
+        }
+        if (layer_index) |index| {
+            if (index >= definition.layers.len) {
+                @panic("replay validation: decoration layer commit layer index out of range");
+            }
+        }
+    }
+
     fn validatePlayerAction(self: *GameStateHistory, event: Event) void {
         switch (event) {
             .player_input_event => |pi| switch (pi) {
@@ -1301,6 +1353,18 @@ pub const GameStateHistory = struct {
                     self.validateInspectorDecorationEdit(set.type_id),
                 .player_set_editor_decoration_color_index => |set|
                     self.validateInspectorDecorationEdit(set.type_id),
+                .player_add_editor_entity_layer => |set|
+                    self.validateInspectorEntityLayerEdit(set.target, null),
+                .player_remove_editor_entity_layer => |set|
+                    self.validateInspectorEntityLayerEdit(set.target, set.layer_index),
+                .player_set_editor_entity_layer => |set|
+                    self.validateInspectorEntityLayerEdit(set.target, set.layer_index),
+                .player_add_editor_decoration_layer => |set|
+                    self.validateInspectorDecorationLayerEdit(set.type_id, set.layer, null),
+                .player_remove_editor_decoration_layer => |set|
+                    self.validateInspectorDecorationLayerEdit(set.type_id, null, set.layer_index),
+                .player_set_editor_decoration_layer => |set|
+                    self.validateInspectorDecorationLayerEdit(set.type_id, set.layer, set.layer_index),
                 // Structural legality: the paint checks + the select tool
                 // active (the live path only toggles from the select tool's
                 // viewport arm; the handler no-ops otherwise as the

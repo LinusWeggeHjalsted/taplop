@@ -1061,6 +1061,206 @@ test "player_set_editor_decoration_def: empty footprint or out-of-range type rec
     try testing.expectEqualStrings("ruin_1", history.current_state.editor.?.decoration_types[0].sprite);
 }
 
+test "entity layer events: add appends, set replaces, remove compacts, player target ignored" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{}};
+    const target: types.EntityEditTarget = .{ .entity_type = 0 };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+        .active_tool = .{ .entity_type = 0 },
+    }));
+    runToIdle(&history);
+
+    // Add: two layers append in order.
+    for ([_][]const u8{ "chainmail", "hood" }) |layer_sprite| {
+        event_handlers.pushEvents(
+            &history.current_state,
+            &.{.{ .player_input_event = .{ .player_add_editor_entity_layer = .{
+                .target = target,
+                .layer = .{ .sprite = layer_sprite, .color_index = 2 },
+            } } }},
+            history.current_arena.allocator(),
+        );
+        runToIdle(&history);
+    }
+    var template = history.current_state.editor.?.entity_types[0].template;
+    try testing.expectEqual(@as(usize, 2), template.layers.len);
+    try testing.expectEqualStrings("chainmail", template.layers[0].sprite);
+    try testing.expectEqualStrings("hood", template.layers[1].sprite);
+
+    // Set: replace layer 0 in place (order + the other layer stable).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_entity_layer = .{
+            .target = target,
+            .layer_index = 0,
+            .layer = .{ .sprite = "plate", .color_index = 4 },
+            } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    template = history.current_state.editor.?.entity_types[0].template;
+    try testing.expectEqualStrings("plate", template.layers[0].sprite);
+    try testing.expectEqual(@as(u32, 4), template.layers[0].color_index);
+    try testing.expectEqualStrings("hood", template.layers[1].sprite);
+
+    // Remove: order-preserving compact.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_remove_editor_entity_layer = .{
+            .target = target,
+            .layer_index = 0,
+            } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    template = history.current_state.editor.?.entity_types[0].template;
+    try testing.expectEqual(@as(usize, 1), template.layers.len);
+    try testing.expectEqualStrings("hood", template.layers[0].sprite);
+
+    // Crafted-log defense: the player loadout has no layers (ignored),
+    // and an out-of-range layer index records nothing.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_add_editor_entity_layer = .{
+            .target = .player_def,
+            .layer = .{ .sprite = "hood", .color_index = 2 },
+            } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.player_def.template.layers.len);
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_remove_editor_entity_layer = .{
+            .target = target,
+            .layer_index = 7,
+            } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.entity_types[0].template.layers.len);
+}
+
+test "decoration layer events: add/set/remove with the dims-match invariant" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The "wide" type: pixel dims 512x256 — a matching layer carries the
+    // same dims, a mismatched one doesn't.
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
+    runToIdle(&history);
+
+    const matching_layer = types.DecorationLayer{
+        .sprite = "moss_overlay",
+        .color_index = 2,
+        .pixel_dims = .{ .x = 512, .y = 256 },
+    };
+    const mismatched_layer = types.DecorationLayer{
+        .sprite = "tall_canopy",
+        .color_index = 2,
+        .pixel_dims = .{ .x = 512, .y = 768 },
+    };
+
+    // Add: a matching layer appends; a MISMATCHED one is ignored (the
+    // load-time invariant — the level parser panics on a dims mismatch,
+    // so the editor never holds one).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_add_editor_decoration_layer = .{
+            .type_id = 0,
+            .layer = matching_layer,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_add_editor_decoration_layer = .{
+            .type_id = 0,
+            .layer = mismatched_layer,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    var definition = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqual(@as(usize, 1), definition.layers.len);
+    try testing.expectEqualStrings("moss_overlay", definition.layers[0].sprite);
+
+    // Set: a color swap replaces in place; a mismatched set is ignored.
+    var recolored = matching_layer;
+    recolored.color_index = 5;
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_layer = .{
+            .type_id = 0,
+            .layer_index = 0,
+            .layer = recolored,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    definition = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqual(@as(u32, 5), definition.layers[0].color_index);
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_decoration_layer = .{
+            .type_id = 0,
+            .layer_index = 0,
+            .layer = mismatched_layer,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    definition = history.current_state.editor.?.decoration_types[0];
+    try testing.expectEqualStrings("moss_overlay", definition.layers[0].sprite);
+
+    // Remove + one undo reverts the remove; an out-of-range index or type
+    // records nothing.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_remove_editor_decoration_layer = .{
+            .type_id = 0,
+            .layer_index = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.decoration_types[0].layers.len);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.decoration_types[0].layers.len);
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_remove_editor_decoration_layer = .{
+            .type_id = 0,
+            .layer_index = 7,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_add_editor_decoration_layer = .{
+            .type_id = 99,
+            .layer = matching_layer,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.decoration_types[0].layers.len);
+}
+
 test "editor_delete_entity_placement: removes the placement, order preserved" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

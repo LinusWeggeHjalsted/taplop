@@ -545,6 +545,24 @@ fn handleEditorEvent(
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.equipped_utility_skills[set.slot_index] = set.value;
         },
+        // Entity layer edits (the enemy content's Layers section — the
+        // player loadout has NO layers: a player_def target is ignored,
+        // defensive against crafted logs; validation rejects them at the
+        // replay seam). The layer index guards are the same posture.
+        .editor_add_entity_layer => |add| {
+            const template = entityLayerEditTemplate(editor, add.target) orelse return;
+            layerListAppend(types.EntityLayer, &template.layers, add.layer, allocator);
+        },
+        .editor_remove_entity_layer => |remove| {
+            const template = entityLayerEditTemplate(editor, remove.target) orelse return;
+            if (remove.layer_index >= template.layers.len) return;
+            layerListRemoveAt(types.EntityLayer, &template.layers, remove.layer_index, allocator);
+        },
+        .editor_set_entity_layer => |set| {
+            const template = entityLayerEditTemplate(editor, set.target) orelse return;
+            if (set.layer_index >= template.layers.len) return;
+            layerListReplaceAt(types.EntityLayer, &template.layers, set.layer_index, set.layer, allocator);
+        },
         // Decoration whole-def commit (a picker pick): adopt the full
         // definition — sprite, footprint, pixel dims, color index, layers —
         // with the palette label tracking the sprite (a decoration's name
@@ -573,6 +591,32 @@ fn handleEditorEvent(
         .editor_set_decoration_color_index => |set| {
             if (set.type_id >= editor.decoration_types.len) return;
             @constCast(editor.decoration_types)[set.type_id].color_index = set.value;
+        },
+        // Decoration layer edits (the decoration content's Layers
+        // section). The load-time invariant — a layer's pixel dims must
+        // equal the base's (the level parser panics otherwise) — is
+        // enforced here too: a mismatched payload is ignored, so the
+        // editor can never hold a state its own load path would reject
+        // (the editor_set_entity_utility_skill posture; the live commit
+        // site rejects mismatches before pushing).
+        .editor_add_decoration_layer => |add| {
+            if (add.type_id >= editor.decoration_types.len) return;
+            const definition = &@constCast(editor.decoration_types)[add.type_id];
+            if (!decorationLayerDimsMatch(definition, add.layer)) return;
+            layerListAppend(types.DecorationLayer, &definition.layers, add.layer, allocator);
+        },
+        .editor_remove_decoration_layer => |remove| {
+            if (remove.type_id >= editor.decoration_types.len) return;
+            const definition = &@constCast(editor.decoration_types)[remove.type_id];
+            if (remove.layer_index >= definition.layers.len) return;
+            layerListRemoveAt(types.DecorationLayer, &definition.layers, remove.layer_index, allocator);
+        },
+        .editor_set_decoration_layer => |set| {
+            if (set.type_id >= editor.decoration_types.len) return;
+            const definition = &@constCast(editor.decoration_types)[set.type_id];
+            if (set.layer_index >= definition.layers.len) return;
+            if (!decorationLayerDimsMatch(definition, set.layer)) return;
+            layerListReplaceAt(types.DecorationLayer, &definition.layers, set.layer_index, set.layer, allocator);
         },
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
@@ -1966,6 +2010,48 @@ fn handlePlayerInputEvent(
                 .value = set.value,
             } } }}, allocator);
         },
+        // Inspector layer commits (the Layers sections): thin forwards.
+        // The player loadout has no layers — the handler ignores a
+        // player_def entity-layer target (validation rejects it at the
+        // replay seam).
+        .player_add_editor_entity_layer => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_add_entity_layer = .{
+                .target = set.target,
+                .layer = set.layer,
+            } } }}, allocator);
+        },
+        .player_remove_editor_entity_layer => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_remove_entity_layer = .{
+                .target = set.target,
+                .layer_index = set.layer_index,
+            } } }}, allocator);
+        },
+        .player_set_editor_entity_layer => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_layer = .{
+                .target = set.target,
+                .layer_index = set.layer_index,
+                .layer = set.layer,
+            } } }}, allocator);
+        },
+        .player_add_editor_decoration_layer => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_add_decoration_layer = .{
+                .type_id = set.type_id,
+                .layer = set.layer,
+            } } }}, allocator);
+        },
+        .player_remove_editor_decoration_layer => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_remove_decoration_layer = .{
+                .type_id = set.type_id,
+                .layer_index = set.layer_index,
+            } } }}, allocator);
+        },
+        .player_set_editor_decoration_layer => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_decoration_layer = .{
+                .type_id = set.type_id,
+                .layer_index = set.layer_index,
+                .layer = set.layer,
+            } } }}, allocator);
+        },
         // Select-tool click: thin over the shared planner (the input layer
         // fires only nonempty plans — see planEditorSelectionActions).
         .player_toggle_editor_selection => |toggle| {
@@ -2441,6 +2527,76 @@ pub fn editorEntityTemplate(
         },
         .player_def => &editor.player_def.template,
     };
+}
+
+/// The template an entity-LAYER edit applies to — `editorEntityTemplate`
+/// minus the player (the player loadout has no layers; the Layers section
+/// is enemy content only).
+fn entityLayerEditTemplate(
+    editor: *types.Editor,
+    target: types.EntityEditTarget,
+) ?*types.Entity {
+    return switch (target) {
+        .entity_type => editorEntityTemplate(editor, target),
+        .player_def => null,
+    };
+}
+
+/// Does a decoration layer's pixel dims match its base type's? The
+/// load-time invariant (`validateDecorationFootprint` panics otherwise) —
+/// shared by the layer-edit handler arms + the replay validation.
+fn decorationLayerDimsMatch(
+    definition: *const types.DecorationTypeDef,
+    layer: types.DecorationLayer,
+) bool {
+    return layer.pixel_dims.x == definition.pixel_dims.x and
+        layer.pixel_dims.y == definition.pixel_dims.y;
+}
+
+/// Append to a `[]const T` layer-list field (Entity.layers /
+/// DecorationTypeDef.layers — both `[]const`, so mutation is
+/// copy-and-reassign).
+fn layerListAppend(
+    comptime T: type,
+    layers: *[]const T,
+    layer: T,
+    allocator: std.mem.Allocator,
+) void {
+    const grown = allocator.alloc(T, layers.len + 1) catch
+        @panic("failed to allocate layers");
+    @memcpy(grown[0..layers.len], layers.*);
+    grown[layers.len] = layer;
+    layers.* = grown;
+}
+
+/// Remove the index from a `[]const T` layer-list field (order-preserving
+/// compact). The caller guards the index.
+fn layerListRemoveAt(
+    comptime T: type,
+    layers: *[]const T,
+    index: u32,
+    allocator: std.mem.Allocator,
+) void {
+    const shrunk = allocator.alloc(T, layers.len - 1) catch
+        @panic("failed to allocate layers");
+    @memcpy(shrunk[0..index], layers.*[0..index]);
+    @memcpy(shrunk[index..], layers.*[index + 1 ..]);
+    layers.* = shrunk;
+}
+
+/// Replace the index in a `[]const T` layer-list field. The caller guards
+/// the index.
+fn layerListReplaceAt(
+    comptime T: type,
+    layers: *[]const T,
+    index: u32,
+    layer: T,
+    allocator: std.mem.Allocator,
+) void {
+    const replaced = allocator.dupe(T, layers.*) catch
+        @panic("failed to allocate layers");
+    replaced[index] = layer;
+    layers.* = replaced;
 }
 
 /// Pure planners for the editor click orchestrators (tile paint, the three
