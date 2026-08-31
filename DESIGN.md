@@ -1936,7 +1936,9 @@ layout + a left inspector + a right settings sidebar:
   `EditorInspectorSectionId` (shared across the enemy + player contents —
   Weapons expanded on an enemy stays expanded on the player), a direct
   UiState write off the undo timeline (the palette-accordion class, NOT
-  the one-at-a-time behavior).
+  the one-at-a-time behavior). The section-break SPACER belongs to the
+  section above it — a collapsed section takes no gap after it (headers
+  stack flush).
 - **Inspector fields (enemy types — settled):** the COUPLING CONTRACT is
   the parser: every key `parseEntityDefinition` reads maps to exactly
   one inspector control, and field bounds are single-sourced from the

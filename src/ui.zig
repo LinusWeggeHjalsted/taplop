@@ -4714,21 +4714,25 @@ fn appendInspectorSlotEntries(
 
 /// The Weapons + Gear sections (shared by the enemy + player content):
 /// each section header, then (while expanded) each slot's row followed by
-/// the equipped item's fields.
+/// the equipped item's fields. The spacer BEFORE Weapons is the caller's —
+/// it belongs to the caller's preceding section (Stats for the enemy
+/// content, Player for the player content) and is emitted only while THAT
+/// section is expanded.
 fn appendInspectorGearSections(
     allocator: std.mem.Allocator,
     template: types.Entity,
     entries: *std.ArrayList(EditorInspectorEntry),
     expanded: *const [editor_inspector_section_count]bool,
 ) !void {
-    try entries.append(allocator, .spacer);
     try entries.append(allocator, .{ .section = .weapons });
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.weapons)]) {
         for ([_]types.GearSlot{ .main_hand, .off_hand }) |hand| {
             try appendInspectorSlotEntries(allocator, template, entries, .{ .weapon_slot = hand }, hand);
         }
     }
-    try entries.append(allocator, .spacer);
+    if (expanded[@intFromEnum(types.EditorInspectorSectionId.weapons)]) {
+        try entries.append(allocator, .spacer);
+    }
     try entries.append(allocator, .{ .section = .gear });
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.gear)]) {
         for ([_]types.GearSlot{ .amulet, .coat, .gloves, .pants, .boots }) |slot| {
@@ -4761,8 +4765,10 @@ fn editorInspectorEntityEntries(
             .{ .field = .{ .label = "Color", .control = .swatches } },
             .{ .field = .{ .label = "Displays weapons", .control = .toggle } },
         });
+        // The section-break spacer belongs to the section ABOVE it — a
+        // collapsed section takes no gap after it (headers stack flush).
+        try entries.append(allocator, .spacer);
     }
-    try entries.append(allocator, .spacer);
     try entries.append(allocator, .{ .section = .stats });
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.stats)]) {
         try entries.appendSlice(allocator, &.{
@@ -4771,13 +4777,16 @@ fn editorInspectorEntityEntries(
             .{ .field = .{ .label = "Speed", .control = .{ .text = .{ .entity_stat = .speed } } } },
             .{ .field = .{ .label = "Aggro range", .control = .{ .text = .{ .entity_stat = .aggro_range } } } },
         });
+        try entries.append(allocator, .spacer);
     }
 
     try appendInspectorGearSections(allocator, template, &entries, expanded);
 
     // Utility skills: ONE row of five skill slots (the entity-inspect
     // look), each slot opening the centered picker.
-    try entries.append(allocator, .spacer);
+    if (expanded[@intFromEnum(types.EditorInspectorSectionId.gear)]) {
+        try entries.append(allocator, .spacer);
+    }
     try entries.append(allocator, .{ .section = .utility_skills });
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.utility_skills)]) {
         try entries.append(allocator, .{ .utility_skill_row = {} });
@@ -4804,16 +4813,23 @@ fn editorInspectorPlayerEntries(
             .{ .player_name_line = {} },
             .{ .import_player = {} },
         });
+        // The section-break spacer belongs to the section ABOVE it — a
+        // collapsed section takes no gap after it (headers stack flush).
+        try entries.append(allocator, .spacer);
     }
     try appendInspectorGearSections(allocator, template, &entries, expanded);
 
-    try entries.append(allocator, .spacer);
+    if (expanded[@intFromEnum(types.EditorInspectorSectionId.gear)]) {
+        try entries.append(allocator, .spacer);
+    }
     try entries.append(allocator, .{ .section = .utility_skills });
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.utility_skills)]) {
         try entries.append(allocator, .{ .utility_skill_row = {} });
     }
 
-    try entries.append(allocator, .spacer);
+    if (expanded[@intFromEnum(types.EditorInspectorSectionId.utility_skills)]) {
+        try entries.append(allocator, .spacer);
+    }
     try entries.append(allocator, .{ .section = .inventory });
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.inventory)]) {
         try entries.append(allocator, .{ .inventory_summary = {} });
