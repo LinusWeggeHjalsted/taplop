@@ -594,6 +594,20 @@ pub fn gearSlotLabel(slot: GearSlot) []const u8 {
     };
 }
 
+/// The item kind a gear slot takes (weapons on the hands, each gear kind
+/// on its own slot). pub: the input-side gear action builder's kind-match
+/// gate reads it.
+pub fn gearSlotItemKind(slot: GearSlot) ItemKind {
+    return switch (slot) {
+        .main_hand, .off_hand => .weapon,
+        .amulet => .amulet,
+        .coat => .coat,
+        .gloves => .gloves,
+        .pants => .pants,
+        .boots => .boots,
+    };
+}
+
 /// The weapon type's display name (tooltips + the "New X" default weapon
 /// names — capitalized, unlike @tagName).
 pub fn weaponTypeLabel(weapon_type: WeaponType) []const u8 {

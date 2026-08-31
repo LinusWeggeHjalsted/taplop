@@ -2569,7 +2569,9 @@ struct exists in events.zig (`editor_add_level` / `editor_delete_level` /
 / `editor_add_decoration_type` / `editor_add_item_type` /
 `editor_delete_type` / `editor_place_entity` / `editor_place_decoration` /
 `editor_place_item` / `editor_delete_*_placement` / `editor_move_*_placement`
-/ `editor_set_entity_*` (20+ field setters) / `editor_set_decoration_def`
+/ `editor_set_entity_*` (the scalar field setters + the ONE unified
+`editor_set_entity_gear` equipped-slot commit — flattened item fields,
+the whole-definition shape) / `editor_set_decoration_def`
 (LANDED — the whole-definition commit; the per-field name/sprite setters
 were superseded and removed) / `editor_set_decoration_color_index`
 (LANDED) / `editor_set_decoration_footprint` (LANDED — the footprint

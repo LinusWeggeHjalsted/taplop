@@ -14,17 +14,33 @@ const GearSlot = types.GearSlot;
 const Item = types.Item;
 const Materials = types.Materials;
 const EffectId = types.EffectId;
-const Weapon = types.Weapon;
-const Amulet = types.Amulet;
-const Coat = types.Coat;
-const Gloves = types.Gloves;
-const Pants = types.Pants;
-const Boots = types.Boots;
 const EntityLayer = types.EntityLayer;
 const DecorationLayer = types.DecorationLayer;
 const EntityEditTarget = types.EntityEditTarget;
 const ItemKind = types.ItemKind;
 const WeaponType = types.WeaponType;
+
+/// The flattened equipped-slot item payload, shared by
+/// `editor_set_entity_gear` + `player_set_editor_entity_gear` (the player
+/// wrapper forwards it verbatim). `equipped: false` = the clear; only the
+/// slot's kind's fields are meaningful while equipped — the defaults
+/// carry the rest (writer emits all, reader requires all — the
+/// session-log field-presence contract; the defaults keep construction
+/// sites clean).
+pub const EntityGearPayload = struct {
+    target: EntityEditTarget,
+    slot: GearSlot,
+    equipped: bool,
+    weapon_type: WeaponType = .sword,
+    name: []const u8 = &.{},
+    weapon_damage: u32 = 0,
+    spell_damage: u32 = 0,
+    health_bonus: u32 = 0,
+    defense_bonus: u32 = 0,
+    damage_bonus: u32 = 0,
+    pickup_radius_bonus: u32 = 0,
+    speed_bonus: u32 = 0,
+};
 const MissionCompleteInfo = types.MissionCompleteInfo;
 
 /// How `end_level` continues after syncing the player entity back into
@@ -395,35 +411,18 @@ pub const EditorEvent = union(enum) {
         target: EntityEditTarget,
         value: u32,
     },
-    // Gear: nullable (equip/unequip). Each slot its own event = one undo.
-    editor_set_entity_main_hand_weapon: struct {
-        target: EntityEditTarget,
-        value: ?Weapon,
-    },
-    editor_set_entity_off_hand_weapon: struct {
-        target: EntityEditTarget,
-        value: ?Weapon,
-    },
-    editor_set_entity_amulet: struct {
-        target: EntityEditTarget,
-        value: ?Amulet,
-    },
-    editor_set_entity_coat: struct {
-        target: EntityEditTarget,
-        value: ?Coat,
-    },
-    editor_set_entity_gloves: struct {
-        target: EntityEditTarget,
-        value: ?Gloves,
-    },
-    editor_set_entity_pants: struct {
-        target: EntityEditTarget,
-        value: ?Pants,
-    },
-    editor_set_entity_boots: struct {
-        target: EntityEditTarget,
-        value: ?Boots,
-    },
+    // Gear: ONE slot-parameterized event (equip/unequip/retype/field
+    // edit — the whole-definition commit, the editor_set_item_def /
+    // editor_set_decoration_def shape). The item's fields are FLATTENED
+    // onto the payload: a nested `?Weapon`-style value can't round-trip
+    // the session log once its name contains a space (nested strings
+    // serialize as one space-separated token — see session_log.zig
+    // parseScalarTokens), and the editor's own defaults ("New Sword")
+    // carry spaces. `equipped: false` = the clear (Delete); only the
+    // slot's kind's fields are meaningful while equipped (the handler
+    // ignores the rest). Shared payload type: the player wrapper forwards
+    // it verbatim.
+    editor_set_entity_gear: EntityGearPayload,
     // Utility skills: per-slot (slot_index 0..utility_skill_count-1), nullable.
     editor_set_entity_utility_skill: struct {
         target: EntityEditTarget,
@@ -851,38 +850,12 @@ pub const PlayerInputEvent = union(enum) {
         target: EntityEditTarget,
         value: u32,
     },
-    // Equipped-slot commits (weapons + gear, nullable whole-item values —
-    // the per-slot EditorEvents carry the full item, so one event covers
-    // create / retype / field-edit / delete; one undo step either way).
-    // Names mirror the editor events (the variant carries the slot).
-    player_set_editor_entity_main_hand_weapon: struct {
-        target: EntityEditTarget,
-        value: ?Weapon,
-    },
-    player_set_editor_entity_off_hand_weapon: struct {
-        target: EntityEditTarget,
-        value: ?Weapon,
-    },
-    player_set_editor_entity_amulet: struct {
-        target: EntityEditTarget,
-        value: ?Amulet,
-    },
-    player_set_editor_entity_coat: struct {
-        target: EntityEditTarget,
-        value: ?Coat,
-    },
-    player_set_editor_entity_gloves: struct {
-        target: EntityEditTarget,
-        value: ?Gloves,
-    },
-    player_set_editor_entity_pants: struct {
-        target: EntityEditTarget,
-        value: ?Pants,
-    },
-    player_set_editor_entity_boots: struct {
-        target: EntityEditTarget,
-        value: ?Boots,
-    },
+    // Equipped-slot commit (weapons + gear): ONE slot-parameterized
+    // event carrying the FLATTENED item (see the editor_set_entity_gear
+    // comment for why flat + the shared payload type) — create / retype /
+    // field-edit / clear all push it, so one event covers each (one undo
+    // step either way).
+    player_set_editor_entity_gear: EntityGearPayload,
     // Inspector utility-skill commit (the picker's pick, or its None
     // option). Only UTILITY skills are legal on the bar — the picker
     // never offers weapon skills and validation rejects them (see

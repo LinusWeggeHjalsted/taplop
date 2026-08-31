@@ -1097,20 +1097,26 @@ Done items in DONE.md. Open:
   check) call `.toScreenPosition()` at the UI seam. The rename made this
   visible (the type name now clearly says i32 where f32 was intended).
 
-- **Nested string fields break session-log round-trips (pre-existing).**
-  `appendEventScalar` flattens nested struct/union fields as
-  space-separated tokens, so a `[]const u8` INSIDE a nested payload can't
-  contain spaces: `player_set_editor_entity_main_hand_weapon` with a
-  weapon named "New Sword" (the weapon-slot create default!) writes
-  `value New Sword sword 0`, and `parseScalarTokens` reads name="New",
-  weapon_type="Sword" → MalformedSessionLog on reload. Only hit via
-  `--replay` / crash-dump restore today (the log-load paths), so it sat
-  unnoticed. Surfaced by the item-inspector slice (its new events are
-  flattened top-level by design — see TODO → Level Editor slice 12);
-  the FIX is to flatten the equipped-slot events the same way
-  (`weapon_type`/`name`/`damage` as top-level fields, kind on the
-  variant) — a mechanical slice, pre-release-free (session logs are
-  session-scoped; no persisted logs exist).
+- **Nested string fields in session-log payloads — the equipped-slot
+  events FIXED, the LAYER events remain.** `appendEventScalar` flattens
+  nested struct/union fields as space-separated tokens, so a `[]const u8`
+  INSIDE a nested payload can't contain spaces. The equipped-slot events
+  (`player_set_editor_entity_main_hand_weapon` etc. with a weapon named
+  "New Sword" — the weapon-slot create default!) were the live instance;
+  FIXED by unifying the 14 variants into ONE slot-parameterized
+  `editor_set_entity_gear` / `player_set_editor_entity_gear` pair
+  carrying the FLATTENED item (`EntityGearPayload`, the
+  `editor_set_item_def` shape) — see DONE.md. The remaining instances
+  are the LAYER events (`editor_add/set_entity_layer`,
+  `editor_add/remove/set_decoration_layer` — an `EntityLayer` /
+  `DecorationLayer` carries a nested `sprite` string): sprite ids are
+  file stems, so they only break if a MISSION DIRECTORY name carries a
+  space (the `custom/<mission>/<stem>` namespace) — low risk until
+  custom-mission acquisition lands; flatten them (sprite/color_index/
+  pixel_dims as top-level fields) when that slice touches the layer
+  events, or earlier if cheap. The general serializer limitation
+  (no spaces in nested strings) stands by design — the fix pattern is
+  flattening, not quoting.
 - **`WorldOverlayDrawable` variant consistency.** `floating_icon` uses a
   named `FloatingIconDrawable` type; `floating_text` is an inline anonymous
   struct. Pure consistency nit — extract a `FloatingTextDrawable` named

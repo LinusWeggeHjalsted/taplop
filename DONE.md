@@ -8568,3 +8568,49 @@ inspector grew its item-type content (the third real target arm —
   no-op gates + clamp), the handler's out-of-range/clamp guards, and a
   session-log round-trip case locking the flattened multi-word name
   ("New Sword" as a top-level `name` line).
+
+## Session-log nested-string fix — the unified equipped-slot event
+
+The item-inspector slice surfaced a pre-existing bug: the session-log
+serializer flattens NESTED struct/union fields as space-separated tokens,
+so a string inside a nested payload can't contain spaces — and the
+equipped-slot commits (`player_set_editor_entity_main_hand_weapon` etc.)
+carried `?Weapon`/`?Amulet`... whose names routinely do ("New Sword", the
+weapon-slot create default). Writing such an event produced a log that
+`loadEventLog` rejected as malformed (`name="New"`, then `"Sword"` fails
+the weapon_type enum parse) — only reachable via `--replay` / crash-dump
+restore, so it sat unnoticed.
+
+**The fix — unify, don't per-variant-flatten.** Instead of flattening each
+of the 14 variants (7 editor + 7 player) in place, they became ONE
+slot-parameterized pair — `editor_set_entity_gear` /
+`player_set_editor_entity_gear` — sharing `EntityGearPayload`
+(`target`, `slot`, `equipped`, then the item's fields FLATTENED:
+`weapon_type`/`name`/the seven stats, defaulted; `equipped: false` = the
+Delete/clear). This is the exact `editor_set_item_def` /
+`editor_set_decoration_def` whole-definition shape the codebase had
+already converged on — the per-slot variants were the last per-field event
+family. Net: 14 event definitions → 2, one handler arm (rebuilds the
+slot's item with the `max_*` clamps, the item-def posture), one
+validation arm, a verbatim forward in the orchestrator (shared payload
+type), and the input side's 7-way `editorSlotItemAction` switch +
+`editorSlotClearAction` deleted in favor of one `editorGearSlotAction`
+(null item = clear; kind-vs-slot mismatch records nothing, the old gate).
+`types.gearSlotItemKind` is the slot→kind single source.
+
+Old logs are unreadable after this (the variants are gone) — free
+pre-release: session logs are session-scoped, none persist.
+
+Tests: the session-log round-trip case now carries the exact payload that
+used to break reload (a multi-word weapon name through
+`player_set_editor_entity_gear` + an `equipped false` clear) with
+write→parse→load→deep-equal; the null-optional-omits assertion was made
+precise (adjacency-scoped to the use_skill pair — the bare `\ntarget `
+count can't prove it with more target-carrying events in the log). All
+existing slot-path handler tests pass unchanged (they assert template
+state through the input path, not event shapes).
+
+Remaining instance of the class (filed in TODO → Tech Debt): the LAYER
+events carry a nested `sprite` string — only breaks if a mission
+directory name contains a space (the `custom/<mission>/<stem>` namespace),
+low risk until custom-mission acquisition lands.

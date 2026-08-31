@@ -1331,85 +1331,59 @@ fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Editor) 
     ) catch &[_][]const u8{};
 }
 
-/// The per-slot player wrapper carrying a WHOLE item (one event per
-/// slot — create / retype / field-edit / delete all push the full value,
-/// so one undo step covers any of them). The item's kind must match the
-/// slot (it always does — items are read from the slot itself); a mismatch
-/// (crafted state) records nothing. Shared by the text-field commits and
-/// the slot click handlers (add / delete / weapon-type pick).
-fn editorSlotItemAction(
+/// The gear-slot player action (create / retype / field-edit / clear —
+/// one event, one undo step), carrying the FLATTENED item (a nested
+/// `?Weapon`-style value can't round-trip the session log once its name
+/// contains a space — see EntityGearPayload in events.zig). A null `item`
+/// is the clear (`equipped: false`). The item's kind must match the slot
+/// (it always does — items are read from the slot itself or built for
+/// it); a mismatch or a skill tome records nothing (crafted state).
+fn editorGearSlotAction(
     target: types.EntityEditTarget,
     slot: types.GearSlot,
-    item: types.Item,
+    item: ?types.Item,
 ) ?events.PlayerInputEvent {
-    switch (slot) {
-        .main_hand => switch (item) {
-            .weapon => |weapon| return .{ .player_set_editor_entity_main_hand_weapon = .{
-                .target = target,
-                .value = weapon,
-            } },
-            else => return null,
-        },
-        .off_hand => switch (item) {
-            .weapon => |weapon| return .{ .player_set_editor_entity_off_hand_weapon = .{
-                .target = target,
-                .value = weapon,
-            } },
-            else => return null,
-        },
-        .amulet => switch (item) {
-            .amulet => |amulet| return .{ .player_set_editor_entity_amulet = .{
-                .target = target,
-                .value = amulet,
-            } },
-            else => return null,
-        },
-        .coat => switch (item) {
-            .coat => |coat| return .{ .player_set_editor_entity_coat = .{
-                .target = target,
-                .value = coat,
-            } },
-            else => return null,
-        },
-        .gloves => switch (item) {
-            .gloves => |gloves| return .{ .player_set_editor_entity_gloves = .{
-                .target = target,
-                .value = gloves,
-            } },
-            else => return null,
-        },
-        .pants => switch (item) {
-            .pants => |pants| return .{ .player_set_editor_entity_pants = .{
-                .target = target,
-                .value = pants,
-            } },
-            else => return null,
-        },
-        .boots => switch (item) {
-            .boots => |boots| return .{ .player_set_editor_entity_boots = .{
-                .target = target,
-                .value = boots,
-            } },
-            else => return null,
-        },
-    }
-}
-
-/// The per-slot player wrapper carrying a NULL item (the Delete path —
-/// the clear event is always well-formed, no kind to match).
-fn editorSlotClearAction(
-    target: types.EntityEditTarget,
-    slot: types.GearSlot,
-) events.PlayerInputEvent {
-    return switch (slot) {
-        .main_hand => .{ .player_set_editor_entity_main_hand_weapon = .{ .target = target, .value = null } },
-        .off_hand => .{ .player_set_editor_entity_off_hand_weapon = .{ .target = target, .value = null } },
-        .amulet => .{ .player_set_editor_entity_amulet = .{ .target = target, .value = null } },
-        .coat => .{ .player_set_editor_entity_coat = .{ .target = target, .value = null } },
-        .gloves => .{ .player_set_editor_entity_gloves = .{ .target = target, .value = null } },
-        .pants => .{ .player_set_editor_entity_pants = .{ .target = target, .value = null } },
-        .boots => .{ .player_set_editor_entity_boots = .{ .target = target, .value = null } },
+    var payload: events.EntityGearPayload = .{
+        .target = target,
+        .slot = slot,
+        .equipped = item != null,
     };
+    if (item) |value| {
+        if (types.itemKindOf(value) != types.gearSlotItemKind(slot)) return null;
+        switch (value) {
+            .weapon => |weapon| {
+                payload.weapon_type = weapon.weapon_type;
+                payload.name = weapon.name;
+                payload.weapon_damage = weapon.weapon_damage;
+            },
+            .amulet => |amulet| {
+                payload.name = amulet.name;
+                payload.spell_damage = amulet.spell_damage;
+            },
+            .coat => |coat| {
+                payload.name = coat.name;
+                payload.health_bonus = coat.health_bonus;
+                payload.defense_bonus = coat.defense_bonus;
+            },
+            .gloves => |gloves| {
+                payload.name = gloves.name;
+                payload.damage_bonus = gloves.damage_bonus;
+                payload.health_bonus = gloves.health_bonus;
+            },
+            .pants => |pants| {
+                payload.name = pants.name;
+                payload.pickup_radius_bonus = pants.pickup_radius_bonus;
+                payload.health_bonus = pants.health_bonus;
+            },
+            .boots => |boots| {
+                payload.name = boots.name;
+                payload.speed_bonus = boots.speed_bonus;
+                payload.health_bonus = boots.health_bonus;
+            },
+            .skill_tome => return null,
+        }
+    }
+    return .{ .player_set_editor_entity_gear = payload };
 }
 
 /// A default item for an EMPTY gear slot (the Add button / a weapon-type
@@ -1506,7 +1480,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             const item = template.gearSlotItem(slot) orelse return;
             if (std.mem.eql(u8, types.itemName(item), value)) return;
             history.session.queueSound(history.backing_allocator, .button_click_up);
-            const action = editorSlotItemAction(
+            const action = editorGearSlotAction(
                 entity_target,
                 slot,
                 types.itemWithName(item, value),
@@ -1527,7 +1501,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             const parsed = parseBoundedStatValue(value, types.itemStatMax(item_field.stat)) orelse return;
             if (parsed == current) return;
             history.session.queueSound(history.backing_allocator, .button_click_up);
-            const action = editorSlotItemAction(
+            const action = editorGearSlotAction(
                 entity_target,
                 item_field.slot,
                 types.itemWithStat(item, item_field.stat, parsed),
@@ -2595,7 +2569,7 @@ pub fn handleAnytimeInput(
                     // Retype in place — identity (name/damage) stay stable.
                     var retyped = weapon;
                     retyped.weapon_type = weapon_type;
-                    const retype_action = editorSlotItemAction(target, hand, .{ .weapon = retyped }) orelse return;
+                    const retype_action = editorGearSlotAction(target, hand, .{ .weapon = retyped }) orelse return;
                     pushPlayerActionAndDrain(history, retype_action);
                 } else {
                     const name = std.fmt.allocPrint(
@@ -2608,7 +2582,7 @@ pub fn handleAnytimeInput(
                         .weapon_type = weapon_type,
                         .weapon_damage = 0,
                     };
-                    const create_action = editorSlotItemAction(target, hand, .{ .weapon = weapon }) orelse return;
+                    const create_action = editorGearSlotAction(target, hand, .{ .weapon = weapon }) orelse return;
                     pushPlayerActionAndDrain(history, create_action);
                 }
             },
@@ -2660,7 +2634,7 @@ pub fn handleAnytimeInput(
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (template.gearSlotItem(slot) != null) return;
                 const item = defaultItemForSlot(history, slot) orelse return;
-                const add_action = editorSlotItemAction(target, slot, item) orelse return;
+                const add_action = editorGearSlotAction(target, slot, item) orelse return;
                 pushPlayerActionAndDrain(history, add_action);
             },
             // Item Delete: clear the slot to null (an empty slot is a
@@ -2710,7 +2684,7 @@ pub fn handleAnytimeInput(
                 const target = editorEntityEditTarget(editor.*) orelse return;
                 const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (template.gearSlotItem(slot) == null) return;
-                const clear_action = editorSlotClearAction(target, slot);
+                const clear_action = editorGearSlotAction(target, slot, null) orelse return;
                 pushPlayerActionAndDrain(history, clear_action);
             },
             else => {},

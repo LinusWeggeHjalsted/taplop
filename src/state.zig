@@ -1392,13 +1392,11 @@ pub const GameStateHistory = struct {
                 .player_set_editor_entity_defense => |set| self.validateInspectorEntityEdit(set.target),
                 .player_set_editor_entity_speed => |set| self.validateInspectorEntityEdit(set.target),
                 .player_set_editor_entity_aggro_range => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_main_hand_weapon => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_off_hand_weapon => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_amulet => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_coat => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_gloves => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_pants => |set| self.validateInspectorEntityEdit(set.target),
-                .player_set_editor_entity_boots => |set| self.validateInspectorEntityEdit(set.target),
+                // The equipped-slot commit (one slot-parameterized event):
+                // same structural legality — target in range. The payload's
+                // kind/slot match + stat bounds are the handler's defensive
+                // posture (a mismatched payload is ignored, not rejected).
+                .player_set_editor_entity_gear => |set| self.validateInspectorEntityEdit(set.target),
                 .player_set_editor_entity_utility_skill => |set| {
                     self.validateInspectorEntityEdit(set.target);
                     if (set.slot_index >= types.utility_skill_count) {

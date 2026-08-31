@@ -508,33 +508,44 @@ fn handleEditorEvent(
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.aggro_range = set.value;
         },
-        .editor_set_entity_main_hand_weapon => |set| {
+        // The equipped-slot commit (ONE slot-parameterized event — see
+        // EntityGearPayload in events.zig). `equipped: false` clears the
+        // slot; otherwise the slot's kind's fields rebuild the item, with
+        // stats clamped to the `max_*` bounds (the item-def posture — the
+        // editor never holds a state its own load path would clamp away).
+        // Both entity targets are valid (gear is player-authorable too).
+        .editor_set_entity_gear => |set| {
             const template = editorEntityTemplate(editor, set.target) orelse return;
-            template.main_hand_weapon = set.value;
-        },
-        .editor_set_entity_off_hand_weapon => |set| {
-            const template = editorEntityTemplate(editor, set.target) orelse return;
-            template.off_hand_weapon = set.value;
-        },
-        .editor_set_entity_amulet => |set| {
-            const template = editorEntityTemplate(editor, set.target) orelse return;
-            template.amulet = set.value;
-        },
-        .editor_set_entity_coat => |set| {
-            const template = editorEntityTemplate(editor, set.target) orelse return;
-            template.coat = set.value;
-        },
-        .editor_set_entity_gloves => |set| {
-            const template = editorEntityTemplate(editor, set.target) orelse return;
-            template.gloves = set.value;
-        },
-        .editor_set_entity_pants => |set| {
-            const template = editorEntityTemplate(editor, set.target) orelse return;
-            template.pants = set.value;
-        },
-        .editor_set_entity_boots => |set| {
-            const template = editorEntityTemplate(editor, set.target) orelse return;
-            template.boots = set.value;
+            switch (set.slot) {
+                .main_hand => template.main_hand_weapon = if (set.equipped)
+                    .{ .name = set.name, .weapon_type = set.weapon_type, .weapon_damage = @min(set.weapon_damage, types.max_weapon_damage) }
+                else
+                    null,
+                .off_hand => template.off_hand_weapon = if (set.equipped)
+                    .{ .name = set.name, .weapon_type = set.weapon_type, .weapon_damage = @min(set.weapon_damage, types.max_weapon_damage) }
+                else
+                    null,
+                .amulet => template.amulet = if (set.equipped)
+                    .{ .name = set.name, .spell_damage = @min(set.spell_damage, types.max_spell_damage) }
+                else
+                    null,
+                .coat => template.coat = if (set.equipped)
+                    .{ .name = set.name, .health_bonus = @min(set.health_bonus, types.max_health_bonus), .defense_bonus = @min(set.defense_bonus, types.max_defense_bonus) }
+                else
+                    null,
+                .gloves => template.gloves = if (set.equipped)
+                    .{ .name = set.name, .damage_bonus = @min(set.damage_bonus, types.max_gloves_damage), .health_bonus = @min(set.health_bonus, types.max_health_bonus) }
+                else
+                    null,
+                .pants => template.pants = if (set.equipped)
+                    .{ .name = set.name, .pickup_radius_bonus = @min(set.pickup_radius_bonus, types.max_pickup_radius), .health_bonus = @min(set.health_bonus, types.max_health_bonus) }
+                else
+                    null,
+                .boots => template.boots = if (set.equipped)
+                    .{ .name = set.name, .speed_bonus = @min(set.speed_bonus, types.max_boots_speed), .health_bonus = @min(set.health_bonus, types.max_health_bonus) }
+                else
+                    null,
+            }
         },
         .editor_set_entity_utility_skill => |set| {
             // Defensive against crafted logs: the slot must be in range and
@@ -2059,48 +2070,10 @@ fn handlePlayerInputEvent(
                 .value = set.value,
             } } }}, allocator);
         },
-        // Equipped-slot commits: thin forwards of the whole (nullable) item.
-        .player_set_editor_entity_main_hand_weapon => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_main_hand_weapon = .{
-                .target = set.target,
-                .value = set.value,
-            } } }}, allocator);
-        },
-        .player_set_editor_entity_off_hand_weapon => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_off_hand_weapon = .{
-                .target = set.target,
-                .value = set.value,
-            } } }}, allocator);
-        },
-        .player_set_editor_entity_amulet => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_amulet = .{
-                .target = set.target,
-                .value = set.value,
-            } } }}, allocator);
-        },
-        .player_set_editor_entity_coat => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_coat = .{
-                .target = set.target,
-                .value = set.value,
-            } } }}, allocator);
-        },
-        .player_set_editor_entity_gloves => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_gloves = .{
-                .target = set.target,
-                .value = set.value,
-            } } }}, allocator);
-        },
-        .player_set_editor_entity_pants => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_pants = .{
-                .target = set.target,
-                .value = set.value,
-            } } }}, allocator);
-        },
-        .player_set_editor_entity_boots => |set| {
-            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_boots = .{
-                .target = set.target,
-                .value = set.value,
-            } } }}, allocator);
+        // The equipped-slot commit: the shared payload forwards verbatim
+        // (the EditorEvent owns the mutation + the stat clamps).
+        .player_set_editor_entity_gear => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_gear = set } }}, allocator);
         },
         // Inspector utility-skill commit: thin forward.
         .player_set_editor_entity_utility_skill => |set| {

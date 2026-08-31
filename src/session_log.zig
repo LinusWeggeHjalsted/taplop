@@ -513,6 +513,23 @@ test "writeEventLog serializes representative event shapes" {
             .type_id = 1,
             .value = "Iron Sword of Doom",
         } } },
+        // The unified equipped-slot commit (FLATTENED): a multi-word weapon
+        // name — the exact payload that used to break log reload when the
+        // event carried a nested `?Weapon` — plus the clear case
+        // (`equipped false`).
+        .{ .player_input_event = .{ .player_set_editor_entity_gear = .{
+            .target = .{ .entity_type = 0 },
+            .slot = .main_hand,
+            .equipped = true,
+            .weapon_type = .sword,
+            .name = "New Sword",
+            .weapon_damage = 3,
+        } } },
+        .{ .editor_event = .{ .editor_set_entity_gear = .{
+            .target = .player_def,
+            .slot = .amulet,
+            .equipped = false,
+        } } },
     };
 
     const output = try writeEventLog(&history, "20260815_143022", allocator);
@@ -534,8 +551,13 @@ test "writeEventLog serializes representative event shapes" {
     try std.testing.expect(std.mem.indexOf(u8, output, "event level_event highlight_tiles\ntile_positions 1 2 3 4\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event level_event highlight_tiles\ntile_positions \n") != null);
 
-    // Null optional omits its line: exactly one "target " across both use_skills.
-    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "\ntarget "));
+    // Null optional omits its line: only the PRESENT use_skill's group
+    // carries a target line (the null one's `skill_id` line is directly
+    // followed by the next event's discriminator). The gear events also
+    // carry `target` lines, so the bare "\ntarget " count can't prove
+    // this anymore — adjacency does.
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, output, "skill_id slice\ntarget 2 5\n"));
+    try std.testing.expectEqual(@as(usize, 3), std.mem.count(u8, output, "\ntarget "));
 
     // Nested tagged-union payload: `<tag> <payload-fields...>` (void tags
     // carry no payload fields).
@@ -552,6 +574,12 @@ test "writeEventLog serializes representative event shapes" {
     // name rides one `name` line verbatim (the flattening's whole point).
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_item_def\ntype_id 1\nitem_kind weapon\nweapon_type sword\nname New Sword\nweapon_damage 3\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_item_name\ntype_id 1\nvalue Iron Sword of Doom\n") != null);
+    // The gear-slot commit: every field a top-level line — the multi-word
+    // weapon name rides one `name` line verbatim (the bug this shape
+    // fixes: a nested `?Weapon` payload's name broke the token regrouping).
+    try std.testing.expect(std.mem.indexOf(u8, output, "event player_input_event player_set_editor_entity_gear\ntarget entity_type 0\nslot main_hand\nequipped true\nweapon_type sword\nname New Sword\nweapon_damage 3\n") != null);
+    // The clear: `equipped false`, the defaulted fields riding along.
+    try std.testing.expect(std.mem.indexOf(u8, output, "event editor_event editor_set_entity_gear\ntarget player_def\nslot amulet\nequipped false\nweapon_type sword\nname \nweapon_damage 0\n") != null);
 
     // The output round-trips through the generic config parser structurally:
     // Metadata + EventLog sections, with one entry group per event.
@@ -578,8 +606,8 @@ test "writeEventLog serializes representative event shapes" {
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer arena.deinit();
         const log = try loadEventLog(sections, arena.allocator());
-        for (0..8) |offset| {
-            try std.testing.expectEqualDeep(history[history.len - 8 + offset], log.events[log.events.len - 8 + offset]);
+        for (0..10) |offset| {
+            try std.testing.expectEqualDeep(history[history.len - 10 + offset], log.events[log.events.len - 10 + offset]);
         }
     }
 }
