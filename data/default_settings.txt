@@ -35,6 +35,11 @@ ctrl true
 action dump_event_log
 
 input_type key
+input_name KeyS
+ctrl true
+action save_editor_mission
+
+input_type key
 input_name Enter
 ctrl true
 action skip_level

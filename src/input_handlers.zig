@@ -1331,6 +1331,179 @@ fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Editor) 
     ) catch &[_][]const u8{};
 }
 
+/// A random v4-format uuid (the shipped mission.txt format: 8-4-4-4-12
+/// lowercase hex). Called ONLY from the save path — an input-layer side
+/// effect that never enters GameState or a recorded event, so the
+/// randomness is replay-safe by construction. See DESIGN → Level Editor →
+/// Mission identity.
+fn generateMissionUuid(history: *GameStateHistory, allocator: std.mem.Allocator) []const u8 {
+    var bytes: [16]u8 = undefined;
+    // Seed a CSPRNG from the wall clock (the same clock the session
+    // timestamps read) + the raw nanoseconds — good enough for identity
+    // minting, and the result never enters replayed state anyway.
+    const now = std.Io.Clock.now(.real, history.io);
+    var seed: [32]u8 = std.mem.zeroes([32]u8);
+    const nanoseconds: [8]u8 = @bitCast(@as(i64, @truncate(now.nanoseconds)));
+    @memcpy(seed[0..8], &nanoseconds);
+    var csprng = std.Random.DefaultCsprng.init(seed);
+    csprng.random().bytes(&bytes);
+    // RFC 4122 v4: version nibble 4, variant 10xx.
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    return std.fmt.allocPrint(
+        allocator,
+        "{x:0>8}-{x:0>4}-{x:0>4}-{x:0>4}-{x:0>12}",
+        .{
+            std.mem.readInt(u32, bytes[0..4], .big),
+            std.mem.readInt(u16, bytes[4..6], .big),
+            std.mem.readInt(u16, bytes[6..8], .big),
+            std.mem.readInt(u16, bytes[8..10], .big),
+            std.mem.readInt(u48, bytes[10..16], .big),
+        },
+    ) catch @panic("failed to format mission uuid");
+}
+
+/// Make a mission name safe as a path segment: path separators + control
+/// characters become '_', an empty result falls back to "Unnamed" (a
+/// mission can be renamed to an empty string via the metadata sidebar).
+fn sanitizeMissionNameForPath(name: []const u8, allocator: std.mem.Allocator) []const u8 {
+    const sanitized = allocator.dupe(u8, name) catch @panic("failed to sanitize mission name");
+    for (sanitized) |*character| {
+        const invalid = character.* == '/' or character.* == '\\' or character.* < 0x20 or character.* == 0x7f;
+        if (invalid) character.* = '_';
+    }
+    if (sanitized.len == 0) {
+        allocator.free(sanitized);
+        return "Unnamed";
+    }
+    return sanitized;
+}
+
+/// Save the edited mission to the persistent dir: resolve the mission's
+/// uuid (in-memory if it was opened from disk, else the session memo of a
+/// previous save — stable identity across saves — else a fresh mint),
+/// project the Editor into files with the pure writer
+/// (writers.writeEditorMission), and write mission.txt + player.txt +
+/// level_N.txt under `missions/<uuid>_<name>/`. The session memo records
+/// the uuid + dir for subsequent saves.
+///
+/// A pure side effect — the dump_event_log class, NOT the save_game class:
+/// there is no GameState component to record, so it pushes no event and
+/// takes no undo step (a recorded event would mint dead undo steps), and
+/// replay never runs the input layer so it never re-fires. Always deriving
+/// the dir as `<uuid>_<name>` gives the settled semantics for free: a
+/// re-save of an unchanged custom mission lands in the same dir, a RENAMED
+/// mission lands in a NEW dir (the old one stays behind), and an OFFICIAL
+/// mission opened for editing is saved as a persistent-dir copy (shipped
+/// data is immutable — FileSource refuses data/ writes). Failures are
+/// recoverable (the pending_error popup; nothing to revert — state is
+/// fine, the files just didn't land). See DESIGN → Level Editor → Mission
+/// identity.
+fn saveEditorMission(history: *GameStateHistory) void {
+    const editor = if (history.current_state.editor) |*some_editor| some_editor else return;
+    const scratch = history.current_arena.allocator();
+    const durable = history.backing_allocator;
+
+    // 1. Resolve the uuid: opened-from-disk → in memory; saved this session
+    //    → the memo; else mint (the write-only rule — the minted value
+    //    never enters GameState).
+    var uuid: []const u8 = editor.mission.uuid;
+    if (uuid.len == 0) {
+        if (history.session.editor_saved_mission) |saved| uuid = saved.uuid;
+    }
+    var minted_uuid: ?[]const u8 = null;
+    if (uuid.len == 0) {
+        minted_uuid = generateMissionUuid(history, durable);
+        uuid = minted_uuid.?;
+    }
+
+    // 2. Project the editor into file contents (transient — the scratch
+    //    arena reclaims them at the next idle point).
+    const written = writers.writeEditorMission(editor.*, uuid, scratch) catch |write_error| {
+        const message = switch (write_error) {
+            error.TooManyLayoutCodes => "failed to save: a single level places more distinct tools than the layout char set provides",
+            else => "failed to save: out of memory",
+        };
+        history.session.setPendingError(history.history_arena.allocator(), message);
+        if (minted_uuid) |minted| durable.free(minted);
+        return;
+    };
+
+    // 3. Write into missions/<uuid>_<name>/.
+    const sanitized_name = sanitizeMissionNameForPath(editor.mission.name, scratch);
+    const dir_path = std.fmt.allocPrint(
+        durable,
+        "missions/{s}_{s}",
+        .{ uuid, sanitized_name },
+    ) catch @panic("failed to allocate mission dir path");
+    const mission_path = std.fmt.allocPrint(scratch, "{s}/mission.txt", .{dir_path}) catch
+        @panic("failed to allocate mission.txt path");
+    const player_path = std.fmt.allocPrint(scratch, "{s}/player.txt", .{dir_path}) catch
+        @panic("failed to allocate player.txt path");
+    history.file_source.writeFile(mission_path, written.mission_txt) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to save: could not write mission.txt",
+        );
+        durable.free(dir_path);
+        if (minted_uuid) |minted| durable.free(minted);
+        return;
+    };
+    history.file_source.writeFile(player_path, written.player_txt) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to save: could not write player.txt",
+        );
+        durable.free(dir_path);
+        if (minted_uuid) |minted| durable.free(minted);
+        return;
+    };
+    for (written.level_txts, 0..) |level_txt, level_index| {
+        const level_path = std.fmt.allocPrint(
+            scratch,
+            "{s}/level_{d}.txt",
+            .{ dir_path, level_index + 1 },
+        ) catch @panic("failed to allocate level path");
+        history.file_source.writeFile(level_path, level_txt) catch {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to save: could not write level_{d}.txt",
+                .{level_index + 1},
+            ) catch @panic("failed to format save failure message");
+            history.session.setPendingError(history.history_arena.allocator(), message);
+            durable.free(dir_path);
+            if (minted_uuid) |minted| durable.free(minted);
+            return;
+        };
+    }
+
+    // 4. Record the save on the session (the editor_mission_sprites
+    //    ownership pattern: free the previous memo's strings, then store).
+    //    The uuid slice: a fresh mint or the previous memo's REUSED slice is
+    //    memo-owned; an OPENED mission's uuid borrows the editor's
+    //    (current-arena) graph — dupe it durable so the memo never dangles
+    //    past an arena compaction.
+    var reused_previous_uuid = false;
+    if (history.session.editor_saved_mission) |previous| {
+        durable.free(previous.dir_path);
+        if (previous.uuid.ptr == uuid.ptr) {
+            reused_previous_uuid = true;
+        } else {
+            durable.free(previous.uuid);
+        }
+    }
+    const memo_uuid: []const u8 = if (minted_uuid) |minted|
+        minted
+    else if (reused_previous_uuid)
+        uuid
+    else
+        durable.dupe(u8, uuid) catch @panic("failed to dupe saved mission uuid");
+    history.session.editor_saved_mission = .{
+        .uuid = memo_uuid,
+        .dir_path = dir_path,
+    };
+}
+
 /// The gear-slot player action (create / retype / field-edit / clear —
 /// one event, one undo step), carrying the FLATTENED item (a nested
 /// `?Weapon`-style value can't round-trip the session log once its name
@@ -1772,6 +1945,16 @@ pub fn handleAnytimeInput(
 
     if (anytime.dump_event_log) {
         dumpEventLog(history);
+    }
+
+    if (anytime.save_editor_mission) {
+        // The editor's save: a pure side effect (the dump_event_log class —
+        // no recorded event, no undo step; replay never runs the input
+        // layer). Editor-only; every other screen no-ops (the
+        // delete_editor_selection discipline).
+        if (history.current_state.screen == .editor and history.current_state.editor != null) {
+            saveEditorMission(history);
+        }
     }
 
     if (anytime.toggle_options_menu) {

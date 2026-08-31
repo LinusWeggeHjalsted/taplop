@@ -11132,6 +11132,22 @@ pub fn buildOptionsMenu(
         button_count += 1;
     }
 
+    // The editor's own save (the mission being edited) — replaces the
+    // campaign Export Save path above, which is hidden in the editor.
+    // Also on ctrl+S (the binding ships in default_settings.txt).
+    if (current_screen == .editor) {
+        const save_body = if (persistent_dir_path) |dir|
+            try std.fmt.allocPrint(allocator, "Ctrl+S — saves to {s}/missions/", .{dir})
+        else
+            "Ctrl+S — saves to the browser's persistent storage";
+        buttons[button_count] = .{
+            .label = "Save Mission",
+            .action = .save_editor_mission,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(save_body))}) },
+        };
+        button_count += 1;
+    }
+
     // Settings: opens the settings overlay on top of this one (drill-in).
     // Present in every context the options menu appears in (level + hub).
     buttons[button_count] = .{ .label = "Settings", .action = .open_settings };
@@ -12544,6 +12560,20 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
             .button => |b| try std.testing.expect(b.action != .save_game),
             else => {},
         };
+        // The editor context carries its OWN save instead: the Save Mission
+        // button (ctrl+S), with the persistent-dir tooltip.
+        var save_mission_button: ?Button = null;
+        for (elements.items) |element| switch (element) {
+            .button => |b| {
+                if (b.action == .save_editor_mission) save_mission_button = b;
+            },
+            else => {},
+        };
+        try std.testing.expect(save_mission_button != null);
+        // The tooltip names the keybind + the destination dir.
+        const save_tooltip = save_mission_button.?.tooltip orelse @panic("Save Mission button has no tooltip");
+        const save_tooltip_text = save_tooltip.body[0][0].text;
+        try std.testing.expectEqualStrings("Ctrl+S — saves to /home/tester/.ziglop/missions/", save_tooltip_text);
     }
 }
 

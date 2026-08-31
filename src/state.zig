@@ -103,6 +103,15 @@ pub const WaitState = struct {
 // (handleIdleInput), and the resulting player_use_skill event is what replay
 // reproduces — the cursor value at prepare-time is never needed for
 // reconstruction. See DESIGN → Replay & Side Effects (SessionState rule).
+/// The session-scoped record of an editor save: the mission's resolved
+/// uuid + the persistent-dir path it landed in. Owned by
+/// `SessionState.editor_saved_mission` (backing-owned strings, freed +
+/// replaced on each save). See DESIGN → Level Editor → Mission identity.
+pub const EditorSavedMission = struct {
+    uuid: []const u8,
+    dir_path: []const u8,
+};
+
 pub const SessionState = struct {
     /// Sentinel for `save_files_last_scan_us` — no scan has run yet this
     /// session.
@@ -156,6 +165,16 @@ pub const SessionState = struct {
     /// each load frees the previous list, so the only leak is the FINAL
     /// list at process exit (the editor_mission_sprites pattern).
     editor_decoration_registry: []const types.DecorationTypeDef = &.{},
+    /// The mission this editing session last SAVED — the write-only uuid
+    /// mint's memory. A re-save reuses the memo's uuid (stable identity
+    /// across saves, no churn) instead of minting again; a mission OPENED
+    /// from disk carries its uuid in `editor.mission` and doesn't need the
+    /// memo. The save is an input-layer side effect off the undo timeline
+    /// (replay never runs the input layer), so the random uuid living
+    /// HERE breaks nothing — GameState stays uuid-free for fresh missions.
+    /// Backing-owned strings, freed + replaced on each save; the FINAL
+    /// value leaks at process exit (the editor_mission_sprites pattern).
+    editor_saved_mission: ?EditorSavedMission = null,
     save_files_last_scan_us: u64 = save_files_never_scanned,
     // Camera pan (right-drag): offset in world pixels added to the player-
     // centered camera, plus the drag anchor. Transient view state — off the

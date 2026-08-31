@@ -104,6 +104,12 @@ pub const Action = enum {
     zoom_reset,
     // Options menu commands (context-specific: hub vs level).
     save_game,
+    // Save the edited mission to the persistent dir (the editor options
+    // menu's Save Mission button + the ctrl+S binding). A pure side effect
+    // — the dump_event_log class, not the save_game class: there is no
+    // GameState component to record, so it pushes no event and takes no
+    // undo step. See input_handlers.saveEditorMission.
+    save_editor_mission,
     restart_mission,
     exit_mission,
     exit_to_menu,

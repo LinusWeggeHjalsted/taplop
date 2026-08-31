@@ -15,6 +15,8 @@ const event_handlers = @import("event_handlers.zig");
 const input_handlers = @import("input_handlers.zig");
 const test_harness = @import("test_harness.zig");
 const ui = @import("ui.zig");
+const parser = @import("parser.zig");
+const loaders = @import("loaders.zig");
 
 const Harness = test_harness.Harness;
 const runToIdle = test_harness.runToIdle;
@@ -3448,6 +3450,86 @@ test "level add/delete input arms: end-to-end + the single-level delete gate" {
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.levels.len);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
+test "editor save: writes the mission files, memoizes the uuid, re-save reuses it" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+
+    // A fresh-mission editor state (the open_editor-null shape).
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .level_end = .{ .x = 1, .y = 0 },
+    }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .mission = .{ .name = "New Mission", .path = "missions/New Mission", .level_count = 1 },
+        .player_def = .{ .id = "Player", .template = .{ .name = "New Player", .sprite = "player", .team = 0 } },
+    }));
+    runToIdle(&history);
+
+    // The ctrl+S / Save Mission path — an anytime action, no recorded event
+    // (the dump_event_log class; no undo step).
+    input_handlers.handleAnytimeInput(&history, .{
+        .save_editor_mission = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // The session memo carries the minted uuid + the derived dir.
+    const first_save = history.session.editor_saved_mission.?;
+    try testing.expectEqual(@as(usize, 36), first_save.uuid.len);
+    try testing.expect(first_save.uuid[14] == '4'); // v4 version nibble
+    try testing.expect(std.mem.startsWith(u8, first_save.dir_path, "missions/"));
+    try testing.expect(std.mem.endsWith(u8, first_save.dir_path, "_New Mission"));
+
+    // The files landed in the persistent dir and parse: mission.txt carries
+    // the minted uuid; level_1.txt + player.txt exist.
+    {
+        const mission_txt = try harness.file_source.readFile(
+            arena,
+            try std.fmt.allocPrint(arena, "{s}/mission.txt", .{first_save.dir_path}),
+        );
+        const sections = try parser.parseConfigFile(mission_txt, arena);
+        const mission = try loaders.loadMission(sections, arena);
+        try testing.expectEqualStrings(first_save.uuid, mission.uuid);
+        try testing.expectEqualStrings("New Mission", mission.name);
+        try testing.expectEqual(@as(u32, 1), mission.level_count);
+    }
+    {
+        const level_txt = try harness.file_source.readFile(
+            arena,
+            try std.fmt.allocPrint(arena, "{s}/level_1.txt", .{first_save.dir_path}),
+        );
+        const sections = try parser.parseConfigFile(level_txt, arena);
+        try testing.expect(parser.findSection(sections, "Layout") != null);
+    }
+    {
+        const player_txt = try harness.file_source.readFile(
+            arena,
+            try std.fmt.allocPrint(arena, "{s}/player.txt", .{first_save.dir_path}),
+        );
+        const sections = try parser.parseConfigFile(player_txt, arena);
+        _ = try loaders.loadPlayerLoadout(sections, arena, "test/player.txt", null);
+    }
+
+    // A second save REUSES the uuid + dir (the memo — no identity churn).
+    // Own the first save's strings before the second save replaces the
+    // memo (it frees + re-stores them — only the session field may hold
+    // the borrowed slices).
+    const first_uuid = try arena.dupe(u8, first_save.uuid);
+    const first_dir_path = try arena.dupe(u8, first_save.dir_path);
+    input_handlers.handleAnytimeInput(&history, .{
+        .save_editor_mission = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    const second_save = history.session.editor_saved_mission.?;
+    try testing.expectEqualStrings(first_uuid, second_save.uuid);
+    try testing.expectEqualStrings(first_dir_path, second_save.dir_path);
 }
 
 test "decoration sprite picker: open routing, official prefab adopt, same-def no-op, entity-picker gate" {
