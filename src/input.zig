@@ -368,6 +368,14 @@ pub const AnytimeInput = struct {
     /// type-pick rows; weapon cells pair it with
     /// `clicked_editor_weapon_type`).
     clicked_editor_item_kind: ?types.ItemKind = null,
+    /// Editor inventory slot index (the player inspector's Inventory
+    /// section), set alongside `options_action ==
+    /// .select_editor_inventory_slot / .add_editor_inventory_item /
+    /// .delete_editor_inventory_item / .select_editor_inventory_item_type`
+    /// by the release dispatch (the type-pick cells address the SELECTED
+    /// slot, so they carry no slot payload — the handler reads the
+    /// selection).
+    clicked_editor_inventory_slot: ?u32 = null,
     /// Editor utility-slot index, set alongside
     /// `options_action == .open_editor_skill_picker` (an inspector slot
     /// button).
@@ -548,6 +556,10 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .toggle_editor_entity_displays_weapons => player_input.anytime.options_action = action,
         .select_editor_weapon_type => player_input.anytime.options_action = action,
         .select_editor_item_type => player_input.anytime.options_action = action,
+        .select_editor_inventory_slot => player_input.anytime.options_action = action,
+        .add_editor_inventory_item => player_input.anytime.options_action = action,
+        .delete_editor_inventory_item => player_input.anytime.options_action = action,
+        .select_editor_inventory_item_type => player_input.anytime.options_action = action,
         .add_editor_item => player_input.anytime.options_action = action,
         .delete_editor_item => player_input.anytime.options_action = action,
         .open_editor_skill_picker => player_input.anytime.options_action = action,

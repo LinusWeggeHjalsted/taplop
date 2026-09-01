@@ -270,6 +270,14 @@ pub const UiState = struct {
     editor_inspector_section_expanded: [editor_inspector_section_count]bool =
         .{false} ** editor_inspector_section_count,
 
+    /// Editor inspector: the player loadout inventory's selected slot (the
+    /// Inventory section's detail rows insert below this slot's row).
+    /// Direct UiState write at the slot-cell click site (the
+    /// section-expansion discipline: selection is navigation, not
+    /// authored content — off the undo timeline). Bounds-checked at every
+    /// read; clicking the already-selected slot deselects (null).
+    editor_inventory_selected_slot: ?u32 = null,
+
     /// Which tab the sprite picker is showing (Mission / Official). View
     /// affordance — a direct UiState write, off the undo timeline. Reset
     /// to `.mission_local` on every open (custom assets take priority over
@@ -963,7 +971,9 @@ fn textEditKey(text_edit: *TextEditState, key: []const u8, shift_held: bool) ?ty
 fn textFieldIsNumeric(field_id: types.TextFieldId) bool {
     return switch (field_id) {
         .entity_name, .item_name, .item_def_name, .mission_name, .level_name => false,
+        .inventory_item_name => false,
         .entity_stat, .item_stat, .item_def_stat => true,
+        .inventory_item_stat => true,
     };
 }
 
@@ -2544,6 +2554,11 @@ pub const Button = struct {
     /// `AnytimeInput.clicked_editor_item_kind` alongside
     /// `.select_editor_item_type`.
     editor_item_kind: ?types.ItemKind = null,
+    /// Editor inventory slot index, if this button is one of the player
+    /// inspector's Inventory-section controls (a slot cell, or the detail
+    /// block's Add/Delete). Rides in
+    /// `AnytimeInput.clicked_editor_inventory_slot`.
+    editor_inventory_slot: ?u32 = null,
     /// Editor utility-slot index, if this button is an inspector
     /// utility-slot button (opens the skill picker). Rides in
     /// `AnytimeInput.clicked_editor_utility_slot`.
@@ -4873,6 +4888,13 @@ pub fn buildEditorLevelTabs(
 /// visible.
 pub const editor_inspector_width: i32 = 1024;
 
+/// The Inventory section's slot-grid width: six square 128px cells fit a
+/// row with room for the gap rhythm; 16 rows × 6 = the full
+/// `inventory_slot_count` (the same 96 slots the in-game 8×12 grid
+/// shows — intentionally identical capacity, arranged to fit the panel).
+pub const editor_inventory_slots_per_row: u32 = 6;
+pub const editor_inventory_row_count: u32 = types.inventory_slot_count / editor_inventory_slots_per_row;
+
 /// The inspector background panel's rect — the single source for the
 /// builder's layout AND the M2 press arbitration (DESIGN → UI Framework →
 /// Text input widget), so the two can't drift.
@@ -5602,6 +5624,10 @@ const EditorInspectorControl = union(enum) {
     /// one stat): the shared text-field element, reading the item context
     /// instead of an entity template.
     item_text: types.TextFieldId,
+    /// An INVENTORY slot item's field (the player content's Inventory
+    /// section detail rows — name or one stat): the shared text-field
+    /// element, reading the selected slot's item.
+    inventory_item_text: types.TextFieldId,
 };
 
 /// One line of inspector content — per the coupling contract in DESIGN →
@@ -5634,9 +5660,21 @@ const EditorInspectorEntry = union(enum) {
     /// The player inspector's Import button: copy the session's player
     /// data (or the new-game default, with none) into the loadout.
     import_player: void,
-    /// The player loadout's inventory — a read-only item count (the
-    /// editable inventory UI is its own slice).
-    inventory_summary: void,
+    /// One ROW of the player loadout's inventory slot grid (six cells;
+    /// `editor_inventory_slots_per_row`). While the section's selected
+    /// slot sits in this row, the detail entries follow directly below
+    /// (the per-frame insert — see editorInspectorPlayerEntries).
+    inventory_slot_row: u32,
+    /// The selected inventory slot's Add/Delete row: the "Slot N" label
+    /// line + the half-width button (Add while the slot is empty, Delete
+    /// while an item is present). The FIRST detail entry below the
+    /// selected slot's row.
+    inventory_item_button: u32,
+    /// The selected inventory slot's type-pick rows (3 units: the "Type"
+    /// label line + the weapon row + the gear-kind row) — emitted ONLY
+    /// while an item exists in the slot (author decision: an empty slot
+    /// shows Add until an item does).
+    inventory_item_type_rows: void,
     /// One ENEMY layer's slot row (label "Layer N"): the sprite-stem
     /// button (re-pick via the layer picker) + Delete. The Layers section
     /// is enemy content only — the player loadout has no layers.
@@ -5688,7 +5726,7 @@ fn editorInspectorEntryUnits(entry: EditorInspectorEntry) i32 {
         .utility_skill_row,
         .player_name_line,
         .import_player,
-        .inventory_summary,
+        .inventory_item_button,
         .entity_layer,
         .entity_layer_color,
         .add_entity_layer,
@@ -5698,6 +5736,10 @@ fn editorInspectorEntryUnits(entry: EditorInspectorEntry) i32 {
         => 2,
         // The type-pick rows: label line + TWO control rows.
         .item_type_rows => 3,
+        // The type-pick rows' inventory mirror.
+        .inventory_item_type_rows => 3,
+        // A slot row: one 128px line of six cells.
+        .inventory_slot_row => 1,
     };
 }
 
@@ -5870,12 +5912,20 @@ fn editorInspectorEntityEntries(
 /// The PLAYER content's entries (the fallback target — the '!' spawn's
 /// loadout): the loadout header + (while expanded) the read-only name line
 /// + import button, the shared Weapons / Gear / Utility sections, and the
-/// inventory summary. No Identity / Stats sections — base stats are
-/// enemy-authorable only; the player template keeps its defaults.
+/// inventory SLOT GRID (16 rows of six cells). While a slot is selected,
+/// its detail entries insert directly BELOW its slot row — the first
+/// in-section expansion in the inspector (the entries list is rebuilt per
+/// frame, so the insert is a conditional append): the Add/Delete row
+/// first, then — only while an item exists (author decision: no type
+/// rows while empty) — the type-pick rows + name + stats, mirroring the
+/// item tool inspector exactly. No Identity / Stats sections — base
+/// stats are enemy-authorable only; the player template keeps its
+/// defaults.
 fn editorInspectorPlayerEntries(
     allocator: std.mem.Allocator,
     template: types.Entity,
     expanded: *const [editor_inspector_section_count]bool,
+    selected_slot: ?u32,
 ) ![]const EditorInspectorEntry {
     var entries: std.ArrayList(EditorInspectorEntry) = .empty;
 
@@ -5904,7 +5954,33 @@ fn editorInspectorPlayerEntries(
     }
     try entries.append(allocator, .{ .section = .inventory });
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.inventory)]) {
-        try entries.append(allocator, .{ .inventory_summary = {} });
+        const selected = if (selected_slot) |slot| blk: {
+            if (slot >= types.inventory_slot_count) break :blk null;
+            break :blk slot;
+        } else null;
+        for (0..editor_inventory_row_count) |row| {
+            try entries.append(allocator, .{ .inventory_slot_row = @intCast(row) });
+            if (selected == null) continue;
+            if (selected.? / editor_inventory_slots_per_row != row) continue;
+            // The detail block — directly below the selected slot's row.
+            try entries.append(allocator, .{ .inventory_item_button = selected.? });
+            const item = template.inventory.slots[selected.?] orelse continue;
+            try entries.append(allocator, .{ .inventory_item_type_rows = {} });
+            // A skill tome has no name (it IS its skill) — no name row,
+            // and itemStatSet yields no stats for it either.
+            if (std.meta.activeTag(item) != .skill_tome) {
+                try entries.append(allocator, .{ .field = .{
+                    .label = "Name",
+                    .control = .{ .inventory_item_text = .inventory_item_name },
+                } });
+            }
+            for (types.itemStatSet(item)) |stat| {
+                try entries.append(allocator, .{ .field = .{
+                    .label = itemStatFieldLabel(stat),
+                    .control = .{ .inventory_item_text = .{ .inventory_item_stat = stat } },
+                } });
+            }
+        }
     }
 
     return entries.items;
@@ -6137,6 +6213,7 @@ fn buildEditorInspectorContent(
             allocator,
             editor.player_def.template,
             &ui_state.editor_inspector_section_expanded,
+            ui_state.editor_inventory_selected_slot,
         ),
         .decoration_type => |index| try editorInspectorDecorationEntries(
             allocator,
@@ -6268,6 +6345,26 @@ fn buildEditorInspectorContent(
                         field_id,
                         active_theme,
                     ),
+                    // An inventory slot item's field (name / stat) — the
+                    // same element over the selected slot's item (the
+                    // `.inventory_slot` ref target; the entries only
+                    // exist while the slot is selected + occupied, so
+                    // the unwraps can't fail on a live frame).
+                    .inventory_item_text => |field_id| {
+                        const selected = ui_state.editor_inventory_selected_slot orelse continue;
+                        const item = entity_context.?.template.inventory.slots[selected] orelse continue;
+                        try emitInspectorInventoryItemTextField(
+                            elements,
+                            allocator,
+                            font_metrics,
+                            text_edit,
+                            item,
+                            selected,
+                            control_rect,
+                            field_id,
+                            active_theme,
+                        );
+                    },
                     .swatches => try emitInspectorColorSwatches(
                         elements,
                         allocator,
@@ -6418,24 +6515,76 @@ fn buildEditorInspectorContent(
                     .blocks_input = false,
                 } });
             },
-            // The player loadout's inventory — a read-only item count.
-            .inventory_summary => {
-                try emitInspectorSlotLabel(elements, allocator, cell, "Items", active_theme);
-                var item_count: u32 = 0;
-                for (entity_context.?.template.inventory.slots) |maybe_item| {
-                    if (maybe_item != null) item_count += 1;
-                }
-                const value = try std.fmt.allocPrint(allocator, "{d}", .{item_count});
-                try elements.append(allocator, .{ .text_label = .{
-                    .text = value,
-                    .screen_position = .{
-                        .x = cell.x,
-                        .y = cell.y + editor_inspector_row_height,
-                    },
-                    .font_size = editor_group_header_font_size,
-                    .color = active_theme.lightest,
-                    .blocks_input = false,
-                } });
+            // One row of the inventory slot grid: six square cells
+            // (occupied = item icon overlay, the type-cell visual class;
+            // the selected cell carries the edge highlight). Clicking a
+            // cell selects the slot — the detail entries below are the
+            // per-frame insert.
+            .inventory_slot_row => |row_index| {
+                try emitInspectorInventorySlotRow(
+                    elements,
+                    allocator,
+                    entity_context.?,
+                    row_index,
+                    cell,
+                    ui_state.editor_inventory_selected_slot,
+                );
+            },
+            // The selected slot's Add/Delete row (the FIRST detail
+            // entry below its slot row): the "Slot N" label line + the
+            // half-width button — Add while the slot is empty, Delete
+            // while an item is present.
+            .inventory_item_button => |slot_index| {
+                const label = try std.fmt.allocPrint(allocator, "Slot {d}", .{slot_index + 1});
+                try emitInspectorSlotLabel(elements, allocator, cell, label, active_theme);
+                const control_rect = inspectorControlRect(cell);
+                const occupied =
+                    entity_context.?.template.inventory.slots[slot_index] != null;
+                const button_label: []const u8 = if (occupied) "Delete" else "Add";
+                const action: types.Action = if (occupied)
+                    .delete_editor_inventory_item
+                else
+                    .add_editor_inventory_item;
+                try emitInspectorInventoryItemButton(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    control_rect,
+                    button_label,
+                    action,
+                    slot_index,
+                    entity_context.?.gradient_colors,
+                    active_theme.lightest,
+                );
+            },
+            // The selected slot's type-pick rows — the item tool
+            // inspector's exact rows over the slot's item (reset-
+            // everything picks; emitted only while occupied).
+            .inventory_item_type_rows => {
+                try emitInspectorSlotLabel(elements, allocator, cell, "Type", active_theme);
+                const weapon_row: Rectangle = .{
+                    .x = cell.x,
+                    .y = cell.y + editor_inspector_row_height,
+                    .width = cell.width,
+                    .height = editor_inspector_row_height,
+                };
+                const gear_row: Rectangle = .{
+                    .x = cell.x,
+                    .y = cell.y + 2 * editor_inspector_row_height,
+                    .width = cell.width,
+                    .height = editor_inspector_row_height,
+                };
+                const selected = ui_state.editor_inventory_selected_slot orelse continue;
+                const item = entity_context.?.template.inventory.slots[selected] orelse continue;
+                try emitInspectorItemTypeRows(
+                    elements,
+                    allocator,
+                    item,
+                    weapon_row,
+                    gear_row,
+                    active_theme,
+                    .select_editor_inventory_item_type,
+                );
             },
             // One ENEMY layer: the slot row — the sprite-stem button (a
             // re-pick opens the layer picker for this index) + Delete.
@@ -6588,10 +6737,11 @@ fn buildEditorInspectorContent(
                 try emitInspectorItemTypeRows(
                     elements,
                     allocator,
-                    item_context.?,
+                    item_context.?.type_definition.item,
                     weapon_row,
                     gear_row,
                     active_theme,
+                    .select_editor_item_type,
                 );
             },
         }
@@ -6703,6 +6853,137 @@ fn emitInspectorTextField(
         control_rect,
         active_theme,
     );
+}
+
+/// The inventory slot's text field (name / one stat): the item
+/// content's exact shape over the selected slot's item — the slot index
+/// rides the `.inventory_slot` ref target (the level-name pattern, so a
+/// mid-edit selection change can't retarget the commit).
+fn emitInspectorInventoryItemTextField(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    text_edit: ?*const TextEditState,
+    item: types.Item,
+    slot_index: u32,
+    control_rect: Rectangle,
+    field_id: types.TextFieldId,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const value = types.itemTextFieldValue(item, allocator, field_id) catch
+        @panic("failed to format item field value");
+    try emitTextFieldUi(
+        elements,
+        allocator,
+        font_metrics,
+        text_edit,
+        .{ .id = field_id, .target = .{ .inventory_slot = slot_index } },
+        value,
+        control_rect,
+        active_theme,
+    );
+}
+
+/// One row of the Inventory section's slot grid: six square cells, one
+/// per slot (`ui/item_slot` button + item icon overlay while occupied —
+/// the type-cell visual class). The selected cell carries the edge
+/// highlight; every cell's click selects its slot.
+fn emitInspectorInventorySlotRow(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    context: InspectorEntityContext,
+    row_index: u32,
+    cell: Rectangle,
+    selected_slot: ?u32,
+) !void {
+    const player = context.gradient_colors;
+    const button_color = player[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const item_icon_color = player[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    const cell_size = editor_inspector_row_height;
+    for (0..editor_inventory_slots_per_row) |column| {
+        const slot_index: u32 = row_index * editor_inventory_slots_per_row + @as(u32, @intCast(column));
+        const rect: Rectangle = .{
+            .x = cell.x + @as(i32, @intCast(column)) * (cell_size + ui_gap),
+            .y = cell.y,
+            .width = cell_size,
+            .height = cell_size,
+        };
+        const item = context.template.inventory.slots[slot_index];
+        const tooltip = if (item) |some|
+            Tooltip{ .header = try spanRow(allocator, text(types.itemName(some))) }
+        else
+            null;
+        try elements.append(allocator, .{ .button = .{
+            .sprite_id = "ui/item_slot",
+            .screen_position = rect.position(),
+            .width = rect.width,
+            .height = rect.height,
+            .action = .select_editor_inventory_slot,
+            .editor_inventory_slot = slot_index,
+            .color = button_color,
+            .highlighted = selected_slot != null and selected_slot.? == slot_index,
+            .tooltip = tooltip,
+        } });
+        if (item) |some| {
+            const fitted = scaleToFit(rect, inventory_slot_size, inventory_slot_size);
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = itemIconSpriteId(some),
+                .screen_position = fitted.position(),
+                .width = fitted.width,
+                .height = fitted.height,
+                .color = item_icon_color,
+                .blocks_input = false,
+            } });
+        }
+    }
+}
+
+/// The selected inventory slot's Add/Delete button: the
+/// `emitInspectorSlotButton` shape with the slot-index payload instead of
+/// a gear slot.
+fn emitInspectorInventoryItemButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    control_rect: Rectangle,
+    label: []const u8,
+    action: types.Action,
+    slot_index: u32,
+    gradient_colors: [types.gradient_color_count]Color,
+    label_color: Color,
+) !void {
+    const button_color = gradient_colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    // Half the panel width — full-width reads as a section header.
+    const rect: Rectangle = .{
+        .x = control_rect.x,
+        .y = control_rect.y,
+        .width = @divFloor(control_rect.width, 2),
+        .height = control_rect.height,
+    };
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .action = action,
+        .editor_inventory_slot = slot_index,
+    } });
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = rect
+            .placeCenter(label_width, editor_group_header_font_size)
+            .position(),
+        .font_size = editor_group_header_font_size,
+        .color = label_color,
+        .blocks_input = false,
+    } });
 }
 
 /// The item content's text field (name / one stat): the entity field's
@@ -6991,15 +7272,15 @@ fn emitInspectorWeaponSlot(
 fn emitInspectorItemTypeRows(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
-    context: InspectorItemContext,
+    item: types.Item,
     weapon_row: Rectangle,
     gear_row: Rectangle,
     active_theme: types.ActiveColorTheme,
+    action: types.Action,
 ) !void {
     const player = active_theme.player_gradient.colors;
     const button_color = player[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const item_icon_color = player[@min(@as(u32, 1), types.gradient_color_count - 1)];
-    const item = context.type_definition.item;
 
     // Row 1: the weapon types (highlighted while the item is a weapon of
     // that type).
@@ -7021,6 +7302,7 @@ fn emitInspectorItemTypeRows(
             highlighted,
             button_color,
             item_icon_color,
+            action,
         );
     }
 
@@ -7041,6 +7323,7 @@ fn emitInspectorItemTypeRows(
             highlighted,
             button_color,
             item_icon_color,
+            action,
         );
     }
 }
@@ -7061,6 +7344,7 @@ fn emitInspectorItemTypeCell(
     highlighted: bool,
     button_color: Color,
     item_icon_color: Color,
+    action: types.Action,
 ) !void {
     const cell_size = row.height;
     const cell: Rectangle = .{
@@ -7074,7 +7358,7 @@ fn emitInspectorItemTypeCell(
         .screen_position = cell.position(),
         .width = cell.width,
         .height = cell.height,
-        .action = .select_editor_item_type,
+        .action = action,
         .editor_item_kind = kind,
         .editor_weapon_type = weapon_type,
         .color = button_color,
@@ -10140,8 +10424,9 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
     }
 
     // A stale tool id (the type deleted mid-edit) falls back to the PLAYER
-    // content — its scroll CLAMPS (31 units − 10 visible = 21), no reset;
-    // the bottom window lands on the last gear slot + utility + inventory.
+    // content — its scroll CLAMPS (45 units − 10 visible = 35: the summary
+    // grew into the 16-row slot grid), no reset; the bottom window lands on
+    // the grid's last ten rows (pure slot cells — no text labels).
     {
         const stale_editor: types.Editor = .{
             .entity_types = &entity_types,
@@ -10150,8 +10435,22 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 999, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, stale_editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 21), ui_state.editor_inspector_scroll);
-        try expectInspectorLabels(&elements, &.{ "Boots", "Add", "- Utility skills", "Skill bar", "- Inventory", "Items", "0" });
+        try std.testing.expectEqual(@as(i32, 35), ui_state.editor_inspector_scroll);
+        try expectInspectorLabels(&elements, &.{});
+        // Ten visible rows × six cells; the window ends at the grid's end
+        // (slot 95) and nothing is selected.
+        var slot_buttons: usize = 0;
+        var highest_slot: u32 = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_inventory_slot) {
+                slot_buttons += 1;
+                highest_slot = @max(highest_slot, button.editor_inventory_slot.?);
+                try std.testing.expect(!button.highlighted);
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 60), slot_buttons);
+        try std.testing.expectEqual(@as(u32, 95), highest_slot);
         // No swatches in the window — only the scrollbar rects are solid.
         try std.testing.expectEqual(@as(usize, 2), countSolidRects(&elements));
     }
@@ -10292,13 +10591,15 @@ test "inspector player content: gear + skills + inventory over player_def, commi
         try std.testing.expect(main_hand_delete);
     }
 
-    // Bottom window: the skill row (blink occupied in slot 0, the rest
-    // diamonds) + the inventory summary counting the two items.
+    // Bottom window (scroll 29: Boots → the skill row → the Inventory
+    // header + the grid's first two rows): blink occupied in slot 0, the
+    // rest diamonds; the two inventory items (slots 3 + 4, row 0) render
+    // their icon overlays. The full grid replaced the old summary.
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 999, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 29, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try expectInspectorLabels(&elements, &.{ "Boots", "Add", "- Utility skills", "Skill bar", "- Inventory", "Items", "2" });
+        try expectInspectorLabels(&elements, &.{ "Boots", "Add", "- Utility skills", "Skill bar", "- Inventory" });
         var occupied_slots: usize = 0;
         for (elements.items) |element| switch (element) {
             .button => |button| if (button.action == .open_editor_skill_picker) {
@@ -10312,6 +10613,20 @@ test "inspector player content: gear + skills + inventory over player_def, commi
             else => {},
         };
         try std.testing.expectEqual(@as(usize, 1), occupied_slots);
+        // The grid's first two rows: 12 cells, two carrying item icons.
+        var slot_buttons: usize = 0;
+        var icon_overlays: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_inventory_slot) {
+                slot_buttons += 1;
+            },
+            .image => |image| if (std.mem.startsWith(u8, image.sprite_id, "items/")) {
+                icon_overlays += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 12), slot_buttons);
+        try std.testing.expectEqual(@as(usize, 2), icon_overlays);
     }
 }
 
@@ -14013,5 +14328,131 @@ test "buildEditorThemePicker: one strip per gradient, current row framed, close 
         };
         try std.testing.expect(current_button != null);
         try std.testing.expectEqual(@as(?u32, 0), current_button.?.editor_gradient);
+    }
+}
+
+test "inspector inventory grid: detail block inserts below the selected slot's row; Add/Delete + item rows by occupancy" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const player_five: types.Color = .{ .r = 40, .g = 40, .b = 40 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{ black, black, black, black, black, player_five } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    var inventory: types.Inventory = .{};
+    inventory.slots[4] = .{ .amulet = .{ .name = "Starter Amulet", .spell_damage = 3 } };
+    const editor: types.Editor = .{
+        .player_def = .{ .id = "Player", .template = .{
+            .name = "New Player",
+            .inventory = inventory,
+        } },
+        .active_tool = .select,
+        .selection = &.{.{ .player_start = {} }},
+    };
+
+    // No selection: bare slot rows only — the section header plus cells,
+    // no detail entries anywhere.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_inspector_scroll = 28, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try expectInspectorLabels(&elements, &.{"- Inventory"});
+        var detail_buttons: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .add_editor_inventory_item or
+                button.action == .delete_editor_inventory_item or
+                button.action == .select_editor_inventory_item_type)
+            {
+                detail_buttons += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 0), detail_buttons);
+    }
+
+    // Selected OCCUPIED slot 4 (row 0): the detail block inserts directly
+    // below row 0 — Delete (not Add), the type rows (the amulet cell
+    // highlighted), name + spell damage fields, all targeting slot 4.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{
+            .editor_inspector_scroll = 29,
+            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
+            .editor_inventory_selected_slot = 4,
+        };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try expectInspectorLabels(&elements, &.{ "Slot 5", "Delete", "Type", "Name", "Spell damage" });
+        const name_field = findTextField(&elements, .inventory_item_name).?;
+        try std.testing.expectEqualStrings("Starter Amulet", name_field.text);
+        try std.testing.expectEqual(types.TextEditTarget{ .inventory_slot = 4 }, name_field.ref.target);
+        const stat_field = findTextField(&elements, .{ .inventory_item_stat = .spell_damage }).?;
+        try std.testing.expectEqualStrings("3", stat_field.text);
+        // The selected cell is highlighted; the Delete button carries
+        // the slot payload.
+        var selected_highlighted = false;
+        var delete_button = false;
+        var amulet_highlighted = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .select_editor_inventory_slot and
+                    button.editor_inventory_slot.? == 4 and button.highlighted)
+                {
+                    selected_highlighted = true;
+                }
+                if (button.action == .delete_editor_inventory_item and
+                    button.editor_inventory_slot.? == 4)
+                {
+                    delete_button = true;
+                }
+                if (button.action == .select_editor_inventory_item_type and
+                    button.editor_item_kind.? == .amulet and button.highlighted)
+                {
+                    amulet_highlighted = true;
+                }
+            },
+            else => {},
+        };
+        try std.testing.expect(selected_highlighted);
+        try std.testing.expect(delete_button);
+        try std.testing.expect(amulet_highlighted);
+    }
+
+    // Selected EMPTY slot 13 (row 2): Add only — no type rows, no fields
+    // (author decision: an empty slot shows Add until an item exists).
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{
+            .editor_inspector_scroll = 28,
+            .editor_inspector_section_expanded = allInspectorSectionsExpanded(),
+            .editor_inventory_selected_slot = 13,
+        };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try expectInspectorLabels(&elements, &.{ "- Inventory", "Slot 14", "Add" });
+        var add_button = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .add_editor_inventory_item and
+                button.editor_inventory_slot.? == 13)
+            {
+                add_button = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(add_button);
+        try std.testing.expect(findTextField(&elements, .inventory_item_name) == null);
+        var type_cells: usize = 0;
+        for (elements.items) |element| switch (element) {
+            .button => |button| if (button.action == .select_editor_inventory_item_type) {
+                type_cells += 1;
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(@as(usize, 0), type_cells);
     }
 }

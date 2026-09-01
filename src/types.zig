@@ -303,6 +303,24 @@ pub const Action = enum {
     // `AnytimeInput.clicked_editor_item_kind`; a weapon cell also sets
     // `clicked_editor_weapon_type`.
     select_editor_item_type,
+    // An inventory slot cell in the player inspector's Inventory section
+    // was clicked (select it — the detail rows insert below its slot row;
+    // clicking the already-selected slot deselects). The slot index rides
+    // in `AnytimeInput.clicked_editor_inventory_slot`.
+    select_editor_inventory_slot,
+    // The inspector's inventory-slot Add button (create the default
+    // sword — the slot index rides in
+    // `AnytimeInput.clicked_editor_inventory_slot`).
+    add_editor_inventory_item,
+    // The inspector's inventory-slot Delete button (clear the slot to
+    // null — the slot index rides in
+    // `AnytimeInput.clicked_editor_inventory_slot`).
+    delete_editor_inventory_item,
+    // An inventory-slot item-TYPE cell was clicked (the detail block's
+    // type-pick rows): same reset-everything semantics as
+    // `select_editor_item_type`, targeting the SELECTED slot's item
+    // (an empty slot has no type rows — the arm gates on occupied).
+    select_editor_inventory_item_type,
     // An inspector utility-slot button was clicked (open the centered
     // skill picker for that slot). The slot index rides in
     // `AnytimeInput.clicked_editor_utility_slot`.
@@ -919,6 +937,11 @@ pub fn itemTextFieldValue(
             try std.fmt.allocPrint(allocator, "{d}", .{value})
         else
             "",
+        .inventory_item_name => itemName(item),
+        .inventory_item_stat => |stat| if (itemStatValue(item, stat)) |value|
+            try std.fmt.allocPrint(allocator, "{d}", .{value})
+        else
+            "",
         // Entity/metadata ids never resolve against an item type (their
         // targets are entities / the mission / levels); the arms exist so
         // the switch stays exhaustive.
@@ -1051,10 +1074,12 @@ pub const Entity = struct {
                 )
             else
                 "",
-            // Settings-sidebar + item-type ids never resolve against an
-            // entity (their targets are `.mission` / `.level` / `.item_type`);
-            // the arms exist so the switch stays exhaustive.
+            // Settings-sidebar + item-type + inventory ids never resolve
+            // against an entity (their targets are `.mission` / `.level` /
+            // `.item_type` / `.inventory_slot`); the arms exist so the
+            // switch stays exhaustive.
             .mission_name, .level_name, .item_def_name, .item_def_stat => "",
+            .inventory_item_name, .inventory_item_stat => "",
         };
     }
 
@@ -1366,6 +1391,14 @@ pub const TextFieldId = union(enum) {
     /// One numeric stat of a palette item type (same target + tome rule
     /// as `item_def_name`; clamped to `itemStatMax` at commit).
     item_def_stat: ItemStatField,
+    /// An INVENTORY slot item's name (the player inspector's Inventory
+    /// section detail rows — a tome commits nothing, tomes aren't
+    /// authorable). Target: `.inventory_slot` carries the slot index.
+    inventory_item_name: void,
+    /// One numeric stat of an inventory slot item (same target + tome
+    /// rule as `inventory_item_name`; clamped to `itemStatMax` at
+    /// commit).
+    inventory_item_stat: ItemStatField,
     /// The edited mission's name (metadata sidebar). Target: `.mission`.
     mission_name: void,
     /// The edited level's name (metadata sidebar, the tab it was focused
@@ -1382,6 +1415,10 @@ pub const TextEditTarget = union(enum) {
     /// the palette index so a mid-edit tool switch can't retarget the
     /// commit (the level-name pattern).
     item_type: u32,
+    /// An inventory slot in the player loadout (the Inventory section's
+    /// detail rows). Carries the slot index so a mid-edit selection
+    /// change can't retarget the commit (the level-name pattern).
+    inventory_slot: u32,
     mission: void,
     level: u32,
 };

@@ -727,7 +727,7 @@ paragraph). Remaining work:
         emission, pick/commit handlers, session-log round-trip with a
         multi-word name). Design: DESIGN → Level Editor → Editor UI
         layout (Inspector fields, item types); history in DONE.md.
-  - [~] **13 — player inventory editing (the player inspector's
+  - [x] **13 — player inventory editing (the player inspector's
         Inventory section):** the full 16×6 slot grid (the same 96
         `inventory_slot_count` indices the in-game 8×12 grid shows,
         arranged 6-wide to fit the panel — intentionally identical
@@ -743,21 +743,21 @@ paragraph). Remaining work:
               `editor_add_inventory_item` / `editor_delete_inventory_item` /
               `editor_set_inventory_item_def` (flattened — the
               `editor_set_item_def` shape; covers type picks AND stat
-              edits) / `editor_set_inventory_item_name` + player wrappers
-              + `validatePlayerAction` arms + tests (add/retype/rename/
-              delete + undo walks, crafted-log guards).
-        - [ ] **2 — inspector content:** `inventory_slot_row` entries
-              (1 unit, 16 of them), the selection state
-              (`UiState.editor_inventory_selected_slot`), the per-frame
-              insert-below-row detail block (Add/Delete entry + the item
-              rows while occupied), selected-slot highlighting, replacing
-              `inventory_summary`.
-        - [ ] **3 — input routing + text-field commits:** the slot-cell /
-              Add/Delete / type-pick actions + payloads, the
-              `TextFieldId.inventory_item_*` ids +
-              `TextEditTarget.inventory_slot` target (index rides the
-              ref — the level-name pattern), the commit sites mirroring
-              the item_def arms, ui + session-log round-trip tests.
+              edits) / `editor_set_inventory_item_name` +
+              player wrappers + `validatePlayerAction` arms + tests
+              (add/retype/rename/delete + undo walks, crafted-log
+              guards).
+        - [x] **2 — inspector content + input routing:** the slot grid
+              (16 one-unit `inventory_slot_row` entries), the UiState
+              selection (+ repeat-click deselect), the insert-below-row
+              detail block (Add/Delete entry, then the type rows + name +
+              stats only while occupied), selected-cell highlighting,
+              replacing `inventory_summary`; the four new actions +
+              payload plumbing (`AnytimeInput.clicked_editor_inventory_slot`).
+        - [x] **3 — text-field commits:** `TextFieldId.inventory_item_*`
+              + `TextEditTarget.inventory_slot` (index rides the ref —
+              the level-name pattern), the commit sites mirroring the
+              item_def arms, tests. History in DONE.md.
   - [ ] **Remaining layer-adjacent opens:**
   Deferred: drag-painting. The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved

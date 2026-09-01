@@ -6308,3 +6308,246 @@ test "editor inventory item handlers: crafted-log guards no-op" {
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.player_def.template.inventory.slots[6] == null);
 }
+
+test "inventory slot clicks: select/deselect toggle, Add default sword, Delete" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+
+    // Selection is a pure UiState write — no events ever record.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_inventory_slot,
+        .clicked_editor_inventory_slot = 4,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(u32, 4), history.session.ui_state.editor_inventory_selected_slot.?);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // A repeat click deselects (the detail block collapses).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_inventory_slot,
+        .clicked_editor_inventory_slot = 4,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_inventory_selected_slot == null);
+
+    // A crafted out-of-range index never selects.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_inventory_slot,
+        .clicked_editor_inventory_slot = types.inventory_slot_count,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_inventory_selected_slot == null);
+
+    // Add: the default sword lands in the empty slot; a crafted Add onto
+    // an occupied slot never fires.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .add_editor_inventory_item,
+        .clicked_editor_inventory_slot = 7,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    {
+        const slot = history.current_state.editor.?.player_def.template.inventory.slots[7];
+        try testing.expectEqual(types.WeaponType.sword, slot.?.weapon.weapon_type);
+        try testing.expectEqualStrings("New Sword", slot.?.weapon.name);
+    }
+    const occupied_baseline = history.event_history.items.len;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .add_editor_inventory_item,
+        .clicked_editor_inventory_slot = 7,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(occupied_baseline, history.event_history.items.len);
+
+    // Delete clears the slot; a crafted Delete on an empty slot never
+    // fires; a crafted out-of-range index never does either.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_inventory_item,
+        .clicked_editor_inventory_slot = 7,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.current_state.editor.?.player_def.template.inventory.slots[7] == null);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_inventory_item,
+        .clicked_editor_inventory_slot = 7,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .delete_editor_inventory_item,
+        .clicked_editor_inventory_slot = types.inventory_slot_count,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(
+        occupied_baseline + 2,
+        history.event_history.items.len,
+    );
+}
+
+test "inventory item-type clicks: reset-on-change on the selected slot, same-pick and empty-selection no-ops" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const levels = [_]types.EditorLevel{.{}};
+    var inventory: types.Inventory = .{};
+    inventory.slots[2] = .{ .weapon = .{
+        .name = "Iron Sword",
+        .weapon_type = .sword,
+        .weapon_damage = 5,
+    } };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .inventory = inventory } },
+    }));
+    runToIdle(&history);
+    history.session.ui_state.editor_inventory_selected_slot = 2;
+
+    // A DIFFERENT weapon type RESETS everything (the item tool's
+    // semantics): "New Axe", damage 0.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_inventory_item_type,
+        .clicked_editor_item_kind = .weapon,
+        .clicked_editor_weapon_type = .axe,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    {
+        const slot = history.current_state.editor.?.player_def.template.inventory.slots[2];
+        try testing.expectEqualStrings("New Axe", slot.?.weapon.name);
+        try testing.expectEqual(types.WeaponType.axe, slot.?.weapon.weapon_type);
+        try testing.expectEqual(@as(u32, 0), slot.?.weapon.weapon_damage);
+    }
+
+    // One undo restores the sword whole.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const slot = history.current_state.editor.?.player_def.template.inventory.slots[2];
+        try testing.expectEqualStrings("Iron Sword", slot.?.weapon.name);
+        try testing.expectEqual(@as(u32, 5), slot.?.weapon.weapon_damage);
+    }
+
+    // The SAME pick never fires (no dead undo step).
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_inventory_item_type,
+        .clicked_editor_item_kind = .weapon,
+        .clicked_editor_weapon_type = .sword,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // A KIND switch resets too — "New Amulet", zero stats.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_inventory_item_type,
+        .clicked_editor_item_kind = .amulet,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    {
+        const slot = history.current_state.editor.?.player_def.template.inventory.slots[2];
+        try testing.expectEqualStrings("New Amulet", slot.?.amulet.name);
+        try testing.expectEqual(@as(u32, 0), slot.?.amulet.spell_damage);
+    }
+
+    // No selection, an EMPTY selected slot, and a weapon pick without its
+    // weapon-type payload (crafted input) all commit nothing.
+    history.session.ui_state.editor_inventory_selected_slot = null;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_inventory_item_type,
+        .clicked_editor_item_kind = .coat,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    history.session.ui_state.editor_inventory_selected_slot = 3;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_inventory_item_type,
+        .clicked_editor_item_kind = .coat,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    history.session.ui_state.editor_inventory_selected_slot = 2;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_inventory_item_type,
+        .clicked_editor_item_kind = .weapon,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
+test "inventory item text fields: name + stat commits end-to-end, no-op gates, bounds" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const levels = [_]types.EditorLevel{.{}};
+    var inventory: types.Inventory = .{};
+    inventory.slots[2] = .{ .weapon = .{
+        .name = "Iron Sword",
+        .weapon_type = .sword,
+        .weapon_damage = 5,
+    } };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .inventory = inventory } },
+    }));
+    runToIdle(&history);
+
+    const no_keys: [0]?[]const u8 = .{};
+
+    // The NAME: a multi-word rename commits through
+    // player_set_editor_inventory_item_name.
+    {
+        const field: types.TextFieldRef = .{
+            .id = .inventory_item_name,
+            .target = .{ .inventory_slot = 2 },
+        };
+        ui.beginTextEdit(&history.session.ui_state, field, "");
+        _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "Spare Blade", &no_keys, &no_keys, false);
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        runToIdle(&history);
+        try testing.expectEqualStrings(
+            "Spare Blade",
+            history.current_state.editor.?.player_def.template.inventory.slots[2].?.weapon.name,
+        );
+        // An unchanged buffer commits nothing.
+        ui.beginTextEdit(&history.session.ui_state, field, "Spare Blade");
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    }
+
+    // A STAT: bounded — an out-of-range buffer clamps to the parser's own
+    // max (single-sourced `itemStatMax`); leading zeros are numeric-equal
+    // no-ops.
+    {
+        const field: types.TextFieldRef = .{
+            .id = .{ .inventory_item_stat = .weapon_damage },
+            .target = .{ .inventory_slot = 2 },
+        };
+        ui.beginTextEdit(&history.session.ui_state, field, "5");
+        _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "99", &no_keys, &no_keys, false);
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        runToIdle(&history);
+        try testing.expectEqual(
+            types.max_weapon_damage,
+            history.current_state.editor.?.player_def.template.inventory.slots[2].?.weapon.weapon_damage,
+        );
+        ui.beginTextEdit(&history.session.ui_state, field, "03");
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    }
+
+    // A stat the kind doesn't carry (a sword has no spell damage), a
+    // stale slot index, and an empty slot all commit nothing.
+    {
+        const wrong_stat: types.TextFieldRef = .{
+            .id = .{ .inventory_item_stat = .spell_damage },
+            .target = .{ .inventory_slot = 2 },
+        };
+        ui.beginTextEdit(&history.session.ui_state, wrong_stat, "");
+        _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "7", &no_keys, &no_keys, false);
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+        const stale_field: types.TextFieldRef = .{
+            .id = .inventory_item_name,
+            .target = .{ .inventory_slot = types.inventory_slot_count },
+        };
+        ui.beginTextEdit(&history.session.ui_state, stale_field, "Ghost");
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+        const empty_field: types.TextFieldRef = .{
+            .id = .inventory_item_name,
+            .target = .{ .inventory_slot = 3 },
+        };
+        ui.beginTextEdit(&history.session.ui_state, empty_field, "Ghost");
+        input_handlers.resolveTextEditOutcome(&history, .commit);
+        try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    }
+}

@@ -1260,6 +1260,60 @@ fn editorItemEditTarget(editor: types.Editor) ?u32 {
     };
 }
 
+/// The inventory-slot item-def player action: `editorItemDefAction`'s
+/// exact shape with the slot index instead of the palette type id (the
+/// inventory detail rows' type picks + stat edits — one event, one undo
+/// step).
+fn editorInventoryItemDefAction(
+    slot_index: u32,
+    item: types.Item,
+) ?events.PlayerInputEvent {
+    return switch (item) {
+        .weapon => |weapon| .{ .player_set_editor_inventory_item_def = .{
+            .index = slot_index,
+            .item_kind = .weapon,
+            .weapon_type = weapon.weapon_type,
+            .name = weapon.name,
+            .weapon_damage = weapon.weapon_damage,
+        } },
+        .amulet => |amulet| .{ .player_set_editor_inventory_item_def = .{
+            .index = slot_index,
+            .item_kind = .amulet,
+            .name = amulet.name,
+            .spell_damage = amulet.spell_damage,
+        } },
+        .coat => |coat| .{ .player_set_editor_inventory_item_def = .{
+            .index = slot_index,
+            .item_kind = .coat,
+            .name = coat.name,
+            .health_bonus = coat.health_bonus,
+            .defense_bonus = coat.defense_bonus,
+        } },
+        .gloves => |gloves| .{ .player_set_editor_inventory_item_def = .{
+            .index = slot_index,
+            .item_kind = .gloves,
+            .name = gloves.name,
+            .damage_bonus = gloves.damage_bonus,
+            .health_bonus = gloves.health_bonus,
+        } },
+        .pants => |pants| .{ .player_set_editor_inventory_item_def = .{
+            .index = slot_index,
+            .item_kind = .pants,
+            .name = pants.name,
+            .pickup_radius_bonus = pants.pickup_radius_bonus,
+            .health_bonus = pants.health_bonus,
+        } },
+        .boots => |boots| .{ .player_set_editor_inventory_item_def = .{
+            .index = slot_index,
+            .item_kind = .boots,
+            .name = boots.name,
+            .speed_bonus = boots.speed_bonus,
+            .health_bonus = boots.health_bonus,
+        } },
+        .skill_tome => null,
+    };
+}
+
 /// The item-def player action carrying a WHOLE item (a type pick, a stat
 /// edit — one event, one undo step), flattened to the event's top-level
 /// fields. Null for a skill tome (not expressible as an `ItemKind` — the
@@ -2039,6 +2093,49 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             ) orelse return;
             pushPlayerActionAndDrain(history, action);
         },
+        // The inventory detail rows' fields (the player loadout's
+        // Inventory section — target: `.inventory_slot`). Same gates as
+        // the item_def arms: would-change never records; an empty slot,
+        // a stale slot index, a stat the kind doesn't carry, or a skill
+        // tome commits nothing; stats clamp to `itemStatMax`.
+        .inventory_item_name => {
+            if (history.current_state.editor == null) return;
+            const editor: *types.Editor = &history.current_state.editor.?;
+            const slot_index = switch (field.target) {
+                .inventory_slot => |index| index,
+                else => return,
+            };
+            if (slot_index >= types.inventory_slot_count) return;
+            const item = editor.player_def.template.inventory.slots[slot_index] orelse return;
+            if (std.meta.activeTag(item) == .skill_tome) return;
+            if (std.mem.eql(u8, types.itemName(item), value)) return;
+            history.session.queueSound(history.backing_allocator, .button_click_up);
+            pushPlayerActionAndDrain(history, .{ .player_set_editor_inventory_item_name = .{
+                .index = slot_index,
+                .value = value,
+            } });
+        },
+        .inventory_item_stat => |stat| {
+            if (history.current_state.editor == null) return;
+            const editor: *types.Editor = &history.current_state.editor.?;
+            const slot_index = switch (field.target) {
+                .inventory_slot => |index| index,
+                else => return,
+            };
+            if (slot_index >= types.inventory_slot_count) return;
+            const item = editor.player_def.template.inventory.slots[slot_index] orelse return;
+            const current = types.itemStatValue(item, stat) orelse return;
+            // Item stats are BOUNDED (the same max_* the parser clamps
+            // with — the player can pick up exactly these items).
+            const parsed = parseBoundedStatValue(value, types.itemStatMax(stat)) orelse return;
+            if (parsed == current) return;
+            history.session.queueSound(history.backing_allocator, .button_click_up);
+            const action = editorInventoryItemDefAction(
+                slot_index,
+                types.itemWithStat(item, stat, parsed),
+            ) orelse return;
+            pushPlayerActionAndDrain(history, action);
+        },
         // Settings-sidebar name fields (mission + level). Same would-
         // change gate as the entity name; the level commit addresses the
         // tab the field was focused on (the index rides the ref target, so
@@ -2113,6 +2210,17 @@ pub fn beginFocusedTextEdit(
                         history.current_arena.allocator(),
                         field.id,
                     ) catch @panic("failed to format item field value");
+                }
+            },
+            .inventory_slot => |slot_index| {
+                if (slot_index < types.inventory_slot_count) {
+                    if (editor.player_def.template.inventory.slots[slot_index]) |item| {
+                        current_value = types.itemTextFieldValue(
+                            item,
+                            history.current_arena.allocator(),
+                            field.id,
+                        ) catch @panic("failed to format item field value");
+                    }
                 }
             },
         }
@@ -3310,6 +3418,82 @@ pub fn handleAnytimeInput(
                 if (template.gearSlotItem(slot) == null) return;
                 const clear_action = editorGearSlotAction(target, slot, null) orelse return;
                 pushPlayerActionAndDrain(history, clear_action);
+            },
+            // An inventory slot cell (the player inspector's Inventory
+            // section): select it — a direct UiState write (selection is
+            // navigation, not authored content — the section-expansion
+            // discipline); clicking the already-selected slot deselects
+            // (the detail block collapses). A crafted out-of-range index
+            // never selects.
+            .select_editor_inventory_slot => {
+                const slot = anytime.clicked_editor_inventory_slot orelse return;
+                if (slot >= types.inventory_slot_count) return;
+                if (history.session.ui_state.editor_inventory_selected_slot == slot) {
+                    history.session.ui_state.editor_inventory_selected_slot = null;
+                } else {
+                    history.session.ui_state.editor_inventory_selected_slot = slot;
+                }
+            },
+            // Inventory-slot Add: create the default sword in the EMPTY
+            // slot (the button only renders while empty; the gate holds
+            // for crafted input).
+            .add_editor_inventory_item => {
+                const slot = anytime.clicked_editor_inventory_slot orelse return;
+                if (slot >= types.inventory_slot_count) return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                if (editor.player_def.template.inventory.slots[slot] != null) return;
+                pushPlayerActionAndDrain(history, .{ .player_add_editor_inventory_item = .{
+                    .index = slot,
+                } });
+            },
+            // Inventory-slot Delete: clear the slot to null (an empty
+            // slot is a no-op — the button isn't rendered then, but the
+            // gate holds for crafted input).
+            .delete_editor_inventory_item => {
+                const slot = anytime.clicked_editor_inventory_slot orelse return;
+                if (slot >= types.inventory_slot_count) return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                if (editor.player_def.template.inventory.slots[slot] == null) return;
+                pushPlayerActionAndDrain(history, .{ .player_delete_editor_inventory_item = .{
+                    .index = slot,
+                } });
+            },
+            // An inventory-slot item-TYPE pick cell (the detail block's
+            // type rows): same reset-everything semantics as
+            // `.select_editor_item_type`, targeting the SELECTED slot's
+            // item. The rows only render while the slot is occupied — an
+            // empty selection commits nothing (author decision: an empty
+            // slot shows Add until an item exists).
+            .select_editor_inventory_item_type => {
+                const kind = anytime.clicked_editor_item_kind orelse return;
+                const slot = history.session.ui_state.editor_inventory_selected_slot orelse return;
+                if (slot >= types.inventory_slot_count) return;
+                const editor = if (current.editor) |*some_editor| some_editor else return;
+                const current_item = editor.player_def.template.inventory.slots[slot] orelse return;
+                const same_pick = switch (current_item) {
+                    .weapon => |weapon| kind == .weapon and
+                        weapon.weapon_type == (anytime.clicked_editor_weapon_type orelse return),
+                    else => types.itemKindOf(current_item) == kind,
+                };
+                if (same_pick) return;
+                const arena = history.current_arena.allocator();
+                const item: types.Item = switch (kind) {
+                    .weapon => .{ .weapon = .{
+                        .name = std.fmt.allocPrint(
+                            arena,
+                            "New {s}",
+                            .{types.weaponTypeLabel(anytime.clicked_editor_weapon_type orelse return)},
+                        ) catch @panic("failed to allocate default item name"),
+                        .weapon_type = anytime.clicked_editor_weapon_type orelse return,
+                    } },
+                    else => types.itemOfKind(kind, std.fmt.allocPrint(
+                        arena,
+                        "New {s}",
+                        .{types.itemKindLabel(kind)},
+                    ) catch @panic("failed to allocate default item name")),
+                };
+                const item_action = editorInventoryItemDefAction(slot, item) orelse return;
+                pushPlayerActionAndDrain(history, item_action);
             },
             // Mission-browser tab switch (Your Missions / Official). A view
             // affordance — direct UiState write, off the undo timeline (the

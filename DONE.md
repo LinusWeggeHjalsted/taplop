@@ -9075,3 +9075,68 @@ fully green natively):
   needs JS braces escaped (`{{`/`}}`) — comptime-dead code on native, so
   only the web build surfaces it (the build gate works; the format
   string was corrected before it ever reached a browser).
+
+## Player inventory editing (the inspector's Inventory section)
+
+The player inspector's Inventory section went from a read-only item count
+to the full editable inventory (TODO → Level editor → slice 13). Design
+decisions settled with the author up front:
+
+- **16 rows × 6 slots** — the same 96 `inventory_slot_count` indices the
+  in-game 8×12 grid shows; the 6-wide arrangement is presentational,
+  chosen because six 128px cells fit the 1024px inspector panel.
+  Capacity is intentionally identical — no data model change.
+- **Selection** is pure UiState (`editor_inventory_selected_slot`), a
+  direct write at the slot-cell click site (the section-expansion
+  discipline: navigation, not authored content — off the undo timeline,
+  replay-safe by construction). A repeat click on the selected slot
+  deselects (the detail block collapses).
+- **The detail block inserts BELOW the selected slot's row** — the
+  inspector's first in-section expansion. It works because the entries
+  list is rebuilt per frame: the insert is a conditional append in
+  `editorInspectorPlayerEntries`, and the windowed emission/scrollbar
+  machinery needed no changes. No scroll-on-select (the offset stays).
+- **Empty slot → Add only** (author decision): the Add/Delete entry is
+  always first below the row; the type rows + name + stats follow ONLY
+  while an item exists. Add creates the default sword ("New Sword",
+  sword, damage 0 — the `data/editor_defaults.txt` Items entry, the
+  palette "+" default, hard-coded like `defaultItemForSlot`).
+
+Event routing mirrors the item tool (slice 12) exactly:
+
+- `editor_add_inventory_item` / `editor_delete_inventory_item` (index
+  only — the player loadout is the sole owner, no palette lookup).
+- `editor_set_inventory_item_def` — FLATTENED (the
+  `editor_set_item_def` shape: nested Item names can't round-trip the
+  session log once they contain a space, and the defaults carry spaces
+  by design). Covers the type picks (reset-everything semantics — a
+  differing pick replaces with "New <Kind>", zeroed stats) AND the stat
+  text commits (one event, one undo step). Handler clamps stats via the
+  shared `itemFromDefSet` (single-sourced `max_*`).
+- `editor_set_inventory_item_name` — its own event (top-level string).
+- Player wrappers + `validatePlayerAction` arms
+  (`validateInspectorInventoryEdit`: editor screen + index range) on all
+  four.
+- Text fields: new `TextFieldId.inventory_item_name/_stat` ids +
+  `TextEditTarget.inventory_slot` (the index rides the ref target — the
+  level-name pattern — so a mid-edit selection change can't retarget the
+  commit); `itemTextFieldValue` arms; `beginFocusedTextEdit` seeding;
+  commit arms in `commitFocusedTextEdit` mirroring the item_def gates
+  (would-change, empty slot, wrong stat, tome, bounds).
+- Input: `.select_editor_inventory_slot` (UiState toggle),
+  `.add_editor_inventory_item` / `.delete_editor_inventory_item` (slot
+  index rides `AnytimeInput.clicked_editor_inventory_slot`),
+  `.select_editor_inventory_item_type` (the type cells address the
+  SELECTED slot — reset semantics, gated on occupied).
+- `emitInspectorItemTypeRows` was generalized (item + action params) so
+  the item tool and the inventory detail block share the exact rows.
+
+Tests: handler arms (add/retype/rename/delete + undo walks, crafted-log
+guards, selection toggle, input-arm no-ops incl. same-pick and
+empty-selection), ui content (grid windowing, insert-below-row, Add vs
+Delete by occupancy, selected-cell + amulet-cell highlights, field
+targets), text commits end-to-end (multi-word rename, stat clamp,
+leading-zero/wrong-stat/stale-index/empty-slot no-ops). Two pre-existing
+ui tests updated for the taller player content (the summary's 2 units
+became 16+ units — the scroll clamps moved; the player-fallback window
+now lands on slot rows).

@@ -263,6 +263,12 @@ fn update(
                         if (button.editor_item_kind) |item_kind| {
                             player_input.anytime.clicked_editor_item_kind = item_kind;
                         }
+                        // Inventory-slot controls (the player inspector's
+                        // Inventory section): the slot index rides
+                        // alongside the action.
+                        if (button.editor_inventory_slot) |slot_index| {
+                            player_input.anytime.clicked_editor_inventory_slot = slot_index;
+                        }
                         // Inspector utility-slot buttons + skill-picker
                         // cells: the slot / skill ride alongside the action
                         // (a missing skill payload = the picker's None cell).
