@@ -12,6 +12,7 @@ const events = @import("events.zig");
 const state = @import("state.zig");
 const input = @import("input.zig");
 const event_handlers = @import("event_handlers.zig");
+const planning = @import("editor/planning.zig");
 const input_handlers = @import("input_handlers.zig");
 const test_harness = @import("test_harness.zig");
 const ui = @import("ui.zig");
@@ -2288,12 +2289,12 @@ test "planEditorTilePaintActions: existing tile with no covering decoration is a
 
     try testing.expectEqual(
         @as(usize, 0),
-        event_handlers.planEditorTilePaintActions(&editor, .{ .x = 1, .y = 1 }, backing.allocator()).len,
+        planning.planEditorTilePaintActions(&editor, .{ .x = 1, .y = 1 }, backing.allocator()).len,
     );
     // Empty ground plans the paint.
     try testing.expectEqual(
         @as(usize, 1),
-        event_handlers.planEditorTilePaintActions(&editor, .{ .x = 2, .y = 1 }, backing.allocator()).len,
+        planning.planEditorTilePaintActions(&editor, .{ .x = 2, .y = 1 }, backing.allocator()).len,
     );
 }
 
@@ -2315,7 +2316,7 @@ test "planEditorEntityPlacementActions: no-op conditions are empty plans" {
 
     try testing.expectEqual(
         @as(usize, 0),
-        event_handlers.planEditorEntityPlacementActions(&editor, 1, .{ .x = 2, .y = 2 }, backing.allocator()).len,
+        planning.planEditorEntityPlacementActions(&editor, 1, .{ .x = 2, .y = 2 }, backing.allocator()).len,
     );
     // The '!' and '=' are never overwritten.
     const marker_levels = [_]types.EditorLevel{.{
@@ -2325,11 +2326,11 @@ test "planEditorEntityPlacementActions: no-op conditions are empty plans" {
     const marker_editor = placementTestEditor(&marker_levels);
     try testing.expectEqual(
         @as(usize, 0),
-        event_handlers.planEditorEntityPlacementActions(&marker_editor, 0, .{ .x = 0, .y = 0 }, backing.allocator()).len,
+        planning.planEditorEntityPlacementActions(&marker_editor, 0, .{ .x = 0, .y = 0 }, backing.allocator()).len,
     );
     try testing.expectEqual(
         @as(usize, 0),
-        event_handlers.planEditorEntityPlacementActions(&marker_editor, 0, .{ .x = 4, .y = 4 }, backing.allocator()).len,
+        planning.planEditorEntityPlacementActions(&marker_editor, 0, .{ .x = 4, .y = 4 }, backing.allocator()).len,
     );
 }
 
@@ -2346,7 +2347,7 @@ test "planEditorEntityPlacementActions: same-type occupant on a missing tile sti
     const levels = [_]types.EditorLevel{.{ .entity_placements = &placements }};
     const editor = placementTestEditor(&levels);
 
-    const plan = event_handlers.planEditorEntityPlacementActions(
+    const plan = planning.planEditorEntityPlacementActions(
         &editor,
         1,
         .{ .x = 2, .y = 2 },
@@ -2373,7 +2374,7 @@ test "planEditorItemPlacementActions: same-type item on a present tile is an emp
 
     try testing.expectEqual(
         @as(usize, 0),
-        event_handlers.planEditorItemPlacementActions(&editor, 1, .{ .x = 2, .y = 2 }, backing.allocator()).len,
+        planning.planEditorItemPlacementActions(&editor, 1, .{ .x = 2, .y = 2 }, backing.allocator()).len,
     );
 }
 
@@ -2392,12 +2393,12 @@ test "planEditorDecorationPlacementActions: exact duplicate is an empty plan" {
 
     try testing.expectEqual(
         @as(usize, 0),
-        event_handlers.planEditorDecorationPlacementActions(&editor, 0, .{ .x = 5, .y = 5 }, backing.allocator()).len,
+        planning.planEditorDecorationPlacementActions(&editor, 0, .{ .x = 5, .y = 5 }, backing.allocator()).len,
     );
     // A different type at the same anchor still replaces (delete + place).
     try testing.expectEqual(
         @as(usize, 2),
-        event_handlers.planEditorDecorationPlacementActions(&editor, 1, .{ .x = 5, .y = 5 }, backing.allocator()).len,
+        planning.planEditorDecorationPlacementActions(&editor, 1, .{ .x = 5, .y = 5 }, backing.allocator()).len,
     );
 }
 
@@ -2479,15 +2480,15 @@ test "planEditorDeleteActions: '!' / '=' / empty ground are empty plans" {
 
     try testing.expectEqual(
         @as(usize, 0),
-        event_handlers.planEditorDeleteActions(&editor, .{ .x = 0, .y = 0 }, backing.allocator()).len,
+        planning.planEditorDeleteActions(&editor, .{ .x = 0, .y = 0 }, backing.allocator()).len,
     );
     try testing.expectEqual(
         @as(usize, 0),
-        event_handlers.planEditorDeleteActions(&editor, .{ .x = 4, .y = 4 }, backing.allocator()).len,
+        planning.planEditorDeleteActions(&editor, .{ .x = 4, .y = 4 }, backing.allocator()).len,
     );
     try testing.expectEqual(
         @as(usize, 0),
-        event_handlers.planEditorDeleteActions(&editor, .{ .x = 9, .y = 9 }, backing.allocator()).len,
+        planning.planEditorDeleteActions(&editor, .{ .x = 9, .y = 9 }, backing.allocator()).len,
     );
 }
 
@@ -2615,7 +2616,7 @@ test "planEditorRegionSelectActions: region adds everything inside, skips presen
 
     const arena = history.current_arena.allocator();
     const editor = &history.current_state.editor.?;
-    const plan = event_handlers.planEditorRegionSelectActions(
+    const plan = planning.planEditorRegionSelectActions(
         editor,
         .{ .x = 0, .y = 0 },
         .{ .x = 9, .y = 9 },
@@ -2639,7 +2640,7 @@ test "planEditorRegionSelectActions: region adds everything inside, skips presen
     try testing.expectEqual(types.Selectable{ .tile = .{ .x = 2, .y = 1 } }, plan[7].editor_event.editor_select.entry);
 
     // Empty region (nothing there) → empty plan (no player action fires).
-    const empty_plan = event_handlers.planEditorRegionSelectActions(
+    const empty_plan = planning.planEditorRegionSelectActions(
         editor,
         .{ .x = 20, .y = 20 },
         .{ .x = 21, .y = 21 },
@@ -2759,7 +2760,7 @@ test "player_delete_editor_selection: deletes everything selected except the mar
     // (1 then 0 — index stability), then the item, then the decoration,
     // then the tile erases. The markers + their tiles plan NOTHING.
     {
-        const plan = event_handlers.planEditorSelectionDeleteActions(
+        const plan = planning.planEditorSelectionDeleteActions(
             &history.current_state.editor.?,
             history.current_arena.allocator(),
         );
@@ -2836,7 +2837,7 @@ test "player_delete_editor_selection: an all-marker selection plans nothing (no-
     history.current_state.editor.?.selection = &seeded_selection;
     runToIdle(&history);
 
-    const plan = event_handlers.planEditorSelectionDeleteActions(
+    const plan = planning.planEditorSelectionDeleteActions(
         &history.current_state.editor.?,
         history.current_arena.allocator(),
     );

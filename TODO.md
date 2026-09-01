@@ -1244,8 +1244,33 @@ Done items in DONE.md. Open:
   salvage_item index inventory.slots[...] directly (panic on out-of-range).
   Pick one convention (guard everywhere, or trust the source everywhere),
   keeping in mind events can also originate from save/replay data.
-- Consider splitting processEvent handlers by scope (player/level/hub/meta)
-  into separate files for readability once it grows further.
+- **Codebase split: ui.zig + event_handlers.zig (approved plan).** The two
+  files grew to 15k + 6.6k lines and mix many jobs. Decisions settled:
+  facade model for shared vocabulary (types + hit-testing + layout consts
+  re-exported from ui.zig; `processEvent` stays in event_handlers.zig),
+  DIRECT imports for specific builders/planners at call sites;
+  subdirectories where coherent (`src/ui/`, `src/handlers/`, `src/editor/`);
+  coherence of contents over line-count targets. `processEvent`'s inline
+  switch prongs extract into per-category handler fns (recording/replay/
+  checkpoint logic stays in the dispatch). Slices, each a commit +
+  `scripts/test.sh` green:
+  - [ ] 1. `src/editor/planning.zig` — the pure `planEditor*Actions`
+        planners + selection algebra + `activeEditorLevel` out of
+        event_handlers.zig; input_handlers + handler_tests_editor import it
+        directly.
+  - [ ] 2. `src/editor/handlers.zig` — `handleEditorEvent` + editor session
+        helpers (import player, palette types, defaults, registry) +
+        selection-mutation helpers out of event_handlers.zig.
+  - [ ] 3. `event_push.zig` — pushEvents/pushPlayerSkillUse/pushPlayerAction.
+  - [ ] 4. `src/handlers/` — meta / player / level / hub handler files;
+        processEvent prongs become handler fns; event_handlers.zig becomes
+        the thin dispatch + shared entity accessors.
+  - [ ] 5+. `src/ui/` — element/state/text_input/tooltip/emit first
+        (vocabulary, facade re-exports), then editor chrome/inspector/
+        pickers, then middle panels, then menus/screens. Tests move with
+        their subject. AGENTS Key Files + DESIGN pointers updated per slice.
+  - [ ] Follow-up (separate): input_handlers.zig (5.7k — mission import/
+        export zip machinery + editor commit sites are the seams).
 - **Duplicated rendering recipes in `buildEntityInspectPanel`.** The skill-
   button visual (frame + icon + cooldown overlay + empty-diamond marker)
   and the gear-slot visual (slot frame + item icon + tooltip) are inlined

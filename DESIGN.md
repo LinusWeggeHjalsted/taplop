@@ -2454,7 +2454,7 @@ Progressive delete: clicking an occupied tile removes the occupant first,
 the tile goes on the next click.
 
 **No-op clicks never fire.** Each tool's click effect is computed by a pure
-planner (`planEditor*Actions` in event_handlers.zig — one per tool, plus
+planner (`planEditor*Actions` in `src/editor/planning.zig` — one per tool, plus
 `planEditorDeleteActions` for the right-click) from the live editor state:
 the handler pushes the plan, and the input layer fires the player action
 only when the plan is nonempty. A click that would change nothing (paint

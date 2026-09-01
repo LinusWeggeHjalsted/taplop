@@ -25,6 +25,7 @@ const file_source_mod = @import("file_source.zig");
 const zip_writer = @import("zip_writer.zig");
 const zip_reader = @import("zip_reader.zig");
 const event_handlers = @import("event_handlers.zig");
+const planning = @import("editor/planning.zig");
 const functions = @import("functions.zig");
 const view_mod = @import("view.zig");
 const build_info = @import("build_info");
@@ -832,7 +833,7 @@ pub fn handleRightClickEditorDelete(
                     // (see planEditorDeleteActions).
                     if (current.editor) |*editor| {
                         const arena = history.current_arena.allocator();
-                        const plan = event_handlers.planEditorDeleteActions(editor, pending.position, arena);
+                        const plan = planning.planEditorDeleteActions(editor, pending.position, arena);
                         if (plan.len > 0) {
                             event_handlers.pushPlayerAction(current, .{ .player_delete_editor_at = .{
                                 .position = pending.position,
@@ -938,7 +939,7 @@ pub fn handleEditorMarquee(
                 if (pointer.modifiers.shift) {
                     if (current.editor) |*editor| {
                         const arena = history.current_arena.allocator();
-                        if (event_handlers.planEditorRegionSelectActions(
+                        if (planning.planEditorRegionSelectActions(
                             editor,
                             marquee.start_position,
                             marquee.end_position,
@@ -956,7 +957,7 @@ pub fn handleEditorMarquee(
                 // tile (the same no-op gate: empty ground never fires).
                 if (current.editor) |*editor| {
                     const arena = history.current_arena.allocator();
-                    if (event_handlers.planEditorSelectionActions(
+                    if (planning.planEditorSelectionActions(
                         editor,
                         marquee.start_position,
                         arena,
@@ -1017,7 +1018,7 @@ pub fn handleEditorMoveDrag(
             viewport,
         );
         const arena = history.current_arena.allocator();
-        const claims = event_handlers.editorSelectionContainsPosition(
+        const claims = planning.editorSelectionContainsPosition(
             &current.editor.?,
             press_tile,
             arena,
@@ -1081,7 +1082,7 @@ pub fn handleEditorMoveDrag(
                 // nothing and never fires).
                 if (current.editor) |*editor| {
                     const arena = history.current_arena.allocator();
-                    if (event_handlers.planEditorReplaceSelectionActions(
+                    if (planning.planEditorReplaceSelectionActions(
                         editor,
                         move_drag.press_position_tile,
                         arena,
@@ -4052,7 +4053,7 @@ pub fn handleIdleInput(
         // an empty or all-marker selection never fires.
         if (idle.delete_editor_selection) {
             if (current.editor) |*editor| {
-                const plan = event_handlers.planEditorSelectionDeleteActions(editor, allocator);
+                const plan = planning.planEditorSelectionDeleteActions(editor, allocator);
                 if (plan.len > 0) {
                     event_handlers.pushPlayerAction(current, .player_delete_editor_selection, allocator);
                 }
@@ -4074,7 +4075,7 @@ pub fn handleIdleInput(
         if (idle.select_editor_all) {
             if (current.editor) |*editor| {
                 if (editor.active_tool == .select) {
-                    if (event_handlers.planEditorSelectAllActions(editor, allocator).len > 0) {
+                    if (planning.planEditorSelectAllActions(editor, allocator).len > 0) {
                         event_handlers.pushPlayerAction(current, .player_select_editor_all, allocator);
                     }
                 }
@@ -4084,7 +4085,7 @@ pub fn handleIdleInput(
             if (current.editor) |*editor| {
                 switch (editor.active_tool) {
                     .tile => {
-                        const plan = event_handlers.planEditorTilePaintActions(editor, clicked_position, allocator);
+                        const plan = planning.planEditorTilePaintActions(editor, clicked_position, allocator);
                         if (plan.len > 0) {
                             event_handlers.pushPlayerAction(current, .{ .player_paint_editor_tile = .{
                                 .position = clicked_position,
@@ -4092,7 +4093,7 @@ pub fn handleIdleInput(
                         }
                     },
                     .entity_type => |type_id| {
-                        const plan = event_handlers.planEditorEntityPlacementActions(editor, type_id, clicked_position, allocator);
+                        const plan = planning.planEditorEntityPlacementActions(editor, type_id, clicked_position, allocator);
                         if (plan.len > 0) {
                             event_handlers.pushPlayerAction(current, .{ .player_place_editor_entity = .{
                                 .type_id = type_id,
@@ -4101,7 +4102,7 @@ pub fn handleIdleInput(
                         }
                     },
                     .decoration_type => |type_id| {
-                        const plan = event_handlers.planEditorDecorationPlacementActions(editor, type_id, clicked_position, allocator);
+                        const plan = planning.planEditorDecorationPlacementActions(editor, type_id, clicked_position, allocator);
                         if (plan.len > 0) {
                             event_handlers.pushPlayerAction(current, .{ .player_place_editor_decoration = .{
                                 .type_id = type_id,
@@ -4110,7 +4111,7 @@ pub fn handleIdleInput(
                         }
                     },
                     .item_type => |type_id| {
-                        const plan = event_handlers.planEditorItemPlacementActions(editor, type_id, clicked_position, allocator);
+                        const plan = planning.planEditorItemPlacementActions(editor, type_id, clicked_position, allocator);
                         if (plan.len > 0) {
                             event_handlers.pushPlayerAction(current, .{ .player_place_editor_item = .{
                                 .type_id = type_id,
@@ -4129,7 +4130,7 @@ pub fn handleIdleInput(
                         // the clear alone).
                         if (modifiers.shift) return;
                         if (history.session.ui_state.editor_move_drag != null) return;
-                        const plan = event_handlers.planEditorReplaceSelectionActions(editor, clicked_position, allocator);
+                        const plan = planning.planEditorReplaceSelectionActions(editor, clicked_position, allocator);
                         if (plan.len > 0) {
                             event_handlers.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
                                 .position = clicked_position,
@@ -4905,7 +4906,7 @@ test "player_toggle_editor_selection (shift+click): toggles the tile + occupants
     // input gate never fires a player action for it).
     try std.testing.expectEqual(
         @as(usize, 0),
-        event_handlers.planEditorSelectionActions(
+        planning.planEditorSelectionActions(
             &history.current_state.editor.?,
             .{ .x = 9, .y = 9 },
             history.current_arena.allocator(),
