@@ -7,6 +7,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const element = @import("element.zig");
 const lookups = @import("../generated_lookups.zig");
+const Effect = @import("../effects/effect.zig").Effect;
 const ui_tooltip = @import("tooltip.zig");
 
 const Action = types.Action;
@@ -513,4 +514,22 @@ pub fn itemIconSpriteId(item: types.Item) []const u8 {
         .boots => "items/boots",
         .skill_tome => "items/skill_tome",
     };
+}
+
+
+/// The sprite id for an active-effect icon in the UI (bottom-bar effects
+/// grid + entity-inspect panel). Effects created by a skill share the skill's
+/// tag name (EffectId and SkillId overlap: `reflect`, `stone_form`,
+/// `that_which_lingers`), so the skill's icon (`skills/<tag>`) is used —
+/// the effect's own `effect_sprite` is a WORLD overlay (under
+/// `assets/effects/`), not a UI icon. Non-skill effects without a
+/// matching SkillId fall back to the effect-sprite path
+/// (`effects/<effect_sprite>`) or the effect name (magenta placeholder).
+pub fn effectIconSpriteId(effect_id: types.EffectId, definition: Effect) []const u8 {
+    const tag = @tagName(effect_id);
+    if (std.meta.stringToEnum(SkillId, tag)) |skill_id| {
+        return skillIconSpriteId(skill_id);
+    }
+    if (definition.effect_sprite) |sprite| return sprite;
+    return definition.name;
 }

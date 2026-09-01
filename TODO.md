@@ -1244,7 +1244,7 @@ Done items in DONE.md. Open:
   salvage_item index inventory.slots[...] directly (panic on out-of-range).
   Pick one convention (guard everywhere, or trust the source everywhere),
   keeping in mind events can also originate from save/replay data.
-- **Codebase split: ui.zig + event_handlers.zig (approved plan).** The two
+- **Codebase split: ui.zig + event_handlers.zig — COMPLETE.** The two
   files grew to 15k + 6.6k lines and mix many jobs. Decisions settled:
   facade model for shared vocabulary (types + hit-testing + layout consts
   re-exported from ui.zig; `processEvent` stays in event_handlers.zig),
@@ -1266,12 +1266,13 @@ Done items in DONE.md. Open:
         files; processEvent prongs became handler fns; event_handlers.zig
         is the thin dispatch (183 lines). No hub file — hub state flows
         through meta + player-input events (no HubEvent exists).
-  - [~] 5+. `src/ui/` — element/state/text_input/tooltip/emit first
-        (vocabulary, facade re-exports), then editor chrome/inspector/
-        pickers, then middle panels, then menus/screens. Tests move with
-        their subject. AGENTS Key Files + DESIGN pointers updated per slice.
-        DONE so far: element.zig + state.zig + text_input.zig (slice 5,
-        facade live — `ui.X` re-exports keep consumers unchanged).
+  - [x] 5+. `src/ui/` — DONE in 6 slices (element/state/text_input →
+        tooltip/emit → editor_chrome → editor_inspector → editor_pickers
+        → bottom_bar/panels/screens/menus). ui.zig is the pure facade
+        (256 lines). Tests moved with their subjects; consumers unchanged
+        via the `ui.X` re-exports. Optional later: split
+        editor_inspector's field emitters into editor_inspector_fields.zig
+        (4,649 lines, ~1,700 of them tests).
   - [ ] Follow-up (separate): input_handlers.zig (5.7k — mission import/
         export zip machinery + editor commit sites are the seams).
 - **Duplicated rendering recipes in `buildEntityInspectPanel`.** The skill-

@@ -9374,3 +9374,50 @@ order convention, Determinism & Tiebreaking domain).
 Consumer re-points were part of each slice (input_handlers, test_harness,
 the handler_tests_* files). AGENTS Key Files updated per slice. The ui.zig
 split (slices 5+) remains open in TODO.
+
+## Codebase split: ui.zig (slices 1–6)
+
+The second half of the event_handlers/ui.zig split (same settled
+decisions — facade for shared vocabulary, direct imports for specifics,
+coherence over line counts; see the event_handlers entry above for the
+full rationale). ui.zig went 15,015 → 256 lines: a pure facade re-exporting
+every pub symbol of `src/ui/`, so all 10 consumer files (main, view, input,
+input_handlers, state, types, raylib_backend, the tests) kept their `ui.X`
+call sites unchanged. Six slices, one commit each, `scripts/test.sh` green:
+
+- **element.zig** (1,304) — UiElement + variants, Rect algebra, layout
+  constants, FontMetrics, hit-testing, wrapRow (+ its scattered tests,
+  reunited), SlotRef (an element payload type, not interaction state).
+- **state.zig** (461) — UiState + drag/press/marquee/picker-target types.
+- **text_input.zig** (598) — TextField + TextEditState + routing. The
+  state↔text_input import pair is a cycle (UiState holds a TextEditState;
+  beginTextEdit takes *UiState) — compiles fine under Zig's lazy
+  resolution; the alternative (merging them) was worse.
+- **tooltip.zig** (685) — placeTooltip + the tooltip content builders +
+  the positive/negative comparison colors.
+- **emit.zig** (535) — shared builder primitives + sprite-id resolution
+  (skillIconSpriteId/itemIconSpriteId/effectIconSpriteId) + material icons.
+- **editor_chrome.zig** (1,676) — tool palette, level tabs, primary
+  actions, palette group math.
+- **editor_inspector.zig** (4,649) — the inspector + metadata sidebar +
+  field emitters + target inference + M2 arbitration (+ ~1,700 lines of
+  tests). Largest file in src/ui/ — a further field-emitter split stays
+  optional (TODO).
+- **editor_pickers.zig** (1,742) — the centered pickers + the comptime
+  official-sprite tables.
+- **bottom_bar.zig** (329), **panels.zig** (1,243), **screens.zig** (633),
+  **menus.zig** (1,588) — the in-game surfaces.
+
+Notable mechanics: the generated_sprite_metadata import must stay BARE
+(`@import("generated_sprite_metadata")` — it's a build-provided named
+module, not a file, so the ../ path form breaks from subdirectories);
+`element`/`tooltip`/`ui_state` collide with common local variable names
+in builder code, so the module aliases are ui_element/ui_tooltip/
+ui_state_mod; the slice-3 chrome extraction briefly left a DUPLICATE
+material-icons block in ui.zig (the extraction added the emit.zig copy
+but missed the remove-set entry) — caught and deduplicated before any
+drift; two more stale/jumbled doc-comment fragments were repaired during
+the moves (an old buildInventoryPanel doc fused into the material-count
+const doc; buildErrorPopup's banner). Unused top-level aliases are
+invisible to the compiler — each slice ended with a scripted usage-count
+prune of the alias blocks.

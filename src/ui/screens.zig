@@ -1,0 +1,633 @@
+//! In-game screen surfaces: the pending-error popup (modal, scrollable
+//! message + Dismiss — see DESIGN → Error Handling), the top bar (options
+//! button), and the mission-complete / mission-fail overlays (stats +
+//! clone-harvest rewards; restart/exit actions — see DESIGN → Clones).
+
+const std = @import("std");
+const types = @import("../types.zig");
+const ui_element = @import("element.zig");
+const emit = @import("emit.zig");
+const ui_tooltip = @import("tooltip.zig");
+const state = @import("../state.zig");
+
+const Action = types.Action;
+const Rectangle = types.Rectangle;
+const Color = types.Color;
+const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
+const GameState = state.GameState;
+const text = ui_element.text;
+const FontMetrics = ui_element.FontMetrics;
+const UiElementList = ui_element.UiElementList;
+const Button = ui_element.Button;
+const screenRect = ui_element.screenRect;
+const rowWidth = ui_element.rowWidth;
+const Row = ui_element.Row;
+const slot_size = ui_element.slot_size;
+const ui_gap = ui_element.ui_gap;
+const panel_button_height = ui_element.panel_button_height;
+const menu_button_width = ui_element.menu_button_width;
+const menu_button_font_size = ui_element.menu_button_font_size;
+const inventory_slot_size = ui_element.inventory_slot_size;
+const top_bar_height = ui_element.top_bar_height;
+const lineHeight = ui_element.lineHeight;
+const spanRow = ui_tooltip.spanRow;
+const emitIconButton = emit.emitIconButton;
+const emitPanelButton = emit.emitPanelButton;
+const emitMaterialIcons = emit.emitMaterialIcons;
+const wrapRow = ui_element.wrapRow;
+const tooltip_panel_sprite = ui_tooltip.tooltip_panel_sprite;
+const button_background_sprite_id = emit.button_background_sprite_id;
+
+
+
+// Error popup sizing — a modal centered panel for recoverable load
+// failures (see SessionState.pending_error). Reuses the tooltip wrap
+// machinery (wrapRow / measureRowWidth / lineHeight) for the message body.
+// The body scrolls when the wrapped text exceeds the max body height.
+pub const error_popup_max_width: i32 = 1280;
+pub const error_popup_padding: i32 = 32;
+pub const error_header_font_size: i32 = 72;
+pub const error_body_font_size: i32 = 56;
+pub const error_header_gap: i32 = 24; // gap below the "Error" header
+pub const error_button_gap: i32 = 32; // gap above the Dismiss button
+pub const error_dismiss_button_width: i32 = 512;
+pub const error_dismiss_button_font_size: i32 = 64;
+/// One body text line's height — also the scroll-step unit (arrow keys scroll
+/// 3 lines at a time; see handleAnytimeInput). Kept in sync with
+/// `lineHeight(error_body_font_size)`.
+pub const error_scroll_line_height: i32 = 56;
+/// Max body region height before scrolling kicks in. Leaves room for the
+/// header + Dismiss button + padding within the 2160px reference height.
+pub const error_popup_max_body_height: i32 = 1600;
+/// Scrollbar geometry (reference-space pixels). Drawn only when the body
+/// content overflows the visible region.
+pub const error_scrollbar_width: i32 = 12;
+pub const error_scrollbar_gap: i32 = 16; // gap between body text and scrollbar
+
+/// Build a modal, centered, scrollable error popup showing `message` with
+/// a Dismiss button. Appended last in view() so it draws on top of
+/// everything; the panel's `blocks_input = true` halts hit-testing within
+/// its bounds. handleAnytimeInput gates all input except `dismiss_error` +
+/// the scroll actions while a pending error is set (see
+/// SessionState.pending_error).
+///
+/// When the wrapped body exceeds `error_popup_max_body_height`, the body
+/// scrolls: only lines within the visible window are emitted, and a
+/// scrollbar is drawn. `session.error_scroll_offset` is clamped to
+/// `[0, max_scroll]` here (the view is the only place that knows
+/// `max_scroll`, which depends on the wrapped line count). Pure over the
+/// message + frame arena, aside from that scroll-offset clamp.
+pub fn buildErrorPopup(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    session: *state.SessionState,
+    message: []const u8,
+    button_color: Color,
+) !void {
+    const content_width_limit = error_popup_max_width - 2 * error_popup_padding;
+
+    const header_lines = try wrapRow(
+        allocator,
+        font_metrics,
+        try spanRow(allocator, text("Error")),
+        error_header_font_size,
+        content_width_limit,
+    );
+    const body_lines = try wrapRow(
+        allocator,
+        font_metrics,
+        try spanRow(allocator, text(message)),
+        error_body_font_size,
+        content_width_limit,
+    );
+
+    const body_line_height = lineHeight(error_body_font_size);
+    const body_content_height: i32 = @intCast(body_lines.len * @as(usize, @intCast(body_line_height)));
+    const visible_body_height = @min(body_content_height, error_popup_max_body_height);
+    const max_scroll = @max(@as(i32, 0), body_content_height - visible_body_height);
+    // Clamp the scroll offset (authoritative — the input handler can't know
+    // max_scroll without wrapping the text itself).
+    if (session.error_scroll_offset < 0) session.error_scroll_offset = 0;
+    if (session.error_scroll_offset > max_scroll) session.error_scroll_offset = max_scroll;
+    const scroll_offset = session.error_scroll_offset;
+    const scrolls = body_content_height > visible_body_height;
+
+    // Content width = widest visual line, capped to the limit. The Dismiss
+    // button + scrollbar also constrain width so they fit inside the panel.
+    var content_width: i32 = error_dismiss_button_width;
+    if (scrolls) content_width += error_scrollbar_width + error_scrollbar_gap;
+    for (header_lines) |line| {
+        const line_width = @min(font_metrics.measureRowWidth(line, error_header_font_size), content_width_limit);
+        if (line_width > content_width) content_width = line_width;
+    }
+    for (body_lines) |line| {
+        const line_width = @min(font_metrics.measureRowWidth(line, error_body_font_size), content_width_limit);
+        if (line_width > content_width) content_width = line_width;
+    }
+
+    // Content height: header lines + header gap + visible body + button gap + button.
+    const header_height: i32 = @intCast(header_lines.len * @as(usize, @intCast(lineHeight(error_header_font_size))));
+    const content_height = header_height +
+        error_header_gap +
+        visible_body_height +
+        error_button_gap +
+        panel_button_height;
+
+    const panel_width = content_width + 2 * error_popup_padding;
+    const panel_height = content_height + 2 * error_popup_padding;
+
+    // Center on screen, clamped to the reference resolution.
+    const panel_rect = screenRect().placeCenter(panel_width, panel_height);
+    const panel_pos = panel_rect.position();
+
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = tooltip_panel_sprite,
+        .screen_position = panel_pos,
+        .width = panel_width,
+        .height = panel_height,
+        // Modal: halts hit-testing within the panel bounds so clicks on the
+        // popup (not on the button) are swallowed rather than passing through.
+        .blocks_input = true,
+    } });
+
+    const content_x = panel_pos.x + error_popup_padding;
+    var y = panel_pos.y + error_popup_padding;
+
+    // Header lines.
+    for (header_lines) |line| {
+        var x = content_x;
+        for (line) |span| {
+            try elements.append(allocator, .{ .text_label = .{
+                .text = span.text,
+                .screen_position = .{ .x = x, .y = y },
+                .color = span.color,
+                .font_size = error_header_font_size,
+                .bold = true,
+                .blocks_input = false,
+            } });
+            x += font_metrics.measureSpanWidth(span, error_header_font_size);
+        }
+        y += lineHeight(error_header_font_size);
+    }
+    y += error_header_gap;
+
+    // Body: emit only the lines within the scroll window. Lines above
+    // scroll_offset are above the visible region; lines below
+    // (scroll_offset + visible_body_height) are below it. The renderer
+    // would clip them anyway, but skipping them keeps the element list small
+    // and the hit-test set clean.
+    const body_top = y;
+    const first_visible_line: usize = @intCast(@divTrunc(scroll_offset, body_line_height));
+    const visible_line_count: usize = @intCast(@divTrunc(visible_body_height, body_line_height));
+    const last_visible_line = @min(body_lines.len, first_visible_line + visible_line_count);
+    // Skip the height of the lines above the scroll window.
+    y += @intCast(first_visible_line * @as(usize, @intCast(body_line_height)));
+    for (body_lines[first_visible_line..last_visible_line]) |line| {
+        var x = content_x;
+        for (line) |span| {
+            try elements.append(allocator, .{ .text_label = .{
+                .text = span.text,
+                .screen_position = .{ .x = x, .y = y },
+                .color = span.color,
+                .font_size = error_body_font_size,
+                .blocks_input = false,
+            } });
+            x += font_metrics.measureSpanWidth(span, error_body_font_size);
+        }
+        y += body_line_height;
+    }
+
+    // Scrollbar (only when the body overflows). Track + thumb on the right
+    // edge of the body region. The thumb is proportional to the visible /
+    // total ratio and positioned by the scroll offset.
+    if (scrolls) {
+        const scrollbar_x = content_x + content_width - error_scrollbar_width;
+        const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = scrollbar_x, .y = body_top },
+            .width = error_scrollbar_width,
+            .height = visible_body_height,
+            .color = track_color,
+        } });
+        const thumb_height = @max(
+            @as(i32, 40),
+            @divTrunc(visible_body_height * visible_body_height, body_content_height),
+        );
+        const thumb_y = body_top + @divTrunc(scroll_offset * (visible_body_height - thumb_height), max_scroll);
+        const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
+        try elements.append(allocator, .{ .solid_rect = .{
+            .screen_position = .{ .x = scrollbar_x, .y = thumb_y },
+            .width = error_scrollbar_width,
+            .height = thumb_height,
+            .color = thumb_color,
+        } });
+    }
+
+    // Dismiss button, centered horizontally in the panel. Positioned after
+    // the (possibly scrolled) body region — always at the bottom, reachable.
+    y = body_top + visible_body_height + error_button_gap;
+    const button_rect = Rectangle{
+        .x = panel_pos.x + @divTrunc(panel_width - error_dismiss_button_width, 2),
+        .y = y,
+        .width = error_dismiss_button_width,
+        .height = panel_button_height,
+    };
+    try emitPanelButton(
+        elements,
+        allocator,
+        font_metrics,
+        button_rect,
+        "Dismiss",
+        error_dismiss_button_font_size,
+        .dismiss_error,
+        button_color,
+        null,
+    );
+}
+
+/// Top bar: options button flush in the top-left corner, then `ui_gap`,
+/// then the undo button, then the remaining width reserved for the combat
+/// log (not rendered — see TODO → Combat Log). Left-anchored row mirroring
+/// the bottom bar's conventions (`Row`, `ui_gap`, `slot_size`). No
+/// background of its own — purely a layout region, like the bottom bar.
+/// Undo is never disabled: the
+/// only state with nothing to undo is a fresh main menu, where this bar is
+/// not shown; `history.undo` no-ops at the earliest idle point regardless.
+pub fn buildTopBar(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    screen: Rectangle,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const p = active_theme.player_gradient.colors;
+    // Match the bottom-bar skip button: background = gradient[5], icon = gradient[1].
+    const c_btn_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const c_btn_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
+
+    var row = Row.init(screen.position(), top_bar_height, ui_gap);
+
+    // Options button — flush in the top-left corner (no margin). Layered
+    // background + icon, same as the skip button.
+    const options_cell = row.next(slot_size);
+    try emitIconButton(
+        elements,
+        allocator,
+        options_cell,
+        button_background_sprite_id,
+        "ui/icon_options",
+        .toggle_options_menu,
+        .{ .header = try spanRow(allocator, text("Options")) },
+        c_btn_bg,
+        c_btn_icon,
+        false,
+        null,
+    );
+
+    // Undo button — same size, one `ui_gap` to the right of options. Same
+    // layered background + icon treatment as the options button.
+    const undo_cell = row.next(slot_size);
+    try emitIconButton(
+        elements,
+        allocator,
+        undo_cell,
+        button_background_sprite_id,
+        "ui/icon_undo",
+        .undo,
+        .{ .header = try spanRow(allocator, text("Undo")) },
+        c_btn_bg,
+        c_btn_icon,
+        false,
+        null,
+    );
+}
+
+/// Build the mission-complete overlay: a full-screen 9-slice panel with a
+/// "{mission_name} completed" header centered at the top, a centered "New
+/// clone: [icons]" summary line below it, a two-column area (left stats,
+/// right clone-harvest rewards with its own sub-header) extending downward,
+/// and Continue + Replay Mission (+ Overwrite Clone if offered) buttons side
+/// by side at the bottom. Rendered when `GameState.last_completed_mission`
+/// is set (the player completed the last level of a mission; the cascade has
+/// already transitioned to the hub). See DESIGN → Architecture + DESIGN →
+/// Clones (clone system).
+pub fn buildMissionComplete(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    info: types.MissionCompleteInfo,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    // Button panels tint with player gradient index 5 to read as buttons
+    // against the theme-`darkest` background panel.
+    const button_color = active_theme.player_gradient.colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    // Full-screen panel background.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = screen.position(),
+        .width = screen.width,
+        .height = screen.height,
+    } });
+
+    // ── Header: "{name} completed", centered at the top. ──
+    const header_font_size: i32 = 128;
+    const header_text = try std.fmt.allocPrint(allocator, "{s} completed", .{info.name});
+    const header_width = font_metrics.measureSpanWidth(text(header_text), header_font_size);
+    const header_box = screen.placeTopCenter(header_width, header_font_size, ui_gap * 4);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = header_text,
+        .screen_position = header_box.position(),
+        .font_size = header_font_size,
+        .blocks_input = false,
+    } });
+
+    // ── "New clone: [horizontal icons]" — centered below the header. ──
+    // Shows the just-completed run's converted_materials (the clone's
+    // rate numerator). The icon row is horizontal + compact (96px icons)
+    // so the whole line reads as one summary.
+    const new_clone_icon_size: i32 = 96;
+    const new_clone_label_text = "New clone:";
+    const new_clone_label_font_size: i32 = 64;
+    const new_clone_label_width = font_metrics.measureSpanWidth(text(new_clone_label_text), new_clone_label_font_size);
+    const new_clone_icon_row_width = rowWidth(5, new_clone_icon_size, ui_gap);
+    const new_clone_total_width = new_clone_label_width + ui_gap + new_clone_icon_row_width;
+    const new_clone_y = header_box.y + header_font_size + ui_gap * 3;
+    const new_clone_start_x = screen.x + @divTrunc(screen.width - new_clone_total_width, 2);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = new_clone_label_text,
+        .screen_position = .{ .x = new_clone_start_x, .y = new_clone_y + (new_clone_icon_size - new_clone_label_font_size) / 2 },
+        .font_size = new_clone_label_font_size,
+        .blocks_input = false,
+    } });
+    try emitMaterialIcons(
+        elements,
+        allocator,
+        font_metrics,
+        .{ .x = new_clone_start_x + new_clone_label_width + ui_gap, .y = new_clone_y },
+        new_clone_icon_size,
+        .horizontal,
+        info.converted_materials,
+        active_theme,
+    );
+
+    // ── Two columns extending down from below the new-clone line. ──
+    const content_y = new_clone_y + new_clone_icon_size + ui_gap * 4;
+
+    // Left column: stats (flush left, top-aligned at content_y).
+    const stat_font_size: i32 = 64;
+    const stat_line_height: i32 = stat_font_size + ui_gap;
+    const stat_entries = [_]struct { label: []const u8, value: u32 }{
+        .{ .label = "Turns Spent", .value = info.turns_spent },
+        .{ .label = "Tiles Moved", .value = info.tiles_moved },
+        .{ .label = "Skills Used", .value = info.skills_used },
+        .{ .label = "Damage Dealt", .value = info.damage_dealt },
+        .{ .label = "Damage Taken", .value = info.damage_taken },
+    };
+    const stats_left = screen.x + ui_gap * 4;
+    var stat_y = content_y;
+    for (stat_entries) |entry| {
+        const value_text = try std.fmt.allocPrint(allocator, "{d}", .{entry.value});
+        const line_text = try std.fmt.allocPrint(allocator, "{s}: {s}", .{ entry.label, value_text });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = line_text,
+            .screen_position = .{ .x = stats_left, .y = stat_y },
+            .font_size = stat_font_size,
+            .blocks_input = false,
+        } });
+        stat_y += stat_line_height;
+    }
+
+    // Right column: "Clone material harvest" sub-header + vertical material
+    // icon stack (flush right, top-aligned at content_y).
+    const harvest_header_font_size: i32 = 64;
+    const harvest_header_text = "Clone material harvest";
+    const harvest_header_width = font_metrics.measureSpanWidth(text(harvest_header_text), harvest_header_font_size);
+    const material_right = screen.x + screen.width - ui_gap * 4;
+    try elements.append(allocator, .{ .text_label = .{
+        .text = harvest_header_text,
+        .screen_position = .{ .x = material_right - harvest_header_width, .y = content_y },
+        .font_size = harvest_header_font_size,
+        .blocks_input = false,
+    } });
+    const icon_top = content_y + harvest_header_font_size + ui_gap * 2;
+    try emitMaterialIcons(
+        elements,
+        allocator,
+        font_metrics,
+        .{ .x = material_right - inventory_slot_size, .y = icon_top },
+        inventory_slot_size,
+        .vertical,
+        info.harvested_materials,
+        active_theme,
+    );
+
+    // ── Bottom buttons: Replay Mission in the bottom-left corner, Continue
+    //    in the bottom-right corner. Overwrite Clone (when offered) sits
+    //    centered between them. ──
+    const buttons_row = screen.placeBottomCenter(menu_button_width, panel_button_height, ui_gap * 4);
+    const button_y = buttons_row.y;
+    const margin = ui_gap * 4;
+    // Replay Mission — bottom-left.
+    try emitPanelButton(elements, allocator, font_metrics, .{
+        .x = screen.x + margin,
+        .y = button_y,
+        .width = menu_button_width,
+        .height = panel_button_height,
+    }, "Replay Mission", menu_button_font_size, .replay_mission, button_color, null);
+    // Continue — bottom-right.
+    try emitPanelButton(elements, allocator, font_metrics, .{
+        .x = screen.x + screen.width - margin - menu_button_width,
+        .y = button_y,
+        .width = menu_button_width,
+        .height = panel_button_height,
+    }, "Continue", menu_button_font_size, .continue_after_mission, button_color, null);
+    // Overwrite Clone — centered (only when offered).
+    if (info.overwrite_offered) {
+        const centered = screen.placeBottomCenter(menu_button_width, panel_button_height, ui_gap * 4);
+        try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Clone", menu_button_font_size, .overwrite_clone, button_color, null);
+    }
+}
+
+/// Build the mission-fail overlay: a full-screen 9-slice panel with a
+/// large "Defeat" label centered above a two-button stack (Restart
+/// Mission / Exit Mission — named for the editor RUN while one is active:
+/// Restart/Exit Playtest or Validation). Rendered when the player is dead
+/// (derived from `level.entities[0].current_health == 0` in view()). The
+/// buttons reuse the existing `.restart_mission` / `.exit_mission`
+/// actions — same dispatch path as the options menu. See DESIGN →
+/// Architecture.
+pub fn buildMissionFail(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    /// The active editor run, if any (.playtest / .validate) — same role
+    /// as in `buildOptionsMenu`.
+    editor_run: ?types.EditorMode,
+    button_color: Color,
+) !void {
+    // Full-screen panel background.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = screen.position(),
+        .width = screen.width,
+        .height = screen.height,
+    } });
+
+    const defeat_font_size: i32 = 256;
+    const defeat_label_width = font_metrics.measureSpanWidth(text("Defeat"), defeat_font_size);
+    const defeat_label = screen.placeCenter(defeat_label_width, defeat_font_size);
+    // Place the label above the button stack, leaving room for the buttons
+    // and a gap between the label and the stack.
+    const buttons_above: i32 = 2 * panel_button_height + ui_gap;
+    try elements.append(allocator, .{ .text_label = .{
+        .text = "Defeat",
+        .screen_position = .{
+            .x = defeat_label.x,
+            .y = defeat_label.y - buttons_above - ui_gap - defeat_font_size,
+        },
+        .font_size = defeat_font_size,
+        .blocks_input = false,
+    } });
+
+    const MenuButton = struct { label: []const u8, action: Action };
+    const run_noun: []const u8 = if (editor_run) |run_mode| switch (run_mode) {
+        .playtest => "Playtest",
+        .validate => "Validation",
+        .edit => "Mission",
+    } else "Mission";
+    const buttons = [_]MenuButton{
+        .{ .label = try std.fmt.allocPrint(allocator, "Restart {s}", .{run_noun}), .action = .restart_mission },
+        .{ .label = try std.fmt.allocPrint(allocator, "Exit {s}", .{run_noun}), .action = .exit_mission },
+    };
+
+    const total_height = rowWidth(@intCast(buttons.len), panel_button_height, ui_gap);
+    const origin = screen
+        .placeCenter(menu_button_width, total_height)
+        .position();
+
+    for (buttons, 0..) |menu_button, index| {
+        const cell: Rectangle = .{
+            .x = origin.x,
+            .y = origin.y + @as(i32, @intCast(index)) * (panel_button_height + ui_gap),
+            .width = menu_button_width,
+            .height = panel_button_height,
+        };
+        try emitPanelButton(
+            elements,
+            allocator,
+            font_metrics,
+            cell,
+            menu_button.label,
+            menu_button_font_size,
+            menu_button.action,
+            button_color,
+            null,
+        );
+    }
+}
+
+test "buildErrorPopup emits a modal panel, header, body, and a Dismiss button" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var session: state.SessionState = .{};
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    var elements: UiElementList = .empty;
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "failed to parse data/campaigns/act_one.txt: missing Campaign section", .{ .r = 50, .g = 50, .b = 50 });
+
+    // Panel + header label(s) + body label(s) + (panel + button + label) from emitPanelButton.
+    // At minimum: 1 nine_slice (popup) + 1 header text + N body texts + 1 nine_slice (button) + 1 button + 1 label.
+    try std.testing.expect(elements.items.len >= 6);
+
+    // The first element is the popup panel and it is modal (blocks_input).
+    try std.testing.expectEqual(std.meta.activeTag(elements.items[0]), .nine_slice_panel);
+    try std.testing.expect(elements.items[0].nine_slice_panel.blocks_input);
+
+    // The Dismiss button carries Action.dismiss_error.
+    var found_dismiss = false;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .dismiss_error) {
+            found_dismiss = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(found_dismiss);
+}
+
+test "buildErrorPopup: short message — no scrollbar, scroll offset clamped to 0" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var session: state.SessionState = .{};
+    session.error_scroll_offset = 500; // should be clamped to 0 (content fits)
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    var elements: UiElementList = .empty;
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, "short error", .{ .r = 50, .g = 50, .b = 50 });
+
+    // No scrollbar (no solid_rect) since content fits in the visible region.
+    for (elements.items) |element| switch (element) {
+        .solid_rect => @panic("unexpected scrollbar for short message"),
+        else => {},
+    };
+    try std.testing.expectEqual(@as(i32, 0), session.error_scroll_offset);
+}
+
+test "buildErrorPopup: long message — scrollbar present, only visible lines emitted" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var session: state.SessionState = .{};
+
+    // Build a message long enough to overflow error_popup_max_body_height.
+    // Each line is ~56px; 1600px / 56 ≈ 28 lines fit. Generate 60 lines.
+    var msg: std.ArrayList(u8) = .empty;
+    defer msg.deinit(std.testing.allocator);
+    for (0..60) |i| {
+        if (i > 0) msg.appendSlice(std.testing.allocator, "\n") catch @panic("msg");
+        msg.appendSlice(std.testing.allocator, "This is warning line number X with some text.") catch @panic("msg");
+    }
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    var elements: UiElementList = .empty;
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items, .{ .r = 50, .g = 50, .b = 50 });
+
+    // Scrollbar present (at least 2 solid_rects: track + thumb).
+    var solid_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .solid_rect => solid_count += 1,
+        else => {},
+    };
+    try std.testing.expect(solid_count >= 2);
+
+    // Scroll offset is 0 (top of content) since we didn't scroll.
+    try std.testing.expectEqual(@as(i32, 0), session.error_scroll_offset);
+}
+
+test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var session: state.SessionState = .{};
+    session.error_scroll_offset = 100_000; // way past max_scroll
+
+    var msg: std.ArrayList(u8) = .empty;
+    defer msg.deinit(std.testing.allocator);
+    for (0..60) |i| {
+        if (i > 0) msg.appendSlice(std.testing.allocator, "\n") catch @panic("msg");
+        msg.appendSlice(std.testing.allocator, "This is warning line number X with some text.") catch @panic("msg");
+    }
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    var elements: UiElementList = .empty;
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items, .{ .r = 50, .g = 50, .b = 50 });
+
+    // Clamped to max_scroll (which is body_content_height - visible_body_height,
+    // both positive since content overflows). Exact value depends on wrapping,
+    // but it must be > 0 and < the original 100_000.
+    try std.testing.expect(session.error_scroll_offset > 0);
+    try std.testing.expect(session.error_scroll_offset < 100_000);
+}
