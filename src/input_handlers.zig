@@ -3172,6 +3172,13 @@ pub fn handleAnytimeInput(
                 if (current.editor == null) return;
                 pushPlayerActionAndDrain(history, .player_import_editor_player);
             },
+            // Player inspector Max player Import button: the shipped
+            // data/max_player.txt loadout (the author-times tool for
+            // official missions).
+            .import_editor_max_player => {
+                if (current.editor == null) return;
+                pushPlayerActionAndDrain(history, .player_import_editor_max_player);
+            },
             // Inspector color swatch: set the edited type's color_index. The
             // gradient index rode in `anytime.clicked_editor_color`; the
             // target is the inspector's resolved target (the swatches only

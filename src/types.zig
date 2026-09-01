@@ -245,6 +245,10 @@ pub const Action = enum {
     // data (or, with none, the new-game default save) into the editor
     // player loadout. No payload — the handler reads live state.
     import_editor_player,
+    // The player inspector's Max player Import button: load the shipped
+    // data/max_player.txt into the editor player loadout (the author-times
+    // tool for official missions). No payload.
+    import_editor_max_player,
     // An inspector color swatch was clicked (set the edited entity type's
     // color_index — the gradient index into the enemy gradient). The index
     // rides in `AnytimeInput.clicked_editor_color`. Routed through

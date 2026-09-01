@@ -1428,8 +1428,9 @@ pub const GameStateHistory = struct {
                     }
                 },
                 // Structural legality: same shape as the inspector toggle —
-                // the live path is the player inspector's Import button.
-                .player_import_editor_player => {
+                // the live path is the player inspector's Import buttons
+                // (the session data + the max-player loadout).
+                .player_import_editor_player, .player_import_editor_max_player => {
                     if (self.current_state.screen != .editor) {
                         @panic("replay validation: player_import_editor_player outside editor screen");
                     }

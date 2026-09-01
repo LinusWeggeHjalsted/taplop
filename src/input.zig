@@ -537,6 +537,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_decoration_sprite => player_input.anytime.options_action = action,
         .select_editor_sprite_tab => player_input.anytime.options_action = action,
         .import_editor_player => player_input.anytime.options_action = action,
+        .import_editor_max_player => player_input.anytime.options_action = action,
         .select_editor_entity_color => player_input.anytime.options_action = action,
         .select_editor_decoration_color => player_input.anytime.options_action = action,
         .open_editor_entity_layer_picker => player_input.anytime.options_action = action,

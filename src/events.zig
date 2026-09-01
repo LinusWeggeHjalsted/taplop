@@ -189,10 +189,13 @@ pub const EditorEvent = union(enum) {
     // Editor, the toggle rides the undo timeline).
     editor_toggle_metadata_sidebar: void,
     // Import a loadout into the editor player (the player inspector's
-    // Import button): the session's player data, or the new-game default
+    // Import buttons): the session's player data, or the new-game default
     // save when the session has none. Handled INLINE in processEvent —
     // the default-save read needs the reconstruction cache.
     editor_import_player: void,
+    // The Max player import (data/max_player.txt — the author-times tool
+    // for official missions): same inline handling + same reason.
+    editor_import_max_player: void,
 
     // ── Selection (the select tool) ──
     // Granular by design: a click toggles a GROUP (up to tile + entity +
@@ -714,6 +717,9 @@ pub const PlayerInputEvent = union(enum) {
     // loadout. The handler pushes `editor_import_player` — the loadout
     // fields ride GameState, so the import is on the undo timeline.
     player_import_editor_player: void,
+    // Player inspector Max-player Import-button click (the shipped
+    // data/max_player.txt loadout): pushes `editor_import_max_player`.
+    player_import_editor_max_player: void,
     // Palette group "+" click: append a new type to that group's palette
     // (Enemies / Decorations / Items). Thin orchestrator — the handler for
     // the `editor_add_*_type` event builds the type from the shipped

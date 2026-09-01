@@ -256,39 +256,57 @@ fn failReconstructionRead(history: *GameStateHistory, message: []const u8) void 
 /// copy is a DEEP one: the source's name slices stay owned by their own
 /// graph. The default-save read goes through the reconstruction cache —
 /// the import event is recorded, so replay re-reads the same bytes.
+/// Which loadout source an import pulls from: the session's player data
+/// (falling back to data/new_player.txt with none — the Player data
+/// button) or the shipped max loadout (data/max_player.txt — the Max
+/// player button, the author-times tool for official missions).
+const EditorPlayerImportSource = enum { session, max_player };
+
 fn importEditorPlayer(
     history: *GameStateHistory,
     current: *GameState,
     allocator: std.mem.Allocator,
+    source: EditorPlayerImportSource,
 ) void {
-    var source: types.PlayerData = current.player_data;
-    if (source.player_name.len == 0) {
-        const bytes = history.readReconstructionFile("data/new_player.txt") catch {
-            failReconstructionRead(history, "failed to read new_player.txt");
-            return;
-        };
-        const sections = parser.parseConfigFile(bytes, allocator) catch {
-            failReconstructionRead(history, "failed to parse new_player.txt");
-            return;
-        };
-        validateConfigKeys(history, sections, parser.player_save_key_map, "data/new_player.txt", allocator);
-        source = loaders.loadPlayerSave(sections, allocator, "data/new_player.txt", null) catch {
-            failReconstructionRead(history, "failed to parse new_player.txt");
-            return;
-        };
-    }
+    const loadout: types.Entity = switch (source) {
+        .session => blk: {
+            var source_data: types.PlayerData = current.player_data;
+            if (source_data.player_name.len == 0) {
+                const bytes = history.readReconstructionFile("data/new_player.txt") catch {
+                    failReconstructionRead(history, "failed to read new_player.txt");
+                    return;
+                };
+                const sections = parser.parseConfigFile(bytes, allocator) catch {
+                    failReconstructionRead(history, "failed to parse new_player.txt");
+                    return;
+                };
+                validateConfigKeys(history, sections, parser.player_save_key_map, "data/new_player.txt", allocator);
+                source_data = loaders.loadPlayerSave(sections, allocator, "data/new_player.txt", null) catch {
+                    failReconstructionRead(history, "failed to parse new_player.txt");
+                    return;
+                };
+            }
+            break :blk loaders.playerLoadoutEntity(source_data);
+        },
+        .max_player => blk: {
+            var warnings: std.ArrayList([]const u8) = .empty;
+            const max_loadout = loadMaxPlayerLoadout(history, allocator, &warnings) orelse return;
+            surfaceWarnings(history, &warnings, allocator);
+            break :blk max_loadout;
+        },
+    };
     const editor = &(current.editor orelse @panic("editor event with no editor"));
     const template = &editor.player_def.template;
-    template.name = deepCopy([]const u8, source.player_name, allocator);
-    template.main_hand_weapon = deepCopy(?types.Weapon, source.main_hand_weapon, allocator);
-    template.off_hand_weapon = deepCopy(?types.Weapon, source.off_hand_weapon, allocator);
-    template.amulet = deepCopy(?types.Amulet, source.amulet, allocator);
-    template.coat = deepCopy(?types.Coat, source.coat, allocator);
-    template.gloves = deepCopy(?types.Gloves, source.gloves, allocator);
-    template.pants = deepCopy(?types.Pants, source.pants, allocator);
-    template.boots = deepCopy(?types.Boots, source.boots, allocator);
-    template.equipped_utility_skills = source.equipped_utility_skills;
-    template.inventory = deepCopy(types.Inventory, source.inventory, allocator);
+    template.name = deepCopy([]const u8, loadout.name, allocator);
+    template.main_hand_weapon = deepCopy(?types.Weapon, loadout.main_hand_weapon, allocator);
+    template.off_hand_weapon = deepCopy(?types.Weapon, loadout.off_hand_weapon, allocator);
+    template.amulet = deepCopy(?types.Amulet, loadout.amulet, allocator);
+    template.coat = deepCopy(?types.Coat, loadout.coat, allocator);
+    template.gloves = deepCopy(?types.Gloves, loadout.gloves, allocator);
+    template.pants = deepCopy(?types.Pants, loadout.pants, allocator);
+    template.boots = deepCopy(?types.Boots, loadout.boots, allocator);
+    template.equipped_utility_skills = loadout.equipped_utility_skills;
+    template.inventory = deepCopy(types.Inventory, loadout.inventory, allocator);
 }
 
 /// Append a new palette type built from the shipped defaults
@@ -2351,6 +2369,12 @@ fn handlePlayerInputEvent(
         // (the loadout fields ride GameState — the import is undoable).
         .player_import_editor_player => {
             pushEvents(current, &.{.{ .editor_event = .editor_import_player }}, allocator);
+        },
+        // The Max player Import (the shipped data/max_player.txt loadout —
+        // the author-times tool for official missions): thin forward, the
+        // EditorEvent owns the mutation.
+        .player_import_editor_max_player => {
+            pushEvents(current, &.{.{ .editor_event = .editor_import_max_player }}, allocator);
         },
         // Palette group "+" clicks: push the machinery event (the handler
         // builds the type from the shipped defaults, makes it the active
@@ -5107,11 +5131,14 @@ pub fn processEvent(
                         }
                     }
                 },
-                // The import needs the reconstruction cache (the
-                // default-save read) — handled inline here, not in
-                // handleEditorEvent.
+                // The imports need the reconstruction cache (the
+                // default-save / max-loadout reads) — handled inline here,
+                // not in handleEditorEvent.
                 .editor_import_player => {
-                    if (current.editor != null) importEditorPlayer(history, current, allocator);
+                    if (current.editor != null) importEditorPlayer(history, current, allocator, .session);
+                },
+                .editor_import_max_player => {
+                    if (current.editor != null) importEditorPlayer(history, current, allocator, .max_player);
                 },
                 // The palette add-type events need the reconstruction cache
                 // too (the defaults read) — same inline-handling reason as

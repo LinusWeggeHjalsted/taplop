@@ -9140,3 +9140,38 @@ leading-zero/wrong-stat/stale-index/empty-slot no-ops). Two pre-existing
 ui tests updated for the taller player content (the summary's 2 units
 became 16+ units — the scroll clamps moved; the player-fallback window
 now lands on slot rows).
+
+## Max player import (the player inspector's second Import button)
+
+The player content's Import row grew a second button: **Player data**
+(the session's data, or `data/new_player.txt` with none — unchanged) and
+**Max player** (the shipped `data/max_player.txt` — the author's tool for
+setting author times on official missions). Both are half-width buttons
+on the same control line.
+
+- `importEditorPlayer` was refactored to an `EditorPlayerImportSource`
+  (`session` / `max_player`): both sources now map onto a loadout Entity
+  (`loaders.playerLoadoutEntity` for the session data — replacing the
+  hand-copied PlayerData field list — and the existing
+  `loadMaxPlayerLoadout` helper for the file, which the open_editor
+  fallback already used) and share one deepCopy-apply into the template.
+  The max path surfaces balance warnings via the shared `surfaceWarnings`
+  (the open_editor posture) and ignores the session's data entirely — the
+  file is the source.
+- Event routing: new `editor_import_max_player` / 
+  `player_import_editor_max_player` (a separate event pair, not a payload
+  on the existing one — zero churn on the recorded-event shape) + the
+  `.import_editor_max_player` action, all with the same replay-validation
+  structural legality (one multi-case arm).
+- The open_editor default (mission-player.txt → max_player.txt fallback)
+  is untouched — the fresh-mission editor still SEEDS from the max
+  loadout; the button is the explicit re-import after edits.
+- Side effect of the new event fields: the session-log comtime parser
+  (`parseEvent`'s inline category/variant/payload-field walks) outgrew
+  Zig's default 1000-branch eval budget — `@setEvalBranchQuota(10000)`
+  at the fn head.
+
+Tests: the max import end-to-end via the input arm (equipped gear with
+authored stats, empty weapon slots + utility bar per the file, inventory
+slots 0 + 11, session data untouched, undo reverts) + a ui assertion that
+both buttons render.

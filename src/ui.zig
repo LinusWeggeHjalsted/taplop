@@ -6480,40 +6480,42 @@ fn buildEditorInspectorContent(
             },
             // The Import button: copy the session's player data (or the
             // new-game default, with none) into the loadout.
+            // The Import row: TWO half-width buttons — Player data (the
+            // session's data, or the new-game default with none) and Max
+            // player (the shipped data/max_player.txt loadout — the
+            // author-times tool for official missions).
             .import_player => {
                 try emitInspectorSlotLabel(elements, allocator, cell, "Import", active_theme);
                 const control_rect = inspectorControlRect(cell);
-                const rect: Rectangle = .{
-                    .x = control_rect.x,
-                    .y = control_rect.y,
-                    .width = @divFloor(control_rect.width, 2),
-                    .height = control_rect.height,
-                };
-                const import_button_color = entity_context.?.gradient_colors[@min(@as(u32, 5), types.gradient_color_count - 1)];
-                try elements.append(allocator, .{ .nine_slice_panel = .{
-                    .sprite_id = "ui/panel",
-                    .screen_position = rect.position(),
-                    .width = rect.width,
-                    .height = rect.height,
-                    .color = import_button_color,
-                } });
-                try elements.append(allocator, .{ .button = .{
-                    .screen_position = rect.position(),
-                    .width = rect.width,
-                    .height = rect.height,
-                    .action = .import_editor_player,
-                } });
-                const label = "Player data";
-                const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
-                try elements.append(allocator, .{ .text_label = .{
-                    .text = label,
-                    .screen_position = rect
-                        .placeCenter(label_width, editor_group_header_font_size)
-                        .position(),
-                    .font_size = editor_group_header_font_size,
-                    .color = active_theme.lightest,
-                    .blocks_input = false,
-                } });
+                const import_button_color = entity_context.?.gradient_colors[
+                    @min(@as(u32, 5), types.gradient_color_count - 1)
+                ];
+                const button_width = @divFloor(control_rect.width - ui_gap, 2);
+                try emitInspectorImportButton(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    .{ .x = control_rect.x, .y = control_rect.y, .width = button_width, .height = control_rect.height },
+                    "Player data",
+                    .import_editor_player,
+                    import_button_color,
+                    active_theme.lightest,
+                );
+                try emitInspectorImportButton(
+                    elements,
+                    allocator,
+                    font_metrics,
+                    .{
+                        .x = control_rect.x + button_width + ui_gap,
+                        .y = control_rect.y,
+                        .width = button_width,
+                        .height = control_rect.height,
+                    },
+                    "Max player",
+                    .import_editor_max_player,
+                    import_button_color,
+                    active_theme.lightest,
+                );
             },
             // One row of the inventory slot grid: six square cells
             // (occupied = item icon overlay, the type-cell visual class;
@@ -6936,6 +6938,44 @@ fn emitInspectorInventorySlotRow(
             } });
         }
     }
+}
+
+/// One of the player content's Import buttons (Player data / Max
+/// player): panel-backed spriteless button + centered label — the
+/// slot-button visual class.
+fn emitInspectorImportButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    rect: Rectangle,
+    label: []const u8,
+    action: types.Action,
+    button_color: Color,
+    label_color: Color,
+) !void {
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = rect.position(),
+        .width = rect.width,
+        .height = rect.height,
+        .action = action,
+    } });
+    const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = rect
+            .placeCenter(label_width, editor_group_header_font_size)
+            .position(),
+        .font_size = editor_group_header_font_size,
+        .color = label_color,
+        .blocks_input = false,
+    } });
 }
 
 /// The selected inventory slot's Add/Delete button: the
@@ -10589,6 +10629,25 @@ test "inspector player content: gear + skills + inventory over player_def, commi
             else => {},
         };
         try std.testing.expect(main_hand_delete);
+    }
+
+    // The Import row: BOTH buttons render — Player data (the session
+    // import) and Max player (the shipped max loadout).
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_inspector_scroll = 3, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        var player_data_button = false;
+        var max_player_button = false;
+        for (elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.action == .import_editor_player) player_data_button = true;
+                if (button.action == .import_editor_max_player) max_player_button = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(player_data_button);
+        try std.testing.expect(max_player_button);
     }
 
     // Bottom window (scroll 29: Boots → the skill row → the Inventory

@@ -6551,3 +6551,54 @@ test "inventory item text fields: name + stat commits end-to-end, no-op gates, b
         try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     }
 }
+
+test "player_import_editor_max_player: loads the shipped max loadout, undo reverts, session data untouched" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+
+    // The session's data is POPULATED — the max import ignores it (unlike
+    // the Player data import, the source is the file, not the session).
+    var player_data: types.PlayerData = .{ .player_name = "Tester" };
+    player_data.main_hand_weapon = .{
+        .name = "Test Sword",
+        .weapon_type = .sword,
+        .weapon_damage = 5,
+    };
+    history.current_state.player_data = player_data;
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .import_editor_max_player,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+
+    {
+        const template = history.current_state.editor.?.player_def.template;
+        try testing.expectEqualStrings("New Player", template.name);
+        // The maxed gear set: every piece equipped, the authored stats.
+        try testing.expectEqualStrings("Max Amulet", template.amulet.?.name);
+        try testing.expectEqual(@as(u32, 10), template.amulet.?.spell_damage);
+        try testing.expectEqualStrings("Max Boots", template.boots.?.name);
+        try testing.expectEqual(@as(u32, 2), template.boots.?.speed_bonus);
+        // Weapons + utility bar empty by design (data/max_player.txt).
+        try testing.expect(template.main_hand_weapon == null);
+        try testing.expect(template.equipped_utility_skills[0] == null);
+        // The maxed inventory: slot 0's Max Sword, slot 11's Spare Max Staff.
+        try testing.expectEqualStrings(
+            "Max Sword",
+            template.inventory.slots[0].?.weapon.name,
+        );
+        try testing.expectEqual(types.WeaponType.staff, template.inventory.slots[11].?.weapon.weapon_type);
+        // The session's data is untouched — the file is a READ source.
+        try testing.expectEqualStrings("Test Sword", history.current_state.player_data.main_hand_weapon.?.name);
+    }
+
+    // The import rides the undo timeline — undo restores the default
+    // (empty) loadout.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.editor.?.player_def.template.amulet == null);
+}

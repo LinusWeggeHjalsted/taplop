@@ -370,6 +370,10 @@ fn parseEvent(
     pairs: []const KeyValuePair,
     allocator: std.mem.Allocator,
 ) SessionLogError!Event {
+    // The event unions have outgrown the default 1000-branch comptime
+    // budget — the inline category/variant/payload-field walks evaluate
+    // per Payload type.
+    @setEvalBranchQuota(10000);
     const discriminator = findValue(pairs, "event") orelse return error.MalformedSessionLog;
     var tokens = std.mem.tokenizeScalar(u8, discriminator, ' ');
     const category = tokens.next() orelse return error.MalformedSessionLog;
