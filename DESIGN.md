@@ -1980,12 +1980,16 @@ fresh — the run's teardown happens INLINE (restore the real player data +
 so an `end_playtest` + queued re-entry pair can't ride the stack) followed
 by a fresh `start_playtest` on the same level, which takes the normal
 enter-from-edit path (backup + rebuild from `player_def`); any other exit
-(natural completion or an exit continuation) pushes `end_playtest`. In
+(natural completion or Exit Playtest/Validation) pushes `end_playtest`. In
 `.validate`: restart does the same inline teardown + a fresh
-`start_validation` from level 1; an exit continuation ABORTS the run
-(`end_validation{success=false}` — the future validation-replay flow only
-cares about successful runs); the default continuation pushes the next
-`start_playtest` or `end_validation{success=true}`. `build_data_from_player`
+`start_validation` from level 1; an Exit Mission continuation ABORTS the
+run (`end_validation{success=false}` — the future validation-replay flow
+only cares about successful runs); the default continuation pushes the
+next `start_playtest` or `end_validation{success=true}`. In BOTH modes an
+Exit-to-Main-Menu continuation tears down inline (same transitionScreen
+constraint — and the restore must precede `close_editor`, whose scope swap
+discards the Editor carrying the backup) and chains `close_editor`: the
+button means the MAIN MENU, not the editor. `build_data_from_player`
 is skipped in editor mode (playtest/validate are discard-semantics — the
 player's real PlayerData is unchanged). `end_mission` also guards: if an
 editor is active, suppress the `start_hub` continuation (defensive —
@@ -1999,7 +2003,9 @@ the mission, and the campaign Export Save button is HIDDEN in the options
 menu — the run's `player_data` is temporary (rebuilt from the editor
 loadout, discarded on exit), so an export mid-run would write throwaway
 data as a campaign save. `save_game` is button-only, so hiding the button
-removes the path entirely.
+removes the path entirely. The menu's Exit to Main Menu button keeps its
+label during a run and is truthful: it ends the run + closes the editor
+(see the exit guard above).
 
 **Replay & the reconstruction cache.** `open_editor` (the path-open
 branch) reads mission.txt +

@@ -5242,6 +5242,50 @@ test "a validation restart continuation re-runs the whole mission from level 1" 
     );
 }
 
+test "exit to main menu during an editor run ends the run and closes the editor" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    const enter_run = [_]events.Event{
+        .{ .player_input_event = .player_start_playtest },
+        .{ .player_input_event = .player_start_validation },
+    };
+    for (enter_run) |start| {
+        var history = harness.newHistory(editorStateWith(.{
+            .levels = &levels,
+            .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+        }));
+        runToIdle(&history);
+        history.current_state.player_data = .{ .player_name = "Campaign Player" };
+
+        event_handlers.pushEvents(
+            &history.current_state,
+            &.{start},
+            history.current_arena.allocator(),
+        );
+        runToIdle(&history);
+        try testing.expect(history.current_state.screen == .level);
+
+        // Mid-run mutation, then the options menu's Exit to Main Menu:
+        // the run ends (data restored) AND the editor session is gone —
+        // the button means the main menu, not the editor.
+        history.current_state.player_data.player_name = "Mutated In Run";
+        event_handlers.pushEvents(
+            &history.current_state,
+            &.{.{ .meta_event = .{ .end_level = .{ .continuation = .exit_to_menu } } }},
+            history.current_arena.allocator(),
+        );
+        runToIdle(&history);
+        try testing.expect(history.current_state.screen == .main_menu);
+        try testing.expect(history.current_state.editor == null);
+        try testing.expect(history.current_state.level == null);
+        try testing.expect(history.current_state.mission == null);
+        try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+    }
+}
+
 test "open_editor: a mission without player.txt falls back to the maxed default loadout" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

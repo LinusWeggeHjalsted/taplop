@@ -455,7 +455,8 @@ paragraph). Remaining work:
   transitionScreen clears the stack; any exit continuation drops back to
   the editor with `end_validation{success=false}` on validate) + the
   run-context UI (options menu + mission-fail overlay label their
-  restart/exit buttons for the run; campaign Export Save hidden mid-run)
+  restart/exit buttons for the run; campaign Export Save hidden mid-run;
+  Exit to Main Menu ends the run + closes the editor)
   + the tab-row scroll window against the new corner bound. History in
   DONE.md; design in DESIGN → Level Editor → Editor UI layout (primary
   actions + tabs) + the exit guard + run-context UI.

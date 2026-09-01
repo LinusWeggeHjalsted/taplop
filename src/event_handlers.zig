@@ -4705,9 +4705,14 @@ pub fn processEvent(
                                 // the queued re-entry. The pushed
                                 // start_playtest then takes the fresh-entry
                                 // path (backup + rebuild from player_def).
-                                // Any OTHER exit — natural level completion
-                                // or an exit continuation — drops back to the
-                                // editor (the run is bracketed).
+                                // Exit-to-menu also tears down inline (the
+                                // backup lives ON the Editor, which
+                                // close_editor's scope swap discards) and
+                                // chains close_editor — the button means the
+                                // MAIN MENU, not the editor. Any OTHER exit —
+                                // natural level completion or Exit Mission —
+                                // drops back to the editor (the run is
+                                // bracketed).
                                 if (end.continuation == .restart_mission) {
                                     current.editor.?.mode = .edit; // the capture is by value — mutate through the optional
                                     restorePrePlaytestPlayerData(current);
@@ -4715,6 +4720,10 @@ pub fn processEvent(
                                     pushEvents(current, &.{.{ .meta_event = .{ .start_playtest = .{
                                         .level_index = restart_level_index,
                                     } } }}, allocator);
+                                } else if (end.continuation == .exit_to_menu) {
+                                    current.editor.?.mode = .edit; // the capture is by value — mutate through the optional
+                                    restorePrePlaytestPlayerData(current);
+                                    pushEvents(current, &.{.{ .meta_event = .close_editor }}, allocator);
                                 } else {
                                     pushEvents(current, &.{.{ .meta_event = .end_playtest }}, allocator);
                                 }
@@ -4725,14 +4734,20 @@ pub fn processEvent(
                                 // playtest restart (end_validation's
                                 // transitionScreen would clear the queued
                                 // re-entry), then a fresh start_validation.
-                                // An EXIT continuation (options menu,
-                                // mission-fail overlay) aborts the run:
-                                // success=false, back to the editor. Only the
-                                // natural level completion advances the run.
+                                // Exit-to-menu tears down inline + closes the
+                                // editor (same as the playtest arm). Any OTHER
+                                // exit continuation (Exit Mission) aborts the
+                                // run: success=false, back to the editor.
+                                // Only the natural level completion advances
+                                // the run.
                                 if (end.continuation == .restart_mission) {
                                     current.editor.?.mode = .edit; // the capture is by value — mutate through the optional
                                     restorePrePlaytestPlayerData(current);
                                     pushEvents(current, &.{.{ .meta_event = .start_validation }}, allocator);
+                                } else if (end.continuation == .exit_to_menu) {
+                                    current.editor.?.mode = .edit; // the capture is by value — mutate through the optional
+                                    restorePrePlaytestPlayerData(current);
+                                    pushEvents(current, &.{.{ .meta_event = .close_editor }}, allocator);
                                 } else if (end.continuation != .default) {
                                     pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{
                                         .success = false,

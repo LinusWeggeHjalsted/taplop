@@ -9270,3 +9270,25 @@ Open (surfaced, not changed): the options menu's "Exit to Main Menu"
 during a run lands in the EDITOR, not the main menu (the guard swallows
 the continuation) — decide whether to hide it during runs or make it
 chain `end_playtest` + `close_editor`.
+
+## Editor runs: Exit to Main Menu goes to the main menu
+
+Resolves the open question from the run-context UI session: during a
+playtest/validate, the options menu's "Exit to Main Menu" landed in the
+EDITOR (the `end_level` guard swallowed the continuation like every other
+exit) — a lying button.
+
+Now an `.exit_to_menu` continuation during a run tears the run down INLINE
+(restore the real player data + `mode = .edit` — the same
+transitionScreen-clears-the-stack constraint as the restart paths, and the
+restore must precede `close_editor`, whose scope swap discards the Editor
+that carries the backup) and chains a single `close_editor` event: main
+menu, editor session gone, campaign player data intact. No
+`end_playtest`/`end_validation` event fires on this path — the teardown
+work is inline in the guard (deterministic, replayed identically), and
+`close_editor`'s transition replaces the run-end transition. Normal
+(non-editor) gameplay's exit-to-menu path is untouched (the guard only
+runs when an editor is active).
+
+Tests: both run modes (playtest + validate) exit to `.main_menu` with the
+editor/level/mission cleared and the campaign player data restored.
