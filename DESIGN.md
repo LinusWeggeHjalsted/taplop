@@ -2037,9 +2037,11 @@ layout + a left inspector + a right metadata sidebar:
   for the width (LANDED): the row is bounded on the right by the
   primary-actions block; overflowing tabs show through a scroll window —
   one wheel notch over the tab strip = one tab (`UiState.editor_level_tab_scroll`,
-  the palette window model; the builder clamps both bounds authoritatively
-  and scrolls the minimum distance to keep the ACTIVE tab on-screen, so
-  the add-level flow's switch-to-new-tab always lands visible). Each tab
+  the palette window model; the builder clamps the upper bound authoritatively)
+  and, when the ACTIVE TAB CHANGES, scrolls the minimum distance to bring it
+  on-screen (the add-level flow's switch-to-new-tab lands visible) — a
+  change-less frame never touches the offset, or the follow would fight
+  every manual scroll. Each tab
   carries a close button (×) — the shared
   `ui/close_button` class, flush in the tab's top-right corner — that
   deletes the level (`player_delete_editor_level` → `editor_delete_level`:

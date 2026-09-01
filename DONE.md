@@ -9292,3 +9292,26 @@ runs when an editor is active).
 
 Tests: both run modes (playtest + validate) exit to `.main_menu` with the
 editor/level/mission cleared and the campaign player data restored.
+
+## Bug fix: the level-tab scroll window fought manual scrolling
+
+The tab scroll window (from the Test/Validate session) was broken in
+play: scrolling "didn't work" and the reachable band depended on the
+active tab's position. Root cause: the ACTIVE-TAB FOLLOW ran on every
+build. `view()` rebuilds the tab row each frame, and the follow
+unconditionally pulled the window back until the active tab was visible —
+so with the active tab at index 0 any scroll snapped back to 0, with it
+at the end the window was pinned to the last-tab band, and mid-row you
+could only scroll within the band that kept the active tab in view.
+
+The follow's only job was the add-level flow ("land on the newly created
+last tab"). Fix: it now fires exactly once per CHANGE of the active tab,
+tracked via `UiState.editor_level_tab_last_active` (default -1). A tab
+click, add-level switch, delete-level shift, or undo across a tab switch
+triggers it; frames where the active index didn't change leave the offset
+alone, so manual scrolling sticks anywhere in the clamp range. (Side
+effect, a good one: undoing a tab switch scrolls the window back to the
+tab you land on.)
+
+Test: a manual scroll away from the active tab now persists (the
+regression case), plus the existing clamp/pin/follow cases.

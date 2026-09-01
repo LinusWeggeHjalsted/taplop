@@ -235,10 +235,19 @@ pub const UiState = struct {
     /// The level-tab row's scroll window offset (the editor top bar): the
     /// index of the first visible tab. One wheel notch over the tab strip
     /// = one tab (the routing in input_handlers); `buildEditorLevelTabs`
-    /// clamps both bounds in place (authoritative — it knows the tab
-    /// widths) and scrolls the minimum distance to keep the ACTIVE tab
-    /// on-screen. Off the undo timeline like the other scrolls.
+    /// clamps the upper bound in place (authoritative — it knows the tab
+    /// widths) and scrolls the minimum distance to bring the ACTIVE tab
+    /// on-screen when (and only when) the active tab CHANGES (the
+    /// `editor_level_tab_last_active` memo below) — a change-less frame
+    /// never touches the offset, or it would fight every manual scroll.
+    /// Off the undo timeline like the other scrolls.
     editor_level_tab_scroll: i32 = 0,
+    /// The level index `buildEditorLevelTabs` last followed. The follow
+    /// fires only on a CHANGE of the active tab (add-level's switch to the
+    /// new tab, a delete shifting the active index, a tab click far from
+    /// the window) — running it every frame would snap the window back to
+    /// the active tab and make manual scrolling impossible.
+    editor_level_tab_last_active: i32 = -1,
 
     /// The editor's centered picker, if open — which field is being
     /// picked (first consumer: the utility-skill picker; the sprite picker
@@ -4874,12 +4883,16 @@ pub fn buildEditorLevelTabs(
         scroll_offset.* = @min(@max(scroll_offset.*, 0), @as(i32, @intCast(max_offset)));
     }
 
-    // Active-tab follow: the add-level flow switches to the newly created
-    // LAST tab ("the author lands on the thing they just created"), which
-    // a scrolled window would hide. Scroll the minimum distance that
-    // brings the active tab into the window — never past the clamp above.
-    {
-        const active = @min(editor.active_level_index, editor.levels.len - 1);
+    // Active-tab follow — ONLY on a change of the active tab (tracked via
+    // `editor_level_tab_last_active`): the add-level flow switches to the
+    // newly created LAST tab ("the author lands on the thing they just
+    // created"), which a scrolled window would hide. Firing on every
+    // frame would snap the window back to the active tab and make manual
+    // scrolling impossible, so the follow scrolls the minimum distance
+    // that brings the active tab into the window exactly once per change
+    // — never past the clamp above.
+    const active = @min(editor.active_level_index, editor.levels.len - 1);
+    if (ui_state.editor_level_tab_last_active != @as(i32, @intCast(active))) {
         const first: usize = @intCast(scroll_offset.*);
         if (active < first) {
             scroll_offset.* = @intCast(active);
@@ -4905,6 +4918,7 @@ pub fn buildEditorLevelTabs(
                 scroll_offset.* = @intCast(back);
             }
         }
+        ui_state.editor_level_tab_last_active = @intCast(active);
     }
 
     // Emit the visible window: fully-fitting tabs only (the palette
@@ -10644,6 +10658,22 @@ test "buildEditorLevelTabs: overflow clamps the window, pins the +, follows the 
         try buildEditorLevelTabs(&elements, arena.allocator(), metrics, early_active, theme, &ui_state);
         try std.testing.expectEqual(@as(i32, 2), ui_state.editor_level_tab_scroll);
         try std.testing.expectEqualStrings(names[2], elements.items[2].text_label.text);
+    }
+    {
+        // A MANUAL scroll away from the active tab STICKS: the follow fires
+        // only on a CHANGE of the active tab (the regression — running it
+        // every frame snapped the window back and made scrolling
+        // impossible, with the reachable band depending on the active
+        // tab's position).
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{
+            .editor_level_tab_scroll = 5,
+            .editor_level_tab_last_active = 0, // unchanged since the last build
+        };
+        const active_zero: types.Editor = .{ .levels = &levels, .active_level_index = 0 };
+        try buildEditorLevelTabs(&elements, arena.allocator(), metrics, active_zero, theme, &ui_state);
+        try std.testing.expectEqual(@as(i32, 5), ui_state.editor_level_tab_scroll);
+        try std.testing.expectEqualStrings(names[5], elements.items[2].text_label.text);
     }
 }
 
