@@ -30,6 +30,9 @@ const pushEvents = event_push.pushEvents;
 const getLevelEntity = shared.getLevelEntity;
 const refreshMoveHighlights = shared.refreshMoveHighlights;
 
+// Real-time pause inserted between enemy turn actions (before moving, before
+// each skill) so enemy turns don't resolve instantly. Not skippable — see the
+// wait handling in update() (main.zig).
 const turn_flow_wait_milliseconds: u32 = 500;
 
 /// Sign of an i32: -1, 0, or 1. Used to normalize a position delta into a

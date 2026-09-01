@@ -301,10 +301,17 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   `main.run`/`main.frame`.
 - `src/test_harness.zig` — reusable harness for `processEvent` handler tests
   (`Harness.init` + `newHistory` + `runToIdle`); test build only.
-- `src/event_handlers.zig` — `processEvent` (the one-event dispatch + all
-  handler arms) and handler-internal helpers (entity accessors, gear mutators,
-  move-highlight refresh, prepared-skill cancel, AI min-range, tile tiebreak).
-  (The round-trip reconstruction test lives in `main.zig`.)
+- `src/event_handlers.zig` — the thin `processEvent` dispatch: pop +
+  record/replay bookkeeping, the start_level/start_hub checkpoint policy,
+  the editor arm's cache-needing inline cases, and the routing to the
+  category handlers. (The round-trip reconstruction test lives in
+  `main.zig`.)
+- `src/handlers/meta.zig` — `handleMetaEvent` (the `.meta_event` arm):
+  session flow — menus, saves, campaign/hub/mission/level lifecycle,
+  editor framing, waits.
+- `src/handlers/level.zig` — `handleLevelEvent`/`handleSubLevelEvent`
+  (the `.level_event`/`.sub_level_event` arms): turn flow + combat
+  primitives, enemy AI, anim/pacing constants.
 - `src/event_push.zig` — the event-stack push utilities (`pushEvents`/
   `pushPlayerSkillUse`/`pushPlayerAction`, the input-side compile-time gate)
   shared by the handlers, input_handlers, main.zig, and the tests.

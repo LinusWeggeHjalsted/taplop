@@ -9315,3 +9315,62 @@ tab you land on.)
 
 Test: a manual scroll away from the active tab now persists (the
 regression case), plus the existing clamp/pin/follow cases.
+
+## Codebase split: event_handlers.zig (slices 1–4)
+
+The codebase doubled during the editor work and the two largest files had
+become many-jobs-in-one. event_handlers.zig (6,636 lines) was split into a
+thin dispatch + scoped handler files, one slice per commit, each
+`scripts/test.sh` green. Decisions settled with the author up front:
+facade/vocabulary vs direct imports (mix: shared vocabulary re-exported,
+specifics imported directly at call sites), subdirectories where coherent,
+processEvent prongs extracted into per-category handler fns (recording/
+replay/checkpoint bookkeeping stays in the dispatch), and coherence of
+file contents over line-count targets.
+
+- **`src/editor/planning.zig`** (~1,140) — the pure `planEditor*Actions`
+  click planners + selection algebra + `activeEditorLevel`. The seam was
+  already drawn (planners are pure and shared with the input-side no-op
+  gate); input_handlers + handler_tests_editor import it directly.
+- **`src/event_push.zig`** (~80) — pushEvents/pushPlayerSkillUse/
+  pushPlayerAction, the input-side compile-time gate. Consumers (main,
+  input_handlers, crash_dump, the test files) import it directly;
+  event_handlers aliases them (the pre-existing deepCopy-alias pattern).
+- **`src/editor/handlers.zig`** (~1,600) — handleEditorEvent (the editor
+  arm's state transform; the cache-needing framing events stay inline in
+  the dispatch) + editor session helpers (playtest data, player import,
+  palette defaults, fresh-mission open, decoration registry) +
+  selection-mutation + template/layer edit helpers.
+- **`src/handlers/shared.zig`** (~200) — cross-category helpers: entity
+  accessors, failReconstructionRead, validateConfigKeys/surfaceWarnings,
+  loadCampaignAndPushHub, pushGameplayStartEvents,
+  refreshMoveHighlights/cancelPreparedSkill. Seeded BEFORE the editor
+  handlers moved so the import graph stayed one-directional at every
+  slice (the alternative — a temporary mutual import between the dispatch
+  and editor handlers until the category files landed — was rejected).
+- **`src/handlers/player_input.zig`** (~1,000) — handlePlayerInputEvent.
+- **`src/handlers/player.zig`** (~500) — the player_event + super_event
+  arms + gear/salvage helpers + clone-harvest math + isSkillLearned.
+- **`src/handlers/level.zig`** (~1,550) — the level_event + sub_level_event
+  arms (turn flow + combat primitives) + AI/anim helpers. No hub file —
+  there is no HubEvent; hub input flows through player-input orchestrators
+  and hub state through meta events.
+- **`src/handlers/meta.zig`** (~650) — the meta_event arm (session flow).
+- **event_handlers.zig is now the thin dispatch** (~185): pop + record/
+  replay bookkeeping, the start_level/start_hub checkpoint policy, the
+  editor arm's inline cache cases, routing to the category handlers.
+
+Mechanics worth remembering: boundary-asserted python extractions (exact
+line anchors verified before cutting), arm bodies de-indented by 8 into
+handler fns, the compiler driving the missed-reference fixes, and manual
+import-usage greps afterward (Zig doesn't flag unused container-level
+consts, so pruned imports must be checked by hand). Two pre-existing
+doc-comment jumbles were found and repaired during the move (docs for
+failReconstructionRead + pushGameplayStartEvents had merged into one ///
+run above buildPlaytestPlayerData; loadCampaignAndPushHub's doc had lost
+its head) — `tileBefore` also moved to functions.zig (the row-major tile
+order convention, Determinism & Tiebreaking domain).
+
+Consumer re-points were part of each slice (input_handlers, test_harness,
+the handler_tests_* files). AGENTS Key Files updated per slice. The ui.zig
+split (slices 5+) remains open in TODO.

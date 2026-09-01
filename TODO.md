@@ -1262,10 +1262,10 @@ Done items in DONE.md. Open:
         helpers (import player, palette types, defaults, registry) +
         selection-mutation helpers out of event_handlers.zig.
   - [x] 3. `event_push.zig` — pushEvents/pushPlayerSkillUse/pushPlayerAction.
-  - [~] 4. `src/handlers/` — meta / player / level / hub handler files;
-        processEvent prongs become handler fns; event_handlers.zig becomes
-        the thin dispatch. (`handlers/shared.zig` seeded early with the
-        cross-category helpers — see AGENTS Key Files.)
+  - [x] 4. `src/handlers/` — meta / player / player_input / level handler
+        files; processEvent prongs became handler fns; event_handlers.zig
+        is the thin dispatch (183 lines). No hub file — hub state flows
+        through meta + player-input events (no HubEvent exists).
   - [ ] 5+. `src/ui/` — element/state/text_input/tooltip/emit first
         (vocabulary, facade re-exports), then editor chrome/inspector/
         pickers, then middle panels, then menus/screens. Tests move with
