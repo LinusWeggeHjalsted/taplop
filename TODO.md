@@ -1266,10 +1266,12 @@ Done items in DONE.md. Open:
         files; processEvent prongs became handler fns; event_handlers.zig
         is the thin dispatch (183 lines). No hub file — hub state flows
         through meta + player-input events (no HubEvent exists).
-  - [ ] 5+. `src/ui/` — element/state/text_input/tooltip/emit first
+  - [~] 5+. `src/ui/` — element/state/text_input/tooltip/emit first
         (vocabulary, facade re-exports), then editor chrome/inspector/
         pickers, then middle panels, then menus/screens. Tests move with
         their subject. AGENTS Key Files + DESIGN pointers updated per slice.
+        DONE so far: element.zig + state.zig + text_input.zig (slice 5,
+        facade live — `ui.X` re-exports keep consumers unchanged).
   - [ ] Follow-up (separate): input_handlers.zig (5.7k — mission import/
         export zip machinery + editor commit sites are the seams).
 - **Duplicated rendering recipes in `buildEntityInspectPanel`.** The skill-

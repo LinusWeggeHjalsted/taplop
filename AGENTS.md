@@ -372,7 +372,13 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (`writeEventLog`/`loadEventLog`/`SessionLog`), comptime-generic over the
   `Event` union. See DESIGN → Logging & Replay.
 - `src/functions.zig` — pathfinding (A*), chebyshevDistance, helpers
-- `src/ui.zig` — UiState, UiElement types, layout helpers (Rect algebra, Row/Grid), panel builders
+- `src/ui.zig` — facade over `src/ui/` + the panel/overlay builders not
+  yet moved out (tooltips, bottom bar, editor chrome/inspector/pickers,
+  in-game middle panels, menus/screens)
+- `src/ui/element.zig` — the UiElement union + variants, Rect algebra
+  (Row/Grid), layout constants, FontMetrics, hit-testing
+- `src/ui/state.zig` — UiState + drag/click/marquee/picker-target types
+- `src/ui/text_input.zig` — the text-field widget core + routing
 - `src/input.zig` — input pipeline, translateInput, bindings
 - `src/combat_log.zig` — combat-log projection (projectCombatLog + combatLogTier)
 - `src/file_source.zig` — unified file I/O (FileSource: embedded map +
