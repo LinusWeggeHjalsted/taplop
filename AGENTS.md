@@ -386,6 +386,8 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/ui/editor_chrome.zig` — editor tool palette (bottom bar), level
   tabs, Test/Validate primary actions, palette group math
 - `src/ui/editor_inspector.zig` — buildEditorInspectorPanel +
+- `src/ui/editor_pickers.zig` — the centered pickers (skill / sprite /
+  theme / footprint editor) + the official sprite tables
   buildEditorMetadataSidebar, the inspector target inference, the field
   emitters, textEditPressProceeds
 - `src/input.zig` — input pipeline, translateInput, bindings
