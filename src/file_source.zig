@@ -666,7 +666,7 @@ fn listPersistentDirNamesWeb(
             "      if (child && FS.isDir(child.mode) === {s}) names.push(n);" ++
             "    }});" ++
             "  }}" ++
-            "  FS.writeFile('{s}', names.join('\n'));" ++
+            "  FS.writeFile('{s}', names.join('\\n'));" ++
             "}} catch(e) {{" ++
             "  try {{ FS.writeFile('{s}', ''); }} catch(e2) {{}}" ++
             "}}" ++
