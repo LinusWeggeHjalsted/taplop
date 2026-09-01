@@ -324,6 +324,11 @@ pub fn view(
                 editor,
                 active_theme,
             ) catch @panic("failed to build editor level tabs");
+            ui.buildEditorPrimaryActions(
+                &ui_elements,
+                frame_allocator,
+                active_theme,
+            ) catch @panic("failed to build editor primary actions");
             ui.buildEditorInspectorPanel(
                 &ui_elements,
                 frame_allocator,

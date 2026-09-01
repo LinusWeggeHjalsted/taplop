@@ -4902,6 +4902,68 @@ pub fn buildEditorLevelTabs(
     );
 }
 
+/// The editor's primary actions (top-right corner): the Test button (a
+/// single-level playtest of the active level) and the Validate button (a
+/// full-mission validation run from level 1). The options/undo icon class
+/// (`emitIconButton`: button background + icon, `slot_size` square) at the
+/// top bar's height, flush against the right screen edge — the visual
+/// mirror of options/undo at the top-left. The icon sprites
+/// (`ui/icon_playtest`, `ui/icon_validate`) are placeholder art until
+/// assets land. See DESIGN → Architecture → Level Editor → Editor UI
+/// layout (primary actions).
+pub fn buildEditorPrimaryActions(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    active_theme: types.ActiveColorTheme,
+) !void {
+    const p = active_theme.player_gradient.colors;
+    // Match the top-bar options/undo buttons: background = gradient[5],
+    // icon = gradient[1].
+    const c_btn_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
+    const c_btn_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
+
+    // Flush right, reading left-to-right: Test, then Validate.
+    const validate_cell: Rectangle = .{
+        .x = types.reference_width - slot_size,
+        .y = 0,
+        .width = slot_size,
+        .height = slot_size,
+    };
+    const test_cell: Rectangle = .{
+        .x = validate_cell.x - slot_size - ui_gap,
+        .y = 0,
+        .width = slot_size,
+        .height = slot_size,
+    };
+
+    try emitIconButton(
+        elements,
+        allocator,
+        test_cell,
+        button_background_sprite_id,
+        "ui/icon_playtest",
+        .test_editor_level,
+        .{ .header = try spanRow(allocator, text("Test (play the active level)")) },
+        c_btn_bg,
+        c_btn_icon,
+        false,
+        null,
+    );
+    try emitIconButton(
+        elements,
+        allocator,
+        validate_cell,
+        button_background_sprite_id,
+        "ui/icon_validate",
+        .validate_editor_mission,
+        .{ .header = try spanRow(allocator, text("Validate (play the whole mission)")) },
+        c_btn_bg,
+        c_btn_icon,
+        false,
+        null,
+    );
+}
+
 /// Width of the editor inspector sidebar's background panel. Placeholder
 /// value — revisit once the field layout lands and the real width is
 /// visible.
@@ -10330,6 +10392,47 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
         };
         try std.testing.expectEqual(@as(usize, 0), close_button_count);
     }
+}
+
+test "buildEditorPrimaryActions: Test + Validate icon buttons flush top-right" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = black,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+
+    var elements: UiElementList = .empty;
+    try buildEditorPrimaryActions(&elements, arena.allocator(), theme);
+
+    // Two icon buttons, each a button + overlaying image = 4 elements.
+    try std.testing.expectEqual(@as(usize, 4), elements.items.len);
+
+    // Test first (elements 0-1), Validate right of it (2-3): the
+    // options/undo visual class (slot_size square, top bar height) flush
+    // against the right screen edge.
+    const test_button = elements.items[0].button;
+    try std.testing.expectEqual(Action.test_editor_level, test_button.action);
+    try std.testing.expectEqualStrings(button_background_sprite_id, test_button.sprite_id.?);
+    try std.testing.expectEqualStrings("ui/icon_playtest", elements.items[1].image.sprite_id);
+    try std.testing.expectEqual(@as(i32, types.reference_width - 2 * slot_size - ui_gap), test_button.screen_position.x);
+    try std.testing.expectEqual(@as(i32, 0), test_button.screen_position.y);
+    try std.testing.expectEqual(slot_size, test_button.width);
+    try std.testing.expectEqual(slot_size, test_button.height);
+    try std.testing.expect(!elements.items[1].image.blocks_input); // button wins hit-test
+
+    const validate_button = elements.items[2].button;
+    try std.testing.expectEqual(Action.validate_editor_mission, validate_button.action);
+    try std.testing.expectEqualStrings("ui/icon_validate", elements.items[3].image.sprite_id);
+    try std.testing.expectEqual(@as(i32, types.reference_width - slot_size), validate_button.screen_position.x);
+    try std.testing.expectEqual(@as(i32, 0), validate_button.screen_position.y);
+    try std.testing.expectEqual(slot_size, validate_button.width);
+    try std.testing.expectEqual(slot_size, validate_button.height);
 }
 
 test "buildEditorInspectorPanel: toggle button always, background panel only when open" {
