@@ -1258,13 +1258,14 @@ Done items in DONE.md. Open:
         planners + selection algebra + `activeEditorLevel` out of
         event_handlers.zig; input_handlers + handler_tests_editor import it
         directly.
-  - [ ] 2. `src/editor/handlers.zig` — `handleEditorEvent` + editor session
+  - [x] 2. `src/editor/handlers.zig` — `handleEditorEvent` + editor session
         helpers (import player, palette types, defaults, registry) +
         selection-mutation helpers out of event_handlers.zig.
   - [x] 3. `event_push.zig` — pushEvents/pushPlayerSkillUse/pushPlayerAction.
-  - [ ] 4. `src/handlers/` — meta / player / level / hub handler files;
+  - [~] 4. `src/handlers/` — meta / player / level / hub handler files;
         processEvent prongs become handler fns; event_handlers.zig becomes
-        the thin dispatch + shared entity accessors.
+        the thin dispatch. (`handlers/shared.zig` seeded early with the
+        cross-category helpers — see AGENTS Key Files.)
   - [ ] 5+. `src/ui/` — element/state/text_input/tooltip/emit first
         (vocabulary, facade re-exports), then editor chrome/inspector/
         pickers, then middle panels, then menus/screens. Tests move with

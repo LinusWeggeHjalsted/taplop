@@ -22,6 +22,7 @@ const state = @import("state.zig");
 const session_setup = @import("session_setup.zig");
 const file_source_mod = @import("file_source.zig");
 const event_handlers = @import("event_handlers.zig");
+const shared = @import("handlers/shared.zig");
 
 const FileSource = file_source_mod.FileSource;
 const GameState = state.GameState;
@@ -144,7 +145,7 @@ pub fn levelStateWithEntities(
     };
 }
 
-/// Mutable pointer to a level entity (mirrors `event_handlers.getLevelEntity`).
+/// Mutable pointer to a level entity (mirrors `shared.getLevelEntity`).
 /// Panics if there's no level — handler tests that call this implicitly assert
 /// they set one up.
 pub fn levelEntity(history: *GameStateHistory, entity_index: usize) *types.Entity {

@@ -27,6 +27,7 @@ const zip_reader = @import("zip_reader.zig");
 const event_handlers = @import("event_handlers.zig");
 const event_push = @import("event_push.zig");
 const planning = @import("editor/planning.zig");
+const editor_handlers = @import("editor/handlers.zig");
 const functions = @import("functions.zig");
 const view_mod = @import("view.zig");
 const build_info = @import("build_info");
@@ -1967,7 +1968,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
             const entity_target = field.target.entity;
-            const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
+            const template = editor_handlers.editorEntityTemplate(editor, entity_target) orelse return;
             const current_value = template.name;
             // Would-change gate: an unchanged value never records (no
             // dead undo step).
@@ -1982,7 +1983,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
             const entity_target = field.target.entity;
-            const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
+            const template = editor_handlers.editorEntityTemplate(editor, entity_target) orelse return;
             // Base stats are UNBOUNDED by design — see DESIGN → Level
             // Editor → Inspector fields.
             const parsed = parseUnboundedStatValue(value) orelse return;
@@ -2018,7 +2019,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
             const entity_target = field.target.entity;
-            const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
+            const template = editor_handlers.editorEntityTemplate(editor, entity_target) orelse return;
             // An empty slot commits nothing (nothing to rename).
             const item = template.gearSlotItem(slot) orelse return;
             if (std.mem.eql(u8, types.itemName(item), value)) return;
@@ -2034,7 +2035,7 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
             if (history.current_state.editor == null) return;
             const editor: *types.Editor = &history.current_state.editor.?;
             const entity_target = field.target.entity;
-            const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
+            const template = editor_handlers.editorEntityTemplate(editor, entity_target) orelse return;
             // An empty slot, or a stat the item kind doesn't carry, commits
             // nothing.
             const item = template.gearSlotItem(item_field.slot) orelse return;
@@ -2190,7 +2191,7 @@ pub fn beginFocusedTextEdit(
         const editor: *types.Editor = &history.current_state.editor.?;
         switch (field.target) {
             .entity => |entity_target| {
-                if (event_handlers.editorEntityTemplate(editor, entity_target)) |template| {
+                if (editor_handlers.editorEntityTemplate(editor, entity_target)) |template| {
                     current_value = template.textFieldValue(
                         history.current_arena.allocator(),
                         field.id,
@@ -2873,7 +2874,7 @@ pub fn handleAnytimeInput(
                 if (history.current_state.editor == null) return;
                 const editor: *types.Editor = &history.current_state.editor.?;
                 const target = editorEntityEditTarget(editor.*) orelse return;
-                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (std.mem.eql(u8, template.sprite, sprite)) return;
                 // Dupe into the current arena BEFORE pushing — the payload
                 // slice must not point into the view's frame allocation
@@ -3011,7 +3012,7 @@ pub fn handleAnytimeInput(
                 if (history.current_state.editor == null) return;
                 const editor: *types.Editor = &history.current_state.editor.?;
                 const target = editorEntityEditTarget(editor.*) orelse return;
-                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 const arena = history.current_arena.allocator();
                 const sprite_value = arena.dupe(u8, sprite) catch
                     @panic("failed to allocate layer sprite commit value");
@@ -3201,7 +3202,7 @@ pub fn handleAnytimeInput(
                 const color_index = anytime.clicked_editor_color orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
-                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (template.color_index == color_index) return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_color_index = .{
                     .target = target,
@@ -3230,7 +3231,7 @@ pub fn handleAnytimeInput(
                 const layer_index = anytime.clicked_editor_layer orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
-                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (layer_index >= template.layers.len) return;
                 pushPlayerActionAndDrain(history, .{ .player_remove_editor_entity_layer = .{
                     .target = target,
@@ -3258,7 +3259,7 @@ pub fn handleAnytimeInput(
                 const color_index = anytime.clicked_editor_color orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
-                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (layer_index >= template.layers.len) return;
                 const current_layer = template.layers[layer_index];
                 if (current_layer.color_index == color_index) return;
@@ -3296,7 +3297,7 @@ pub fn handleAnytimeInput(
             .toggle_editor_entity_displays_weapons => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
-                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_displays_weapons = .{
                     .target = target,
                     .value = !template.displays_weapons,
@@ -3311,7 +3312,7 @@ pub fn handleAnytimeInput(
                 if (hand != .main_hand and hand != .off_hand) return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
-                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 const equipped: ?types.Weapon = switch (hand) {
                     .main_hand => template.main_hand_weapon,
                     .off_hand => template.off_hand_weapon,
@@ -3384,7 +3385,7 @@ pub fn handleAnytimeInput(
                 const slot = anytime.clicked_editor_gear_slot orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
-                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (template.gearSlotItem(slot) != null) return;
                 const item = defaultItemForSlot(history, slot) orelse return;
                 const add_action = editorGearSlotAction(target, slot, item) orelse return;
@@ -3420,7 +3421,7 @@ pub fn handleAnytimeInput(
                 const editor: *types.Editor = &history.current_state.editor.?;
                 const entity_target = editorEntityEditTarget(editor.*) orelse return;
                 if (slot_index >= types.utility_skill_count) return;
-                const template = event_handlers.editorEntityTemplate(editor, entity_target) orelse return;
+                const template = editor_handlers.editorEntityTemplate(editor, entity_target) orelse return;
                 const picked = anytime.clicked_editor_skill;
                 if (template.equipped_utility_skills[slot_index] == picked) return;
                 pushPlayerActionAndDrain(history, .{ .player_set_editor_entity_utility_skill = .{
@@ -3435,7 +3436,7 @@ pub fn handleAnytimeInput(
                 const slot = anytime.clicked_editor_gear_slot orelse return;
                 const editor = if (current.editor) |*some_editor| some_editor else return;
                 const target = editorEntityEditTarget(editor.*) orelse return;
-                const template = event_handlers.editorEntityTemplate(editor, target) orelse return;
+                const template = editor_handlers.editorEntityTemplate(editor, target) orelse return;
                 if (template.gearSlotItem(slot) == null) return;
                 const clear_action = editorGearSlotAction(target, slot, null) orelse return;
                 pushPlayerActionAndDrain(history, clear_action);

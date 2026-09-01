@@ -679,3 +679,12 @@ test "nearestTileAlongDirection: tiles behind the origin and the origin itself a
         nearestTileAlongDirection(&tiles, .{ .x = 2, .y = 0 }, .{ .x = 0, .y = 0 }),
     );
 }
+
+/// Row-major (x, then y) tile order — the canonical ordering convention
+/// for tile lists (insertions keep it; the enemy-turn reachable-tile
+/// fallback breaks distance ties with it). See DESIGN → Determinism &
+/// Tiebreaking.
+pub fn tileBefore(a: types.Vector2, b: types.Vector2) bool {
+    if (a.x != b.x) return a.x < b.x;
+    return a.y < b.y;
+}

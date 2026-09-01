@@ -312,6 +312,14 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (`planEditor*Actions`, one per tool) + editor selection algebra, shared by
   the editor handlers and the input-side no-op gate
   (see DESIGN → Level Editor → Active-tool model).
+- `src/editor/handlers.zig` — `handleEditorEvent` (the `.editor_event`
+  arm's state transform, minus the cache-needing framing events handled
+  inline in the dispatch) + the editor session helpers (playtest data,
+  player import, palette defaults, fresh-mission open, decoration
+  registry) + selection-mutation + template/layer edit helpers.
+- `src/handlers/shared.zig` — cross-category handler helpers (entity
+  accessors, the recoverable reconstruction-read failure, config-key
+  validation + warning surfacing, campaign load, gameplay start batch).
 - `src/input_handlers.zig` — input consumption: `handleAnytimeInput`,
   `handleIdleInput`, `resolveTileCursor`, the drag lifecycle, and session-log
   dev tooling (dumpEventLog, build-version warn, timestamp formatter). The
