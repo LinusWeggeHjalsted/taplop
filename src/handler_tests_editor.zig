@@ -12,6 +12,7 @@ const events = @import("events.zig");
 const state = @import("state.zig");
 const input = @import("input.zig");
 const event_handlers = @import("event_handlers.zig");
+const player_handlers = @import("handlers/player.zig");
 const event_push = @import("event_push.zig");
 const planning = @import("editor/planning.zig");
 const input_handlers = @import("input_handlers.zig");
@@ -4954,7 +4955,7 @@ test "start_playtest builds its own player_data (all skills learned), end_playte
         history.current_state.player_data.learned_skills.len,
     );
     for (utility_skills.utility_skill_ids) |skill_id| {
-        try testing.expect(event_handlers.isSkillLearned(
+        try testing.expect(player_handlers.isSkillLearned(
             history.current_state.player_data.learned_skills,
             skill_id,
         ));

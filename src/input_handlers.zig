@@ -25,6 +25,7 @@ const file_source_mod = @import("file_source.zig");
 const zip_writer = @import("zip_writer.zig");
 const zip_reader = @import("zip_reader.zig");
 const event_handlers = @import("event_handlers.zig");
+const player_handlers = @import("handlers/player.zig");
 const event_push = @import("event_push.zig");
 const planning = @import("editor/planning.zig");
 const editor_handlers = @import("editor/handlers.zig");
@@ -160,12 +161,12 @@ fn dragActionWouldChange(
     return switch (action) {
         .player_equip_to_gear => |equip| {
             const item = player.inventory.slots[equip.inventory_slot_index] orelse return false;
-            return event_handlers.itemFitsGearSlot(item, equip.gear_slot);
+            return player_handlers.itemFitsGearSlot(item, equip.gear_slot);
         },
         .player_unequip_from_gear => |unequip| {
             if (ui.gearSlotItem(player, unequip.gear_slot) == null) return false;
             const existing = player.inventory.slots[unequip.inventory_slot_index] orelse return true;
-            return event_handlers.itemFitsGearSlot(existing, unequip.gear_slot);
+            return player_handlers.itemFitsGearSlot(existing, unequip.gear_slot);
         },
         .player_assign_utility_skill => |assign| {
             if (assign.slot_index >= player.equipped_utility_skills.len) return false;
@@ -296,7 +297,7 @@ pub fn handleDrag(
             // corners) never fires — no dead undo step.
             if (pointer.modifiers.shift) {
                 const player = ui.playerEntity(current) orelse types.Entity{};
-                if (event_handlers.salvageRegionOccupiedSlots(
+                if (player_handlers.salvageRegionOccupiedSlots(
                     player,
                     region.start_slot,
                     region.end_slot,
@@ -4539,8 +4540,8 @@ test "resolveItemClick: modifier precedence and double-click" {
 
 test "isSkillLearned: found / not found" {
     const learned = [_]types.SkillId{ .slice, .bash };
-    try std.testing.expect(event_handlers.isSkillLearned(&learned, .slice));
-    try std.testing.expect(!event_handlers.isSkillLearned(&learned, .blink));
+    try std.testing.expect(player_handlers.isSkillLearned(&learned, .slice));
+    try std.testing.expect(!player_handlers.isSkillLearned(&learned, .blink));
 }
 
 

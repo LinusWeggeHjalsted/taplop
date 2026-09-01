@@ -12,6 +12,7 @@ const events = @import("../events.zig");
 const state = @import("../state.zig");
 const parser = @import("../parser.zig");
 const loaders = @import("../loaders.zig");
+const functions = @import("../functions.zig");
 const event_push = @import("../event_push.zig");
 
 const GameState = state.GameState;
@@ -163,4 +164,38 @@ pub fn pushGameplayStartEvents(current: *GameState, allocator: std.mem.Allocator
         } } }) catch @panic("failed to append build_player_from_data");
     }
     pushEvents(current, start_events.items, allocator);
+}
+
+
+/// Recompute the reachable tiles shown during the player's move step.
+/// No-op unless we're in a level and currently in the .player_move phase
+/// (e.g. changing boots in the hub or during the attack step should not
+/// touch highlighted_tiles).
+pub fn refreshMoveHighlights(
+    current: *GameState,
+    allocator: std.mem.Allocator,
+) void {
+    const level = if (current.level) |*level| level else return;
+    if (level.turn_phase != .player_move) return;
+
+    const player = level.entities[0];
+    level.highlighted_tiles = functions.reachableTiles(
+        level.*,
+        player.position,
+        player.getEffectiveSpeed(),
+        allocator,
+    );
+}
+
+/// Cancel any in-progress skill targeting during the player's attack step.
+/// No-op unless we're in a level with a prepared skill. Call this whenever
+/// the player's available skills change mid-attack-step (swapping or equipping
+/// weapons rewrites the first three skill slots), so a skill prepared from the
+/// old weapon does not linger with stale targeting highlights.
+pub fn cancelPreparedSkill(current: *GameState) void {
+    const level = if (current.level) |*level| level else return;
+    if (level.prepared_skill == null) return;
+
+    level.prepared_skill = null;
+    level.highlighted_tiles = &.{};
 }

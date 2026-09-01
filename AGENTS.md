@@ -319,7 +319,13 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   registry) + selection-mutation + template/layer edit helpers.
 - `src/handlers/shared.zig` — cross-category handler helpers (entity
   accessors, the recoverable reconstruction-read failure, config-key
-  validation + warning surfacing, campaign load, gameplay start batch).
+  validation + warning surfacing, campaign load, gameplay start batch,
+  move-highlight refresh + prepared-skill cancel).
+- `src/handlers/player_input.zig` — `handlePlayerInputEvent`, the
+  `.player_input_event` arm (player-initiated orchestrator actions).
+- `src/handlers/player.zig` — the `.player_event` + `.super_event` arms
+  (player verbs, entity↔PlayerData sync) + gear/salvage helpers + clone
+  harvest math.
 - `src/input_handlers.zig` — input consumption: `handleAnytimeInput`,
   `handleIdleInput`, `resolveTileCursor`, the drag lifecycle, and session-log
   dev tooling (dumpEventLog, build-version warn, timestamp formatter). The

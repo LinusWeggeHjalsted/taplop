@@ -1,0 +1,501 @@
+//! Player-data mechanics: the `player_event` + `super_event` arms
+//! (`handlePlayerEvent` — learn/equip/salvage/swap verbs; 
+//! `handleSuperEvent` — the entity↔PlayerData sync pair), the gear-slot
+//! mutators + salvage helpers, and the clone-harvest math. The input
+//! orchestrators live in player_input.zig; the cross-category helpers in
+//! shared.zig.
+
+const std = @import("std");
+const types = @import("../types.zig");
+const events = @import("../events.zig");
+const state = @import("../state.zig");
+const utility_skills = @import("../utility_skills.zig");
+const functions = @import("../functions.zig");
+const event_push = @import("../event_push.zig");
+const shared = @import("shared.zig");
+
+const GameState = state.GameState;
+const GameStateHistory = state.GameStateHistory;
+const Entity = types.Entity;
+
+const SkillId = types.SkillId;
+const utility_skill_count = types.utility_skill_count;
+const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
+
+const pushEvents = event_push.pushEvents;
+const cancelPreparedSkill = shared.cancelPreparedSkill;
+const refreshMoveHighlights = shared.refreshMoveHighlights;
+const getPlayerEntity = shared.getPlayerEntity;
+
+/// Return the piece currently in a gear slot as an Item, or null if empty.
+/// The occupied inventory slot indices inside a salvage region (two
+/// opposite-corner slot indices, order-independent). Shared by the
+/// `player_salvage_inventory_region` handler (one salvage_item per slot)
+/// and the input-side no-op gate (an all-empty region never fires) — one
+/// definition of the region's slots so the two can't drift.
+pub fn salvageRegionOccupiedSlots(
+    player: types.Entity,
+    start_slot: u32,
+    end_slot: u32,
+    allocator: std.mem.Allocator,
+) []const u32 {
+    const start_row = @divTrunc(start_slot, types.inventory_columns);
+    const start_col = @rem(start_slot, types.inventory_columns);
+    const end_row = @divTrunc(end_slot, types.inventory_columns);
+    const end_col = @rem(end_slot, types.inventory_columns);
+    const min_row = @min(start_row, end_row);
+    const max_row = @max(start_row, end_row);
+    const min_col = @min(start_col, end_col);
+    const max_col = @max(start_col, end_col);
+    var occupied: std.ArrayList(u32) = .empty;
+    var row: u32 = min_row;
+    while (row <= max_row) : (row += 1) {
+        var col: u32 = min_col;
+        while (col <= max_col) : (col += 1) {
+            const slot_index = row * types.inventory_columns + col;
+            if (player.inventory.slots[slot_index] != null) {
+                occupied.append(allocator, slot_index) catch
+                    @panic("failed to allocate salvage region slots");
+            }
+        }
+    }
+    return occupied.items;
+}
+
+
+fn gearSlotItem(player: *Entity, gear_slot: types.GearSlot) ?types.Item {
+    return switch (gear_slot) {
+        .main_hand => if (player.main_hand_weapon) |weapon| .{ .weapon = weapon } else null,
+        .off_hand => if (player.off_hand_weapon) |weapon| .{ .weapon = weapon } else null,
+        .amulet => if (player.amulet) |amulet| .{ .amulet = amulet } else null,
+        .coat => if (player.coat) |coat| .{ .coat = coat } else null,
+        .gloves => if (player.gloves) |gloves| .{ .gloves = gloves } else null,
+        .pants => if (player.pants) |pants| .{ .pants = pants } else null,
+        .boots => if (player.boots) |boots| .{ .boots = boots } else null,
+    };
+}
+
+
+/// Whether an inventory item can be equipped into the given gear slot.
+/// Whether `item` can go into `gear_slot`. Shared by the equip/unequip
+/// machinery here and the input-side drag no-op gate (input_handlers)
+/// so "fits" has one definition and the two can't drift.
+pub fn itemFitsGearSlot(item: types.Item, gear_slot: types.GearSlot) bool {
+    return switch (gear_slot) {
+        .main_hand, .off_hand => item == .weapon,
+        .amulet => item == .amulet,
+        .coat => item == .coat,
+        .gloves => item == .gloves,
+        .pants => item == .pants,
+        .boots => item == .boots,
+    };
+}
+
+
+/// Write an item into a gear slot. The caller must ensure the item fits the
+/// slot (see itemFitsGearSlot); the union access panics otherwise.
+fn setGearSlot(player: *Entity, gear_slot: types.GearSlot, item: types.Item) void {
+    switch (gear_slot) {
+        .main_hand => player.main_hand_weapon = item.weapon,
+        .off_hand => player.off_hand_weapon = item.weapon,
+        .amulet => player.amulet = item.amulet,
+        .coat => player.coat = item.coat,
+        .gloves => player.gloves = item.gloves,
+        .pants => player.pants = item.pants,
+        .boots => player.boots = item.boots,
+    }
+}
+
+
+/// Empty a gear slot.
+fn clearGearSlot(player: *Entity, gear_slot: types.GearSlot) void {
+    switch (gear_slot) {
+        .main_hand => player.main_hand_weapon = null,
+        .off_hand => player.off_hand_weapon = null,
+        .amulet => player.amulet = null,
+        .coat => player.coat = null,
+        .gloves => player.gloves = null,
+        .pants => player.pants = null,
+        .boots => player.boots = null,
+    }
+}
+
+
+/// Re-apply the mid-turn side effects of a gear change: weapons rewrite the
+/// first three skills (cancel targeting), boots change speed (refresh range).
+fn applyGearChangeSideEffects(
+    current: *GameState,
+    gear_slot: types.GearSlot,
+    allocator: std.mem.Allocator,
+) void {
+    const player = getPlayerEntity(current, 0);
+    // Gear may change effective max health (coat/gloves/pants/boots carry
+    // health_bonus). Clamp current_health to the new cap so the invariant
+    // current_health ≤ getEffectiveMaxHealth() holds. Equipping a +health
+    // piece raises the cap without healing (current stays, more headroom);
+    // unequipping drops current to the new cap if it was above.
+    player.current_health = @min(player.current_health, player.getEffectiveMaxHealth());
+    switch (gear_slot) {
+        .main_hand, .off_hand => cancelPreparedSkill(current),
+        .boots => refreshMoveHighlights(current, allocator),
+        else => {},
+    }
+}
+
+
+/// Set the incoming weapon's three skill cooldowns to `@max(old, new)` so
+/// equipping a fresh weapon can't bypass a cooldown that was ticking on the
+/// displaced weapon's skills. Runs for all three skills regardless of which
+/// hand holds the weapon — the hidden skill's cd surfaces later if the player
+/// `swap_hands`. Both old+new cds are snapshotted before any `set` so a
+/// degenerate SkillId overlap between weapon types can't double-decrement.
+/// See DESIGN → Architecture (Cooldown inheritance on skill/weapon swap).
+fn transferWeaponCooldowns(
+    player: *Entity,
+    old_weapon: ?types.Weapon,
+    new_weapon: ?types.Weapon,
+    weapon_type_definitions: *const [weapon_type_count]types.WeaponTypeDefinition,
+) void {
+    const new_w = new_weapon orelse return;
+    const new_def = &weapon_type_definitions[@intFromEnum(new_w.weapon_type)];
+    const new_skills = [_]types.SkillId{ new_def.skill_1, new_def.skill_2, new_def.skill_3 };
+
+    const old_skills: [3]?types.SkillId = if (old_weapon) |old_w| blk: {
+        const old_def = &weapon_type_definitions[@intFromEnum(old_w.weapon_type)];
+        break :blk .{ old_def.skill_1, old_def.skill_2, old_def.skill_3 };
+    } else .{ null, null, null };
+
+    // Snapshot every cooldown before any mutation so a degenerate SkillId
+    // overlap between old and new weapon types can't double-decrement.
+    var new_cds: [3]u32 = undefined;
+    var old_cds: [3]u32 = undefined;
+    for (&new_cds, &old_cds, new_skills, old_skills) |*new_cd, *old_cd, new_skill, old_skill| {
+        new_cd.* = player.skill_cooldowns.get(new_skill);
+        old_cd.* = if (old_skill) |s| player.skill_cooldowns.get(s) else 0;
+    }
+    // Pair positionally: new skill_i inherits the max of old skill_i and
+    // new skill_i. No old weapon → old cd is 0 → new cd is preserved as-is.
+    for (new_cds, old_cds, new_skills) |new_cd, old_cd, new_skill| {
+        player.skill_cooldowns.set(new_skill, @max(old_cd, new_cd));
+    }
+}
+
+
+/// Compare a just-completed run against an existing clone, per-material, on
+/// the per-turn rate (materials / turns). Pareto-strict: the new run is
+/// "strictly better" when its rate is `>=` the old rate for ALL materials
+/// AND `>` for at least one nonzero material. Tied-zero materials (a
+/// mission that gives no cloth in either run) don't block the comparison.
+/// Both turns values must be > 0 (the caller gates on that — see end_level).
+/// See DESIGN → Clones (clone system).
+pub fn cloneIsStrictlyBetter(
+    new_turns: u32,
+    new_materials: types.Materials,
+    old_turns: u32,
+    old_materials: types.Materials,
+) bool {
+    const fields = .{
+        .{ new_materials.wood, old_materials.wood },
+        .{ new_materials.metal, old_materials.metal },
+        .{ new_materials.leather, old_materials.leather },
+        .{ new_materials.cloth, old_materials.cloth },
+        .{ new_materials.knowledge, old_materials.knowledge },
+    };
+    var has_strict_gain = false;
+    inline for (fields) |pair| {
+        const new_rate = pair[0] / new_turns;
+        const old_rate = pair[1] / old_turns;
+        if (new_rate < old_rate) return false;
+        if (new_rate > old_rate) has_strict_gain = true;
+    }
+    return has_strict_gain;
+}
+
+
+/// Pure harvest payout: per material, `(materials_collected * turns_spent)
+/// / turns_to_complete` summed over all clones. The multiply happens BEFORE
+/// the divide so a clone whose per-turn rate is fractional (materials <
+/// turns_to_complete) still pays out — dividing first truncates the rate to
+/// 0 and yields nothing. u64 intermediate guards the multiply against u32
+/// overflow. Skips clones with `turns_to_complete == 0`. Shared by the
+/// `harvest_clones` handler and the `end_level` completion branch (which
+/// snapshots the payout onto `MissionCompleteInfo` for the overlay). See
+/// DESIGN → Clones (clone system).
+pub fn computeHarvest(clones: []const types.Clone, turns_spent: u32) types.Materials {
+    if (turns_spent == 0) return .{};
+    var payout: types.Materials = .{};
+    const t: u64 = turns_spent;
+    for (clones) |clone| {
+        if (clone.turns_to_complete == 0) continue;
+        const d: u64 = clone.turns_to_complete;
+        payout.wood += @intCast((@as(u64, clone.materials_collected.wood) * t) / d);
+        payout.metal += @intCast((@as(u64, clone.materials_collected.metal) * t) / d);
+        payout.leather += @intCast((@as(u64, clone.materials_collected.leather) * t) / d);
+        payout.cloth += @intCast((@as(u64, clone.materials_collected.cloth) * t) / d);
+        payout.knowledge += @intCast((@as(u64, clone.materials_collected.knowledge) * t) / d);
+    }
+    return payout;
+}
+
+
+/// Whether `skill_id` is in the player's `learned_skills` list. Pure —
+/// extracted from the `player_use_inventory_item` handler so the
+/// learn-vs-salvage decision for a skill tome is testable without the
+/// orchestrator wrapper (no `expectPanics` in Zig 0.16; see AGENTS →
+/// Testing discipline).
+pub fn isSkillLearned(learned_skills: []const types.SkillId, skill_id: types.SkillId) bool {
+    for (learned_skills) |learned| {
+        if (learned == skill_id) return true;
+    }
+    return false;
+}
+
+
+
+/// Handle a `SuperEvent` — the entity↔PlayerData sync pair
+/// (build_player_from_data / build_data_from_player; see DESIGN →
+/// Architecture → PlayerData/Entity sync).
+pub fn handleSuperEvent(
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+    super: events.SuperEvent,
+) void {
+    const current = &history.current_state;
+    switch (super) {
+        .build_player_from_data => |sync| {
+            const player_data = &current.player_data;
+            const player_entity = getPlayerEntity(current, sync.entity_index);
+
+            player_entity.name = player_data.player_name;
+            player_entity.main_hand_weapon = player_data.main_hand_weapon;
+            player_entity.off_hand_weapon = player_data.off_hand_weapon;
+            player_entity.amulet = player_data.amulet;
+            player_entity.coat = player_data.coat;
+            player_entity.gloves = player_data.gloves;
+            player_entity.pants = player_data.pants;
+            player_entity.boots = player_data.boots;
+            player_entity.equipped_utility_skills = player_data.equipped_utility_skills;
+            player_entity.inventory = player_data.inventory;
+            // Enter at full effective health (base + gear health_bonus).
+            player_entity.current_health = player_entity.getEffectiveMaxHealth();
+        },
+        .build_data_from_player => |sync| {
+            const player_data = &current.player_data;
+            const player_entity = getPlayerEntity(current, sync.entity_index);
+
+            player_data.player_name = player_entity.name;
+            player_data.main_hand_weapon = player_entity.main_hand_weapon;
+            player_data.off_hand_weapon = player_entity.off_hand_weapon;
+            player_data.amulet = player_entity.amulet;
+            player_data.coat = player_entity.coat;
+            player_data.gloves = player_entity.gloves;
+            player_data.pants = player_entity.pants;
+            player_data.boots = player_entity.boots;
+            player_data.equipped_utility_skills = player_entity.equipped_utility_skills;
+            player_data.inventory = player_entity.inventory;
+        },
+        .save_clone_info => |info| {
+            // Replace the existing clone for this mission (matched by
+            // uuid), else append. The clone records the run's
+            // per-turn material conversion rate (materials_collected
+            // / turns_to_complete) so future completions can harvest
+            // from it. See DESIGN → Clones (clone system).
+            var rebuilt: std.ArrayList(types.Clone) = .empty;
+            var replaced = false;
+            for (current.player_data.clones) |clone| {
+                if (std.mem.eql(u8, clone.mission_uuid, info.mission_uuid)) {
+                    rebuilt.append(allocator, .{
+                        .mission_uuid = info.mission_uuid,
+                        .name = info.mission_name,
+                        .turns_to_complete = info.total_turns,
+                        .materials_collected = info.total_materials,
+                    }) catch @panic("failed to append clone");
+                    replaced = true;
+                } else {
+                    rebuilt.append(allocator, clone) catch @panic("failed to copy clone");
+                }
+            }
+            if (!replaced) {
+                rebuilt.append(allocator, .{
+                    .mission_uuid = info.mission_uuid,
+                    .name = info.mission_name,
+                    .turns_to_complete = info.total_turns,
+                    .materials_collected = info.total_materials,
+                }) catch @panic("failed to append clone");
+            }
+            current.player_data.clones =
+                rebuilt.toOwnedSlice(allocator) catch @panic("failed to allocate clones");
+        },
+        .harvest_clones => |harvest| {
+            // Payout from all saved clones: per material,
+            // `(materials * turns_spent) / turns_to_complete`
+            // (multiply before divide — see computeHarvest).
+            // Gated on turns_spent > 0 at the push site, but guard
+            // here too in case a hand-crafted replay seeds it at 0.
+            // See DESIGN → Clones (clone system).
+            const payout = computeHarvest(current.player_data.clones, harvest.turns_spent);
+            current.player_data.materials.add(payout);
+        },
+    }
+}
+
+/// Handle a `PlayerEvent` — the direct player verbs (learn/equip/salvage/
+/// swap), pushed as machinery children by the input orchestrators.
+pub fn handlePlayerEvent(
+    history: *GameStateHistory,
+    allocator: std.mem.Allocator,
+    player_event: events.PlayerEvent,
+) void {
+    const current = &history.current_state;
+    switch (player_event) {
+        .learn_skill => |learn| {
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .learn_skill);
+            const player = getPlayerEntity(current, 0);
+            const slot = &player.inventory.slots[learn.inventory_slot_index];
+
+            // Validate the slot contains a skill tome
+            const item = slot.* orelse return;
+            const skill_id = switch (item) {
+                .skill_tome => |tome| tome.skill,
+                else => return,
+            };
+
+            // Check if already learned
+            for (current.player_data.learned_skills) |learned| {
+                if (learned == skill_id) return;
+            }
+
+            // Remove the tome from inventory
+            slot.* = null;
+
+            // Add to learned skills
+            var updated_skills: std.ArrayList(SkillId) = .empty;
+            updated_skills.appendSlice(allocator, current.player_data.learned_skills) catch
+                @panic("failed to copy learned skills");
+            updated_skills.append(allocator, skill_id) catch
+                @panic("failed to append learned skill");
+            current.player_data.learned_skills = updated_skills.toOwnedSlice(allocator) catch
+                @panic("failed to allocate learned skills");
+        },
+        .salvage_item => |salvage| {
+            const player = getPlayerEntity(current, 0);
+            const slot = &player.inventory.slots[salvage.inventory_slot_index];
+
+            const item = slot.* orelse return;
+            // Sound after the guard: a salvage of an empty slot
+            // (crafted logs; live clicks are gated to occupied
+            // slots) must not click.
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .salvage);
+
+            // Compute salvage value and add to player materials
+            const materials = functions.computeSalvageValue(item, history.salvage_definitions);
+            current.player_data.materials.add(materials);
+
+            // Remove the item from inventory
+            slot.* = null;
+        },
+        .equip_item => |equip| {
+            const player = getPlayerEntity(current, 0);
+            const slot = &player.inventory.slots[equip.inventory_slot_index];
+
+            const item = slot.* orelse return;
+            if (!itemFitsGearSlot(item, equip.gear_slot)) return;
+            // Sound after the guards: a no-op equip (empty slot /
+            // unfitting item — crafted logs; live drags are gated at
+            // the drop site) must not click.
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .equip);
+
+            // Capture the displaced weapon before the gear-slot swap
+            // overwrites the slot, so its skill cooldowns can be
+            // inherited by the incoming weapon. See DESIGN → Architecture.
+            const old_weapon: ?types.Weapon = switch (equip.gear_slot) {
+                .main_hand, .off_hand => if (gearSlotItem(player, equip.gear_slot)) |old_item| old_item.weapon else null,
+                else => null,
+            };
+
+            // Old gear (if any) drops back into the inventory slot.
+            slot.* = gearSlotItem(player, equip.gear_slot);
+            setGearSlot(player, equip.gear_slot, item);
+
+            applyGearChangeSideEffects(current, equip.gear_slot, allocator);
+
+            if (equip.gear_slot == .main_hand or equip.gear_slot == .off_hand) {
+                transferWeaponCooldowns(
+                    player,
+                    old_weapon,
+                    item.weapon,
+                    history.weapon_type_definitions,
+                );
+            }
+        },
+        .unequip_item => |unequip| {
+            const player = getPlayerEntity(current, 0);
+            const piece = gearSlotItem(player, unequip.gear_slot) orelse return;
+            const slot = &player.inventory.slots[unequip.inventory_slot_index];
+
+            if (slot.*) |existing| {
+                // Filled target: swap only if the item fits this slot.
+                if (!itemFitsGearSlot(existing, unequip.gear_slot)) return;
+                setGearSlot(player, unequip.gear_slot, existing);
+                slot.* = piece;
+            } else {
+                // Empty target: move the piece out and clear the slot.
+                slot.* = piece;
+                clearGearSlot(player, unequip.gear_slot);
+            }
+
+            applyGearChangeSideEffects(current, unequip.gear_slot, allocator);
+        },
+        .equip_utility_skill => |equip| {
+            if (equip.slot_index >= utility_skill_count) return;
+            // Only UTILITY skills may sit on the bar — the learned
+            // list can contain weapon-skill tomes, so the drag path
+            // gates here too (see src/utility_skills.zig).
+            if (!utility_skills.isUtilitySkill(equip.skill_id)) return;
+            const player = getPlayerEntity(current, 0);
+
+            // Cooldown inheritance: the incoming skill's cd becomes
+            // @max(old slot skill cd, incoming cd) so a fresh swap
+            // can't bypass a cooldown that was ticking on the
+            // displaced skill. The outgoing skill's cd is PRESERVED
+            // (not cleared) in skill_cooldowns — see DESIGN → Architecture.
+            const old_skill = player.equipped_utility_skills[equip.slot_index];
+            const incoming_cd = player.skill_cooldowns.get(equip.skill_id);
+            const old_cd = if (old_skill) |s| player.skill_cooldowns.get(s) else 0;
+
+            player.equipped_utility_skills[equip.slot_index] = equip.skill_id;
+            player.skill_cooldowns.set(equip.skill_id, @max(old_cd, incoming_cd));
+
+            // Changing utility skills can invalidate a prepared skill.
+            cancelPreparedSkill(current);
+        },
+        .swap_utility_skills => |swap| {
+            if (swap.slot_a_index >= utility_skill_count) return;
+            if (swap.slot_b_index >= utility_skill_count) return;
+            const player = getPlayerEntity(current, 0);
+            const held = player.equipped_utility_skills[swap.slot_a_index];
+            player.equipped_utility_skills[swap.slot_a_index] =
+                player.equipped_utility_skills[swap.slot_b_index];
+            player.equipped_utility_skills[swap.slot_b_index] = held;
+
+            cancelPreparedSkill(current);
+            if (!history.replaying) history.session.queueSound(history.backing_allocator, .swap_skill);
+        },
+        .unequip_utility_skill => |unequip| {
+            if (unequip.slot_index >= utility_skill_count) return;
+            const player = getPlayerEntity(current, 0);
+            player.equipped_utility_skills[unequip.slot_index] = null;
+
+            cancelPreparedSkill(current);
+        },
+        .swap_inventory_items => |swap| {
+            if (swap.slot_a_index >= types.inventory_slot_count) return;
+            if (swap.slot_b_index >= types.inventory_slot_count) return;
+            const player = getPlayerEntity(current, 0);
+            const held = player.inventory.slots[swap.slot_a_index];
+            player.inventory.slots[swap.slot_a_index] =
+                player.inventory.slots[swap.slot_b_index];
+            player.inventory.slots[swap.slot_b_index] = held;
+        },
+    }
+}

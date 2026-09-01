@@ -12,6 +12,7 @@ const types = @import("types.zig");
 const state = @import("state.zig");
 const events = @import("events.zig");
 const event_handlers = @import("event_handlers.zig");
+const player_handlers = @import("handlers/player.zig");
 const event_push = @import("event_push.zig");
 const test_harness = @import("test_harness.zig");
 
@@ -559,28 +560,28 @@ test "cloneIsStrictlyBetter: all rates strictly higher -> true" {
     const new_m: Materials = .{ .wood = 20, .metal = 30, .leather = 0, .cloth = 0, .knowledge = 0 };
     const old_m: Materials = .{ .wood = 10, .metal = 10, .leather = 0, .cloth = 0, .knowledge = 0 };
     // 4 turns each: rates 5,7 vs 2,2 -> strict gain; zeros tie.
-    try testing.expect(event_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
+    try testing.expect(player_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
 }
 
 test "cloneIsStrictlyBetter: one rate worse -> false" {
     const new_m: Materials = .{ .wood = 20, .metal = 5, .leather = 0, .cloth = 0, .knowledge = 0 };
     const old_m: Materials = .{ .wood = 10, .metal = 20, .leather = 0, .cloth = 0, .knowledge = 0 };
     // 4 turns: wood 5>2 (gain), metal 1<5 (worse) -> false.
-    try testing.expect(!event_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
+    try testing.expect(!player_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
 }
 
 test "cloneIsStrictlyBetter: all rates equal -> false (no strict gain)" {
     const new_m: Materials = .{ .wood = 10, .metal = 10, .leather = 0, .cloth = 0, .knowledge = 0 };
     const old_m: Materials = .{ .wood = 10, .metal = 10, .leather = 0, .cloth = 0, .knowledge = 0 };
     // 4 turns: all rates equal -> no strict gain -> false (offer manual overwrite).
-    try testing.expect(!event_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
+    try testing.expect(!player_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
 }
 
 test "cloneIsStrictlyBetter: gains on some, ties on rest -> true" {
     const new_m: Materials = .{ .wood = 20, .metal = 10, .leather = 0, .cloth = 0, .knowledge = 0 };
     const old_m: Materials = .{ .wood = 10, .metal = 10, .leather = 0, .cloth = 0, .knowledge = 0 };
     // 4 turns: wood 5>2 (gain), metal 2==2 (tie), rest 0==0 -> true.
-    try testing.expect(event_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
+    try testing.expect(player_handlers.cloneIsStrictlyBetter(4, new_m, 4, old_m));
 }
 
 test "save_clone_info: appends when no existing clone for that uuid" {
@@ -790,7 +791,7 @@ test "computeHarvest: pure payout matches harvest_clones handler" {
         .{ .mission_uuid = "u1", .name = "A", .turns_to_complete = 5, .materials_collected = .{ .wood = 10 } },
         .{ .mission_uuid = "u2", .name = "B", .turns_to_complete = 3, .materials_collected = .{ .metal = 6 } },
     };
-    const payout = event_handlers.computeHarvest(&clones, 4);
+    const payout = player_handlers.computeHarvest(&clones, 4);
     // wood: (10/5)*4 = 8; metal: (6/3)*4 = 8.
     try testing.expectEqual(@as(u32, 8), payout.wood);
     try testing.expectEqual(@as(u32, 8), payout.metal);
@@ -806,7 +807,7 @@ test "computeHarvest: multiply-before-divide pays out fractional-rate clones" {
     const clones = [_]Clone{
         .{ .mission_uuid = "u1", .name = "A", .turns_to_complete = 49, .materials_collected = .{ .wood = 11, .metal = 25 } },
     };
-    const payout = event_handlers.computeHarvest(&clones, 30);
+    const payout = player_handlers.computeHarvest(&clones, 30);
     // wood: (11*30)/49 = 330/49 = 6; metal: (25*30)/49 = 750/49 = 15.
     try testing.expectEqual(@as(u32, 6), payout.wood);
     try testing.expectEqual(@as(u32, 15), payout.metal);
