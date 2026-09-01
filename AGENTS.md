@@ -385,6 +385,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   panel/skill buttons, number labels, skillIconSpriteId)
 - `src/ui/editor_chrome.zig` — editor tool palette (bottom bar), level
   tabs, Test/Validate primary actions, palette group math
+- `src/ui/editor_inspector.zig` — buildEditorInspectorPanel +
+  buildEditorMetadataSidebar, the inspector target inference, the field
+  emitters, textEditPressProceeds
 - `src/input.zig` — input pipeline, translateInput, bindings
 - `src/combat_log.zig` — combat-log projection (projectCombatLog + combatLogTier)
 - `src/file_source.zig` — unified file I/O (FileSource: embedded map +
