@@ -3646,6 +3646,19 @@ pub fn handleAnytimeInput(
             if (history.session.ui_state.editor_metadata_scroll < 0) {
                 history.session.ui_state.editor_metadata_scroll = 0;
             }
+        } else if (history.current_state.screen == .editor and
+            history.current_state.editor != null and
+            ui.editorLevelTabScrollRegion().contains(pointer_position))
+        {
+            // Level-tab window scroll (horizontal): one wheel notch = one
+            // tab, wheel-up = earlier tabs (the palette window model).
+            // Lower clamp here; `buildEditorLevelTabs` clamps the upper
+            // bound in place (authoritative — it knows the tab widths).
+            const delta_tabs: i32 = @intFromFloat(anytime.scroll_delta);
+            history.session.ui_state.editor_level_tab_scroll -= delta_tabs;
+            if (history.session.ui_state.editor_level_tab_scroll < 0) {
+                history.session.ui_state.editor_level_tab_scroll = 0;
+            }
         } else if (skillsSlotUnderPointer(ui_elements, pointer_position)) {
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
             history.session.ui_state.skills_scroll_offset -= delta_rows;

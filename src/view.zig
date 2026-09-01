@@ -323,6 +323,7 @@ pub fn view(
                 font_metrics,
                 editor,
                 active_theme,
+                &session.ui_state,
             ) catch @panic("failed to build editor level tabs");
             ui.buildEditorPrimaryActions(
                 &ui_elements,

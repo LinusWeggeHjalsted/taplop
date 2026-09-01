@@ -232,6 +232,13 @@ pub const UiState = struct {
     /// `editor_inspector_scroll`: clamped authoritative in the builder,
     /// lower-clamped in the wheel handler.
     editor_metadata_scroll: i32 = 0,
+    /// The level-tab row's scroll window offset (the editor top bar): the
+    /// index of the first visible tab. One wheel notch over the tab strip
+    /// = one tab (the routing in input_handlers); `buildEditorLevelTabs`
+    /// clamps both bounds in place (authoritative — it knows the tab
+    /// widths) and scrolls the minimum distance to keep the ACTIVE tab
+    /// on-screen. Off the undo timeline like the other scrolls.
+    editor_level_tab_scroll: i32 = 0,
 
     /// The editor's centered picker, if open — which field is being
     /// picked (first consumer: the utility-skill picker; the sprite picker
@@ -4784,8 +4791,12 @@ fn emitEditorToolDeleteButton(
 /// carries a small close-button (the shared `ui/close_button` class) flush
 /// in its top-right corner — `.delete_editor_level` deletes the level;
 /// offered only while the mission has more than one level (a mission
-/// always keeps ≥1). To the right of the last tab sits a square panel
-/// "+" (`.add_editor_level`): append a new level from the shipped
+/// always keeps ≥1). The row is bounded on the right by the primary-actions
+/// block (Test + Validate); when the tabs overflow it, the row shows a
+/// scroll window (one wheel notch over the tabs = one tab; the builder
+/// clamps both bounds and keeps the ACTIVE tab on-screen). The square
+/// panel "+" (`.add_editor_level`) pins flush at the row's right edge so
+/// it stays reachable while scrolled: append a new level from the shipped
 /// template (data/default_level.txt) + switch to it. See DESIGN →
 /// Architecture → Level Editor → Editor UI layout (tabs).
 pub fn buildEditorLevelTabs(
@@ -4794,16 +4805,34 @@ pub fn buildEditorLevelTabs(
     font_metrics: FontMetrics,
     editor: types.Editor,
     active_theme: types.ActiveColorTheme,
+    ui_state: *UiState,
 ) !void {
     const p = active_theme.player_gradient.colors;
     const button_color = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
 
     // Tabs start right of the top bar's two cells (options + undo joined
-    // by ui_gap in buildTopBar's Row; one more gap separates the tabs) and
-    // sit flush against the top of the screen.
-    var x = 2 * (slot_size + ui_gap);
-    const y: i32 = 0;
+    // by ui_gap in buildTopBar's Row; one more gap separates the tabs),
+    // flush against the top of the screen, and end at the pinned add-level
+    // "+" — one ui_gap clear of it, one clear of the primary-actions block.
+    const region_left: i32 = 2 * (slot_size + ui_gap);
+    const plus_cell: Rectangle = .{
+        .x = types.reference_width - editor_primary_actions_width - ui_gap -
+            editor_header_strip_height,
+        .y = 0,
+        .width = editor_header_strip_height,
+        .height = editor_header_strip_height,
+    };
+    const tabs_right_bound: i32 = plus_cell.x - ui_gap;
+    const region_width: i32 = tabs_right_bound - region_left;
 
+    // Per-tab labels + widths, computed up front: the scroll clamp and the
+    // active-tab follow below need every width before anything is emitted.
+    const TabLayout = struct { label: []const u8, width: i32 };
+    const tabs = try allocator.alloc(TabLayout, editor.levels.len);
+    const delete_zone_width: i32 = if (editor.levels.len > 1)
+        close_button_size + ui_gap
+    else
+        0;
     for (editor.levels, 0..) |level, index| {
         const label = if (level.name.len > 0)
             level.name
@@ -4812,18 +4841,86 @@ pub fn buildEditorLevelTabs(
         const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
         // The × delete button clears the label by WIDENING the tab: the
         // label centers in the zone left of the × (its width + one
-        // ui_gap), so the two can never overlap. A single-level mission
-        // offers no ×, so its tabs keep the compact width. Width never
-        // drops below the tab height (a square floor so short labels
-        // don't squish the panel).
-        const delete_zone_width: i32 = if (editor.levels.len > 1)
-            close_button_size + ui_gap
+        // ui_gap), so the two can never overlap. Width never drops below
+        // the tab height (a square floor so short labels don't squish the
+        // panel).
+        tabs[index] = .{
+            .label = label,
+            .width = @max(
+                label_width + delete_zone_width + 2 * ui_gap,
+                editor_header_strip_height,
+            ),
+        };
+    }
+
+    // Scroll clamp (authoritative, in place — the builder knows the tab
+    // widths): the max offset is the smallest offset whose remaining tab
+    // suffix fits the region; scrolling past it would only hide tabs at
+    // the front. Capped at the last tab so a tab wider than the whole
+    // region can't blank the row (it renders width-clamped as the first
+    // visible tab below).
+    const scroll_offset = &ui_state.editor_level_tab_scroll;
+    {
+        var suffix_width: i32 = 0;
+        var smallest_fitting: usize = editor.levels.len;
+        while (smallest_fitting > 0) {
+            const add: i32 = tabs[smallest_fitting - 1].width +
+                (if (smallest_fitting < editor.levels.len) ui_gap else 0);
+            if (suffix_width + add > region_width) break;
+            suffix_width += add;
+            smallest_fitting -= 1;
+        }
+        const max_offset: usize = @min(smallest_fitting, editor.levels.len - 1);
+        scroll_offset.* = @min(@max(scroll_offset.*, 0), @as(i32, @intCast(max_offset)));
+    }
+
+    // Active-tab follow: the add-level flow switches to the newly created
+    // LAST tab ("the author lands on the thing they just created"), which
+    // a scrolled window would hide. Scroll the minimum distance that
+    // brings the active tab into the window — never past the clamp above.
+    {
+        const active = @min(editor.active_level_index, editor.levels.len - 1);
+        const first: usize = @intCast(scroll_offset.*);
+        if (active < first) {
+            scroll_offset.* = @intCast(active);
+        } else {
+            var used: i32 = 0;
+            var last_visible: usize = first;
+            for (tabs[first..], first..) |tab, index| {
+                if (index > first and used + tab.width > region_width) break;
+                used += tab.width + ui_gap;
+                last_visible = index;
+            }
+            if (active > last_visible) {
+                // Walk backward from the active tab: the smallest offset
+                // whose window still contains it.
+                var back: usize = active;
+                var back_used: i32 = tabs[active].width;
+                while (back > first) {
+                    const add = tabs[back - 1].width + ui_gap;
+                    if (back_used + add > region_width) break;
+                    back_used += add;
+                    back -= 1;
+                }
+                scroll_offset.* = @intCast(back);
+            }
+        }
+    }
+
+    // Emit the visible window: fully-fitting tabs only (the palette
+    // window model — offscreen tabs can't be clicked). The FIRST visible
+    // tab always renders, its width clamped to the region.
+    const first_visible: usize = @intCast(scroll_offset.*);
+    var x = region_left;
+    const y: i32 = 0;
+    for (tabs[first_visible..], first_visible..) |tab, index| {
+        if (index > first_visible and x + tab.width > tabs_right_bound) break;
+        const width: i32 = if (index == first_visible)
+            @min(tab.width, tabs_right_bound - x)
         else
-            0;
-        const width = @max(
-            label_width + delete_zone_width + 2 * ui_gap,
-            editor_header_strip_height,
-        );
+            tab.width;
+        const label = tab.label;
+        const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
         const cell: Rectangle = .{
             .x = x,
             .y = y,
@@ -4886,20 +4983,41 @@ pub fn buildEditorLevelTabs(
         x += width + ui_gap;
     }
 
-    // Add-level "+": square panel cell flush right of the last tab — a
-    // BUTTON now (spriteless over the panel, the group-header class):
+    // Add-level "+": square panel cell PINNED flush at the row's right
+    // edge (always reachable while the tab window scrolls) — a BUTTON
+    // (spriteless over the panel, the group-header class):
     // `.add_editor_level` appends the template level + switches to it.
     try emitEditorPlusCell(
         elements,
         allocator,
         font_metrics,
-        .{ .x = x, .y = y, .width = editor_header_strip_height, .height = editor_header_strip_height },
+        plus_cell,
         button_color,
         active_theme.lightest,
         "Add level",
         .add_editor_level,
         null,
     );
+}
+
+/// The top-right primary-actions block's total width (Test + Validate:
+/// two `slot_size` cells + the separating gap). Shared by the buttons
+/// builder, the level-tab row's right bound, and the tab wheel-scroll
+/// region so the three can't drift.
+pub const editor_primary_actions_width: i32 = 2 * slot_size + ui_gap;
+
+/// The level-tab strip's wheel-scroll region: from the tab row's left
+/// edge (right of the top bar's options + undo cells) to the
+/// primary-actions block, top-aligned with the tabs. One wheel notch over
+/// it scrolls the tab window by one tab (`UiState.editor_level_tab_scroll`).
+pub fn editorLevelTabScrollRegion() Rectangle {
+    const left: i32 = 2 * (slot_size + ui_gap);
+    return .{
+        .x = left,
+        .y = 0,
+        .width = types.reference_width - editor_primary_actions_width - left,
+        .height = editor_header_strip_height,
+    };
 }
 
 /// The editor's primary actions (top-right corner): the Test button (a
@@ -4922,7 +5040,9 @@ pub fn buildEditorPrimaryActions(
     const c_btn_bg = p[@min(@as(u32, 5), types.gradient_color_count - 1)];
     const c_btn_icon = p[@min(@as(u32, 1), types.gradient_color_count - 1)];
 
-    // Flush right, reading left-to-right: Test, then Validate.
+    // Flush right, reading left-to-right: Test, then Validate. The
+    // block's total width is `editor_primary_actions_width` — the shared
+    // bound the level-tab row clamps against.
     const validate_cell: Rectangle = .{
         .x = types.reference_width - slot_size,
         .y = 0,
@@ -10298,7 +10418,11 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     };
 
     var elements: UiElementList = .empty;
-    try buildEditorLevelTabs(&elements, arena.allocator(), metrics, editor, theme);
+    var ui_state: UiState = .{ .editor_level_tab_scroll = 999 };
+    try buildEditorLevelTabs(&elements, arena.allocator(), metrics, editor, theme, &ui_state);
+
+    // No overflow: the scroll clamps to 0 (authoritative in the builder).
+    try std.testing.expectEqual(@as(i32, 0), ui_state.editor_level_tab_scroll);
 
     // 3 tabs x (panel + spriteless button + label + × button) + the
     // add-level "+" (panel + button + glyph) = 15 elements.
@@ -10379,9 +10503,10 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     // trio = 6 elements.
     {
         var single_elements: UiElementList = .empty;
+        var single_ui_state: UiState = .{};
         const single_levels = [_]types.EditorLevel{.{ .name = "Only" }};
         const single_editor: types.Editor = .{ .levels = &single_levels };
-        try buildEditorLevelTabs(&single_elements, arena.allocator(), metrics, single_editor, theme);
+        try buildEditorLevelTabs(&single_elements, arena.allocator(), metrics, single_editor, theme, &single_ui_state);
         try std.testing.expectEqual(@as(usize, 6), single_elements.items.len);
         var close_button_count: usize = 0;
         for (single_elements.items) |element| switch (element) {
@@ -10433,6 +10558,93 @@ test "buildEditorPrimaryActions: Test + Validate icon buttons flush top-right" {
     try std.testing.expectEqual(@as(i32, 0), validate_button.screen_position.y);
     try std.testing.expectEqual(slot_size, validate_button.width);
     try std.testing.expectEqual(slot_size, validate_button.height);
+}
+
+test "buildEditorLevelTabs: overflow clamps the window, pins the +, follows the active tab" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = black,
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{black} ** 6 },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // Eight levels with very long names: each tab is far wider than a
+    // third of the region, so the window shows exactly ONE tab and the
+    // max scroll is the last index (7).
+    var names: [8][]const u8 = undefined;
+    for (&names, 0..) |*slot, index| {
+        slot.* = try std.fmt.allocPrint(
+            arena.allocator(),
+            "An extremely long level name number {d} of eight",
+            .{index + 1},
+        );
+    }
+    var levels: [8]types.EditorLevel = undefined;
+    for (&levels, 0..) |*slot, index| {
+        slot.* = .{ .name = names[index] };
+    }
+    const editor: types.Editor = .{
+        .levels = &levels,
+        .active_level_index = 0,
+    };
+
+    // An over-scrolled offset clamps to the max (the last tab): the
+    // window shows exactly tab 7. (The active tab is 7 too — the
+    // active-follow below must NOT move the window past the clamp.)
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_level_tab_scroll = 999 };
+        const last_active: types.Editor = .{ .levels = &levels, .active_level_index = 7 };
+        try buildEditorLevelTabs(&elements, arena.allocator(), metrics, last_active, theme, &ui_state);
+        try std.testing.expectEqual(@as(i32, 7), ui_state.editor_level_tab_scroll);
+        // 1 tab x (panel + button + label + x) + the pinned "+" trio.
+        try std.testing.expectEqual(@as(usize, 7), elements.items.len);
+        try std.testing.expectEqualStrings(names[7], elements.items[2].text_label.text);
+        // The visible tab stays clear of the pinned "+".
+        const tab_panel = elements.items[0].nine_slice_panel;
+        try std.testing.expect(tab_panel.screen_position.x + tab_panel.width <=
+            types.reference_width - editor_primary_actions_width - ui_gap - editor_header_strip_height - ui_gap);
+    }
+
+    // The pinned "+": flush at the row's right edge, one ui_gap clear of
+    // the primary-actions block.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        try buildEditorLevelTabs(&elements, arena.allocator(), metrics, editor, theme, &ui_state);
+        const plus_panel = elements.items[4].nine_slice_panel;
+        try std.testing.expectEqual(
+            @as(i32, types.reference_width - editor_primary_actions_width - ui_gap - editor_header_strip_height),
+            plus_panel.screen_position.x,
+        );
+        try std.testing.expectEqual(@as(i32, 0), plus_panel.screen_position.y);
+    }
+
+    // Active-tab follow: the active tab beyond the window scrolls the
+    // window to it (the add-level flow's "land on the new tab").
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        const last_active: types.Editor = .{ .levels = &levels, .active_level_index = 7 };
+        try buildEditorLevelTabs(&elements, arena.allocator(), metrics, last_active, theme, &ui_state);
+        try std.testing.expectEqual(@as(i32, 7), ui_state.editor_level_tab_scroll);
+        try std.testing.expectEqualStrings(names[7], elements.items[2].text_label.text);
+    }
+    {
+        // The active tab BEHIND the window scrolls back to it.
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_level_tab_scroll = 7 };
+        const early_active: types.Editor = .{ .levels = &levels, .active_level_index = 2 };
+        try buildEditorLevelTabs(&elements, arena.allocator(), metrics, early_active, theme, &ui_state);
+        try std.testing.expectEqual(@as(i32, 2), ui_state.editor_level_tab_scroll);
+        try std.testing.expectEqualStrings(names[2], elements.items[2].text_label.text);
+    }
 }
 
 test "buildEditorInspectorPanel: toggle button always, background panel only when open" {
