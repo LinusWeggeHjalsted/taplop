@@ -1969,12 +1969,17 @@ restore the backup (null = the fresh-session default) and clear it.
 never write back to the editor's levels) and restore `screen = .editor`,
 `mode = .edit`. Validation is the same shape but starts at level 1 and forces
 a full playthrough; its per-level continuation is "next `start_playtest` from
-`editor.levels` or `end_validation`."
+`editor.levels` or `end_validation`" (a restart/exit continuation aborts
+with `end_validation{success=false}` — see the exit guard below).
 
 **Exit guard (the minimal editor-aware seam).** `end_level` checks
-`current.editor`: in `.playtest` it pushes `end_playtest` (instead of the
-default next-level/`end_mission`); in `.validate` it pushes the next
-`start_playtest` or `end_validation{success=true}`. `build_data_from_player`
+`current.editor`: in `.playtest` ANY exit — natural level completion or a
+restart/exit continuation (options menu, mission-fail overlay) — pushes
+`end_playtest` (the run is bracketed; there is no in-run restart); in
+`.validate` a non-default continuation ABORTS the run
+(`end_validation{success=false}` — the future validation-replay flow only
+cares about successful runs), while the default continuation pushes the
+next `start_playtest` or `end_validation{success=true}`. `build_data_from_player`
 is skipped in editor mode (playtest/validate are discard-semantics — the
 player's real PlayerData is unchanged). `end_mission` also guards: if an
 editor is active, suppress the `start_hub` continuation (defensive —
@@ -2007,8 +2012,14 @@ layout + a left inspector + a right metadata sidebar:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-- **Tabs (top):** one per level, horizontally scrollable when too many for
-  the width. Each tab carries a close button (×) — the shared
+- **Tabs (top):** one per level, horizontally scrollable when too many
+  for the width (LANDED): the row is bounded on the right by the
+  primary-actions block; overflowing tabs show through a scroll window —
+  one wheel notch over the tab strip = one tab (`UiState.editor_level_tab_scroll`,
+  the palette window model; the builder clamps both bounds authoritatively
+  and scrolls the minimum distance to keep the ACTIVE tab on-screen, so
+  the add-level flow's switch-to-new-tab always lands visible). Each tab
+  carries a close button (×) — the shared
   `ui/close_button` class, flush in the tab's top-right corner — that
   deletes the level (`player_delete_editor_level` → `editor_delete_level`:
   order-preserving removal, later levels shift down, `mission.level_count`
@@ -2018,7 +2029,9 @@ layout + a left inspector + a right metadata sidebar:
   has >1 level (a mission always has ≥1 — the handler PANICS on the
   violated invariant; the UI, the input layer, and `validatePlayerAction`
   all gate it first). The "add level" button (`+`)
-  is pinned OUTSIDE the scroll region so it's always reachable; it creates
+  is pinned flush at the row's right edge (one `ui_gap` clear of the
+  primary-actions block) so it's always reachable while the window
+  scrolls; it creates
   a level from the default template (`data/default_level.txt` — a minimal
   `!=` layout, `!` at (0,0), `=` at (1,0); the markers carry their own
   ground, so exactly those two tiles; unnamed — the author renames via the
@@ -2249,9 +2262,14 @@ layout + a left inspector + a right metadata sidebar:
   row's mode: the AUTO button while deriving, the SWATCH while an
   explicit pick is in force (the world row's swatch always — its index
   is always picked).
-- **Primary actions (top-right):** Test + Validate buttons. Test =
-  `start_playtest` on the active level (single-level); Validate =
-  `start_validation` (full playthrough from level 1). Both transition to
+- **Primary actions (top-right): LANDED.** Test + Validate icon buttons
+  (the options/undo visual class — `emitIconButton`, `slot_size` square,
+  flush at the top-right corner; placeholder sprite ids `ui/icon_playtest`
+  / `ui/icon_validate` until art lands). Test = `.test_editor_level` →
+  `player_start_playtest` → `start_playtest` on the active level
+  (single-level); Validate = `.validate_editor_mission` →
+  `player_start_validation` → `start_validation` (full playthrough from
+  level 1). Both transition to
   `.level` screen with editor dormant; `end_playtest`/`end_validation`
   return to `.editor`. The bottom bar during playtest/validate is the
   in-game bottom bar (the screen transition handles it; `view()` branches

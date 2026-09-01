@@ -448,6 +448,13 @@ paragraph). Remaining work:
   `start_playtest` / `end_playtest` / `start_validation` / `end_validation` +
   `editor_set_active_level`; exit guard in `end_level` / `end_mission`;
   round-trip test). See DESIGN → Architecture → Level Editor.
+- **Test/Validate buttons DONE** — the top-right icon buttons
+  (`player_start_playtest` / `player_start_validation` orchestrators +
+  `validatePlayerAction` arms + the exit-abort rule: any restart/exit
+  continuation during a validation run → `end_validation{success=false}`;
+  all exits drop back to the editor) + the tab-row scroll window against
+  the new corner bound. History in DONE.md; design in DESIGN → Level
+  Editor → Editor UI layout (primary actions + tabs) + the exit guard.
 - Edit-verb events: every verb's struct exists in events.zig and almost
   all are handled — the remaining unhandled three still `@panic` in
   `handleEditorEvent` (fail-fast): the `editor_move_*_placement` events.
@@ -956,8 +963,9 @@ Open:
   (DONE — see DONE.md). `drawTextLabel` still ignores bold/italic (only the
   regular face is loaded); honoring TextLabel bold/italic + color is a
   follow-up (needs separate bold/italic faces).
-- Missing-art audit: some bottom-bar sprite ids are still placeholders
-  (ui/icon_swap, ui/momentum) and will draw magenta until
+- Missing-art audit: some sprite ids are still placeholders
+  (ui/icon_swap, ui/momentum, and the editor's ui/icon_playtest /
+  ui/icon_validate) and will draw magenta until
   real assets land.
 - Web Phase 4: asset downscaling for web download budget (the Memory & Budget
   → Asset memory levers matter more for web than native); WebGL1/WebGL2 build

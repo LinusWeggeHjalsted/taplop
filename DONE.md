@@ -9175,3 +9175,58 @@ Tests: the max import end-to-end via the input arm (equipped gear with
 authored stats, empty weapon slots + utility bar per the file, inventory
 slots 0 + 11, session data untouched, undo reverts) + a ui assertion that
 both buttons render.
+
+## Editor Test/Validate buttons (the playtest/validate surface)
+
+The editor's top-right primary actions, wired end to end. The machinery
+(`start_playtest` / `end_playtest` / `start_validation` /
+`end_validation`, PlayerData dormancy, the `end_level` editor exit guard)
+was already landed from the framing slices — this session built the player
+surface + fixed one real behavioral gap the buttons would have exposed.
+
+- **Player orchestrators:** `player_start_playtest` /
+  `player_start_validation` PlayerInputEvents (the machinery events are
+  MetaEvents, which the replay structural whitelist rejects at idle
+  points). Thin handlers: `start_playtest{editor.active_level_index}` /
+  `start_validation`. `validatePlayerAction` arms gate editor screen +
+  editor present + `mode == .edit` (the buttons only exist there; a
+  crafted log seeding them mid-run panics).
+- **Exit-abort fix (the gap):** `end_level`'s editor guard previously
+  IGNORED the continuation and switched purely on mode — during a
+  validation run, a death + "restart mission"/"exit mission" click (both
+  route through `end_level` with a non-default continuation) would have
+  advanced to the NEXT level. Now: `.playtest` + any continuation →
+  `end_playtest` (the run is bracketed, no in-run restart); `.validate` +
+  non-default continuation → `end_validation{success=false}` (abort —
+  the future validation-replay flow only cares about successful runs);
+  default continuation → next `start_playtest` or
+  `end_validation{success=true}`. All exits drop back to the editor.
+- **Buttons:** `buildEditorPrimaryActions` (ui.zig) — two
+  `emitIconButton` cells (the options/undo class: button background +
+  icon, `slot_size` square, flush at the top-right corner), reading
+  Test, Validate. Placeholder sprite ids `ui/icon_playtest` /
+  `ui/icon_validate` (magenta until assets land — AGENTS missing-art
+  audit). Actions `.test_editor_level` / `.validate_editor_mission`
+  route through the payload-less `options_action` anytime pattern.
+  A click while a text field is focused is pure dismissal
+  (deliberately NOT added to `textEditPressProceeds` — the top bar is
+  not a sibling control of either panel).
+- **Tab-row scroll window (a consequence of the corner buttons):** the
+  tab row was unbounded; many/long-named tabs would run under the new
+  buttons. Now bounded by `editor_primary_actions_width` (the shared
+  const: two slots + gap), with a wheel-scroll window when tabs overflow
+  (one notch = one tab, `UiState.editor_level_tab_scroll`, the palette
+  window model), an authoritative builder clamp (max offset = smallest
+  offset whose tab suffix fits), an active-tab follow (the add-level
+  flow switches to the new LAST tab — "the author lands on the thing
+  they just created" — so the builder scrolls the minimum distance to
+  keep the active tab visible; a follow past the clamp is impossible by
+  construction), and the add-level "+" PINNED flush at the row's right
+  edge (always reachable while scrolled, one `ui_gap` clear of the
+  buttons). `editorLevelTabScrollRegion()` is the wheel-routing region,
+  sharing the same bound.
+
+Tests: the two orchestrators end-to-end (active-level playtest + full
+mission chain + exits), the validation abort on a non-default
+continuation, and the tab-window clamp/pin/follow behavior in the ui
+builder tests.
