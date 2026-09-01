@@ -9,8 +9,8 @@
 //!
 //! Handler-internal helpers (entity accessors, gear mutators, move-highlight
 //! refresh, prepared-skill cancel, AI min-range, tile tiebreak) live here too,
-//! alongside the event-pushing utilities (`pushEvents`/`pushPlayerSkillUse`)
-//! shared with the input handlers. The pure editor click planners
+//! alongside the event-pushing utilities shared with the input handlers
+//! (`pushEvents`/`pushPlayerSkillUse`/`pushPlayerAction` — event_push.zig). The pure editor click planners
 //! (`planEditor*Actions`) + editor selection algebra live in
 //! `editor/planning.zig` (see DESIGN → Level Editor → Active-tool model).
 
@@ -28,6 +28,11 @@ const lookups = @import("generated_lookups.zig");
 const deep_copy = @import("deep_copy.zig");
 const Skill = @import("skills/skill.zig").Skill;
 const planning = @import("editor/planning.zig");
+const event_push = @import("event_push.zig");
+
+const pushEvents = event_push.pushEvents;
+const pushPlayerAction = event_push.pushPlayerAction;
+const pushPlayerSkillUse = event_push.pushPlayerSkillUse;
 
 const deepCopy = deep_copy.deepCopy;
 
@@ -127,63 +132,6 @@ fn computeMinRange(
     }
 
     return min_range;
-}
-
-/// Push the single orchestrator event for a player skill use. The handler
-/// resolves whether the skill ends the turn (weapon_skill/spell) and composes
-/// use_skill + clear_highlights + clear_prepared_skill (+ turn_end). Keeping
-/// one event per action is what lets reconstruction derive idle points from
-/// virtual stack depth (see reconstructFromEventLog in state.zig).
-pub fn pushPlayerSkillUse(
-    current: *GameState,
-    skill_id: SkillId,
-    target: ?Vector2,
-    allocator: std.mem.Allocator,
-) void {
-    pushPlayerAction(current, .{ .player_use_skill = .{
-        .skill_id = skill_id,
-        .target = target,
-    } }, allocator);
-}
-
-/// Push events onto the event stack. Events are processed from the back
-/// (top of stack), so the last event pushed is processed first.
-pub fn pushEvents(
-    current: *GameState,
-    new_events: []const Event,
-    allocator: std.mem.Allocator,
-) void {
-    if (new_events.len == 0) return;
-
-    if (current.event_stack.len == 0) {
-        current.event_stack = allocator.dupe(
-            Event,
-            new_events,
-        ) catch @panic("failed to allocate event stack");
-        return;
-    }
-
-    const combined = allocator.alloc(
-        Event,
-        current.event_stack.len + new_events.len,
-    ) catch @panic("failed to allocate event stack");
-
-    @memcpy(combined[0..current.event_stack.len], current.event_stack);
-    @memcpy(combined[current.event_stack.len..], new_events);
-    current.event_stack = combined;
-}
-
-/// Push a player-input event (the ONLY kind input handlers may push — see
-/// `PlayerInputEvent` in events.zig). This wrapper is the compile-time gate:
-/// input handlers call this instead of `pushEvents`, so they can't push
-/// machinery events. The handler for a `PlayerInputEvent` may push machinery
-/// events as children via `pushEvents` (that's the orchestrator convention).
-pub fn pushPlayerAction(
-    current: *GameState,
-    action: events.PlayerInputEvent,
-    allocator: std.mem.Allocator,
-) void {
-    pushEvents(current, &.{.{ .player_input_event = action }}, allocator);
 }
 
 /// Push the gameplay start batch for a freshly-loaded level: player sync

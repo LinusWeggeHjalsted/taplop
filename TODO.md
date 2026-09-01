@@ -1254,14 +1254,14 @@ Done items in DONE.md. Open:
   switch prongs extract into per-category handler fns (recording/replay/
   checkpoint logic stays in the dispatch). Slices, each a commit +
   `scripts/test.sh` green:
-  - [ ] 1. `src/editor/planning.zig` — the pure `planEditor*Actions`
+  - [x] 1. `src/editor/planning.zig` — the pure `planEditor*Actions`
         planners + selection algebra + `activeEditorLevel` out of
         event_handlers.zig; input_handlers + handler_tests_editor import it
         directly.
   - [ ] 2. `src/editor/handlers.zig` — `handleEditorEvent` + editor session
         helpers (import player, palette types, defaults, registry) +
         selection-mutation helpers out of event_handlers.zig.
-  - [ ] 3. `event_push.zig` — pushEvents/pushPlayerSkillUse/pushPlayerAction.
+  - [x] 3. `event_push.zig` — pushEvents/pushPlayerSkillUse/pushPlayerAction.
   - [ ] 4. `src/handlers/` — meta / player / level / hub handler files;
         processEvent prongs become handler fns; event_handlers.zig becomes
         the thin dispatch + shared entity accessors.

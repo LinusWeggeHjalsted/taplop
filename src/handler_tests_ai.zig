@@ -10,6 +10,7 @@ const types = @import("types.zig");
 const state = @import("state.zig");
 const events = @import("events.zig");
 const event_handlers = @import("event_handlers.zig");
+const event_push = @import("event_push.zig");
 const test_harness = @import("test_harness.zig");
 
 const Harness = test_harness.Harness;
@@ -33,13 +34,13 @@ const five_by_five = [_]Vector2{
 
 /// Push a single level event and run to idle.
 fn pushAndRunLevel(history: *state.GameStateHistory, event: LevelEvent) void {
-    event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = event }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .level_event = event }}, history.current_arena.allocator());
     runToIdle(history);
 }
 
 /// Push a single sub-level event and run to idle.
 fn pushAndRunSub(history: *state.GameStateHistory, event: SubLevelEvent) void {
-    event_handlers.pushEvents(&history.current_state, &.{.{ .sub_level_event = event }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .sub_level_event = event }}, history.current_arena.allocator());
     runToIdle(history);
 }
 

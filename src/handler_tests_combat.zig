@@ -9,6 +9,7 @@ const types = @import("types.zig");
 const state = @import("state.zig");
 const events = @import("events.zig");
 const event_handlers = @import("event_handlers.zig");
+const event_push = @import("event_push.zig");
 const functions = @import("functions.zig");
 const test_harness = @import("test_harness.zig");
 
@@ -32,13 +33,13 @@ const three_by_three = [_]Vector2{
 
 /// Push a single sub-level event and run to idle.
 fn pushAndRunSub(history: *state.GameStateHistory, event: SubLevelEvent) void {
-    event_handlers.pushEvents(&history.current_state, &.{.{ .sub_level_event = event }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .sub_level_event = event }}, history.current_arena.allocator());
     runToIdle(history);
 }
 
 /// Push a single level event and run to idle.
 fn pushAndRunLevel(history: *state.GameStateHistory, event: LevelEvent) void {
-    event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = event }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .level_event = event }}, history.current_arena.allocator());
     runToIdle(history);
 }
 
@@ -841,7 +842,7 @@ test "equip boots during player_move refreshes move highlights" {
     history.current_state.level.?.turn_phase = .player_move;
     // Equip boots (speed_bonus 1) → effective speed 2 → reachable tiles grow.
     levelEntity(&history, 0).inventory.slots[0] = .{ .boots = .{ .speed_bonus = 1 } };
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_event = .{ .equip_item = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .player_event = .{ .equip_item = .{
         .inventory_slot_index = 0,
         .gear_slot = .boots,
     } } }}, history.current_arena.allocator());
@@ -861,7 +862,7 @@ test "equip weapon cancels a prepared skill" {
     ));
     history.current_state.level.?.prepared_skill = .slice;
     levelEntity(&history, 0).inventory.slots[0] = .{ .weapon = .{ .weapon_type = .sword, .weapon_damage = 1 } };
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_event = .{ .equip_item = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .player_event = .{ .equip_item = .{
         .inventory_slot_index = 0,
         .gear_slot = .main_hand,
     } } }}, history.current_arena.allocator());

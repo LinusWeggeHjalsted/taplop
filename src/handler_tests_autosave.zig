@@ -11,6 +11,7 @@ const testing = std.testing;
 const types = @import("types.zig");
 const events = @import("events.zig");
 const event_handlers = @import("event_handlers.zig");
+const event_push = @import("event_push.zig");
 const state_mod = @import("state.zig");
 const test_harness = @import("test_harness.zig");
 const writers = @import("writers.zig");
@@ -41,7 +42,7 @@ test "player_continue: populated PlayerData resumes at current_hub" {
     history.current_state.player_data.current_hub = "camp_at_the_crossroads";
     runToIdle(&history);
 
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .player_continue,
         history.current_arena.allocator(),
@@ -63,7 +64,7 @@ test "player_continue: empty PlayerData pushes load_save on the autosave" {
     var history = harness.newHistory(null);
     runToIdle(&history);
 
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .player_continue,
         history.current_arena.allocator(),
@@ -94,7 +95,7 @@ test "player_continue: missing autosave is recoverable (popup + hide Continue)" 
     history.session.autosave_available = true; // simulate a fresh launch that detected an autosave
     runToIdle(&history);
 
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .player_continue,
         history.current_arena.allocator(),
@@ -133,7 +134,7 @@ test "end_level: pushes build_data_from_player then write_save on the autosave" 
     ));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{} } }},
         history.current_arena.allocator(),
@@ -163,7 +164,7 @@ test "end_hub: pushes build_data_from_player then write_save on the autosave" {
     var history = harness.newHistory(null);
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .end_hub }},
         history.current_arena.allocator(),
@@ -195,7 +196,7 @@ test "save_game: pushes timestamped write + autosave write after sync" {
     ));
     runToIdle(&history);
 
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .save_game = .{ .save_path = "saves/save_TEST.txt" } },
         history.current_arena.allocator(),
@@ -251,7 +252,7 @@ test "backup_autosave: copies existing autosave to a timestamped backup" {
     var history = harness.newHistory(null);
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .backup_autosave }},
         history.current_arena.allocator(),
@@ -303,7 +304,7 @@ test "backup_autosave: no autosave present is a no-op" {
     var history = harness.newHistory(null);
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .backup_autosave }},
         history.current_arena.allocator(),
@@ -351,7 +352,7 @@ test "start_new_game: backs up existing autosave before start_hub clears the sta
     var history = harness.newHistory(null);
     runToIdle(&history);
 
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .start_new_game,
         history.current_arena.allocator(),

@@ -12,6 +12,7 @@ const types = @import("types.zig");
 const state = @import("state.zig");
 const events = @import("events.zig");
 const event_handlers = @import("event_handlers.zig");
+const event_push = @import("event_push.zig");
 const functions = @import("functions.zig");
 const test_harness = @import("test_harness.zig");
 const input_handlers = @import("input_handlers.zig");
@@ -54,7 +55,7 @@ fn hubStateWithPlayer(player_entity: Entity) GameState {
 
 /// Push a single player event and run the history to idle.
 fn pushAndRun(history: *state.GameStateHistory, event: PlayerEvent) void {
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_event = event }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .player_event = event }}, history.current_arena.allocator());
     runToIdle(history);
 }
 
@@ -521,7 +522,7 @@ test "equip_item: weapon into empty hand preserves own cds" {
 
 /// Push a single player-input orchestrator event and run to idle.
 fn pushInputAndRun(history: *state.GameStateHistory, event: events.PlayerInputEvent) void {
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = event }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = event }}, history.current_arena.allocator());
     runToIdle(history);
 }
 

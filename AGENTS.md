@@ -304,9 +304,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/event_handlers.zig` — `processEvent` (the one-event dispatch + all
   handler arms) and handler-internal helpers (entity accessors, gear mutators,
   move-highlight refresh, prepared-skill cancel, AI min-range, tile tiebreak).
-  Also the event-pushing utilities (`pushEvents`/`pushPlayerSkillUse`) shared
-  with the input handlers. (The round-trip reconstruction test lives in
-  `main.zig`.)
+  (The round-trip reconstruction test lives in `main.zig`.)
+- `src/event_push.zig` — the event-stack push utilities (`pushEvents`/
+  `pushPlayerSkillUse`/`pushPlayerAction`, the input-side compile-time gate)
+  shared by the handlers, input_handlers, main.zig, and the tests.
 - `src/editor/planning.zig` — the pure editor click planners
   (`planEditor*Actions`, one per tool) + editor selection algebra, shared by
   the editor handlers and the input-side no-op gate

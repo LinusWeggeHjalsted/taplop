@@ -20,6 +20,7 @@ const session_log = @import("session_log.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const event_handlers = @import("event_handlers.zig");
+const event_push = @import("event_push.zig");
 const input_handlers = @import("input_handlers.zig");
 const view_mod = @import("view.zig");
 const build_info = @import("build_info");
@@ -997,9 +998,9 @@ test "session log round-trips through reconstruction (forward play == replay)" {
     // one hub move) into history1, recording events as it goes.
     var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
     runToIdle(&history1);
-    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
+    event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
     runToIdle(&history1);
-    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history1.current_arena.allocator());
+    event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history1.current_arena.allocator());
     runToIdle(&history1);
     try std.testing.expectEqual(state.Screen.hub, history1.current_state.screen);
 
@@ -1078,9 +1079,9 @@ test "loadAndReconstructSession: resumes at the end of a loaded log file" {
     // move) into history1.
     var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
     runToIdle(&history1);
-    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
+    event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
     runToIdle(&history1);
-    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history1.current_arena.allocator());
+    event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history1.current_arena.allocator());
     runToIdle(&history1);
     try std.testing.expectEqual(state.Screen.hub, history1.current_state.screen);
 
@@ -1204,7 +1205,7 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
     // so reconstruction's isPlayerAction gate accepts them.
     var history1 = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
     runToIdle(&history1);
-    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
+    event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .start_new_game }}, history1.current_arena.allocator());
     runToIdle(&history1);
     try std.testing.expectEqual(state.Screen.hub, history1.current_state.screen);
 
@@ -1220,7 +1221,7 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
         }
     }
     try std.testing.expect(beginnings_exit != null);
-    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .move_player = .{
+    event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .move_player = .{
         .destination = beginnings_exit.?,
     } } }}, history1.current_arena.allocator());
     runToIdle(&history1);
@@ -1250,7 +1251,7 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
             .x = player_pos.x + sign(enemy_pos.x - player_pos.x),
             .y = player_pos.y + sign(enemy_pos.y - player_pos.y),
         };
-        event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .player_move_action = .{
+        event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .player_move_action = .{
             .destination = step,
         } } }}, history1.current_arena.allocator());
         runToIdle(&history1);
@@ -1260,10 +1261,10 @@ test "reconstruction with wait events: undo/redo reversible, no stale waiting" {
 
     // Skip the player's move + attack to end the turn → enemy turns drain
     // (pushing wait events) → turn_start for the next player turn.
-    event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .player_skip_move = .{} } }}, history1.current_arena.allocator());
+    event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .{ .player_skip_move = .{} } }}, history1.current_arena.allocator());
     runToIdle(&history1);
     if (history1.current_state.level.?.turn_phase == .player_attack) {
-        event_handlers.pushEvents(&history1.current_state, &.{.{ .player_input_event = .player_skip_attack }}, history1.current_arena.allocator());
+        event_push.pushEvents(&history1.current_state, &.{.{ .player_input_event = .player_skip_attack }}, history1.current_arena.allocator());
         runToIdle(&history1);
     }
 
@@ -1359,9 +1360,9 @@ test "replay verification: clean replay through the slow path passes" {
 
     var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
     runToIdle(&history);
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .start_new_game }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .start_new_game }}, history.current_arena.allocator());
     runToIdle(&history);
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .move_player = .{ .destination = .{ .x = 1, .y = 0 } } } }}, history.current_arena.allocator());
     runToIdle(&history);
     try std.testing.expectEqual(state.Screen.hub, history.current_state.screen);
 
@@ -1430,7 +1431,7 @@ test "ported campaign missions load through the event path" {
         // Fresh history per mission so each load is independent.
         var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
         runToIdle(&history);
-        event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
+        event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
             .mission_path = mission.path,
             .start_hub_id = null,
             .end_hub_id = null,
@@ -1537,7 +1538,7 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     runToIdle(&history);
 
     // Open the editor on the shipped beginnings mission.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
         .mission_path = "data/campaigns/main_campaign/missions/beginnings",
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
@@ -1571,7 +1572,7 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     try std.testing.expect(std.mem.eql(u8, "player", editor.player_def.template.sprite));
 
     // Start a playtest on level 0.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
         .level_index = 0,
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
@@ -1595,7 +1596,7 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
 
     // End the playtest (simulating the player completing the level — in live
     // play, end_level's guard pushes end_playtest; here we push it directly).
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
     runToIdle(&history);
 
     // Back in the editor: screen .editor, level + mission cleared (discard
@@ -1607,7 +1608,7 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     try std.testing.expectEqual(@as(usize, 3), history.current_state.editor.?.levels.len);
 
     // Close the editor.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .close_editor }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .close_editor }}, history.current_arena.allocator());
     runToIdle(&history);
     try std.testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
     try std.testing.expect(history.current_state.editor == null);
@@ -1650,7 +1651,7 @@ test "fresh editor open: empty New Mission, template level, playtest round-trip"
     // The main-menu Editor button's flow: null mission_path = a FRESH
     // empty mission (no uuid — identity is minted at save time, never
     // held in state; see DESIGN → Level Editor → Mission identity).
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{
         .open_editor = .{ .mission_path = null },
     } }}, history.current_arena.allocator());
     runToIdle(&history);
@@ -1686,7 +1687,7 @@ test "fresh editor open: empty New Mission, template level, playtest round-trip"
 
     // Playtest the template level: just the player at the '!', the '=' at
     // (1,0), nothing else.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
         .level_index = 0,
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
@@ -1695,9 +1696,9 @@ test "fresh editor open: empty New Mission, template level, playtest round-trip"
     try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.current_state.level.?.level_end.?);
 
     // End + close round-trip.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
     runToIdle(&history);
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .close_editor }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .close_editor }}, history.current_arena.allocator());
     runToIdle(&history);
     try std.testing.expectEqual(state.Screen.main_menu, history.current_state.screen);
     try std.testing.expect(history.current_state.editor == null);
@@ -1745,11 +1746,11 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     runToIdle(&history);
 
     // Open editor + start playtest on beginnings level 0.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
         .mission_path = "data/campaigns/main_campaign/missions/beginnings",
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_playtest = .{
         .level_index = 0,
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
@@ -1762,14 +1763,14 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     // attack phase; if not, auto_skip_attack_step_out_of_combat completes
     // the whole turn (turn_end fires during the drain). The per-mission
     // counter increments; the cumulative counter does NOT (editor mode).
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .player_skip_move = .{} } }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .player_skip_move = .{} } }}, history.current_arena.allocator());
     runToIdle(&history);
 
     // If auto-skip didn't fire (we're in the attack phase), skip it to
     // complete the turn. If it did fire, we're back in player_move for the
     // next turn — don't push another skip (it would start a second turn).
     if (history.current_state.level.?.turn_phase == .player_attack) {
-        event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .player_skip_attack }}, history.current_arena.allocator());
+        event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .player_skip_attack }}, history.current_arena.allocator());
         runToIdle(&history);
     }
 
@@ -1778,7 +1779,7 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
 
     // End the playtest (discard semantics — counters are discarded with the
     // mission; player_data.turns was never touched).
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
     runToIdle(&history);
     try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
 }
@@ -1832,14 +1833,14 @@ test "open_editor with a path from inside the editor swaps missions + bumps worl
 
     // Enter the editor with a fresh mission, then swap to beginnings via a
     // path open (the mission browser's row click).
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
         .mission_path = null,
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
     try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
     const generation_before = history.current_state.world_generation;
 
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
         .mission_path = "data/campaigns/main_campaign/missions/beginnings",
     } } }}, history.current_arena.allocator());
     runToIdle(&history);
@@ -1915,7 +1916,7 @@ test "reconstruction read failure: handler sets load_error, drain loop reverts s
     try std.testing.expectEqual(@as(?[]const u8, null), history.session.pending_error);
 
     // Push start_mission pointing at the broken mission.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .start_mission = .{
         .mission_path = "data/campaigns/main_campaign/missions/beginnings",
         .start_hub_id = null,
         .end_hub_id = null,
@@ -2003,7 +2004,7 @@ test "write_save failure: sets pending_error, no crash, no state corruption" {
 
     // Push write_save to "saves/test_save.txt" — ensureParentDirs tries to
     // create the "saves" dir, fails because "saves" is a file.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .write_save = .{
+    event_push.pushEvents(&history.current_state, &.{.{ .meta_event = .{ .write_save = .{
         .save_path = "saves/test_save.txt",
     } } }}, history.current_arena.allocator());
     event_handlers.processEvent(&history);
@@ -2116,7 +2117,7 @@ test "anytime swap_weapons during a wait: handled immediately, no idle point, ab
     // below the wait's baseline depth (e.g. a pending turn_end). The wait has
     // 500ms remaining; baseline_stack_depth = 1 (the stack depth when the wait
     // was pushed, after the wait event itself was popped).
-    event_handlers.pushEvents(&history.current_state, &.{.{
+    event_push.pushEvents(&history.current_state, &.{.{
         .level_event = .clear_highlights,
     }}, history.current_arena.allocator());
     history.current_state.waiting = .{
@@ -2262,7 +2263,7 @@ test "undo during a mid-drain reverts to the current idle point, not one further
     // Simulate a mid-drain: an in-progress player action's subtree is on the
     // stack with a wait active (e.g. enemy turns draining). current_idle_index
     // still points at idle point 2 — the state just before the drain started.
-    event_handlers.pushEvents(&history.current_state, &.{.{
+    event_push.pushEvents(&history.current_state, &.{.{
         .level_event = .clear_highlights,
     }}, history.current_arena.allocator());
     history.current_state.waiting = .{
@@ -2312,7 +2313,7 @@ test "maybeRecordIdlePoint: first idle point from empty idle_points (no out-of-b
 
     // Process one event (swap_hands) directly, then call maybeRecordIdlePoint
     // with empty idle_points — must record the first idle point, not crash.
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .swap_hands }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .swap_hands }}, history.current_arena.allocator());
     event_handlers.processEvent(&history);
     try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try std.testing.expect(history.current_event_index > 0);

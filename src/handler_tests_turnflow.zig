@@ -12,6 +12,7 @@ const types = @import("types.zig");
 const state = @import("state.zig");
 const events = @import("events.zig");
 const event_handlers = @import("event_handlers.zig");
+const event_push = @import("event_push.zig");
 const test_harness = @import("test_harness.zig");
 
 const Harness = test_harness.Harness;
@@ -36,14 +37,14 @@ const five_by_five = [_]Vector2{
 /// Push one level event onto the stack (no drain). The caller inspects
 /// `event_stack` or calls `processEvent` manually for ordering tests.
 fn pushOne(history: *state.GameStateHistory, event: LevelEvent) void {
-    event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = event }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .level_event = event }}, history.current_arena.allocator());
 }
 
 /// Push one player-input event onto the stack (no drain). Same as `pushOne`
 /// but for `PlayerInputEvent` (the player orchestrator variants that moved
 /// out of LevelEvent).
 fn pushPlayerInput(history: *state.GameStateHistory, event: events.PlayerInputEvent) void {
-    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = event }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = event }}, history.current_arena.allocator());
 }
 
 /// Run exactly one processEvent step (pops the top, runs its handler, leaves
@@ -551,7 +552,7 @@ const Clone = types.Clone;
 const SuperEvent = events.SuperEvent;
 
 fn pushSuper(history: *state.GameStateHistory, event: SuperEvent) void {
-    event_handlers.pushEvents(&history.current_state, &.{.{ .super_event = event }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .super_event = event }}, history.current_arena.allocator());
 }
 
 test "cloneIsStrictlyBetter: all rates strictly higher -> true" {
@@ -712,7 +713,7 @@ test "harvest_clones: skips clones with zero turns_to_complete" {
 // skills_used in use_skill — both player-only, gated on mission non-null.
 
 fn pushLevel(history: *state.GameStateHistory, event: LevelEvent) void {
-    event_handlers.pushEvents(&history.current_state, &.{.{ .level_event = event }}, history.current_arena.allocator());
+    event_push.pushEvents(&history.current_state, &.{.{ .level_event = event }}, history.current_arena.allocator());
 }
 
 test "move_entity: player tiles_moved accumulates on the mission" {

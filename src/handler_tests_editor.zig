@@ -12,6 +12,7 @@ const events = @import("events.zig");
 const state = @import("state.zig");
 const input = @import("input.zig");
 const event_handlers = @import("event_handlers.zig");
+const event_push = @import("event_push.zig");
 const planning = @import("editor/planning.zig");
 const input_handlers = @import("input_handlers.zig");
 const test_harness = @import("test_harness.zig");
@@ -64,7 +65,7 @@ test "player_set_editor_level: switches the active level, undo reverts" {
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.active_level_index);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_level = .{ .level_index = 2 } } }},
         history.current_arena.allocator(),
@@ -90,7 +91,7 @@ test "player_set_editor_level: out-of-range index is a no-op (handler guard)" {
 
     // The inline editor_set_active_level handler guards the range (an
     // out-of-range index leaves active_level_index unchanged).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_active_level = .{ .level_index = 9 } } }},
         history.current_arena.allocator(),
@@ -150,7 +151,7 @@ test "player_toggle_editor_inspector: flips the open state, undo/redo restores" 
     // inspector is the first thing an author sees).
     try testing.expect(history.current_state.editor.?.inspector_open);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .player_toggle_editor_inspector }},
         history.current_arena.allocator(),
@@ -177,7 +178,7 @@ test "player_add_editor_entity_type: default creation, tool + inspector, undo re
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.entity_types.len);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .player_add_editor_entity_type }},
         history.current_arena.allocator(),
@@ -221,7 +222,7 @@ test "player_add_editor_decoration_type: stone_1 default, undo reverts" {
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .player_add_editor_decoration_type }},
         history.current_arena.allocator(),
@@ -257,7 +258,7 @@ test "player_add_editor_item_type: New Sword default, undo reverts" {
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .player_add_editor_item_type }},
         history.current_arena.allocator(),
@@ -298,7 +299,7 @@ test "player_add_editor_entity_type: opens a closed inspector, clears the select
     runToIdle(&history);
     try testing.expect(history.current_state.editor.?.selection.len > 0);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .player_add_editor_entity_type }},
         history.current_arena.allocator(),
@@ -344,7 +345,7 @@ test "editor_delete_type (entity): removes the type + placements across levels, 
     }));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_delete_editor_type = .{
             .type_kind = .entity,
@@ -414,7 +415,7 @@ test "editor_delete_type: deleting the active tool resets to select; the selecti
     }));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_delete_editor_type = .{
             .type_kind = .entity,
@@ -488,7 +489,7 @@ test "editor_delete_type (decoration + item kinds): placements across levels, ot
 
     // Delete the tree type: both levels' tree placements go, the item
     // placements are untouched (separate palettes).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_delete_editor_type = .{
             .type_kind = .decoration,
@@ -507,7 +508,7 @@ test "editor_delete_type (decoration + item kinds): placements across levels, ot
     }
 
     // Delete the amulet type: both levels' amulet placements go.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_delete_editor_type = .{
             .type_kind = .item,
@@ -546,7 +547,7 @@ test "editor_delete_type: out-of-range type id is a no-op (handler guard)" {
     }));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_delete_type = .{
             .type_kind = .entity,
@@ -570,7 +571,7 @@ test "player_paint_editor_tile: paints a tile on empty space, sorted into the li
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_paint_editor_tile = .{
             .position = .{ .x = 1, .y = 2 },
@@ -596,7 +597,7 @@ test "player_paint_editor_tile: existing tile is a no-op" {
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_paint_editor_tile = .{
             .position = .{ .x = 1, .y = 1 },
@@ -647,7 +648,7 @@ test "player_paint_editor_tile: replaces a covering decoration, one undo reverts
     });
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_paint_editor_tile = .{
             .position = .{ .x = 5, .y = 1 },
@@ -712,7 +713,7 @@ test "player_paint_editor_tile: deletes ALL covering decorations, others intact"
     });
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_paint_editor_tile = .{
             .position = .{ .x = 2, .y = 1 },
@@ -740,7 +741,7 @@ test "editor_set_tile: erase arm removes a tile, absent tile is a no-op" {
     var history = harness.newHistory(editorStartingState(&levels));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_tile = .{
             .level_index = 0,
@@ -756,7 +757,7 @@ test "editor_set_tile: erase arm removes a tile, absent tile is a no-op" {
     try testing.expect(!hasTile(level, .{ .x = 1, .y = 2 }));
 
     // Erasing a tile that isn't there is an idempotent no-op.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_tile = .{
             .level_index = 0,
@@ -808,7 +809,7 @@ test "editor_delete_decoration_placement: removes the placement, order preserved
     });
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_delete_decoration_placement = .{
             .level_index = 0,
@@ -846,7 +847,7 @@ test "player_place_editor_entity: empty tile → enemy placed on it" {
     var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
             .type_id = 1,
@@ -873,7 +874,7 @@ test "player_place_editor_entity: no tile → tile placed + enemy on top" {
     var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
             .type_id = 0,
@@ -913,7 +914,7 @@ test "player_place_editor_entity: decoration + missing tile → both handled, on
     var history = harness.newHistory(editorStateWith(editor));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
             .type_id = 0,
@@ -952,7 +953,7 @@ test "player_place_editor_entity: player start and level end are no-ops" {
     runToIdle(&history);
 
     for ([_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 4, .y = 0 } }) |position| {
-        event_handlers.pushEvents(
+        event_push.pushEvents(
             &history.current_state,
             &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
                 .type_id = 0,
@@ -987,7 +988,7 @@ test "player_place_editor_entity: existing enemy is retyped in place, same type 
 
     // Different type → retyped in place: same index, same position, new
     // type_id, placement count unchanged.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
             .type_id = 1, // Wolf
@@ -1003,7 +1004,7 @@ test "player_place_editor_entity: existing enemy is retyped in place, same type 
     try testing.expectEqual(types.Vector2{ .x = 1, .y = 1 }, level.entity_placements[0].position);
 
     // Same type again → nothing to do (no do-nothing undo step).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
             .type_id = 1,
@@ -1035,7 +1036,7 @@ test "player_place_editor_entity: ground item on the tile is deleted, enemy plac
     var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_entity = .{
             .type_id = 0,
@@ -1065,7 +1066,7 @@ test "editor_set_entity_placement_type: retypes without touching position or cou
     var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_entity_placement_type = .{
             .level_index = 0,
@@ -1097,7 +1098,7 @@ test "editor_delete_item_placement: removes the placement, order preserved" {
     var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_delete_item_placement = .{
             .level_index = 0,
@@ -1135,7 +1136,7 @@ test "player_place_editor_decoration: empty ground → placement at the anchor p
     var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
             .type_id = 0,
@@ -1167,7 +1168,7 @@ test "player_place_editor_decoration: player start or level end under ANY footpr
     runToIdle(&history);
 
     for ([_]types.Vector2{ .{ .x = -1, .y = 0 }, .{ .x = 3, .y = 4 } }) |position| {
-        event_handlers.pushEvents(
+        event_push.pushEvents(
             &history.current_state,
             &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
                 .type_id = 0,
@@ -1210,7 +1211,7 @@ test "player_place_editor_decoration: covered tiles + occupants are cleared, one
     var history = harness.newHistory(editorStateWith(editor));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
             .type_id = 0,
@@ -1257,7 +1258,7 @@ test "player_place_editor_decoration: overlapping other decorations are deleted"
     var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
             .type_id = 0,
@@ -1285,7 +1286,7 @@ test "player_set_editor_decoration_color_index: sets the type's color, out-of-ra
     var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_decoration_color_index = .{
             .type_id = 1,
@@ -1298,7 +1299,7 @@ test "player_set_editor_decoration_color_index: sets the type's color, out-of-ra
     try testing.expectEqual(@as(u32, 5), history.current_state.editor.?.decoration_types[1].color_index);
 
     // A crafted out-of-range type id records nothing (the handler's guard).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_decoration_color_index = .{
             .type_id = 99,
@@ -1326,7 +1327,7 @@ fn pushDecorationDef(
         .color_index = 2,
         .pixel_dims = .{ .x = 512, .y = 768 },
     }};
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_decoration_def = .{
             .type_id = type_id,
@@ -1516,7 +1517,7 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
 
     // Add: two layers append in order.
     for ([_][]const u8{ "chainmail", "hood" }) |layer_sprite| {
-        event_handlers.pushEvents(
+        event_push.pushEvents(
             &history.current_state,
             &.{.{ .player_input_event = .{ .player_add_editor_entity_layer = .{
                 .target = target,
@@ -1533,7 +1534,7 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
     try testing.expectEqualStrings("hood", template.layers[1].sprite);
 
     // Set: replace layer 0 in place (order + the other layer stable).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_entity_layer = .{
             .target = target,
@@ -1550,7 +1551,7 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
     try testing.expectEqualStrings("hood", template.layers[1].sprite);
 
     // Remove: order-preserving compact.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_remove_editor_entity_layer = .{
             .target = target,
@@ -1565,7 +1566,7 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
 
     // Crafted-log defense: the player loadout has no layers (ignored),
     // and an out-of-range layer index records nothing.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_add_editor_entity_layer = .{
             .target = .player_def,
@@ -1576,7 +1577,7 @@ test "entity layer events: add appends, set replaces, remove compacts, player ta
     );
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.player_def.template.layers.len);
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_remove_editor_entity_layer = .{
             .target = target,
@@ -1613,7 +1614,7 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
     // Add: a matching layer appends; a MISMATCHED one is ignored (the
     // load-time invariant — the level parser panics on a dims mismatch,
     // so the editor never holds one).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_add_editor_decoration_layer = .{
             .type_id = 0,
@@ -1624,7 +1625,7 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_add_editor_decoration_layer = .{
             .type_id = 0,
@@ -1642,7 +1643,7 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
     // Set: a color swap replaces in place; a mismatched set is ignored.
     var recolored = matching_layer;
     recolored.color_index = 5;
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_decoration_layer = .{
             .type_id = 0,
@@ -1656,7 +1657,7 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
     runToIdle(&history);
     definition = history.current_state.editor.?.decoration_types[0];
     try testing.expectEqual(@as(u32, 5), definition.layers[0].color_index);
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_decoration_layer = .{
             .type_id = 0,
@@ -1673,7 +1674,7 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
 
     // Remove + one undo reverts the remove; an out-of-range index or type
     // records nothing.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_remove_editor_decoration_layer = .{
             .type_id = 0,
@@ -1686,7 +1687,7 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.decoration_types[0].layers.len);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_remove_editor_decoration_layer = .{
             .type_id = 0,
@@ -1695,7 +1696,7 @@ test "decoration layer events: add/set/remove with the dims-match invariant" {
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_add_editor_decoration_layer = .{
             .type_id = 99,
@@ -1723,7 +1724,7 @@ test "editor_delete_entity_placement: removes the placement, order preserved" {
     var history = harness.newHistory(editorStateWith(placementTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_delete_entity_placement = .{
             .level_index = 0,
@@ -1758,7 +1759,7 @@ test "player_place_editor_item: no tile → tile placed + item on top" {
     var history = harness.newHistory(editorStateWith(itemTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_item = .{
             .type_id = 0,
@@ -1784,7 +1785,7 @@ test "player_place_editor_item: empty tile → item placed on it" {
     var history = harness.newHistory(editorStateWith(itemTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_item = .{
             .type_id = 1,
@@ -1818,7 +1819,7 @@ test "player_place_editor_item: decoration footprint → decoration deleted, til
     var history = harness.newHistory(editorStateWith(editor));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_item = .{
             .type_id = 0,
@@ -1855,7 +1856,7 @@ test "player_place_editor_item: player start and level end are no-ops" {
     runToIdle(&history);
 
     for ([_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 4, .y = 0 } }) |position| {
-        event_handlers.pushEvents(
+        event_push.pushEvents(
             &history.current_state,
             &.{.{ .player_input_event = .{ .player_place_editor_item = .{
                 .type_id = 0,
@@ -1893,7 +1894,7 @@ test "player_place_editor_item: enemy on the tile is deleted, item placed" {
     var history = harness.newHistory(editorStateWith(editor));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_item = .{
             .type_id = 0,
@@ -1929,7 +1930,7 @@ test "player_place_editor_item: existing item is retyped in place, same type is 
 
     // Different type → retyped in place: same index, same position, new
     // type_id, placement count unchanged.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_item = .{
             .type_id = 1, // Boots
@@ -1945,7 +1946,7 @@ test "player_place_editor_item: existing item is retyped in place, same type is 
     try testing.expectEqual(types.Vector2{ .x = 1, .y = 1 }, level.item_placements[0].position);
 
     // Same type again → nothing to do (no do-nothing undo step).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_item = .{
             .type_id = 1,
@@ -1973,7 +1974,7 @@ test "editor_set_item_placement_type: retypes without touching position or count
     var history = harness.newHistory(editorStateWith(itemTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_item_placement_type = .{
             .level_index = 0,
@@ -2022,7 +2023,7 @@ test "player_delete_editor_at: one thing per click, occupant before tile" {
 
     const pushDelete = struct {
         fn call(history_: *state.GameStateHistory, position: types.Vector2) void {
-            event_handlers.pushEvents(
+            event_push.pushEvents(
                 &history_.current_state,
                 &.{.{ .player_input_event = .{ .player_delete_editor_at = .{
                     .position = position,
@@ -2086,7 +2087,7 @@ test "player_delete_editor_at: player start / level end / decoration cases" {
 
     const pushDelete = struct {
         fn call(history_: *state.GameStateHistory, position: types.Vector2) void {
-            event_handlers.pushEvents(
+            event_push.pushEvents(
                 &history_.current_state,
                 &.{.{ .player_input_event = .{ .player_delete_editor_at = .{
                     .position = position,
@@ -2138,7 +2139,7 @@ test "editor deletes prune the selection and remap shifted indices" {
     const seeded_selection = [_]types.Selectable{ .{ .entity_placement = 0 }, .{ .entity_placement = 2 } };
     history.current_state.editor.?.selection = &seeded_selection;
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_delete_entity_placement = .{
             .level_index = 0,
@@ -2159,7 +2160,7 @@ test "editor deletes prune the selection and remap shifted indices" {
     }
 
     // Deleting a SELECTED placement removes its entry outright.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_delete_entity_placement = .{
             .level_index = 0,
@@ -2205,7 +2206,7 @@ test "editor deletes prune selected tiles and decorations" {
 
     // Erasing a selected tile removes just that tile entry (the other tile
     // + the decoration stay).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_tile = .{
             .level_index = 0,
@@ -2222,7 +2223,7 @@ test "editor deletes prune selected tiles and decorations" {
     }
 
     // Deleting the selected decoration removes its entry.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_delete_decoration_placement = .{
             .level_index = 0,
@@ -2256,7 +2257,7 @@ test "player_place_editor_decoration: cascaded tile erases prune selected tiles"
     };
     history.current_state.editor.?.selection = &seeded_selection;
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
             .type_id = 0,
@@ -2415,7 +2416,7 @@ test "player_place_editor_decoration: exact duplicate click is a no-op" {
     var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
             .type_id = 0,
@@ -2448,7 +2449,7 @@ test "player_place_editor_decoration: duplicate kept, other overlapping decorati
     var history = harness.newHistory(editorStateWith(decorationTestEditor(&levels)));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_place_editor_decoration = .{
             .type_id = 0,
@@ -2664,7 +2665,7 @@ test "player_select_editor_region: adds the region in one undoable step" {
 
     // Marquee over (1,1)-(2,1): both tiles + the player start (0,0) is
     // OUTSIDE the region (the rect is inclusive between the corners).
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_select_editor_region = .{
             .start_position = .{ .x = 1, .y = 1 },
@@ -2695,7 +2696,7 @@ test "player_select_editor_region: adds the region in one undoable step" {
     // plan replays a crafted redundant event gracefully (selection
     // unchanged, no duplicates).
     const selection_before = history.current_state.editor.?.selection.len;
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_select_editor_region = .{
             .start_position = .{ .x = 1, .y = 1 },
@@ -2774,7 +2775,7 @@ test "player_delete_editor_selection: deletes everything selected except the mar
         try testing.expectEqual(@as(u32, 1), plan[6].editor_event.editor_delete_entity_placement.placement_index);
     }
 
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .player_delete_editor_selection,
         history.current_arena.allocator(),
@@ -3285,7 +3286,7 @@ test "player_add_editor_level: appends the template level, switches to it, undo 
     }));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .player_add_editor_level }},
         history.current_arena.allocator(),
@@ -3350,7 +3351,7 @@ test "editor_delete_level: removal + active-tab adjustment + level_count sync, u
     // Delete BELOW the active tab (A): the active tab shifts down with its
     // level, the selection survives (the active level's placements are
     // untouched).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_delete_editor_level = .{
             .level_index = 0,
@@ -3370,7 +3371,7 @@ test "editor_delete_level: removal + active-tab adjustment + level_count sync, u
 
     // Delete the ACTIVE level (B, now index 0): the tab clamps onto C and
     // the selection clears (the editor_set_active_level semantics).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_delete_editor_level = .{
             .level_index = 0,
@@ -4238,7 +4239,7 @@ test "editor_set_item_def: out-of-range type id is a no-op (handler guard)" {
     }));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_item_def = .{
             .type_id = 9,
@@ -4253,7 +4254,7 @@ test "editor_set_item_def: out-of-range type id is a no-op (handler guard)" {
     // The crafted-log clamp: stats beyond the max_* bounds are clamped by
     // the handler (the editor never holds a state its own load path
     // would clamp away).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_item_def = .{
             .type_id = 0,
@@ -4412,7 +4413,7 @@ test "player_move_editor_selection: moves the whole selection, deselects after, 
 
     // Move everything down 3 rows. The moved player start lands on empty
     // ground (0,3) — a tile is ensured under it.
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_move_editor_selection = .{ .delta = .{ .x = 0, .y = 3 } } },
         history.current_arena.allocator(),
@@ -4485,7 +4486,7 @@ test "player_move_editor_selection: an unselected occupant pins its tile (no swe
     history.current_state.editor.?.selection = &seeded_selection;
     runToIdle(&history);
 
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_move_editor_selection = .{ .delta = .{ .x = 1, .y = 0 } } },
         history.current_arena.allocator(),
@@ -4526,7 +4527,7 @@ test "player_move_editor_selection: a target on a marker drops the thing entirel
     history.current_state.editor.?.selection = &seeded_selection;
     runToIdle(&history);
 
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_move_editor_selection = .{ .delta = .{ .x = -1, .y = -1 } } },
         history.current_arena.allocator(),
@@ -4574,7 +4575,7 @@ test "player_move_editor_selection: chained placement handles targets sharing a 
 
     // Targets (4,4) + (5,4) — both under the wide footprint (the
     // decoration erased the tiles there when it was placed).
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_move_editor_selection = .{ .delta = .{ .x = 3, .y = 3 } } },
         history.current_arena.allocator(),
@@ -4613,7 +4614,7 @@ test "player_move_editor_selection: a moved marker takes its ground with it" {
     history.current_state.editor.?.selection = &seeded_selection;
     runToIdle(&history);
 
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_move_editor_selection = .{ .delta = .{ .x = 2, .y = 1 } } },
         history.current_arena.allocator(),
@@ -4646,7 +4647,7 @@ test "player_move_editor_selection: a moved marker takes its ground with it" {
     history.current_state.editor.?.selection = &seeded_selection;
     const with_tile = [_]types.Selectable{ .{ .tile = .{ .x = 0, .y = 0 } }, .player_start };
     history.current_state.editor.?.selection = &with_tile;
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_move_editor_selection = .{ .delta = .{ .x = 0, .y = 2 } } },
         history.current_arena.allocator(),
@@ -4673,7 +4674,7 @@ test "editor utility-skill commit: set/clear via the wrapper, weapon skills and 
     runToIdle(&history);
 
     // Set slot 0 to blink (a cantrip): one undo step.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_entity_utility_skill = .{
             .target = .{ .entity_type = 0 },
@@ -4695,7 +4696,7 @@ test "editor utility-skill commit: set/clear via the wrapper, weapon skills and 
 
     // A weapon skill no-ops (the handler's defensive gate — the picker
     // never offers one and validation rejects crafted logs).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_entity_utility_skill = .{
             .target = .{ .entity_type = 0 },
@@ -4711,7 +4712,7 @@ test "editor utility-skill commit: set/clear via the wrapper, weapon skills and 
     );
 
     // An out-of-range slot no-ops.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_entity_utility_skill = .{
             .target = .{ .entity_type = 0 },
@@ -4877,7 +4878,7 @@ test "player_import_editor_player: copies the session player data, undo reverts,
     // A playtest instantiates entity 0 from the template — the inventory
     // (loadout data, not a runtime field) carries into the level.
     try testing.expect(history.redo(event_handlers.processEvent));
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .start_playtest = .{ .level_index = 0 } } }},
         history.current_arena.allocator(),
@@ -4900,7 +4901,7 @@ test "player_import_editor_player: no session data imports the new-game default 
     // to data/new_player.txt.
     try testing.expectEqual(@as(usize, 0), history.current_state.player_data.player_name.len);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .editor_import_player }},
         history.current_arena.allocator(),
@@ -4937,7 +4938,7 @@ test "start_playtest builds its own player_data (all skills learned), end_playte
     campaign.learned_skills = &.{.replenish};
     history.current_state.player_data = campaign;
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .start_playtest = .{ .level_index = 0 } } }},
         history.current_arena.allocator(),
@@ -4967,7 +4968,7 @@ test "start_playtest builds its own player_data (all skills learned), end_playte
     // In-level events mutate player_data directly (use_skill_tome,
     // salvage) — simulate one, then end the playtest.
     history.current_state.player_data.player_name = "Mutated In Playtest";
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .end_playtest }},
         history.current_arena.allocator(),
@@ -4992,7 +4993,7 @@ test "a validation run's chained level start_playtest does not re-back-up" {
     history.current_state.player_data = .{ .player_name = "Campaign Player" };
 
     // Level 1 of the validation run: backs up + builds.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .start_validation }},
         history.current_arena.allocator(),
@@ -5003,7 +5004,7 @@ test "a validation run's chained level start_playtest does not re-back-up" {
     // Mid-run mutation (an in-level event), then the chained next-level
     // start_playtest (mode is .validate, not .edit).
     history.current_state.player_data.player_name = "Mutated In Run";
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .start_playtest = .{ .level_index = 1 } } }},
         history.current_arena.allocator(),
@@ -5018,7 +5019,7 @@ test "a validation run's chained level start_playtest does not re-back-up" {
         history.current_state.editor.?.pre_playtest_player_data.?.player_name,
     );
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_validation = .{ .success = true } } }},
         history.current_arena.allocator(),
@@ -5042,7 +5043,7 @@ test "player_start_playtest starts the active level; the exit returns to the edi
     history.current_state.player_data = .{ .player_name = "Campaign Player" };
 
     // The Test button's orchestrator: playtest of the ACTIVE level (1).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .player_start_playtest }},
         history.current_arena.allocator(),
@@ -5057,7 +5058,7 @@ test "player_start_playtest starts the active level; the exit returns to the edi
 
     // Natural level completion (end_level, default continuation) exits
     // back to the editor + restores the session's real player data.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{} } }},
         history.current_arena.allocator(),
@@ -5084,7 +5085,7 @@ test "player_start_validation plays the whole mission; completion ends back in t
     runToIdle(&history);
     history.current_state.player_data = .{ .player_name = "Campaign Player" };
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .player_start_validation }},
         history.current_arena.allocator(),
@@ -5095,7 +5096,7 @@ test "player_start_validation plays the whole mission; completion ends back in t
     try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.current_level_index);
 
     // Completing level 1 chains level 2 (not the active tab — level 0).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{} } }},
         history.current_arena.allocator(),
@@ -5105,7 +5106,7 @@ test "player_start_validation plays the whole mission; completion ends back in t
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
 
     // Completing the LAST level ends the run: editor, edit mode, restored.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{} } }},
         history.current_arena.allocator(),
@@ -5129,7 +5130,7 @@ test "a validation run's restart/exit continuation aborts to the editor (success
     runToIdle(&history);
     history.current_state.player_data = .{ .player_name = "Campaign Player" };
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .start_validation }},
         history.current_arena.allocator(),
@@ -5139,7 +5140,7 @@ test "a validation run's restart/exit continuation aborts to the editor (success
     // Death-exit shape: the mission-fail overlay / options menu routes
     // through end_level with a non-default continuation. The run aborts —
     // no next-level chain, back to the editor, real player data restored.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{ .continuation = .exit_mission } } }},
         history.current_arena.allocator(),
@@ -5167,7 +5168,7 @@ test "a playtest restart continuation re-runs the same level fresh" {
     runToIdle(&history);
     history.current_state.player_data = .{ .player_name = "Campaign Player" };
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .player_start_playtest }},
         history.current_arena.allocator(),
@@ -5178,7 +5179,7 @@ test "a playtest restart continuation re-runs the same level fresh" {
     // Mid-run mutation, then the restart (the mission-fail overlay's
     // "Restart Playtest"): end + fresh re-entry of the SAME level.
     history.current_state.player_data.player_name = "Mutated In Run";
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{ .continuation = .restart_mission } } }},
         history.current_arena.allocator(),
@@ -5209,14 +5210,14 @@ test "a validation restart continuation re-runs the whole mission from level 1" 
     runToIdle(&history);
     history.current_state.player_data = .{ .player_name = "Campaign Player" };
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .start_validation }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
     // Advance to level 2 (the natural completion path).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{} } }},
         history.current_arena.allocator(),
@@ -5227,7 +5228,7 @@ test "a validation restart continuation re-runs the whole mission from level 1" 
     // Mid-run mutation, then the restart: back to level 1 with fresh run
     // data (NOT the mutated carry-over, NOT a next-level advance).
     history.current_state.player_data.player_name = "Mutated In Run";
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{ .continuation = .restart_mission } } }},
         history.current_arena.allocator(),
@@ -5261,7 +5262,7 @@ test "exit to main menu during an editor run ends the run and closes the editor"
         runToIdle(&history);
         history.current_state.player_data = .{ .player_name = "Campaign Player" };
 
-        event_handlers.pushEvents(
+        event_push.pushEvents(
             &history.current_state,
             &.{start},
             history.current_arena.allocator(),
@@ -5273,7 +5274,7 @@ test "exit to main menu during an editor run ends the run and closes the editor"
         // the run ends (data restored) AND the editor session is gone —
         // the button means the main menu, not the editor.
         history.current_state.player_data.player_name = "Mutated In Run";
-        event_handlers.pushEvents(
+        event_push.pushEvents(
             &history.current_state,
             &.{.{ .meta_event = .{ .end_level = .{ .continuation = .exit_to_menu } } }},
             history.current_arena.allocator(),
@@ -5321,7 +5322,7 @@ test "open_editor: a mission without player.txt falls back to the maxed default 
     var history = harness.newHistory(null);
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .open_editor = .{
             .mission_path = "missions/no_player",
@@ -5648,7 +5649,7 @@ test "player_set_editor_decoration_footprint: adopts + prunes, empty/out-of-boun
     }));
     runToIdle(&history);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_decoration_footprint = .{
             .type_id = 0,
@@ -5672,7 +5673,7 @@ test "player_set_editor_decoration_footprint: adopts + prunes, empty/out-of-boun
 
     // Crafted-log defense: an empty footprint, a tile outside the sprite
     // grid, and a bad type id all record nothing.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_decoration_footprint = .{
             .type_id = 0,
@@ -5682,7 +5683,7 @@ test "player_set_editor_decoration_footprint: adopts + prunes, empty/out-of-boun
     );
     runToIdle(&history);
     const out_of_bounds = [_]types.Vector2{.{ .x = 5, .y = 0 }};
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_decoration_footprint = .{
             .type_id = 0,
@@ -5691,7 +5692,7 @@ test "player_set_editor_decoration_footprint: adopts + prunes, empty/out-of-boun
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_decoration_footprint = .{
             .type_id = 99,
@@ -5807,7 +5808,7 @@ test "metadata sidebar metadata commits: names, color wheel, gradient overrides"
     runToIdle(&history);
 
     // Mission name (mission-scoped, no level index).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_mission_name = .{
             .name = "New Name",
@@ -5818,7 +5819,7 @@ test "metadata sidebar metadata commits: names, color wheel, gradient overrides"
     try testing.expectEqualStrings("New Name", history.current_state.editor.?.mission.name);
 
     // Level name + world gradient index (level-indexed, tab 0).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_level_name = .{
             .level_index = 0,
@@ -5829,7 +5830,7 @@ test "metadata sidebar metadata commits: names, color wheel, gradient overrides"
     runToIdle(&history);
     try testing.expectEqualStrings("Renamed", history.current_state.editor.?.levels[0].name);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_level_color_wheel = .{
             .level_index = 0,
@@ -5842,7 +5843,7 @@ test "metadata sidebar metadata commits: names, color wheel, gradient overrides"
 
     // Gradient overrides: a pick sets the manual index; null reverts to
     // auto-derivation (the Auto toggle). Both ride the undo timeline.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_level_enemy_gradient = .{
             .level_index = 0,
@@ -5853,7 +5854,7 @@ test "metadata sidebar metadata commits: names, color wheel, gradient overrides"
     runToIdle(&history);
     try testing.expectEqual(@as(?u32, 2), history.current_state.editor.?.levels[0].enemy_gradient_index);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_set_editor_level_player_gradient = .{
             .level_index = 0,
@@ -5884,7 +5885,7 @@ test "player_toggle_editor_metadata_sidebar: flips the open state, undo restores
     // reference panel, not the first thing an author needs).
     try testing.expect(!history.current_state.editor.?.metadata_sidebar_open);
 
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .player_toggle_editor_metadata_sidebar }},
         history.current_arena.allocator(),
@@ -6424,7 +6425,7 @@ test "editor inventory slot events: add default sword, def retype, rename, delet
 
     // Add: the default sword (the editor_defaults.txt Items entry — the
     // palette "+" default).
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_add_editor_inventory_item = .{ .index = 0 } },
         history.current_arena.allocator(),
@@ -6448,7 +6449,7 @@ test "editor inventory slot events: add default sword, def retype, rename, delet
 
     // Def commit (a type pick — reset-everything semantics): replace the
     // sword with a coat; the crafted-log clamp applies to stats over max.
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_set_editor_inventory_item_def = .{
             .index = 0,
@@ -6468,7 +6469,7 @@ test "editor inventory slot events: add default sword, def retype, rename, delet
     }
 
     // Rename: top-level string event (multi-word names are the point).
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_set_editor_inventory_item_name = .{
             .index = 0,
@@ -6487,7 +6488,7 @@ test "editor inventory slot events: add default sword, def retype, rename, delet
 
     // Delete clears to null; undo walks back through rename + def (the
     // add was undone above).
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_delete_editor_inventory_item = .{ .index = 0 } },
         history.current_arena.allocator(),
@@ -6510,7 +6511,7 @@ test "editor inventory item handlers: crafted-log guards no-op" {
     runToIdle(&history);
 
     // An occupied slot for the occupied-add / rename / delete guards.
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_add_editor_inventory_item = .{ .index = 5 } },
         history.current_arena.allocator(),
@@ -6518,7 +6519,7 @@ test "editor inventory item handlers: crafted-log guards no-op" {
     runToIdle(&history);
 
     // Out-of-range index: ignored.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_add_inventory_item = .{
             .index = types.inventory_slot_count,
@@ -6528,7 +6529,7 @@ test "editor inventory item handlers: crafted-log guards no-op" {
     runToIdle(&history);
 
     // Add onto an occupied slot: a no-op (the slot keeps its item).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_add_inventory_item = .{ .index = 5 } } }},
         history.current_arena.allocator(),
@@ -6540,7 +6541,7 @@ test "editor inventory item handlers: crafted-log guards no-op" {
     );
 
     // Def + name commits on an EMPTY slot: no-ops.
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_inventory_item_def = .{
             .index = 6,
@@ -6549,7 +6550,7 @@ test "editor inventory item handlers: crafted-log guards no-op" {
         } } }},
         history.current_arena.allocator(),
     );
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_set_inventory_item_name = .{
             .index = 6,
@@ -6561,7 +6562,7 @@ test "editor inventory item handlers: crafted-log guards no-op" {
     try testing.expect(history.current_state.editor.?.player_def.template.inventory.slots[6] == null);
 
     // Delete on an empty slot: a no-op (null stays null, no error).
-    event_handlers.pushEvents(
+    event_push.pushEvents(
         &history.current_state,
         &.{.{ .editor_event = .{ .editor_delete_inventory_item = .{ .index = 6 } } }},
         history.current_arena.allocator(),

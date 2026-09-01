@@ -4,7 +4,7 @@
 //! `input.zig` is the *translation* layer (raw platform events → semantic
 //! `PlayerInput`); this file is the *consumption* layer: `handleAnytimeInput`,
 //! `handleIdleInput`, `resolveTileCursor`, and the drag lifecycle resolve a
-//! player input into event pushes (via `event_handlers.pushEvents`) or direct
+//! player input into event pushes (via `event_push.pushEvents`) or direct
 //! `SessionState` writes (transient view/input state — never undoable
 //! `GameState`). Session-log dev tooling (`dumpEventLog`, the build-version
 //! advisory warn, the timestamp formatter) lives here too, called from the
@@ -25,6 +25,7 @@ const file_source_mod = @import("file_source.zig");
 const zip_writer = @import("zip_writer.zig");
 const zip_reader = @import("zip_reader.zig");
 const event_handlers = @import("event_handlers.zig");
+const event_push = @import("event_push.zig");
 const planning = @import("editor/planning.zig");
 const functions = @import("functions.zig");
 const view_mod = @import("view.zig");
@@ -300,7 +301,7 @@ pub fn handleDrag(
                     region.end_slot,
                     allocator,
                 ).len > 0) {
-                    event_handlers.pushPlayerAction(current, .{ .player_salvage_inventory_region = .{
+                    event_push.pushPlayerAction(current, .{ .player_salvage_inventory_region = .{
                         .start_slot = region.start_slot,
                         .end_slot = region.end_slot,
                     } }, allocator);
@@ -348,7 +349,7 @@ pub fn handleDrag(
                 else
                     false;
                 if (dragActionWouldChange(player, skill_prepared, orchestrator)) {
-                    event_handlers.pushPlayerAction(current, orchestrator, allocator);
+                    event_push.pushPlayerAction(current, orchestrator, allocator);
                 }
             }
             ui_state.drag = null;
@@ -456,14 +457,14 @@ fn resolveInventoryClick(
     const allocator = history.current_arena.allocator();
     switch (intent) {
         .equip_main, .equip_off => {
-            event_handlers.pushPlayerAction(current, .{ .player_use_inventory_item = .{
+            event_push.pushPlayerAction(current, .{ .player_use_inventory_item = .{
                 .inventory_slot_index = slot_index,
                 .off_hand = intent == .equip_off,
             } }, allocator);
             ui_state.last_item_click = null; // consumed
         },
         .salvage => {
-            event_handlers.pushPlayerAction(current, .{ .player_salvage_inventory_item = .{
+            event_push.pushPlayerAction(current, .{ .player_salvage_inventory_item = .{
                 .inventory_slot_index = slot_index,
             } }, allocator);
             ui_state.last_item_click = null;
@@ -835,7 +836,7 @@ pub fn handleRightClickEditorDelete(
                         const arena = history.current_arena.allocator();
                         const plan = planning.planEditorDeleteActions(editor, pending.position, arena);
                         if (plan.len > 0) {
-                            event_handlers.pushPlayerAction(current, .{ .player_delete_editor_at = .{
+                            event_push.pushPlayerAction(current, .{ .player_delete_editor_at = .{
                                 .position = pending.position,
                             } }, arena);
                         }
@@ -945,7 +946,7 @@ pub fn handleEditorMarquee(
                             marquee.end_position,
                             arena,
                         ).len > 0) {
-                            event_handlers.pushPlayerAction(current, .{ .player_select_editor_region = .{
+                            event_push.pushPlayerAction(current, .{ .player_select_editor_region = .{
                                 .start_position = marquee.start_position,
                                 .end_position = marquee.end_position,
                             } }, arena);
@@ -962,7 +963,7 @@ pub fn handleEditorMarquee(
                         marquee.start_position,
                         arena,
                     ).len > 0) {
-                        event_handlers.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
+                        event_push.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
                             .position = marquee.start_position,
                         } }, arena);
                     }
@@ -1069,7 +1070,7 @@ pub fn handleEditorMoveDrag(
                 // Zero delta → nothing to move — no event (no dead undo
                 // step). The commit machinery handles everything else.
                 if (delta.x != 0 or delta.y != 0) {
-                    event_handlers.pushPlayerAction(
+                    event_push.pushPlayerAction(
                         current,
                         .{ .player_move_editor_selection = .{ .delta = delta } },
                         history.current_arena.allocator(),
@@ -1087,7 +1088,7 @@ pub fn handleEditorMoveDrag(
                         move_drag.press_position_tile,
                         arena,
                     ).len > 0) {
-                        event_handlers.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
+                        event_push.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
                             .position = move_drag.press_position_tile,
                         } }, arena);
                     }
@@ -1193,7 +1194,7 @@ fn pushPlayerActionAndDrain(
     const current = &history.current_state;
     const allocator = history.current_arena.allocator();
     const baseline = current.event_stack.len;
-    event_handlers.pushPlayerAction(current, action, allocator);
+    event_push.pushPlayerAction(current, action, allocator);
     while (current.event_stack.len > baseline) {
         if (history.load_error) break;
         event_handlers.processEvent(history);
@@ -3771,7 +3772,7 @@ pub fn handleAnytimeInput(
             const any_weapon = player.main_hand_weapon != null or player.off_hand_weapon != null;
             if (any_weapon or skill_prepared) {
                 if (!history.replaying) history.session.queueSound(history.backing_allocator, .swap_skill);
-                event_handlers.pushPlayerAction(current, .swap_hands, allocator);
+                event_push.pushPlayerAction(current, .swap_hands, allocator);
             }
         }
     }
@@ -3921,7 +3922,7 @@ fn pollImportMarker(history: *GameStateHistory) void {
     const path_copy = allocator.dupe(u8, save_path) catch
         @panic("failed to allocate imported save path");
     rescanSaveFilesNow(history);
-    event_handlers.pushPlayerAction(&history.current_state, .{ .player_load_save = .{
+    event_push.pushPlayerAction(&history.current_state, .{ .player_load_save = .{
         .save_path = path_copy,
     } }, history.current_arena.allocator());
 }
@@ -3949,19 +3950,19 @@ pub fn handleIdleInput(
     if (current.screen == .main_menu) {
         if (idle.menu_action) |action| {
             switch (action) {
-                .new_game => event_handlers.pushPlayerAction(current, .start_new_game, allocator),
+                .new_game => event_push.pushPlayerAction(current, .start_new_game, allocator),
                 // Main-menu Editor button: open a FRESH empty mission
                 // (New Mission, one default-template level, empty
                 // palettes). Opening an EXISTING mission is the editor's
                 // mission browser (the options-menu Open Mission button /
                 // ctrl+O) — it pushes open_editor with a path.
-                .open_editor => event_handlers.pushPlayerAction(current, .{ .open_editor = .{
+                .open_editor => event_push.pushPlayerAction(current, .{ .open_editor = .{
                     .mission_path = null,
                 } }, allocator),
                 // Continue: resume the last game. Two branches in the handler
                 // (populated PlayerData → resume from memory; empty → load the
                 // autosave first).
-                .continue_game => event_handlers.pushPlayerAction(current, .player_continue, allocator),
+                .continue_game => event_push.pushPlayerAction(current, .player_continue, allocator),
                 // Load-save browser: toggle the panel; on open, scan now +
                 // reset the scroll (the list may be stale from a previous
                 // open or never scanned this session).
@@ -3991,7 +3992,7 @@ pub fn handleIdleInput(
                     // next frame's drain — a borrowed path could dangle.
                     const save_path = allocator.dupe(u8, history.session.save_files[row].path) catch
                         @panic("failed to allocate save path");
-                    event_handlers.pushPlayerAction(current, .{ .player_load_save = .{
+                    event_push.pushPlayerAction(current, .{ .player_load_save = .{
                         .save_path = save_path,
                     } }, allocator);
                 },
@@ -4032,7 +4033,7 @@ pub fn handleIdleInput(
     // with an empty stack + no active wait, so this never interleaves with a
     // draining enemy turn. See DESIGN → Input + AGENTS → Dev Tools.
     if (idle.skip_level and build_info.dev_mode and current.screen == .level) {
-        event_handlers.pushPlayerAction(current, .player_skip_level, allocator);
+        event_push.pushPlayerAction(current, .player_skip_level, allocator);
         return;
     }
 
@@ -4055,7 +4056,7 @@ pub fn handleIdleInput(
             if (current.editor) |*editor| {
                 const plan = planning.planEditorSelectionDeleteActions(editor, allocator);
                 if (plan.len > 0) {
-                    event_handlers.pushPlayerAction(current, .player_delete_editor_selection, allocator);
+                    event_push.pushPlayerAction(current, .player_delete_editor_selection, allocator);
                 }
             }
         }
@@ -4064,7 +4065,7 @@ pub fn handleIdleInput(
         if (idle.clear_editor_selection) {
             if (current.editor) |*editor| {
                 if (editor.selection.len > 0) {
-                    event_handlers.pushPlayerAction(current, .player_clear_editor_selection, allocator);
+                    event_push.pushPlayerAction(current, .player_clear_editor_selection, allocator);
                 }
             }
         }
@@ -4076,7 +4077,7 @@ pub fn handleIdleInput(
             if (current.editor) |*editor| {
                 if (editor.active_tool == .select) {
                     if (planning.planEditorSelectAllActions(editor, allocator).len > 0) {
-                        event_handlers.pushPlayerAction(current, .player_select_editor_all, allocator);
+                        event_push.pushPlayerAction(current, .player_select_editor_all, allocator);
                     }
                 }
             }
@@ -4087,7 +4088,7 @@ pub fn handleIdleInput(
                     .tile => {
                         const plan = planning.planEditorTilePaintActions(editor, clicked_position, allocator);
                         if (plan.len > 0) {
-                            event_handlers.pushPlayerAction(current, .{ .player_paint_editor_tile = .{
+                            event_push.pushPlayerAction(current, .{ .player_paint_editor_tile = .{
                                 .position = clicked_position,
                             } }, allocator);
                         }
@@ -4095,7 +4096,7 @@ pub fn handleIdleInput(
                     .entity_type => |type_id| {
                         const plan = planning.planEditorEntityPlacementActions(editor, type_id, clicked_position, allocator);
                         if (plan.len > 0) {
-                            event_handlers.pushPlayerAction(current, .{ .player_place_editor_entity = .{
+                            event_push.pushPlayerAction(current, .{ .player_place_editor_entity = .{
                                 .type_id = type_id,
                                 .position = clicked_position,
                             } }, allocator);
@@ -4104,7 +4105,7 @@ pub fn handleIdleInput(
                     .decoration_type => |type_id| {
                         const plan = planning.planEditorDecorationPlacementActions(editor, type_id, clicked_position, allocator);
                         if (plan.len > 0) {
-                            event_handlers.pushPlayerAction(current, .{ .player_place_editor_decoration = .{
+                            event_push.pushPlayerAction(current, .{ .player_place_editor_decoration = .{
                                 .type_id = type_id,
                                 .position = clicked_position,
                             } }, allocator);
@@ -4113,7 +4114,7 @@ pub fn handleIdleInput(
                     .item_type => |type_id| {
                         const plan = planning.planEditorItemPlacementActions(editor, type_id, clicked_position, allocator);
                         if (plan.len > 0) {
-                            event_handlers.pushPlayerAction(current, .{ .player_place_editor_item = .{
+                            event_push.pushPlayerAction(current, .{ .player_place_editor_item = .{
                                 .type_id = type_id,
                                 .position = clicked_position,
                             } }, allocator);
@@ -4132,7 +4133,7 @@ pub fn handleIdleInput(
                         if (history.session.ui_state.editor_move_drag != null) return;
                         const plan = planning.planEditorReplaceSelectionActions(editor, clicked_position, allocator);
                         if (plan.len > 0) {
-                            event_handlers.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
+                            event_push.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
                                 .position = clicked_position,
                             } }, allocator);
                         }
@@ -4154,14 +4155,14 @@ pub fn handleIdleInput(
                     if (idle.skill_slot_selected) |slot| {
                         if (resolveSkillSlotAction(history, current, level, slot, allocator)) |action| {
                             switch (action) {
-                                .use => |use| event_handlers.pushPlayerAction(current, .{ .player_skip_move_to_skill = .{
+                                .use => |use| event_push.pushPlayerAction(current, .{ .player_skip_move_to_skill = .{
                                     .skill_id = use.skill_id,
                                     .target = use.target,
                                     .prepare = false,
                                 } }, allocator),
                                 .prepare => |skill_id| {
                                     if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
-                                    event_handlers.pushPlayerAction(current, .{ .player_skip_move_to_skill = .{
+                                    event_push.pushPlayerAction(current, .{ .player_skip_move_to_skill = .{
                                         .skill_id = skill_id,
                                         .target = null,
                                         .prepare = true,
@@ -4174,7 +4175,7 @@ pub fn handleIdleInput(
                                     // switch total; the cancel is the sane
                                     // behavior if that invariant ever breaks.
                                     if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
-                                    event_handlers.pushPlayerAction(current, .player_cancel_skill, allocator);
+                                    event_push.pushPlayerAction(current, .player_cancel_skill, allocator);
                                 },
                             }
                             return;
@@ -4191,7 +4192,7 @@ pub fn handleIdleInput(
                             }
                         }
                         if (is_reachable) {
-                            event_handlers.pushPlayerAction(current, .{ .player_move_action = .{
+                            event_push.pushPlayerAction(current, .{ .player_move_action = .{
                                 .destination = clicked_position,
                                 .force_attack_step = modifiers.ctrl,
                             } }, allocator);
@@ -4200,7 +4201,7 @@ pub fn handleIdleInput(
 
                     if (idle.skip) {
                         // Skip movement, go straight to attack phase
-                        event_handlers.pushPlayerAction(current, .{ .player_skip_move = .{
+                        event_push.pushPlayerAction(current, .{ .player_skip_move = .{
                             .force_attack_step = modifiers.ctrl,
                         } }, allocator);
                     }
@@ -4209,7 +4210,7 @@ pub fn handleIdleInput(
                     if (idle.skill_slot_selected) |slot| {
                         if (resolveSkillSlotAction(history, current, level, slot, allocator)) |action| {
                             switch (action) {
-                                .use => |use| event_handlers.pushPlayerSkillUse(
+                                .use => |use| event_push.pushPlayerSkillUse(
                                     current,
                                     use.skill_id,
                                     use.target,
@@ -4217,7 +4218,7 @@ pub fn handleIdleInput(
                                 ),
                                 .prepare => |skill_id| {
                                     if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
-                                    event_handlers.pushPlayerAction(current, .{ .player_prepare_skill = .{
+                                    event_push.pushPlayerAction(current, .{ .player_prepare_skill = .{
                                         .caster_index = 0,
                                         .skill_id = skill_id,
                                     } }, allocator);
@@ -4229,7 +4230,7 @@ pub fn handleIdleInput(
                                     // preparation), so the press is a real
                                     // undo step instead of a recorded no-op.
                                     if (!history.replaying) history.session.queueSound(history.backing_allocator, .button_click_up);
-                                    event_handlers.pushPlayerAction(current, .player_cancel_skill, allocator);
+                                    event_push.pushPlayerAction(current, .player_cancel_skill, allocator);
                                 },
                             }
                             return;
@@ -4250,7 +4251,7 @@ pub fn handleIdleInput(
                             }
                             if (is_valid) {
                                 if (lookups.getSkillDefinition(skill_id) != null) {
-                                    event_handlers.pushPlayerSkillUse(current, skill_id, clicked_position, allocator);
+                                    event_push.pushPlayerSkillUse(current, skill_id, clicked_position, allocator);
                                 }
                             }
                         }
@@ -4265,13 +4266,13 @@ pub fn handleIdleInput(
                         // Cancel skill targeting
                         if (level.prepared_skill != null) {
                             // Stay in player_attack phase
-                            event_handlers.pushPlayerAction(current, .player_cancel_skill, allocator);
+                            event_push.pushPlayerAction(current, .player_cancel_skill, allocator);
                         }
                     }
 
                     if (idle.skip) {
                         // Skip attack, end turn
-                        event_handlers.pushPlayerAction(current, .player_skip_attack, allocator);
+                        event_push.pushPlayerAction(current, .player_skip_attack, allocator);
                     }
                 },
             }
@@ -4312,7 +4313,7 @@ pub fn handleIdleInput(
             const own_tile = clicked_position.x == hub.player.position.x and
                 clicked_position.y == hub.player.position.y;
             if (is_walkable and !own_tile and !clicked_npc) {
-                event_handlers.pushPlayerAction(current, .{ .move_player = .{
+                event_push.pushPlayerAction(current, .{ .move_player = .{
                     .destination = clicked_position,
                 } }, allocator);
             }
@@ -4803,7 +4804,7 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
 /// marquee gesture's unpromoted shift release fires) drained to idle —
 /// the contract-level toggle used by the selection tests.
 fn toggleSelectionAt(history: *GameStateHistory, position: types.Vector2) void {
-    event_handlers.pushPlayerAction(
+    event_push.pushPlayerAction(
         &history.current_state,
         .{ .player_toggle_editor_selection = .{ .position = position } },
         history.current_arena.allocator(),
