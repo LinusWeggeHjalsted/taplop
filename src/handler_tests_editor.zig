@@ -5152,6 +5152,96 @@ test "a validation run's restart/exit continuation aborts to the editor (success
     try testing.expect(history.current_state.editor.?.pre_playtest_player_data == null);
 }
 
+test "a playtest restart continuation re-runs the same level fresh" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{ .{}, .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .active_level_index = 1,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_start_playtest }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
+
+    // Mid-run mutation, then the restart (the mission-fail overlay's
+    // "Restart Playtest"): end + fresh re-entry of the SAME level.
+    history.current_state.player_data.player_name = "Mutated In Run";
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .end_level = .{ .continuation = .restart_mission } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .level);
+    try testing.expect(history.current_state.editor.?.mode == .playtest);
+    try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
+    // The run data was REBUILT from the loadout (fresh run) — and the
+    // session's real data is still what's backed up.
+    try testing.expectEqualStrings("Editor Player", history.current_state.player_data.player_name);
+    try testing.expectEqualStrings(
+        "Campaign Player",
+        history.current_state.editor.?.pre_playtest_player_data.?.player_name,
+    );
+}
+
+test "a validation restart continuation re-runs the whole mission from level 1" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .start_validation }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    // Advance to level 2 (the natural completion path).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .end_level = .{} } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
+
+    // Mid-run mutation, then the restart: back to level 1 with fresh run
+    // data (NOT the mutated carry-over, NOT a next-level advance).
+    history.current_state.player_data.player_name = "Mutated In Run";
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .end_level = .{ .continuation = .restart_mission } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .level);
+    try testing.expect(history.current_state.editor.?.mode == .validate);
+    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.current_level_index);
+    try testing.expectEqualStrings("Editor Player", history.current_state.player_data.player_name);
+    try testing.expectEqualStrings(
+        "Campaign Player",
+        history.current_state.editor.?.pre_playtest_player_data.?.player_name,
+    );
+}
+
 test "open_editor: a mission without player.txt falls back to the maxed default loadout" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

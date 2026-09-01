@@ -11777,16 +11777,21 @@ pub fn buildMissionComplete(
 }
 
 /// Build the mission-fail overlay: a full-screen 9-slice panel with a
-/// large "Defeat" label centered above a two-button stack (Restart Mission,
-/// Exit Mission). Rendered when the player is dead (derived from
-/// `level.entities[0].current_health == 0` in view()). The buttons reuse the
-/// existing `.restart_mission` / `.exit_mission` actions — same dispatch path
-/// as the options menu. See DESIGN → Architecture.
+/// large "Defeat" label centered above a two-button stack (Restart
+/// Mission / Exit Mission — named for the editor RUN while one is active:
+/// Restart/Exit Playtest or Validation). Rendered when the player is dead
+/// (derived from `level.entities[0].current_health == 0` in view()). The
+/// buttons reuse the existing `.restart_mission` / `.exit_mission`
+/// actions — same dispatch path as the options menu. See DESIGN →
+/// Architecture.
 pub fn buildMissionFail(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
     screen: Rectangle,
+    /// The active editor run, if any (.playtest / .validate) — same role
+    /// as in `buildOptionsMenu`.
+    editor_run: ?types.EditorMode,
     button_color: Color,
 ) !void {
     // Full-screen panel background.
@@ -11814,9 +11819,14 @@ pub fn buildMissionFail(
     } });
 
     const MenuButton = struct { label: []const u8, action: Action };
+    const run_noun: []const u8 = if (editor_run) |run_mode| switch (run_mode) {
+        .playtest => "Playtest",
+        .validate => "Validation",
+        .edit => "Mission",
+    } else "Mission";
     const buttons = [_]MenuButton{
-        .{ .label = "Restart Mission", .action = .restart_mission },
-        .{ .label = "Exit Mission", .action = .exit_mission },
+        .{ .label = try std.fmt.allocPrint(allocator, "Restart {s}", .{run_noun}), .action = .restart_mission },
+        .{ .label = try std.fmt.allocPrint(allocator, "Exit {s}", .{run_noun}), .action = .exit_mission },
     };
 
     const total_height = rowWidth(@intCast(buttons.len), panel_button_height, ui_gap);
@@ -11858,6 +11868,13 @@ pub fn buildOptionsMenu(
     font_metrics: FontMetrics,
     screen: Rectangle,
     current_screen: state.Screen,
+    /// The active editor run, if any (.playtest / .validate while the
+    /// editor sits dormant behind the level screen). Relabels the level
+    /// screen's restart/exit buttons for the run ("Restart Playtest" etc.)
+    /// and hides the campaign Export Save path — the run's player_data is
+    /// temporary, rebuilt from the editor loadout (see DESIGN → Level
+    /// Editor → Playtest/validate framing).
+    editor_run: ?types.EditorMode,
     button_color: Color,
     /// Where the exported save lands, for the Export Save tooltip. Native:
     /// the resolved persistent dir (tooltip: "Saves to <dir>/saves/"). Web:
@@ -11882,11 +11899,25 @@ pub fn buildOptionsMenu(
     button_count += 1;
 
     // Level-only exit paths (restart / exit mission). Hub has no mission in
-    // progress to restart or abandon.
+    // progress to restart or abandon. During an editor run the buttons
+    // name the RUN, not the mission — and restart genuinely re-runs it
+    // (end_level's editor guard chains a fresh start on the restart
+    // continuation; an exit drops back to the editor).
     if (current_screen == .level) {
-        buttons[button_count] = .{ .label = "Restart Mission", .action = .restart_mission };
+        const run_noun: []const u8 = if (editor_run) |run_mode| switch (run_mode) {
+            .playtest => "Playtest",
+            .validate => "Validation",
+            .edit => "Mission",
+        } else "Mission";
+        buttons[button_count] = .{
+            .label = try std.fmt.allocPrint(allocator, "Restart {s}", .{run_noun}),
+            .action = .restart_mission,
+        };
         button_count += 1;
-        buttons[button_count] = .{ .label = "Exit Mission", .action = .exit_mission };
+        buttons[button_count] = .{
+            .label = try std.fmt.allocPrint(allocator, "Exit {s}", .{run_noun}),
+            .action = .exit_mission,
+        };
         button_count += 1;
     }
 
@@ -11895,9 +11926,12 @@ pub fn buildOptionsMenu(
     // web it's offered as a browser download (no user-visible path).
     // Hidden in the editor — the save the player expects there is the
     // MISSION being edited (a separate future slice), not the campaign
-    // save. `save_game` is button-only (no keybind), so hiding the button
-    // removes the path entirely.
-    if (current_screen != .editor) {
+    // save — and hidden during an editor run (playtest/validate): the
+    // run's player_data is temporary (rebuilt from the editor loadout,
+    // restored on exit), so an export mid-run would write the throwaway
+    // run data as a campaign save. `save_game` is button-only (no
+    // keybind), so hiding the button removes the path entirely.
+    if (current_screen != .editor and editor_run == null) {
         const export_save_body = if (persistent_dir_path) |dir|
             try std.fmt.allocPrint(allocator, "Saves to {s}/saves/", .{dir})
         else
@@ -13704,7 +13738,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     // Native (a persistent dir path is known): "Saves to <dir>/saves/".
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, button_color, "/home/tester/.ziglop");
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, button_color, "/home/tester/.ziglop");
         const button = (for (elements.items) |element| switch (element) {
             .button => |b| if (b.action == .save_game) break b,
             else => {},
@@ -13718,7 +13752,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     // Web (null path): the export is a browser download.
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, button_color, null);
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, button_color, null);
         const button = (for (elements.items) |element| switch (element) {
             .button => |b| if (b.action == .save_game) break b,
             else => {},
@@ -13731,7 +13765,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     // Other buttons stay tooltip-free.
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, button_color, "/x");
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, button_color, "/x");
         for (elements.items) |element| switch (element) {
             .button => |b| if (b.action != .save_game) {
                 try std.testing.expect(b.tooltip == null);
@@ -13745,7 +13779,7 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     // Exit to Main Menu remain.
     {
         var elements: UiElementList = .empty;
-        try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, button_color, "/home/tester/.ziglop");
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, null, button_color, "/home/tester/.ziglop");
         for (elements.items) |element| switch (element) {
             .button => |b| try std.testing.expect(b.action != .save_game),
             else => {},
@@ -13767,6 +13801,67 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     }
 }
 
+test "buildOptionsMenu + buildMissionFail during an editor run: run labels, no Export Save" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    for ([_]types.EditorMode{ .playtest, .validate }) |run_mode| {
+        const restart_label = if (run_mode == .playtest) "Restart Playtest" else "Restart Validation";
+        const exit_label = if (run_mode == .playtest) "Exit Playtest" else "Exit Validation";
+
+        // The options menu names the RUN on the restart/exit buttons and
+        // offers NO campaign Export Save (the run's player_data is
+        // temporary — rebuilt from the editor loadout, discarded on exit).
+        {
+            var elements: UiElementList = .empty;
+            try buildOptionsMenu(&elements, allocator, metrics, screen, .level, run_mode, button_color, "/dir");
+            try expectMenuButtonLabel(elements.items, .restart_mission, restart_label);
+            try expectMenuButtonLabel(elements.items, .exit_mission, exit_label);
+            for (elements.items) |element| switch (element) {
+                .button => |b| try std.testing.expect(b.action != .save_game),
+                else => {},
+            };
+        }
+
+        // The mission-fail overlay uses the same run nouns.
+        {
+            var fail_elements: UiElementList = .empty;
+            try buildMissionFail(&fail_elements, allocator, metrics, screen, run_mode, button_color);
+            try expectMenuButtonLabel(fail_elements.items, .restart_mission, restart_label);
+            try expectMenuButtonLabel(fail_elements.items, .exit_mission, exit_label);
+        }
+    }
+}
+
+/// Assert that a panel-button list (emitPanelButton: panel, button, label
+/// triplets) contains a button with `action` and its label reads `expected`.
+fn expectMenuButtonLabel(elements: []const UiElement, action: Action, expected: []const u8) !void {
+    var found = false;
+    for (elements, 0..) |element, index| switch (element) {
+        // The label follows its spriteless button (the triplet's third
+        // element) — match the immediately-preceding button's action.
+        .text_label => |label| {
+            if (index > 0) {
+                switch (elements[index - 1]) {
+                    .button => |b| {
+                        if (b.action == action) {
+                            try std.testing.expectEqualStrings(expected, label.text);
+                            found = true;
+                        }
+                    },
+                    else => {},
+                }
+            }
+        },
+        else => {},
+    };
+    try std.testing.expect(found);
+}
 
 
 test "buildEditorSkillPicker: header + close + None + one cell per utility skill" {

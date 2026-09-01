@@ -514,6 +514,15 @@ pub fn view(
         }
     }
 
+    // The active editor run (playtest/validate), if any: the options menu
+    // and the mission-fail overlay label their restart/exit buttons for
+    // the run, and the campaign Export Save path stays hidden (the run's
+    // player_data is temporary). Null on every other screen/context.
+    const editor_run: ?types.EditorMode = if (current_state.editor) |editor|
+        (if (editor.mode != .edit) editor.mode else null)
+    else
+        null;
+
     // Options menu: full-screen modal panel with a context-specific button
     // stack. Drawn on top of normal UI (bottom/top bars) but under the error
     // popup (which is the most-modal surface). Pure over
@@ -525,6 +534,7 @@ pub fn view(
             font_metrics,
             ui.screenRect(),
             current_state.screen,
+            editor_run,
             button_color,
             session.persistent_dir_path,
         ) catch @panic("failed to build options menu");
@@ -541,6 +551,7 @@ pub fn view(
             frame_allocator,
             font_metrics,
             ui.screenRect(),
+            editor_run,
             button_color,
         ) catch @panic("failed to build mission fail overlay");
     }

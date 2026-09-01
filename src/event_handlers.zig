@@ -4696,20 +4696,44 @@ pub fn processEvent(
                     if (current.editor) |editor| {
                         switch (editor.mode) {
                             .playtest => {
-                                // Any exit — natural level completion or a
-                                // restart/exit continuation — drops back to
-                                // the editor: the run is bracketed, there's
-                                // no in-run restart.
-                                pushEvents(current, &.{.{ .meta_event = .end_playtest }}, allocator);
+                                // A restart re-runs the level FRESH. The
+                                // run's teardown is done INLINE (restore the
+                                // session's real player data + edit mode)
+                                // rather than via end_playtest: a
+                                // transitionScreen would CLEAR the event
+                                // stack (see state.transitionScreen), eating
+                                // the queued re-entry. The pushed
+                                // start_playtest then takes the fresh-entry
+                                // path (backup + rebuild from player_def).
+                                // Any OTHER exit — natural level completion
+                                // or an exit continuation — drops back to the
+                                // editor (the run is bracketed).
+                                if (end.continuation == .restart_mission) {
+                                    current.editor.?.mode = .edit; // the capture is by value — mutate through the optional
+                                    restorePrePlaytestPlayerData(current);
+                                    const restart_level_index = current.mission.?.current_level_index - 1; // 1-based gameplay -> 0-based
+                                    pushEvents(current, &.{.{ .meta_event = .{ .start_playtest = .{
+                                        .level_index = restart_level_index,
+                                    } } }}, allocator);
+                                } else {
+                                    pushEvents(current, &.{.{ .meta_event = .end_playtest }}, allocator);
+                                }
                             },
                             .validate => {
-                                // A non-default continuation (restart /
-                                // exit from the options menu or the
-                                // mission-fail overlay) ABORTS the run:
-                                // success=false, back to the editor. Only
-                                // the natural level completion advances
-                                // the run.
-                                if (end.continuation != .default) {
+                                // A restart re-runs the WHOLE run fresh from
+                                // level 1: same inline-teardown shape as the
+                                // playtest restart (end_validation's
+                                // transitionScreen would clear the queued
+                                // re-entry), then a fresh start_validation.
+                                // An EXIT continuation (options menu,
+                                // mission-fail overlay) aborts the run:
+                                // success=false, back to the editor. Only the
+                                // natural level completion advances the run.
+                                if (end.continuation == .restart_mission) {
+                                    current.editor.?.mode = .edit; // the capture is by value — mutate through the optional
+                                    restorePrePlaytestPlayerData(current);
+                                    pushEvents(current, &.{.{ .meta_event = .start_validation }}, allocator);
+                                } else if (end.continuation != .default) {
                                     pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{
                                         .success = false,
                                     } } }}, allocator);

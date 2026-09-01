@@ -1969,22 +1969,37 @@ restore the backup (null = the fresh-session default) and clear it.
 never write back to the editor's levels) and restore `screen = .editor`,
 `mode = .edit`. Validation is the same shape but starts at level 1 and forces
 a full playthrough; its per-level continuation is "next `start_playtest` from
-`editor.levels` or `end_validation`" (a restart/exit continuation aborts
-with `end_validation{success=false}` — see the exit guard below).
+`editor.levels` or `end_validation`" (a restart continuation re-runs the
+whole mission from level 1 with fresh run data; an exit continuation
+aborts with `end_validation{success=false}` — see the exit guard below).
 
 **Exit guard (the minimal editor-aware seam).** `end_level` checks
-`current.editor`: in `.playtest` ANY exit — natural level completion or a
-restart/exit continuation (options menu, mission-fail overlay) — pushes
-`end_playtest` (the run is bracketed; there is no in-run restart); in
-`.validate` a non-default continuation ABORTS the run
+`current.editor`. In `.playtest`: a RESTART continuation re-runs the level
+fresh — the run's teardown happens INLINE (restore the real player data +
+`mode = .edit`, NO transition: `transitionScreen` clears the event stack,
+so an `end_playtest` + queued re-entry pair can't ride the stack) followed
+by a fresh `start_playtest` on the same level, which takes the normal
+enter-from-edit path (backup + rebuild from `player_def`); any other exit
+(natural completion or an exit continuation) pushes `end_playtest`. In
+`.validate`: restart does the same inline teardown + a fresh
+`start_validation` from level 1; an exit continuation ABORTS the run
 (`end_validation{success=false}` — the future validation-replay flow only
-cares about successful runs), while the default continuation pushes the
-next `start_playtest` or `end_validation{success=true}`. `build_data_from_player`
+cares about successful runs); the default continuation pushes the next
+`start_playtest` or `end_validation{success=true}`. `build_data_from_player`
 is skipped in editor mode (playtest/validate are discard-semantics — the
 player's real PlayerData is unchanged). `end_mission` also guards: if an
 editor is active, suppress the `start_hub` continuation (defensive —
 `end_level`'s guard should redirect before `end_mission` is ever reached).
 No other gameplay handler knows about the editor.
+
+**Run-context UI (options menu + mission-fail overlay).** While a run is
+active, both surfaces label their restart/exit buttons for the RUN
+("Restart Playtest" / "Exit Playtest", or the Validation nouns) instead of
+the mission, and the campaign Export Save button is HIDDEN in the options
+menu — the run's `player_data` is temporary (rebuilt from the editor
+loadout, discarded on exit), so an export mid-run would write throwaway
+data as a campaign save. `save_game` is button-only, so hiding the button
+removes the path entirely.
 
 **Replay & the reconstruction cache.** `open_editor` (the path-open
 branch) reads mission.txt +

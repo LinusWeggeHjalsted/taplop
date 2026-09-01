@@ -9230,3 +9230,43 @@ Tests: the two orchestrators end-to-end (active-level playtest + full
 mission chain + exits), the validation abort on a non-default
 continuation, and the tab-window clamp/pin/follow behavior in the ui
 builder tests.
+
+## Editor runs: restart semantics + run-context UI (options menu / mission fail)
+
+Follow-up to the Test/Validate buttons. Two asks — hide Export Save during
+a run, relabel Restart/Exit Mission for the run — plus the semantic fix
+the relabel forced: restart previously didn't restart (slice-1 decision:
+any non-default continuation aborted/exited to the editor), and a button
+labeled "Restart Playtest" that drops you in the editor would lie.
+
+- **Restart now genuinely re-runs.** Playtest restart: the SAME level,
+  fresh; validation restart: the whole run from level 1, fresh. The
+  run's teardown (restore real player data + `mode = .edit`) happens
+  INLINE in `end_level`'s editor guard, then a single fresh
+  `start_playtest` / `start_validation` is pushed and takes the normal
+  enter-from-edit path (backup + rebuild from `player_def`). An
+  end+start EVENT pair can't ride the stack: `end_playtest` /
+  `end_validation` call `transitionScreen`, which CLEARS the event
+  stack — the queued re-entry would be eaten (caught by the handler
+  tests: the screen ended on `.editor`). Normal `end_level` never
+  transitions itself for exactly this reason; the guard now matches
+  that discipline. Gotcha hit on the way: `if (current.editor) |editor|`
+  captures the Editor BY VALUE — the inline `mode = .edit` must go
+  through `current.editor.?`.
+- **Run-context UI.** `editor_run: ?types.EditorMode` threaded into
+  `buildOptionsMenu` + `buildMissionFail` (computed in view): the
+  restart/exit buttons name the RUN (Restart/Exit Playtest or
+  Validation — the mission-fail overlay shows the same nouns on a
+  mid-run death), and the campaign Export Save is HIDDEN during a run —
+  the run's player_data is temporary (rebuilt from the editor loadout,
+  discarded on exit), so an export mid-run would write throwaway data as
+  a campaign save. `save_game` is button-only, so hiding removes the
+  path entirely (the editor-screen precedent).
+
+Tests: playtest restart re-enters the same level with rebuilt run data
++ intact backup; validation restart returns to level 1 fresh; the ui
+pair-test covers both builders' run labels + the absent Export Save.
+Open (surfaced, not changed): the options menu's "Exit to Main Menu"
+during a run lands in the EDITOR, not the main menu (the guard swallows
+the continuation) — decide whether to hide it during runs or make it
+chain `end_playtest` + `close_editor`.

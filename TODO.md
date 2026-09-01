@@ -450,11 +450,15 @@ paragraph). Remaining work:
   round-trip test). See DESIGN → Architecture → Level Editor.
 - **Test/Validate buttons DONE** — the top-right icon buttons
   (`player_start_playtest` / `player_start_validation` orchestrators +
-  `validatePlayerAction` arms + the exit-abort rule: any restart/exit
-  continuation during a validation run → `end_validation{success=false}`;
-  all exits drop back to the editor) + the tab-row scroll window against
-  the new corner bound. History in DONE.md; design in DESIGN → Level
-  Editor → Editor UI layout (primary actions + tabs) + the exit guard.
+  `validatePlayerAction` arms) + the exit rules (restart continuation
+  RE-RUNS the run fresh — inline teardown + re-entry, since a
+  transitionScreen clears the stack; any exit continuation drops back to
+  the editor with `end_validation{success=false}` on validate) + the
+  run-context UI (options menu + mission-fail overlay label their
+  restart/exit buttons for the run; campaign Export Save hidden mid-run)
+  + the tab-row scroll window against the new corner bound. History in
+  DONE.md; design in DESIGN → Level Editor → Editor UI layout (primary
+  actions + tabs) + the exit guard + run-context UI.
 - Edit-verb events: every verb's struct exists in events.zig and almost
   all are handled — the remaining unhandled three still `@panic` in
   `handleEditorEvent` (fail-fast): the `editor_move_*_placement` events.
