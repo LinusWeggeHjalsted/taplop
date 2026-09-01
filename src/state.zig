@@ -1227,6 +1227,21 @@ pub const GameStateHistory = struct {
         }
     }
 
+    /// Structural legality shared by the inventory-slot commits: the
+    /// editor screen with an editor present + the slot index inside
+    /// `inventory_slot_count`.
+    fn validateInspectorInventoryEdit(self: *GameStateHistory, index: u32) void {
+        if (self.current_state.screen != .editor) {
+            @panic("replay validation: inventory inspector commit outside editor screen");
+        }
+        if (self.current_state.editor == null) {
+            @panic("replay validation: inventory inspector commit with no editor");
+        }
+        if (index >= types.inventory_slot_count) {
+            @panic("replay validation: inventory inspector commit slot index out of range");
+        }
+    }
+
     /// Structural legality shared by the entity LAYER commits: the entity
     /// scalar checks + the player target rejected (the player loadout has
     /// no layers) + the layer index in range for remove/set (null = add).
@@ -1520,6 +1535,19 @@ pub const GameStateHistory = struct {
                     self.validateInspectorItemEdit(set.type_id),
                 .player_set_editor_item_name => |set|
                     self.validateInspectorItemEdit(set.type_id),
+                // Inventory-slot commits (the player loadout's Inventory
+                // section): same structural legality — the editor screen
+                // with an editor present + the slot index in range. The
+                // payload's stat bounds are the handler's clamp (same
+                // posture as the item palette arms above).
+                .player_add_editor_inventory_item => |set|
+                    self.validateInspectorInventoryEdit(set.index),
+                .player_delete_editor_inventory_item => |set|
+                    self.validateInspectorInventoryEdit(set.index),
+                .player_set_editor_inventory_item_def => |set|
+                    self.validateInspectorInventoryEdit(set.index),
+                .player_set_editor_inventory_item_name => |set|
+                    self.validateInspectorInventoryEdit(set.index),
                 .player_add_editor_entity_layer => |set|
                     self.validateInspectorEntityLayerEdit(set.target, null),
                 .player_remove_editor_entity_layer => |set|

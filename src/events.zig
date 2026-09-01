@@ -545,6 +545,41 @@ pub const EditorEvent = union(enum) {
         type_id: u32,
         value: []const u8,
     },
+
+    // ── Player loadout inventory editing ──
+    // The player-def inspector's Inventory section (the 16×6 slot grid —
+    // the same 96 `inventory_slot_count` indices the in-game 8×12 grid
+    // shows, arranged to fit the panel). Same conventions as the item
+    // type editing above: the def commit is FLATTENED (nested Item names
+    // can't round-trip the session log — same why), covers type picks
+    // (reset-everything semantics) AND stat edits (one undo step each),
+    // and the handler clamps stats; name commits ride their own event
+    // (top-level string, spaces fine). Add creates the default sword
+    // ("New Sword", the editor_defaults.txt Items entry — the palette
+    // "+" default); Delete clears to null.
+    editor_add_inventory_item: struct {
+        index: u32,
+    },
+    editor_delete_inventory_item: struct {
+        index: u32,
+    },
+    editor_set_inventory_item_def: struct {
+        index: u32,
+        item_kind: ItemKind,
+        weapon_type: WeaponType = .sword,
+        name: []const u8 = &.{},
+        weapon_damage: u32 = 0,
+        spell_damage: u32 = 0,
+        health_bonus: u32 = 0,
+        defense_bonus: u32 = 0,
+        damage_bonus: u32 = 0,
+        pickup_radius_bonus: u32 = 0,
+        speed_bonus: u32 = 0,
+    },
+    editor_set_inventory_item_name: struct {
+        index: u32,
+        value: []const u8,
+    },
 };
 
 /// Which palette group a type belongs to (for editor_delete_type). Matches
@@ -962,6 +997,33 @@ pub const PlayerInputEvent = union(enum) {
     },
     player_set_editor_item_name: struct {
         type_id: u32,
+        value: []const u8,
+    },
+    // Inspector inventory-slot commits (the player loadout's Inventory
+    // section — see the editor_add_inventory_item block for the shape +
+    // why). The player loadout is the only inventory owner, so these
+    // carry just the slot index.
+    player_add_editor_inventory_item: struct {
+        index: u32,
+    },
+    player_delete_editor_inventory_item: struct {
+        index: u32,
+    },
+    player_set_editor_inventory_item_def: struct {
+        index: u32,
+        item_kind: ItemKind,
+        weapon_type: WeaponType = .sword,
+        name: []const u8 = &.{},
+        weapon_damage: u32 = 0,
+        spell_damage: u32 = 0,
+        health_bonus: u32 = 0,
+        defense_bonus: u32 = 0,
+        damage_bonus: u32 = 0,
+        pickup_radius_bonus: u32 = 0,
+        speed_bonus: u32 = 0,
+    },
+    player_set_editor_inventory_item_name: struct {
+        index: u32,
         value: []const u8,
     },
     // The footprint editor's confirm (the centered tile-grid picker —

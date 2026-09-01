@@ -6152,3 +6152,159 @@ test "mission import: a zip without mission.txt pops up instead of extracting" {
     try testing.expectEqual(@as(usize, 0), history.session.editor_local_missions.len);
     try testing.expect(!harness.file_source.fileExists(".mission_import_marker"));
 }
+
+test "editor inventory slot events: add default sword, def retype, rename, delete; undo reverts" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+
+    // Add: the default sword (the editor_defaults.txt Items entry — the
+    // palette "+" default).
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_add_editor_inventory_item = .{ .index = 0 } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const slot = history.current_state.editor.?.player_def.template.inventory.slots[0];
+        try testing.expectEqual(types.WeaponType.sword, slot.?.weapon.weapon_type);
+        try testing.expectEqualStrings("New Sword", slot.?.weapon.name);
+        try testing.expectEqual(@as(u32, 0), slot.?.weapon.weapon_damage);
+    }
+
+    // One undo step reverts the add; redo walks it back in.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.editor.?.player_def.template.inventory.slots[0] == null);
+    try testing.expect(history.redo(event_handlers.processEvent));
+    {
+        const slot = history.current_state.editor.?.player_def.template.inventory.slots[0];
+        try testing.expectEqualStrings("New Sword", slot.?.weapon.name);
+    }
+
+    // Def commit (a type pick — reset-everything semantics): replace the
+    // sword with a coat; the crafted-log clamp applies to stats over max.
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_set_editor_inventory_item_def = .{
+            .index = 0,
+            .item_kind = .coat,
+            .name = "Ghost Coat",
+            .defense_bonus = 99,
+            .health_bonus = 2,
+        } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    {
+        const slot = history.current_state.editor.?.player_def.template.inventory.slots[0];
+        try testing.expectEqualStrings("Ghost Coat", slot.?.coat.name);
+        try testing.expectEqual(types.max_defense_bonus, slot.?.coat.defense_bonus);
+        try testing.expectEqual(@as(u32, 2), slot.?.coat.health_bonus);
+    }
+
+    // Rename: top-level string event (multi-word names are the point).
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_set_editor_inventory_item_name = .{
+            .index = 0,
+            .value = "Wool Coat",
+        } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqualStrings(
+        "Wool Coat",
+        history.current_state.editor.?.player_def.template.inventory.slots[0].?.coat.name,
+    );
+
+    // The slot's item never leaks onto another slot.
+    try testing.expect(history.current_state.editor.?.player_def.template.inventory.slots[1] == null);
+
+    // Delete clears to null; undo walks back through rename + def (the
+    // add was undone above).
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_delete_editor_inventory_item = .{ .index = 0 } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.editor.?.player_def.template.inventory.slots[0] == null);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqualStrings(
+        "Wool Coat",
+        history.current_state.editor.?.player_def.template.inventory.slots[0].?.coat.name,
+    );
+}
+
+test "editor inventory item handlers: crafted-log guards no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStartingState(&levels));
+    runToIdle(&history);
+
+    // An occupied slot for the occupied-add / rename / delete guards.
+    event_handlers.pushPlayerAction(
+        &history.current_state,
+        .{ .player_add_editor_inventory_item = .{ .index = 5 } },
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // Out-of-range index: ignored.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_add_inventory_item = .{
+            .index = types.inventory_slot_count,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // Add onto an occupied slot: a no-op (the slot keeps its item).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_add_inventory_item = .{ .index = 5 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqualStrings(
+        "New Sword",
+        history.current_state.editor.?.player_def.template.inventory.slots[5].?.weapon.name,
+    );
+
+    // Def + name commits on an EMPTY slot: no-ops.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_inventory_item_def = .{
+            .index = 6,
+            .item_kind = .amulet,
+            .name = "Ghost Amulet",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_inventory_item_name = .{
+            .index = 6,
+            .value = "Ghost Amulet",
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.editor.?.player_def.template.inventory.slots[6] == null);
+
+    // Delete on an empty slot: a no-op (null stays null, no error).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_delete_inventory_item = .{ .index = 6 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.editor.?.player_def.template.inventory.slots[6] == null);
+}

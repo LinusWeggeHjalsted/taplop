@@ -727,6 +727,38 @@ paragraph). Remaining work:
         emission, pick/commit handlers, session-log round-trip with a
         multi-word name). Design: DESIGN → Level Editor → Editor UI
         layout (Inspector fields, item types); history in DONE.md.
+  - [~] **13 — player inventory editing (the player inspector's
+        Inventory section):** the full 16×6 slot grid (the same 96
+        `inventory_slot_count` indices the in-game 8×12 grid shows,
+        arranged 6-wide to fit the panel — intentionally identical
+        capacity). Selecting a slot (pure UiState, off the undo timeline)
+        inserts the detail rows directly BELOW that slot's row: the
+        Add/Delete button first (Add creates the default sword — the
+        editor_defaults Items entry; Delete clears to null), then — ONLY
+        while an item exists in the slot (author decision: no type rows
+        while empty) — the item tool inspector's rows mirrored exactly
+        (type pick rows with reset-everything semantics, name, per-stat
+        fields). No scroll-on-select (the scroll offset stays). Slices:
+        - [x] **1 — events + handlers + validation:**
+              `editor_add_inventory_item` / `editor_delete_inventory_item` /
+              `editor_set_inventory_item_def` (flattened — the
+              `editor_set_item_def` shape; covers type picks AND stat
+              edits) / `editor_set_inventory_item_name` + player wrappers
+              + `validatePlayerAction` arms + tests (add/retype/rename/
+              delete + undo walks, crafted-log guards).
+        - [ ] **2 — inspector content:** `inventory_slot_row` entries
+              (1 unit, 16 of them), the selection state
+              (`UiState.editor_inventory_selected_slot`), the per-frame
+              insert-below-row detail block (Add/Delete entry + the item
+              rows while occupied), selected-slot highlighting, replacing
+              `inventory_summary`.
+        - [ ] **3 — input routing + text-field commits:** the slot-cell /
+              Add/Delete / type-pick actions + payloads, the
+              `TextFieldId.inventory_item_*` ids +
+              `TextEditTarget.inventory_slot` target (index rides the
+              ref — the level-name pattern), the commit sites mirroring
+              the item_def arms, ui + session-log round-trip tests.
+  - [ ] **Remaining layer-adjacent opens:**
   Deferred: drag-painting. The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved
   placements, `!`/`=` markers; camera centered on the active level's

@@ -1005,6 +1005,40 @@ fn handleEditorEvent(
             definition.item = item;
             definition.id = loaders.itemDisplayName(item, allocator);
         },
+        // Player-loadout inventory slot commits (the inspector's
+        // Inventory section). The player_def template is the only owner —
+        // index-gated, no palette lookup. Defensive against crafted logs:
+        // an index outside `inventory_slot_count` is ignored, an Add onto
+        // an occupied slot, a Delete on an empty one, and a def/name
+        // commit on an empty slot are no-ops (the live path can't produce
+        // any of them — the Add/Delete buttons and the detail fields only
+        // render in the matching state).
+        .editor_add_inventory_item => |add| {
+            if (add.index >= types.inventory_slot_count) return;
+            const template = &editor.player_def.template;
+            if (template.inventory.slots[add.index] != null) return;
+            template.inventory.slots[add.index] = defaultInventoryItem();
+        },
+        .editor_delete_inventory_item => |delete| {
+            if (delete.index >= types.inventory_slot_count) return;
+            editor.player_def.template.inventory.slots[delete.index] = null;
+        },
+        // A type pick (reset-everything semantics) or a stat edit — the
+        // whole slot's item commits in ONE event, one undo step. Stats
+        // clamp to the max_* bounds (itemFromDefSet, shared with the item
+        // palette path — the editor never holds a state its own load path
+        // would clamp away).
+        .editor_set_inventory_item_def => |set| {
+            if (set.index >= types.inventory_slot_count) return;
+            if (editor.player_def.template.inventory.slots[set.index] == null) return;
+            editor.player_def.template.inventory.slots[set.index] = itemFromDefSet(set);
+        },
+        .editor_set_inventory_item_name => |set| {
+            if (set.index >= types.inventory_slot_count) return;
+            const slot = &editor.player_def.template.inventory.slots[set.index];
+            if (slot.* == null) return;
+            slot.* = types.itemWithName(slot.*.?, set.value);
+        },
         .editor_select => |select| {
             // Defensive against crafted logs: the select workflow only, and
             // placement entries must address the active level's lists (a
@@ -2506,6 +2540,40 @@ fn handlePlayerInputEvent(
                 .value = set.value,
             } } }}, allocator);
         },
+        // Inspector inventory-slot commits (the player loadout's
+        // Inventory section) — thin forwards, the EditorEvents own the
+        // mutations.
+        .player_add_editor_inventory_item => |add| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_add_inventory_item = .{
+                .index = add.index,
+            } } }}, allocator);
+        },
+        .player_delete_editor_inventory_item => |delete| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_delete_inventory_item = .{
+                .index = delete.index,
+            } } }}, allocator);
+        },
+        .player_set_editor_inventory_item_def => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_inventory_item_def = .{
+                .index = set.index,
+                .item_kind = set.item_kind,
+                .weapon_type = set.weapon_type,
+                .name = set.name,
+                .weapon_damage = set.weapon_damage,
+                .spell_damage = set.spell_damage,
+                .health_bonus = set.health_bonus,
+                .defense_bonus = set.defense_bonus,
+                .damage_bonus = set.damage_bonus,
+                .pickup_radius_bonus = set.pickup_radius_bonus,
+                .speed_bonus = set.speed_bonus,
+            } } }}, allocator);
+        },
+        .player_set_editor_inventory_item_name => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_inventory_item_name = .{
+                .index = set.index,
+                .value = set.value,
+            } } }}, allocator);
+        },
         // Inspector layer commits (the Layers sections): thin forwards.
         // The player loadout has no layers — the handler ignores a
         // player_def entity-layer target (validation rejects it at the
@@ -3031,10 +3099,21 @@ pub fn editorEntityTemplate(
     };
 }
 
+/// The default item an inventory-slot Add creates: the new-sword default
+/// (the `data/editor_defaults.txt` Items entry — the palette "+" default,
+/// kept in sync with it).
+fn defaultInventoryItem() types.Item {
+    return .{ .weapon = .{
+        .name = "New Sword",
+        .weapon_type = .sword,
+        .weapon_damage = 0,
+    } };
+}
+
 /// Rebuild an `Item` from a flattened item-def event payload
-/// (`editor_set_item_def` / `player_set_editor_item_def` share the field
-/// set — hence `anytype`). Stats clamp to the `max_*` bounds (the editor
-/// never holds a state its own load path would clamp away); only the
+/// (`editor_set_item_def` / `player_set_editor_inventory_item_def` share
+/// the field set — hence `anytype`). Stats clamp to the `max_*` bounds (the
+/// editor never holds a state its own load path would clamp away); only the
 /// picked kind's fields are meaningful, the rest are ignored.
 fn itemFromDefSet(set: anytype) types.Item {
     return switch (set.item_kind) {
