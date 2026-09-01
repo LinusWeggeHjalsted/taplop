@@ -531,6 +531,8 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .select_editor_level => player_input.anytime.options_action = action,
         .toggle_editor_inspector => player_input.anytime.options_action = action,
         .toggle_editor_metadata_sidebar => player_input.anytime.options_action = action,
+        .test_editor_level => player_input.anytime.options_action = action,
+        .validate_editor_mission => player_input.anytime.options_action = action,
         .toggle_editor_inspector_section => player_input.anytime.options_action = action,
         .open_editor_sprite_picker => player_input.anytime.options_action = action,
         .select_editor_entity_sprite => player_input.anytime.options_action = action,

@@ -3165,6 +3165,18 @@ pub fn handleAnytimeInput(
                 if (current.editor == null) return;
                 pushPlayerActionAndDrain(history, .player_toggle_editor_metadata_sidebar);
             },
+            // Top-bar Test button: start the single-level playtest of the
+            // active level.
+            .test_editor_level => {
+                if (current.editor == null) return;
+                pushPlayerActionAndDrain(history, .player_start_playtest);
+            },
+            // Top-bar Validate button: start the full-mission validation
+            // run from level 1.
+            .validate_editor_mission => {
+                if (current.editor == null) return;
+                pushPlayerActionAndDrain(history, .player_start_validation);
+            },
             // Player inspector Import button: copy the session's player
             // data (or the new-game default, with none) into the editor
             // player loadout.

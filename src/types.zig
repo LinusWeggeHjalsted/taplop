@@ -201,6 +201,18 @@ pub const Action = enum {
     // `player_toggle_editor_metadata_sidebar` →
     // `editor_toggle_metadata_sidebar` (undo timeline + replay).
     toggle_editor_metadata_sidebar,
+    // The top-bar Test button (top-right corner, the options/undo icon
+    // class): start a single-level playtest of the ACTIVE level. Pushes
+    // `player_start_playtest` → `start_playtest` (the machinery handler
+    // owns instantiation + dormancy + the transition); `end_level`'s
+    // editor guard returns to the editor. See DESIGN → Architecture →
+    // Level Editor → Editor UI layout (primary actions).
+    test_editor_level,
+    // The top-bar Validate button (right of Test): start a full-mission
+    // validation run from level 1. Pushes `player_start_validation` →
+    // `start_validation`; completing the last level (or any restart/exit
+    // continuation) ends the run back in the editor.
+    validate_editor_mission,
     // A settings-sidebar gradient swatch (world / enemy / player row):
     // open the centered theme picker for that role. The role rides in
     // `AnytimeInput.clicked_editor_gradient_role`; the picker target
