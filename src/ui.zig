@@ -4810,9 +4810,20 @@ pub fn buildEditorLevelTabs(
         else
             try std.fmt.allocPrint(allocator, "Level {d}", .{index + 1});
         const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
-        // Width = label + side padding, never narrower than the tab height
-        // (a square floor so short labels don't squish the panel).
-        const width = @max(label_width + 2 * ui_gap, editor_header_strip_height);
+        // The × delete button clears the label by WIDENING the tab: the
+        // label centers in the zone left of the × (its width + one
+        // ui_gap), so the two can never overlap. A single-level mission
+        // offers no ×, so its tabs keep the compact width. Width never
+        // drops below the tab height (a square floor so short labels
+        // don't squish the panel).
+        const delete_zone_width: i32 = if (editor.levels.len > 1)
+            close_button_size + ui_gap
+        else
+            0;
+        const width = @max(
+            label_width + delete_zone_width + 2 * ui_gap,
+            editor_header_strip_height,
+        );
         const cell: Rectangle = .{
             .x = x,
             .y = y,
@@ -4839,7 +4850,15 @@ pub fn buildEditorLevelTabs(
         } });
         try elements.append(allocator, .{ .text_label = .{
             .text = label,
-            .screen_position = cell.placeCenter(label_width, editor_group_header_font_size).position(),
+            // Centered in the zone LEFT of the delete button, not the
+            // full tab — the × owns the top-right corner.
+            .screen_position = .{
+                .x = cell.x + @divFloor(width - delete_zone_width - label_width, 2),
+                .y = cell.y + @divFloor(
+                    cell.height - editor_group_header_font_size,
+                    2,
+                ),
+            },
             .font_size = editor_group_header_font_size,
             .color = active_theme.lightest,
             .blocks_input = false,
@@ -8840,14 +8859,15 @@ pub fn buildEditorBottomBar(
             .blocks_input = false,
         } });
 
-        // "+" (add-new): square ui/panel cell flush against the header's
-        // right edge (adjacent — reads as tied to the group), carrying the
-        // add-new action + the group index payload. The handler builds the
-        // type from the shipped defaults, makes it the active tool, and
-        // opens the inspector; the input layer opens the sprite picker for
-        // enemies + decorations.
+        // "+" (add-new): square ui/panel cell one ui_gap right of the
+        // header (adjacent — reads as tied to the group; the gap keeps
+        // the two cells visually distinct), carrying the add-new action
+        // + the group index payload. The handler builds the type from
+        // the shipped defaults, makes it the active tool, and opens the
+        // inspector; the input layer opens the sprite picker for enemies
+        // + decorations.
         const plus_cell: Rectangle = .{
-            .x = group_left + header_width,
+            .x = group_left + header_width + ui_gap,
             .y = header_y,
             .width = editor_plus_size,
             .height = editor_plus_size,
@@ -10252,6 +10272,15 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
             tab_panel.screen_position.x + tab_panel.width - close_button_size,
             close_button.screen_position.x,
         );
+        // The widened tab: the label sits fully clear of the ×'s zone
+        // (centered in the area left of it — the tab grew by exactly
+        // that zone's width; at least a full ui_gap of clearance).
+        try std.testing.expect(
+            label.screen_position.x + metrics.measureSpanWidth(
+                text(expected_labels[tab]),
+                editor_group_header_font_size,
+            ) <= close_button.screen_position.x - ui_gap,
+        );
 
         // Tabs lay out left-to-right, advancing past each panel.
         const panel_x = elements.items[4 * tab].nine_slice_panel.screen_position.x;
@@ -10865,6 +10894,8 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     var delete_button_count: usize = 0;
     var enemies_header: ?types.ScreenPosition = null;
     var enemies_header_button: ?types.ScreenPosition = null;
+    var enemies_header_width: i32 = 0;
+    var enemies_plus_button: ?types.ScreenPosition = null;
     var first_enemy_cell: ?types.ScreenPosition = null;
     const header_top: i32 = types.reference_height - bottom_bar_height - ui_gap - editor_header_strip_height;
     var enemy_cell_index: usize = 0;
@@ -10874,11 +10905,13 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
             // them apart by action.
             if (button.editor_group == 0 and button.action == .toggle_editor_palette_group) {
                 enemies_header_button = button.screen_position;
+                enemies_header_width = button.width;
             }
             if (button.action == .add_editor_palette_type) {
                 plus_button_count += 1;
                 try std.testing.expect(button.editor_group != null);
                 try std.testing.expect(button.sprite_id == null); // spriteless over the panel
+                if (button.editor_group.? == 0) enemies_plus_button = button.screen_position;
             }
             if (button.action == .delete_editor_palette_type) {
                 delete_button_count += 1;
@@ -10930,6 +10963,12 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     );
     // The header BUTTON is left-aligned with the group's first cell.
     try std.testing.expectEqual(first_enemy_cell.?.x, enemies_header_button.?.x);
+    // The "+" sits one ui_gap right of the header (not flush against it).
+    try std.testing.expect(enemies_plus_button != null);
+    try std.testing.expectEqual(
+        enemies_header_button.?.x + enemies_header_width + ui_gap,
+        enemies_plus_button.?.x,
+    );
 }
 
 test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover above" {
