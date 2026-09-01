@@ -32,6 +32,34 @@ const loaders = @import("loaders.zig");
 /// is ~70 KB).
 const read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
 
+/// The shipped campaign mission-directory paths (e.g.
+/// "data/campaigns/main_campaign/missions/beginnings") — the mission
+/// browser's Official tab. Comptime from the embedded map (shipped content
+/// is immutable per build); sorted for a stable browser order. Mirrors
+/// ui.zig's `official_entity_sprite_stems` comptime scan.
+const official_mission_dir_paths: []const []const u8 = build: {
+    @setEvalBranchQuota(20000);
+    var paths: []const []const u8 = &.{};
+    for (embedded_assets.map.kvs.keys[0..embedded_assets.map.kvs.len]) |key| {
+        if (!std.mem.startsWith(u8, key, "data/campaigns/")) continue;
+        if (!std.mem.endsWith(u8, key, "/mission.txt")) continue;
+        const missions_index = std.mem.indexOf(u8, key, "/missions/") orelse continue;
+        // The campaign segment between the prefix and "/missions/" must be
+        // a single plain path segment (no nesting beyond campaign/missions/).
+        const campaign = key["data/campaigns/".len..missions_index];
+        if (campaign.len == 0 or std.mem.indexOfScalar(u8, campaign, '/') != null) continue;
+        const stem = key[missions_index + "/missions/".len .. key.len - "/mission.txt".len];
+        if (stem.len == 0 or std.mem.indexOfScalar(u8, stem, '/') != null) continue;
+        const dir_path = key[0 .. key.len - "/mission.txt".len];
+        // Insert in sorted position (comptime slices have const elements —
+        // no in-place sort).
+        var insert_index: usize = 0;
+        while (insert_index < paths.len and std.mem.lessThan(u8, paths[insert_index], dir_path)) : (insert_index += 1) {}
+        paths = paths[0..insert_index] ++ [_][]const u8{dir_path} ++ paths[insert_index..];
+    }
+    break :build paths;
+};
+
 pub const FileSource = struct {
     io: std.Io,
     // The persistent data directory (~/.ziglop/). All writes land here, and
@@ -178,85 +206,93 @@ pub const FileSource = struct {
         try self.persistent_dir.createDirPath(self.io, dir);
     }
 
-    /// One custom mission in the player's local collection. `id` is the
-    /// folder name under `custom_missions/` — for editor-generated and
-    /// online-downloaded missions this is `<uuid>_<slug>`; for hand-placed
-    /// folders it's whatever the user named it (both are accepted). `name`
-    /// is the display name from mission.txt. `has_custom_assets` is true if
-    /// the folder contains any file beyond the known config set
-    /// (mission.txt / player.txt / level_*.txt). `author_turns` is the
-    /// validation run's turn count (the author medal target), read from the
-    /// validation replay file's metadata — null when the mission hasn't been
-    /// validated (no replay file). Medal targets (gold/silver/bronze) are
-    /// DERIVED from `author_turns` at display time, not stored here.
-    pub const CustomMissionEntry = struct {
+    /// One mission in the player's local collection. `id` is the folder
+    /// name under `missions/` — for editor-saved and online-downloaded
+    /// missions this is `<uuid>_<slug>`; for hand-placed or imported
+    /// folders it's whatever the folder is named (all accepted). `path` is
+    /// the mission-directory path ("missions/<id>") as `open_editor` /
+    /// `start_mission` consume it. `name` is the display name from
+    /// mission.txt. `has_custom_assets` is true if the folder contains any
+    /// file beyond the known config set (mission.txt / player.txt /
+    /// level_*.txt). `author_turns` is the validation run's turn count (the
+    /// author medal target), read from the validation replay file's
+    /// metadata — null when the mission hasn't been validated (no replay
+    /// file). Medal targets (gold/silver/bronze) are DERIVED from
+    /// `author_turns` at display time, not stored here.
+    pub const MissionEntry = struct {
         id: []const u8,
+        path: []const u8,
         name: []const u8,
         level_count: u32,
         has_custom_assets: bool,
         author_turns: ?u32,
     };
 
-    /// Enumerate the player's local custom-mission collection under
-    /// `custom_missions/` in the persistent dir. Returns one entry per
+    /// Enumerate the player's local mission collection under `missions/`
+    /// in the persistent dir (editor saves land in `missions/<uuid>_<slug>/`;
+    /// hand-placed and imported folders of any name are accepted too — the
+    /// id is whatever the folder is named). Returns one entry per
     /// subdirectory, with metadata read from each mission's `mission.txt`.
     /// Folders without a readable `mission.txt` are SKIPPED (a half-installed
     /// or broken mission is not listed; the browser shouldn't offer to start
     /// something unparseable). The caller owns the returned slice and all
-    /// strings within (allocated from `allocator`).
+    /// strings within (allocated from `allocator`; free via `freeMissions`).
     ///
     /// Persistent-dir only (no VFS): the local collection is the source of
-    /// truth for "your custom missions." Transient acquisitions (online
-    /// fetch-to-local, zip preview) persist into this dir first, then appear
-    /// here. See DESIGN → Custom Missions & Online Services.
-    pub fn listCustomMissions(
+    /// truth for "your missions." Transient acquisitions (online
+    /// fetch-to-local, zip import preview) persist into this dir first, then
+    /// appear here. See DESIGN → Custom Missions & Online Services.
+    pub fn listMissions(
         self: *const FileSource,
         allocator: std.mem.Allocator,
-    ) ![]CustomMissionEntry {
-        // Open custom_missions/ with iterate capability. If the dir doesn't
-        // exist yet (fresh install, no custom missions acquired), return an
+    ) ![]MissionEntry {
+        // Open missions/ with iterate capability. If the dir doesn't
+        // exist yet (fresh install, nothing saved/imported yet), return an
         // empty list — not an error.
-        const custom_dir = self.persistent_dir.openDir(self.io, "custom_missions", .{
+        const missions_dir = self.persistent_dir.openDir(self.io, "missions", .{
             .access_sub_paths = true,
             .iterate = true,
         }) catch |err| switch (err) {
             error.FileNotFound => return &.{},
             else => return err,
         };
-        defer std.Io.Dir.close(custom_dir, self.io);
+        defer std.Io.Dir.close(missions_dir, self.io);
 
-        var entries: std.ArrayList(CustomMissionEntry) = .empty;
+        var entries: std.ArrayList(MissionEntry) = .empty;
         errdefer {
-            for (entries.items) |e| {
-                allocator.free(e.id);
-                allocator.free(e.name);
-            }
+            for (entries.items) |e| freeMissionEntry(allocator, e);
             entries.deinit(allocator);
         }
 
-        var it = custom_dir.iterate();
+        var it = missions_dir.iterate();
         while (try it.next(self.io)) |dir_entry| {
             if (dir_entry.kind != .directory) continue;
 
             const mission_id = try allocator.dupe(u8, dir_entry.name);
             errdefer allocator.free(mission_id);
 
+            // The mission-directory path as open_editor / start_mission
+            // consume it — also the prefix for the mission.txt read below.
+            const mission_dir_path = try std.fmt.allocPrint(allocator, "missions/{s}", .{mission_id});
+            errdefer allocator.free(mission_dir_path);
+            const mission_txt_path = try std.fmt.allocPrint(allocator, "{s}/mission.txt", .{mission_dir_path});
+            defer allocator.free(mission_txt_path);
+
             // Read mission.txt from this subfolder via the FileSource (so the
             // read goes through the same layering as gameplay reads — though
-            // for custom missions it's always the persistent dir).
-            const mission_path = try std.fmt.allocPrint(allocator, "custom_missions/{s}/mission.txt", .{mission_id});
-            defer allocator.free(mission_path);
-            const mission_bytes = self.readFile(allocator, mission_path) catch |err| switch (err) {
+            // for local missions it's always the persistent dir).
+            const mission_bytes = self.readFile(allocator, mission_txt_path) catch |err| switch (err) {
                 // No mission.txt (or unreadable) → skip this folder; it's not
-                // a playable custom mission. Free the id we duped.
+                // an openable mission. `continue` discards the errdefers, so
+                // free manually. (On `return err` below the errdefers fire —
+                // never free manually on an error-return path; that's a
+                // double-free.)
                 error.FileNotFound => {
+                    allocator.free(mission_dir_path);
                     allocator.free(mission_id);
                     continue;
                 },
-                else => {
-                    allocator.free(mission_id);
-                    return err;
-                },
+                else => return err,
             };
 
             // Parse just enough metadata (name + level_count) in a throwaway
@@ -269,11 +305,14 @@ pub const FileSource = struct {
             defer parse_arena.deinit();
             const pa = parse_arena.allocator();
             const sections = parser.parseConfigFile(mission_bytes, pa) catch {
+                // Same continue-frees-manually rule as the FileNotFound arm.
+                allocator.free(mission_dir_path);
                 allocator.free(mission_id);
                 allocator.free(mission_bytes);
                 continue;
             };
             const mission = loaders.loadMission(sections, pa) catch {
+                allocator.free(mission_dir_path);
                 allocator.free(mission_id);
                 allocator.free(mission_bytes);
                 continue;
@@ -289,14 +328,77 @@ pub const FileSource = struct {
             // has_custom_assets: scan the folder for any file that isn't a
             // known config file. Known config: mission.txt, player.txt,
             // level_<N>.txt. Anything else (sprites, audio, etc.) → true.
-            const has_custom_assets = try folderHasCustomAssets(self, custom_dir, dir_entry.name, mission.level_count);
+            const has_custom_assets = try folderHasCustomAssets(self, missions_dir, dir_entry.name, mission.level_count);
 
             try entries.append(allocator, .{
                 .id = mission_id,
+                .path = mission_dir_path,
                 .name = owned_name,
                 .level_count = mission.level_count,
                 .has_custom_assets = has_custom_assets,
                 .author_turns = null, // no validation replay format
+            });
+        }
+
+        return entries.toOwnedSlice(allocator);
+    }
+
+    /// Enumerate the OFFICIAL missions (shipped embedded campaign content)
+    /// for the mission browser's Official tab. Metadata (name +
+    /// level_count) is parsed from each mission's embedded mission.txt at
+    /// call time — the path list is comptime-known, the parse is not.
+    /// Entries mirror `listMissions` (same `MissionEntry` shape; `id` is the
+    /// mission's folder stem, `path` is the embedded dir path exactly as
+    /// `open_editor` consumes it). The caller owns the returned slice +
+    /// strings (`freeMissions`). A mission whose mission.txt is unreadable
+    /// or unparseable is SKIPPED (shouldn't happen for shipped content — an
+    /// absent row means a broken build).
+    pub fn listOfficialMissions(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+    ) ![]MissionEntry {
+        var entries: std.ArrayList(MissionEntry) = .empty;
+        errdefer {
+            for (entries.items) |e| freeMissionEntry(allocator, e);
+            entries.deinit(allocator);
+        }
+
+        for (official_mission_dir_paths) |dir_path| {
+            const mission_txt_path = try std.fmt.allocPrint(allocator, "{s}/mission.txt", .{dir_path});
+            defer allocator.free(mission_txt_path);
+            const mission_bytes = self.readEmbeddedFile(allocator, mission_txt_path) catch continue;
+
+            // Throwaway parse arena — same shape as listMissions: keep only
+            // the duped id/path/name out of it.
+            var parse_arena = std.heap.ArenaAllocator.init(allocator);
+            defer parse_arena.deinit();
+            const pa = parse_arena.allocator();
+            const sections = parser.parseConfigFile(mission_bytes, pa) catch {
+                allocator.free(mission_bytes);
+                continue;
+            };
+            const mission = loaders.loadMission(sections, pa) catch {
+                allocator.free(mission_bytes);
+                continue;
+            };
+
+            const stem = std.fs.path.basename(dir_path);
+            const id = try allocator.dupe(u8, stem);
+            errdefer allocator.free(id);
+            const path = try allocator.dupe(u8, dir_path);
+            errdefer allocator.free(path);
+            // loadMission borrows into the parse arena — dupe before it dies.
+            const name = try allocator.dupe(u8, mission.name);
+            errdefer allocator.free(name);
+            allocator.free(mission_bytes);
+
+            try entries.append(allocator, .{
+                .id = id,
+                .path = path,
+                .name = name,
+                .level_count = mission.level_count,
+                .has_custom_assets = false,
+                .author_turns = null,
             });
         }
 
@@ -441,17 +543,17 @@ pub fn deleteFile(self: *const FileSource, path: []const u8) !void {
 }
 };
 
-/// Scan a custom-mission folder for files beyond the known config set
+/// Scan a mission folder for files beyond the known config set
 /// (mission.txt, player.txt, level_<N>.txt). Returns true if any such file
 /// exists (custom sprites/audio/assets). `level_count` is the mission's
 /// declared level count, used to know which level_*.txt names are expected.
 fn folderHasCustomAssets(
     file_source: *const FileSource,
-    custom_dir: std.Io.Dir,
+    missions_dir: std.Io.Dir,
     mission_id: []const u8,
     level_count: u32,
 ) !bool {
-    const mission_dir = custom_dir.openDir(file_source.io, mission_id, .{
+    const mission_dir = missions_dir.openDir(file_source.io, mission_id, .{
         .access_sub_paths = true,
         .iterate = true,
     }) catch return false; // unreadable folder → treat as no custom assets
@@ -501,6 +603,23 @@ pub fn freeSaveFiles(allocator: std.mem.Allocator, files: []const SaveFileEntry)
         allocator.free(file.path);
     }
     allocator.free(files);
+}
+
+/// Free one `FileSource.MissionEntry`'s strings (not the entry itself).
+fn freeMissionEntry(allocator: std.mem.Allocator, entry: FileSource.MissionEntry) void {
+    allocator.free(entry.id);
+    allocator.free(entry.path);
+    allocator.free(entry.name);
+}
+
+/// Free a slice returned by `FileSource.listMissions` or
+/// `FileSource.listOfficialMissions` (entries + strings). A zero-length
+/// slice (`&.{}` from an empty collection) is a no-op — `allocator.free`
+/// on an empty slice at a non-owned address would be invalid.
+pub fn freeMissions(allocator: std.mem.Allocator, missions: []const FileSource.MissionEntry) void {
+    if (missions.len == 0) return;
+    for (missions) |entry| freeMissionEntry(allocator, entry);
+    allocator.free(missions);
 }
 
 /// Newest-first ordering: mtime descending, name ascending as the
@@ -607,35 +726,35 @@ pub fn triggerBrowserUpload() void {
     }
 }
 
-// --- tests for listCustomMissions ---
+// --- tests for listMissions / listOfficialMissions ---
 
 const testing = std.testing;
 
-test "listCustomMissions: empty when custom_missions/ absent" {
+test "listMissions: empty when missions/ absent" {
     const allocator = testing.allocator;
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
 
-    const scratch = "zig-cache/test-list-custom-empty";
+    const scratch = "zig-cache/test-list-missions-empty";
     const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
         .open_options = .{ .access_sub_paths = true, .iterate = true },
     }) catch @panic("failed to create scratch dir");
     defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
     const file_source = FileSource.init(io, dir);
 
-    const list = try file_source.listCustomMissions(allocator);
-    defer allocator.free(list);
+    const list = try file_source.listMissions(allocator);
+    defer freeMissions(allocator, list);
     try testing.expectEqual(@as(usize, 0), list.len);
 }
 
-test "listCustomMissions: lists missions with metadata + custom-asset detection" {
+test "listMissions: lists missions with metadata, paths, + custom-asset detection" {
     const allocator = testing.allocator;
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();
     const io = threaded_io.io();
 
-    const scratch = "zig-cache/test-list-custom-populated";
+    const scratch = "zig-cache/test-list-missions-populated";
     const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
         .open_options = .{ .access_sub_paths = true, .iterate = true },
     }) catch @panic("failed to create scratch dir");
@@ -643,35 +762,29 @@ test "listCustomMissions: lists missions with metadata + custom-asset detection"
     const file_source = FileSource.init(io, dir);
 
     // Mission 1: plain folder name, config files only (no custom assets).
-    file_source.writeFile("custom_missions/skeleton_attack/mission.txt",
+    file_source.writeFile("missions/skeleton_attack/mission.txt",
         "Metadata\nfile_format_version 2\nmission_uuid 11111111-1111-1111-1111-111111111111\nlevel_count 1\nname Skeleton Attack\n") catch @panic("w1");
-    file_source.writeFile("custom_missions/skeleton_attack/level_1.txt",
+    file_source.writeFile("missions/skeleton_attack/level_1.txt",
         "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w2");
 
     // Mission 2: UUID_slug folder name, config + a custom sprite (custom assets).
-    file_source.writeFile("custom_missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/mission.txt",
+    file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/mission.txt",
         "Metadata\nfile_format_version 2\nmission_uuid 22222222-2222-2222-2222-222222222222\nlevel_count 2\nname Tree Grove\n") catch @panic("w3");
-    file_source.writeFile("custom_missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/level_1.txt",
+    file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/level_1.txt",
         "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w4");
-    file_source.writeFile("custom_missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/level_2.txt",
+    file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/level_2.txt",
         "Metadata\nfile_format_version 1\n\nLayout\n.!\n") catch @panic("w5");
-    file_source.writeFile("custom_missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/custom_tree.png",
+    file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/custom_tree.png",
         "fake png bytes") catch @panic("w6");
 
     // Mission 3: missing mission.txt — should be SKIPPED.
-    file_source.writeFile("custom_missions/broken/level_1.txt",
+    file_source.writeFile("missions/broken/level_1.txt",
         "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w7");
 
-    const list = try file_source.listCustomMissions(allocator);
-    defer {
-        for (list) |e| {
-            allocator.free(e.id);
-            allocator.free(e.name);
-        }
-        allocator.free(list);
-    }
+    const list = try file_source.listMissions(allocator);
+    defer freeMissions(allocator, list);
 
-    // Two playable missions (broken one is skipped). Order is filesystem-
+    // Two openable missions (broken one is skipped). Order is filesystem-
     // dependent, so find each by id.
     try testing.expectEqual(@as(usize, 2), list.len);
 
@@ -681,6 +794,7 @@ test "listCustomMissions: lists missions with metadata + custom-asset detection"
         if (std.mem.eql(u8, entry.id, "skeleton_attack")) {
             found_skeleton = true;
             try testing.expectEqualStrings("Skeleton Attack", entry.name);
+            try testing.expectEqualStrings("missions/skeleton_attack", entry.path);
             try testing.expectEqual(@as(u32, 1), entry.level_count);
             try testing.expectEqual(false, entry.has_custom_assets);
             try testing.expectEqual(@as(?u32, null), entry.author_turns);
@@ -693,6 +807,34 @@ test "listCustomMissions: lists missions with metadata + custom-asset detection"
     }
     try testing.expect(found_skeleton);
     try testing.expect(found_tree);
+}
+
+test "listOfficialMissions: the shipped campaign missions with paths + metadata" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const file_source = FileSource.init(io, undefined);
+
+    const list = try file_source.listOfficialMissions(allocator);
+    defer freeMissions(allocator, list);
+
+    // The four shipped main-campaign missions (fixed shipped content — a
+    // missing entry means a broken build, so exact stems are asserted).
+    try testing.expectEqual(@as(usize, 4), list.len);
+    const expected = [_][]const u8{ "beginnings", "forest", "seatown", "wetlands" };
+    for (list, expected) |entry, stem| {
+        try testing.expectEqualStrings(stem, entry.id);
+        try testing.expect(std.mem.startsWith(
+            u8,
+            entry.path,
+            "data/campaigns/main_campaign/missions/",
+        ));
+        try testing.expect(std.mem.endsWith(u8, entry.path, stem));
+        try testing.expect(entry.name.len > 0);
+        try testing.expect(entry.level_count > 0);
+        try testing.expectEqual(false, entry.has_custom_assets);
+    }
 }
 
 // --- tests for listSaveFiles ---

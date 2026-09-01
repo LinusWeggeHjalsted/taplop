@@ -95,10 +95,11 @@ pub const Action = enum {
     error_scroll_up,
     error_scroll_down,
     // Camera zoom (keyboard shortcuts; the mouse wheel also zooms via
-    // scroll_delta). ctrl+I = zoom in, ctrl+O = zoom out, ctrl+0 = reset to
-    // 1.0. Letters/digits are layout-stable (physical key positions), unlike
-    // the +/- symbol keys whose raylib tokens are layout-labeled and degrade
-    // on ISO layouts. See DESIGN → Input.
+    // scroll_delta). PgDn = zoom in, PgUp = zoom out (up = the camera moves
+    // away from the scene), ctrl+0 = reset to 1.0. Letters/digits are
+    // layout-stable (physical key positions), unlike the +/- symbol keys
+    // whose raylib tokens are layout-labeled and degrade on ISO layouts.
+    // See DESIGN → Input.
     zoom_in,
     zoom_out,
     zoom_reset,
@@ -335,6 +336,23 @@ pub const Action = enum {
     // no-op. Consumed in handleIdleInput's editor arm, gated on the
     // select tool active — a no-op on every other screen.
     select_editor_all,
+    // Opens/closes the editor's mission browser (the options-menu Open
+    // Mission button, the browser's Back button, and the ctrl+O binding).
+    // A full-screen modal over the editor, mirroring the load-save browser;
+    // editor-screen-only (the toggle no-ops elsewhere). See DESIGN →
+    // Architecture → Level Editor → The mission browser.
+    toggle_editor_mission_browser,
+    // A mission-browser TAB button was clicked (Your Missions / Official).
+    // The tab rides in `AnytimeInput.clicked_editor_mission_tab`. Routed
+    // through `options_action` so it works while the browser is open over
+    // the options menu.
+    select_editor_mission_tab,
+    // A mission-browser ROW was clicked (open that mission in the editor,
+    // replacing the one being edited — no unsaved-changes confirm by
+    // design). The row index rides in `AnytimeInput.clicked_editor_mission_row`
+    // (an index into the CURRENT tab's list; the tab is read from UiState at
+    // resolution). Pushes `open_editor` with the row's mission path.
+    open_editor_mission_row,
 };
 
 /// One per editable `Settings` scalar field. Drives the settings-screen
@@ -371,7 +389,7 @@ pub fn releaseSoundForAction(action: Action) ?SoundId {
     return switch (action) {
         .skip => .skip,
         .swap_weapons => .swap_skill,
-        .toggle_inventory, .toggle_gear, .toggle_skills, .toggle_entity_inspect, .toggle_world_map, .toggle_options_menu, .toggle_editor_inspector => .menu,
+        .toggle_inventory, .toggle_gear, .toggle_skills, .toggle_entity_inspect, .toggle_world_map, .toggle_options_menu, .toggle_editor_inspector, .toggle_editor_mission_browser => .menu,
         // Undo/redo: reuses the menu sound (no dedicated sfx).
         .undo, .redo => .menu,
         .save_game => .menu,
@@ -1431,6 +1449,15 @@ pub const EditorMode = enum {
 /// shipped ones.
 pub const EditorSpritePickerTab = enum {
     mission_local,
+    official,
+};
+
+/// Which tab the editor's mission browser is showing (see DESIGN →
+/// Architecture → Level Editor → The mission browser). Local = the
+/// player's saved/imported missions under `missions/` in the persistent
+/// dir; Official = the shipped embedded campaign missions.
+pub const EditorMissionBrowserTab = enum {
+    local,
     official,
 };
 

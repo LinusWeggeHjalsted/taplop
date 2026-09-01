@@ -2138,6 +2138,14 @@ fn handlePlayerInputEvent(
                 if (current.editor == null) return;
                 loadEditorDecorationRegistry(history, allocator);
                 surfaceWarnings(history, &balance_warnings, allocator);
+                // A newly installed editor mission is a new world: bump so
+                // the transition UI reset in the driver fires even when the
+                // screen STAYS .editor (an open-from-the-editor via the
+                // mission browser) — stale view state (open panels, the
+                // browser itself, scroll offsets) must not survive the
+                // mission swap. start_level/start_hub bump for the same
+                // reason.
+                current.world_generation +%= 1;
                 current.transitionScreen(.editor);
                 return;
             }
@@ -2231,6 +2239,8 @@ fn handlePlayerInputEvent(
             current.editor.?.mission.path = mission_path;
             loadEditorDecorationRegistry(history, allocator);
             surfaceWarnings(history, &balance_warnings, allocator);
+            // Same new-world bump as the fresh branch above.
+            current.world_generation +%= 1;
             current.transitionScreen(.editor);
         },
 

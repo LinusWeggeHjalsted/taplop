@@ -293,6 +293,14 @@ fn update(
                         if (button.editor_skill) |skill_id| {
                             player_input.anytime.clicked_editor_skill = skill_id;
                         }
+                        // Mission-browser tabs + rows: the tab / row index
+                        // ride alongside their actions.
+                        if (button.editor_mission_tab) |mission_tab| {
+                            player_input.anytime.clicked_editor_mission_tab = mission_tab;
+                        }
+                        if (button.editor_mission_row) |mission_row| {
+                            player_input.anytime.clicked_editor_mission_row = mission_row;
+                        }
                         // Release sound: generic button-up for actions without a
                         // specific sound. Actions WITH a specific sound (skip,
                         // swap_weapons, panel toggles) get their sound from the
@@ -328,8 +336,12 @@ fn update(
     // DESIGN → UI Framework → Settings screen.
     input_handlers.handleSliderDrag(history, player_input.pointer, ui_elements);
 
-    // Options menu pauses the game.
-    if (history.session.ui_state.options_menu_open) return;
+    // Options menu pauses the game. The editor mission browser (a modal on
+    // top of it or standalone over the editor) gets the same pause: drag /
+    // camera pan / viewport gestures + idle input are blocked while it's
+    // open. Its own interactions were consumed in handleAnytimeInput above.
+    if (history.session.ui_state.options_menu_open or
+        history.session.ui_state.editor_mission_browser_open) return;
 
     // Recoverable error popup pauses the game (modal — same as options).
     // handleAnytimeInput already cleared it if `dismiss_error` fired this
@@ -1763,6 +1775,75 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     event_handlers.pushEvents(&history.current_state, &.{.{ .meta_event = .end_playtest }}, history.current_arena.allocator());
     runToIdle(&history);
     try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
+}
+
+test "open_editor with a path from inside the editor swaps missions + bumps world_generation" {
+    // The mission browser opens an existing mission while ALREADY in the
+    // editor: the screen stays .editor, so the driver's transition UI reset
+    // only fires if open_editor bumps world_generation (the same signal
+    // start_level/start_hub use). Without it, the browser itself (a UiState
+    // flag) + stale view state would survive the mission swap.
+    const allocator = std.testing.allocator;
+
+    var backing = std.heap.ArenaAllocator.init(allocator);
+    defer backing.deinit();
+    const arena = backing.allocator();
+
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    // Scratch persistent dir (the shipped content reads come from the
+    // embedded map regardless).
+    const scratch = "zig-cache/test-open-editor-from-editor";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    const settings = session_setup.loadSettingsFromDisk(&file_source, arena, &warnings);
+    const weapon_type_definitions = session_setup.loadWeaponTypeDefinitions(&file_source, arena, &warnings);
+    const color_theme_definitions = session_setup.loadColorThemeDefinitionsFromDisk(&file_source, arena, &warnings);
+    const salvage_definitions = session_setup.loadSalvageDefinitionsFromDisk(&file_source, arena, &warnings);
+
+    const starting_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{.{ .meta_event = .open_main_menu }},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    var history = GameStateHistory.init(arena, starting_state, settings, &weapon_type_definitions, color_theme_definitions, salvage_definitions, &file_source, io);
+    runToIdle(&history);
+
+    // Enter the editor with a fresh mission, then swap to beginnings via a
+    // path open (the mission browser's row click).
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
+        .mission_path = null,
+    } } }}, history.current_arena.allocator());
+    runToIdle(&history);
+    try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
+    const generation_before = history.current_state.world_generation;
+
+    event_handlers.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .open_editor = .{
+        .mission_path = "data/campaigns/main_campaign/missions/beginnings",
+    } } }}, history.current_arena.allocator());
+    runToIdle(&history);
+
+    // The swap landed (Beginnings, three levels) and the screen stayed
+    // .editor — but the generation bumped, so the driver's UI reset fires.
+    try std.testing.expectEqual(state.Screen.editor, history.current_state.screen);
+    try std.testing.expectEqualStrings("Beginnings", history.current_state.editor.?.mission.name);
+    try std.testing.expectEqual(@as(u32, 3), history.current_state.editor.?.mission.level_count);
+    try std.testing.expectEqual(generation_before + 1, history.current_state.world_generation);
 }
 
 test "reconstruction read failure: handler sets load_error, drain loop reverts state + trims history" {

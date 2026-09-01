@@ -1968,6 +1968,14 @@ fn handleEscapeKey(history: *GameStateHistory) void {
         return;
     }
 
+    // Editor mission browser (opens over the editor / on top of the options
+    // menu): Escape steps back one layer — only the browser closes.
+    if (ui_state.editor_mission_browser_open) {
+        queueMenuSound(history);
+        ui_state.editor_mission_browser_open = false;
+        return;
+    }
+
     // Mission-fail overlay: Escape fires the same orchestrator its Exit
     // Mission button does (end_level routes PlayerData persistence + the
     // return to the hub). Undo (processed earlier in handleAnytimeInput)
@@ -2094,6 +2102,27 @@ pub fn handleAnytimeInput(
         // The mission export — same side-effect class + gates as the save.
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
             exportEditorMission(history);
+        }
+    }
+
+    if (anytime.toggle_editor_mission_browser) {
+        // The editor's mission browser (the options-menu Open Mission button,
+        // the browser's Back button, ctrl+O). Editor-only — every other
+        // screen no-ops (the save_editor_mission discipline).
+        if (history.current_state.screen == .editor and history.current_state.editor != null) {
+            const ui_state = &history.session.ui_state;
+            ui_state.editor_mission_browser_open = !ui_state.editor_mission_browser_open;
+            if (ui_state.editor_mission_browser_open) {
+                queueMenuSound(history);
+                // Fresh view state on every open (the load-save browser's
+                // reset-on-open pattern): scroll to the top + the local tab
+                // (your collection is the primary target), then scan now.
+                ui_state.editor_mission_scroll_offset = 0;
+                ui_state.editor_mission_browser_tab = .local;
+                rescanEditorMissionsNow(history);
+            } else {
+                queueMenuSound(history);
+            }
         }
     }
 
@@ -3101,8 +3130,65 @@ pub fn handleAnytimeInput(
                 const clear_action = editorGearSlotAction(target, slot, null) orelse return;
                 pushPlayerActionAndDrain(history, clear_action);
             },
+            // Mission-browser tab switch (Your Missions / Official). A view
+            // affordance — direct UiState write, off the undo timeline (the
+            // sprite-picker tab's convention).
+            .select_editor_mission_tab => {
+                if (!history.session.ui_state.editor_mission_browser_open) return;
+                const tab = anytime.clicked_editor_mission_tab orelse return;
+                history.session.ui_state.editor_mission_browser_tab = tab;
+                // A tab switch resets the scroll — the other tab's list has
+                // its own extent, and a stale offset can clamp past its end.
+                history.session.ui_state.editor_mission_scroll_offset = 0;
+            },
+            // A mission row was clicked: open that mission in the editor
+            // (replacing the one being edited — no unsaved-changes confirm,
+            // by design). The recorded event is the ordinary `open_editor`
+            // with the row's path (already a whitelisted player action); the
+            // acquisition (the scan that produced the row) happened in idle
+            // input, so replay re-reads the files silently — the
+            // player_load_save shape. On failure the recoverable popup
+            // surfaces and the browser stays open (the revert restores
+            // world_generation, so the transition UI reset never fires).
+            .open_editor_mission_row => {
+                if (!history.session.ui_state.editor_mission_browser_open) return;
+                const row = anytime.clicked_editor_mission_row orelse return;
+                const missions = switch (history.session.ui_state.editor_mission_browser_tab) {
+                    .local => history.session.editor_local_missions,
+                    .official => history.session.editor_official_missions,
+                };
+                if (row >= missions.len) return; // stale-list belt (list can't shift mid-open, but cheap)
+                // Dupe the path into the current arena: the session list's
+                // strings are backing-owned and a later scan frees them —
+                // the recorded event must not borrow across frames
+                // (recordEvent deep-copies at drain time, next frame).
+                const mission_path = allocator.dupe(u8, missions[row].path) catch
+                    @panic("failed to allocate mission path");
+                pushPlayerActionAndDrain(history, .{ .open_editor = .{
+                    .mission_path = mission_path,
+                } });
+            },
             else => {},
         }
+    }
+
+    // Editor mission browser: a modal on top of everything but the error
+    // popup (which gated above) and above the options menu it opened from.
+    // Its own interactions were folded into the anytime / options_action
+    // fields above (toggle, tabs, rows — the options-menu-before-the-gate
+    // dispatch); while it's open, everything else is blocked. The wheel
+    // scrolls the row list — whole-row ticks (the load-save browser's
+    // model), lower clamp here, upper clamp authoritative in the builder.
+    // No periodic rescan while open (see SessionState.editor_local_missions).
+    if (history.session.ui_state.editor_mission_browser_open) {
+        if (anytime.scroll_delta != 0) {
+            const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
+            history.session.ui_state.editor_mission_scroll_offset -= delta_rows;
+            if (history.session.ui_state.editor_mission_scroll_offset < 0) {
+                history.session.ui_state.editor_mission_scroll_offset = 0;
+            }
+        }
+        return;
     }
 
     // When options menu is open, block all other input
@@ -3204,7 +3290,7 @@ pub fn handleAnytimeInput(
         }
     }
 
-    // Keyboard zoom shortcuts (ctrl+I / ctrl+O / ctrl+0). Same additive
+    // Keyboard zoom shortcuts (PgUp / PgDn / ctrl+0). Same additive
     // step + bounds as the wheel. Reset snaps to the default.
     if (anytime.zoom_in) {
         const new_zoom = @min(max_camera_zoom, history.settings.camera_zoom + camera_zoom_step);
@@ -3373,6 +3459,31 @@ fn rescanSaveFilesIfDue(history: *GameStateHistory) void {
     }
 }
 
+/// Scan both mission-browser lists into SessionState, freeing the previous
+/// local list (the save_files pattern). The LOCAL list is the persistent
+/// `missions/` dir; the OFFICIAL list is parsed from the embedded mission
+/// files ONCE per session (the embedded map is immutable per build — no
+/// rescan). Runs when the browser OPENS (never in `view()`, which stays
+/// file-free) — no periodic rescan while open: nothing can add a local
+/// mission while the modal is up (a web import triggers its own explicit
+/// rescan), so reopening is the refresh path. An unreadable dir keeps the
+/// previous list rather than blanking the browser.
+fn rescanEditorMissionsNow(history: *GameStateHistory) void {
+    const allocator = history.backing_allocator;
+    const local = history.file_source.listMissions(allocator) catch return;
+    file_source_mod.freeMissions(allocator, history.session.editor_local_missions);
+    history.session.editor_local_missions = local;
+
+    if (!history.session.editor_official_missions_scanned) {
+        const official = history.file_source.listOfficialMissions(allocator) catch return;
+        // The one-time official scan only replaces the list on success, so a
+        // failure retries on the next open (scanned stays false).
+        file_source_mod.freeMissions(allocator, history.session.editor_official_missions);
+        history.session.editor_official_missions = official;
+        history.session.editor_official_missions_scanned = true;
+    }
+}
+
 /// Consume the web import marker, if present: the picked file has landed in
 /// saves/ — delete the marker, rescan (so the file shows in the list), and
 /// load it. A parse failure inside the load surfaces the recoverable popup
@@ -3429,9 +3540,9 @@ pub fn handleIdleInput(
                 .new_game => event_handlers.pushPlayerAction(current, .start_new_game, allocator),
                 // Main-menu Editor button: open a FRESH empty mission
                 // (New Mission, one default-template level, empty
-                // palettes). Opening an EXISTING mission (custom from the
-                // persistent dir, or official) is the deferred mission
-                // browser (TODO) — it will push open_editor with a path.
+                // palettes). Opening an EXISTING mission is the editor's
+                // mission browser (the options-menu Open Mission button /
+                // ctrl+O) — it pushes open_editor with a path.
                 .open_editor => event_handlers.pushPlayerAction(current, .{ .open_editor = .{
                     .mission_path = null,
                 } }, allocator),
@@ -3461,8 +3572,15 @@ pub fn handleIdleInput(
                     if (!history.session.ui_state.load_save_menu_open) return;
                     const row = idle.clicked_save_row orelse return;
                     if (row >= history.session.save_files.len) return;
+                    // Dupe the path into the current arena: the session
+                    // list's strings are backing-owned and the housekeeping
+                    // rescan below can free them THIS frame, while the
+                    // pushed event isn't recorded (deep-copied) until the
+                    // next frame's drain — a borrowed path could dangle.
+                    const save_path = allocator.dupe(u8, history.session.save_files[row].path) catch
+                        @panic("failed to allocate save path");
                     event_handlers.pushPlayerAction(current, .{ .player_load_save = .{
-                        .save_path = history.session.save_files[row].path,
+                        .save_path = save_path,
                     } }, allocator);
                 },
                 // Web import: open the browser file picker. The picked file

@@ -978,7 +978,7 @@ Read order (first hit wins):
 
 A read of a shipped path with no persistent/VFS override hits layer 3. A read
 of a save/log hits layer 2 (misses VFS + embedded). A read of a custom mission
-hits layer 1 (VFS) or 2 (persisted custom_missions/), depending on how it was
+hits layer 1 (VFS) or 2 (persisted missions/), depending on how it was
 acquired.
 
 ### Embedding
@@ -997,7 +997,7 @@ existing files require a recompile (which `zig build run` does anyway).
 
 Default: `~/.ziglop/` (dotfile in `$HOME`, NOT XDG — chosen for player-
 discoverability of saves/custom content over convention). Holds `autosave.txt`,
-`saves/`, `logs/`, future `replays/` and `custom_missions/`. Overridable via
+`saves/`, `logs/`, future `replays/` and `missions/`. Overridable via
 `--data-dir` flag / `$ZIGLOP_DATA` env var (dev, portable installs, tests);
 the flag wins over the env var, which wins over the default. For dev work,
 prefer `zig build run -- --data-dir <scratch-dir>` so session logs and
@@ -1266,7 +1266,7 @@ settled; implementation is mostly pending (the VFS layer is the foundation).
   (the shipped campaign is one locally-bundled set showcasing all skills);
   the only differences are file source + return target.
 - **File source:** the VFS layer (layer 1 of the FileSource read order) or
-  the persistent `custom_missions/` dir, NOT the embedded map. This is the
+  the persistent `missions/` dir, NOT the embedded map. This is the
   outstanding VFS piece from File System & IO.
 - **Return target = where the player was when they opened the browser**, NOT
   the mission's authored `start_hub`/`end_hub` (those may name a hub that
@@ -1290,32 +1290,38 @@ settled; implementation is mostly pending (the VFS layer is the foundation).
   2. The main menu (a button alongside New Game / Continue).
   3. The world map.
 - Tabs/content:
-  - **Acquired missions** (already in the persistent `custom_missions/`
+  - **Acquired missions** (already in the persistent `missions/`
     dir) — click to start. Enumerated via
-    `FileSource.listCustomMissions` (see below).
+    `FileSource.listMissions` (see below).
   - **Online browse** (fetch list from the database, preview metadata,
     download into the persistent dir) — only once online services ship;
     absent/disabled until then. Fetch-to-local-then-play so no active
     connection is needed after download.
   - **Import from file** (zip upload / local path) — the offline sharing
     path, always available, no account needed.
-- **Folder convention:** `custom_missions/<id>/` where `<id>` is the folder
-  name. Editor-generated and online-downloaded missions use `<uuid>_<slug>`
+- **Folder convention:** `missions/<id>/` where `<id>` is the folder
+  name. Editor-saved and online-downloaded missions use `<uuid>_<slug>`
   (UUID generated at mission creation, stored in `mission_uuid` in
   mission.txt, stable across re-saves; slug derived from the display name).
   Hand-placed folders with any name are ALSO accepted (the id is whatever
   the folder is named) — generation/download follow the convention, reading
   tolerates anything. Two authors making "Skeleton Attack" get different
   UUIDs → different folders, no collision.
-- **`FileSource.listCustomMissions`** (file_source.zig): enumerates
-  `custom_missions/` in the persistent dir, returns `[]CustomMissionEntry`.
-  Each entry: `id` (folder name), `name` + `level_count` (from mission.txt),
+- **`FileSource.listMissions`** (file_source.zig): enumerates
+  `missions/` in the persistent dir, returns `[]FileSource.MissionEntry`.
+  Each entry: `id` (folder name), `path` ("missions/<id>" — as
+  `open_editor`/`start_mission` consume it), `name` + `level_count` (from
+  mission.txt),
   `has_custom_assets` (true if the folder has any file beyond mission.txt /
   player.txt / level_*.txt), `author_turns: ?u32` (null = unvalidated, until
   the validation replay format lands). Folders without a readable
   mission.txt are SKIPPED (broken/half-installed missions aren't offered).
   Persistent-dir only (no VFS — the local collection is the source of
-  truth; transient acquisitions persist into this dir first).
+  truth; transient acquisitions persist into this dir first). The EDITOR's
+  mission browser reuses this scan for its Your Missions tab; the dream
+  browser will reuse it too. `FileSource.listOfficialMissions` is the
+  Official-tab sibling (comptime embedded path list + runtime metadata
+  parse, same entry shape).
 
 ### Content identity
 
@@ -1376,7 +1382,7 @@ replay that proved it). Medal derivation is a pure function of author_turns,
 so the browser/mission-complete derive at display time. A mission with no
 validation replay shows "unvalidated" (no medals). The validation replay
 format is the session-log format + reconstruction cache (`file_format_version`
-2), not yet built — so `listCustomMissions` shows "unvalidated" for all
+2), not yet built — so `listMissions` shows "unvalidated" for all
 missions until it lands.
 
 ### Balance bounds (parse-time, warn + clamp)
@@ -1412,7 +1418,7 @@ the campaign.
 ### Auth & the server seam (deferred)
 
 - **Local-first always.** The editor saves a mission to the persistent
-  `custom_missions/` dir (zip or folder) — a complete, shareable artifact
+  `missions/` dir (zip or folder) — a complete, shareable artifact
   you can hand to anyone, post anywhere. No account, no server.
 - **Online upload is optional and gated behind auth.** "Publish to the
   database" is a separate action requiring a token; the server validates
@@ -1737,7 +1743,7 @@ buttons carry `Action`s that dispatch via `handleAnytimeInput` (before any
    open on undo. Prefer the GameState-derived approach when the trigger is
    already in undoable state.
 
-### Level Editor (core + UI landed; save-to-disk + drag-painting pending)
+### Level Editor (core + UI + save/export + mission browser landed; drag-painting pending)
 
 A custom-mission editor. A mission is multiple sequential levels, so the
 editor is focused on a mission with per-level tabs (quick swap to edit each
@@ -1818,8 +1824,8 @@ opens a FRESH empty mission: `open_editor` with a NULL `mission_path` →
 stem namespace; the dir usually doesn't exist yet, and the scan treats a
 missing dir as empty), ONE default-template level
 (`data/default_level.txt`), empty palettes, `player_def` from
-`max_player.txt`. A non-null path opens that mission directory (the
-deferred mission browser + tests) — the loading path is unchanged.
+`max_player.txt`. A non-null path opens that mission directory (the editor's
+mission browser — see The mission browser) — the loading path is unchanged.
 
 The fresh mission's uuid stays EMPTY for the whole editing session:
 mission uuids are FILE CONTENT (authored in mission.txt), and identity is
@@ -1864,6 +1870,36 @@ bundles the saved configs + the mission dir's custom sprites + a
 validation_replay.txt (once validation writes one) into a STORE-method
 zip (`zip_writer.zig`) at `exported_missions/<uuid>_<name>.zip` — on web
 the file is also offered as a browser download (the Export Save seam).
+
+**The mission browser (LANDED).** The editor options menu's Open Mission
+button (+ ctrl+O) opens a full-screen modal over the editor, mirroring the
+load-save browser (`UiState.editor_mission_browser_open` — a modal like the
+options menu; Escape steps back one layer, the options menu it opened from
+stays beneath). Two tabs at the top (the sprite picker's tab pattern):
+**Your Missions** (`FileSource.listMissions` — the persistent `missions/`
+dir, where editor saves land) and **Official** (`FileSource.listOfficialMissions`
+— the shipped embedded campaign missions, comptime path list + runtime
+metadata parse, scanned once per session). Lists live on SessionState
+(scanned from the input path on open, never `view()`; no periodic rescan
+while open — nothing can add a local mission while the modal is up, a web
+import rescans explicitly). A row click pushes the ordinary `open_editor`
+with the row's path (`pushPlayerActionAndDrain`) — the loading path is
+unchanged; replay re-reads the files silently (the `player_load_save`
+shape). Three settled points:
+- **No unsaved-changes confirm** — opening replaces the mission being
+  edited; save first if in doubt (ctrl+S is cheap). Deliberate.
+- **`open_editor` bumps `world_generation`** in BOTH branches: the
+  driver's transition UI reset fires on screen-change OR generation-bump,
+  and an editor→editor open changes neither screen — without the bump the
+  browser (a UiState flag) and stale view state (scroll offsets, open
+  panels) would survive the mission swap. On a failed open the revert
+  restores the generation, no reset fires, the browser stays open + the
+  popup surfaces (exactly the load-save browser's failure shape).
+- **Undo across the swap works** — `open_editor` is on the timeline, so
+  undo restores the previously-edited mission. Accepted as a feature.
+
+The web-only Import button (zip upload, ctrl+I) lands with the import
+slice; the zip reader accepts both STORE + DEFLATE entries.
 
 **Editor edits ride the existing event system.** `EditorEvent` variants
 (`editor_set_active_level`, …) mutate `current.editor.?.levels[level_index]`

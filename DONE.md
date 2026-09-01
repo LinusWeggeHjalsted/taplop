@@ -8911,3 +8911,86 @@ The editor can save its mission to the persistent dir and export it as a
   `exported_missions/<uuid>_<name>.zip`; on web the file is also offered
   as a browser download via the existing Export Save seam
   (triggerBrowserDownload — comptime no-op on native).
+
+## Level editor — the mission browser (open existing missions)
+
+The editor can open an EXISTING mission: a full-screen modal browser over
+the editor (options-menu Open Mission button + ctrl+O), two tabs at the
+top (Your Missions / Official), one row per mission, Back bottom-left. The
+web-only Import button (zip upload) is the remaining slice — see TODO.
+Design: DESIGN → Architecture → Level Editor → The mission browser.
+
+- **The scan layer (file_source.zig).** `listCustomMissions` →
+  `listMissions`, retargeted from `custom_missions/` to `missions/` — the
+  author is unifying on `missions/` as THE persistent mission dir (the
+  dream browser later reuses the same scan; DESIGN's folder convention
+  updated in the same pass). `CustomMissionEntry` → `MissionEntry`, which
+  gained a `path` field ("missions/<id>", exactly what `open_editor` /
+  `start_mission` consume — rows carry their identity). New
+  `listOfficialMissions`: the shipped campaign missions as a comptime
+  path list scanned from the embedded map (the
+  `official_entity_sprite_stems` precedent in ui.zig) + a runtime parse of
+  each embedded mission.txt for name + level_count (scan-once per
+  session; the embedded map is immutable per build).
+- **The browser UI (ui.zig / view.zig).** `buildEditorMissionBrowser`
+  mirrors `buildLoadSavePanel` (same metrics, whole-row scrolling,
+  builder-authoritative upper clamp) with the sprite picker's tab-button
+  pattern on top. `UiState.editor_mission_browser_open` + `_tab` +
+  `_scroll_offset`; emitted from `view()` above the options menu, under
+  the error popup. Editor-screen-only.
+- **Input plumbing.** `Action.toggle_editor_mission_browser` (button +
+  keybind, consumed in handleAnytimeInput — scan-on-open, view-state
+  reset, no periodic rescan: nothing can add a local mission while the
+  modal is up), `.select_editor_mission_tab` + `.open_editor_mission_row`
+  (options_action routing, payload via the Button-field convention —
+  `editor_mission_tab` / `editor_mission_row` — not SlotRef; rows are
+  never drag sources). A row pushes the ordinary `open_editor` with the
+  row's path through `pushPlayerActionAndDrain` — the loading path was
+  already DONE (the beginnings round-trip test); the browser is pure UI +
+  scan on top. On a failed open the revert restores world_generation so
+  no UI reset fires: the browser stays open + the popup surfaces (the
+  load-save browser's exact failure shape).
+- **`open_editor` bumps `world_generation`** (both branches). The
+  driver's transition UI reset fires on screen-change OR generation-bump;
+  an editor→editor open changes neither — without the bump the browser
+  (a UiState flag) and stale view state (scrolls, open panels) would
+  survive the mission swap. start_level/start_hub bump for the same
+  reason. Undo across the swap restores the previous mission (accepted
+  as a feature; tested).
+- **Modal semantics.** While open: its own button clicks dispatch
+  (anytime/options_action run before the gates), the wheel scrolls its
+  rows (handled before the options gate — the browser opens ON TOP of
+  the options menu, the settings-screen stacking), and update()'s
+  options pause gate extends to the browser (drag/camera-pan/viewport
+  gestures + idle input blocked). Escape steps back one layer (browser
+  closes, the options menu beneath stays).
+- **Bindings (the three-site rule).** ctrl+O →
+  `toggle_editor_mission_browser`; camera zoom rebinds from ctrl+I/O to
+  PgUp (zoom out — "up = the camera moves away", author's call) / PgDn
+  (zoom in), ctrl+0 unchanged. PageUp/PageDown added to the backend
+  key table. ctrl+I → mission import lands with the zip-import slice.
+  Existing installs keep their user-overlay bindings (pre-release, free).
+- **Three latent bugs fixed en route** (found while mirroring the
+  load-save patterns; none were covered by tests):
+  1. `listCustomMissions`' error arm did `allocator.free(mission_id)` +
+     `return err` under an active `errdefer` — a DOUBLE-FREE on the
+     unreadable-mission.txt path (errdefer fires on the return; manual
+     frees belong only on `continue` paths, where errdefers are
+     discarded). Verified with a standalone repro before fixing.
+  2. The load-save row click passed the session list's path to
+     `player_load_save` BORROWED: the housekeeping rescan could free the
+     list in the same frame while the pushed event isn't deep-copied into
+     history until the next frame's drain — a use-after-free on the
+     recorded path. Fixed by duping into the current arena at push (and
+     the mission rows do the same by construction).
+  3. The fresh-open branch of `open_editor` never bumped anything for an
+     editor→editor path (impossible before the browser; covered by the
+     world_generation bump above).
+- **Tests.** file_source: retargeted scan tests (+ the new `path` field,
+  `freeMissions`), the official list (exact four stems + paths +
+  metadata). ui: browser tabs/payloads/windowing/clamp + per-tab empty
+  states. input/handlers: the toggle (open/reset/editor-only no-op),
+  escape layering, tab switch + wheel routing, and the end-to-end row
+  click (scan → click → drain → editor holds the opened mission,
+  world_generation bumped, undo restores). main.zig: the
+  open-from-editor swap test.

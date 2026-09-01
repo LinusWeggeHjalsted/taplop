@@ -276,6 +276,28 @@ pub const UiState = struct {
     /// shipped ones).
     editor_picker_sprite_tab: types.EditorSpritePickerTab = .mission_local,
 
+    /// Editor mission browser (the options-menu Open Mission button /
+    /// ctrl+O): a full-screen modal over the editor, mirroring the
+    /// load-save browser. Like the options menu it locks input (the input
+    /// layer gates on it); the panel itself blocks input to the editor UI
+    /// behind it. Auto-cleared by the screen-transition UI reset —
+    /// open_editor bumps world_generation on every successful open, so the
+    /// reset fires even editor-to-editor. See DESIGN → Architecture →
+    /// Level Editor → The mission browser.
+    editor_mission_browser_open: bool = false,
+
+    /// Which tab the mission browser is showing (Your Missions / Official).
+    /// View affordance — a direct UiState write, off the undo timeline.
+    /// Reset to `.local` on every open (your collection is the primary
+    /// target).
+    editor_mission_browser_tab: types.EditorMissionBrowserTab = .local,
+
+    /// Mission browser vertical scroll offset, in ROWS — the load-save
+    /// browser's exact scroll model (one notch = one full row pitch, lower
+    /// clamp at the input site, upper clamp authoritative in the builder).
+    /// Cleared on every open. Off the undo timeline like the other scrolls.
+    editor_mission_scroll_offset: i32 = 0,
+
     /// Combat log scroll offset (for full combat log view).
     combat_log_scroll_offset: i32 = 0,
 
@@ -2547,6 +2569,15 @@ pub const Button = struct {
     /// Editor skill pick, if this button is a skill-picker cell. Rides in
     /// `AnytimeInput.clicked_editor_skill`; null on the None cell (clears).
     editor_skill: ?types.SkillId = null,
+    /// Mission-browser tab identity, if this button is one of the browser's
+    /// two tabs (Your Missions / Official). The `.select_editor_mission_tab`
+    /// action + `AnytimeInput.clicked_editor_mission_tab` fold this into the
+    /// handler — same payload-rides-along pattern as `editor_sprite_tab`.
+    editor_mission_tab: ?types.EditorMissionBrowserTab = null,
+    /// Mission-browser ROW index (into the current tab's list), if this
+    /// button is a mission row. The `.open_editor_mission_row` action +
+    /// `AnytimeInput.clicked_editor_mission_row` fold this into the handler.
+    editor_mission_row: ?u32 = null,
     blocks_input: bool = true,
 };
 
@@ -11161,6 +11192,20 @@ pub fn buildOptionsMenu(
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(export_body))}) },
         };
         button_count += 1;
+
+        // Open an EXISTING mission into the editor (the mission browser):
+        // your saved/imported missions + the official campaign ones, two
+        // tabs. Opening replaces the mission being edited (no unsaved-
+        // changes confirm — save first if in doubt; ctrl+S is cheap).
+        // Also on ctrl+O (the binding ships in default_settings.txt).
+        buttons[button_count] = .{
+            .label = "Open Mission",
+            .action = .toggle_editor_mission_browser,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
+                "Ctrl+O — browse your saved missions and the official ones",
+            ))}) },
+        };
+        button_count += 1;
     }
 
     // Settings: opens the settings overlay on top of this one (drill-in).
@@ -11458,6 +11503,210 @@ pub fn buildLoadSavePanel(
             null,
         );
     }
+}
+
+// --- Editor mission browser (editor, full screen) ---
+
+/// Build the editor's mission browser: a full-screen modal panel mirroring
+/// the load-save browser — two tab buttons top-left (Your Missions /
+/// Official — the sprite picker's tab pattern), one clickable row per
+/// mission (display name; a click opens it in the editor via `open_editor`,
+/// replacing the mission being edited), a Back button bottom-left. The
+/// web-only Import button (zip upload) lands with the import slice.
+/// Overflowing lists scroll with the load-save browser's whole-row model;
+/// the scroll offset clamps here (authoritative — the view is the only
+/// place that knows the max). Barebones like the load-save browser (same
+/// polish slice owns richer row visuals). See DESIGN → Architecture →
+/// Level Editor → The mission browser.
+pub fn buildEditorMissionBrowser(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    screen: Rectangle,
+    local_missions: []const @import("file_source.zig").FileSource.MissionEntry,
+    official_missions: []const @import("file_source.zig").FileSource.MissionEntry,
+    tab: types.EditorMissionBrowserTab,
+    scroll_offset: *i32,
+    button_color: Color,
+) !void {
+    // Full-screen modal background — blocks input to the editor UI behind
+    // it. Reuses the load-save browser's metrics (same visual class).
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = screen.position(),
+        .width = screen.width,
+        .height = screen.height,
+        .blocks_input = true,
+    } });
+
+    const content_x = screen.x + load_save_padding;
+    const content_width = screen.width - 2 * load_save_padding;
+    const origin = screen.position();
+
+    // Tabs top-left (the tabs ARE the header, like the sprite picker).
+    // Darkest background panels; the active tab's highlight outline is the
+    // indication, no tint change (the picker's convention).
+    const tab_specs = [_]struct { tab: types.EditorMissionBrowserTab, label: []const u8 }{
+        .{ .tab = .local, .label = "Your Missions" },
+        .{ .tab = .official, .label = "Official" },
+    };
+    var tab_x = origin.x + ui_gap;
+    for (tab_specs) |spec| {
+        const label_width = font_metrics.measureSpanWidth(text(spec.label), middle_panel_header_font_size);
+        const tab_width = label_width + 2 * ui_gap;
+        const active = spec.tab == tab;
+        try elements.append(allocator, .{ .nine_slice_panel = .{
+            .sprite_id = "ui/panel",
+            .screen_position = .{ .x = tab_x, .y = origin.y + load_save_padding },
+            .width = tab_width,
+            .height = middle_panel_header_height,
+            .color = button_color,
+        } });
+        try elements.append(allocator, .{ .button = .{
+            .screen_position = .{ .x = tab_x, .y = origin.y + load_save_padding },
+            .width = tab_width,
+            .height = middle_panel_header_height,
+            .action = .select_editor_mission_tab,
+            .editor_mission_tab = spec.tab,
+            .highlighted = active,
+        } });
+        try elements.append(allocator, .{ .text_label = .{
+            .text = spec.label,
+            .screen_position = .{
+                .x = tab_x + ui_gap,
+                .y = origin.y + load_save_padding + @divFloor(
+                    middle_panel_header_height - middle_panel_header_font_size,
+                    2,
+                ),
+            },
+            .font_size = middle_panel_header_font_size,
+            .blocks_input = false,
+        } });
+        tab_x += tab_width + ui_gap;
+    }
+
+    // Rows region: from below the tabs to above the Back button.
+    const rows_y = origin.y + load_save_padding + middle_panel_header_height + load_save_header_gap;
+    const rows_bottom = screen.y + screen.height - load_save_padding -
+        panel_button_height - load_save_button_gap;
+    const rows_height = rows_bottom - rows_y;
+    const row_pitch = load_save_row_height + load_save_row_gap;
+    const visible_rows: usize = @intCast(@max(0, @divTrunc(rows_height, row_pitch)));
+
+    const missions = switch (tab) {
+        .local => local_missions,
+        .official => official_missions,
+    };
+
+    // Clamp the scroll offset (authoritative — the input handler can't know
+    // max_scroll_row without the row count).
+    const total_rows: usize = missions.len;
+    const max_scroll_row: i32 = @intCast(total_rows -| @min(total_rows, visible_rows));
+    if (scroll_offset.* < 0) scroll_offset.* = 0;
+    if (scroll_offset.* > max_scroll_row) scroll_offset.* = max_scroll_row;
+    const scrolls = total_rows > visible_rows;
+
+    if (total_rows == 0) {
+        const empty_text = switch (tab) {
+            .local => "No saved missions yet",
+            .official => "No official missions",
+        };
+        try elements.append(allocator, .{ .text_label = .{
+            .text = empty_text,
+            .screen_position = .{ .x = content_x, .y = rows_y },
+            .font_size = load_save_row_font_size,
+            .blocks_input = false,
+        } });
+    } else {
+        // Rows widen right up to the scrollbar gutter when one is drawn.
+        const rows_width = if (scrolls)
+            content_width - load_save_scrollbar_width - load_save_scrollbar_gap
+        else
+            content_width;
+
+        const first: usize = @intCast(scroll_offset.*);
+        const last_exclusive = @min(total_rows, first + visible_rows);
+        for (first..last_exclusive) |index| {
+            const cell: Rectangle = .{
+                .x = content_x,
+                .y = rows_y + @as(i32, @intCast(index - first)) * row_pitch,
+                .width = rows_width,
+                .height = load_save_row_height,
+            };
+            try elements.append(allocator, .{ .nine_slice_panel = .{
+                .sprite_id = "ui/panel",
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+            } });
+            // The row identity rides in the Button payload (the save-row
+            // SlotRef pattern, via the newer Button-payload convention —
+            // rows are never drag sources, so no SlotRef).
+            try elements.append(allocator, .{ .button = .{
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .action = .open_editor_mission_row,
+                .editor_mission_row = @intCast(index),
+            } });
+            const label = missions[index].name;
+            const label_width = font_metrics.measureSpanWidth(text(label), load_save_row_font_size);
+            const label_box = cell.placeCenter(label_width, load_save_row_font_size);
+            try elements.append(allocator, .{ .text_label = .{
+                .text = label,
+                .screen_position = label_box.position(),
+                .font_size = load_save_row_font_size,
+                .blocks_input = false,
+            } });
+        }
+
+        // Scrollbar: track + proportional thumb, the load-save browser's
+        // exact model.
+        if (scrolls) {
+            const scrollbar_x = content_x + content_width - load_save_scrollbar_width;
+            const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = scrollbar_x, .y = rows_y },
+                .width = load_save_scrollbar_width,
+                .height = rows_height,
+                .color = track_color,
+            } });
+            const visible_span_rows: i32 = @intCast(@min(total_rows, visible_rows));
+            const track_travel = rows_height - visible_span_rows * row_pitch;
+            const thumb_height = @max(@as(i32, 40), visible_span_rows * row_pitch);
+            const thumb_y = rows_y + if (max_scroll_row == 0)
+                0
+            else
+                @divTrunc(scroll_offset.* * track_travel, max_scroll_row);
+            const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
+            try elements.append(allocator, .{ .solid_rect = .{
+                .screen_position = .{ .x = scrollbar_x, .y = thumb_y },
+                .width = load_save_scrollbar_width,
+                .height = thumb_height,
+                .color = thumb_color,
+            } });
+        }
+    }
+
+    // Bottom-left: Back (closes the browser — same toggle action that
+    // opens it).
+    const button_y = screen.y + screen.height - load_save_padding - panel_button_height;
+    try emitPanelButton(
+        elements,
+        allocator,
+        font_metrics,
+        .{
+            .x = content_x,
+            .y = button_y,
+            .width = load_save_button_width,
+            .height = panel_button_height,
+        },
+        "Back",
+        menu_button_font_size,
+        .toggle_editor_mission_browser,
+        button_color,
+        null,
+    );
 }
 
 // --- Credits screen (main menu, full screen) ---
@@ -12517,6 +12766,162 @@ test "buildLoadSavePanel: empty list shows placeholder, Back always emitted" {
     try std.testing.expect(found_back);
 }
 
+test "buildEditorMissionBrowser: tabs, rows carry payloads + actions, window + clamp" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const MissionEntry = @import("file_source.zig").FileSource.MissionEntry;
+
+    // Enough rows to overflow the visible window (the load-save browser's
+    // geometry — ~14 visible rows).
+    var missions: [20]MissionEntry = undefined;
+    for (&missions, 0..) |*mission, i| {
+        mission.* = .{
+            .id = "mission_id",
+            .path = "missions/mission_id",
+            .name = try std.fmt.allocPrint(allocator, "Mission {d}", .{i}),
+            .level_count = 1,
+            .has_custom_assets = false,
+            .author_turns = null,
+        };
+    }
+
+    var scroll: i32 = 0;
+    var elements: UiElementList = .empty;
+    try buildEditorMissionBrowser(
+        &elements,
+        allocator,
+        metrics,
+        screen,
+        &missions,
+        &.{},
+        .local,
+        &scroll,
+        .{ .r = 50, .g = 50, .b = 50 },
+    );
+
+    // Both tabs emitted with their payloads; the active one highlighted.
+    var found_local_tab = false;
+    var found_official_tab = false;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .select_editor_mission_tab) {
+            if (button.editor_mission_tab == .local) {
+                found_local_tab = true;
+                try std.testing.expect(button.highlighted);
+            }
+            if (button.editor_mission_tab == .official) {
+                found_official_tab = true;
+                try std.testing.expect(!button.highlighted);
+            }
+        },
+        else => {},
+    };
+    try std.testing.expect(found_local_tab);
+    try std.testing.expect(found_official_tab);
+
+    // Rows: only the visible window, starting at scroll 0, each carrying its
+    // index + the open action.
+    var row_buttons: usize = 0;
+    var first_row_index: ?u32 = null;
+    for (elements.items) |element| switch (element) {
+        .button => |button| if (button.action == .open_editor_mission_row) {
+            row_buttons += 1;
+            if (first_row_index == null) first_row_index = button.editor_mission_row;
+        },
+        else => {},
+    };
+    try std.testing.expect(row_buttons > 0);
+    try std.testing.expect(row_buttons < missions.len); // window, not all rows
+    try std.testing.expectEqual(@as(u32, 0), first_row_index.?);
+
+    // Scroll past the end clamps to the last window; the last row is visible.
+    scroll = 999;
+    var elements_end: UiElementList = .empty;
+    try buildEditorMissionBrowser(
+        &elements_end,
+        allocator,
+        metrics,
+        screen,
+        &missions,
+        &.{},
+        .local,
+        &scroll,
+        .{ .r = 50, .g = 50, .b = 50 },
+    );
+    var last_row_index: u32 = 0;
+    for (elements_end.items) |element| switch (element) {
+        .button => |button| if (button.action == .open_editor_mission_row) {
+            last_row_index = button.editor_mission_row.?;
+        },
+        else => {},
+    };
+    try std.testing.expectEqual(@as(u32, missions.len - 1), last_row_index);
+    const max_scroll_row: i32 = @intCast(missions.len - row_buttons);
+    try std.testing.expectEqual(max_scroll_row, scroll);
+
+    // Negative scroll clamps to 0.
+    scroll = -5;
+    var elements_neg: UiElementList = .empty;
+    try buildEditorMissionBrowser(
+        &elements_neg,
+        allocator,
+        metrics,
+        screen,
+        &missions,
+        &.{},
+        .local,
+        &scroll,
+        .{ .r = 50, .g = 50, .b = 50 },
+    );
+    try std.testing.expectEqual(@as(i32, 0), scroll);
+}
+
+test "buildEditorMissionBrowser: empty lists show per-tab placeholders, Back always emitted" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+
+    for ([_]types.EditorMissionBrowserTab{ .local, .official }) |tab| {
+        var scroll: i32 = 0;
+        var elements: UiElementList = .empty;
+        try buildEditorMissionBrowser(
+            &elements,
+            allocator,
+            metrics,
+            screen,
+            &.{},
+            &.{},
+            tab,
+            &scroll,
+            .{ .r = 50, .g = 50, .b = 50 },
+        );
+
+        const expected_text = switch (tab) {
+            .local => "No saved missions yet",
+            .official => "No official missions",
+        };
+        var found_placeholder = false;
+        var found_back = false;
+        for (elements.items) |element| switch (element) {
+            .text_label => |label| if (std.mem.eql(u8, label.text, expected_text)) {
+                found_placeholder = true;
+            },
+            .button => |button| if (button.action == .toggle_editor_mission_browser) {
+                found_back = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(found_placeholder);
+        try std.testing.expect(found_back);
+    }
+}
+
 test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -12850,7 +13255,7 @@ test "buildEditorSpritePicker: decoration target — registry official cells, na
     const editor: types.Editor = .{
         .decoration_types = &decoration_types,
         .active_tool = .{ .decoration_type = 0 },
-        .mission = .{ .path = "custom_missions/artists_den" },
+        .mission = .{ .path = "missions/artists_den" },
     };
 
     // Official tab: one cell per registry prefab — the decoration pick

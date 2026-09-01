@@ -5872,3 +5872,121 @@ test "metadata sidebar wheel routing: scrolls over the open panel, not elsewhere
     input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = -1 }, inside, &.{});
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_metadata_scroll);
 }
+
+// --- editor mission browser ---
+
+test "mission browser: toggle opens (scan + reset) editor-only, escape closes above the options menu" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(editorStartingState(&.{
+        .{ .player_start = .{ .x = 0, .y = 0 } },
+    }));
+    runToIdle(&history);
+
+    // The toggle opens the browser: fresh view state (scroll 0, local tab)
+    // + both lists scanned (the official one parsed from the embedded
+    // mission files — the shipped campaign is always there).
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_editor_mission_browser = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_mission_browser_open);
+    try testing.expectEqual(types.EditorMissionBrowserTab.local, history.session.ui_state.editor_mission_browser_tab);
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
+    try testing.expect(history.session.editor_official_missions.len > 0);
+    try testing.expect(history.session.editor_official_missions_scanned);
+
+    // The browser opens ON TOP of the options menu (the settings-screen
+    // stacking): Escape steps back one layer — only the browser closes.
+    history.session.ui_state.options_menu_open = true;
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_options_menu = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(!history.session.ui_state.editor_mission_browser_open);
+    try testing.expect(history.session.ui_state.options_menu_open);
+
+    // Re-toggle while a stale scroll + tab linger: both reset on open.
+    history.session.ui_state.editor_mission_scroll_offset = 7;
+    history.session.ui_state.editor_mission_browser_tab = .official;
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_editor_mission_browser = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_mission_browser_open);
+    try testing.expectEqual(types.EditorMissionBrowserTab.local, history.session.ui_state.editor_mission_browser_tab);
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_editor_mission_browser = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(!history.session.ui_state.editor_mission_browser_open);
+
+    // Editor-only: on a non-editor screen the toggle is a no-op (the
+    // save_editor_mission discipline).
+    history.current_state.screen = .main_menu;
+    history.current_state.editor = null;
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_editor_mission_browser = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(!history.session.ui_state.editor_mission_browser_open);
+}
+
+test "mission browser: row click opens the mission, tab switch resets scroll, wheel scrolls rows" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(editorStartingState(&.{
+        .{ .player_start = .{ .x = 0, .y = 0 } },
+    }));
+    runToIdle(&history);
+
+    // A local mission in the harness's scratch persistent dir: the minimal
+    // valid shape (mission.txt + one level with the '!=' layout).
+    harness.file_source.writeFile("missions/test_mission/mission.txt",
+        "Metadata\nfile_format_version 2\nmission_uuid 11111111-1111-1111-1111-111111111111\nlevel_count 1\nname Test Mission\n") catch @panic("w1");
+    harness.file_source.writeFile("missions/test_mission/level_1.txt",
+        "Metadata\nfile_format_version 1\n\nLayout\n!=\n") catch @panic("w2");
+
+    // Open the browser (scans) — the local list now carries the mission.
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_editor_mission_browser = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(usize, 1), history.session.editor_local_missions.len);
+    try testing.expectEqualStrings("missions/test_mission", history.session.editor_local_missions[0].path);
+
+    // While the browser is open the wheel scrolls its rows (whole rows,
+    // lower-clamped at 0 — wheel-up past the top stays; the upper clamp is
+    // the builder's).
+    history.session.ui_state.editor_mission_scroll_offset = 0;
+    input_handlers.handleAnytimeInput(&history, .{ .scroll_delta = 1 }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_mission_scroll_offset);
+
+    // A tab switch is a direct UiState write + scroll reset.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_mission_tab,
+        .clicked_editor_mission_tab = .official,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(types.EditorMissionBrowserTab.official, history.session.ui_state.editor_mission_browser_tab);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .select_editor_mission_tab,
+        .clicked_editor_mission_tab = .local,
+    }, .{ .x = 0, .y = 0 }, &.{});
+
+    // The row click: pushes open_editor with the row's path and drains —
+    // the editor swaps to the opened mission, world_generation bumps (the
+    // driver's UI reset signal — the browser itself clears there), and the
+    // event is on the recorded timeline (undo restores the previous
+    // mission).
+    const generation_before = history.current_state.world_generation;
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .open_editor_mission_row,
+        .clicked_editor_mission_row = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expectEqualStrings("Test Mission", history.current_state.editor.?.mission.name);
+    try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.mission.level_count);
+    try testing.expectEqual(generation_before + 1, history.current_state.world_generation);
+
+    // Undo across the swap: the previous (fresh) editor mission returns
+    // (editorStartingState's default — empty name, the fresh-mission shape).
+    _ = history.undo(event_handlers.processEvent);
+    try testing.expectEqualStrings("", history.current_state.editor.?.mission.name);
+}

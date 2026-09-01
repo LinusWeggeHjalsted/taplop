@@ -148,6 +148,27 @@ pub const SessionState = struct {
     /// only leak is the FINAL list at process exit (bounded, one slice).
     save_files: []file_source_mod.SaveFileEntry = &.{},
 
+    /// The LOCAL missions listed in the editor's mission browser (the
+    /// Your Missions tab: `missions/` in the persistent dir). Scanned from
+    /// the input path when the browser OPENS (never `view()`, which stays
+    /// file-free) — no periodic rescan while open: nothing can add a local
+    /// mission while the modal is up (a web import triggers its own explicit
+    /// rescan), so a reopen is the refresh path. Owned by
+    /// `backing_allocator`; each scan frees the previous list, so the only
+    /// leak is the FINAL list at process exit (the editor_mission_sprites
+    /// pattern).
+    editor_local_missions: []file_source_mod.FileSource.MissionEntry = &.{},
+
+    /// The OFFICIAL missions listed in the editor's mission browser (the
+    /// Official tab: the shipped embedded campaign missions). Parsed from
+    /// the embedded mission.txt files at the browser's FIRST open of the
+    /// session (the embedded map is immutable per build — no rescan ever);
+    /// `editor_official_missions_scanned` gates the one-time scan. Owned by
+    /// `backing_allocator`; kept for the session (the only leak is the
+    /// final list at process exit — bounded, one slice).
+    editor_official_missions: []file_source_mod.FileSource.MissionEntry = &.{},
+    editor_official_missions_scanned: bool = false,
+
     /// The mission-local `.png` file names for the editor sprite picker's
     /// Mission tab (see DESIGN → Architecture → Level Editor → Editor UI
     /// layout — the centered sprite picker). Scanned from the input path

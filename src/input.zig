@@ -301,7 +301,7 @@ pub const AnytimeInput = struct {
     error_scroll_up: bool = false,
     error_scroll_down: bool = false,
     scroll_delta: f32 = 0,
-    // Keyboard zoom shortcuts (ctrl+I / ctrl+O / ctrl+0). Press-only — the
+    // Keyboard zoom shortcuts (PgUp / PgDn / ctrl+0). Press-only — the
     // mouse wheel (scroll_delta) is the continuous path. See Action.zoom_*.
     zoom_in: bool = false,
     zoom_out: bool = false,
@@ -390,6 +390,21 @@ pub const AnytimeInput = struct {
     /// `options_action == .select_editor_utility_skill` (a picker cell).
     /// No payload = the picker's None cell.
     clicked_editor_skill: ?types.SkillId = null,
+    /// Mission-browser tab, set alongside
+    /// `options_action == .select_editor_mission_tab` by the release
+    /// dispatch (one of the browser's two tab buttons).
+    clicked_editor_mission_tab: ?types.EditorMissionBrowserTab = null,
+    /// Mission-browser row index (into the current tab's list), set
+    /// alongside `options_action == .open_editor_mission_row` by the
+    /// release dispatch (a mission row). Valid only in the same frame as
+    /// the click — the row is resolved against the CURRENT tab's list
+    /// before any rescan can replace it.
+    clicked_editor_mission_row: ?u32 = null,
+    /// Open/close the editor's mission browser (the options-menu Open
+    /// Mission button, the browser's Back button, and the ctrl+O binding).
+    /// Editor-screen-only at the consumption site (the
+    /// save_editor_mission no-op discipline).
+    toggle_editor_mission_browser: bool = false,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -531,7 +546,11 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .add_editor_item => player_input.anytime.options_action = action,
         .delete_editor_item => player_input.anytime.options_action = action,
         .open_editor_skill_picker => player_input.anytime.options_action = action,
+        .select_editor_mission_tab,
+        .open_editor_mission_row,
+        => player_input.anytime.options_action = action,
         .close_editor_picker => player_input.anytime.options_action = action,
+        .toggle_editor_mission_browser => player_input.anytime.toggle_editor_mission_browser = true,
         .select_editor_utility_skill => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
@@ -912,6 +931,7 @@ pub fn translateInput(
     result.anytime.toggle_options_menu = checkAction(.toggle_options_menu, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.dump_event_log = checkAction(.dump_event_log, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.toggle_editor_mission_browser = checkAction(.toggle_editor_mission_browser, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.error_scroll_up = checkAction(.error_scroll_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.error_scroll_down = checkAction(.error_scroll_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.scroll_delta = scroll_delta;
