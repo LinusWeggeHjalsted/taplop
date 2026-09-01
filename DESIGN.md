@@ -1882,7 +1882,12 @@ dir, where editor saves land) and **Official** (`FileSource.listOfficialMissions
 metadata parse, scanned once per session). Lists live on SessionState
 (scanned from the input path on open, never `view()`; no periodic rescan
 while open — nothing can add a local mission while the modal is up, a web
-import rescans explicitly). A row click pushes the ordinary `open_editor`
+import rescans explicitly). On WEB, the folder ENUMERATION goes through
+the JS listing path (`FS.lookupPath` + `Object.keys` + a temp listing
+file — the `listSaveFiles` IDBFS story: Zig's `Dir.iterate` fails on the
+mount, while individual file reads + stats work); the per-mission
+mission.txt probe + parse is shared across platforms. A row click pushes
+the ordinary `open_editor`
 with the row's path (`pushPlayerActionAndDrain`) — the loading path is
 unchanged; replay re-reads the files silently (the `player_load_save`
 shape). Three settled points:
