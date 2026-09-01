@@ -1,0 +1,392 @@
+//! Shared panel-builder primitives: the emit helpers every builder uses —
+//! panel headers, icon/panel/skill buttons, centered + corner number
+//! labels — plus the skill-slot Action mapping. Pure element-list
+//! appends over element.zig vocabulary; no game-state reads.
+
+const std = @import("std");
+const types = @import("../types.zig");
+const element = @import("element.zig");
+const lookups = @import("../generated_lookups.zig");
+const ui_tooltip = @import("tooltip.zig");
+
+const Action = types.Action;
+const Rectangle = types.Rectangle;
+const Color = types.Color;
+const ScreenPosition = types.ScreenPosition;
+const Span = element.Span;
+const Tooltip = element.Tooltip;
+const TooltipRow = element.TooltipRow;
+const text = element.text;
+const colored = element.colored;
+const bold = element.bold;
+const FontMetrics = element.FontMetrics;
+const UiElement = element.UiElement;
+const UiElementList = element.UiElementList;
+const Button = element.Button;
+const TextLabel = element.TextLabel;
+const Image = element.Image;
+const slot_size = element.slot_size;
+const ui_gap = element.ui_gap;
+const slot_padding = element.slot_padding;
+const small_icon_size = element.small_icon_size;
+const panel_button_height = element.panel_button_height;
+const middle_panel_header_height = element.middle_panel_header_height;
+const middle_panel_header_font_size = element.middle_panel_header_font_size;
+const close_button_sprite_id = element.close_button_sprite_id;
+const close_button_size = element.close_button_size;
+const SlotRef = element.SlotRef;
+const Entity = types.Entity;
+const SkillId = types.SkillId;
+const buildSkillTooltip = ui_tooltip.buildSkillTooltip;
+const weapon_type_count = @typeInfo(types.WeaponType).@"enum".fields.len;
+const WeaponTypeDefinition = types.WeaponTypeDefinition;
+
+/// Font size of the material-count corner label on item icons (bottom bar,
+/// inventory, pickers) — shared with the editor material icons.
+pub const material_count_font_size: i32 = 48;
+
+/// Inset of the material-count corner label from the icon's edge.
+pub const material_count_inset: i32 = 8;
+
+pub const cooldown_font_size: i32 = 96;
+pub const overlay_font_size: i32 = 64;
+
+/// Emit a centered integer label inside `cell` (cooldowns, momentum,
+/// effect durations). Centered on the MEASURED text width via `font_metrics`
+/// so multi-digit numbers sit truly centered; vertical centering uses the
+/// `font_size` glyph cell (raylib draws from the top of that cell).
+pub fn emitCenteredNumber(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell: Rectangle,
+    value: u32,
+    font_size: i32,
+) !void {
+    const label = try std.fmt.allocPrint(allocator, "{d}", .{value});
+    // Center on the MEASURED text width (not a font_size square) so multi-digit
+    // numbers sit truly centered. Vertical centering uses the `font_size` glyph
+    // cell (not `lineHeight`) — raylib draws a glyph from the top of a
+    // font_size-tall cell, so centering that cell puts the visual mass on the
+    // button's center; centering the taller lineHeight box would sit text high.
+    const label_width = font_metrics.measureSpanWidth(text(label), font_size);
+    const label_box = cell.placeCenter(label_width, font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = label_box.position(),
+        .font_size = font_size,
+        // Outlined for readability over varied icon art.
+        .outlined = true,
+        // Sits on top of its parent icon/button; let its tooltip win the hover.
+        .blocks_input = false,
+    } });
+}
+
+/// Emit a number label in the BOTTOM-RIGHT corner of `cell`, outlined for
+/// readability. Mirrors the material-count placement (`material_count_font_size`
+/// + `material_count_inset`) so effect-duration numbers read like the
+/// inventory material counts. Used for active-effect duration overlays.
+pub fn emitCornerNumber(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell: Rectangle,
+    value: u32,
+) !void {
+    const label = try std.fmt.allocPrint(allocator, "{d}", .{value});
+    const label_width = font_metrics.measureSpanWidth(text(label), material_count_font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = .{
+            .x = cell.x + cell.width - label_width - material_count_inset,
+            .y = cell.y + cell.height - material_count_font_size - material_count_inset,
+        },
+        .font_size = material_count_font_size,
+        .outlined = true,
+        .blocks_input = false,
+    } });
+}
+
+/// Sprite id of the reusable button background — a rounded panel drawn
+/// under an icon so the coloring framework can tint background and icon
+/// independently.
+pub const button_background_sprite_id: []const u8 = "ui/button_background";
+
+/// Emit a middle-panel header: a title `text_label` on the left (vertically
+/// centered in the `header_height` strip) + a close `button` flush in the
+/// panel's top-right corner. Returns the content bounds — the area below the
+/// header where the panel body lives. The close button carries the panel's
+/// toggle action (firing it while open closes the panel); the view() hover
+/// pass sets `highlighted` on the button under the pointer, so the renderer
+/// rings it with the theme lightest. Callers emit the 9-slice panel
+/// background first, then this, then position body elements within the
+/// returned content bounds.
+pub fn emitPanelHeader(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    bounds: Rectangle,
+    title: []const u8,
+    close_action: Action,
+) !Rectangle {
+    const origin = bounds.position();
+    // raylib draws a glyph from the top of a font_size-tall cell, so offset
+    // by (header_height − font_size)/2 to center the visual mass.
+    const text_y = origin.y + @divFloor(middle_panel_header_height - middle_panel_header_font_size, 2);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = title,
+        .screen_position = .{ .x = origin.x + ui_gap, .y = text_y },
+        .font_size = middle_panel_header_font_size,
+        .blocks_input = false,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = close_button_sprite_id,
+        .screen_position = .{
+            .x = origin.x + bounds.width - close_button_size,
+            .y = origin.y,
+        },
+        .width = close_button_size,
+        .height = close_button_size,
+        .action = close_action,
+    } });
+    return .{
+        .x = bounds.x,
+        .y = bounds.y + middle_panel_header_height,
+        .width = bounds.width,
+        .height = bounds.height - middle_panel_header_height,
+    };
+}
+
+/// Emit a layered icon button: a background sprite (carries the action,
+/// tooltip, and hit-test) with the icon drawn on top. The icon passes hover
+/// through to the background so the whole button is one target. Callers pass
+/// the background id so different button styles (bottom-bar frame, skill
+/// frame) reuse the same layering.
+pub fn emitIconButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    cell: Rectangle,
+    background_sprite_id: []const u8,
+    icon_sprite_id: []const u8,
+    action: Action,
+    tooltip: ?Tooltip,
+    background_color: Color,
+    icon_color: Color,
+    highlighted: bool,
+    /// Drag ref, if this button is also a drag source/drop target.
+    ref: ?SlotRef,
+) !void {
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = background_sprite_id,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = action,
+        .color = background_color,
+        .tooltip = tooltip,
+        .highlighted = highlighted,
+        .ref = ref,
+    } });
+    try elements.append(allocator, .{ .image = .{
+        .sprite_id = icon_sprite_id,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .color = icon_color,
+        // Sits on top of the background; let the button win the hit-test.
+        .blocks_input = false,
+    } });
+}
+
+/// Emit a panel-backed button: a 9-slice panel background, a spriteless
+/// Button over it (owns the action + hit-test + optional tooltip), and a
+/// centered text label on top. Used for text buttons (main menu, settings,
+/// dialog choices).
+pub fn emitPanelButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell: Rectangle,
+    label: []const u8,
+    font_size: i32,
+    action: Action,
+    button_color: Color,
+    tooltip: ?Tooltip,
+) !void {
+    // Button panels take an explicit tint (player gradient index 5) so they
+    // read as buttons against background panels, which stay theme `darkest`.
+    try elements.append(allocator, .{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .color = button_color,
+    } });
+    try elements.append(allocator, .{ .button = .{
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = action,
+        .tooltip = tooltip,
+    } });
+    // Centered label. Horizontal centering uses the measurement seam;
+    // vertical centering uses the `font_size` glyph cell (not `lineHeight`) —
+    // raylib draws from the top of a font_size-tall cell, so centering that
+    // cell (not the taller lineHeight box) puts the visual mass on the
+    // button's center.
+    const label_width = font_metrics.measureSpanWidth(text(label), font_size);
+    const label_box = cell.placeCenter(label_width, font_size);
+    try elements.append(allocator, .{ .text_label = .{
+        .text = label,
+        .screen_position = label_box.position(),
+        .font_size = font_size,
+        // Sits on top of the button; let the button win the hit-test.
+        .blocks_input = false,
+    } });
+}
+
+/// Map a skill bar slot (1-8) to its input Action, so clicking a skill
+/// button triggers the same path as the keybind.
+pub fn skillSlotAction(slot: u8) Action {
+    return switch (slot) {
+        1 => .skill_slot_1,
+        2 => .skill_slot_2,
+        3 => .skill_slot_3,
+        4 => .skill_slot_4,
+        5 => .skill_slot_5,
+        6 => .skill_slot_6,
+        7 => .skill_slot_7,
+        8 => .skill_slot_8,
+        else => unreachable,
+    };
+}
+
+/// Inverse of `skillSlotAction`: map a skill-slot Action back to its slot
+/// number (1-8), or null for any other action. Used by `view()` to detect
+/// when the pointer hovers a skill button and resolve which skill it is.
+pub fn actionSkillSlot(action: Action) ?u8 {
+    return switch (action) {
+        .skill_slot_1 => 1,
+        .skill_slot_2 => 2,
+        .skill_slot_3 => 3,
+        .skill_slot_4 => 4,
+        .skill_slot_5 => 5,
+        .skill_slot_6 => 6,
+        .skill_slot_7 => 7,
+        .skill_slot_8 => 8,
+        else => null,
+    };
+}
+
+/// Emit one skill button into `cell`. If the slot resolves to a skill,
+/// draws the icon button (with tooltip) plus a cooldown overlay and
+/// remaining-turns number when on cooldown. Empty slots (e.g. a missing
+/// off-hand weapon) draw an empty-slot placeholder so the row keeps its
+/// width.
+pub fn emitSkillButton(
+    elements: *UiElementList,
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    cell: Rectangle,
+    slot: u8,
+    player: Entity,
+    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
+    background_color: Color,
+    icon_color: Color,
+    prepared_skill: ?SkillId,
+    /// Tint for the cooldown overlay (the skill-button sprite washed at 50%
+    /// alpha). Caller passes the active theme's darkest color.
+    cooldown_overlay_color: Color,
+    /// Drag ref for this slot, if it's a reorderable utility slot. Null for
+    /// weapon-skill slots (1-3, derived from the equipped weapon — not
+    /// draggable). Set by the caller for utility slots 4-8.
+    drag_ref: ?SlotRef,
+    /// The slot currently being dragged from, if any. The source slot renders
+    /// empty (diamond) so the skill reads as "in flight" (shown only as the
+    /// ghost following the pointer).
+    drag_source: ?SlotRef,
+) !void {
+    const skill_id = player.skillInSlot(slot, weapon_type_definitions);
+    const definition = if (skill_id) |id| lookups.getSkillDefinition(id) else null;
+    const is_drag_source = blk: {
+        // A ref-less slot (weapon skill) can never be the drag source.
+        const ref = drag_ref orelse break :blk false;
+        const src = drag_source orelse break :blk false;
+        break :blk src.eql(ref);
+    };
+
+    // Empty, or the drag source (skill is "in flight"): render the diamond
+    // marker. For a reorderable utility slot this is a `.slot` carrying the
+    // ref so it stays a DROP TARGET (an empty slot can receive a drop). For
+    // a weapon slot or the drag source it's a plain `.image` (inert — no
+    // ref, no action; a same-slot drop is already a no-op via the guard).
+    if (skill_id == null or definition == null or is_drag_source) {
+        if (drag_ref) |ref| {
+            try elements.append(allocator, .{ .slot = .{
+                .screen_position = cell.position(),
+                .size = cell.width,
+                .icon_sprite_id = "ui/skill_slot_empty",
+                .icon_color = background_color,
+                .ref = ref,
+            } });
+        } else {
+            try elements.append(allocator, .{ .image = .{
+                .sprite_id = "ui/skill_slot_empty",
+                .screen_position = cell.position(),
+                .width = cell.width,
+                .height = cell.height,
+                .color = background_color,
+            } });
+        }
+        return;
+    }
+
+    // Filled slot: skill frame background + the skill's icon on top. The icon
+    // id mirrors the SkillId tag name (assets/skills/<tag>.png). Highlighted
+    // when this slot holds the prepared skill awaiting target confirmation.
+    const is_prepared = prepared_skill != null and prepared_skill.? == skill_id.?;
+    const icon_sprite_id = skillIconSpriteId(skill_id.?);
+    try emitIconButton(
+        elements,
+        allocator,
+        cell,
+        "ui/skill_button",
+        icon_sprite_id,
+        skillSlotAction(slot),
+        try buildSkillTooltip(allocator, definition.?),
+        background_color,
+        icon_color,
+        is_prepared,
+        drag_ref,
+    );
+
+    const cooldown = player.skill_cooldowns.get(skill_id.?);
+    if (cooldown > 0) {
+        try elements.append(allocator, .{ .image = .{
+            // Reuse the skill-button frame as a translucent wash so the icon
+            // reads as dimmed/locked. Tinted darkest theme color at 50% alpha.
+            .sprite_id = "ui/skill_button",
+            .screen_position = cell.position(),
+            .width = cell.width,
+            .height = cell.height,
+            .color = cooldown_overlay_color,
+            .alpha = 128,
+            // Overlay on the skill button — pass hover through to the button.
+            .blocks_input = false,
+        } });
+        try emitCenteredNumber(elements, allocator, font_metrics, cell, cooldown, cooldown_font_size);
+    }
+}
+
+/// returned slice is stable for the process lifetime (no allocation) —
+/// drag ghosts borrow it across frames.
+pub fn skillIconSpriteId(skill_id: SkillId) []const u8 {
+    const table = comptime blk: {
+        const fields = @typeInfo(SkillId).@"enum".fields;
+        var t: [fields.len][]const u8 = undefined;
+        for (fields, 0..) |field, i| {
+            t[i] = "skills/" ++ field.name;
+        }
+        break :blk t;
+    };
+    return table[@intFromEnum(skill_id)];
+}

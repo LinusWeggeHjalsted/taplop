@@ -379,6 +379,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (Row/Grid), layout constants, FontMetrics, hit-testing
 - `src/ui/state.zig` — UiState + drag/click/marquee/picker-target types
 - `src/ui/text_input.zig` — the text-field widget core + routing
+- `src/ui/tooltip.zig` — tooltip placement + content builders
+  (buildTooltip/buildSkillTooltip/buildItemTooltip, placeTooltip)
+- `src/ui/emit.zig` — shared builder primitives (panel headers, icon/
+  panel/skill buttons, number labels, skillIconSpriteId)
 - `src/input.zig` — input pipeline, translateInput, bindings
 - `src/combat_log.zig` — combat-log projection (projectCombatLog + combatLogTier)
 - `src/file_source.zig` — unified file I/O (FileSource: embedded map +

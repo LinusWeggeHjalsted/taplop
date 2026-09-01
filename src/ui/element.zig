@@ -1087,3 +1087,218 @@ test "tooltipAt: overlays pass through, blockers shield what is behind" {
 // state; the flat list is what the renderer walks. pub: main.zig's
 // focus-on-click integration test builds elements directly.
 pub const UiElementList = std.ArrayList(UiElement);
+
+/// Wrap one logical row into visual lines that each fit `content_width`.
+/// Text is split on spaces (the only break opportunities); each word keeps
+/// its span's style, so styling survives wrapping. Spaces at a wrap point
+/// (and at the start of a line) are dropped; a single word wider than
+/// `content_width` sits alone on its line and is allowed to overflow.
+pub fn wrapRow(
+    allocator: std.mem.Allocator,
+    font_metrics: FontMetrics,
+    row: TooltipRow,
+    font_size: i32,
+    content_width: i32,
+) ![]const TooltipRow {
+    var lines: std.ArrayList(TooltipRow) = .empty;
+    var current: std.ArrayList(Span) = .empty;
+    var current_width: i32 = 0;
+    var pending_space: ?Span = null;
+
+    for (row) |span| {
+        var index: usize = 0;
+        while (index < span.text.len) {
+            const ch = span.text[index];
+            const is_space = ch == ' ';
+            const is_slash = ch == '/';
+            const start = index;
+            if (is_space) {
+                // Run of spaces.
+                while (index < span.text.len and span.text[index] == ' ') index += 1;
+            } else if (is_slash) {
+                // A '/' is a break opportunity. Keep it with the preceding
+                // text as one token (so "data/campaigns/" is one piece), then
+                // the next segment starts after the '/'. This keeps paths
+                // readable while allowing them to wrap at separators.
+                index += 1; // include the '/'
+            } else {
+                // Run of non-space, non-slash characters.
+                while (index < span.text.len and span.text[index] != ' ' and span.text[index] != '/') index += 1;
+            }
+            const piece = Span{
+                .text = span.text[start..index],
+                .color = span.color,
+                .bold = span.bold,
+                .italic = span.italic,
+            };
+            if (is_space) {
+                pending_space = piece;
+                continue;
+            }
+            const word_width = font_metrics.measureSpanWidth(piece, font_size);
+            const space_width = if (pending_space) |s| font_metrics.measureSpanWidth(s, font_size) else 0;
+            // If the word itself is wider than the content width, character-
+            // wrap it: emit chunks that fit, each on its own line. This is
+            // the fallback for any token (path segment, long key, etc.) that
+            // still overflows after splitting on spaces and '/'.
+            if (word_width > content_width) {
+                // First, flush any pending line content before the long word.
+                if (current.items.len > 0) {
+                    // Drop the pending space (the break before the long word
+                    // consumes it) and flush.
+                    pending_space = null;
+                    try lines.append(allocator, try current.toOwnedSlice(allocator));
+                    current = .empty;
+                    current_width = 0;
+                }
+                // Split the long piece into char-chunks that each fit.
+                const char_width = font_metrics.measureSpanWidth(.{ .text = "x", .color = piece.color, .bold = piece.bold }, font_size);
+                if (char_width == 0) {
+                    // Degenerate (zero-width font); emit the whole piece to
+                    // avoid an infinite loop.
+                    try current.append(allocator, piece);
+                    current_width = word_width;
+                } else {
+                    const max_chars = @max(@as(usize, 1), @as(usize, @intCast(@divTrunc(content_width, char_width))));
+                    var ci: usize = 0;
+                    while (ci < piece.text.len) {
+                        const chunk_len = @min(max_chars, piece.text.len - ci);
+                        try lines.append(allocator, try allocator.dupe(Span, &.{.{
+                            .text = piece.text[ci .. ci + chunk_len],
+                            .color = piece.color,
+                            .bold = piece.bold,
+                            .italic = piece.italic,
+                        }}));
+                        ci += chunk_len;
+                    }
+                    // The long word is fully emitted; reset line state.
+                    current = .empty;
+                    current_width = 0;
+                    pending_space = null;
+                }
+                continue;
+            }
+            if (current.items.len > 0 and current_width + space_width + word_width > content_width) {
+                // Break before this word: flush the line, drop the pending space.
+                try lines.append(allocator, try current.toOwnedSlice(allocator));
+                current = .empty;
+                current_width = 0;
+                pending_space = null;
+                try current.append(allocator, piece);
+                current_width = word_width;
+            } else {
+                // Keep any pending space only mid-line (drop leading spaces).
+                if (pending_space) |s| {
+                    if (current.items.len > 0) {
+                        try current.append(allocator, s);
+                        current_width += space_width;
+                    }
+                    pending_space = null;
+                }
+                try current.append(allocator, piece);
+                current_width += word_width;
+            }
+        }
+    }
+    if (current.items.len > 0) try lines.append(allocator, try current.toOwnedSlice(allocator));
+    return lines.toOwnedSlice(allocator);
+}
+
+/// One wrapped row ready to size and draw: its font size, its visual lines,
+/// and whether it is the header (which gets extra spacing below).
+pub const WrappedRow = struct {
+    font_size: i32,
+    lines: []const TooltipRow,
+    is_header: bool,
+};
+
+test "wrapRow breaks at spaces and drops the break space" {
+    const font_size: i32 = 100; // 1 char = 55px (50 advance + 5 spacing)
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const row: TooltipRow = &.{text("aa bb cc")};
+
+    // content_width 310 fits "aa bb" (110+55+110=275) but not a third word.
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 310);
+    defer {
+        for (lines) |line| std.testing.allocator.free(line);
+        std.testing.allocator.free(lines);
+    }
+    try std.testing.expectEqual(@as(usize, 2), lines.len);
+    // First visual line keeps the interior space span: ["aa", " ", "bb"].
+    try std.testing.expectEqual(@as(usize, 3), lines[0].len);
+    try std.testing.expectEqualStrings("aa", lines[0][0].text);
+    try std.testing.expectEqualStrings(" ", lines[0][1].text);
+    try std.testing.expectEqualStrings("bb", lines[0][2].text);
+    // Second line starts at "cc" with no leading space.
+    try std.testing.expectEqualStrings("cc", lines[1][0].text);
+}
+
+
+test "wrapRow breaks on '/' for paths" {
+    // font_size 100 → 1 char = 55px (50 advance + 5 spacing). content_width
+    // 380 fits "aa/bb/" (6 glyphs = 330) but not a third segment, so it
+    // wraps at a '/' and the first line keeps the trailing slash.
+    const font_size: i32 = 100;
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const row: TooltipRow = &.{text("aa/bb/cc")};
+
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 380);
+    defer {
+        for (lines) |line| std.testing.allocator.free(line);
+        std.testing.allocator.free(lines);
+    }
+    // "aa/bb/" (6 chars = 300px) fits, then "cc" on the next line.
+    // The '/' stays with the preceding segment.
+    try std.testing.expect(lines.len >= 2);
+    // First line starts with "aa/bb/" (includes the trailing slash).
+    var first_line_text: []const u8 = "";
+    for (lines[0]) |span| first_line_text = span.text;
+    try std.testing.expect(std.mem.endsWith(u8, first_line_text, "/"));
+}
+
+test "wrapRow character-wraps a token wider than the content width" {
+    // font_size 100 → 1 char = 55px. content_width 240 fits 4 chars.
+    // "abcdefgh" is 8 chars = 440px > 240, no spaces or slashes → char-wrap.
+    const font_size: i32 = 100;
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const row: TooltipRow = &.{text("abcdefgh")};
+
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 240);
+    defer {
+        for (lines) |line| std.testing.allocator.free(line);
+        std.testing.allocator.free(lines);
+    }
+    // 8 chars / 4 per line = 2 lines.
+    try std.testing.expectEqual(@as(usize, 2), lines.len);
+    // Each line has 4 chars.
+    var first_line_text: []const u8 = "";
+    for (lines[0]) |span| first_line_text = span.text;
+    try std.testing.expectEqualStrings("abcd", first_line_text);
+    var second_line_text: []const u8 = "";
+    for (lines[1]) |span| second_line_text = span.text;
+    try std.testing.expectEqualStrings("efgh", second_line_text);
+}
+
+test "wrapRow: normal space wrapping still works" {
+    // Regression: the existing space-based wrapping behavior is unchanged.
+    const font_size: i32 = 100;
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const row: TooltipRow = &.{text("aa bb cc")};
+
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 310);
+    defer {
+        for (lines) |line| std.testing.allocator.free(line);
+        std.testing.allocator.free(lines);
+    }
+    try std.testing.expectEqual(@as(usize, 2), lines.len);
+    try std.testing.expectEqual(@as(usize, 3), lines[0].len);
+    try std.testing.expectEqualStrings("aa", lines[0][0].text);
+    try std.testing.expectEqualStrings(" ", lines[0][1].text);
+    try std.testing.expectEqualStrings("bb", lines[0][2].text);
+    try std.testing.expectEqualStrings("cc", lines[1][0].text);
+}
+
+// ============================================================
+// Tooltip placement (placeTooltip) — pure geometry over (source, screen, size)
+// ============================================================
+
