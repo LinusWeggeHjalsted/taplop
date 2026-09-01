@@ -242,21 +242,22 @@ pub const FileSource = struct {
     /// truth for "your missions." Transient acquisitions (online
     /// fetch-to-local, zip import preview) persist into this dir first, then
     /// appear here. See DESIGN → Custom Missions & Online Services.
+    ///
+    /// The folder ENUMERATION is platform-split (the save-list scan's
+    /// `Dir.iterate`-is-broken-on-IDBFS story — see `listSaveFiles`): web
+    /// lists the mission folders via JS + a temp listing file, native
+    /// iterates. The per-mission work (mission.txt probe + parse + the
+    /// custom-assets check) is shared below — individual file reads + stats
+    /// work on IDBFS, so only the directory listings need the JS path.
     pub fn listMissions(
         self: *const FileSource,
         allocator: std.mem.Allocator,
     ) ![]MissionEntry {
-        // Open missions/ with iterate capability. If the dir doesn't
-        // exist yet (fresh install, nothing saved/imported yet), return an
-        // empty list — not an error.
-        const missions_dir = self.persistent_dir.openDir(self.io, "missions", .{
-            .access_sub_paths = true,
-            .iterate = true,
-        }) catch |err| switch (err) {
-            error.FileNotFound => return &.{},
-            else => return err,
-        };
-        defer std.Io.Dir.close(missions_dir, self.io);
+        const mission_ids = try self.listMissionFolderNames(allocator);
+        defer {
+            for (mission_ids) |id| allocator.free(id);
+            allocator.free(mission_ids);
+        }
 
         var entries: std.ArrayList(MissionEntry) = .empty;
         errdefer {
@@ -264,15 +265,12 @@ pub const FileSource = struct {
             entries.deinit(allocator);
         }
 
-        var it = missions_dir.iterate();
-        while (try it.next(self.io)) |dir_entry| {
-            if (dir_entry.kind != .directory) continue;
+        for (mission_ids) |mission_id| {
+            // The entry OWNS its id (the folder-name array is freed by the
+            // caller's defer after the loop).
+            const owned_id = try allocator.dupe(u8, mission_id);
+            errdefer allocator.free(owned_id);
 
-            const mission_id = try allocator.dupe(u8, dir_entry.name);
-            errdefer allocator.free(mission_id);
-
-            // The mission-directory path as open_editor / start_mission
-            // consume it — also the prefix for the mission.txt read below.
             const mission_dir_path = try std.fmt.allocPrint(allocator, "missions/{s}", .{mission_id});
             errdefer allocator.free(mission_dir_path);
             const mission_txt_path = try std.fmt.allocPrint(allocator, "{s}/mission.txt", .{mission_dir_path});
@@ -289,7 +287,7 @@ pub const FileSource = struct {
                 // double-free.)
                 error.FileNotFound => {
                     allocator.free(mission_dir_path);
-                    allocator.free(mission_id);
+                    allocator.free(owned_id);
                     continue;
                 },
                 else => return err,
@@ -307,13 +305,13 @@ pub const FileSource = struct {
             const sections = parser.parseConfigFile(mission_bytes, pa) catch {
                 // Same continue-frees-manually rule as the FileNotFound arm.
                 allocator.free(mission_dir_path);
-                allocator.free(mission_id);
+                allocator.free(owned_id);
                 allocator.free(mission_bytes);
                 continue;
             };
             const mission = loaders.loadMission(sections, pa) catch {
                 allocator.free(mission_dir_path);
-                allocator.free(mission_id);
+                allocator.free(owned_id);
                 allocator.free(mission_bytes);
                 continue;
             };
@@ -326,12 +324,13 @@ pub const FileSource = struct {
             allocator.free(mission_bytes);
 
             // has_custom_assets: scan the folder for any file that isn't a
-            // known config file. Known config: mission.txt, player.txt,
-            // level_<N>.txt. Anything else (sprites, audio, etc.) → true.
-            const has_custom_assets = try folderHasCustomAssets(self, missions_dir, dir_entry.name, mission.level_count);
+            // known config file (mission.txt / player.txt / level_<N>.txt —
+            // anything else is a custom asset). Platform-split enumeration
+            // (see listSaveFiles for the IDBFS story).
+            const has_custom_assets = try self.hasMissionCustomAssets(allocator, mission_id, mission.level_count);
 
             try entries.append(allocator, .{
-                .id = mission_id,
+                .id = owned_id,
                 .path = mission_dir_path,
                 .name = owned_name,
                 .level_count = mission.level_count,
@@ -341,6 +340,91 @@ pub const FileSource = struct {
         }
 
         return entries.toOwnedSlice(allocator);
+    }
+
+    /// The mission FOLDER names under `missions/` (directories only, no
+    /// files). Native iterates the persistent dir; web enumerates via JS
+    /// (`Dir.iterate` fails with `error.Unexpected` on the IDBFS mount —
+    /// the `listSaveFiles` story, see `listSaveFilesWeb`). A missing
+    /// missions/ (fresh install) is an empty list, not an error. The
+    /// caller owns the returned names + slice.
+    fn listMissionFolderNames(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+    ) ![][]const u8 {
+        if (@import("builtin").os.tag == .emscripten) {
+            return listPersistentDirNamesWeb(
+                self,
+                allocator,
+                persistent_mount_path ++ "/missions",
+                true,
+            );
+        }
+        var names: std.ArrayList([]const u8) = .empty;
+        errdefer {
+            for (names.items) |name| allocator.free(name);
+            names.deinit(allocator);
+        }
+        const missions_dir = self.persistent_dir.openDir(self.io, "missions", .{
+            .access_sub_paths = true,
+            .iterate = true,
+        }) catch |err| switch (err) {
+            error.FileNotFound => return names.toOwnedSlice(allocator),
+            else => return err,
+        };
+        defer std.Io.Dir.close(missions_dir, self.io);
+        var it = missions_dir.iterate();
+        while (try it.next(self.io)) |dir_entry| {
+            if (dir_entry.kind != .directory) continue;
+            try names.append(allocator, try allocator.dupe(u8, dir_entry.name));
+        }
+        return names.toOwnedSlice(allocator);
+    }
+
+    /// Does the mission folder contain any file beyond the known config
+    /// set (mission.txt / player.txt / level_<N>.txt)? Native iterates the
+    /// folder; web enumerates its FILE children via JS (the
+    /// `listMissionFolderNames` story) + the shared name check. A
+    /// pathological folder name (quote/backslash — can't be embedded in the
+    /// JS path) reports false on web (the mission still lists; the flag is
+    /// advisory).
+    fn hasMissionCustomAssets(
+        self: *const FileSource,
+        allocator: std.mem.Allocator,
+        mission_id: []const u8,
+        level_count: u32,
+    ) !bool {
+        if (@import("builtin").os.tag == .emscripten) {
+            if (!isSafeForJsEmbedding(mission_id)) return false;
+            const fs_dir_path = try std.fmt.allocPrint(
+                allocator,
+                "{s}/missions/{s}",
+                .{ persistent_mount_path, mission_id },
+            );
+            defer allocator.free(fs_dir_path);
+            const names = try listPersistentDirNamesWeb(self, allocator, fs_dir_path, false);
+            defer {
+                for (names) |name| allocator.free(name);
+                allocator.free(names);
+            }
+            for (names) |name| {
+                if (!isKnownMissionConfigFile(name, level_count)) return true;
+            }
+            return false;
+        }
+        const dir_path = try std.fmt.allocPrint(allocator, "missions/{s}", .{mission_id});
+        defer allocator.free(dir_path);
+        const mission_dir = self.persistent_dir.openDir(self.io, dir_path, .{
+            .access_sub_paths = true,
+            .iterate = true,
+        }) catch return false; // unreadable folder → treat as no custom assets
+        defer std.Io.Dir.close(mission_dir, self.io);
+        var it = mission_dir.iterate();
+        while (try it.next(self.io)) |entry| {
+            if (entry.kind == .directory) continue; // subdirs aren't config files
+            if (!isKnownMissionConfigFile(entry.name, level_count)) return true;
+        }
+        return false;
     }
 
     /// Enumerate the OFFICIAL missions (shipped embedded campaign content)
@@ -535,6 +619,93 @@ fn listSaveFilesWeb(
     }
 }
 
+/// Temp listing file for the web JS directory enumeration (the
+/// `saves_listing_temp` pattern, reused by both mission-listing call
+/// sites — the script runs are sequential + synchronous, so one temp
+/// path serves both).
+const missions_listing_temp = ".missions_listing";
+
+/// A name that can be safely embedded inside a single-quoted JS string
+/// literal (the web listing scripts format paths into them): no quotes,
+/// backslashes, or newlines. Our own saved mission dirs are sanitized to
+/// this by construction; a hand-placed folder that isn't is skipped by the
+/// caller (its flags degrade, the mission still lists).
+fn isSafeForJsEmbedding(name: []const u8) bool {
+    for (name) |character| {
+        if (character == '\'' or character == '"' or character == '\\' or
+            character == '\n' or character == '\r') return false;
+    }
+    return true;
+}
+
+/// Web: enumerate one persistent-dir folder's children via JS — Zig's
+/// `Dir.iterate` fails with `error.Unexpected` on the IDBFS mount (see
+/// `listSaveFiles`). The JS writes the newline-separated names of children
+/// whose `isDir` matches `keep_directories` to the temp listing file (empty
+/// when the folder is missing or the lookup fails); Zig reads + deletes it.
+/// Caller owns the returned names + slice.
+fn listPersistentDirNamesWeb(
+    self: *const FileSource,
+    allocator: std.mem.Allocator,
+    /// The ABSOLUTE in-FS path to enumerate (e.g. "/ziglop/missions") —
+    /// must be safe to embed in the JS string (the caller filters).
+    fs_dir_path: []const u8,
+    keep_directories: bool,
+) ![][]const u8 {
+    const keep_flag: []const u8 = if (keep_directories) "true" else "false";
+    const temp_fs_path = persistent_mount_path ++ "/" ++ missions_listing_temp;
+    const script_body = std.fmt.allocPrint(
+        allocator,
+        "(function() {{" ++
+            "try {{" ++
+            "  var node = FS.lookupPath('{s}');" ++
+            "  var names = [];" ++
+            "  if (node && node.node) {{" ++
+            "    Object.keys(node.node.contents).forEach(function(n) {{" ++
+            "      var child = node.node.contents[n];" ++
+            "      if (child && FS.isDir(child.mode) === {s}) names.push(n);" ++
+            "    }});" ++
+            "  }}" ++
+            "  FS.writeFile('{s}', names.join('\n'));" ++
+            "}} catch(e) {{" ++
+            "  try {{ FS.writeFile('{s}', ''); }} catch(e2) {{}}" ++
+            "}}" ++
+            "}})();",
+        .{ fs_dir_path, keep_flag, temp_fs_path, temp_fs_path },
+    ) catch @panic("failed to format web dir listing script");
+    defer allocator.free(script_body);
+    const script = allocator.dupeZ(u8, script_body) catch
+        @panic("failed to null-terminate web dir listing script");
+    defer allocator.free(script);
+    emscripten_run_script(script);
+
+    // Read the temp listing back (individual file reads work on IDBFS),
+    // delete it, split + dupe the names.
+    const listing_bytes = self.persistent_dir.readFileAlloc(
+        self.io,
+        missions_listing_temp,
+        allocator,
+        read_limit,
+    ) catch |err| switch (err) {
+        error.FileNotFound => return &.{}, // JS didn't write it — empty dir
+        else => return err,
+    };
+    defer allocator.free(listing_bytes);
+    self.persistent_dir.deleteFile(self.io, missions_listing_temp) catch {};
+
+    var names: std.ArrayList([]const u8) = .empty;
+    errdefer {
+        for (names.items) |name| allocator.free(name);
+        names.deinit(allocator);
+    }
+    var lines = std.mem.splitScalar(u8, listing_bytes, '\n');
+    while (lines.next()) |name| {
+        if (name.len == 0) continue;
+        try names.append(allocator, try allocator.dupe(u8, name));
+    }
+    return names.toOwnedSlice(allocator);
+}
+
 /// Delete a file from the persistent dir (used to consume the import
 /// marker). Missing file is an error like any other — callers poll with
 /// `fileExists` first.
@@ -544,33 +715,19 @@ pub fn deleteFile(self: *const FileSource, path: []const u8) !void {
 };
 
 /// Scan a mission folder for files beyond the known config set
-/// (mission.txt, player.txt, level_<N>.txt). Returns true if any such file
-/// exists (custom sprites/audio/assets). `level_count` is the mission's
-/// declared level count, used to know which level_*.txt names are expected.
-fn folderHasCustomAssets(
-    file_source: *const FileSource,
-    missions_dir: std.Io.Dir,
-    mission_id: []const u8,
-    level_count: u32,
-) !bool {
-    const mission_dir = missions_dir.openDir(file_source.io, mission_id, .{
-        .access_sub_paths = true,
-        .iterate = true,
-    }) catch return false; // unreadable folder → treat as no custom assets
-    defer std.Io.Dir.close(mission_dir, file_source.io);
+/// (mission.txt, player.txt, level_<N>.txt) — anything else is a custom
+/// asset (sprites, audio). The ENUMERATION is platform-split (see
+/// `FileSource.hasMissionCustomAssets`): native iterates the folder; web
+/// uses a JS listing. Both share `isKnownMissionConfigFile`.
 
-    var it = mission_dir.iterate();
-    while (try it.next(file_source.io)) |entry| {
-        if (entry.kind == .directory) continue; // subdirs aren't config files
-        const name = entry.name;
-        if (std.mem.eql(u8, name, "mission.txt")) continue;
-        if (std.mem.eql(u8, name, "player.txt")) continue;
-        // level_<N>.txt — match the pattern.
-        if (matchesLevelFile(name, level_count)) continue;
-        // Anything else is a custom asset.
-        return true;
-    }
-    return false;
+/// True if `name` is one of the KNOWN mission config files (mission.txt,
+/// player.txt, level_<N>.txt for 1 <= N <= level_count) — anything else is
+/// a custom asset. Shared by the native folder iteration + the web JS
+/// listing (both has-custom-assets paths).
+fn isKnownMissionConfigFile(name: []const u8, level_count: u32) bool {
+    if (std.mem.eql(u8, name, "mission.txt")) return true;
+    if (std.mem.eql(u8, name, "player.txt")) return true;
+    return matchesLevelFile(name, level_count);
 }
 
 /// Returns true if `name` is `level_<N>.txt` for some 1 <= N <= level_count.
@@ -719,6 +876,7 @@ pub fn triggerBrowserUpload() void {
             "  if (name.indexOf('.') == 0) name = '_' + name;" ++
             "  var reader = new FileReader();" ++
             "  reader.onload = function() {" ++
+            "    FS.mkdirTree('" ++ persistent_mount_path ++ "/saves');" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/saves/' + name, new Uint8Array(reader.result));" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ import_marker_path ++ "', 'saves/' + name);" ++
             "    FS.syncfs(false, function(err) { if (err) console.error('IDBFS flush failed:', err); });" ++
@@ -755,6 +913,7 @@ pub fn triggerBrowserMissionUpload() void {
             "  if (name.indexOf('.') == 0) name = '_' + name;" ++
             "  var reader = new FileReader();" ++
             "  reader.onload = function() {" ++
+            "    FS.mkdirTree('" ++ persistent_mount_path ++ "/imported_missions');" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/imported_missions/' + name, new Uint8Array(reader.result));" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ mission_import_marker_path ++ "', 'imported_missions/' + name);" ++
             "    FS.syncfs(false, function(err) { if (err) console.error('IDBFS flush failed:', err); });" ++

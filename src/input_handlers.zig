@@ -3660,17 +3660,22 @@ fn rescanSaveFilesIfDue(history: *GameStateHistory) void {
 /// previous list rather than blanking the browser.
 fn rescanEditorMissionsNow(history: *GameStateHistory) void {
     const allocator = history.backing_allocator;
-    const local = history.file_source.listMissions(allocator) catch return;
-    file_source_mod.freeMissions(allocator, history.session.editor_local_missions);
-    history.session.editor_local_missions = local;
+
+    // The two scans are INDEPENDENT: a failure in one keeps that list's
+    // previous contents and never blocks the other (a local-scan failure
+    // on web's broken-readdir mount must not blank the OFFICIAL tab too —
+    // the tabs fail separately or not at all).
+    if (history.file_source.listMissions(allocator)) |local| {
+        file_source_mod.freeMissions(allocator, history.session.editor_local_missions);
+        history.session.editor_local_missions = local;
+    } else |_| {} // unreadable dir mid-session: keep the previous list
 
     if (!history.session.editor_official_missions_scanned) {
-        const official = history.file_source.listOfficialMissions(allocator) catch return;
-        // The one-time official scan only replaces the list on success, so a
-        // failure retries on the next open (scanned stays false).
-        file_source_mod.freeMissions(allocator, history.session.editor_official_missions);
-        history.session.editor_official_missions = official;
-        history.session.editor_official_missions_scanned = true;
+        if (history.file_source.listOfficialMissions(allocator)) |official| {
+            file_source_mod.freeMissions(allocator, history.session.editor_official_missions);
+            history.session.editor_official_missions = official;
+            history.session.editor_official_missions_scanned = true;
+        } else |_| {} // one-time scan failed: retry on the next open
     }
 }
 

@@ -9042,3 +9042,36 @@ Editor → The mission browser (the zip import paragraph).
   compiles + the native-side pipeline is fully tested, but the browser
   upload itself needs an in-browser eyeball (`scripts/web.sh emrun`) —
   the "web compiles ≠ web runs" rule.
+
+## Mission browser — web fixes (IDBFS listing + import ENOENT)
+
+First in-browser test of the mission browser surfaced two IDBFS issues
+(the documented "web compiles ≠ web runs" class — the pipeline was
+fully green natively):
+
+- **Both tabs came up empty.** Root cause was COMPOUND: (1) Zig's
+  `Dir.iterate` fails with `error.Unexpected` on the IDBFS mount (the
+  exact reason `listSaveFiles` has a JS enumeration path — the new
+  `listMissions` had no such path), and (2) `rescanEditorMissionsNow`
+  early-`return`ed on the local-scan error BEFORE the official scan, so
+  the failure blanked BOTH tabs. Fixes: `listMissions` was refactored to
+  a platform-split ENUMERATION (`listMissionFolderNames`: native
+  iterates, web enumerates via `FS.lookupPath` + `Object.keys` +
+  `FS.isDir` + a temp listing file — the `listSaveFilesWeb` pattern,
+  generalized as `listPersistentDirNamesWeb` and also used for the
+  per-mission has-custom-assets check) with the whole per-mission loop
+  (mission.txt probe + parse + entry assembly) SHARED between platforms;
+  and the two scans in `rescanEditorMissionsNow` are now independent —
+  a failure keeps that tab's previous list and never blocks the other.
+  A JS-embeddability check (`isSafeForJsEmbedding`) skips pathological
+  folder names from the per-mission JS listing (the flags degrade, the
+  mission still lists).
+- **The zip import did nothing** (console: `ErrnoError 44` — ENOENT):
+  the upload JS wrote into `imported_missions/` which didn't exist —
+  `FS.writeFile` creates no parent dirs. Both upload scripts now
+  `FS.mkdirTree` their target first (the SAVE import had the same latent
+  bug on a fresh install with no `saves/` yet — fixed in the same pass).
+- Also caught while wiring the listing script: `std.fmt.allocPrint`
+  needs JS braces escaped (`{{`/`}}`) — comptime-dead code on native, so
+  only the web build surfaces it (the build gate works; the format
+  string was corrected before it ever reached a browser).
