@@ -383,6 +383,8 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (buildTooltip/buildSkillTooltip/buildItemTooltip, placeTooltip)
 - `src/ui/emit.zig` — shared builder primitives (panel headers, icon/
   panel/skill buttons, number labels, skillIconSpriteId)
+- `src/ui/editor_chrome.zig` — editor tool palette (bottom bar), level
+  tabs, Test/Validate primary actions, palette group math
 - `src/input.zig` — input pipeline, translateInput, bindings
 - `src/combat_log.zig` — combat-log projection (projectCombatLog + combatLogTier)
 - `src/file_source.zig` — unified file I/O (FileSource: embedded map +
