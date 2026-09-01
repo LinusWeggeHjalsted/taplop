@@ -77,6 +77,11 @@ ctrl true
 action toggle_editor_mission_browser
 
 input_type key
+input_name KeyI
+ctrl true
+action import_editor_mission
+
+input_type key
 input_name Escape
 action toggle_options_menu
 

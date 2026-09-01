@@ -11707,6 +11707,29 @@ pub fn buildEditorMissionBrowser(
         button_color,
         null,
     );
+    // Bottom-right: Import (web only — the load-save browser's Import
+    // discipline): opens a file picker for a mission .zip; the picked zip
+    // extracts into missions/ and the rescanned list shows it. Native has
+    // no button — drop the extracted folder (or a STORE zip) into the
+    // persistent missions/ dir by hand.
+    if (@import("builtin").os.tag == .emscripten) {
+        try emitPanelButton(
+            elements,
+            allocator,
+            font_metrics,
+            .{
+                .x = screen.x + screen.width - load_save_padding - load_save_button_width,
+                .y = button_y,
+                .width = load_save_button_width,
+                .height = panel_button_height,
+            },
+            "Import",
+            menu_button_font_size,
+            .import_editor_mission,
+            button_color,
+            null,
+        );
+    }
 }
 
 // --- Credits screen (main menu, full screen) ---

@@ -8994,3 +8994,51 @@ Design: DESIGN → Architecture → Level Editor → The mission browser.
   click (scan → click → drain → editor holds the opened mission,
   world_generation bumped, undo restores). main.zig: the
   open-from-editor swap test.
+
+## Level editor — the mission zip import (browser slice 3)
+
+The mission browser can import a mission .zip on web: the Import button
+(ctrl+I) opens a file picker, the zip extracts into `missions/`, the
+rescanned list shows the row. Design: DESIGN → Architecture → Level
+Editor → The mission browser (the zip import paragraph).
+
+- **zip_reader.zig** — the buffer-based sibling of zip_writer: EOCD
+  backward scan (comment-tolerant, last occurrence wins), central-
+  directory walk, per-entry local-header data offset (the LOCAL name/
+  extra lengths, never the CD's), STORE verbatim + DEFLATE via
+  std.compress.flate (raw container, `.fixed` reader → `streamRemaining`
+  into a pre-sized buffer), CRC-32 verification on every entry regardless
+  of method, uniform ownership (names + bytes from the caller's allocator,
+  `freeZipArchive`), descriptive rejections for zip64 / encryption /
+  unsupported methods. std.zip was considered and passed over: its
+  iterator is File-seek-based (awkward for our in-memory bytes, untested
+  on the IDBFS mount); the buffer reader keeps the whole pipeline pure
+  and arena-friendly.
+- **The upload seam** — `triggerBrowserMissionUpload` (the save import's
+  JS shape, `.zip` accept + `imported_missions/` staging +
+  `.mission_import_marker`), polled while the browser is open
+  (`pollMissionImportMarker` in the browser's input block). The trigger is
+  comptime-dead on native; the button is never emitted there and the
+  ctrl+I binding parses + no-ops (the skip_level discipline).
+- **The extraction** (`importMissionFromZip`) — junk skip (directory
+  markers, `__MACOSX/`, `._*`, `.DS_Store`), single-common-root strip (an
+  OS "compress folder" zip; mixed shapes strip nothing and fail the
+  mission.txt lookup with the popup), validation-before-write (absolute /
+  `..` / backslash / empty-segment names fail the WHOLE import — never
+  half-imported), the save-convention target dir
+  `missions/<uuid>_<sanitized name>/` from the zip's mission.txt (no
+  uuid → the name alone; re-import is idempotent overwrite), zip deleted
+  on success / kept on failure, entry-count cap 1024 as the hostile-
+  archive bound on the scratch arena.
+- **Tests (513 total)** — zip_reader: STORE round-trip vs zip_writer, a
+  hand-assembled DEFLATE archive (stored-block stream — exercises the
+  method-8 path through the real inflater without needing a compressor),
+  missing-EOCD / unsupported-method / CRC-mismatch rejections. Import
+  flow: the full marker → extract → rescan → row pipeline (files
+  spot-checked, marker + zip cleaned up), the OS-zip root-strip + junk
+  skip, unsafe-name fail-whole (popup, nothing written, marker consumed,
+  zip kept), a zip without mission.txt.
+- Known web-only residual: the file-picker → marker → row-appears flow
+  compiles + the native-side pipeline is fully tested, but the browser
+  upload itself needs an in-browser eyeball (`scripts/web.sh emrun`) —
+  the "web compiles ≠ web runs" rule.

@@ -822,28 +822,18 @@ paragraph). Remaining work:
   `exported_missions/<uuid>_<name>.zip`; browser download on web). See
   DONE.md + DESIGN → Level Editor (the save/export flow). The
   mission-metadata derivation cleanup below is still OPEN.
-- **Mission browser — slices 1+2 DONE (browser + entry points).** The
-  full-screen modal over the editor (options-menu Open Mission button /
-  ctrl+O), two tabs (Your Missions = persistent `missions/` via
-  `listMissions`; Official = embedded campaign via `listOfficialMissions`),
-  scan-on-open, row click → `open_editor` with the path, no unsaved-changes
-  confirm (deliberate), `open_editor` bumps `world_generation` (the
-  editor→editor UI reset). Design + history: DESIGN → Architecture → Level
-  Editor → The mission browser + DONE.md. Remaining:
-  - [ ] **Web zip import (slice 3):** the browser's web-only Import button
-        (ctrl+I) — `triggerBrowserUpload` variant for `.zip`, a
-        `zip_reader.zig` accepting STORE + DEFLATE entries (std.compress.flate
-        for inflate), zip-slip sanitization, extraction into
-        `missions/<uuid>_<name>/` (uuid/name from the zip's mission.txt;
-        foreign zips may carry a single common root folder — strip it),
-        then an explicit rescan. The `.import_editor_mission` action + the
-        ctrl+I binding land with it (nothing consumes them until then).
-        Native has no import button — drop the extracted folder (or a
-        STORE zip) into `missions/` by hand.
-  - Also settled this pass: the persistent-dir convention is unified on
-        `missions/` (the old `custom_missions/` name is gone — DESIGN →
-        Custom Missions updated); zoom rebinds to PgUp (out) / PgDn (in)
-        freeing ctrl+O for the browser (ctrl+I goes to import with slice 3).
+- **Mission browser — DONE.** The full-screen modal over the editor
+  (options-menu Open Mission button / ctrl+O), two tabs (Your Missions =
+  persistent `missions/` via `listMissions`; Official = embedded campaign
+  via `listOfficialMissions`), scan-on-open, row click → `open_editor` with
+  the path, no unsaved-changes confirm (deliberate), `open_editor` bumps
+  `world_generation` (the editor→editor UI reset). The WEB ZIP IMPORT is
+  landed too (the Import button / ctrl+I → `zip_reader.zig` STORE+DEFLATE,
+  marker poll, extraction into `missions/`). Design + history: DESIGN →
+  Architecture → Level Editor → The mission browser + DONE.md.
+  Browser polish (columns: author / level count / timestamp formatting,
+  keyboard navigation) rides the load-save browser's polish slice when the
+  UI design settles.
 
 ## Logging & Replay
 

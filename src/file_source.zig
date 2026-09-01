@@ -660,6 +660,13 @@ pub const persistent_mount_path = "/ziglop";
 /// scan never sees it.
 pub const import_marker_path = ".import_marker";
 
+/// Marker file (persistent-dir root) written by the web mission-import JS
+/// after the picked mission .zip has landed in imported_missions/. Zig polls
+/// it while the editor's mission browser is open; finding it means "an import
+/// upload completed — extract this zip into missions/". Deleted immediately
+/// after reading — same shape as `import_marker_path`.
+pub const mission_import_marker_path = ".mission_import_marker";
+
 /// On web, offer a file from the persistent dir to the player as a browser
 /// download (anchor click on a Blob of the file's bytes). The file must
 /// already be written — this reads it back from the emscripten in-memory FS.
@@ -714,6 +721,42 @@ pub fn triggerBrowserUpload() void {
             "  reader.onload = function() {" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/saves/' + name, new Uint8Array(reader.result));" ++
             "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ import_marker_path ++ "', 'saves/' + name);" ++
+            "    FS.syncfs(false, function(err) { if (err) console.error('IDBFS flush failed:', err); });" ++
+            "  };" ++
+            "  reader.readAsArrayBuffer(file);" ++
+            "};" ++
+            "document.body.appendChild(input);" ++
+            "input.click();" ++
+            "setTimeout(function() { input.remove(); }, 5000);" ++
+            "})();";
+        emscripten_run_script(script);
+    }
+}
+
+/// On web, open a browser file picker for importing a MISSION zip: the
+/// picked .zip is written into imported_missions/ under its (sanitized)
+/// own name, then the mission import marker is written so the Zig-side
+/// poll (while the mission browser is open) picks it up and extracts it
+/// into missions/. Same write-order + sanitization discipline as
+/// `triggerBrowserUpload`. Native is a no-op (comptime-dead branch) —
+/// the editor browser never emits the button there, and the ctrl+I
+/// binding parses but no-ops (the skip_level discipline).
+pub fn triggerBrowserMissionUpload() void {
+    if (@import("builtin").os.tag == .emscripten) {
+        const script =
+            "(function() {" ++
+            "var input = document.createElement('input');" ++
+            "input.type = 'file';" ++
+            "input.accept = '.zip';" ++
+            "input.onchange = function() {" ++
+            "  var file = input.files[0];" ++
+            "  if (!file) return;" ++
+            "  var name = file.name.replace(/[^A-Za-z0-9_.-]/g, '_');" ++
+            "  if (name.indexOf('.') == 0) name = '_' + name;" ++
+            "  var reader = new FileReader();" ++
+            "  reader.onload = function() {" ++
+            "    FS.writeFile('" ++ persistent_mount_path ++ "/imported_missions/' + name, new Uint8Array(reader.result));" ++
+            "    FS.writeFile('" ++ persistent_mount_path ++ "/" ++ mission_import_marker_path ++ "', 'imported_missions/' + name);" ++
             "    FS.syncfs(false, function(err) { if (err) console.error('IDBFS flush failed:', err); });" ++
             "  };" ++
             "  reader.readAsArrayBuffer(file);" ++

@@ -1898,8 +1898,31 @@ shape). Three settled points:
 - **Undo across the swap works** — `open_editor` is on the timeline, so
   undo restores the previously-edited mission. Accepted as a feature.
 
-The web-only Import button (zip upload, ctrl+I) lands with the import
-slice; the zip reader accepts both STORE + DEFLATE entries.
+**The zip import (LANDED).** The browser's web-only Import button (also
+ctrl+I) opens a file picker; the picked `.zip` lands in
+`imported_missions/` + writes `.mission_import_marker` (the save import's
+marker pattern), and the Zig-side poll (while the browser is open) extracts
+it into `missions/` + rescans so the row appears immediately. Design
+points:
+- **`zip_reader.zig`** (the sibling of zip_writer): buffer-based central-
+  directory walk accepting STORE (our exports) + DEFLATE (any OS
+  "compress" default — inflate via std.compress.flate), CRC-verified;
+  zip64/encryption/other methods rejected with descriptive errors.
+- **Extraction is validation-before-write**: junk entries (directory
+  markers, `__MACOSX/`, `._*`, `.DS_Store`) are skipped, a single common
+  root folder is stripped (the OS-compress shape), and every remaining
+  name is checked (no absolute paths, no `..` traversal, no backslashes,
+  no empty segments) BEFORE the first file is written — a hostile or
+  malformed zip fails whole with the popup, never half-imported.
+- **The target dir is the save convention** `missions/<uuid>_<sanitized
+  name>/` (uuid + name parsed from the zip's mission.txt; no uuid →
+  `missions/<sanitized name>/`) — re-importing the same zip overwrites
+  the same dir, idempotent. The zip is deleted on success (the extracted
+  folder is the artifact) and kept on failure (re-uploadable).
+- **Native has no Import button** — drop the extracted folder into the
+  persistent `missions/` dir by hand; the extraction path itself is
+  platform-neutral and tested natively by writing the zip + marker
+  directly.
 
 **Editor edits ride the existing event system.** `EditorEvent` variants
 (`editor_set_active_level`, …) mutate `current.editor.?.levels[level_index]`

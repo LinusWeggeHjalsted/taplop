@@ -353,6 +353,13 @@ pub const Action = enum {
     // (an index into the CURRENT tab's list; the tab is read from UiState at
     // resolution). Pushes `open_editor` with the row's mission path.
     open_editor_mission_row,
+    // The mission browser's "Import" (web only): opens a file picker for a
+    // mission .zip; the picked zip lands in imported_missions/ and the Zig
+    // side extracts it into missions/ (see
+    // input_handlers.pollMissionImportMarker). Also on ctrl+I (the binding
+    // ships in default_settings.txt and no-ops on native, where the button
+    // is never emitted — the skip_level discipline).
+    import_editor_mission,
 };
 
 /// One per editable `Settings` scalar field. Drives the settings-screen

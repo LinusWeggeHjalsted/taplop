@@ -17,6 +17,7 @@ const test_harness = @import("test_harness.zig");
 const ui = @import("ui.zig");
 const parser = @import("parser.zig");
 const loaders = @import("loaders.zig");
+const zip_writer = @import("zip_writer.zig");
 
 const Harness = test_harness.Harness;
 const runToIdle = test_harness.runToIdle;
@@ -5989,4 +5990,165 @@ test "mission browser: row click opens the mission, tab switch resets scroll, wh
     // (editorStartingState's default — empty name, the fresh-mission shape).
     _ = history.undo(event_handlers.processEvent);
     try testing.expectEqualStrings("", history.current_state.editor.?.mission.name);
+}
+
+// --- editor mission browser: the zip import ---
+
+test "mission import: a picked zip extracts into missions/, the row appears, the artifacts clean up" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    var history = harness.newHistory(editorStartingState(&.{
+        .{ .player_start = .{ .x = 0, .y = 0 } },
+    }));
+    runToIdle(&history);
+
+    // A mission zip (the Export Mission shape): configs + a custom sprite.
+    const zip_entries = [_]zip_writer.ZipEntry{
+        .{ .name = "mission.txt", .bytes =
+        "Metadata\nfile_format_version 2\nmission_uuid a1b2c3d4-e5f6-7890-abcd-ef1234567890\nlevel_count 1\nname Skeleton Den\n" },
+        .{ .name = "level_1.txt", .bytes = "Metadata\nfile_format_version 1\n\nLayout\n!=\n" },
+        .{ .name = "boss.png", .bytes = "pretend png bytes" },
+    };
+    const archive = try zip_writer.writeZipArchive(&zip_entries, arena);
+    harness.file_source.writeFile("imported_missions/skeleton_den.zip", archive) catch @panic("zip write");
+
+    // The upload marker (the web JS writes this after the file lands).
+    harness.file_source.writeFile(".mission_import_marker", "imported_missions/skeleton_den.zip") catch @panic("marker write");
+
+    // Open the browser + run one anytime tick (the poll runs while open).
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_editor_mission_browser = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.session.ui_state.editor_mission_browser_open);
+    input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
+
+    // The row: name + the save-convention dir path derived from the zip's
+    // mission.txt (uuid + sanitized name).
+    try testing.expectEqual(@as(usize, 1), history.session.editor_local_missions.len);
+    const entry = history.session.editor_local_missions[0];
+    try testing.expectEqualStrings("Skeleton Den", entry.name);
+    try testing.expectEqualStrings(
+        "missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_Skeleton Den",
+        entry.path,
+    );
+    try testing.expectEqual(@as(u32, 1), entry.level_count);
+
+    // The extracted files exist (one spot-check), the marker + zip are gone.
+    const png = try harness.file_source.readFile(
+        arena,
+        "missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_Skeleton Den/boss.png",
+    );
+    try testing.expectEqualStrings("pretend png bytes", png);
+    try testing.expect(!harness.file_source.fileExists(".mission_import_marker"));
+    try testing.expect(!harness.file_source.fileExists("imported_missions/skeleton_den.zip"));
+    try testing.expect(history.session.pending_error == null);
+}
+
+test "mission import: an OS-made zip with a single root folder strips it" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    var history = harness.newHistory(editorStartingState(&.{
+        .{ .player_start = .{ .x = 0, .y = 0 } },
+    }));
+    runToIdle(&history);
+
+    // The "compress folder" shape: every file under one root segment, plus
+    // macOS junk that must be skipped.
+    const zip_entries = [_]zip_writer.ZipEntry{
+        .{ .name = "Skeleton Den/mission.txt", .bytes =
+        "Metadata\nfile_format_version 2\nmission_uuid 22222222-2222-2222-2222-222222222222\nlevel_count 1\nname Skeleton Den\n" },
+        .{ .name = "Skeleton Den/level_1.txt", .bytes = "Metadata\nfile_format_version 1\n\nLayout\n!=\n" },
+        .{ .name = "__MACOSX/Skeleton Den/._mission.txt", .bytes = "junk" },
+        .{ .name = "Skeleton Den/.DS_Store", .bytes = "junk" },
+    };
+    const archive = try zip_writer.writeZipArchive(&zip_entries, arena);
+    harness.file_source.writeFile("imported_missions/os_made.zip", archive) catch @panic("zip write");
+    harness.file_source.writeFile(".mission_import_marker", "imported_missions/os_made.zip") catch @panic("marker write");
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_editor_mission_browser = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
+
+    // The root stripped (mission.txt found at the stripped root), the junk
+    // skipped (no stray files inside the mission dir), one row.
+    try testing.expectEqual(@as(usize, 1), history.session.editor_local_missions.len);
+    try testing.expectEqualStrings(
+        "missions/22222222-2222-2222-2222-222222222222_Skeleton Den",
+        history.session.editor_local_missions[0].path,
+    );
+    try testing.expect(!harness.file_source.fileExists(
+        "missions/22222222-2222-2222-2222-222222222222_Skeleton Den/.DS_Store",
+    ));
+    try testing.expect(!harness.file_source.fileExists(
+        "missions/22222222-2222-2222-2222-222222222222_Skeleton Den/_MACOSX_Skeleton Den_._mission.txt",
+    ));
+    try testing.expect(history.session.pending_error == null);
+}
+
+test "mission import: an unsafe entry name fails whole — popup, nothing written" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    var history = harness.newHistory(editorStartingState(&.{
+        .{ .player_start = .{ .x = 0, .y = 0 } },
+    }));
+    runToIdle(&history);
+
+    const zip_entries = [_]zip_writer.ZipEntry{
+        .{ .name = "mission.txt", .bytes =
+        "Metadata\nfile_format_version 2\nmission_uuid 33333333-3333-3333-3333-333333333333\nlevel_count 1\nname Evil\n" },
+        .{ .name = "../escape.txt", .bytes = "should never be written" },
+    };
+    const archive = try zip_writer.writeZipArchive(&zip_entries, arena);
+    harness.file_source.writeFile("imported_missions/evil.zip", archive) catch @panic("zip write");
+    harness.file_source.writeFile(".mission_import_marker", "imported_missions/evil.zip") catch @panic("marker write");
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_editor_mission_browser = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
+
+    // The popup explains, the list stays empty, and NOTHING was written —
+    // names are validated before the first write (never half-imported).
+    try testing.expect(history.session.pending_error != null);
+    try testing.expectEqual(@as(usize, 0), history.session.editor_local_missions.len);
+    try testing.expect(!harness.file_source.fileExists("missions"));
+    try testing.expect(!harness.file_source.fileExists("../escape.txt"));
+
+    // The marker is consumed (no spin); the zip stays for re-inspection.
+    try testing.expect(!harness.file_source.fileExists(".mission_import_marker"));
+    try testing.expect(harness.file_source.fileExists("imported_missions/evil.zip"));
+}
+
+test "mission import: a zip without mission.txt pops up instead of extracting" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    var history = harness.newHistory(editorStartingState(&.{
+        .{ .player_start = .{ .x = 0, .y = 0 } },
+    }));
+    runToIdle(&history);
+
+    const zip_entries = [_]zip_writer.ZipEntry{
+        .{ .name = "not_a_mission.txt", .bytes = "hello" },
+    };
+    const archive = try zip_writer.writeZipArchive(&zip_entries, arena);
+    harness.file_source.writeFile("imported_missions/random.zip", archive) catch @panic("zip write");
+    harness.file_source.writeFile(".mission_import_marker", "imported_missions/random.zip") catch @panic("marker write");
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .toggle_editor_mission_browser = true,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    input_handlers.handleAnytimeInput(&history, .{}, .{ .x = 0, .y = 0 }, &.{});
+
+    try testing.expect(history.session.pending_error != null);
+    try testing.expectEqual(@as(usize, 0), history.session.editor_local_missions.len);
+    try testing.expect(!harness.file_source.fileExists(".mission_import_marker"));
 }

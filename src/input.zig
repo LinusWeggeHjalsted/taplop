@@ -405,6 +405,11 @@ pub const AnytimeInput = struct {
     /// Editor-screen-only at the consumption site (the
     /// save_editor_mission no-op discipline).
     toggle_editor_mission_browser: bool = false,
+    /// Import a mission .zip (the mission browser's Import button + the
+    /// ctrl+I binding). Web-only effect at the consumption site (the
+    /// upload trigger is comptime-dead on native — the skip_level
+    /// discipline); consumed only while the browser is open.
+    import_editor_mission: bool = false,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -551,6 +556,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         => player_input.anytime.options_action = action,
         .close_editor_picker => player_input.anytime.options_action = action,
         .toggle_editor_mission_browser => player_input.anytime.toggle_editor_mission_browser = true,
+        .import_editor_mission => player_input.anytime.import_editor_mission = true,
         .select_editor_utility_skill => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
@@ -932,6 +938,7 @@ pub fn translateInput(
     result.anytime.dump_event_log = checkAction(.dump_event_log, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.toggle_editor_mission_browser = checkAction(.toggle_editor_mission_browser, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.import_editor_mission = checkAction(.import_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.error_scroll_up = checkAction(.error_scroll_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.error_scroll_down = checkAction(.error_scroll_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.scroll_delta = scroll_delta;

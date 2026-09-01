@@ -23,6 +23,7 @@ const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
 const zip_writer = @import("zip_writer.zig");
+const zip_reader = @import("zip_reader.zig");
 const event_handlers = @import("event_handlers.zig");
 const functions = @import("functions.zig");
 const view_mod = @import("view.zig");
@@ -1637,6 +1638,186 @@ fn exportEditorMission(history: *GameStateHistory) void {
     file_source_mod.triggerBrowserDownload(scratch, zip_path);
 }
 
+/// Consume the mission-import marker, if present: the picked .zip has landed
+/// in imported_missions/ — delete the marker, extract the zip into missions/
+/// (see importMissionFromZip), and rescan so the row appears. The web-only
+/// upload (the browser's Import button / ctrl+I) lands the zip + marker; the
+/// extraction is platform-neutral file I/O. A failure surfaces the
+/// recoverable popup and keeps the zip (re-uploadable; the marker is gone
+/// either way).
+fn pollMissionImportMarker(history: *GameStateHistory) void {
+    const marker = file_source_mod.mission_import_marker_path;
+    if (!history.file_source.fileExists(marker)) return;
+
+    const scratch = history.current_arena.allocator();
+    const marker_bytes = history.file_source.readFile(scratch, marker) catch {
+        // Unreadable marker: delete it so we don't spin on a corrupt file
+        // (the pollImportMarker discipline).
+        history.file_source.deleteFile(marker) catch {};
+        return;
+    };
+    history.file_source.deleteFile(marker) catch {};
+    importMissionFromZip(history, std.mem.trim(u8, marker_bytes, " \r\n\t"));
+}
+
+/// A safety cap on imported archive size: a mission dir is a handful of
+/// config files + sprites; four orders of magnitude past that is a hostile
+/// or mis-picked archive, not content. Keeps the scratch arena bounded.
+const mission_import_max_entries: usize = 1024;
+
+/// The set of junk a macOS "Compress" zip carries alongside the real
+/// content — skipped so an OS-made mission zip imports clean.
+fn isMissionImportJunk(name: []const u8) bool {
+    // Directory entries (a trailing '/', zero contents).
+    if (std.mem.endsWith(u8, name, "/")) return true;
+    // The macOS resource-fork folder + its artifacts.
+    if (std.mem.startsWith(u8, name, "__MACOSX/")) return true;
+    const basename = std.fs.path.basename(name);
+    if (std.mem.startsWith(u8, basename, "._")) return true;
+    if (std.mem.eql(u8, basename, ".DS_Store")) return true;
+    return false;
+}
+
+/// Strip a single common ROOT folder from every entry name, if there is
+/// one: an OS "compress folder" zip wraps the mission's files in
+/// `<folder>/…`, while our own exports are flat at the archive root.
+/// Mixed shapes (some entries at the root, some under a folder, or two
+/// different folders) strip nothing — the mission.txt lookup then fails and
+/// the popup explains. Mutates `entries` in place (the caller's scratch-
+/// arena copy of the filtered list).
+fn missionImportRootStrip(entries: []zip_reader.ZipEntry) void {
+    if (entries.len == 0) return;
+    const first_slash = std.mem.indexOfScalar(u8, entries[0].name, '/') orelse return;
+    const root = entries[0].name[0..first_slash];
+    if (root.len == 0) return;
+    for (entries) |entry| {
+        if (!std.mem.startsWith(u8, entry.name, root) or
+            entry.name.len <= root.len or
+            entry.name[root.len] != '/') return;
+    }
+    for (entries) |*entry| {
+        entry.name = entry.name[root.len + 1 ..];
+    }
+}
+
+/// A safe extraction name: no absolute paths, no `..` traversal, no
+/// backslashes (spec names use '/'; a backslash is a malformed or hostile
+/// name — a literal filename character on some platforms), no empty
+/// segments. Applied AFTER the root strip.
+fn isUnsafeMissionImportName(name: []const u8) bool {
+    if (name.len == 0 or name[0] == '/') return true;
+    if (std.mem.indexOfScalar(u8, name, '\\') != null) return true;
+    var iterator = std.mem.splitScalar(u8, name, '/');
+    while (iterator.next()) |segment| {
+        if (segment.len == 0 or std.mem.eql(u8, segment, "..")) return true;
+    }
+    return false;
+}
+
+/// Extract one mission zip into `missions/<uuid>_<sanitized name>/` (the
+/// editor save's dir convention — a re-import of the same zip overwrites
+/// the same dir, idempotent; a mission without a uuid lands under
+/// `missions/<sanitized name>/`). All names are validated BEFORE the first
+/// write: a hostile or malformed zip fails whole, never half-imported.
+fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
+    const scratch = history.current_arena.allocator();
+    const fail = struct {
+        fn note(history_arg: *GameStateHistory, reason: []const u8) void {
+            history_arg.session.setPendingError(
+                history_arg.history_arena.allocator(),
+                reason,
+            );
+        }
+    };
+
+    const zip_bytes = history.file_source.readFile(scratch, zip_path) catch {
+        fail.note(history, "failed to import: could not read the uploaded zip");
+        return;
+    };
+    const all_entries = zip_reader.readZipArchive(zip_bytes, scratch) catch {
+        fail.note(history, "failed to import: the zip is corrupt or uses an unsupported format");
+        return;
+    };
+    if (all_entries.len > mission_import_max_entries) {
+        fail.note(history, "failed to import: the zip has too many files");
+        return;
+    }
+
+    // Filter OS junk, then strip a single common root folder.
+    var file_entries: std.ArrayList(zip_reader.ZipEntry) = .empty;
+    for (all_entries) |entry| {
+        if (!isMissionImportJunk(entry.name)) file_entries.append(scratch, entry) catch
+            @panic("failed to collect zip entries");
+    }
+    missionImportRootStrip(file_entries.items);
+    const stripped = file_entries.items;
+
+    // The mission's identity: mission.txt at the (stripped) archive root.
+    const mission_txt = blk: for (stripped) |entry| {
+        if (std.mem.eql(u8, entry.name, "mission.txt")) break :blk entry.bytes;
+    } else {
+        fail.note(history, "failed to import: the zip has no mission.txt at its root");
+        return;
+    };
+    const sections = parser.parseConfigFile(mission_txt, scratch) catch {
+        fail.note(history, "failed to import: the zip's mission.txt is not valid");
+        return;
+    };
+    const mission = loaders.loadMission(sections, scratch) catch {
+        fail.note(history, "failed to import: the zip's mission.txt is not valid");
+        return;
+    };
+
+    // Validate every name up front (nothing written on any bad entry).
+    for (stripped) |entry| {
+        if (isUnsafeMissionImportName(entry.name)) {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to import: unsafe file name in the zip ({s})",
+                .{entry.name},
+            ) catch "failed to import: unsafe file name in the zip";
+            fail.note(history, message);
+            return;
+        }
+    }
+
+    // The target dir, derived exactly like the editor save's.
+    const sanitized_name = sanitizeMissionNameForPath(mission.name, scratch);
+    var name_prefix: []const u8 = sanitized_name;
+    if (mission.uuid.len > 0) {
+        name_prefix = std.fmt.allocPrint(
+            scratch,
+            "{s}_{s}",
+            .{ mission.uuid, sanitized_name },
+        ) catch @panic("failed to allocate imported mission dir path");
+    }
+    const dir_path = std.fmt.allocPrint(
+        scratch,
+        "missions/{s}",
+        .{name_prefix},
+    ) catch @panic("failed to allocate imported mission dir path");
+
+    for (stripped) |entry| {
+        const file_path = std.fmt.allocPrint(scratch, "{s}/{s}", .{ dir_path, entry.name }) catch
+            @panic("failed to allocate imported mission file path");
+        history.file_source.writeFile(file_path, entry.bytes) catch {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to import: could not write {s}",
+                .{entry.name},
+            ) catch "failed to import: could not write a mission file";
+            fail.note(history, message);
+            return;
+        };
+    }
+
+    // Success: the zip has served its purpose (delete it — the extracted
+    // folder is the artifact), and the browser's list rescans so the row
+    // appears immediately.
+    history.file_source.deleteFile(zip_path) catch {};
+    rescanEditorMissionsNow(history);
+}
+
 /// The gear-slot player action (create / retype / field-edit / clear —
 /// one event, one undo step), carrying the FLATTENED item (a nested
 /// `?Weapon`-style value can't round-trip the session log once its name
@@ -3180,7 +3361,16 @@ pub fn handleAnytimeInput(
     // scrolls the row list — whole-row ticks (the load-save browser's
     // model), lower clamp here, upper clamp authoritative in the builder.
     // No periodic rescan while open (see SessionState.editor_local_missions).
+    // The zip-import marker is polled here: a completed web upload extracts
+    // into missions/ + rescans, so the new row appears immediately.
     if (history.session.ui_state.editor_mission_browser_open) {
+        // The Import trigger (web-only effect at the seam; native no-ops —
+        // the button is never emitted there and the binding parses +
+        // no-ops, the skip_level discipline).
+        if (anytime.import_editor_mission) {
+            file_source_mod.triggerBrowserMissionUpload();
+        }
+        pollMissionImportMarker(history);
         if (anytime.scroll_delta != 0) {
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
             history.session.ui_state.editor_mission_scroll_offset -= delta_rows;
