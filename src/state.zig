@@ -1313,6 +1313,20 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_exit_to_menu outside level/hub/editor screen");
                     }
                 },
+                // Editor Test/Validate buttons: only from the editor's edit
+                // mode — the buttons exist only there, so anything else in
+                // a crafted log is rejected.
+                .player_start_playtest, .player_start_validation => {
+                    if (self.current_state.screen != .editor) {
+                        @panic("replay validation: editor playtest/validation start outside editor screen");
+                    }
+                    const editor = self.current_state.editor orelse {
+                        @panic("replay validation: editor playtest/validation start with no editor");
+                    };
+                    if (editor.mode != .edit) {
+                        @panic("replay validation: editor playtest/validation start outside edit mode");
+                    }
+                },
                 .player_set_editor_level => |set| {
                     if (self.current_state.screen != .editor) {
                         @panic("replay validation: player_set_editor_level outside editor screen");

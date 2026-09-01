@@ -712,6 +712,13 @@ pub const PlayerInputEvent = union(enum) {
     // inspector toggle's height, flush to the right screen edge): flip the
     // metadata sidebar. The handler pushes `editor_toggle_metadata_sidebar`.
     player_toggle_editor_metadata_sidebar: void,
+    // Top-bar Test/Validate button clicks: start a single-level playtest
+    // of the active level / a full-mission validation run from level 1.
+    // Thin orchestrators — the machinery handlers (start_playtest /
+    // start_validation) own instantiation, PlayerData dormancy, and the
+    // screen transition; end_level's editor guard owns the return path.
+    player_start_playtest: void,
+    player_start_validation: void,
     // Player inspector Import-button click: copy the session's player data
     // (or, with none, the new-game default save) into the editor player
     // loadout. The handler pushes `editor_import_player` — the loadout

@@ -5026,6 +5026,132 @@ test "a validation run's chained level start_playtest does not re-back-up" {
     try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
 }
 
+test "player_start_playtest starts the active level; the exit returns to the editor" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{ .{}, .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .active_level_index = 1,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+
+    // The Test button's orchestrator: playtest of the ACTIVE level (1).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_start_playtest }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .level);
+    try testing.expect(history.current_state.editor.?.mode == .playtest);
+    try testing.expect(history.current_state.level != null);
+    // 1-based gameplay index of the instantiated level: active 1 → 2.
+    try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
+    try testing.expectEqualStrings("Editor Player", history.current_state.player_data.player_name);
+
+    // Natural level completion (end_level, default continuation) exits
+    // back to the editor + restores the session's real player data.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .end_level = .{} } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .editor);
+    try testing.expect(history.current_state.editor.?.mode == .edit);
+    try testing.expect(history.current_state.level == null);
+    try testing.expect(history.current_state.mission == null);
+    try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+}
+
+test "player_start_validation plays the whole mission; completion ends back in the editor" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .active_level_index = 1, // ignored: validation always starts at 0
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .player_start_validation }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .level);
+    try testing.expect(history.current_state.editor.?.mode == .validate);
+    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.current_level_index);
+
+    // Completing level 1 chains level 2 (not the active tab — level 0).
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .end_level = .{} } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .level);
+    try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
+
+    // Completing the LAST level ends the run: editor, edit mode, restored.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .end_level = .{} } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .editor);
+    try testing.expect(history.current_state.editor.?.mode == .edit);
+    try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+}
+
+test "a validation run's restart/exit continuation aborts to the editor (success=false)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    history.current_state.player_data = .{ .player_name = "Campaign Player" };
+
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .start_validation }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+
+    // Death-exit shape: the mission-fail overlay / options menu routes
+    // through end_level with a non-default continuation. The run aborts —
+    // no next-level chain, back to the editor, real player data restored.
+    event_handlers.pushEvents(
+        &history.current_state,
+        &.{.{ .meta_event = .{ .end_level = .{ .continuation = .exit_mission } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .editor);
+    try testing.expect(history.current_state.editor.?.mode == .edit);
+    try testing.expect(history.current_state.level == null);
+    try testing.expect(history.current_state.mission == null);
+    try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+    try testing.expect(history.current_state.editor.?.pre_playtest_player_data == null);
+}
+
 test "open_editor: a mission without player.txt falls back to the maxed default loadout" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

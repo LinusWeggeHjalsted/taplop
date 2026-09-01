@@ -2365,6 +2365,21 @@ fn handlePlayerInputEvent(
         .player_toggle_editor_metadata_sidebar => {
             pushEvents(current, &.{.{ .editor_event = .editor_toggle_metadata_sidebar }}, allocator);
         },
+        // Top-bar Test button: start a playtest of the ACTIVE level (the
+        // machinery handler owns instantiation + dormancy + the screen
+        // transition). validatePlayerAction guarantees the editor screen +
+        // edit mode, so the force-unwrap is the fail-fast invariant.
+        .player_start_playtest => {
+            const editor = &current.editor.?;
+            pushEvents(current, &.{.{ .meta_event = .{ .start_playtest = .{
+                .level_index = @intCast(editor.active_level_index),
+            } } }}, allocator);
+        },
+        // Top-bar Validate button: start the full-mission validation run
+        // from level 1 (the machinery handler always instantiates level 0).
+        .player_start_validation => {
+            pushEvents(current, &.{.{ .meta_event = .start_validation }}, allocator);
+        },
         // Player inspector Import-button click: push the machinery event
         // (the loadout fields ride GameState — the import is undoable).
         .player_import_editor_player => {
@@ -4681,19 +4696,35 @@ pub fn processEvent(
                     if (current.editor) |editor| {
                         switch (editor.mode) {
                             .playtest => {
+                                // Any exit — natural level completion or a
+                                // restart/exit continuation — drops back to
+                                // the editor: the run is bracketed, there's
+                                // no in-run restart.
                                 pushEvents(current, &.{.{ .meta_event = .end_playtest }}, allocator);
                             },
                             .validate => {
-                                const current_level_index = current.mission.?.current_level_index;
-                                if (current_level_index < editor.levels.len) {
-                                    const next_index = current_level_index; // 0-based: current is 1-based, next is current
-                                    pushEvents(current, &.{.{ .meta_event = .{ .start_playtest = .{
-                                        .level_index = next_index,
+                                // A non-default continuation (restart /
+                                // exit from the options menu or the
+                                // mission-fail overlay) ABORTS the run:
+                                // success=false, back to the editor. Only
+                                // the natural level completion advances
+                                // the run.
+                                if (end.continuation != .default) {
+                                    pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{
+                                        .success = false,
                                     } } }}, allocator);
                                 } else {
-                                    pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{
-                                        .success = true,
-                                    } } }}, allocator);
+                                    const current_level_index = current.mission.?.current_level_index;
+                                    if (current_level_index < editor.levels.len) {
+                                        const next_index = current_level_index; // 0-based: current is 1-based, next is current
+                                        pushEvents(current, &.{.{ .meta_event = .{ .start_playtest = .{
+                                            .level_index = next_index,
+                                        } } }}, allocator);
+                                    } else {
+                                        pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{
+                                            .success = true,
+                                        } } }}, allocator);
+                                    }
                                 }
                             },
                             .edit => {}, // shouldn't happen (no level loaded in edit mode)
