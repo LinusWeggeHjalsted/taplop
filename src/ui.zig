@@ -8751,17 +8751,24 @@ pub fn buildEditorBottomBar(
             font_metrics.measureSpanWidth(text(label), editor_group_header_font_size) + 2 * ui_gap;
     }
 
-    // Row footprint per group: expanded = its visible type cells; collapsed
-    // (or empty) = the header + "+" extent, so headers never overlap in the
-    // strip above. Total content width joins the footprints by ui_gap.
+    // Row footprint per group: expanded = its visible type cells;
+    // collapsed (or empty) = the header + "+" extent. The header-to-"+"
+    // gap is INCLUDED in that extent, so the row's join gap stays a real
+    // gap AFTER the "+" (not eaten by it) — and an expanded group whose
+    // cells are narrower than its header + "+" (a 1-2-type group) takes
+    // the extent as its footprint, so the "+" can't overlap the next
+    // group's header in the strip above. Total content width joins the
+    // footprints by ui_gap.
     var footprints: [group_labels.len]i32 = undefined;
     var content_width: i32 = 2 * slot_size; // Select + Tile
     for (group_sizes, 0..) |size, group_index| {
+        const header_plus_extent = header_widths[group_index] + ui_gap + editor_plus_size;
         if (collapsed[group_index] or size == 0) {
-            footprints[group_index] = header_widths[group_index] + editor_plus_size;
+            footprints[group_index] = header_plus_extent;
         } else {
             const visible: i32 = @intCast(@min(size, editor_palette_max_tools));
-            footprints[group_index] = visible * slot_size + (visible - 1) * ui_gap;
+            const cells_width = visible * slot_size + (visible - 1) * ui_gap;
+            footprints[group_index] = @max(cells_width, header_plus_extent);
         }
         content_width += footprints[group_index];
     }
@@ -10896,6 +10903,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     var enemies_header_button: ?types.ScreenPosition = null;
     var enemies_header_width: i32 = 0;
     var enemies_plus_button: ?types.ScreenPosition = null;
+    var decorations_header_button: ?types.ScreenPosition = null;
     var first_enemy_cell: ?types.ScreenPosition = null;
     const header_top: i32 = types.reference_height - bottom_bar_height - ui_gap - editor_header_strip_height;
     var enemy_cell_index: usize = 0;
@@ -10906,6 +10914,9 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
             if (button.editor_group == 0 and button.action == .toggle_editor_palette_group) {
                 enemies_header_button = button.screen_position;
                 enemies_header_width = button.width;
+            }
+            if (button.editor_group == 1 and button.action == .toggle_editor_palette_group) {
+                decorations_header_button = button.screen_position;
             }
             if (button.action == .add_editor_palette_type) {
                 plus_button_count += 1;
@@ -10968,6 +10979,14 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
     try std.testing.expectEqual(
         enemies_header_button.?.x + enemies_header_width + ui_gap,
         enemies_plus_button.?.x,
+    );
+    // ...and one ui_gap LEFT of the next group's header too (the
+    // footprint includes the header-+ extent, so the row's join gap
+    // survives past the "+").
+    try std.testing.expect(decorations_header_button != null);
+    try std.testing.expectEqual(
+        enemies_plus_button.?.x + editor_plus_size + ui_gap,
+        decorations_header_button.?.x,
     );
 }
 
