@@ -408,7 +408,7 @@ const MaterialKind = struct {
 
 /// The five material kinds in display order (top-to-bottom for vertical
 /// stacks, left-to-right for horizontal rows).
-const material_kinds = [_]MaterialKind{
+pub const material_kinds = [_]MaterialKind{
     .{ .sprite_id = "ui/material_wood", .color_index = 5, .name = "Wood" },
     .{ .sprite_id = "ui/material_metal", .color_index = 2, .name = "Metal" },
     .{ .sprite_id = "ui/material_leather", .color_index = 5, .name = "Leather" },
@@ -418,7 +418,7 @@ const material_kinds = [_]MaterialKind{
 
 /// Read the count for `kind_index` out of `materials`. Kept as a switch so
 /// adding a material kind is a compile error until every index is handled.
-fn materialCount(materials: types.Materials, kind_index: usize) u32 {
+pub fn materialCount(materials: types.Materials, kind_index: usize) u32 {
     return switch (kind_index) {
         0 => materials.wood,
         1 => materials.metal,
