@@ -926,7 +926,12 @@ arrow keys (`error_scroll_up/down`) 3 lines per press, and the view clamps
 the upper bound in place (authoritative — only it knows the wrapped line
 count) and emits exactly the window's lines drawn from the top of the body
 region. Whole visible lines only — the region height is the visible count ×
-line height, so text placement is identical at every offset. (The popup was
+line height, so text placement is identical at every offset. Messages are
+joined with `\n` (one warning per line); `wrapRow` treats `\n` as a HARD
+line break and never emits it inside a span — raylib's `DrawTextEx` also
+breaks on `\n`, but with its own line advance + x reset the layout never
+reserved space for, which made overlapping lines before the fix (see
+DONE.md). (The popup was
 originally built with a pixel offset that predated every other scroller in
 the game: the wheel sign was flipped, the window was drawn at its
 unscrolled y, and the input step unit (a hardcoded 56px) didn't match the

@@ -1089,10 +1089,20 @@ test "tooltipAt: overlays pass through, blockers shield what is behind" {
 pub const UiElementList = std.ArrayList(UiElement);
 
 /// Wrap one logical row into visual lines that each fit `content_width`.
-/// Text is split on spaces (the only break opportunities); each word keeps
-/// its span's style, so styling survives wrapping. Spaces at a wrap point
-/// (and at the start of a line) are dropped; a single word wider than
-/// `content_width` sits alone on its line and is allowed to overflow.
+/// Text is split on spaces and '/' (the width-based break opportunities);
+/// each word keeps its span's style, so styling survives wrapping. Spaces
+/// at a wrap point (and at the start of a line) are dropped; a single word
+/// wider than `content_width` is character-wrapped into fitting chunks.
+/// A '\n' in the text is a HARD line break: the current line is flushed
+/// (dropping the pending space) and the character itself is dropped — no
+/// emitted span may contain a raw newline, because raylib's DrawTextEx
+/// ALSO breaks on '\n' but with its own line advance + x reset, which the
+/// layout never reserved space for (the measurement/rendering disagreement
+/// that made overlapping lines in the error popup — the startup warnings
+/// are joined with '\n'). Consecutive breaks collapse (no blank lines —
+/// the warning-list shape wants one entry per line, no gap noise, and a
+/// trailing break must not add a trailing blank row). '\r' is treated the
+/// same way (tolerating Windows-style line endings).
 pub fn wrapRow(
     allocator: std.mem.Allocator,
     font_metrics: FontMetrics,
@@ -1109,6 +1119,18 @@ pub fn wrapRow(
         var index: usize = 0;
         while (index < span.text.len) {
             const ch = span.text[index];
+            if (ch == '\n' or ch == '\r') {
+                // Hard line break — flush the current line, drop the pending
+                // space + the break character itself (see the fn doc).
+                index += 1;
+                pending_space = null;
+                if (current.items.len > 0) {
+                    try lines.append(allocator, try current.toOwnedSlice(allocator));
+                    current = .empty;
+                    current_width = 0;
+                }
+                continue;
+            }
             const is_space = ch == ' ';
             const is_slash = ch == '/';
             const start = index;
@@ -1122,8 +1144,12 @@ pub fn wrapRow(
                 // readable while allowing them to wrap at separators.
                 index += 1; // include the '/'
             } else {
-                // Run of non-space, non-slash characters.
-                while (index < span.text.len and span.text[index] != ' ' and span.text[index] != '/') index += 1;
+                // Run of non-space, non-slash, non-newline characters —
+                // a newline must END the token so the hard-break check at
+                // the loop top sees it (otherwise it rides inside the word).
+                while (index < span.text.len and span.text[index] != ' ' and
+                    span.text[index] != '/' and
+                    span.text[index] != '\n' and span.text[index] != '\r') index += 1;
             }
             const piece = Span{
                 .text = span.text[start..index],
@@ -1233,6 +1259,43 @@ test "wrapRow breaks at spaces and drops the break space" {
     try std.testing.expectEqualStrings("cc", lines[1][0].text);
 }
 
+
+test "wrapRow: newline is a hard line break, the character dropped" {
+    // raylib's DrawTextEx ALSO breaks on '\n' (its own line advance + x
+    // reset) — so a span containing one renders more lines than the layout
+    // measured, overlapping the next visual row (the error-popup bug: the
+    // startup warnings are joined with '\n'). wrapRow must treat '\n' as a
+    // hard break and never emit it inside a span; '\r' (Windows line
+    // endings) is handled the same way.
+    const font_size: i32 = 100; // 1 char = 55px (50 advance + 5 spacing)
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const row: TooltipRow = &.{text("aa bb\ncc dd\r\n\nee")};
+
+    // content_width wide enough that no WIDTH-based break ever fires —
+    // every line break below comes from the newline handling.
+    const lines = try wrapRow(std.testing.allocator, metrics, row, font_size, 10_000);
+    defer {
+        for (lines) |line| std.testing.allocator.free(line);
+        std.testing.allocator.free(lines);
+    }
+
+    try std.testing.expectEqual(@as(usize, 3), lines.len);
+    // Each hard-broken line keeps its interior space span, starts with no
+    // leading/trailing space, and contains no newline character. The \r\n +
+    // \n run collapses — consecutive breaks emit no blank lines (the
+    // warning-list shape: one warning per line, no gap noise).
+    const expected = [_][]const u8{ "aa bb", "cc dd", "ee" };
+    for (lines, expected) |line, want| {
+        var joined: std.ArrayList(u8) = .empty;
+        defer joined.deinit(std.testing.allocator);
+        for (line) |span| try joined.appendSlice(std.testing.allocator, span.text);
+        try std.testing.expectEqualStrings(want, joined.items);
+        for (line) |span| {
+            try std.testing.expect(std.mem.indexOfScalar(u8, span.text, '\n') == null);
+            try std.testing.expect(std.mem.indexOfScalar(u8, span.text, '\r') == null);
+        }
+    }
+}
 
 test "wrapRow breaks on '/' for paths" {
     // font_size 100 → 1 char = 55px (50 advance + 5 spacing). content_width

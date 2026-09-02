@@ -9991,3 +9991,48 @@ Tests: window content + placement + exact clamp (screens.zig), wheel sign
 + line steps + lower clamp + dismiss (input_handlers.zig, direct
 handleAnytimeInput through the pending_error gate). Design: DESIGN →
 Error Handling → Recoverable error surface (scrolling paragraph).
+
+## Bug fix: wrapRow must break on '\n' (overlapping lines in the error popup)
+
+Follow-up to the scroll fix above, same popup, same first real use. Symptom:
+with the multi-warning startup message, "lines overlap each other, layout
+weird — I think we're dropping linebreaks."
+
+Root cause — a measurement/rendering disagreement over the newline:
+
+- The startup warnings are joined with `\n` (session_setup, one warning per
+  line).
+- `wrapRow` (the layout authority) treated `\n` as an ordinary character:
+  it isn't a space or '/', so the token-run loop consumed straight past it —
+  `\n` rode INSIDE a word token ("dropped\nInputBindings"), measured as one
+  line on one visual row.
+- raylib's `DrawTextEx` (verified in the vendored rtext.c) treats `'\n'` as
+  a line break: `textOffsetY += fontSize + textLineSpacing`, x reset. So
+  the label drew a SECOND, unmeasured line at y+71 (at 56px font) while the
+  next visual row's labels sat at y+67 — the two text bodies drew on top of
+  each other, and the internal line restarted at the span's x, scrambling
+  placement. Every symptom matched.
+
+The fix is at the layout authority, not the renderer: `wrapRow` now treats
+`\n` (and `\r`, tolerating Windows endings) as a HARD line break — flush the
+current line, drop the pending space, drop the character. No emitted span
+ever contains a raw newline, so measurement and rendering agree by
+construction (stripping `\n` in drawTextLabel instead would have thrown away
+the intended line structure). Consecutive breaks collapse (no blank lines —
+the warning list wants one entry per line, no gap noise, and a trailing
+break must not add a trailing blank row). First fix attempt missed that the
+check must ALSO end the token-run loop — a check at the loop top alone never
+sees a `\n` the run loop consumed past (caught immediately by the new test).
+
+Also fixed in passing: wrapRow's doc claimed a too-wide word "sits alone on
+its line and is allowed to overflow" — stale; the code (and the doc now)
+says it character-wraps into fitting chunks.
+
+Tests: wrapRow hard-break semantics (break, char dropped, `\r\n` collapsed,
+no newline in any span, interior spaces kept); buildErrorPopup end-to-end
+(two `\n`-joined warnings → two visual lines exactly one lineHeight apart,
+no label carries a newline). Sweep: no other UI text source emits `\n`
+(authored strings only; the renderer-side break was never something anyone
+relied on). Design: the wrapRow contract is its doc comment in
+element.zig; DESIGN → Error Handling → Recoverable error surface notes the
+newline join + the contract.

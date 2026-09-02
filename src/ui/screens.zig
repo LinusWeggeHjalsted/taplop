@@ -801,6 +801,50 @@ test "buildErrorPopup: scrolled window renders at the body top" {
     try std.testing.expectEqual(@as(i32, 10), session.error_scroll_offset);
 }
 
+test "buildErrorPopup: newline-separated warnings render as distinct lines" {
+    // The startup warnings are joined with '\n' (session_setup). The
+    // measurement/rendering contract: wrapRow breaks on '\n' and never
+    // emits it inside a span — because raylib's DrawTextEx ALSO breaks on
+    // '\n', with its own line advance + x reset that the layout never
+    // reserved space for. Before the fix, the '\n' rode inside a word
+    // token: raylib drew a second line at y+fontSize+textLineSpacing that
+    // overlapped the next visual row at y+lineHeight — "lines overlap each
+    // other, layout weird".
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var session: state.SessionState = .{};
+
+    // Two warnings, each short enough to be one visual line (no width wrap).
+    const message = "InputBindings entry for 'skill_slot_1' is missing a valid context\nInputBindings entry for 'skill_slot_2' is missing a valid context";
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    var elements: UiElementList = .empty;
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, message, .{ .r = 50, .g = 50, .b = 50 });
+
+    // Collect the body labels' distinct y positions (word-level spans share
+    // a y) and assert no label text carries a newline.
+    var first_y: ?i32 = null;
+    var second_y: ?i32 = null;
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| if (label.font_size == error_body_font_size) {
+            try std.testing.expect(std.mem.indexOfScalar(u8, label.text, '\n') == null);
+            const y = label.screen_position.y;
+            if (first_y == null) {
+                first_y = y;
+            } else if (second_y == null and y != first_y.?) {
+                second_y = y;
+            }
+        },
+        else => {},
+    };
+
+    // Two visual lines, one per warning, exactly one lineHeight apart.
+    try std.testing.expect(first_y != null);
+    try std.testing.expect(second_y != null);
+    try std.testing.expectEqual(lineHeight(error_body_font_size), second_y.? - first_y.?);
+}
+
 const text_label_attrs = struct {
     text: []const u8,
     y: i32,
