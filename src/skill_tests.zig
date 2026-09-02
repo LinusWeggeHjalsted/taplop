@@ -31,6 +31,7 @@ const slam_skill = @import("skills/slam.zig");
 const piston_bolt_skill = @import("skills/piston_bolt.zig");
 const blitz_skill = @import("skills/blitz.zig");
 const chain_lightning_skill = @import("skills/chain_lightning.zig");
+const adrenaline_surge_skill = @import("skills/adrenaline_surge.zig");
 
 const Vector2 = types.Vector2;
 
@@ -1566,4 +1567,77 @@ test "chain lightning: options pick the target with the largest component" {
     try testing.expectEqual(@as(usize, 1), options.len);
     try testing.expectEqual(pair_head.position, options[0].target.?);
     try testing.expectEqual(@as(u32, 2), options[0].priority);
+}
+
+test "adrenaline surge: options rate the target by its ticking on-bar count" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    // Two in-range sword-carriers: the wounded one has MORE ticking
+    // cooldowns (3 vs 1) — the count outranks focus-fire.
+    const lightly_cooled = types.Entity{
+        .team = 1,
+        .position = .{ .x = 1, .y = 0 },
+        .current_health = 5,
+        .max_health = 20,
+        .main_hand_weapon = .{ .weapon_type = .sword },
+    };
+    const heavily_cooled = types.Entity{
+        .team = 1,
+        .position = .{ .x = 0, .y = 1 },
+        .current_health = 15,
+        .max_health = 20,
+        .main_hand_weapon = .{ .weapon_type = .sword },
+        .equipped_utility_skills = .{ .blink, null, null, null, null },
+    };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, lightly_cooled, heavily_cooled },
+        &.{},
+    );
+    @constCast(game_state.level.?.entities)[1].skill_cooldowns.set(.slice, 2); // 1 ticking
+    @constCast(game_state.level.?.entities)[2].skill_cooldowns.set(.slice, 2);
+    @constCast(game_state.level.?.entities)[2].skill_cooldowns.set(.flash_strike, 3); // swap-available third
+    @constCast(game_state.level.?.entities)[2].skill_cooldowns.set(.blink, 1); // utility
+    @constCast(game_state.level.?.entities)[2].skill_cooldowns.set(.skewer, 9); // off-bar: not counted
+
+    const options = adrenaline_surge_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), options.len);
+    try testing.expectEqual(heavily_cooled.position, options[0].target.?);
+    try testing.expectEqual(@as(u32, 3), options[0].priority);
+}
+
+test "adrenaline surge: nothing ticking on any target offers nothing" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const target = types.Entity{
+        .team = 1,
+        .position = .{ .x = 1, .y = 0 },
+        .main_hand_weapon = .{ .weapon_type = .sword },
+    };
+    const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
+
+    try testing.expectEqual(@as(usize, 0), adrenaline_surge_skill.skill.aiOptions(0, game_state, definitions, arena.allocator()).len);
+}
+
+test "adrenaline surge: useSkill delegates to the machinery event" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const defender = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, defender }, &.{});
+
+    const result = adrenaline_surge_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), result.len);
+    const surge = result[0].sub_level_event.adrenaline_surge;
+    try testing.expectEqual(@as(u32, 0), surge.attacker_index);
+    try testing.expectEqual(@as(u32, 1), surge.defender_index);
 }

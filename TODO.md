@@ -262,9 +262,13 @@ stale).
         range 3, cd 3 (impale shape, spell damage + the extra
         getConvertedMomentum). Priority 3, weakestTarget pick. History in
         DONE.md.
-  - [ ] spell chain lightning — attack target + each entity connected via
-        neighboring entities, range 1, radius 1, cd 5. OPEN: connection
-        rule — Chebyshev-1 entity-to-entity adjacency BFS?
+  - [x] spell chain lightning — attack target + each hostile connected
+        via neighboring hostiles (connected component by the skill's
+        EFFECTIVE radius, Chebyshev; allies are not chain nodes — a hostile
+        line broken by an ally does not conduct). Option = the
+        largest-component target (focus-fire tail ties), rated
+        aoePriority(component, 1) — 1-link chains rate like plain attacks.
+        History in DONE.md.
   - [ ] spell adrenaline surge — reset all target's skill cooldowns +
         attack per cooldown reset, range 1, cd 5.
   - [ ] cantrip burst — AoE attack, radius 1, cd 10.

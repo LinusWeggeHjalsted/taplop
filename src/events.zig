@@ -1401,6 +1401,19 @@ pub const SubLevelEvent = union(enum) {
     reset_weapon_cooldowns: struct {
         entity_index: u32,
     },
+    // Adrenaline Surge: reset the DEFENDER's on-bar cooldowns (all skills of
+    // both equipped weapons — the swap-available thirds included — plus the
+    // equipped utility skills; Entity.onBarSkillIds is the shared
+    // enumeration) and the attacker strikes the defender once per cooldown
+    // reset this way. Machinery for the same reason as
+    // reset_weapon_cooldowns (the enumeration needs the definitions); the
+    // skill's aiOptions — which does receive them — computes the same
+    // count for its rating. The handler resets FIRST, then attacks, so the
+    // resets land even when the attacks kill.
+    adrenaline_surge: struct {
+        attacker_index: u32,
+        defender_index: u32,
+    },
     // Items actually picked up from a ground stack. `pickup_around` is a pure
     // CHECK: it scans ground items in the entity's radius and, for each in-range
     // stack (one per position), pushes this event with just the stack's

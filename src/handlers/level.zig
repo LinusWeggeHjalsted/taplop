@@ -1493,5 +1493,48 @@ pub fn handleSubLevelEvent(
                 }, allocator);
             }
         },
+        .adrenaline_surge => |surge| {
+            // Reset the defender's on-bar cooldowns (Entity.onBarSkillIds —
+            // both weapons' full sets + utility), then the attacker strikes
+            // once per reset. Enumeration needs weapon_type_definitions
+            // (the reset_weapon_cooldowns precedent); the count drives the
+            // attack fan, so reset and attacks resolve in the same place.
+            // The skill's aiOptions computes the same count for its rating.
+            const attacker = getLevelEntity(current, surge.attacker_index);
+            const defender = getLevelEntity(current, surge.defender_index);
+            if (attacker.current_health == 0) return;
+            if (defender.current_health == 0) return;
+
+            var reset_events: std.ArrayList(Event) = .empty;
+            var reset_count: u32 = 0;
+            for (defender.onBarSkillIds(history.weapon_type_definitions)) |maybe_skill_id| {
+                const skill_id = maybe_skill_id orelse continue;
+                const current_cooldown = defender.skill_cooldowns.get(skill_id);
+                if (current_cooldown == 0) continue;
+                reset_events.append(allocator, .{ .sub_level_event = .{ .change_cooldown = .{
+                    .entity_index = surge.defender_index,
+                    .skill_id = skill_id,
+                    .delta = -@as(i32, @intCast(current_cooldown)),
+                } } }) catch @panic("failed to append adrenaline reset");
+                reset_count += 1;
+            }
+            if (reset_count == 0) return;
+
+            // LIFO: later pushes drain first, so the RESETS go on the stack
+            // LAST — they run before the attacks, landing even when the
+            // attacks kill the defender (change_cooldown no-ops on a dead
+            // entity, so the reverse order would lose the resets).
+            const damage = attacker.getEffectiveSpellDamage();
+            var attack_events: std.ArrayList(Event) = .empty;
+            for (0..reset_count) |_| {
+                attack_events.append(allocator, .{ .sub_level_event = .{ .attack = .{
+                    .attacker_index = surge.attacker_index,
+                    .defender_index = surge.defender_index,
+                    .outgoing_damage = damage,
+                } } }) catch @panic("failed to append adrenaline attack");
+            }
+            pushEvents(current, attack_events.items, allocator);
+            pushEvents(current, reset_events.items, allocator);
+        },
     }
 }

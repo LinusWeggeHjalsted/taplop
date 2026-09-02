@@ -10456,3 +10456,36 @@ ally-between-hostiles line breaks at 1; the options test picks the larger
 component — my first layout was wrong (the "lone" target sat diagonally
 adjacent to the pair head, silently merging the components into one
 size-3 tie) and the failure output caught it.
+
+## Skill: spell Adrenaline Surge (Tier A slice 11) — spells complete
+
+All five spells done. Adrenaline Surge: enemy-targeted finisher — reset
+the target's ON-BAR cooldowns (all skills of both equipped weapons, the
+swap-available thirds included, plus equipped utility skills) and attack
+it once per cooldown reset this way. Range 1, cd 5, 1x effective spell
+damage per hit. The re-arm-if-it-survives cost is deliberate (balance
+tunable later, per the author).
+
+Engine shape (the reset_weapon_cooldowns precedent, one step broader):
+- `Entity.onBarSkillIds(defs)` — the full equippable set (6 weapon slots
+  deduped + 5 utility), fixed-size, distinct from collectSkillSlots (the
+  8 EXPOSED slots). Shared by the handler and the skill's aiOptions so
+  enumeration cannot drift. Off-bar preserved cooldowns (the
+  swap-inheritance ticking ones) deliberately excluded — "on the bar"
+  only.
+- New SubLevelEvent `adrenaline_surge{attacker, defender}` — machinery:
+  the enumeration needs weapon_type_definitions, unreachable from
+  useSkill. aiOptions (which receives the defs) computes the same count
+  for its rating: option = the target with the most ticking on-bar
+  cooldowns (focus-fire tail ties), rated = the count in value units —
+  literally one hit per reset; no option when nothing ticks.
+- The handler's push order matters and the tests caught me implementing
+  it BACKWARDS: resets must go on the LIFO stack LAST (drain first) so
+  they land even when the attacks kill — change_cooldown no-ops on a dead
+  entity, so attacks-first loses the resets on a killing cast.
+
+Tests: handler (3 resets incl. the swap-available third + utility,
+skewer's off-bar cd untouched, 3×4 damage; the kill case zeroes cooldowns
+despite death; nothing-ticking no-op), options (count outranks
+focus-fire; the off-bar cd not counted — also caught my test forgetting
+to EQUIP blink, which the count rightly ignored), useSkill delegation.

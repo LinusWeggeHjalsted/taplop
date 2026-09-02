@@ -1473,6 +1473,62 @@ pub const Entity = struct {
         }
         return result;
     }
+
+    /// Every skill id on the entity's combat bar, INCLUDING the
+    /// swap-available third skills of BOTH equipped weapons (hand-swap
+    /// exposes them) plus the equipped utility skills. Slot order: main
+    /// weapon 1-3, off weapon 1-3 (deduped when both hands carry the same
+    /// type), then utility slots. Distinct from collectSkillSlots (the 8
+    /// EXPOSED slots) — this is the full equippable set; used by Adrenaline
+    /// Surge's reset + rating (both sides share it so they cannot drift).
+    pub fn onBarSkillIds(
+        self: Entity,
+        weapon_type_definitions: WeaponTypeDefinitions,
+    ) [on_bar_skill_count]?SkillId {
+        var result: [on_bar_skill_count]?SkillId = .{null} ** on_bar_skill_count;
+        var length: usize = 0;
+
+        const hands = [2]?Weapon{ self.main_hand_weapon, self.off_hand_weapon };
+        for (hands) |maybe_weapon| {
+            const weapon = maybe_weapon orelse continue;
+            const definition = weapon_type_definitions[@intFromEnum(weapon.weapon_type)];
+            const type_skills = [weapon_skills_per_type]SkillId{
+                definition.skill_1,
+                definition.skill_2,
+                definition.skill_3,
+            };
+            for (type_skills) |skill_id| {
+                var duplicate = false;
+                for (result[0..length]) |existing| {
+                    if (existing == skill_id) {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if (!duplicate) {
+                    result[length] = skill_id;
+                    length += 1;
+                }
+            }
+        }
+
+        for (self.equipped_utility_skills) |maybe_skill_id| {
+            const skill_id = maybe_skill_id orelse continue;
+            var duplicate = false;
+            for (result[0..length]) |existing| {
+                if (existing == skill_id) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) {
+                result[length] = skill_id;
+                length += 1;
+            }
+        }
+
+        return result;
+    }
 };
 
 pub const GroundItems = struct {
@@ -1515,6 +1571,13 @@ pub const SalvageDefinition = struct {
 
 pub const item_type_count = @typeInfo(ItemType).@"union".fields.len;
 pub const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
+
+/// Skills per weapon type (skill_1..skill_3 in WeaponTypeDefinition).
+pub const weapon_skills_per_type: usize = 3;
+
+/// Size of Entity.onBarSkillIds: both equipped weapons' full skill sets
+/// (swap-available thirds included) + the utility slots.
+pub const on_bar_skill_count: usize = 2 * weapon_skills_per_type + utility_skill_count;
 
 /// Salvage definitions for all item types.
 /// Non-weapon items are indexed by their position in the ItemType union

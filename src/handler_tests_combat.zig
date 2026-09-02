@@ -921,3 +921,92 @@ test "equip weapon cancels a prepared skill" {
     runToIdle(&history);
     try testing.expectEqual(@as(?SkillId, null), history.current_state.level.?.prepared_skill);
 }
+
+test "adrenaline_surge: resets on-bar cooldowns then attacks once per reset" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            // Attacker: amulet-driven spell damage 4.
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .amulet = .{ .spell_damage = 4 } },
+            // Defender: main-hand sword (slice / spinblade / flash_strike —
+            // flash_strike is the SWAP-AVAILABLE third, not on the exposed
+            // bar) + blink in utility slot 1.
+            .{
+                .team = 1,
+                .position = .{ .x = 1, .y = 0 },
+                .current_health = 20,
+                .max_health = 20,
+                .main_hand_weapon = .{ .weapon_type = .sword },
+                .equipped_utility_skills = .{ .blink, null, null, null, null },
+            },
+        },
+        &three_by_three,
+    ));
+    // slice + flash_strike (swap-available) + blink ticking; spinblade off.
+    levelEntity(&history, 1).skill_cooldowns.set(.slice, 2);
+    levelEntity(&history, 1).skill_cooldowns.set(.flash_strike, 3);
+    levelEntity(&history, 1).skill_cooldowns.set(.blink, 1);
+    // An OFF-BAR preserved cooldown (swap-inheritance ticking) — must NOT
+    // count or reset.
+    levelEntity(&history, 1).skill_cooldowns.set(.skewer, 4);
+
+    pushAndRunSub(&history, .{ .adrenaline_surge = .{ .attacker_index = 0, .defender_index = 1 } });
+
+    // 3 resets: slice, flash_strike, blink → zeroed. Skewer untouched.
+    const defender = levelEntity(&history, 1);
+    try testing.expectEqual(@as(u32, 0), defender.skill_cooldowns.get(.slice));
+    try testing.expectEqual(@as(u32, 0), defender.skill_cooldowns.get(.flash_strike));
+    try testing.expectEqual(@as(u32, 0), defender.skill_cooldowns.get(.blink));
+    try testing.expectEqual(@as(u32, 4), defender.skill_cooldowns.get(.skewer));
+    // 3 attacks of 4 spell damage: 20 - 12 = 8.
+    try testing.expectEqual(@as(u32, 8), defender.current_health);
+}
+
+test "adrenaline_surge: resets land even when the attacks kill" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .amulet = .{ .spell_damage = 9 } },
+            .{
+                .team = 1,
+                .position = .{ .x = 1, .y = 0 },
+                .current_health = 10,
+                .max_health = 20,
+                .main_hand_weapon = .{ .weapon_type = .sword },
+            },
+        },
+        &three_by_three,
+    ));
+    levelEntity(&history, 1).skill_cooldowns.set(.slice, 2);
+    levelEntity(&history, 1).skill_cooldowns.set(.spinblade, 1);
+
+    pushAndRunSub(&history, .{ .adrenaline_surge = .{ .attacker_index = 0, .defender_index = 1 } });
+
+    // Two 9-damage attacks kill (10 -> 0) — but the resets drained FIRST,
+    // so the cooldowns are zeroed regardless.
+    try testing.expectEqual(@as(u32, 0), levelEntity(&history, 1).current_health);
+    try testing.expectEqual(@as(u32, 0), levelEntity(&history, 1).skill_cooldowns.get(.slice));
+    try testing.expectEqual(@as(u32, 0), levelEntity(&history, 1).skill_cooldowns.get(.spinblade));
+}
+
+test "adrenaline_surge: nothing ticking is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .amulet = .{ .spell_damage = 9 } },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 10, .max_health = 10 },
+        },
+        &three_by_three,
+    ));
+    pushAndRunSub(&history, .{ .adrenaline_surge = .{ .attacker_index = 0, .defender_index = 1 } });
+    try testing.expectEqual(@as(u32, 10), levelEntity(&history, 1).current_health);
+}
