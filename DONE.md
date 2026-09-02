@@ -10073,3 +10073,22 @@ sooner than nearest-first; strictly more effective in practice.
   Tier A/B/C triage of the remaining designs (the open design questions —
   drain's heal scope, chain lightning's connection rule, diamond form vs
   collision counterplay, etc. — live inline there).
+
+## Skill: crossbow Shoot (Tier A slice 1)
+
+First of the Tier A batch (the unimplemented Unity skill designs that need
+no engine changes). Shoot: the crossbow's first skill (main hand, no
+cooldown) — attack target for 1x main-hand damage + retreat 1 tile, range 3.
+Exactly RetreatingSwipe's shape at range, with plain 1x damage.
+
+- src/skills/shoot.zig — standard 5-fn Skill; priority flat 2 (the
+  always-available basic rating, toss precedent; the 1-tile retreat doesn't
+  earn a 3); selectTarget on weakestTarget (the new focus-fire convention).
+- src/skill_tests.zig grows the per-skill contract-test convention: useSkill
+  emits attack+retreat with main-hand damage (asserting the LIFO order —
+  ownedEvents returns execution order reversed), useSkill no-ops on an empty
+  target tile, priority 0/2 by range + the cooldown map (a swap can leave a
+  cooldown on a no-cooldown skill — that's why priority still checks it),
+  getValidTargets filters team/dead/range.
+- Not yet equippable in-game: WeaponType enum + weapon-type data wiring is
+  the separate tracked TODO (crossbow + idol).
