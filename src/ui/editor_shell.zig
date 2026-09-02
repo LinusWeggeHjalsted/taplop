@@ -858,9 +858,11 @@ fn cellAt(bar_y: i32, group_left: i32, ordinal: usize) Rectangle {
 }
 
 /// A square ui/panel "+" cell (the editor's add-new affordance — palette
-/// group pluses and the level-tab add-level plus): a tooltip-carrying
-/// panel + a spriteless button over it (the group-header class) + a
-/// centered "+" glyph. `cell` should be square.
+/// group pluses and the level-tab add-level plus): a panel + a spriteless
+/// button over it (the group-header class) carrying the tooltip + a
+/// centered "+" glyph. `cell` should be square. The tooltip rides the
+/// BUTTON, not the panel — hitTest halts at the first blocking element,
+/// so a panel-level tooltip would be shielded by the button covering it.
 fn emitEditorPlusCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -878,7 +880,6 @@ fn emitEditorPlusCell(
         .width = cell.width,
         .height = cell.height,
         .color = panel_color,
-        .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
     } });
     try elements.append(allocator, .{ .button = .{
         .sprite_id = null,
@@ -887,6 +888,7 @@ fn emitEditorPlusCell(
         .height = cell.height,
         .action = action,
         .editor_group = editor_group,
+        .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
     } });
     const plus_width = font_metrics.measureSpanWidth(text("+"), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
@@ -1011,19 +1013,25 @@ test "buildEditorLevelTabs: one panel button per level, active highlighted, unna
     }
 
     // Add-level "+": square ui/panel cell to the right of the last tab,
-    // top-aligned with the tabs, carrying the tooltip — a BUTTON now
-    // (spriteless over the panel): `.add_editor_level` appends the
-    // template level.
+    // top-aligned with the tabs — a BUTTON (spriteless over the panel)
+    // carrying the tooltip: `.add_editor_level` appends the template
+    // level. The tooltip rides the button, not the panel — hitTest halts
+    // at the first blocking element, so a panel-level tooltip would be
+    // shielded by the button covering it.
     const plus_panel = elements.items[12].nine_slice_panel;
     try std.testing.expectEqualStrings("ui/panel", plus_panel.sprite_id);
     try std.testing.expectEqual(@as(i32, 128), plus_panel.width);
     try std.testing.expectEqual(@as(i32, 128), plus_panel.height);
     try std.testing.expectEqual(@as(i32, 0), plus_panel.screen_position.y);
     try std.testing.expect(plus_panel.screen_position.x > previous_x);
-    try std.testing.expect(plus_panel.tooltip != null);
+    try std.testing.expect(plus_panel.tooltip == null);
     const plus_button = elements.items[13].button;
     try std.testing.expectEqual(Action.add_editor_level, plus_button.action);
     try std.testing.expect(plus_button.sprite_id == null);
+    try std.testing.expectEqualStrings(
+        "Add Level",
+        plus_button.tooltip.?.header.?[0].text,
+    );
     try std.testing.expectEqualStrings("+", elements.items[14].text_label.text);
     try std.testing.expect(!elements.items[14].text_label.blocks_input);
 

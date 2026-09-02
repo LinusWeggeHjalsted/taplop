@@ -9726,3 +9726,21 @@ warns of a destructive action rather than restating a visible label.
 with an "inert until its edit verb lands" null branch + stale comments,
 but both call sites (add-level + palette pluses) pass an action — made
 the param required and dropped the dead branch + the stale prose.
+
+## Bug fix: editor "+" tooltips never showed (hitTest shields panel-level tooltips)
+
+The reworded "+" tooltips still didn't appear: `emitEditorPlusCell` carried
+the tooltip on the `nine_slice_panel`, with the spriteless interactive
+button emitted on top covering the exact same rect. `hitTest` (element.zig)
+walks top-to-bottom and HALTS at the first blocking element that fails the
+predicate — the button (no tooltip, blocks input) shielded the panel's
+tooltip underneath, so it could never spawn. The tooltip now rides the
+BUTTON (the convention every working tooltip already used — tool cells,
+level tabs, group headers), pinned by the add-level test asserting the
+button's header text "Add Level" and the panel carrying none.
+
+Swept the tree for other victims of the same pattern: none (the
+entity-inspect skill grid's image-carried tooltip sits topmost; slot
+tooltips are on the interactive slot itself). The doc comment on
+`emitEditorPlusCell` records the rule: a tooltip on an element drawn under
+a blocking element never shows.
