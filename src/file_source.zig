@@ -226,13 +226,22 @@ pub const FileSource = struct {
         level_count: u32,
         has_custom_assets: bool,
         author_turns: ?u32,
+        /// The local tab's recency sort key: the MAX mtime across the
+        /// mission folder's files — any change (editor save, custom png,
+        /// validation replay) counts as an update. 0 for official entries
+        /// (embedded content has no filesystem; the Official tab keeps its
+        /// comptime order).
+        mtime_ns: i128 = 0,
     };
 
     /// Enumerate the player's local mission collection under `missions/`
     /// in the persistent dir (editor saves land in `missions/<uuid>_<slug>/`;
     /// hand-placed and imported folders of any name are accepted too — the
     /// id is whatever the folder is named). Returns one entry per
-    /// subdirectory, with metadata read from each mission's `mission.txt`.
+    /// subdirectory, with metadata read from each mission's `mission.txt`,
+    /// sorted NEWEST FIRST (max folder-file mtime descending — any change
+    /// to any file is an update; name ascending breaks mtime ties
+    /// deterministically — the load-save browser's ordering).
     /// Folders without a readable `mission.txt` are SKIPPED (a half-installed
     /// or broken mission is not listed; the browser shouldn't offer to start
     /// something unparseable). The caller owns the returned slice and all
@@ -323,22 +332,29 @@ pub const FileSource = struct {
             errdefer allocator.free(owned_name);
             allocator.free(mission_bytes);
 
-            // has_custom_assets: scan the folder for any file that isn't a
-            // known config file (mission.txt / player.txt / level_<N>.txt —
-            // anything else is a custom asset). Platform-split enumeration
-            // (see listSaveFiles for the IDBFS story).
-            const has_custom_assets = try self.hasMissionCustomAssets(allocator, mission_id, mission.level_count);
+            // Folder scan: custom-asset detection + the recency stamp
+            // (the max file mtime — any change is an update).
+            // Platform-split enumeration (see listSaveFiles for the IDBFS
+            // story).
+            const folder_scan = try self.scanMissionFolder(
+                allocator,
+                mission_id,
+                mission.level_count,
+            );
 
             try entries.append(allocator, .{
                 .id = owned_id,
                 .path = mission_dir_path,
                 .name = owned_name,
                 .level_count = mission.level_count,
-                .has_custom_assets = has_custom_assets,
+                .has_custom_assets = folder_scan.has_custom_assets,
                 .author_turns = null, // no validation replay format
+                .mtime_ns = folder_scan.max_mtime_ns,
             });
         }
 
+        // Newest first (the load-save browser's ordering).
+        std.mem.sort(MissionEntry, entries.items, {}, missionOrder);
         return entries.toOwnedSlice(allocator);
     }
 
@@ -381,21 +397,26 @@ pub const FileSource = struct {
         return names.toOwnedSlice(allocator);
     }
 
-    /// Does the mission folder contain any file beyond the known config
-    /// set (mission.txt / player.txt / level_<N>.txt)? Native iterates the
-    /// folder; web enumerates its FILE children via JS (the
-    /// `listMissionFolderNames` story) + the shared name check. A
-    /// pathological folder name (quote/backslash — can't be embedded in the
-    /// JS path) reports false on web (the mission still lists; the flag is
-    /// advisory).
-    fn hasMissionCustomAssets(
+    /// One mission folder's scan results for the browser listing: whether
+    /// the folder holds anything beyond the known config files
+    /// (mission.txt / player.txt / level_<N>.txt), and the recency stamp
+    /// (the max mtime across the folder's files — see
+    /// `MissionEntry.mtime_ns`). Native iterates the folder; web enumerates
+    /// its FILE children via JS (the `listMissionFolderNames` story) + the
+    /// shared name check, then stats each file individually (stats work on
+    /// IDBFS). A pathological folder name (quote/backslash — can't be
+    /// embedded in the JS path) yields no custom assets + mtime 0 on web
+    /// (the mission still lists; the flags are advisory). An unreadable
+    /// folder behaves the same — the scan never blocks the listing.
+    fn scanMissionFolder(
         self: *const FileSource,
         allocator: std.mem.Allocator,
         mission_id: []const u8,
         level_count: u32,
-    ) !bool {
+    ) !MissionFolderScan {
+        var result: MissionFolderScan = .{};
         if (@import("builtin").os.tag == .emscripten) {
-            if (!isSafeForJsEmbedding(mission_id)) return false;
+            if (!isSafeForJsEmbedding(mission_id)) return result;
             const fs_dir_path = try std.fmt.allocPrint(
                 allocator,
                 "{s}/missions/{s}",
@@ -408,23 +429,39 @@ pub const FileSource = struct {
                 allocator.free(names);
             }
             for (names) |name| {
-                if (!isKnownMissionConfigFile(name, level_count)) return true;
+                if (!isKnownMissionConfigFile(name, level_count)) result.has_custom_assets = true;
+                // Stat via the persistent dir (individual file stats work
+                // on IDBFS); a stat failure (vanished between enumerate +
+                // stat) just skips the stamp.
+                const file_path = try std.fmt.allocPrint(
+                    allocator,
+                    "missions/{s}/{s}",
+                    .{ mission_id, name },
+                );
+                defer allocator.free(file_path);
+                const stat = self.persistent_dir.statFile(self.io, file_path, .{}) catch continue;
+                result.max_mtime_ns = @max(result.max_mtime_ns, stat.mtime.nanoseconds);
             }
-            return false;
+            return result;
         }
         const dir_path = try std.fmt.allocPrint(allocator, "missions/{s}", .{mission_id});
         defer allocator.free(dir_path);
         const mission_dir = self.persistent_dir.openDir(self.io, dir_path, .{
             .access_sub_paths = true,
             .iterate = true,
-        }) catch return false; // unreadable folder → treat as no custom assets
+        }) catch return result; // unreadable folder → no custom assets, mtime 0
         defer std.Io.Dir.close(mission_dir, self.io);
         var it = mission_dir.iterate();
         while (try it.next(self.io)) |entry| {
             if (entry.kind == .directory) continue; // subdirs aren't config files
-            if (!isKnownMissionConfigFile(entry.name, level_count)) return true;
+            if (!isKnownMissionConfigFile(entry.name, level_count)) result.has_custom_assets = true;
+            // Stat through the open mission dir by bare name (the
+            // save-listing pattern); a stat failure (vanished between
+            // iterate + stat) just skips the stamp.
+            const stat = mission_dir.statFile(self.io, entry.name, .{}) catch continue;
+            result.max_mtime_ns = @max(result.max_mtime_ns, stat.mtime.nanoseconds);
         }
-        return false;
+        return result;
     }
 
     /// Enumerate the OFFICIAL missions (shipped embedded campaign content)
@@ -779,6 +816,22 @@ pub fn freeMissions(allocator: std.mem.Allocator, missions: []const FileSource.M
     allocator.free(missions);
 }
 
+/// Newest-first ordering for the mission browser's local tab (the
+/// `saveFileOrder` discipline): mtime descending, name ascending as the
+/// deterministic tiebreak.
+fn missionOrder(_: void, a: FileSource.MissionEntry, b: FileSource.MissionEntry) bool {
+    if (a.mtime_ns != b.mtime_ns) return a.mtime_ns > b.mtime_ns;
+    return std.mem.lessThan(u8, a.name, b.name);
+}
+
+/// One mission folder's scan results (`FileSource.scanMissionFolder`):
+/// custom-asset detection + the recency stamp. Defaults are the degraded
+/// results (no custom assets, mtime 0) for unreadable/JS-unsafe folders.
+const MissionFolderScan = struct {
+    has_custom_assets: bool = false,
+    max_mtime_ns: i128 = 0,
+};
+
 /// Newest-first ordering: mtime descending, name ascending as the
 /// deterministic tiebreak.
 fn saveFileOrder(_: void, a: SaveFileEntry, b: SaveFileEntry) bool {
@@ -968,6 +1021,10 @@ test "listMissions: lists missions with metadata, paths, + custom-asset detectio
         "Metadata\nfile_format_version 2\nmission_uuid 11111111-1111-1111-1111-111111111111\nlevel_count 1\nname Skeleton Attack\n") catch @panic("w1");
     file_source.writeFile("missions/skeleton_attack/level_1.txt",
         "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w2");
+    // Sleep between the two missions so their mtimes are strictly ordered
+    // (sequential writes can tie within filesystem mtime resolution — the
+    // listSaveFiles test's discipline).
+    try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
 
     // Mission 2: UUID_slug folder name, config + a custom sprite (custom assets).
     file_source.writeFile("missions/a1b2c3d4-e5f6-7890-abcd-ef1234567890_tree_grove/mission.txt",
@@ -986,9 +1043,14 @@ test "listMissions: lists missions with metadata, paths, + custom-asset detectio
     const list = try file_source.listMissions(allocator);
     defer freeMissions(allocator, list);
 
-    // Two openable missions (broken one is skipped). Order is filesystem-
-    // dependent, so find each by id.
+    // Two openable missions (broken one is skipped). The list is sorted
+    // NEWEST FIRST — Tree Grove was written after Skeleton Attack, so it
+    // leads; find-by-id below still checks each entry's metadata.
     try testing.expectEqual(@as(usize, 2), list.len);
+    try testing.expect(std.mem.startsWith(u8, list[0].id, "a1b2c3d4"));
+    try testing.expectEqualStrings("skeleton_attack", list[1].id);
+    try testing.expect(list[0].mtime_ns > list[1].mtime_ns);
+    try testing.expect(list[1].mtime_ns > 0);
 
     var found_skeleton = false;
     var found_tree = false;
@@ -1009,6 +1071,62 @@ test "listMissions: lists missions with metadata, paths, + custom-asset detectio
     }
     try testing.expect(found_skeleton);
     try testing.expect(found_tree);
+}
+
+test "listMissions: newest first — any file change (custom png) is an update" {
+    const allocator = testing.allocator;
+    var threaded_io = std.Io.Threaded.init(allocator, .{});
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const scratch = "zig-cache/test-list-missions-recency";
+    const dir = std.Io.Dir.cwd().createDirPathOpen(io, scratch, .{
+        .open_options = .{ .access_sub_paths = true, .iterate = true },
+    }) catch @panic("failed to create scratch dir");
+    defer std.Io.Dir.cwd().deleteTree(io, scratch) catch {};
+    const file_source = FileSource.init(io, dir);
+
+    // Alpha saved first, beta second — then a custom png lands in ALPHA's
+    // folder. The png is NOT a config file, but it must bump alpha's
+    // recency above beta's: the sort key is the max mtime across ALL
+    // folder files. Sleeps force distinct stamps (the tie discipline
+    // above).
+    file_source.writeFile("missions/alpha/mission.txt",
+        "Metadata\nfile_format_version 2\nmission_uuid 33333333-3333-3333-3333-333333333333\nlevel_count 1\nname Alpha\n") catch @panic("w1");
+    file_source.writeFile("missions/alpha/level_1.txt",
+        "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w2");
+    try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
+    file_source.writeFile("missions/beta/mission.txt",
+        "Metadata\nfile_format_version 2\nmission_uuid 44444444-4444-4444-4444-444444444444\nlevel_count 1\nname Beta\n") catch @panic("w3");
+    file_source.writeFile("missions/beta/level_1.txt",
+        "Metadata\nfile_format_version 1\n\nLayout\n!\n") catch @panic("w4");
+    try io.sleep(std.Io.Duration.fromNanoseconds(2 * std.time.ns_per_ms), .real);
+    file_source.writeFile("missions/alpha/custom.png", "fake png bytes") catch @panic("w5");
+
+    const list = try file_source.listMissions(allocator);
+    defer freeMissions(allocator, list);
+
+    try testing.expectEqual(@as(usize, 2), list.len);
+    // Alpha leads: its png write is the most recent change in either
+    // folder, even though beta's config files are newer than alpha's.
+    try testing.expectEqualStrings("Alpha", list[0].name);
+    try testing.expectEqualStrings("Beta", list[1].name);
+    try testing.expect(list[0].mtime_ns > list[1].mtime_ns);
+    try testing.expect(list[1].mtime_ns > 0);
+}
+
+test "missionOrder: mtime descending, name ascending tiebreak" {
+    const MissionEntry = FileSource.MissionEntry;
+    var entries = [_]MissionEntry{
+        .{ .id = "c", .path = "", .name = "Older", .level_count = 1, .has_custom_assets = false, .author_turns = null },
+        .{ .id = "a", .path = "", .name = "Beta", .level_count = 1, .has_custom_assets = false, .author_turns = null, .mtime_ns = 100 },
+        .{ .id = "b", .path = "", .name = "Alpha", .level_count = 1, .has_custom_assets = false, .author_turns = null, .mtime_ns = 100 },
+    };
+    std.mem.sort(MissionEntry, &entries, {}, missionOrder);
+    // Equal mtimes → name ascending; mtime 0 sorts last.
+    try testing.expectEqualStrings("Alpha", entries[0].name);
+    try testing.expectEqualStrings("Beta", entries[1].name);
+    try testing.expectEqualStrings("Older", entries[2].name);
 }
 
 test "listOfficialMissions: the shipped campaign missions with paths + metadata" {

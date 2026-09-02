@@ -9776,3 +9776,32 @@ Tests: the add-path test now drives all-groups-expanded going in and
 asserts the accordion after each of the three "+" clicks (one group open,
 the other two collapsed); a new test with 9 preset enemy types asserts
 offset 10 -| 8 = 2 with the accordion.
+
+## Mission browser: the Your Missions tab sorts newest first (max file mtime)
+
+The local tab had NO explicit sort — entries rendered in `Dir.iterate`
+order (filesystem-implementation-defined; looked alphabetical on the
+author's machine by coincidence). Now `listMissions` sorts NEWEST FIRST,
+keyed by `MissionEntry.mtime_ns` = the MAX mtime across the mission
+folder's files — the settled semantics: ANY file change is an update
+(editor save, custom png drop, zip import, validation-replay write all
+count), matching the load-save browser's proven ordering + tiebreak
+discipline (mtime descending, name ascending). Considered and rejected:
+a persisted `last_modified` stamp in mission.txt (travels through zips
+but needs an mtime fallback for every non-editor-authored mission
+anyway, and starts the mission file-format-version clock TODO defers).
+
+`hasMissionCustomAssets` folded into `scanMissionFolder` returning both
+flags + the stamp (the custom-asset check already enumerates the folder's
+files platform-safely — the stat pass rides it; web stats each file
+through the persistent dir, the `listSaveFilesWeb`-proven pattern).
+Official entries keep `mtime_ns = 0` (embedded, no filesystem) and the
+Official tab keeps its comptime order. Web branch verified by compile
+(`scripts/web.sh` — emrun spot-check unnecessary: the per-file stat
+pattern is the save-listing's, already running on the mount).
+
+Tests: the populated scan test now asserts the defined order + mtime
+sanity (sleep between missions per the save-test tie discipline); a new
+recency test (png dropped into the OLDER mission bumps it to the front —
+max-across-files, not mission.txt-only); a comparator unit test pinning
+the name tiebreak + mtime-0-last.

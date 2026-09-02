@@ -1953,7 +1953,13 @@ stays beneath). Two tabs at the top (the sprite picker's tab pattern):
 **Your Missions** (`FileSource.listMissions` — the persistent `missions/`
 dir, where editor saves land) and **Official** (`FileSource.listOfficialMissions`
 — the shipped embedded campaign missions, comptime path list + runtime
-metadata parse, scanned once per session). Lists live on SessionState
+metadata parse, scanned once per session). The LOCAL tab is sorted NEWEST
+FIRST: each entry's sort key is the max mtime across the mission folder's
+files (any change — editor save, custom png, validation replay — counts
+as an update; `MissionEntry.mtime_ns`), name ascending breaks mtime ties
+(the load-save browser's ordering, scanned in sorted at `listMissions`
+time). The OFFICIAL tab keeps its comptime path order (embedded content
+has no filesystem). Lists live on SessionState
 (scanned from the input path on open, never `view()`; no periodic rescan
 while open — nothing can add a local mission while the modal is up, a web
 import rescans explicitly). On WEB, the folder ENUMERATION goes through
