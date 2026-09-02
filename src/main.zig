@@ -22,6 +22,7 @@ const ui = @import("ui.zig");
 const event_handlers = @import("event_handlers.zig");
 const event_push = @import("event_push.zig");
 const input_handlers = @import("input_handlers.zig");
+const input_gestures = @import("input_gestures.zig");
 const view_mod = @import("view.zig");
 const build_info = @import("build_info");
 const file_source_mod = @import("file_source.zig");
@@ -341,7 +342,7 @@ fn update(
     // Settings slider drag runs before the options-menu gate so sliders work
     // while the settings overlay is open on top of the options menu. See
     // DESIGN → UI Framework → Settings screen.
-    input_handlers.handleSliderDrag(history, player_input.pointer, ui_elements);
+    input_gestures.handleSliderDrag(history, player_input.pointer, ui_elements);
 
     // Options menu pauses the game. The editor mission browser (a modal on
     // top of it or standalone over the editor) gets the same pause: drag /
@@ -358,37 +359,37 @@ fn update(
     // Drag lifecycle runs anytime (not gated on the event stack) so the player
     // can rearrange inventory / gear / skills even while turns resolve. Hit-
     // tested against the previous frame's UI.
-    input_handlers.handleDrag(history, player_input.pointer, ui_elements);
+    input_gestures.handleDrag(history, player_input.pointer, ui_elements);
 
     // Camera pan (right-drag) runs anytime alongside the inventory drag. Needs
     // the camera (with current pan) for the drag-start anchor; subsequent pan
     // updates use the stored anchor, so the camera passed here is the frame's
     // input camera. See handleCameraPan.
-    input_handlers.handleCameraPan(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
+    input_gestures.handleCameraPan(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
     // Right-click entity inspection (levels only). Runs alongside the camera
     // pan + drag; the two right-click consumers coexist via the movement-
     // threshold disambiguation (a clean right-click inspects, a right-drag
     // pans). See handleRightClickInspect.
-    input_handlers.handleRightClickInspect(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
+    input_gestures.handleRightClickInspect(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
     // Editor right-click: the tool-independent delete (clean click) vs the
     // camera pan (right-drag) — same disambiguation, owning the
     // `.editor_delete` pending kind on the editor screen. Runs after the
     // inspect handler (which clears only its own kind elsewhere).
-    input_handlers.handleRightClickEditorDelete(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
+    input_gestures.handleRightClickEditorDelete(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
     // Editor select-tool marquee (shift+left-drag region add). Runs after
     // the right-click handlers, same anytime block; a shift press is
     // claimed here so `handleIdleInput`'s select arm skips it (the arm
     // gates on Shift itself).
-    input_handlers.handleEditorMarquee(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
+    input_gestures.handleEditorMarquee(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
     // Editor select-tool selection move (plain left press on a selected
     // thing, drag, release). Runs after the marquee (a Shift press is the
     // marquee's; a plain press on a selected thing is the move's — the
     // two gestures are exclusive by press modifier + selection hit).
-    input_handlers.handleEditorMoveDrag(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
+    input_gestures.handleEditorMoveDrag(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
     // Turn-flow pause: while waiting, drain the timer and stall event
     // processing until it elapses. Anytime input and drag above still run, so

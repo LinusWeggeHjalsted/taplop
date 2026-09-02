@@ -16,6 +16,7 @@ const event_push = @import("event_push.zig");
 const functions = @import("functions.zig");
 const test_harness = @import("test_harness.zig");
 const input_handlers = @import("input_handlers.zig");
+const input_gestures = @import("input_gestures.zig");
 const input = @import("input.zig");
 const ui = @import("ui.zig");
 
@@ -634,11 +635,11 @@ test "handleDrag: drag a bar skill to empty space clears the slot" {
     const elements = [_]ui.UiElement{skillBarElement(0, .{ .x = 0, .y = 0 })};
 
     // Press on the slot → records a pending press.
-    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
     // Move past the drag threshold → promotes to a drag.
-    input_handlers.handleDrag(&history, .{ .position = .{ .x = 500, .y = 500 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .position = .{ .x = 500, .y = 500 } }, &elements);
     // Release over empty space (no ref under the pointer) → off-bar → clear.
-    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 500, .y = 500 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .released = true, .position = .{ .x = 500, .y = 500 } }, &elements);
 
     runToIdle(&history);
     try testing.expectEqual(@as(?SkillId, null), player(&history).equipped_utility_skills[0]);
@@ -662,11 +663,11 @@ test "handleDrag: drag a bar skill onto an inventory ref (cross-domain) clears t
         } },
     };
 
-    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
-    input_handlers.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
     // Release over the inventory slot — cross-domain, dragToOrchestrator
     // returns null, not a self-drop → off-bar → clear.
-    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
 
     runToIdle(&history);
     try testing.expectEqual(@as(?SkillId, null), player(&history).equipped_utility_skills[0]);
@@ -681,10 +682,10 @@ test "handleDrag: release back on the source slot is a no-op (no clear)" {
 
     const elements = [_]ui.UiElement{skillBarElement(0, .{ .x = 0, .y = 0 })};
 
-    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
-    input_handlers.handleDrag(&history, .{ .position = .{ .x = 500, .y = 500 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .position = .{ .x = 500, .y = 500 } }, &elements);
     // Release back over the source slot → self-drop → no-op.
-    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .released = true, .position = .{ .x = 10, .y = 10 } }, &elements);
 
     runToIdle(&history);
     try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[0]);
@@ -703,10 +704,10 @@ test "handleDrag: drag a bar skill onto another bar slot swaps (not clear)" {
         skillBarElement(3, .{ .x = 400, .y = 0 }),
     };
 
-    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
-    input_handlers.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
     // Release over slot 3 → swap (not clear).
-    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
 
     runToIdle(&history);
     try testing.expectEqual(@as(?SkillId, .howl), player(&history).equipped_utility_skills[0]);
@@ -754,9 +755,9 @@ test "handleDrag: unfitting equip drop never fires" {
         inventorySlotElement(0, .{ .x = 0, .y = 0 }),
         gearSlotElement(.boots, .{ .x = 400, .y = 0 }),
     };
-    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
-    input_handlers.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
-    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
 
     // A weapon doesn't fit the boots slot — nothing fired, nothing moved.
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
@@ -782,9 +783,9 @@ test "handleDrag: unequip onto a filled unfitting slot never fires" {
         gearSlotElement(.boots, .{ .x = 0, .y = 0 }),
         inventorySlotElement(0, .{ .x = 400, .y = 0 }),
     };
-    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
-    input_handlers.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
-    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
 
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try testing.expect(player(&history).boots != null);
@@ -809,9 +810,9 @@ test "handleDrag: re-assigning the skill already in the bar slot never fires" {
         } },
         skillBarElement(0, .{ .x = 400, .y = 0 }),
     };
-    input_handlers.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
-    input_handlers.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
-    input_handlers.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .pressed = true, .position = .{ .x = 10, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .position = .{ .x = 450, .y = 10 } }, &elements);
+    input_gestures.handleDrag(&history, .{ .released = true, .position = .{ .x = 450, .y = 10 } }, &elements);
 
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
     try testing.expectEqual(@as(?SkillId, .replenish), player(&history).equipped_utility_skills[0]);

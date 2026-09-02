@@ -16,6 +16,7 @@ const player_handlers = @import("handlers/player.zig");
 const event_push = @import("event_push.zig");
 const planning = @import("editor/planning.zig");
 const input_handlers = @import("input_handlers.zig");
+const input_gestures = @import("input_gestures.zig");
 const test_harness = @import("test_harness.zig");
 const ui = @import("ui.zig");
 const parser = @import("parser.zig");
@@ -2534,7 +2535,7 @@ test "editor right-click delete with an empty plan fires no event" {
     } };
 
     const pointer = input.PointerInput{ .right_released = true };
-    input_handlers.handleRightClickEditorDelete(
+    input_gestures.handleRightClickEditorDelete(
         &history,
         pointer,
         &.{},
@@ -2556,7 +2557,7 @@ test "editor right-click delete with an empty plan fires no event" {
         .press_position = .{ .x = 100, .y = 100 },
     } };
 
-    input_handlers.handleRightClickEditorDelete(
+    input_gestures.handleRightClickEditorDelete(
         &tiled_history,
         pointer,
         &.{},

@@ -1,6 +1,6 @@
 //! Minimal ZIP archive writer — STORE method only (no compression), the
 //! shape `std.zip` (the read side) accepts. Used by the editor's mission
-//! export (see input_handlers.exportEditorMission — DESIGN → Level Editor,
+//! export (see editor/mission_io.zig's exportEditorMission — DESIGN → Level Editor,
 //! the export flow). Pure: bytes in, archive bytes out, no IO — directly
 //! round-trip-testable.
 

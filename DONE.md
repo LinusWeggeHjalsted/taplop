@@ -9421,3 +9421,35 @@ the moves (an old buildInventoryPanel doc fused into the material-count
 const doc; buildErrorPopup's banner). Unused top-level aliases are
 invisible to the compiler — each slice ended with a scripted usage-count
 prune of the alias blocks.
+
+## Codebase split: input_handlers.zig
+
+The third split of the cleanup, same method (boundary-asserted extractions,
+compiler-driven rewiring, one commit, tests green). input_handlers.zig went
+5,740 → 3,900:
+
+- **`src/input_gestures.zig`** (1,149) — pointer gesture resolution: the
+  drag lifecycle (dragToOrchestrator + the click intents), camera pan,
+  settings sliders, right-click inspect, and the editor viewport gestures
+  (right-click delete, marquee, selection move drag) + the pure gesture
+  tests. Consumers call it directly (main.zig's update loop +
+  handler_tests_gear/editor); input_handlers aliases the two fns its
+  remaining code touches (skillsSlotUnderPointer for wheel routing, the
+  gesture fns for the idle-input-driven integration tests). The
+  handleIdleInput-driven integration tests (right-click delete,
+  shift+click toggle, plain-click replace) stayed in input_handlers —
+  they exercise the whole input path, not the gesture predicates.
+- **`src/editor/mission_io.zig`** (552) — the editor mission save/export/
+  import machinery: uuid resolution + dir naming, the STORE zip bundling,
+  the web import marker poll + extraction (junk filter, root-strip, path
+  safety), and the mission-list/sprite rescans. Side-effect paths off the
+  undo timeline; input_handlers' anytime path calls into it (one-way).
+- What stayed: handleAnytimeInput, handleIdleInput, resolveTileCursor,
+  the text-field commit sites (per DESIGN → UI Framework → Text input
+  widget, the field-kind commit switch lives in the input layer), the
+  settings persistence fns (markSettingsDirty is pub — gestures' slider
+  apply uses it), and the session-log dev tooling. The camera zoom consts
+  stayed too (only handleAnytimeInput's wheel/zoom bindings read them).
+
+Comment references in zip_writer/zip_reader/types.zig re-pointed at
+editor/mission_io.zig.

@@ -3,32 +3,38 @@
 //!
 //! `input.zig` is the *translation* layer (raw platform events → semantic
 //! `PlayerInput`); this file is the *consumption* layer: `handleAnytimeInput`,
-//! `handleIdleInput`, `resolveTileCursor`, and the drag lifecycle resolve a
-//! player input into event pushes (via `event_push.pushEvents`) or direct
-//! `SessionState` writes (transient view/input state — never undoable
-//! `GameState`). Session-log dev tooling (`dumpEventLog`, the build-version
-//! advisory warn, the timestamp formatter) lives here too, called from the
-//! anytime path.
+//! `handleIdleInput`, and `resolveTileCursor` resolve a player input into
+//! event pushes (via `event_push.pushEvents`) or direct `SessionState`
+//! writes (transient view/input state — never undoable `GameState`).
+//! Session-log dev tooling (`dumpEventLog`, the build-version advisory
+//! warn, the timestamp formatter) lives here too, called from the anytime
+//! path. The pointer gestures (drag/click/pan/sliders/right-click intents
+//! + the editor viewport gestures) live in `input_gestures.zig`; the
+//! editor mission save/export/import in `editor/mission_io.zig`.
 
 const std = @import("std");
 const types = @import("types.zig");
 const events = @import("events.zig");
 const state = @import("state.zig");
 const input = @import("input.zig");
-const parser = @import("parser.zig");
 const loaders = @import("loaders.zig");
 const writers = @import("writers.zig");
 const session_log = @import("session_log.zig");
 const lookups = @import("generated_lookups.zig");
 const ui = @import("ui.zig");
 const file_source_mod = @import("file_source.zig");
-const zip_writer = @import("zip_writer.zig");
-const zip_reader = @import("zip_reader.zig");
 const event_handlers = @import("event_handlers.zig");
 const player_handlers = @import("handlers/player.zig");
 const event_push = @import("event_push.zig");
 const planning = @import("editor/planning.zig");
 const editor_handlers = @import("editor/handlers.zig");
+const mission_io = @import("editor/mission_io.zig");
+const input_gestures = @import("input_gestures.zig");
+const skillsSlotUnderPointer = input_gestures.skillsSlotUnderPointer;
+const handleRightClickEditorDelete = input_gestures.handleRightClickEditorDelete;
+const handleEditorMarquee = input_gestures.handleEditorMarquee;
+const handleEditorMoveDrag = input_gestures.handleEditorMoveDrag;
+const dragActionWouldChange = input_gestures.dragActionWouldChange;
 const functions = @import("functions.zig");
 const view_mod = @import("view.zig");
 const build_info = @import("build_info");
@@ -47,22 +53,6 @@ const min_camera_zoom: u32 = 25;
 const max_camera_zoom: u32 = 100;
 const default_camera_zoom: u32 = 50;
 
-/// True when the pointer is over a skills-browser slot (a ref-bearing
-/// element whose ref is `.learned_skill`). Used to route the mouse wheel to
-/// skills-browser scroll instead of camera zoom. The skills panel's slots
-/// are only emitted when the panel is open, so a hit here implies the panel
-/// is open — no separate open-state check needed. See `handleAnytimeInput`.
-fn skillsSlotUnderPointer(
-    ui_elements: []const ui.UiElement,
-    position: types.ScreenPosition,
-) bool {
-    const ref = ui.refAt(ui_elements, position) orelse return false;
-    return switch (ref) {
-        .learned_skill => true,
-        else => false,
-    };
-}
-
 /// Write the current settings to `~/.ziglop/settings.txt` (best-effort —
 /// errors are swallowed since a failed preferences write is not critical;
 /// the preference just doesn't persist). Called as a `PendingWrite` writer
@@ -76,7 +66,7 @@ pub fn writeSettingsToFile(history: *GameStateHistory) void {
 
 /// Mark settings as dirty for debounced persistence. Called after a tunable
 /// setting changes (currently `camera_zoom`). See DESIGN → Input.
-fn markSettingsDirty(history: *GameStateHistory) void {
+pub fn markSettingsDirty(history: *GameStateHistory) void {
     history.session.markWriteDirty(.settings, writeSettingsToFile, history.session.session_clock);
 }
 const PlayerInput = input.PlayerInput;
@@ -90,1016 +80,6 @@ const utility_skill_count = types.utility_skill_count;
 const weapon_type_count = @typeInfo(WeaponType).@"enum".fields.len;
 const WeaponType = types.WeaponType;
 
-/// Map a drag (source slot ref → target slot ref) to the orchestrator
-/// `PlayerInputEvent` that the handler will resolve, or null for a
-/// nonsensical / unsupported drop. Replaces the old `dragToEvent` which
-/// returned machinery events directly — input now only pushes
-/// PlayerInputEvents (orchestrator convention; see DESIGN → Determinism &
-/// Tiebreaking → Replay PLAYER-ACTION LEGALITY). The handler pushes the
-/// machinery event as a child.
-pub fn dragToOrchestrator(from: ui.SlotRef, to: ui.SlotRef) ?events.PlayerInputEvent {
-    // A drop back on the source slot is a no-op for every domain — don't
-    // push a no-op swap/equip into the event log.
-    if (ui.SlotRef.eql(from, to)) return null;
-    return switch (from) {
-        // Save rows are never drag sources (see slotContentIcon).
-        .save_file => null,
-        .inventory => |inventory_index| switch (to) {
-            .gear => |gear_slot| .{ .player_equip_to_gear = .{
-                .inventory_slot_index = inventory_index,
-                .gear_slot = gear_slot,
-            } },
-            .inventory => |target_index| .{ .player_swap_inventory_items = .{
-                .slot_a_index = inventory_index,
-                .slot_b_index = target_index,
-            } },
-            else => null, // inventory → skill targets: no handler
-        },
-        .gear => |gear_slot| switch (to) {
-            .inventory => |inventory_index| .{ .player_unequip_from_gear = .{
-                .gear_slot = gear_slot,
-                .inventory_slot_index = inventory_index,
-            } },
-            else => null,
-        },
-        .learned_skill => |skill_id| switch (to) {
-            .skill_bar => |slot_index| .{ .player_assign_utility_skill = .{
-                .skill_id = skill_id,
-                .slot_index = slot_index,
-            } },
-            else => null,
-        },
-        .skill_bar => |from_index| switch (to) {
-            .skill_bar => |to_index| .{ .player_swap_utility_skills = .{
-                .slot_a_index = from_index,
-                .slot_b_index = to_index,
-            } },
-            // Dropping a bar skill back onto the skills menu clears the slot.
-            .learned_skill => .{ .player_clear_utility_skill = .{
-                .slot_index = from_index,
-            } },
-            else => null,
-        },
-    };
-}
-
-/// Whether a resolved drag orchestrator would actually change state — the
-/// no-op gate at the drag drop site (a drop that would change nothing never
-/// fires, so it can't become a recorded no-op undo step). Mirrors the
-/// machinery handlers' early-return guards: equip_item's item-fit check,
-/// unequip_item's empty-source/filled-target-fit checks,
-/// equip_utility_skill's same-skill re-assign, swap_utility_skills'
-/// same-skill pair, unequip_utility_skill's empty slot. `skill_prepared`
-/// (a level skill preparation is active) keeps the utility-skill cases
-/// honest: those handlers also cancel a preparation, which IS a change.
-/// Pure over the player entity — testable without input.
-fn dragActionWouldChange(
-    player: types.Entity,
-    skill_prepared: bool,
-    action: events.PlayerInputEvent,
-) bool {
-    return switch (action) {
-        .player_equip_to_gear => |equip| {
-            const item = player.inventory.slots[equip.inventory_slot_index] orelse return false;
-            return player_handlers.itemFitsGearSlot(item, equip.gear_slot);
-        },
-        .player_unequip_from_gear => |unequip| {
-            if (ui.gearSlotItem(player, unequip.gear_slot) == null) return false;
-            const existing = player.inventory.slots[unequip.inventory_slot_index] orelse return true;
-            return player_handlers.itemFitsGearSlot(existing, unequip.gear_slot);
-        },
-        .player_assign_utility_skill => |assign| {
-            if (assign.slot_index >= player.equipped_utility_skills.len) return false;
-            if (player.equipped_utility_skills[assign.slot_index] == assign.skill_id) {
-                return skill_prepared;
-            }
-            return true;
-        },
-        .player_swap_utility_skills => |swap| {
-            if (swap.slot_a_index >= player.equipped_utility_skills.len) return false;
-            if (swap.slot_b_index >= player.equipped_utility_skills.len) return false;
-            const same_skill = player.equipped_utility_skills[swap.slot_a_index] ==
-                player.equipped_utility_skills[swap.slot_b_index];
-            return !same_skill or skill_prepared;
-        },
-        .player_clear_utility_skill => |clear| {
-            if (clear.slot_index >= player.equipped_utility_skills.len) return false;
-            return player.equipped_utility_skills[clear.slot_index] != null or skill_prepared;
-        },
-        else => true,
-    };
-}
-
-/// Pointer-driven slot-press lifecycle. Runs every tick (anytime): a press
-/// on a content slot records a pending press (no ghost yet); movement beyond
-/// `drag_threshold_pixels` promotes it to a drag (ghost appears, drop on
-/// release); a release within threshold over the same slot is a click
-/// resolved into an inventory-item intent (equip / salvage, with modifier +
-/// double-click disambiguation). Right-button presses never drag (right-drag
-/// is camera pan on the world; panels block it, so a right-press on a slot is
-/// a click). Hit-tests against the previous frame's UI.
-///
-/// Item clicks are ANYTIME (not gated on the event stack) — salvaging /
-/// equipping / learning during enemy turns is allowed. The pushed
-/// orchestrator is processed mid-drain like `swap_hands` (see the wait/drain
-/// loop in `update`). See DESIGN → UI Framework.
-pub fn handleDrag(
-    history: *GameStateHistory,
-    pointer: input.PointerInput,
-    ui_elements: []const ui.UiElement,
-) void {
-    const current = &history.current_state;
-    const allocator = history.current_arena.allocator();
-    const ui_state = &history.session.ui_state;
-
-    // --- Left button: press → pending or drag ---
-    if (pointer.pressed) {
-        if (ui.refAt(ui_elements, pointer.position)) |ref| {
-            // Two press paths share `pending_slot_press`:
-            //   • Shift+left on an INVENTORY slot (occupied or empty) tracks
-            //     a salvage-region selection — empty slots are valid region
-            //     corners so the player can drag across mixed occupancy.
-            //   • Otherwise, only OCCUPIED slots track an item drag/click —
-            //     `slotContentIcon` is null for an empty slot, gating drags
-            //     to slots that actually hold something.
-            if (pointer.modifiers.shift and ref == .inventory) {
-                ui_state.pending_slot_press = .{
-                    .source = ref,
-                    // No ghost is rendered for a region selection; the icon
-                    // is unused on this path (empty-slot shift+click is a
-                    // harmless no-op salvage).
-                    .icon_sprite_id = "ui/item_slot",
-                    .press_position = pointer.position,
-                    .button = .left,
-                    .shift_held = true,
-                };
-            } else if (ui.slotContentIcon(current, ref)) |icon| {
-                ui_state.pending_slot_press = .{
-                    .source = ref,
-                    .icon_sprite_id = icon,
-                    .press_position = pointer.position,
-                    .button = .left,
-                    .shift_held = pointer.modifiers.shift,
-                };
-            }
-        }
-    }
-
-    // Promote a pending left-press once the pointer moves beyond the
-    // threshold. Uses `>` (strict) so a zero-threshold config still tolerates
-    // a no-movement press+release as a CLICK (0 > 0 is false → pending
-    // survives → release reaches the click branch). `>=` would promote on
-    // the press frame itself (0 >= 0 is true), making click-to-equip dead.
-    // See `handleRightClickInspect` for the same `>` convention.
-    if (ui_state.pending_slot_press) |press| {
-        if (press.button == .left) {
-            const dx = pointer.position.x - press.press_position.x;
-            const dy = pointer.position.y - press.press_position.y;
-            if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
-                if (press.shift_held and press.source == .inventory) {
-                    ui_state.salvage_region = .{
-                        .start_slot = press.source.inventory,
-                        .end_slot = press.source.inventory,
-                    };
-                } else {
-                    ui_state.drag = .{
-                        .source = press.source,
-                        .icon_sprite_id = press.icon_sprite_id,
-                        .size = ui.slotContentSize(press.source),
-                    };
-                }
-                ui_state.pending_slot_press = null;
-            }
-        }
-    }
-
-    // While a salvage-region selection is in progress, update the end slot to
-    // the inventory slot currently under the pointer. Runs every call (not
-    // just on events) so the outline tracks the cursor live. When the pointer
-    // is off-grid (null / non-inventory ref) the previous end slot is kept —
-    // the release then salves the last valid region.
-    if (ui_state.salvage_region) |region| {
-        if (ui.refAt(ui_elements, pointer.position)) |ref| switch (ref) {
-            .inventory => |slot_index| ui_state.salvage_region = .{
-                .start_slot = region.start_slot,
-                .end_slot = slot_index,
-            },
-            else => {},
-        };
-    }
-
-    // --- Left button: release → drop, region-salvage, or click ---
-    if (pointer.released) {
-        if (ui_state.salvage_region) |region| {
-            // Shift-drag release: salvage the bounding box if Shift is still
-            // held, else cancel. Either way the selection clears. No-op
-            // gate: an all-empty region (empty slots are valid region
-            // corners) never fires — no dead undo step.
-            if (pointer.modifiers.shift) {
-                const player = ui.playerEntity(current) orelse types.Entity{};
-                if (player_handlers.salvageRegionOccupiedSlots(
-                    player,
-                    region.start_slot,
-                    region.end_slot,
-                    allocator,
-                ).len > 0) {
-                    event_push.pushPlayerAction(current, .{ .player_salvage_inventory_region = .{
-                        .start_slot = region.start_slot,
-                        .end_slot = region.end_slot,
-                    } }, allocator);
-                }
-            }
-            ui_state.salvage_region = null;
-            ui_state.pending_slot_press = null;
-        } else if (ui_state.drag) |drag| {
-            // Resolve the drop. `target` is null when the release is over empty
-            // space (or non-ref UI like a panel background). A resolved
-            // orchestrator (swap / assign / equip / clear) is pushed as-is.
-            const target: ?ui.SlotRef = ui.refAt(ui_elements, pointer.position);
-            var resolved: ?events.PlayerInputEvent = null;
-            if (target) |target_ref| {
-                if (dragToOrchestrator(drag.source, target_ref)) |orchestrator| {
-                    resolved = orchestrator;
-                }
-            }
-            // Drag a skill off the bar: if nothing resolved and the release
-            // isn't back on the source slot, the drag went "off the bar" (empty
-            // space, a non-ref surface, or a cross-domain ref like an inventory
-            // slot) → clear the source utility slot. A self-drop (release back
-            // on the source slot) stays a no-op. Item/gear drags off to empty
-            // space just cancel (no destroy-on-missdrop). See DESIGN →
-            // Architecture (no-duplicate utility-skill rule + off-bar clear).
-            if (resolved == null) {
-                const is_self_drop = if (target) |target_ref| ui.SlotRef.eql(drag.source, target_ref) else false;
-                if (!is_self_drop) switch (drag.source) {
-                    .skill_bar => |from_index| resolved = .{ .player_clear_utility_skill = .{
-                        .slot_index = from_index,
-                    } },
-                    else => {},
-                };
-            }
-            if (resolved) |orchestrator| {
-                // No-op gate: a drop that would change nothing (unfitting
-                // item→gear or gear→occupied-slot pair, re-assigning the
-                // skill already in the slot) never fires — see
-                // dragActionWouldChange. The empty-entity fallback makes a
-                // mid-drag screen transition (no player anymore) a safe
-                // no-op drop instead of a panic.
-                const player = ui.playerEntity(current) orelse types.Entity{};
-                const skill_prepared = if (current.level) |level|
-                    level.prepared_skill != null
-                else
-                    false;
-                if (dragActionWouldChange(player, skill_prepared, orchestrator)) {
-                    event_push.pushPlayerAction(current, orchestrator, allocator);
-                }
-            }
-            ui_state.drag = null;
-            ui_state.pending_slot_press = null;
-        } else if (ui_state.pending_slot_press) |press| {
-            if (press.button == .left) {
-                // Release over the same slot = click; elsewhere = cancel.
-                if (ui.refAt(ui_elements, pointer.position)) |target| {
-                    if (slotRefsEqual(target, press.source)) {
-                        resolveInventoryClick(history, press.source, .left, pointer.modifiers);
-                    }
-                }
-                ui_state.pending_slot_press = null;
-            }
-        }
-    }
-
-    // --- Right button: press → pending (click only, no drag) ---
-    if (pointer.right_pressed) {
-        if (ui.refAt(ui_elements, pointer.position)) |ref| {
-            // Same content gate as left-press: only occupied slots are
-            // clickable (an empty slot has nothing to equip/salvage).
-            if (ui.slotContentIcon(current, ref)) |icon| {
-                ui_state.pending_slot_press = .{
-                    .source = ref,
-                    .icon_sprite_id = icon,
-                    .press_position = pointer.position,
-                    .button = .right,
-                };
-            }
-        }
-    }
-
-    // --- Right button: release → click ---
-    if (pointer.right_released) {
-        if (ui_state.pending_slot_press) |press| {
-            if (press.button == .right and ui_state.drag == null) {
-                if (ui.refAt(ui_elements, pointer.position)) |target| {
-                    if (slotRefsEqual(target, press.source)) {
-                        resolveInventoryClick(history, press.source, .right, pointer.modifiers);
-                    }
-                }
-                ui_state.pending_slot_press = null;
-            }
-        }
-    }
-}
-
-/// Whether two SlotRefs refer to the same slot. Thin wrapper over
-/// `SlotRef.eql` (kept for the call sites that read better with a free fn).
-fn slotRefsEqual(a: ui.SlotRef, b: ui.SlotRef) bool {
-    return ui.SlotRef.eql(a, b);
-}
-
-/// The click intents an inventory-slot click can resolve to. `none` carries
-/// no action (plain single click awaiting a double, or a no-op combo).
-const ItemIntent = enum { equip_main, equip_off, salvage, none };
-
-/// Resolve a click (button + modifiers + double-click state) to an intent.
-/// Precedence: shift > ctrl > alt > plain-double; combos (2+ modifiers) are
-/// a no-op. Pure — testable without input/state.
-///   shift+left → salvage; shift+right → none
-///   ctrl+left → equip_main; ctrl+right → equip_off
-///   alt+left → equip_off; alt+right → equip_main
-///   plain double-left → equip_main; plain double-right → equip_off
-///   plain single → none (seeds a pending double)
-fn resolveItemClick(button: ui.ClickButton, modifiers: types.Modifiers, is_double: bool) ItemIntent {
-    const combo: u8 = @as(u8, @intFromBool(modifiers.shift)) + @as(u8, @intFromBool(modifiers.ctrl)) + @as(u8, @intFromBool(modifiers.alt));
-    if (combo >= 2) return .none;
-    if (modifiers.shift) return if (button == .left) .salvage else .none;
-    if (modifiers.ctrl) return if (button == .left) .equip_main else .equip_off;
-    if (modifiers.alt) return if (button == .left) .equip_off else .equip_main;
-    return if (is_double) (if (button == .left) .equip_main else .equip_off) else .none;
-}
-
-/// Resolve an inventory-slot click into an orchestrator action, with double-
-/// click detection. Only inventory slots are clickable this slice (gear /
-/// skills panels have no builders yet); non-inventory sources are ignored.
-/// Anytime — not gated on the event stack (salvaging/equipping/learning
-/// during enemy turns is allowed). See `handleDrag`.
-fn resolveInventoryClick(
-    history: *GameStateHistory,
-    source: ui.SlotRef,
-    button: ui.ClickButton,
-    modifiers: types.Modifiers,
-) void {
-    const slot_index = switch (source) {
-        .inventory => |i| i,
-        else => return, // gear/skill slots: no click behavior yet
-    };
-    const ui_state = &history.session.ui_state;
-    const now = history.session.session_clock;
-
-    // Double-click = a prior plain single click on the same slot + same
-    // button within the threshold window.
-    const is_double = if (ui_state.last_item_click) |last| blk: {
-        if (last.slot_index == slot_index and last.button == button and
-            now - last.time <= ui.double_click_threshold_us)
-            break :blk true;
-        break :blk false;
-    } else false;
-
-    const intent = resolveItemClick(button, modifiers, is_double);
-    const current = &history.current_state;
-    const allocator = history.current_arena.allocator();
-    switch (intent) {
-        .equip_main, .equip_off => {
-            event_push.pushPlayerAction(current, .{ .player_use_inventory_item = .{
-                .inventory_slot_index = slot_index,
-                .off_hand = intent == .equip_off,
-            } }, allocator);
-            ui_state.last_item_click = null; // consumed
-        },
-        .salvage => {
-            event_push.pushPlayerAction(current, .{ .player_salvage_inventory_item = .{
-                .inventory_slot_index = slot_index,
-            } }, allocator);
-            ui_state.last_item_click = null;
-        },
-        .none => {
-            // Seed a pending double ONLY for plain (no-modifier) single
-            // clicks that didn't fire. Modifier-clicks that no-op (combos,
-            // shift+right) clear it so they don't pair with a later plain click.
-            const combo: u8 = @as(u8, @intFromBool(modifiers.shift)) + @as(u8, @intFromBool(modifiers.ctrl)) + @as(u8, @intFromBool(modifiers.alt));
-            if (combo == 0 and !is_double) {
-                ui_state.last_item_click = .{ .slot_index = slot_index, .button = button, .time = now };
-            } else {
-                ui_state.last_item_click = null;
-            }
-        },
-    }
-}
-
-/// Camera pan (right-drag): grab the world point under the cursor and drag
-/// it so it stays under the cursor. Runs anytime (not gated on the event
-/// stack) so the player can look around mid-wait / mid-turn. Levels/hubs/
-/// editor only. The pan offset lives on SessionState (transient view state, replay-
-/// safe by construction — see DESIGN → Replay & Side Effects). `camera` must already include the
-/// current pan offset (so screenToTile / floatWorldPoint map the cursor
-/// against the camera the player is actually seeing).
-///
-/// Pan-start is suppressed when the pointer is over a blocking UI element
-/// (same occlusion check as the tile cursor) — right-clicking a panel pans
-/// nothing. On player move (detected in frame()) the pan is cleared so the
-/// camera recenters; on screen transition frame() also clears it. Here we
-/// only own the drag itself.
-pub fn handleCameraPan(
-    history: *GameStateHistory,
-    pointer: input.PointerInput,
-    ui_elements: []const ui.UiElement,
-    camera: types.Camera,
-    camera_zoom: f32,
-    viewport: input.ViewportSize,
-) void {
-    const current = &history.current_state;
-    const session = &history.session;
-
-    // Outside a level/hub/editor there's nothing to pan. Clear any stale
-    // pan/anchor so re-entering a world doesn't inherit it (frame() also
-    // clears on screen transition, but this covers direct entry without a
-    // transition).
-    if (current.screen != .level and current.screen != .hub and current.screen != .editor) {
-        session.camera_pan = null;
-        session.camera_pan_anchor = null;
-        return;
-    }
-
-    // Right-button press begins a pan — unless the cursor is over blocking UI.
-    if (pointer.right_pressed) {
-        if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
-            session.camera_pan_anchor = null;
-            return;
-        }
-        const world = input.floatWorldPoint(pointer.position, camera, camera_zoom, viewport);
-        session.camera_pan_anchor = .{ .world_x = world.x, .world_y = world.y };
-        return;
-    }
-
-    // No active drag — nothing to do on held/moved/released.
-    if (session.camera_pan_anchor == null) {
-        if (pointer.right_released) session.camera_pan_anchor = null;
-        return;
-    }
-
-    // Drag in progress (right held). Solve for the camera position that keeps
-    // the anchored world point exactly under the cursor, then store the
-    // offset from the player-centered camera as `camera_pan`.
-    //
-    //   world = (camera.position + (cursor - viewport/2)) / tile_pixels
-    //   => camera.position = world * tile_pixels - (cursor - viewport/2)
-    //
-    // pan = camera.position - player_centered_camera.position (computed here
-    // without the pan offset, so the offset is relative to the recentered
-    // camera and survives a player move only until frame() clears it).
-    if (pointer.right_held) {
-        const tile_pixels = input.tile_size_pixels * camera_zoom;
-        const anchor = session.camera_pan_anchor.?;
-        const cursor_x: f32 = @floatFromInt(pointer.position.x);
-        const cursor_y: f32 = @floatFromInt(pointer.position.y);
-        const target_camera_x = anchor.world_x * tile_pixels - (cursor_x - viewport.width / 2.0);
-        const target_camera_y = anchor.world_y * tile_pixels - (cursor_y - viewport.height / 2.0);
-
-        const player_centered = view_mod.computeCamera(current, camera_zoom, null);
-        session.camera_pan = .{
-            .x = @intFromFloat(@round(target_camera_x - @as(f32, @floatFromInt(player_centered.position.x)))),
-            .y = @intFromFloat(@round(target_camera_y - @as(f32, @floatFromInt(player_centered.position.y)))),
-        };
-    }
-
-    if (pointer.right_released) {
-        session.camera_pan_anchor = null;
-    }
-}
-
-/// Right-click entity inspection (levels only). A right-press on a world
-/// tile with an entity records a pending right-click; movement beyond
-/// `drag_threshold_pixels` cancels it (the press became a camera pan); a
-/// clean release toggles the entity inspect panel on that entity (same
-/// entity → close, different → switch, none open → open). Suppressed over
-/// blocking UI (same occlusion check as the tile cursor + camera pan) so a
-/// right-click on a panel never inspects the world behind it. Hubs are
-/// excluded — inspection is level-only by design.
-///
-/// Runs anytime alongside `handleCameraPan` / `handleDrag`. The two right-
-/// click consumers coexist without conflict: a no-movement right-press sets
-/// the pan anchor + a pending right-click, and on release the anchor clears
-/// (no pan offset was ever computed) while the pending right-click fires
-/// the inspect. A right-drag past the threshold cancels the pending right-
-/// click and lets the pan proceed.
-
-/// Compute an integer slider value from a pointer x position over the
-/// slider's track. Clamps to `[min, max]`, step 1.
-fn sliderValueFromPointer(slider: ui.Slider, pointer_x: i32) u32 {
-    const track_x: f32 = @floatFromInt(slider.screen_position.x);
-    const track_w: f32 = @floatFromInt(slider.width);
-    const px: f32 = @floatFromInt(pointer_x);
-    const fraction = if (track_w > 0)
-        @max(0.0, @min(1.0, (px - track_x) / track_w))
-    else
-        0.0;
-    const range: f32 = if (slider.max > slider.min) @floatFromInt(slider.max - slider.min) else 0;
-    return slider.min + @as(u32, @intFromFloat(@round(fraction * range)));
-}
-
-/// Apply a slider value to `history.settings` based on the slider's
-/// `setting_id`. Mutates settings directly (off the undo timeline) + marks
-/// dirty for debounced persistence. Called on every drag step (the debounce
-/// coalesces — the write fires 1s after the last scrub).
-fn applySliderValue(history: *GameStateHistory, slider: ui.Slider, pointer_x: i32) void {
-    const value = sliderValueFromPointer(slider, pointer_x);
-    const settings = &history.settings;
-    switch (slider.setting_id) {
-        .master_volume => settings.master_volume = value,
-        .music_volume => settings.music_volume = value,
-        .sound_effects_volume => settings.sound_effects_volume = value,
-        .render_fps_cap => settings.render_fps_cap = value,
-        .animation_fps => settings.animation_fps = value,
-        else => return,
-    }
-    markSettingsDirty(history);
-}
-
-/// Settings slider drag handler. Runs before the options-menu gate (sliders
-/// must work while the settings overlay is open on top of the options menu).
-/// Left-press on a slider begins a drag + jumps to the pointer; left-held
-/// scrubs; left-release ends the drag. The slider is hit-tested against the
-/// previous frame's UI (same as the button model). See DESIGN → UI Framework
-/// → Settings screen.
-pub fn handleSliderDrag(
-    history: *GameStateHistory,
-    pointer: input.PointerInput,
-    ui_elements: []const ui.UiElement,
-) void {
-    const session = &history.session;
-    if (!session.ui_state.settings_open) {
-        if (session.ui_state.active_slider != null) session.ui_state.active_slider = null;
-        return;
-    }
-
-    // Left-press over a slider begins a drag + jumps to the pointer.
-    if (pointer.pressed) {
-        if (ui.sliderAt(ui_elements, pointer.position)) |slider| {
-            session.ui_state.active_slider = slider.setting_id;
-            applySliderValue(history, slider, pointer.position.x);
-        }
-    }
-
-    // Left-held with an active slider: scrub (find the slider for the active
-    // setting in the current UI + apply the value from the pointer x).
-    if (pointer.held and session.ui_state.active_slider != null) {
-        if (ui.findSlider(ui_elements, session.ui_state.active_slider.?)) |slider| {
-            applySliderValue(history, slider, pointer.position.x);
-        }
-    }
-
-    // Left-release ends the drag.
-    if (pointer.released) {
-        session.ui_state.active_slider = null;
-    }
-}
-pub fn handleRightClickInspect(
-    history: *GameStateHistory,
-    pointer: input.PointerInput,
-    ui_elements: []const ui.UiElement,
-    camera: types.Camera,
-    camera_zoom: f32,
-    viewport: input.ViewportSize,
-) void {
-    const current = &history.current_state;
-    const ui_state = &history.session.ui_state;
-
-    // Levels only. Not our screen — drop only OUR kind of pending (the
-    // editor screen's delete gesture owns the field there; see
-    // PendingRightClick).
-    if (current.screen != .level) {
-        clearPendingRightClick(ui_state, .inspect);
-        return;
-    }
-    const level = current.level orelse {
-        clearPendingRightClick(ui_state, .inspect);
-        return;
-    };
-
-    // Right-press: if over a world tile (not blocking UI) with an entity,
-    // record a pending right-click. Over blocking UI or an empty tile, clear
-    // any stale pending (a right-click on a panel or empty ground inspects
-    // nothing).
-    if (pointer.right_pressed) {
-        if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
-            clearPendingRightClick(ui_state, .inspect);
-            return;
-        }
-        const mouse_tile = input.screenToTile(
-            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
-            camera,
-            camera_zoom,
-            viewport,
-        );
-        for (level.entities, 0..) |entity, index| {
-            if (entity.position.x == mouse_tile.x and entity.position.y == mouse_tile.y) {
-                ui_state.pending_right_click = .{ .inspect = .{
-                    .entity_index = @intCast(index),
-                    .press_position = pointer.position,
-                } };
-                return;
-            }
-        }
-        clearPendingRightClick(ui_state, .inspect);
-        return;
-    }
-
-    // Movement beyond the threshold cancels the pending right-click (it
-    // became a camera pan). Checked on every call while the right button is
-    // held. Uses `>` (strict) so a zero-threshold config still tolerates a
-    // no-movement press+release — `0 > 0` is false, so a clean click survives.
-    // Same convention as the inventory drag promotion in `handleDrag`.
-    if (ui_state.pending_right_click) |press| {
-        switch (press) {
-            .inspect => |pending| {
-                if (pointer.right_held) {
-                    const dx = pointer.position.x - pending.press_position.x;
-                    const dy = pointer.position.y - pending.press_position.y;
-                    if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
-                        ui_state.pending_right_click = null;
-                    }
-                }
-            },
-            else => {},
-        }
-    }
-
-    // Right-release: if a pending right-click survived (no threshold
-    // crossing), toggle inspect on that entity.
-    if (pointer.right_released) {
-        if (ui_state.pending_right_click) |press| {
-            switch (press) {
-                .inspect => |pending| {
-                    if (ui_state.inspected_entity_index) |current_inspected| {
-                        if (current_inspected == pending.entity_index) {
-                            // Same entity — close the panel.
-                            ui_state.toggleMiddlePanel(.entity_inspect);
-                            ui_state.inspected_entity_index = null;
-                        } else {
-                            // Different entity — switch target.
-                            ui_state.inspected_entity_index = pending.entity_index;
-                        }
-                    } else {
-                        // Not inspecting — open the panel.
-                        ui_state.inspected_entity_index = pending.entity_index;
-                        ui_state.toggleMiddlePanel(.entity_inspect);
-                    }
-                },
-                else => {},
-            }
-        }
-        clearPendingRightClick(ui_state, .inspect);
-    }
-}
-
-/// Drop the pending right-click if it is of `kind` (a no-op otherwise —
-/// each right-click handler owns only its own kind; see PendingRightClick).
-fn clearPendingRightClick(
-    ui_state: *ui.UiState,
-    kind: std.meta.Tag(ui.PendingRightClick),
-) void {
-    if (ui_state.pending_right_click) |press| {
-        if (std.meta.activeTag(press) == kind) ui_state.pending_right_click = null;
-    }
-}
-
-/// Editor-screen right-click: the TOOL-INDEPENDENT delete. One clean
-/// click deletes ONE thing at the pressed tile — priority: enemy / ground
-/// item occupant, then covering decoration, then the bare tile; the '!' /
-/// '=' and empty ground are no-ops. All of that policy lives in the shared
-/// planner (`planEditorDeleteActions` — the pushed handler consumes the
-/// same plan); this handler owns the gesture + the no-op gate (a click
-/// whose plan is empty never fires, so it can't become an undo/replay
-/// step). Same movement-threshold lifecycle as the inspect right-click: a
-/// right-drag pans the camera (handleCameraPan) and cancels the pending; a
-/// clean release fires the delete. The pressed tile is recorded at PRESS
-/// (a clean click acts on what was under the pointer when the button went
-/// down).
-pub fn handleRightClickEditorDelete(
-    history: *GameStateHistory,
-    pointer: input.PointerInput,
-    ui_elements: []const ui.UiElement,
-    camera: types.Camera,
-    camera_zoom: f32,
-    viewport: input.ViewportSize,
-) void {
-    const current = &history.current_state;
-    const ui_state = &history.session.ui_state;
-
-    // Editor edit mode only (playtest/validate are the .level screen,
-    // where the inspect handler owns right-clicks). Not our screen — drop
-    // only OUR kind of pending.
-    if (current.screen != .editor or current.editor == null) {
-        clearPendingRightClick(ui_state, .editor_delete);
-        return;
-    }
-
-    if (pointer.right_pressed) {
-        if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
-            clearPendingRightClick(ui_state, .editor_delete);
-            return;
-        }
-        const mouse_tile = input.screenToTile(
-            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
-            camera,
-            camera_zoom,
-            viewport,
-        );
-        ui_state.pending_right_click = .{ .editor_delete = .{
-            .position = mouse_tile,
-            .press_position = pointer.position,
-        } };
-        return;
-    }
-
-    // Movement beyond the threshold cancels the pending (the press became
-    // a camera pan). `>` strict, same convention as the inspect handler.
-    if (ui_state.pending_right_click) |press| {
-        switch (press) {
-            .editor_delete => |pending| {
-                if (pointer.right_held) {
-                    const dx = pointer.position.x - pending.press_position.x;
-                    const dy = pointer.position.y - pending.press_position.y;
-                    if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
-                        ui_state.pending_right_click = null;
-                    }
-                }
-            },
-            else => {},
-        }
-    }
-
-    if (pointer.right_released) {
-        if (ui_state.pending_right_click) |press| {
-            switch (press) {
-                .editor_delete => |pending| {
-                    // No-op gate: empty ground / the '!' / '=' never fire
-                    // (see planEditorDeleteActions).
-                    if (current.editor) |*editor| {
-                        const arena = history.current_arena.allocator();
-                        const plan = planning.planEditorDeleteActions(editor, pending.position, arena);
-                        if (plan.len > 0) {
-                            event_push.pushPlayerAction(current, .{ .player_delete_editor_at = .{
-                                .position = pending.position,
-                            } }, arena);
-                        }
-                    }
-                },
-                else => {},
-            }
-        }
-        clearPendingRightClick(ui_state, .editor_delete);
-    }
-}
-
-/// Editor-screen shift+left-drag: the select tool's MARQUEE. A press with
-/// Shift held over the viewport records the press tile; moving beyond the
-/// drag threshold promotes the gesture (the rectangle renders, the end
-/// corner tracks the pointer live); release with Shift STILL held adds
-/// everything inside the region (`player_select_editor_region` — skipping
-/// already-selected entries; the marquee never removes). Shift released
-/// mid-drag cancels. An UNPROMOTED release (no drag) IS the shift+click
-/// TOGGLE path: the toggle fires at the press tile (the select arm in
-/// `handleIdleInput` defers to this gesture while Shift is held; a plain
-/// click there would REPLACE) — fired here with the same no-op gate. Mirrors the
-/// inventory salvage-region gesture (`handleDrag`) + the right-click
-/// clean-click disambiguation (`handleRightClickEditorDelete`).
-pub fn handleEditorMarquee(
-    history: *GameStateHistory,
-    pointer: input.PointerInput,
-    ui_elements: []const ui.UiElement,
-    camera: types.Camera,
-    camera_zoom: f32,
-    viewport: input.ViewportSize,
-) void {
-    const current = &history.current_state;
-    const ui_state = &history.session.ui_state;
-
-    // Editor edit mode + the select tool only. Not our context — clear any
-    // in-progress marquee (a stale gesture must not fire later).
-    if (current.screen != .editor or current.editor == null or
-        current.editor.?.active_tool != .select)
-    {
-        ui_state.editor_marquee = null;
-        return;
-    }
-
-    if (pointer.pressed) {
-        // Only a Shift press starts a marquee (Shift acquired mid-drag does
-        // not); a press over blocking UI belongs to the panel, never the
-        // world.
-        if (!pointer.modifiers.shift) return;
-        if (ui.blockingElementAt(ui_elements, pointer.position) != null) return;
-        const press_tile = input.screenToTile(
-            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
-            camera,
-            camera_zoom,
-            viewport,
-        );
-        ui_state.editor_move_drag = null;
-        ui_state.editor_marquee = .{
-            .start_position = press_tile,
-            .end_position = press_tile,
-            .press_position = pointer.position,
-            .promoted = false,
-        };
-        return;
-    }
-
-    if (ui_state.editor_marquee) |*marquee| {
-        // Promotion: movement beyond the threshold (strict `>` — a
-        // zero-threshold config still tolerates a no-movement press+
-        // release as a click; same convention as the inventory drag +
-        // right-click cancel).
-        if (pointer.held) {
-            const dx = pointer.position.x - marquee.press_position.x;
-            const dy = pointer.position.y - marquee.press_position.y;
-            if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
-                marquee.promoted = true;
-            }
-        }
-        // The end corner tracks the pointer live, but only over the
-        // viewport (not blocking UI) — a release over a panel fires the
-        // LAST VALID region (inventory salvage-region behavior: the region
-        // keeps the last valid corner).
-        if (pointer.held and marquee.promoted and
-            ui.blockingElementAt(ui_elements, pointer.position) == null)
-        {
-            marquee.end_position = input.screenToTile(
-                .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
-                camera,
-                camera_zoom,
-                viewport,
-            );
-        }
-    }
-
-    if (pointer.released) {
-        if (ui_state.editor_marquee) |marquee| {
-            if (marquee.promoted) {
-                // Shift still held at release → add the region (no-op gate:
-                // an empty or all-already-selected region never fires — no
-                // dead undo step); Shift released mid-drag → cancel.
-                if (pointer.modifiers.shift) {
-                    if (current.editor) |*editor| {
-                        const arena = history.current_arena.allocator();
-                        if (planning.planEditorRegionSelectActions(
-                            editor,
-                            marquee.start_position,
-                            marquee.end_position,
-                            arena,
-                        ).len > 0) {
-                            event_push.pushPlayerAction(current, .{ .player_select_editor_region = .{
-                                .start_position = marquee.start_position,
-                                .end_position = marquee.end_position,
-                            } }, arena);
-                        }
-                    }
-                }
-            } else {
-                // No drag: the shift+click TOGGLE — fire it at the press
-                // tile (the same no-op gate: empty ground never fires).
-                if (current.editor) |*editor| {
-                    const arena = history.current_arena.allocator();
-                    if (planning.planEditorSelectionActions(
-                        editor,
-                        marquee.start_position,
-                        arena,
-                    ).len > 0) {
-                        event_push.pushPlayerAction(current, .{ .player_toggle_editor_selection = .{
-                            .position = marquee.start_position,
-                        } }, arena);
-                    }
-                }
-            }
-        }
-        ui_state.editor_marquee = null;
-    }
-}
-
-/// Editor-screen selection MOVE drag (select tool, plain left press on a
-/// selected thing). Press claims the gesture when the press tile hits the
-/// selection (a selected tile / entity / item, a selected decoration's
-/// footprint, or a selected '!' / '=' — see `editorSelectionContainsPosition`);
-/// the drag threshold promotes it (the view translates the selection
-/// OUTLINES by the live delta — the world stays put); release commits the
-/// move when the delta is nonzero (`player_move_editor_selection` — see
-/// its doc for the clear + chained-place semantics) and CLEARS the
-/// selection (a move deselects). An UNPROMOTED release (no movement) acts
-/// as a plain click — the REPLACE fires at the press tile (the select arm
-/// in `handleIdleInput` defers while a move drag is in progress; usually
-/// a no-op, since the pressed thing is selected). Shift+press never claims (the
-/// marquee owns it); a press over blocking UI never claims.
-pub fn handleEditorMoveDrag(
-    history: *GameStateHistory,
-    pointer: input.PointerInput,
-    ui_elements: []const ui.UiElement,
-    camera: types.Camera,
-    camera_zoom: f32,
-    viewport: input.ViewportSize,
-) void {
-    const current = &history.current_state;
-    const ui_state = &history.session.ui_state;
-
-    // Editor edit mode + the select tool only. Not our context — clear any
-    // in-progress drag (a stale gesture must not fire later).
-    if (current.screen != .editor or current.editor == null or
-        current.editor.?.active_tool != .select)
-    {
-        ui_state.editor_move_drag = null;
-        return;
-    }
-
-    if (pointer.pressed) {
-        // A Shift press belongs to the marquee gesture; a press over
-        // blocking UI belongs to the panel.
-        if (pointer.modifiers.shift) return;
-        if (ui.blockingElementAt(ui_elements, pointer.position) != null) return;
-        const press_tile = input.screenToTile(
-            .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
-            camera,
-            camera_zoom,
-            viewport,
-        );
-        const arena = history.current_arena.allocator();
-        const claims = planning.editorSelectionContainsPosition(
-            &current.editor.?,
-            press_tile,
-            arena,
-        );
-        if (!claims) return;
-        ui_state.editor_marquee = null;
-        ui_state.editor_move_drag = .{
-            .press_position_tile = press_tile,
-            .current_position_tile = press_tile,
-            .press_position = pointer.position,
-            .promoted = false,
-        };
-        return;
-    }
-
-    if (ui_state.editor_move_drag) |*move_drag| {
-        // Promotion: movement beyond the threshold (strict `>`, the house
-        // convention — a no-movement press+release stays a click).
-        if (pointer.held) {
-            const dx = pointer.position.x - move_drag.press_position.x;
-            const dy = pointer.position.y - move_drag.press_position.y;
-            if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
-                move_drag.promoted = true;
-            }
-        }
-        // The live delta tracks the pointer, but only over the viewport
-        // (not blocking UI) — a release over a panel commits the LAST
-        // VALID delta (the marquee's end-corner behavior).
-        if (pointer.held and move_drag.promoted and
-            ui.blockingElementAt(ui_elements, pointer.position) == null)
-        {
-            move_drag.current_position_tile = input.screenToTile(
-                .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
-                camera,
-                camera_zoom,
-                viewport,
-            );
-        }
-    }
-
-    if (pointer.released) {
-        if (ui_state.editor_move_drag) |move_drag| {
-            if (move_drag.promoted) {
-                const delta = types.Vector2{
-                    .x = move_drag.current_position_tile.x - move_drag.press_position_tile.x,
-                    .y = move_drag.current_position_tile.y - move_drag.press_position_tile.y,
-                };
-                // Zero delta → nothing to move — no event (no dead undo
-                // step). The commit machinery handles everything else.
-                if (delta.x != 0 or delta.y != 0) {
-                    event_push.pushPlayerAction(
-                        current,
-                        .{ .player_move_editor_selection = .{ .delta = delta } },
-                        history.current_arena.allocator(),
-                    );
-                }
-            } else {
-                // No drag: a plain click — fire the REPLACE at the press
-                // tile (the same path + no-op gate as the select arm; a
-                // plain click on the whole current selection changes
-                // nothing and never fires).
-                if (current.editor) |*editor| {
-                    const arena = history.current_arena.allocator();
-                    if (planning.planEditorReplaceSelectionActions(
-                        editor,
-                        move_drag.press_position_tile,
-                        arena,
-                    ).len > 0) {
-                        event_push.pushPlayerAction(current, .{ .player_replace_editor_selection = .{
-                            .position = move_drag.press_position_tile,
-                        } }, arena);
-                    }
-                }
-            }
-        }
-        ui_state.editor_move_drag = null;
-    }
-}
 pub fn warnIfSessionLogFromDifferentBuild(log_game_version: []const u8) void {
     if (!std.mem.eql(u8, log_game_version, build_info.game_version)) {
         std.debug.print(
@@ -1371,509 +351,6 @@ fn editorItemDefAction(
         } },
         .skill_tome => null,
     };
-}
-
-/// Scan the mission directory's .pngs into `session.editor_mission_sprites`
-/// (the sprite picker's mission-local tab). Frees the previous scan — the
-/// list is session-owned (backing allocator); the final list's leak at
-/// process exit is bounded (the save_files pattern). An IO failure degrades
-/// to an empty list — the Mission tab shows "No sprites" while the
-/// Official tab stays usable (recoverable-degrade; a popup would interrupt
-/// the click flow for a dev tool).
-fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Editor) void {
-    const allocator = history.backing_allocator;
-    const session = &history.session;
-    for (session.editor_mission_sprites) |name| allocator.free(name);
-    allocator.free(session.editor_mission_sprites);
-    session.editor_mission_sprites = history.file_source.listPersistentPngFiles(
-        allocator,
-        editor.mission.path,
-    ) catch &[_][]const u8{};
-}
-
-/// A random v4-format uuid (the shipped mission.txt format: 8-4-4-4-12
-/// lowercase hex). Called ONLY from the save path — an input-layer side
-/// effect that never enters GameState or a recorded event, so the
-/// randomness is replay-safe by construction. See DESIGN → Level Editor →
-/// Mission identity.
-fn generateMissionUuid(history: *GameStateHistory, allocator: std.mem.Allocator) []const u8 {
-    var bytes: [16]u8 = undefined;
-    // Seed a CSPRNG from the wall clock (the same clock the session
-    // timestamps read) + the raw nanoseconds — good enough for identity
-    // minting, and the result never enters replayed state anyway.
-    const now = std.Io.Clock.now(.real, history.io);
-    var seed: [32]u8 = std.mem.zeroes([32]u8);
-    const nanoseconds: [8]u8 = @bitCast(@as(i64, @truncate(now.nanoseconds)));
-    @memcpy(seed[0..8], &nanoseconds);
-    var csprng = std.Random.DefaultCsprng.init(seed);
-    csprng.random().bytes(&bytes);
-    // RFC 4122 v4: version nibble 4, variant 10xx.
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    return std.fmt.allocPrint(
-        allocator,
-        "{x:0>8}-{x:0>4}-{x:0>4}-{x:0>4}-{x:0>12}",
-        .{
-            std.mem.readInt(u32, bytes[0..4], .big),
-            std.mem.readInt(u16, bytes[4..6], .big),
-            std.mem.readInt(u16, bytes[6..8], .big),
-            std.mem.readInt(u16, bytes[8..10], .big),
-            std.mem.readInt(u48, bytes[10..16], .big),
-        },
-    ) catch @panic("failed to format mission uuid");
-}
-
-/// Make a mission name safe as a path segment: path separators + control
-/// characters become '_', an empty result falls back to "Unnamed" (a
-/// mission can be renamed to an empty string via the metadata sidebar).
-fn sanitizeMissionNameForPath(name: []const u8, allocator: std.mem.Allocator) []const u8 {
-    const sanitized = allocator.dupe(u8, name) catch @panic("failed to sanitize mission name");
-    for (sanitized) |*character| {
-        const invalid = character.* == '/' or character.* == '\\' or character.* < 0x20 or character.* == 0x7f;
-        if (invalid) character.* = '_';
-    }
-    if (sanitized.len == 0) {
-        allocator.free(sanitized);
-        return "Unnamed";
-    }
-    return sanitized;
-}
-
-/// Save the edited mission to the persistent dir: resolve the mission's
-/// uuid (in-memory if it was opened from disk, else the session memo of a
-/// previous save — stable identity across saves — else a fresh mint),
-/// project the Editor into files with the pure writer
-/// (writers.writeEditorMission), and write mission.txt + player.txt +
-/// level_N.txt under `missions/<uuid>_<name>/`. The session memo records
-/// the uuid + dir for subsequent saves.
-///
-/// A pure side effect — the dump_event_log class, NOT the save_game class:
-/// there is no GameState component to record, so it pushes no event and
-/// takes no undo step (a recorded event would mint dead undo steps), and
-/// replay never runs the input layer so it never re-fires. Always deriving
-/// the dir as `<uuid>_<name>` gives the settled semantics for free: a
-/// re-save of an unchanged custom mission lands in the same dir, a RENAMED
-/// mission lands in a NEW dir (the old one stays behind), and an OFFICIAL
-/// mission opened for editing is saved as a persistent-dir copy (shipped
-/// data is immutable — FileSource refuses data/ writes). Failures are
-/// recoverable (the pending_error popup; nothing to revert — state is
-/// fine, the files just didn't land). See DESIGN → Level Editor → Mission
-/// identity.
-fn saveEditorMission(history: *GameStateHistory) void {
-    const editor = if (history.current_state.editor) |*some_editor| some_editor else return;
-    const scratch = history.current_arena.allocator();
-    const durable = history.backing_allocator;
-
-    // 1. Resolve the uuid: opened-from-disk → in memory; saved this session
-    //    → the memo; else mint (the write-only rule — the minted value
-    //    never enters GameState).
-    var uuid: []const u8 = editor.mission.uuid;
-    if (uuid.len == 0) {
-        if (history.session.editor_saved_mission) |saved| uuid = saved.uuid;
-    }
-    var minted_uuid: ?[]const u8 = null;
-    if (uuid.len == 0) {
-        minted_uuid = generateMissionUuid(history, durable);
-        uuid = minted_uuid.?;
-    }
-
-    // 2. Project the editor into file contents (transient — the scratch
-    //    arena reclaims them at the next idle point).
-    const written = writers.writeEditorMission(editor.*, uuid, scratch) catch |write_error| {
-        const message = switch (write_error) {
-            error.TooManyLayoutCodes => "failed to save: a single level places more distinct tools than the layout char set provides",
-            else => "failed to save: out of memory",
-        };
-        history.session.setPendingError(history.history_arena.allocator(), message);
-        if (minted_uuid) |minted| durable.free(minted);
-        return;
-    };
-
-    // 3. Write into missions/<uuid>_<name>/.
-    const sanitized_name = sanitizeMissionNameForPath(editor.mission.name, scratch);
-    const dir_path = std.fmt.allocPrint(
-        durable,
-        "missions/{s}_{s}",
-        .{ uuid, sanitized_name },
-    ) catch @panic("failed to allocate mission dir path");
-    const mission_path = std.fmt.allocPrint(scratch, "{s}/mission.txt", .{dir_path}) catch
-        @panic("failed to allocate mission.txt path");
-    const player_path = std.fmt.allocPrint(scratch, "{s}/player.txt", .{dir_path}) catch
-        @panic("failed to allocate player.txt path");
-    history.file_source.writeFile(mission_path, written.mission_txt) catch {
-        history.session.setPendingError(
-            history.history_arena.allocator(),
-            "failed to save: could not write mission.txt",
-        );
-        durable.free(dir_path);
-        if (minted_uuid) |minted| durable.free(minted);
-        return;
-    };
-    history.file_source.writeFile(player_path, written.player_txt) catch {
-        history.session.setPendingError(
-            history.history_arena.allocator(),
-            "failed to save: could not write player.txt",
-        );
-        durable.free(dir_path);
-        if (minted_uuid) |minted| durable.free(minted);
-        return;
-    };
-    for (written.level_txts, 0..) |level_txt, level_index| {
-        const level_path = std.fmt.allocPrint(
-            scratch,
-            "{s}/level_{d}.txt",
-            .{ dir_path, level_index + 1 },
-        ) catch @panic("failed to allocate level path");
-        history.file_source.writeFile(level_path, level_txt) catch {
-            const message = std.fmt.allocPrint(
-                history.history_arena.allocator(),
-                "failed to save: could not write level_{d}.txt",
-                .{level_index + 1},
-            ) catch @panic("failed to format save failure message");
-            history.session.setPendingError(history.history_arena.allocator(), message);
-            durable.free(dir_path);
-            if (minted_uuid) |minted| durable.free(minted);
-            return;
-        };
-    }
-
-    // 4. Record the save on the session (the editor_mission_sprites
-    //    ownership pattern: free the previous memo's strings, then store).
-    //    The uuid slice: a fresh mint or the previous memo's REUSED slice is
-    //    memo-owned; an OPENED mission's uuid borrows the editor's
-    //    (current-arena) graph — dupe it durable so the memo never dangles
-    //    past an arena compaction.
-    var reused_previous_uuid = false;
-    if (history.session.editor_saved_mission) |previous| {
-        durable.free(previous.dir_path);
-        if (previous.uuid.ptr == uuid.ptr) {
-            reused_previous_uuid = true;
-        } else {
-            durable.free(previous.uuid);
-        }
-    }
-    const memo_uuid: []const u8 = if (minted_uuid) |minted|
-        minted
-    else if (reused_previous_uuid)
-        uuid
-    else
-        durable.dupe(u8, uuid) catch @panic("failed to dupe saved mission uuid");
-    history.session.editor_saved_mission = .{
-        .uuid = memo_uuid,
-        .dir_path = dir_path,
-    };
-}
-
-/// Read one file from the persistent dir and append it to the export
-/// entries under `archive_name`. Errors propagate (the caller surfaces
-/// the popup).
-fn appendExportFile(
-    entries: *std.ArrayList(zip_writer.ZipEntry),
-    file_source: *const file_source_mod.FileSource,
-    allocator: std.mem.Allocator,
-    path: []const u8,
-    archive_name: []const u8,
-) !void {
-    const bytes = try file_source.readFile(allocator, path);
-    try entries.append(allocator, .{ .name = archive_name, .bytes = bytes });
-}
-
-/// Export the edited mission as a .zip (the editor options menu's Export
-/// Mission button — button-only, no keybind): SAVE first (the settled
-/// order — the bundle is always the current state), then bundle the saved
-/// mission files + the mission directory's custom sprites (a fresh
-/// mission's pngs sit in its placeholder dir — they bundle even though the
-/// save itself writes elsewhere) + a validation_replay.txt when one
-/// exists (it lands with the validation slice) into a STORE archive at
-/// `exported_missions/<uuid>_<name>.zip` in the persistent dir. On web
-/// that file is then offered as a browser download (the Export Save seam —
-/// triggerBrowserDownload reads it back from the mounted FS; a comptime
-/// no-op on native). A pure side effect like the save (the dump_event_log
-/// class). See DESIGN → Level Editor (the export flow).
-fn exportEditorMission(history: *GameStateHistory) void {
-    saveEditorMission(history);
-    // The save failed (or no editor): its popup is already surfaced.
-    const saved = history.session.editor_saved_mission orelse return;
-    const editor = if (history.current_state.editor) |*some_editor| some_editor else return;
-    const scratch = history.current_arena.allocator();
-
-    const fail = struct {
-        fn note(history_arg: *GameStateHistory, reason: []const u8) void {
-            history_arg.session.setPendingError(
-                history_arg.history_arena.allocator(),
-                reason,
-            );
-        }
-    };
-
-    var entries: std.ArrayList(zip_writer.ZipEntry) = .empty;
-
-    // The generated mission files, read back from the save's directory.
-    appendExportFile(
-        &entries,
-        history.file_source,
-        scratch,
-        std.fmt.allocPrint(scratch, "{s}/mission.txt", .{saved.dir_path}) catch
-            @panic("failed to allocate export path"),
-        "mission.txt",
-    ) catch {
-        fail.note(history, "failed to export: could not read the saved mission.txt");
-        return;
-    };
-    appendExportFile(
-        &entries,
-        history.file_source,
-        scratch,
-        std.fmt.allocPrint(scratch, "{s}/player.txt", .{saved.dir_path}) catch
-            @panic("failed to allocate export path"),
-        "player.txt",
-    ) catch {
-        fail.note(history, "failed to export: could not read the saved player.txt");
-        return;
-    };
-    for (0..editor.levels.len) |level_index| {
-        const level_path = std.fmt.allocPrint(
-            scratch,
-            "{s}/level_{d}.txt",
-            .{ saved.dir_path, level_index + 1 },
-        ) catch @panic("failed to allocate export path");
-        const archive_name = std.fmt.allocPrint(
-            scratch,
-            "level_{d}.txt",
-            .{level_index + 1},
-        ) catch @panic("failed to allocate export archive name");
-        appendExportFile(&entries, history.file_source, scratch, level_path, archive_name) catch {
-            fail.note(history, "failed to export: could not read a saved level file");
-            return;
-        };
-    }
-
-    // Custom sprites from the editor's CURRENT mission dir.
-    const sprite_names = history.file_source.listPersistentPngFiles(
-        scratch,
-        editor.mission.path,
-    ) catch &[_][]const u8{};
-    for (sprite_names) |sprite_name| {
-        const sprite_path = std.fmt.allocPrint(
-            scratch,
-            "{s}/{s}",
-            .{ editor.mission.path, sprite_name },
-        ) catch @panic("failed to allocate sprite export path");
-        appendExportFile(&entries, history.file_source, scratch, sprite_path, sprite_name) catch {
-            fail.note(history, "failed to export: could not read a mission sprite");
-            return;
-        };
-    }
-
-    // A validation replay, when one exists in the saved dir (written by
-    // the validation flow once it lands). Absent or unreadable → not
-    // bundled.
-    if (appendExportFile(
-        &entries,
-        history.file_source,
-        scratch,
-        std.fmt.allocPrint(scratch, "{s}/validation_replay.txt", .{saved.dir_path}) catch
-            @panic("failed to allocate export path"),
-        "validation_replay.txt",
-    )) |_| {} else |_| {}
-
-    const archive = zip_writer.writeZipArchive(entries.items, scratch) catch {
-        fail.note(history, "failed to export: could not build the zip archive");
-        return;
-    };
-    const sanitized_name = sanitizeMissionNameForPath(editor.mission.name, scratch);
-    const zip_path = std.fmt.allocPrint(
-        scratch,
-        "exported_missions/{s}_{s}.zip",
-        .{ saved.uuid, sanitized_name },
-    ) catch @panic("failed to allocate export zip path");
-    history.file_source.writeFile(zip_path, archive) catch {
-        fail.note(history, "failed to export: could not write the zip file");
-        return;
-    };
-    // Web: offer it as a download (reads it back from the mounted FS);
-    // native: a comptime no-op.
-    file_source_mod.triggerBrowserDownload(scratch, zip_path);
-}
-
-/// Consume the mission-import marker, if present: the picked .zip has landed
-/// in imported_missions/ — delete the marker, extract the zip into missions/
-/// (see importMissionFromZip), and rescan so the row appears. The web-only
-/// upload (the browser's Import button / ctrl+I) lands the zip + marker; the
-/// extraction is platform-neutral file I/O. A failure surfaces the
-/// recoverable popup and keeps the zip (re-uploadable; the marker is gone
-/// either way).
-fn pollMissionImportMarker(history: *GameStateHistory) void {
-    const marker = file_source_mod.mission_import_marker_path;
-    if (!history.file_source.fileExists(marker)) return;
-
-    const scratch = history.current_arena.allocator();
-    const marker_bytes = history.file_source.readFile(scratch, marker) catch {
-        // Unreadable marker: delete it so we don't spin on a corrupt file
-        // (the pollImportMarker discipline).
-        history.file_source.deleteFile(marker) catch {};
-        return;
-    };
-    history.file_source.deleteFile(marker) catch {};
-    importMissionFromZip(history, std.mem.trim(u8, marker_bytes, " \r\n\t"));
-}
-
-/// A safety cap on imported archive size: a mission dir is a handful of
-/// config files + sprites; four orders of magnitude past that is a hostile
-/// or mis-picked archive, not content. Keeps the scratch arena bounded.
-const mission_import_max_entries: usize = 1024;
-
-/// The set of junk a macOS "Compress" zip carries alongside the real
-/// content — skipped so an OS-made mission zip imports clean.
-fn isMissionImportJunk(name: []const u8) bool {
-    // Directory entries (a trailing '/', zero contents).
-    if (std.mem.endsWith(u8, name, "/")) return true;
-    // The macOS resource-fork folder + its artifacts.
-    if (std.mem.startsWith(u8, name, "__MACOSX/")) return true;
-    const basename = std.fs.path.basename(name);
-    if (std.mem.startsWith(u8, basename, "._")) return true;
-    if (std.mem.eql(u8, basename, ".DS_Store")) return true;
-    return false;
-}
-
-/// Strip a single common ROOT folder from every entry name, if there is
-/// one: an OS "compress folder" zip wraps the mission's files in
-/// `<folder>/…`, while our own exports are flat at the archive root.
-/// Mixed shapes (some entries at the root, some under a folder, or two
-/// different folders) strip nothing — the mission.txt lookup then fails and
-/// the popup explains. Mutates `entries` in place (the caller's scratch-
-/// arena copy of the filtered list).
-fn missionImportRootStrip(entries: []zip_reader.ZipEntry) void {
-    if (entries.len == 0) return;
-    const first_slash = std.mem.indexOfScalar(u8, entries[0].name, '/') orelse return;
-    const root = entries[0].name[0..first_slash];
-    if (root.len == 0) return;
-    for (entries) |entry| {
-        if (!std.mem.startsWith(u8, entry.name, root) or
-            entry.name.len <= root.len or
-            entry.name[root.len] != '/') return;
-    }
-    for (entries) |*entry| {
-        entry.name = entry.name[root.len + 1 ..];
-    }
-}
-
-/// A safe extraction name: no absolute paths, no `..` traversal, no
-/// backslashes (spec names use '/'; a backslash is a malformed or hostile
-/// name — a literal filename character on some platforms), no empty
-/// segments. Applied AFTER the root strip.
-fn isUnsafeMissionImportName(name: []const u8) bool {
-    if (name.len == 0 or name[0] == '/') return true;
-    if (std.mem.indexOfScalar(u8, name, '\\') != null) return true;
-    var iterator = std.mem.splitScalar(u8, name, '/');
-    while (iterator.next()) |segment| {
-        if (segment.len == 0 or std.mem.eql(u8, segment, "..")) return true;
-    }
-    return false;
-}
-
-/// Extract one mission zip into `missions/<uuid>_<sanitized name>/` (the
-/// editor save's dir convention — a re-import of the same zip overwrites
-/// the same dir, idempotent; a mission without a uuid lands under
-/// `missions/<sanitized name>/`). All names are validated BEFORE the first
-/// write: a hostile or malformed zip fails whole, never half-imported.
-fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
-    const scratch = history.current_arena.allocator();
-    const fail = struct {
-        fn note(history_arg: *GameStateHistory, reason: []const u8) void {
-            history_arg.session.setPendingError(
-                history_arg.history_arena.allocator(),
-                reason,
-            );
-        }
-    };
-
-    const zip_bytes = history.file_source.readFile(scratch, zip_path) catch {
-        fail.note(history, "failed to import: could not read the uploaded zip");
-        return;
-    };
-    const all_entries = zip_reader.readZipArchive(zip_bytes, scratch) catch {
-        fail.note(history, "failed to import: the zip is corrupt or uses an unsupported format");
-        return;
-    };
-    if (all_entries.len > mission_import_max_entries) {
-        fail.note(history, "failed to import: the zip has too many files");
-        return;
-    }
-
-    // Filter OS junk, then strip a single common root folder.
-    var file_entries: std.ArrayList(zip_reader.ZipEntry) = .empty;
-    for (all_entries) |entry| {
-        if (!isMissionImportJunk(entry.name)) file_entries.append(scratch, entry) catch
-            @panic("failed to collect zip entries");
-    }
-    missionImportRootStrip(file_entries.items);
-    const stripped = file_entries.items;
-
-    // The mission's identity: mission.txt at the (stripped) archive root.
-    const mission_txt = blk: for (stripped) |entry| {
-        if (std.mem.eql(u8, entry.name, "mission.txt")) break :blk entry.bytes;
-    } else {
-        fail.note(history, "failed to import: the zip has no mission.txt at its root");
-        return;
-    };
-    const sections = parser.parseConfigFile(mission_txt, scratch) catch {
-        fail.note(history, "failed to import: the zip's mission.txt is not valid");
-        return;
-    };
-    const mission = loaders.loadMission(sections, scratch) catch {
-        fail.note(history, "failed to import: the zip's mission.txt is not valid");
-        return;
-    };
-
-    // Validate every name up front (nothing written on any bad entry).
-    for (stripped) |entry| {
-        if (isUnsafeMissionImportName(entry.name)) {
-            const message = std.fmt.allocPrint(
-                history.history_arena.allocator(),
-                "failed to import: unsafe file name in the zip ({s})",
-                .{entry.name},
-            ) catch "failed to import: unsafe file name in the zip";
-            fail.note(history, message);
-            return;
-        }
-    }
-
-    // The target dir, derived exactly like the editor save's.
-    const sanitized_name = sanitizeMissionNameForPath(mission.name, scratch);
-    var name_prefix: []const u8 = sanitized_name;
-    if (mission.uuid.len > 0) {
-        name_prefix = std.fmt.allocPrint(
-            scratch,
-            "{s}_{s}",
-            .{ mission.uuid, sanitized_name },
-        ) catch @panic("failed to allocate imported mission dir path");
-    }
-    const dir_path = std.fmt.allocPrint(
-        scratch,
-        "missions/{s}",
-        .{name_prefix},
-    ) catch @panic("failed to allocate imported mission dir path");
-
-    for (stripped) |entry| {
-        const file_path = std.fmt.allocPrint(scratch, "{s}/{s}", .{ dir_path, entry.name }) catch
-            @panic("failed to allocate imported mission file path");
-        history.file_source.writeFile(file_path, entry.bytes) catch {
-            const message = std.fmt.allocPrint(
-                history.history_arena.allocator(),
-                "failed to import: could not write {s}",
-                .{entry.name},
-            ) catch "failed to import: could not write a mission file";
-            fail.note(history, message);
-            return;
-        };
-    }
-
-    // Success: the zip has served its purpose (delete it — the extracted
-    // folder is the artifact), and the browser's list rescans so the row
-    // appears immediately.
-    history.file_source.deleteFile(zip_path) catch {};
-    rescanEditorMissionsNow(history);
 }
 
 /// The gear-slot player action (create / retype / field-edit / clear —
@@ -2387,14 +864,14 @@ pub fn handleAnytimeInput(
         // layer). Editor-only; every other screen no-ops (the
         // delete_editor_selection discipline).
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
-            saveEditorMission(history);
+            mission_io.saveEditorMission(history);
         }
     }
 
     if (anytime.export_editor_mission) {
         // The mission export — same side-effect class + gates as the save.
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
-            exportEditorMission(history);
+            mission_io.exportEditorMission(history);
         }
     }
 
@@ -2412,7 +889,7 @@ pub fn handleAnytimeInput(
                 // (your collection is the primary target), then scan now.
                 ui_state.editor_mission_scroll_offset = 0;
                 ui_state.editor_mission_browser_tab = .local;
-                rescanEditorMissionsNow(history);
+                mission_io.rescanEditorMissionsNow(history);
             } else {
                 queueMenuSound(history);
             }
@@ -2555,7 +1032,7 @@ pub fn handleAnytimeInput(
                 history.session.ui_state.editor_picker = null;
                 if (group_index <= 1) {
                     const editor = &(history.current_state.editor orelse return);
-                    rescanEditorMissionSprites(history, editor.*);
+                    mission_io.rescanEditorMissionSprites(history, editor.*);
                     history.session.ui_state.editor_picker = if (group_index == 0)
                         .{ .entity_sprite = {} }
                     else
@@ -2632,7 +1109,7 @@ pub fn handleAnytimeInput(
             // commits) — the same panel, target-resolved inside the builder.
             .open_editor_sprite_picker => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                rescanEditorMissionSprites(history, editor.*);
+                mission_io.rescanEditorMissionSprites(history, editor.*);
                 history.session.ui_state.editor_picker = switch (ui.editorInspectorTarget(editor.*)) {
                     .decoration_type => .{ .decoration_sprite = {} },
                     .entity_type, .player => .{ .entity_sprite = {} },
@@ -2648,7 +1125,7 @@ pub fn handleAnytimeInput(
             // layer index riding the payload (null = add mode).
             .open_editor_entity_layer_picker => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                rescanEditorMissionSprites(history, editor.*);
+                mission_io.rescanEditorMissionSprites(history, editor.*);
                 history.session.ui_state.editor_picker = .{
                     .entity_layer = anytime.clicked_editor_layer,
                 };
@@ -2656,7 +1133,7 @@ pub fn handleAnytimeInput(
             },
             .open_editor_decoration_layer_picker => {
                 const editor = if (current.editor) |*some_editor| some_editor else return;
-                rescanEditorMissionSprites(history, editor.*);
+                mission_io.rescanEditorMissionSprites(history, editor.*);
                 history.session.ui_state.editor_picker = .{
                     .decoration_layer = anytime.clicked_editor_layer,
                 };
@@ -3577,7 +2054,7 @@ pub fn handleAnytimeInput(
         if (anytime.import_editor_mission) {
             file_source_mod.triggerBrowserMissionUpload();
         }
-        pollMissionImportMarker(history);
+        mission_io.pollMissionImportMarker(history);
         if (anytime.scroll_delta != 0) {
             const delta_rows: i32 = @intFromFloat(anytime.scroll_delta);
             history.session.ui_state.editor_mission_scroll_offset -= delta_rows;
@@ -3866,36 +2343,6 @@ fn rescanSaveFilesIfDue(history: *GameStateHistory) void {
         save_file_rescan_interval_us)
     {
         rescanSaveFilesNow(history);
-    }
-}
-
-/// Scan both mission-browser lists into SessionState, freeing the previous
-/// local list (the save_files pattern). The LOCAL list is the persistent
-/// `missions/` dir; the OFFICIAL list is parsed from the embedded mission
-/// files ONCE per session (the embedded map is immutable per build — no
-/// rescan). Runs when the browser OPENS (never in `view()`, which stays
-/// file-free) — no periodic rescan while open: nothing can add a local
-/// mission while the modal is up (a web import triggers its own explicit
-/// rescan), so reopening is the refresh path. An unreadable dir keeps the
-/// previous list rather than blanking the browser.
-fn rescanEditorMissionsNow(history: *GameStateHistory) void {
-    const allocator = history.backing_allocator;
-
-    // The two scans are INDEPENDENT: a failure in one keeps that list's
-    // previous contents and never blocks the other (a local-scan failure
-    // on web's broken-readdir mount must not blank the OFFICIAL tab too —
-    // the tabs fail separately or not at all).
-    if (history.file_source.listMissions(allocator)) |local| {
-        file_source_mod.freeMissions(allocator, history.session.editor_local_missions);
-        history.session.editor_local_missions = local;
-    } else |_| {} // unreadable dir mid-session: keep the previous list
-
-    if (!history.session.editor_official_missions_scanned) {
-        if (history.file_source.listOfficialMissions(allocator)) |official| {
-            file_source_mod.freeMissions(allocator, history.session.editor_official_missions);
-            history.session.editor_official_missions = official;
-            history.session.editor_official_missions_scanned = true;
-        } else |_| {} // one-time scan failed: retry on the next open
     }
 }
 
@@ -4469,221 +2916,6 @@ fn resolveEditorTileCursor(
     history.session.tile_cursor = cursor;
 }
 
-test "dragToOrchestrator maps valid drags and blocks cross-domain drops" {
-    // inventory → gear = player_equip_to_gear
-    {
-        const orchestrator = dragToOrchestrator(.{ .inventory = 2 }, .{ .gear = .boots }).?;
-        try std.testing.expectEqual(@as(u32, 2), orchestrator.player_equip_to_gear.inventory_slot_index);
-        try std.testing.expectEqual(types.GearSlot.boots, orchestrator.player_equip_to_gear.gear_slot);
-    }
-    // gear → inventory = player_unequip_from_gear
-    {
-        const orchestrator = dragToOrchestrator(.{ .gear = .amulet }, .{ .inventory = 5 }).?;
-        try std.testing.expectEqual(types.GearSlot.amulet, orchestrator.player_unequip_from_gear.gear_slot);
-        try std.testing.expectEqual(@as(u32, 5), orchestrator.player_unequip_from_gear.inventory_slot_index);
-    }
-    // learned skill → skill bar = player_assign_utility_skill
-    {
-        const orchestrator = dragToOrchestrator(.{ .learned_skill = .replenish }, .{ .skill_bar = 1 }).?;
-        try std.testing.expectEqual(types.SkillId.replenish, orchestrator.player_assign_utility_skill.skill_id);
-        try std.testing.expectEqual(@as(u32, 1), orchestrator.player_assign_utility_skill.slot_index);
-    }
-    // skill bar → skill bar = player_swap_utility_skills
-    {
-        const orchestrator = dragToOrchestrator(.{ .skill_bar = 0 }, .{ .skill_bar = 3 }).?;
-        try std.testing.expectEqual(@as(u32, 0), orchestrator.player_swap_utility_skills.slot_a_index);
-        try std.testing.expectEqual(@as(u32, 3), orchestrator.player_swap_utility_skills.slot_b_index);
-    }
-    // skill bar → learned skill (skills menu) = player_clear_utility_skill
-    {
-        const orchestrator = dragToOrchestrator(.{ .skill_bar = 2 }, .{ .learned_skill = .slice }).?;
-        try std.testing.expectEqual(@as(u32, 2), orchestrator.player_clear_utility_skill.slot_index);
-    }
-    // inventory → inventory = player_swap_inventory_items
-    {
-        const orchestrator = dragToOrchestrator(.{ .inventory = 0 }, .{ .inventory = 1 }).?;
-        try std.testing.expectEqual(@as(u32, 0), orchestrator.player_swap_inventory_items.slot_a_index);
-        try std.testing.expectEqual(@as(u32, 1), orchestrator.player_swap_inventory_items.slot_b_index);
-    }
-    // Dropping back on the source slot is a no-op for every domain.
-    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .inventory = 3 }, .{ .inventory = 3 }));
-    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .skill_bar = 1 }, .{ .skill_bar = 1 }));
-
-    // Cross-domain and nonsensical drops are no-ops.
-    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .inventory = 0 }, .{ .skill_bar = 0 }));
-    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .learned_skill = .slice }, .{ .gear = .coat }));
-    try std.testing.expectEqual(@as(?events.PlayerInputEvent, null), dragToOrchestrator(.{ .gear = .coat }, .{ .gear = .boots }));
-}
-
-test "resolveItemClick: modifier precedence and double-click" {
-    const none_mods: types.Modifiers = .{};
-    // Plain single clicks seed no intent (awaiting a double).
-    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.left, none_mods, false));
-    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.right, none_mods, false));
-    // Plain double-clicks fire the equip intent (left → main, right → off).
-    try std.testing.expectEqual(ItemIntent.equip_main, resolveItemClick(.left, none_mods, true));
-    try std.testing.expectEqual(ItemIntent.equip_off, resolveItemClick(.right, none_mods, true));
-    // ctrl+click mirrors double-click (left → main, right → off), single fires.
-    try std.testing.expectEqual(ItemIntent.equip_main, resolveItemClick(.left, .{ .ctrl = true }, false));
-    try std.testing.expectEqual(ItemIntent.equip_off, resolveItemClick(.right, .{ .ctrl = true }, false));
-    // alt swaps the button's handedness (left → off, right → main).
-    try std.testing.expectEqual(ItemIntent.equip_off, resolveItemClick(.left, .{ .alt = true }, false));
-    try std.testing.expectEqual(ItemIntent.equip_main, resolveItemClick(.right, .{ .alt = true }, false));
-    // shift+left → salvage; shift+right → none.
-    try std.testing.expectEqual(ItemIntent.salvage, resolveItemClick(.left, .{ .shift = true }, false));
-    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.right, .{ .shift = true }, false));
-    // Combos (2+ modifiers) are no-ops regardless of button.
-    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.left, .{ .shift = true, .ctrl = true }, false));
-    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.right, .{ .ctrl = true, .alt = true }, true));
-    try std.testing.expectEqual(ItemIntent.none, resolveItemClick(.left, .{ .shift = true, .alt = true }, true));
-}
-
-test "isSkillLearned: found / not found" {
-    const learned = [_]types.SkillId{ .slice, .bash };
-    try std.testing.expect(player_handlers.isSkillLearned(&learned, .slice));
-    try std.testing.expect(!player_handlers.isSkillLearned(&learned, .blink));
-}
-
-
-test "skillsSlotUnderPointer: true over a learned_skill slot, false elsewhere" {
-    const elements = [_]ui.UiElement{
-        .{ .slot = .{
-            .screen_position = .{ .x = 0, .y = 0 },
-            .size = 256,
-            .icon_sprite_id = "ui/skill_button",
-            .ref = .{ .learned_skill = .slice },
-        } },
-        .{ .slot = .{
-            .screen_position = .{ .x = 300, .y = 0 },
-            .size = 128,
-            .icon_sprite_id = "ui/item_slot",
-            .ref = .{ .inventory = 0 },
-        } },
-    };
-    // Over the learned-skill slot.
-    try std.testing.expect(skillsSlotUnderPointer(&elements, .{ .x = 10, .y = 10 }));
-    // Over the inventory slot.
-    try std.testing.expect(!skillsSlotUnderPointer(&elements, .{ .x = 310, .y = 10 }));
-    // Over empty space.
-    try std.testing.expect(!skillsSlotUnderPointer(&elements, .{ .x = 500, .y = 500 }));
-}
-
-test "resolveEditorTileCursor: mouse follows to any tile position, blocked over UI, nudges unclamped" {
-    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer backing.deinit();
-    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
-
-    const levels = [_]types.EditorLevel{.{ .player_start = .{ .x = 2, .y = 3 } }};
-    var history = harness.newHistory(.{
-        .screen = .editor,
-        .event_stack = &.{},
-        .player_data = .{},
-        .camera = null,
-        .editor = .{ .levels = &levels },
-        .replay_viewer = null,
-        .campaign = null,
-        .mission = null,
-        .level = null,
-        .hub = null,
-    });
-
-    // Mouse owns the cursor when it moved — at a position with NO tile
-    // (paint semantics: any tile position is a legal target).
-    history.current_state.editor.?.active_tool = .tile;
-    resolveTileCursor(
-        &history,
-        .{ .anytime = .{ .in_game = .{
-            .mouse_moved_this_tick = true,
-            .mouse_tile = .{ .x = 9, .y = 9 },
-        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
-        &.{},
-    );
-    try std.testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, history.session.tile_cursor.?);
-
-    // Over a blocking UI element the cursor clears (no world-cursor ghost
-    // behind panels).
-    const blocking_panel = [_]ui.UiElement{.{ .nine_slice_panel = .{
-        .sprite_id = "ui/panel",
-        .screen_position = .{ .x = 400, .y = 400 },
-        .width = 400,
-        .height = 400,
-    } }};
-    resolveTileCursor(
-        &history,
-        .{ .anytime = .{ .in_game = .{
-            .mouse_moved_this_tick = true,
-            .mouse_tile = .{ .x = 9, .y = 9 },
-        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
-        &blocking_panel,
-    );
-    try std.testing.expectEqual(@as(?types.Vector2, null), history.session.tile_cursor);
-
-    // Arrow nudge with a null cursor snaps to player_start first, then
-    // nudges — no clamp-to-real-tile (empty space is a legal paint target).
-    history.current_state.editor.?.active_tool = .tile;
-    resolveTileCursor(
-        &history,
-        .{ .anytime = .{ .in_game = .{
-            .move_cursor_right = true,
-            .cursor_direction = .{ .x = 1, .y = 0 },
-        } } },
-        &.{},
-    );
-    try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 3 }, history.session.tile_cursor.?);
-
-    // The select tool resolves the tile cursor as well (its outline
-    // previews what a click would select — a covering decoration's
-    // footprint region, else the single tile).
-    history.current_state.editor.?.active_tool = .select;
-    resolveTileCursor(
-        &history,
-        .{ .anytime = .{ .in_game = .{
-            .mouse_moved_this_tick = true,
-            .mouse_tile = .{ .x = 9, .y = 9 },
-        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
-        &.{},
-    );
-    try std.testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, history.session.tile_cursor.?);
-
-    // The enemy tool is a tile-cursor tool too (same semantics — any
-    // position is a legal place target).
-    history.current_state.editor.?.active_tool = .{ .entity_type = 0 };
-    resolveTileCursor(
-        &history,
-        .{ .anytime = .{ .in_game = .{
-            .mouse_moved_this_tick = true,
-            .mouse_tile = .{ .x = 8, .y = 8 },
-        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
-        &.{},
-    );
-    try std.testing.expectEqual(types.Vector2{ .x = 8, .y = 8 }, history.session.tile_cursor.?);
-
-    // The decoration tool as well — the cursor tile is the placement
-    // ANCHOR tile (the view draws the footprint region outline around it).
-    history.current_state.editor.?.active_tool = .{ .decoration_type = 0 };
-    resolveTileCursor(
-        &history,
-        .{ .anytime = .{ .in_game = .{
-            .mouse_moved_this_tick = true,
-            .mouse_tile = .{ .x = 7, .y = 7 },
-        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
-        &.{},
-    );
-    try std.testing.expectEqual(types.Vector2{ .x = 7, .y = 7 }, history.session.tile_cursor.?);
-
-    // The ground-item tool too (single-tile outline, like tile/enemy).
-    history.current_state.editor.?.active_tool = .{ .item_type = 0 };
-    resolveTileCursor(
-        &history,
-        .{ .anytime = .{ .in_game = .{
-            .mouse_moved_this_tick = true,
-            .mouse_tile = .{ .x = 6, .y = 6 },
-        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
-        &.{},
-    );
-    try std.testing.expectEqual(types.Vector2{ .x = 6, .y = 6 }, history.session.tile_cursor.?);
-}
-
 test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no-ops" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
@@ -4930,55 +3162,6 @@ test "player_toggle_editor_selection (shift+click): toggles the tile + occupants
     try std.testing.expectEqual(@as(usize, 4), history.current_state.editor.?.selection.len);
 }
 
-test "select_editor_tool: changing tools clears the selection, re-selecting keeps it, undo reverts the tool" {
-    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer backing.deinit();
-    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
-
-    const levels = [_]types.EditorLevel{.{}};
-    var history = harness.newHistory(.{
-        .screen = .editor,
-        .event_stack = &.{},
-        .player_data = .{},
-        .camera = null,
-        .editor = .{ .levels = &levels },
-        .replay_viewer = null,
-        .campaign = null,
-        .mission = null,
-        .level = null,
-        .hub = null,
-    });
-    const seeded_selection = [_]types.Selectable{.{ .tile = .{ .x = 1, .y = 1 } }};
-    history.current_state.editor.?.active_tool = .select;
-    history.current_state.editor.?.selection = &seeded_selection;
-    @import("test_harness.zig").runToIdle(&history);
-
-    // Re-selecting the ACTIVE tool changes nothing (no event fired).
-    handleAnytimeInput(&history, .{
-        .options_action = .select_editor_tool,
-        .clicked_editor_tool = .select,
-    }, .{ .x = 0, .y = 0 }, &.{});
-    try std.testing.expectEqual(@as(usize, 1), history.current_state.editor.?.selection.len);
-
-    // Changing to a different tool clears the selection (the clear rides
-    // the editor_set_tool event, so it is atomic with the switch).
-    handleAnytimeInput(&history, .{
-        .options_action = .select_editor_tool,
-        .clicked_editor_tool = .tile,
-    }, .{ .x = 0, .y = 0 }, &.{});
-    @import("test_harness.zig").runToIdle(&history);
-    try std.testing.expectEqual(types.EditorToolId.tile, history.current_state.editor.?.active_tool);
-    try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
-
-    // The tool pointer AND the selection ride the undo timeline — one undo
-    // step reverts the switch together with its selection clear.
-    try std.testing.expect(history.undo(event_handlers.processEvent));
-    try std.testing.expectEqual(types.EditorToolId.select, history.current_state.editor.?.active_tool);
-    const selection = history.current_state.editor.?.selection;
-    try std.testing.expectEqual(@as(usize, 1), selection.len);
-    try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection[0]);
-}
-
 test "handleEditorMarquee: shift-drag adds the region, shift-click toggles, shift-release cancels" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer backing.deinit();
@@ -5139,7 +3322,6 @@ test "handleEditorMarquee: shift-drag adds the region, shift-click toggles, shif
     );
     try std.testing.expect(history.session.ui_state.editor_marquee == null);
 }
-
 
 test "handleEditorMoveDrag: press on a selected thing moves it, plain click toggles, unselected press does nothing" {
     var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -5308,6 +3490,358 @@ test "handleEditorMoveDrag: press on a selected thing moves it, plain click togg
     try std.testing.expect(history.session.ui_state.editor_move_drag == null);
 }
 
+// --- Drag no-op gate (pure predicate) ---------------------------------------
+// A drop that would change nothing never fires (no dead undo step). The
+// predicate is pure over the player entity; the handleDrag wiring is
+// covered by the gate tests in handler_tests_gear.zig.
+
+/// Fixture: a sword in inventory slot 0, boots in slot 1, a main-hand
+/// weapon equipped, Flash Strike in utility slot 0.
+
+fn dragGatePlayer() types.Entity {
+    var player_entity = types.Entity{};
+    player_entity.inventory.slots[0] = .{ .weapon = .{
+        .name = "sword",
+        .weapon_type = .sword,
+        .weapon_damage = 4,
+    } };
+    player_entity.inventory.slots[1] = .{ .boots = .{ .name = "boots" } };
+    player_entity.main_hand_weapon = .{ .name = "equipped", .weapon_type = .sword, .weapon_damage = 5 };
+    player_entity.equipped_utility_skills[0] = .flash_strike;
+    return player_entity;
+}
+
+test "dragActionWouldChange: equip fit conditions" {
+    const player_entity = dragGatePlayer();
+    // A weapon into a hand slot: fits → fires.
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
+        .inventory_slot_index = 0,
+        .gear_slot = .main_hand,
+    } }));
+    // A weapon into the boots slot: doesn't fit → never fires.
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
+        .inventory_slot_index = 0,
+        .gear_slot = .boots,
+    } }));
+    // Boots into the boots slot: fits → fires.
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
+        .inventory_slot_index = 1,
+        .gear_slot = .boots,
+    } }));
+    // An empty inventory slot: nothing to equip → never fires.
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
+        .inventory_slot_index = 2,
+        .gear_slot = .main_hand,
+    } }));
+}
+
+test "dragActionWouldChange: unequip fit conditions" {
+    const player_entity = dragGatePlayer();
+    // Main hand (occupied) into an empty inventory slot: fires.
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
+        .gear_slot = .main_hand,
+        .inventory_slot_index = 2,
+    } }));
+    // Into a slot holding boots (doesn't fit a hand): never fires.
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
+        .gear_slot = .main_hand,
+        .inventory_slot_index = 1,
+    } }));
+    // Into a slot holding a weapon (fits the hand): fires.
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
+        .gear_slot = .main_hand,
+        .inventory_slot_index = 0,
+    } }));
+    // From an empty gear slot (amulet): never fires.
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
+        .gear_slot = .amulet,
+        .inventory_slot_index = 2,
+    } }));
+}
+
+test "dragActionWouldChange: utility-skill conditions" {
+    var player_entity = dragGatePlayer();
+    // Re-assigning the skill already in the slot: only a change when a
+    // preparation is active (the handler cancels it).
+    const assign_same: events.PlayerInputEvent = .{ .player_assign_utility_skill = .{
+        .skill_id = .flash_strike,
+        .slot_index = 0,
+    } };
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, assign_same));
+    try std.testing.expect(dragActionWouldChange(player_entity, true, assign_same));
+    // A different skill: always fires.
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_assign_utility_skill = .{
+        .skill_id = .replenish,
+        .slot_index = 0,
+    } }));
+    // Swapping two slots holding the same skill (a duplicate assignment):
+    // only a change when a preparation is active.
+    player_entity.equipped_utility_skills[1] = .flash_strike;
+    const swap_same: events.PlayerInputEvent = .{ .player_swap_utility_skills = .{
+        .slot_a_index = 0,
+        .slot_b_index = 1,
+    } };
+    try std.testing.expect(!dragActionWouldChange(player_entity, false, swap_same));
+    try std.testing.expect(dragActionWouldChange(player_entity, true, swap_same));
+    // Swapping a skill with an empty slot: a real move → fires.
+    player_entity.equipped_utility_skills[1] = null;
+    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_swap_utility_skills = .{
+        .slot_a_index = 0,
+        .slot_b_index = 1,
+    } }));
+}
+
+test "player_replace_editor_selection (plain click): replaces the selection, empty ground clears it, no-op clicks never fire" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 2 } };
+    const entity_placements = [_]types.EntityPlacement{.{
+        .type_id = 0,
+        .position = .{ .x = 1, .y = 1 },
+    }};
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+        .entity_placements = &entity_placements,
+    }};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{
+            .levels = &levels,
+            .entity_types = &.{.{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } }},
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    @import("test_harness.zig").runToIdle(&history);
+
+    // A plain click on (1,1) with an EMPTY selection: the group (tile +
+    // entity) becomes the selection.
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
+    @import("test_harness.zig").runToIdle(&history);
+    {
+        const selection = history.current_state.editor.?.selection;
+        try std.testing.expectEqual(@as(usize, 2), selection.len);
+        try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection[0]);
+        try std.testing.expectEqual(@as(u32, 0), selection[1].entity_placement);
+    }
+
+    // A plain click elsewhere REPLACES the selection entirely (the old
+    // entries go, the clicked group becomes the selection).
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
+    @import("test_harness.zig").runToIdle(&history);
+    {
+        const selection = history.current_state.editor.?.selection;
+        try std.testing.expectEqual(@as(usize, 1), selection.len);
+        try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 2, .y = 2 } }, selection[0]);
+    }
+
+    // Clicking the exact current selection is a NO-OP — no event fires.
+    const history_length_before = history.event_history.items.len;
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expectEqual(history_length_before, history.event_history.items.len);
+
+    // A plain click on EMPTY GROUND clears the selection — the clicky
+    // deselect-all.
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, .{});
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+
+    // Clicking empty ground with an ALREADY-EMPTY selection is a no-op.
+    const history_length_before_empty = history.event_history.items.len;
+    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, .{});
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try std.testing.expectEqual(history_length_before_empty, history.event_history.items.len);
+
+    // One undo step reverts a replace (the clear + the new group share the
+    // click's idle point).
+    try std.testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const selection = history.current_state.editor.?.selection;
+        try std.testing.expectEqual(@as(usize, 1), selection.len);
+        try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 2, .y = 2 } }, selection[0]);
+    }
+}
+
+test "isSkillLearned: found / not found" {
+    const learned = [_]types.SkillId{ .slice, .bash };
+    try std.testing.expect(player_handlers.isSkillLearned(&learned, .slice));
+    try std.testing.expect(!player_handlers.isSkillLearned(&learned, .blink));
+}
+
+test "resolveEditorTileCursor: mouse follows to any tile position, blocked over UI, nudges unclamped" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{ .player_start = .{ .x = 2, .y = 3 } }};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+
+    // Mouse owns the cursor when it moved — at a position with NO tile
+    // (paint semantics: any tile position is a legal target).
+    history.current_state.editor.?.active_tool = .tile;
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 9, .y = 9 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, history.session.tile_cursor.?);
+
+    // Over a blocking UI element the cursor clears (no world-cursor ghost
+    // behind panels).
+    const blocking_panel = [_]ui.UiElement{.{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = .{ .x = 400, .y = 400 },
+        .width = 400,
+        .height = 400,
+    } }};
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 9, .y = 9 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &blocking_panel,
+    );
+    try std.testing.expectEqual(@as(?types.Vector2, null), history.session.tile_cursor);
+
+    // Arrow nudge with a null cursor snaps to player_start first, then
+    // nudges — no clamp-to-real-tile (empty space is a legal paint target).
+    history.current_state.editor.?.active_tool = .tile;
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .move_cursor_right = true,
+            .cursor_direction = .{ .x = 1, .y = 0 },
+        } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 3 }, history.session.tile_cursor.?);
+
+    // The select tool resolves the tile cursor as well (its outline
+    // previews what a click would select — a covering decoration's
+    // footprint region, else the single tile).
+    history.current_state.editor.?.active_tool = .select;
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 9, .y = 9 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, history.session.tile_cursor.?);
+
+    // The enemy tool is a tile-cursor tool too (same semantics — any
+    // position is a legal place target).
+    history.current_state.editor.?.active_tool = .{ .entity_type = 0 };
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 8, .y = 8 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 8, .y = 8 }, history.session.tile_cursor.?);
+
+    // The decoration tool as well — the cursor tile is the placement
+    // ANCHOR tile (the view draws the footprint region outline around it).
+    history.current_state.editor.?.active_tool = .{ .decoration_type = 0 };
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 7, .y = 7 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 7, .y = 7 }, history.session.tile_cursor.?);
+
+    // The ground-item tool too (single-tile outline, like tile/enemy).
+    history.current_state.editor.?.active_tool = .{ .item_type = 0 };
+    resolveTileCursor(
+        &history,
+        .{ .anytime = .{ .in_game = .{
+            .mouse_moved_this_tick = true,
+            .mouse_tile = .{ .x = 6, .y = 6 },
+        } }, .pointer = .{ .position = .{ .x = 500, .y = 500 } } },
+        &.{},
+    );
+    try std.testing.expectEqual(types.Vector2{ .x = 6, .y = 6 }, history.session.tile_cursor.?);
+}
+
+test "select_editor_tool: changing tools clears the selection, re-selecting keeps it, undo reverts the tool" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    const seeded_selection = [_]types.Selectable{.{ .tile = .{ .x = 1, .y = 1 } }};
+    history.current_state.editor.?.active_tool = .select;
+    history.current_state.editor.?.selection = &seeded_selection;
+    @import("test_harness.zig").runToIdle(&history);
+
+    // Re-selecting the ACTIVE tool changes nothing (no event fired).
+    handleAnytimeInput(&history, .{
+        .options_action = .select_editor_tool,
+        .clicked_editor_tool = .select,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try std.testing.expectEqual(@as(usize, 1), history.current_state.editor.?.selection.len);
+
+    // Changing to a different tool clears the selection (the clear rides
+    // the editor_set_tool event, so it is atomic with the switch).
+    handleAnytimeInput(&history, .{
+        .options_action = .select_editor_tool,
+        .clicked_editor_tool = .tile,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    @import("test_harness.zig").runToIdle(&history);
+    try std.testing.expectEqual(types.EditorToolId.tile, history.current_state.editor.?.active_tool);
+    try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
+
+    // The tool pointer AND the selection ride the undo timeline — one undo
+    // step reverts the switch together with its selection clear.
+    try std.testing.expect(history.undo(event_handlers.processEvent));
+    try std.testing.expectEqual(types.EditorToolId.select, history.current_state.editor.?.active_tool);
+    const selection = history.current_state.editor.?.selection;
+    try std.testing.expectEqual(@as(usize, 1), selection.len);
+    try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection[0]);
+}
 
 // --- Prepared-skill toggle (same-slot re-activation) ------------------------
 // Re-activating the slot of an already-prepared skill toggles the
@@ -5425,106 +3959,6 @@ test "attack-phase slot press on the prepared skill unprepares it" {
     try std.testing.expect(history.undo(event_handlers.processEvent));
     try std.testing.expectEqual(types.SkillId.flash_strike, history.current_state.level.?.prepared_skill.?);
     try std.testing.expectEqual(@as(usize, 2), history.current_state.level.?.highlighted_tiles.len);
-}
-
-// --- Drag no-op gate (pure predicate) ---------------------------------------
-// A drop that would change nothing never fires (no dead undo step). The
-// predicate is pure over the player entity; the handleDrag wiring is
-// covered by the gate tests in handler_tests_gear.zig.
-
-/// Fixture: a sword in inventory slot 0, boots in slot 1, a main-hand
-/// weapon equipped, Flash Strike in utility slot 0.
-fn dragGatePlayer() types.Entity {
-    var player_entity = types.Entity{};
-    player_entity.inventory.slots[0] = .{ .weapon = .{
-        .name = "sword",
-        .weapon_type = .sword,
-        .weapon_damage = 4,
-    } };
-    player_entity.inventory.slots[1] = .{ .boots = .{ .name = "boots" } };
-    player_entity.main_hand_weapon = .{ .name = "equipped", .weapon_type = .sword, .weapon_damage = 5 };
-    player_entity.equipped_utility_skills[0] = .flash_strike;
-    return player_entity;
-}
-
-test "dragActionWouldChange: equip fit conditions" {
-    const player_entity = dragGatePlayer();
-    // A weapon into a hand slot: fits → fires.
-    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
-        .inventory_slot_index = 0,
-        .gear_slot = .main_hand,
-    } }));
-    // A weapon into the boots slot: doesn't fit → never fires.
-    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
-        .inventory_slot_index = 0,
-        .gear_slot = .boots,
-    } }));
-    // Boots into the boots slot: fits → fires.
-    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
-        .inventory_slot_index = 1,
-        .gear_slot = .boots,
-    } }));
-    // An empty inventory slot: nothing to equip → never fires.
-    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_equip_to_gear = .{
-        .inventory_slot_index = 2,
-        .gear_slot = .main_hand,
-    } }));
-}
-
-test "dragActionWouldChange: unequip fit conditions" {
-    const player_entity = dragGatePlayer();
-    // Main hand (occupied) into an empty inventory slot: fires.
-    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
-        .gear_slot = .main_hand,
-        .inventory_slot_index = 2,
-    } }));
-    // Into a slot holding boots (doesn't fit a hand): never fires.
-    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
-        .gear_slot = .main_hand,
-        .inventory_slot_index = 1,
-    } }));
-    // Into a slot holding a weapon (fits the hand): fires.
-    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
-        .gear_slot = .main_hand,
-        .inventory_slot_index = 0,
-    } }));
-    // From an empty gear slot (amulet): never fires.
-    try std.testing.expect(!dragActionWouldChange(player_entity, false, .{ .player_unequip_from_gear = .{
-        .gear_slot = .amulet,
-        .inventory_slot_index = 2,
-    } }));
-}
-
-test "dragActionWouldChange: utility-skill conditions" {
-    var player_entity = dragGatePlayer();
-    // Re-assigning the skill already in the slot: only a change when a
-    // preparation is active (the handler cancels it).
-    const assign_same: events.PlayerInputEvent = .{ .player_assign_utility_skill = .{
-        .skill_id = .flash_strike,
-        .slot_index = 0,
-    } };
-    try std.testing.expect(!dragActionWouldChange(player_entity, false, assign_same));
-    try std.testing.expect(dragActionWouldChange(player_entity, true, assign_same));
-    // A different skill: always fires.
-    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_assign_utility_skill = .{
-        .skill_id = .replenish,
-        .slot_index = 0,
-    } }));
-    // Swapping two slots holding the same skill (a duplicate assignment):
-    // only a change when a preparation is active.
-    player_entity.equipped_utility_skills[1] = .flash_strike;
-    const swap_same: events.PlayerInputEvent = .{ .player_swap_utility_skills = .{
-        .slot_a_index = 0,
-        .slot_b_index = 1,
-    } };
-    try std.testing.expect(!dragActionWouldChange(player_entity, false, swap_same));
-    try std.testing.expect(dragActionWouldChange(player_entity, true, swap_same));
-    // Swapping a skill with an empty slot: a real move → fires.
-    player_entity.equipped_utility_skills[1] = null;
-    try std.testing.expect(dragActionWouldChange(player_entity, false, .{ .player_swap_utility_skills = .{
-        .slot_a_index = 0,
-        .slot_b_index = 1,
-    } }));
 }
 
 test "hub clicks: own tile and NPC tiles fire nothing, walkable tile moves" {
@@ -5658,83 +4092,3 @@ test "resolveTileCursor: nudge onto a gap jumps to the first tile in the directi
     try std.testing.expectEqual(types.Vector2{ .x = 1, .y = 0 }, history.session.tile_cursor.?);
 }
 
-test "player_replace_editor_selection (plain click): replaces the selection, empty ground clears it, no-op clicks never fire" {
-    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer backing.deinit();
-    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
-
-    const tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 2 } };
-    const entity_placements = [_]types.EntityPlacement{.{
-        .type_id = 0,
-        .position = .{ .x = 1, .y = 1 },
-    }};
-    const levels = [_]types.EditorLevel{.{
-        .level_tiles = &tiles,
-        .player_start = .{ .x = 0, .y = 0 },
-        .entity_placements = &entity_placements,
-    }};
-    var history = harness.newHistory(.{
-        .screen = .editor,
-        .event_stack = &.{},
-        .player_data = .{},
-        .camera = null,
-        .editor = .{
-            .levels = &levels,
-            .entity_types = &.{.{ .id = "Skeleton", .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 } }},
-        },
-        .replay_viewer = null,
-        .campaign = null,
-        .mission = null,
-        .level = null,
-        .hub = null,
-    });
-    @import("test_harness.zig").runToIdle(&history);
-
-    // A plain click on (1,1) with an EMPTY selection: the group (tile +
-    // entity) becomes the selection.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 1, .y = 1 } }, .{});
-    @import("test_harness.zig").runToIdle(&history);
-    {
-        const selection = history.current_state.editor.?.selection;
-        try std.testing.expectEqual(@as(usize, 2), selection.len);
-        try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection[0]);
-        try std.testing.expectEqual(@as(u32, 0), selection[1].entity_placement);
-    }
-
-    // A plain click elsewhere REPLACES the selection entirely (the old
-    // entries go, the clicked group becomes the selection).
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
-    @import("test_harness.zig").runToIdle(&history);
-    {
-        const selection = history.current_state.editor.?.selection;
-        try std.testing.expectEqual(@as(usize, 1), selection.len);
-        try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 2, .y = 2 } }, selection[0]);
-    }
-
-    // Clicking the exact current selection is a NO-OP — no event fires.
-    const history_length_before = history.event_history.items.len;
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 2 } }, .{});
-    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
-    try std.testing.expectEqual(history_length_before, history.event_history.items.len);
-
-    // A plain click on EMPTY GROUND clears the selection — the clicky
-    // deselect-all.
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, .{});
-    @import("test_harness.zig").runToIdle(&history);
-    try std.testing.expectEqual(@as(usize, 0), history.current_state.editor.?.selection.len);
-
-    // Clicking empty ground with an ALREADY-EMPTY selection is a no-op.
-    const history_length_before_empty = history.event_history.items.len;
-    handleIdleInput(&history, .{ .tile_clicked = .{ .x = 9, .y = 9 } }, .{});
-    try std.testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
-    try std.testing.expectEqual(history_length_before_empty, history.event_history.items.len);
-
-    // One undo step reverts a replace (the clear + the new group share the
-    // click's idle point).
-    try std.testing.expect(history.undo(event_handlers.processEvent));
-    {
-        const selection = history.current_state.editor.?.selection;
-        try std.testing.expectEqual(@as(usize, 1), selection.len);
-        try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 2, .y = 2 } }, selection[0]);
-    }
-}

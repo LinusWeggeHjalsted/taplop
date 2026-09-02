@@ -1273,8 +1273,14 @@ Done items in DONE.md. Open:
         via the `ui.X` re-exports. Optional later: split
         editor_inspector's field emitters into editor_inspector_fields.zig
         (4,649 lines, ~1,700 of them tests).
-  - [ ] Follow-up (separate): input_handlers.zig (5.7k — mission import/
-        export zip machinery + editor commit sites are the seams).
+  - [x] Follow-up: input_handlers.zig split — `src/input_gestures.zig`
+        (drag/click/pan/slider/inspect + editor viewport gestures, with the
+        pure gesture tests) + `src/editor/mission_io.zig` (save/export/import
+        zip machinery + rescans). input_handlers.zig: 5,740 → 3,900
+        (handleAnytimeInput/handleIdleInput + commits, its coherent core).
+        The text-field commit sites STAY here by design (DESIGN → UI
+        Framework → Text input widget: the field-kind commit switch lives
+        in the input layer).
 - **Duplicated rendering recipes in `buildEntityInspectPanel`.** The skill-
   button visual (frame + icon + cooldown overlay + empty-diamond marker)
   and the gear-slot visual (slot frame + item icon + tooltip) are inlined

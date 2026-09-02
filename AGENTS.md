@@ -334,9 +334,16 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (player verbs, entity↔PlayerData sync) + gear/salvage helpers + clone
   harvest math.
 - `src/input_handlers.zig` — input consumption: `handleAnytimeInput`,
-  `handleIdleInput`, `resolveTileCursor`, the drag lifecycle, and session-log
-  dev tooling (dumpEventLog, build-version warn, timestamp formatter). The
-  dragToEvent test lives here.
+  `handleIdleInput`, `resolveTileCursor`, the text-field commit sites, and
+  session-log dev tooling (dumpEventLog, build-version warn, timestamp
+  formatter).
+- `src/input_gestures.zig` — pointer gesture resolution: the drag
+  lifecycle + click intents, camera pan, settings sliders, right-click
+  inspect, and the editor viewport gestures (right-click delete, marquee,
+  selection move drag).
+- `src/editor/mission_io.zig` — editor mission save/export/import (uuid
+  resolution, STORE zip bundling, the web import marker poll) + the
+  mission list/sprite rescans.
 - `src/view.zig` — `view()` (builds ViewState each frame from GameState +
   SessionState + the per-frame arena) + world drawable builders (tiles,
   overlays, entities, decoration pieces, ground items, flag poles, occlusion

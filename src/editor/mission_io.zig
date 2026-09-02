@@ -1,0 +1,552 @@
+//! Editor mission file I/O: save-to-disk (uuid resolution + dir naming),
+//! export (save + configs + sprites bundled into a STORE zip, browser
+//! download on web), import (the web zip-upload marker poll + extraction
+//! with junk/root-strip/safety filtering), and the mission-list /
+//! mission-sprite rescans. Side-effect paths off the undo timeline
+//! (dump_event_log-class — no recorded events). See DESIGN → Level Editor
+//! (the save/export flow + the mission browser) + DESIGN → File System &
+//! IO.
+const std = @import("std");
+const types = @import("../types.zig");
+const state = @import("../state.zig");
+const parser = @import("../parser.zig");
+const loaders = @import("../loaders.zig");
+const writers = @import("../writers.zig");
+const file_source_mod = @import("../file_source.zig");
+const zip_writer = @import("../zip_writer.zig");
+const zip_reader = @import("../zip_reader.zig");
+
+const GameStateHistory = state.GameStateHistory;
+
+/// Scan the mission directory's .pngs into `session.editor_mission_sprites`
+/// (the sprite picker's mission-local tab). Frees the previous scan — the
+/// list is session-owned (backing allocator); the final list's leak at
+/// process exit is bounded (the save_files pattern). An IO failure degrades
+/// to an empty list — the Mission tab shows "No sprites" while the
+/// Official tab stays usable (recoverable-degrade; a popup would interrupt
+/// the click flow for a dev tool).
+pub fn rescanEditorMissionSprites(history: *GameStateHistory, editor: types.Editor) void {
+    const allocator = history.backing_allocator;
+    const session = &history.session;
+    for (session.editor_mission_sprites) |name| allocator.free(name);
+    allocator.free(session.editor_mission_sprites);
+    session.editor_mission_sprites = history.file_source.listPersistentPngFiles(
+        allocator,
+        editor.mission.path,
+    ) catch &[_][]const u8{};
+}
+
+/// A random v4-format uuid (the shipped mission.txt format: 8-4-4-4-12
+/// lowercase hex). Called ONLY from the save path — an input-layer side
+/// effect that never enters GameState or a recorded event, so the
+/// randomness is replay-safe by construction. See DESIGN → Level Editor →
+/// Mission identity.
+fn generateMissionUuid(history: *GameStateHistory, allocator: std.mem.Allocator) []const u8 {
+    var bytes: [16]u8 = undefined;
+    // Seed a CSPRNG from the wall clock (the same clock the session
+    // timestamps read) + the raw nanoseconds — good enough for identity
+    // minting, and the result never enters replayed state anyway.
+    const now = std.Io.Clock.now(.real, history.io);
+    var seed: [32]u8 = std.mem.zeroes([32]u8);
+    const nanoseconds: [8]u8 = @bitCast(@as(i64, @truncate(now.nanoseconds)));
+    @memcpy(seed[0..8], &nanoseconds);
+    var csprng = std.Random.DefaultCsprng.init(seed);
+    csprng.random().bytes(&bytes);
+    // RFC 4122 v4: version nibble 4, variant 10xx.
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    return std.fmt.allocPrint(
+        allocator,
+        "{x:0>8}-{x:0>4}-{x:0>4}-{x:0>4}-{x:0>12}",
+        .{
+            std.mem.readInt(u32, bytes[0..4], .big),
+            std.mem.readInt(u16, bytes[4..6], .big),
+            std.mem.readInt(u16, bytes[6..8], .big),
+            std.mem.readInt(u16, bytes[8..10], .big),
+            std.mem.readInt(u48, bytes[10..16], .big),
+        },
+    ) catch @panic("failed to format mission uuid");
+}
+
+/// Make a mission name safe as a path segment: path separators + control
+/// characters become '_', an empty result falls back to "Unnamed" (a
+/// mission can be renamed to an empty string via the metadata sidebar).
+fn sanitizeMissionNameForPath(name: []const u8, allocator: std.mem.Allocator) []const u8 {
+    const sanitized = allocator.dupe(u8, name) catch @panic("failed to sanitize mission name");
+    for (sanitized) |*character| {
+        const invalid = character.* == '/' or character.* == '\\' or character.* < 0x20 or character.* == 0x7f;
+        if (invalid) character.* = '_';
+    }
+    if (sanitized.len == 0) {
+        allocator.free(sanitized);
+        return "Unnamed";
+    }
+    return sanitized;
+}
+
+/// Save the edited mission to the persistent dir: resolve the mission's
+/// uuid (in-memory if it was opened from disk, else the session memo of a
+/// previous save — stable identity across saves — else a fresh mint),
+/// project the Editor into files with the pure writer
+/// (writers.writeEditorMission), and write mission.txt + player.txt +
+/// level_N.txt under `missions/<uuid>_<name>/`. The session memo records
+/// the uuid + dir for subsequent saves.
+///
+/// A pure side effect — the dump_event_log class, NOT the save_game class:
+/// there is no GameState component to record, so it pushes no event and
+/// takes no undo step (a recorded event would mint dead undo steps), and
+/// replay never runs the input layer so it never re-fires. Always deriving
+/// the dir as `<uuid>_<name>` gives the settled semantics for free: a
+/// re-save of an unchanged custom mission lands in the same dir, a RENAMED
+/// mission lands in a NEW dir (the old one stays behind), and an OFFICIAL
+/// mission opened for editing is saved as a persistent-dir copy (shipped
+/// data is immutable — FileSource refuses data/ writes). Failures are
+/// recoverable (the pending_error popup; nothing to revert — state is
+/// fine, the files just didn't land). See DESIGN → Level Editor → Mission
+/// identity.
+pub fn saveEditorMission(history: *GameStateHistory) void {
+    const editor = if (history.current_state.editor) |*some_editor| some_editor else return;
+    const scratch = history.current_arena.allocator();
+    const durable = history.backing_allocator;
+
+    // 1. Resolve the uuid: opened-from-disk → in memory; saved this session
+    //    → the memo; else mint (the write-only rule — the minted value
+    //    never enters GameState).
+    var uuid: []const u8 = editor.mission.uuid;
+    if (uuid.len == 0) {
+        if (history.session.editor_saved_mission) |saved| uuid = saved.uuid;
+    }
+    var minted_uuid: ?[]const u8 = null;
+    if (uuid.len == 0) {
+        minted_uuid = generateMissionUuid(history, durable);
+        uuid = minted_uuid.?;
+    }
+
+    // 2. Project the editor into file contents (transient — the scratch
+    //    arena reclaims them at the next idle point).
+    const written = writers.writeEditorMission(editor.*, uuid, scratch) catch |write_error| {
+        const message = switch (write_error) {
+            error.TooManyLayoutCodes => "failed to save: a single level places more distinct tools than the layout char set provides",
+            else => "failed to save: out of memory",
+        };
+        history.session.setPendingError(history.history_arena.allocator(), message);
+        if (minted_uuid) |minted| durable.free(minted);
+        return;
+    };
+
+    // 3. Write into missions/<uuid>_<name>/.
+    const sanitized_name = sanitizeMissionNameForPath(editor.mission.name, scratch);
+    const dir_path = std.fmt.allocPrint(
+        durable,
+        "missions/{s}_{s}",
+        .{ uuid, sanitized_name },
+    ) catch @panic("failed to allocate mission dir path");
+    const mission_path = std.fmt.allocPrint(scratch, "{s}/mission.txt", .{dir_path}) catch
+        @panic("failed to allocate mission.txt path");
+    const player_path = std.fmt.allocPrint(scratch, "{s}/player.txt", .{dir_path}) catch
+        @panic("failed to allocate player.txt path");
+    history.file_source.writeFile(mission_path, written.mission_txt) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to save: could not write mission.txt",
+        );
+        durable.free(dir_path);
+        if (minted_uuid) |minted| durable.free(minted);
+        return;
+    };
+    history.file_source.writeFile(player_path, written.player_txt) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to save: could not write player.txt",
+        );
+        durable.free(dir_path);
+        if (minted_uuid) |minted| durable.free(minted);
+        return;
+    };
+    for (written.level_txts, 0..) |level_txt, level_index| {
+        const level_path = std.fmt.allocPrint(
+            scratch,
+            "{s}/level_{d}.txt",
+            .{ dir_path, level_index + 1 },
+        ) catch @panic("failed to allocate level path");
+        history.file_source.writeFile(level_path, level_txt) catch {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to save: could not write level_{d}.txt",
+                .{level_index + 1},
+            ) catch @panic("failed to format save failure message");
+            history.session.setPendingError(history.history_arena.allocator(), message);
+            durable.free(dir_path);
+            if (minted_uuid) |minted| durable.free(minted);
+            return;
+        };
+    }
+
+    // 4. Record the save on the session (the editor_mission_sprites
+    //    ownership pattern: free the previous memo's strings, then store).
+    //    The uuid slice: a fresh mint or the previous memo's REUSED slice is
+    //    memo-owned; an OPENED mission's uuid borrows the editor's
+    //    (current-arena) graph — dupe it durable so the memo never dangles
+    //    past an arena compaction.
+    var reused_previous_uuid = false;
+    if (history.session.editor_saved_mission) |previous| {
+        durable.free(previous.dir_path);
+        if (previous.uuid.ptr == uuid.ptr) {
+            reused_previous_uuid = true;
+        } else {
+            durable.free(previous.uuid);
+        }
+    }
+    const memo_uuid: []const u8 = if (minted_uuid) |minted|
+        minted
+    else if (reused_previous_uuid)
+        uuid
+    else
+        durable.dupe(u8, uuid) catch @panic("failed to dupe saved mission uuid");
+    history.session.editor_saved_mission = .{
+        .uuid = memo_uuid,
+        .dir_path = dir_path,
+    };
+}
+
+/// Read one file from the persistent dir and append it to the export
+/// entries under `archive_name`. Errors propagate (the caller surfaces
+/// the popup).
+fn appendExportFile(
+    entries: *std.ArrayList(zip_writer.ZipEntry),
+    file_source: *const file_source_mod.FileSource,
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    archive_name: []const u8,
+) !void {
+    const bytes = try file_source.readFile(allocator, path);
+    try entries.append(allocator, .{ .name = archive_name, .bytes = bytes });
+}
+
+/// Export the edited mission as a .zip (the editor options menu's Export
+/// Mission button — button-only, no keybind): SAVE first (the settled
+/// order — the bundle is always the current state), then bundle the saved
+/// mission files + the mission directory's custom sprites (a fresh
+/// mission's pngs sit in its placeholder dir — they bundle even though the
+/// save itself writes elsewhere) + a validation_replay.txt when one
+/// exists (it lands with the validation slice) into a STORE archive at
+/// `exported_missions/<uuid>_<name>.zip` in the persistent dir. On web
+/// that file is then offered as a browser download (the Export Save seam —
+/// triggerBrowserDownload reads it back from the mounted FS; a comptime
+/// no-op on native). A pure side effect like the save (the dump_event_log
+/// class). See DESIGN → Level Editor (the export flow).
+pub fn exportEditorMission(history: *GameStateHistory) void {
+    saveEditorMission(history);
+    // The save failed (or no editor): its popup is already surfaced.
+    const saved = history.session.editor_saved_mission orelse return;
+    const editor = if (history.current_state.editor) |*some_editor| some_editor else return;
+    const scratch = history.current_arena.allocator();
+
+    const fail = struct {
+        fn note(history_arg: *GameStateHistory, reason: []const u8) void {
+            history_arg.session.setPendingError(
+                history_arg.history_arena.allocator(),
+                reason,
+            );
+        }
+    };
+
+    var entries: std.ArrayList(zip_writer.ZipEntry) = .empty;
+
+    // The generated mission files, read back from the save's directory.
+    appendExportFile(
+        &entries,
+        history.file_source,
+        scratch,
+        std.fmt.allocPrint(scratch, "{s}/mission.txt", .{saved.dir_path}) catch
+            @panic("failed to allocate export path"),
+        "mission.txt",
+    ) catch {
+        fail.note(history, "failed to export: could not read the saved mission.txt");
+        return;
+    };
+    appendExportFile(
+        &entries,
+        history.file_source,
+        scratch,
+        std.fmt.allocPrint(scratch, "{s}/player.txt", .{saved.dir_path}) catch
+            @panic("failed to allocate export path"),
+        "player.txt",
+    ) catch {
+        fail.note(history, "failed to export: could not read the saved player.txt");
+        return;
+    };
+    for (0..editor.levels.len) |level_index| {
+        const level_path = std.fmt.allocPrint(
+            scratch,
+            "{s}/level_{d}.txt",
+            .{ saved.dir_path, level_index + 1 },
+        ) catch @panic("failed to allocate export path");
+        const archive_name = std.fmt.allocPrint(
+            scratch,
+            "level_{d}.txt",
+            .{level_index + 1},
+        ) catch @panic("failed to allocate export archive name");
+        appendExportFile(&entries, history.file_source, scratch, level_path, archive_name) catch {
+            fail.note(history, "failed to export: could not read a saved level file");
+            return;
+        };
+    }
+
+    // Custom sprites from the editor's CURRENT mission dir.
+    const sprite_names = history.file_source.listPersistentPngFiles(
+        scratch,
+        editor.mission.path,
+    ) catch &[_][]const u8{};
+    for (sprite_names) |sprite_name| {
+        const sprite_path = std.fmt.allocPrint(
+            scratch,
+            "{s}/{s}",
+            .{ editor.mission.path, sprite_name },
+        ) catch @panic("failed to allocate sprite export path");
+        appendExportFile(&entries, history.file_source, scratch, sprite_path, sprite_name) catch {
+            fail.note(history, "failed to export: could not read a mission sprite");
+            return;
+        };
+    }
+
+    // A validation replay, when one exists in the saved dir (written by
+    // the validation flow once it lands). Absent or unreadable → not
+    // bundled.
+    if (appendExportFile(
+        &entries,
+        history.file_source,
+        scratch,
+        std.fmt.allocPrint(scratch, "{s}/validation_replay.txt", .{saved.dir_path}) catch
+            @panic("failed to allocate export path"),
+        "validation_replay.txt",
+    )) |_| {} else |_| {}
+
+    const archive = zip_writer.writeZipArchive(entries.items, scratch) catch {
+        fail.note(history, "failed to export: could not build the zip archive");
+        return;
+    };
+    const sanitized_name = sanitizeMissionNameForPath(editor.mission.name, scratch);
+    const zip_path = std.fmt.allocPrint(
+        scratch,
+        "exported_missions/{s}_{s}.zip",
+        .{ saved.uuid, sanitized_name },
+    ) catch @panic("failed to allocate export zip path");
+    history.file_source.writeFile(zip_path, archive) catch {
+        fail.note(history, "failed to export: could not write the zip file");
+        return;
+    };
+    // Web: offer it as a download (reads it back from the mounted FS);
+    // native: a comptime no-op.
+    file_source_mod.triggerBrowserDownload(scratch, zip_path);
+}
+
+/// Consume the mission-import marker, if present: the picked .zip has landed
+/// in imported_missions/ — delete the marker, extract the zip into missions/
+/// (see importMissionFromZip), and rescan so the row appears. The web-only
+/// upload (the browser's Import button / ctrl+I) lands the zip + marker; the
+/// extraction is platform-neutral file I/O. A failure surfaces the
+/// recoverable popup and keeps the zip (re-uploadable; the marker is gone
+/// either way).
+pub fn pollMissionImportMarker(history: *GameStateHistory) void {
+    const marker = file_source_mod.mission_import_marker_path;
+    if (!history.file_source.fileExists(marker)) return;
+
+    const scratch = history.current_arena.allocator();
+    const marker_bytes = history.file_source.readFile(scratch, marker) catch {
+        // Unreadable marker: delete it so we don't spin on a corrupt file
+        // (the pollImportMarker discipline).
+        history.file_source.deleteFile(marker) catch {};
+        return;
+    };
+    history.file_source.deleteFile(marker) catch {};
+    importMissionFromZip(history, std.mem.trim(u8, marker_bytes, " \r\n\t"));
+}
+
+/// A safety cap on imported archive size: a mission dir is a handful of
+/// config files + sprites; four orders of magnitude past that is a hostile
+/// or mis-picked archive, not content. Keeps the scratch arena bounded.
+const mission_import_max_entries: usize = 1024;
+
+/// The set of junk a macOS "Compress" zip carries alongside the real
+/// content — skipped so an OS-made mission zip imports clean.
+fn isMissionImportJunk(name: []const u8) bool {
+    // Directory entries (a trailing '/', zero contents).
+    if (std.mem.endsWith(u8, name, "/")) return true;
+    // The macOS resource-fork folder + its artifacts.
+    if (std.mem.startsWith(u8, name, "__MACOSX/")) return true;
+    const basename = std.fs.path.basename(name);
+    if (std.mem.startsWith(u8, basename, "._")) return true;
+    if (std.mem.eql(u8, basename, ".DS_Store")) return true;
+    return false;
+}
+
+/// Strip a single common ROOT folder from every entry name, if there is
+/// one: an OS "compress folder" zip wraps the mission's files in
+/// `<folder>/…`, while our own exports are flat at the archive root.
+/// Mixed shapes (some entries at the root, some under a folder, or two
+/// different folders) strip nothing — the mission.txt lookup then fails and
+/// the popup explains. Mutates `entries` in place (the caller's scratch-
+/// arena copy of the filtered list).
+fn missionImportRootStrip(entries: []zip_reader.ZipEntry) void {
+    if (entries.len == 0) return;
+    const first_slash = std.mem.indexOfScalar(u8, entries[0].name, '/') orelse return;
+    const root = entries[0].name[0..first_slash];
+    if (root.len == 0) return;
+    for (entries) |entry| {
+        if (!std.mem.startsWith(u8, entry.name, root) or
+            entry.name.len <= root.len or
+            entry.name[root.len] != '/') return;
+    }
+    for (entries) |*entry| {
+        entry.name = entry.name[root.len + 1 ..];
+    }
+}
+
+/// A safe extraction name: no absolute paths, no `..` traversal, no
+/// backslashes (spec names use '/'; a backslash is a malformed or hostile
+/// name — a literal filename character on some platforms), no empty
+/// segments. Applied AFTER the root strip.
+fn isUnsafeMissionImportName(name: []const u8) bool {
+    if (name.len == 0 or name[0] == '/') return true;
+    if (std.mem.indexOfScalar(u8, name, '\\') != null) return true;
+    var iterator = std.mem.splitScalar(u8, name, '/');
+    while (iterator.next()) |segment| {
+        if (segment.len == 0 or std.mem.eql(u8, segment, "..")) return true;
+    }
+    return false;
+}
+
+/// Extract one mission zip into `missions/<uuid>_<sanitized name>/` (the
+/// editor save's dir convention — a re-import of the same zip overwrites
+/// the same dir, idempotent; a mission without a uuid lands under
+/// `missions/<sanitized name>/`). All names are validated BEFORE the first
+/// write: a hostile or malformed zip fails whole, never half-imported.
+pub fn importMissionFromZip(history: *GameStateHistory, zip_path: []const u8) void {
+    const scratch = history.current_arena.allocator();
+    const fail = struct {
+        fn note(history_arg: *GameStateHistory, reason: []const u8) void {
+            history_arg.session.setPendingError(
+                history_arg.history_arena.allocator(),
+                reason,
+            );
+        }
+    };
+
+    const zip_bytes = history.file_source.readFile(scratch, zip_path) catch {
+        fail.note(history, "failed to import: could not read the uploaded zip");
+        return;
+    };
+    const all_entries = zip_reader.readZipArchive(zip_bytes, scratch) catch {
+        fail.note(history, "failed to import: the zip is corrupt or uses an unsupported format");
+        return;
+    };
+    if (all_entries.len > mission_import_max_entries) {
+        fail.note(history, "failed to import: the zip has too many files");
+        return;
+    }
+
+    // Filter OS junk, then strip a single common root folder.
+    var file_entries: std.ArrayList(zip_reader.ZipEntry) = .empty;
+    for (all_entries) |entry| {
+        if (!isMissionImportJunk(entry.name)) file_entries.append(scratch, entry) catch
+            @panic("failed to collect zip entries");
+    }
+    missionImportRootStrip(file_entries.items);
+    const stripped = file_entries.items;
+
+    // The mission's identity: mission.txt at the (stripped) archive root.
+    const mission_txt = blk: for (stripped) |entry| {
+        if (std.mem.eql(u8, entry.name, "mission.txt")) break :blk entry.bytes;
+    } else {
+        fail.note(history, "failed to import: the zip has no mission.txt at its root");
+        return;
+    };
+    const sections = parser.parseConfigFile(mission_txt, scratch) catch {
+        fail.note(history, "failed to import: the zip's mission.txt is not valid");
+        return;
+    };
+    const mission = loaders.loadMission(sections, scratch) catch {
+        fail.note(history, "failed to import: the zip's mission.txt is not valid");
+        return;
+    };
+
+    // Validate every name up front (nothing written on any bad entry).
+    for (stripped) |entry| {
+        if (isUnsafeMissionImportName(entry.name)) {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to import: unsafe file name in the zip ({s})",
+                .{entry.name},
+            ) catch "failed to import: unsafe file name in the zip";
+            fail.note(history, message);
+            return;
+        }
+    }
+
+    // The target dir, derived exactly like the editor save's.
+    const sanitized_name = sanitizeMissionNameForPath(mission.name, scratch);
+    var name_prefix: []const u8 = sanitized_name;
+    if (mission.uuid.len > 0) {
+        name_prefix = std.fmt.allocPrint(
+            scratch,
+            "{s}_{s}",
+            .{ mission.uuid, sanitized_name },
+        ) catch @panic("failed to allocate imported mission dir path");
+    }
+    const dir_path = std.fmt.allocPrint(
+        scratch,
+        "missions/{s}",
+        .{name_prefix},
+    ) catch @panic("failed to allocate imported mission dir path");
+
+    for (stripped) |entry| {
+        const file_path = std.fmt.allocPrint(scratch, "{s}/{s}", .{ dir_path, entry.name }) catch
+            @panic("failed to allocate imported mission file path");
+        history.file_source.writeFile(file_path, entry.bytes) catch {
+            const message = std.fmt.allocPrint(
+                history.history_arena.allocator(),
+                "failed to import: could not write {s}",
+                .{entry.name},
+            ) catch "failed to import: could not write a mission file";
+            fail.note(history, message);
+            return;
+        };
+    }
+
+    // Success: the zip has served its purpose (delete it — the extracted
+    // folder is the artifact), and the browser's list rescans so the row
+    // appears immediately.
+    history.file_source.deleteFile(zip_path) catch {};
+    rescanEditorMissionsNow(history);
+}
+
+/// Scan both mission-browser lists into SessionState, freeing the previous
+/// local list (the save_files pattern). The LOCAL list is the persistent
+/// `missions/` dir; the OFFICIAL list is parsed from the embedded mission
+/// files ONCE per session (the embedded map is immutable per build — no
+/// rescan). Runs when the browser OPENS (never in `view()`, which stays
+/// file-free) — no periodic rescan while open: nothing can add a local
+/// mission while the modal is up (a web import triggers its own explicit
+/// rescan), so reopening is the refresh path. An unreadable dir keeps the
+/// previous list rather than blanking the browser.
+pub fn rescanEditorMissionsNow(history: *GameStateHistory) void {
+    const allocator = history.backing_allocator;
+
+    // The two scans are INDEPENDENT: a failure in one keeps that list's
+    // previous contents and never blocks the other (a local-scan failure
+    // on web's broken-readdir mount must not blank the OFFICIAL tab too —
+    // the tabs fail separately or not at all).
+    if (history.file_source.listMissions(allocator)) |local| {
+        file_source_mod.freeMissions(allocator, history.session.editor_local_missions);
+        history.session.editor_local_missions = local;
+    } else |_| {} // unreadable dir mid-session: keep the previous list
+
+    if (!history.session.editor_official_missions_scanned) {
+        if (history.file_source.listOfficialMissions(allocator)) |official| {
+            file_source_mod.freeMissions(allocator, history.session.editor_official_missions);
+            history.session.editor_official_missions = official;
+            history.session.editor_official_missions_scanned = true;
+        } else |_| {} // one-time scan failed: retry on the next open
+    }
+}

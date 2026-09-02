@@ -1,5 +1,5 @@
 //! Minimal ZIP archive READER — the sibling of zip_writer.zig (the export
-//! path; see input_handlers.importMissionFromZip for the import flow).
+//! path; see editor/mission_io.zig's importMissionFromZip for the import flow).
 //! Pure: archive bytes in, entries out, no IO — directly round-trip-
 //! testable against zip_writer. Supports the two methods mission zips
 //! carry in practice: STORE (our own exports) and DEFLATE (any OS file

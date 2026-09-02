@@ -109,12 +109,12 @@ pub const Action = enum {
     // menu's Save Mission button + the ctrl+S binding). A pure side effect
     // — the dump_event_log class, not the save_game class: there is no
     // GameState component to record, so it pushes no event and takes no
-    // undo step. See input_handlers.saveEditorMission.
+    // undo step. See editor/mission_io.zig's saveEditorMission.
     save_editor_mission,
     // Export the edited mission as a .zip (the editor options menu's
     // Export Mission button — button-only, no keybind). Same side-effect
     // class; saves first, then bundles. See
-    // input_handlers.exportEditorMission.
+    // editor/mission_io.zig's exportEditorMission.
     export_editor_mission,
     restart_mission,
     exit_mission,
@@ -390,7 +390,7 @@ pub const Action = enum {
     // The mission browser's "Import" (web only): opens a file picker for a
     // mission .zip; the picked zip lands in imported_missions/ and the Zig
     // side extracts it into missions/ (see
-    // input_handlers.pollMissionImportMarker). Also on ctrl+I (the binding
+    // editor/mission_io.zig's pollMissionImportMarker). Also on ctrl+I (the binding
     // ships in default_settings.txt and no-ops on native, where the button
     // is never emitted — the skip_level discipline).
     import_editor_mission,
