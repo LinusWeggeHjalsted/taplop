@@ -10560,3 +10560,23 @@ promise's full sweep (on-bar + swap-available + utility + OFF-BAR skewer
 all reset, heal-to-full) ; diamond's self-stun+effect ordering, the
   999-damage interception, the 23/10→2 heal truncation, and the
   three-branch desperation gate.
+
+## Session reflection — noted follow-ups
+
+End-of-session review with the author. The architecture held (20 skills,
+zero engine changes beyond convention work); the test suite caught four of
+my own bugs (adrenaline's backwards push order, the cleave cascade swap,
+worldfire's three-target "cluster of two", the ally on my collision test's
+push path). Follow-ups recorded where they belong:
+- TODO → Skill Logic: non-ending pool rating audit (ported cantrips/
+  enchantments kept pre-value-unit numbers unexamined).
+- TODO → Tech Debt: Effect interface field defaults (kill the 18-callback
+  boilerplate — cheapest win on the list); style pass for the session's
+  over-length lines; handler-level integration coverage for novel
+  compositions (adrenaline's tests are the template); aiOptions allocation
+  churn as a watch item.
+- AGENTS → Testing discipline: the three process lessons — dry-run sweep
+  scripts on one file first (asserts catch value errors, nothing catches
+  shape errors), fix a test's shape when it breaks twice structurally,
+  and write tests from the design doc's semantics rather than the code's
+  behavior.

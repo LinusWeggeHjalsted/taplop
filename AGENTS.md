@@ -96,6 +96,24 @@ leak-checked testing, deferred until a load change lands. `scripts/test.sh`
 cleans `crashes/` before and after a passing run so a panicking test's crash
 dump doesn't pollute the tree.
 
+**Sweep scripts and repeated test churn** (lessons from the Tier A skills
+session):
+- **Dry-run one-shot sweep scripts against ONE file and inspect its full
+d  diff before running them across the tree.** Asserted replacements catch
+  VALUE errors, but nothing catches SHAPE errors — the ai_options migration
+  ran on all 31 skill files with a broken doc-walk and left doubled stale
+  doc comments everywhere, invisible to the compiler for several commits.
+- **When the same test breaks twice for the same structural reason, fix
+  the test's SHAPE, don't patch the number again.** The utility-skill
+  census counts were hand-updated twice before being derived from the
+  same list the picker iterates (self-updating, still catches emission
+  bugs). Snapshot counts of anything that grows by design are churn.
+- **Write tests from the design doc's semantics, not the code's behavior.**
+  The adrenaline-surge handler's push order was implemented backwards; the
+  death-ordering test caught it because it pinned the INTENDED semantics
+  (resets land even when the attacks kill), not what the code happened to
+  do. Tests copied from behavior re-assert bugs.
+
 ### Commit policy
 
 - **Commit at each TODO slice checkoff.** The TODO slice boundaries are the

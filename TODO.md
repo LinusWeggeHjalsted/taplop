@@ -302,6 +302,13 @@ stale).
 
 **TIER A COMPLETE — 20 skills, 0 engine changes.** Remaining new-design
 work is Tier B (four small engine gaps) and Tier C (two design sessions).
+
+- [ ] **Non-ending pool rating audit.** The ported cantrips/enchantments
+      kept their pre-value-unit numbers without scrutiny (replenish 3,
+      focus 2, stone_form 2, lingers/blink/swap 1; the new ones were born
+      on the scale). Re-rate them against the value-unit semantic — e.g.
+      is a FULL heal really 3 while a 20% heal is 2? Cheap pass, do it
+      before playtesting skews on stale numbers.
 All five spells done. Tier A remaining: cantrips (burst, meditate,
 accelerate) + enchantments (that which reaches, bull form, that which
 rushes, that which explodes, promise of death, diamond form).
@@ -1306,6 +1313,29 @@ Already total (no action): A* comparePathNodes (f→x→y); entity draw sort
 
 Done items in DONE.md. Open:
 
+- **Effect interface field defaults** (surfaced in the Tier A session
+      reflection). Every effect file declares all 18 callbacks (~20 real
+      lines each, the rest `no_op`/`pass_incoming_damage` boilerplate).
+      Give the `on_*_fn` fields DEFAULTS in effect.zig (`= &noOp`,
+      interceptor `= pass_incoming_damage`) so effect files declare only
+      the hooks they use — reflect would drop from 62 to ~20 lines, and
+      new effects stop copying 18 lines of noise. Skill's 5 fns stay
+      required (deals_damage deliberately so).
+- **Style pass over the Tier A session's lines.** Some lines exceed the
+      ~95-char wrap convention (long `singleOption` calls, comments).
+      Mechanical cleanup, fold into the next skills slice.
+- **New-skill handler-level integration coverage is thin.** The Tier A
+      skills are contract-tested at the pure-fn level (useSkill/aiOptions
+      asserted directly) and the verbs have handler coverage, but only
+      adrenaline_surge got real processEvent-drain tests. When a new
+      skill's composition is novel (shockwave's attack+knockback fan,
+      drain's lifesteal), one runToIdle test through the real handler is
+      the model — adrenaline's are the template.
+- **aiOptions allocation churn — watch item, no action.** enemy_turn_attack
+      calls aiOptions (allocating) for every off-cooldown skill on every
+      re-evaluation. Fine under the arena model (compacted at idle
+      points); if AI turns ever feel slow with full 8-slot bars, this is
+      the first place to look.
 - **Frame-level player actions — keep the exception list closed.** Exactly
   one exists (the text-field keyboard resolution; see DESIGN → Architecture
   → "Frame-level player actions" for the contract it breaks + the
