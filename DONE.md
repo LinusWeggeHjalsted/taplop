@@ -9903,3 +9903,42 @@ declarative (the binding file states where a combo fires), give load-time
 validation a real rule (same combo + same context is the only collision
 class left, and the remaining un-validated case is documented), and the
 future binding-UI gets its grouping for free.
+
+## Input: editor tool/palette keybinds (slice 2 — Digit1–5)
+
+Settled design: DESIGN → Input (Binding contexts) + DESIGN → Level Editor →
+Editor UI layout (tool palette). The five keybinds the context model was
+built for:
+
+- **Bindings** (`data/default_settings.txt`, all `context editor`):
+  Digit1 → `editor_select_tool`, Digit2 → `editor_tile_tool`, Digit3/4/5 →
+  `toggle_editor_enemy/decoration/item_group`. Digit1–8 remain the in-game
+  skill slots (`context game`) — the first shipped same-combo
+  cross-context pair; the context gate resolves it upstream, so pressing 1
+  in-game never touches the editor tool and vice versa (pinned by tests
+  both directions). No backend key-table edit (Digit1–8 were already
+  mapped for the skill slots — the usual missing-site trap didn't apply).
+
+- **The bridge, not new handler arms.** The five are payload-less
+  keybind-only Actions (no button carries them — `applyAction` has an
+  explicit no-op case). `translateInput` maps each onto the EXACT
+  `options_action` + payload pair the button-release dispatch produces for
+  the equivalent click (`.select_editor_tool` + `clicked_editor_tool` /
+  `.toggle_editor_palette_group` + `clicked_editor_group`), so the existing
+  consumption sites serve both input paths with zero new handler code and
+  identical semantics: the tool switch pushes `player_set_editor_tool`
+  (undo timeline, same-value no-op, editor-gated), the group toggle is the
+  accordion UiState write. Same-frame keypress + button release on the
+  same action is degenerate (the button's payload lands last and wins).
+  Consumption choice: `handleAnytimeInput`'s options_action path (the
+  tool-cell click path), not `handleIdleInput`'s editor arm — tool
+  switching is a palette interaction and the editor has no waits, so
+  stack-state gating would add nothing.
+
+- **Tests**: the bridge end-to-end through `translateInput` on the editor
+  set (all five payloads correct, skill slots silent) and on the game set
+  (skill slots fire, no editor bridge) — the ctrl+S dispatch-test pattern
+  (pin the dispatch, not just checkAction).
+
+- Digit6–8 have no editor binding yet — free for future editor shortcuts
+  if wanted; nothing reserves them.

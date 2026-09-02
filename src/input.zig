@@ -572,6 +572,16 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .close_editor_picker => player_input.anytime.options_action = action,
         .toggle_editor_mission_browser => player_input.anytime.toggle_editor_mission_browser = true,
         .import_editor_mission => player_input.anytime.import_editor_mission = true,
+        // Keyboard-only editor shortcuts — no button carries these (the
+        // palette cells use the payload-carrying click actions), so the
+        // click bridge never sees them; the translateInput dispatch owns
+        // the keybind→click-action bridging.
+        .editor_select_tool,
+        .editor_tile_tool,
+        .toggle_editor_enemy_group,
+        .toggle_editor_decoration_group,
+        .toggle_editor_item_group,
+        => {},
         .select_editor_utility_skill => player_input.anytime.options_action = action,
         .toggle_inventory => player_input.anytime.in_game.toggle_inventory = true,
         .toggle_gear => player_input.anytime.in_game.toggle_gear = true,
@@ -972,6 +982,32 @@ pub fn translateInput(
     result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.toggle_editor_mission_browser = checkAction(.toggle_editor_mission_browser, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.import_editor_mission = checkAction(.import_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    // Editor tool/palette keybinds (Digit1–5, editor context — see the
+    // Action docs): bridged onto the click paths' options_action + payload
+    // pairs so keybind and click share the consumption sites exactly. The
+    // payload fields are otherwise set only at the button-release dispatch
+    // in main.zig; a same-frame keypress + button release on the same
+    // action is degenerate (the button's payload lands last and wins).
+    if (checkAction(.editor_select_tool, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
+        result.anytime.options_action = .select_editor_tool;
+        result.anytime.clicked_editor_tool = .select;
+    }
+    if (checkAction(.editor_tile_tool, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
+        result.anytime.options_action = .select_editor_tool;
+        result.anytime.clicked_editor_tool = .tile;
+    }
+    if (checkAction(.toggle_editor_enemy_group, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
+        result.anytime.options_action = .toggle_editor_palette_group;
+        result.anytime.clicked_editor_group = 0;
+    }
+    if (checkAction(.toggle_editor_decoration_group, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
+        result.anytime.options_action = .toggle_editor_palette_group;
+        result.anytime.clicked_editor_group = 1;
+    }
+    if (checkAction(.toggle_editor_item_group, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
+        result.anytime.options_action = .toggle_editor_palette_group;
+        result.anytime.clicked_editor_group = 2;
+    }
     result.anytime.save_editor_mission = checkAction(.save_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.export_editor_mission = checkAction(.export_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.error_scroll_up = checkAction(.error_scroll_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
@@ -1232,6 +1268,75 @@ test "checkAction: most specific among three wins" {
     try std.testing.expect(checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
     try std.testing.expect(!checkAction(.skip, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
     try std.testing.expect(!checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+}
+
+test "translateInput: editor tool/palette keybinds bridge onto the click actions" {
+    // Digit1–5 on the editor screen (the first shipped same-combo
+    // cross-context pair — Digit1–8 are the in-game skill slots): the
+    // tool shortcuts must land on options_action=.select_editor_tool with
+    // the right clicked_editor_tool payload, and the group toggles on
+    // options_action=.toggle_editor_palette_group with the right group
+    // index — the exact pairs the button-release dispatch produces, so
+    // the click consumption sites serve both. On the game set the same
+    // keys fire the skill slots and nothing editor-side.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Digit1" }, .action = .skill_slot_1, .context = .game },
+        .{ .input = .{ .key = "Digit2" }, .action = .skill_slot_2, .context = .game },
+        .{ .input = .{ .key = "Digit1" }, .action = .editor_select_tool, .context = .editor },
+        .{ .input = .{ .key = "Digit2" }, .action = .editor_tile_tool, .context = .editor },
+        .{ .input = .{ .key = "Digit3" }, .action = .toggle_editor_enemy_group, .context = .editor },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+
+    const press_one = PlatformInput{
+        .events = &.{.{ .key_down = "Digit1" }},
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+    const press_two = PlatformInput{
+        .events = &.{.{ .key_down = "Digit2" }},
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+    const press_three = PlatformInput{
+        .events = &.{.{ .key_down = "Digit3" }},
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+
+    // Editor screen: Digit1 → select tool (bridged), no skill slot.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(press_one, &input_state, settings, camera, 0, null, .{ .anytime = true, .editor = true });
+        try std.testing.expectEqual(types.Action.select_editor_tool, result.anytime.options_action);
+        try std.testing.expectEqual(types.EditorToolId.select, result.anytime.clicked_editor_tool);
+        try std.testing.expect(result.idle.skill_slot_selected == null);
+    }
+    // Editor screen: Digit2 → tile tool.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(press_two, &input_state, settings, camera, 0, null, .{ .anytime = true, .editor = true });
+        try std.testing.expectEqual(types.Action.select_editor_tool, result.anytime.options_action);
+        try std.testing.expectEqual(types.EditorToolId.tile, result.anytime.clicked_editor_tool);
+    }
+    // Editor screen: Digit3 → enemy group toggle (group index 0).
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(press_three, &input_state, settings, camera, 0, null, .{ .anytime = true, .editor = true });
+        try std.testing.expectEqual(types.Action.toggle_editor_palette_group, result.anytime.options_action);
+        try std.testing.expectEqual(@as(usize, 0), result.anytime.clicked_editor_group);
+    }
+    // Level screen: the same keys are the skill slots — no editor bridge.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(press_one, &input_state, settings, camera, 0, null, .{ .anytime = true, .game = true });
+        try std.testing.expectEqual(@as(u8, 1), result.idle.skill_slot_selected);
+        try std.testing.expect(result.anytime.options_action == null);
+        try std.testing.expect(result.anytime.clicked_editor_tool == null);
+    }
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(press_two, &input_state, settings, camera, 0, null, .{ .anytime = true, .game = true });
+        try std.testing.expectEqual(@as(u8, 2), result.idle.skill_slot_selected);
+    }
 }
 
 test "translateInput: editor save/export chords reach the anytime flags" {

@@ -35,17 +35,17 @@ Test by running `zig build run` and clicking through.
   the frame's active context set, and the ArrowUp/ArrowDown dual-binds now
   resolve upstream (popup up → only `error_scroll_*`; down → only
   `move_cursor_*`) instead of via handler ordering. History in DONE.md.
-- **Editor tool/palette keybinds (1–5)** — slice 2 of the binding-contexts
-  work (slice 1, the context model, is DONE — see DONE.md): Digit1 = select
-  tool, Digit2 = tile tool, Digit3/4/5 = expand/collapse the enemy /
-  decoration / item palette groups. Five payload-less actions
-  (`.editor_select_tool`, `.editor_tile_tool`,
-  `.toggle_editor_enemy/decoration/item_group`) — the tool shortcuts push
-  the same `player_set_editor_tool` player actions the tool cells do
-  (undoable + replay-safe); the group toggles route to the same UiState
-  write as the group-header clicks. Bindings in `data/default_settings.txt`
-  with `context editor` (Digit1–8 are already in the backend key table).
-  Wiring sites: see DESIGN → Input → New keybind wiring sites.
+- **Editor tool/palette keybinds (1–5)** — DONE (slice 2 of the
+  binding-contexts work). Digit1 = select tool, Digit2 = tile tool,
+  Digit3/4/5 = expand/collapse the enemy/decoration/item palette groups —
+  context-`editor` bindings (Digit1–8 stay the in-game skill slots; the
+  first shipped same-combo cross-context pair). Five payload-less actions
+  bridged in `translateInput` onto the click paths' `options_action` +
+  payload pairs, so clicks and keys share consumption sites exactly.
+  Design: DESIGN → Input (Binding contexts) + DESIGN → Level Editor →
+  Editor UI layout (tool palette); history in DONE.md. Optional polish
+  follow-up: surface the shortcut numbers in the palette UI (fixed-tool
+  labels "1 Select" / group headers "Enemies 3", or tooltips).
 - **Replay viewer** — wire the .replay_viewer screen to STEP through a loaded
   log. The `--replay <path>` CLI flag (DONE — see DONE.md) loads a session
   log and reconstructs the session to its END state (resume mid-session);

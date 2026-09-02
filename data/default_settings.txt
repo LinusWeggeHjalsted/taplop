@@ -219,3 +219,28 @@ input_type key
 input_name ArrowRight
 action move_cursor_right
 context game
+
+input_type key
+input_name Digit1
+action editor_select_tool
+context editor
+
+input_type key
+input_name Digit2
+action editor_tile_tool
+context editor
+
+input_type key
+input_name Digit3
+action toggle_editor_enemy_group
+context editor
+
+input_type key
+input_name Digit4
+action toggle_editor_decoration_group
+context editor
+
+input_type key
+input_name Digit5
+action toggle_editor_item_group
+context editor

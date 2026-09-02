@@ -402,6 +402,21 @@ pub const Action = enum {
     // ships in default_settings.txt and no-ops on native, where the button
     // is never emitted — the skip_level discipline).
     import_editor_mission,
+    // Editor tool/palette keyboard shortcuts (Digit1–5, context editor —
+    // the first same-combo cross-context pair: Digit1–8 are the in-game
+    // skill slots). Payload-less keybind-only actions: `translateInput`
+    // bridges them onto the click paths' `options_action` + payload pairs
+    // (select_editor_tool + clicked_editor_tool /
+    // toggle_editor_palette_group + clicked_editor_group), so keybind and
+    // click share consumption sites exactly — the tool switch rides the
+    // undo timeline via `player_set_editor_tool` (same-value = no-op), the
+    // group toggle is the accordion UiState write. No button carries these
+    // (the palette cells use the payload-carrying click actions).
+    editor_select_tool,
+    editor_tile_tool,
+    toggle_editor_enemy_group,
+    toggle_editor_decoration_group,
+    toggle_editor_item_group,
 };
 
 /// One per editable `Settings` scalar field. Drives the settings-screen
@@ -630,6 +645,11 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .open_editor_mission_row,
         .import_editor_mission,
         .overwrite_validation_replay,
+        .editor_select_tool,
+        .editor_tile_tool,
+        .toggle_editor_enemy_group,
+        .toggle_editor_decoration_group,
+        .toggle_editor_item_group,
         => .{ .editor = true },
 
         // The main-menu screen.

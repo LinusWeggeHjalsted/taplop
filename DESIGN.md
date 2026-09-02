@@ -2223,7 +2223,15 @@ layout + a left inspector + a right metadata sidebar:
   prompts; the active tool determines what a viewport click does.
 - **Tool palette (bottom bar):** mirrors the in-game bottom bar's slot
   style. Fixed tools first ([Select] [Tile]), then three collapsible groups:
-  Enemies, Decorations, Items. Each group shows at most 8 type
+  Enemies, Decorations, Items. Keyboard: Digit1 = select tool, Digit2 =
+  tile tool, Digit3/4/5 = expand/collapse the enemy/decoration/item groups
+  (context-`editor` bindings — the same keys are the in-game skill slots;
+  see DESIGN → Input → Binding contexts). The keybinds are payload-less
+  actions (`editor_select_tool` etc.) bridged in `translateInput` onto the
+  click paths' `options_action` + payload pairs, so the tool-cell and
+  group-header consumption sites serve clicks and keys identically (the
+  tool switch rides the undo timeline; the group toggle is the accordion
+  UiState write). Each group shows at most 8 type
   cells (the visible window); scrolling the wheel with the pointer over a
   group shifts its window left/right (one cell per notch; state on
   `UiState.editor_palette_scroll`, clamped in the builder). Each slot
