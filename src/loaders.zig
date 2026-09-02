@@ -221,6 +221,11 @@ pub fn loadSettings(
     sections: []const Section,
     allocator: std.mem.Allocator,
     base: ?Settings,
+    /// Receives binding-level config warnings (missing/unknown context,
+    /// action not valid in its context, unknown action). Null on the
+    /// defaults path (`loadSettingsWrapped`) — the shipped file is
+    /// round-trip-tested, so binding warnings there are dev noise.
+    warnings: ?*std.ArrayList([]const u8),
 ) !Settings {
     try validateSections(sections, &settings_sections);
     try validateFileFormatVersion(sections, "Metadata", settings_file_format_version);
@@ -297,7 +302,37 @@ pub fn loadSettings(
             const input_type = findValue(pairs, "input_type") orelse continue;
             const input_name = findValue(pairs, "input_name") orelse continue;
             const action_string = findValue(pairs, "action") orelse continue;
-            const action = parseEnum(types.Action,action_string) orelse continue;
+            const action = parseEnum(types.Action, action_string) orelse {
+                if (warnings) |w| {
+                    const message = std.fmt.allocPrint(allocator, "InputBindings entry '{s}' names unknown action '{s}'; entry dropped", .{ input_name, action_string }) catch @panic("failed to format binding warning");
+                    w.append(allocator, message) catch @panic("failed to append binding warning");
+                }
+                continue;
+            };
+
+            // Binding context is REQUIRED (see DESIGN → Input → Binding
+            // contexts). A context-less or unknown-context entry, or an
+            // action bound in a context it never fires in, is a config
+            // error: warn + drop the entry. A dropped entry leaves its
+            // action unmentioned, so the per-action overlay injects the
+            // action's default binding (with its default context) — a
+            // context-less pre-migration user file self-heals on the next
+            // debounced full-format write.
+            const context_string = findValue(pairs, "context") orelse "";
+            const context = parseEnum(types.BindingContext, context_string) orelse {
+                if (warnings) |w| {
+                    const message = std.fmt.allocPrint(allocator, "InputBindings entry for '{s}' is missing a valid context; entry dropped", .{action_string}) catch @panic("failed to format binding warning");
+                    w.append(allocator, message) catch @panic("failed to append binding warning");
+                }
+                continue;
+            };
+            if (!types.actionBindingContexts(action).contains(context)) {
+                if (warnings) |w| {
+                    const message = std.fmt.allocPrint(allocator, "Action '{s}' cannot be bound in context '{s}'; entry dropped", .{ action_string, context_string }) catch @panic("failed to format binding warning");
+                    w.append(allocator, message) catch @panic("failed to append binding warning");
+                }
+                continue;
+            }
 
             const InputTypeId = enum { key, mouse_button, gamepad_button };
             const input_type_id = parseEnum(InputTypeId, input_type) orelse continue;
@@ -326,6 +361,7 @@ pub fn loadSettings(
                 .input = input,
                 .modifiers = modifiers,
                 .action = action,
+                .context = context,
             });
         }
 
@@ -365,6 +401,7 @@ pub fn loadSettings(
                     .input = default_input,
                     .modifiers = default_binding.modifiers,
                     .action = default_binding.action,
+                    .context = default_binding.context,
                 });
             }
         }
@@ -2369,17 +2406,19 @@ test "loadSettings parses settings sections into a Settings struct" {
         \\input_type key
         \\input_name Space
         \\action skip
+        \\context game
         \\
         \\input_type mouse_button
         \\input_name left
         \\ctrl true
         \\action confirm
+        \\context game
     ;
 
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const settings = try loadSettings(sections, allocator, null);
+    const settings = try loadSettings(sections, allocator, null, null);
     defer freeSettings(settings, allocator);
 
     // Audio values (u32 percentages 0–100)
@@ -3357,7 +3396,7 @@ test "data/default_settings.txt binds ctrl+L to dump_event_log" {
     defer allocator.free(parsed.raw_text);
     defer freeParsedSections(parsed.sections, allocator);
 
-    const settings = try loadSettings(parsed.sections, allocator, null);
+    const settings = try loadSettings(parsed.sections, allocator, null, null);
     defer freeSettings(settings, allocator);
 
     var found = false;
@@ -3378,7 +3417,12 @@ test "data/default_settings.txt binds ctrl+L to dump_event_log" {
 /// base Settings can be freed with `freeSettings` under `testing.allocator`.
 fn testOwnedBindings(
     allocator: std.mem.Allocator,
-    specs: []const struct { key: []const u8, ctrl: bool = false, action: types.Action },
+    specs: []const struct {
+        key: []const u8,
+        ctrl: bool = false,
+        action: types.Action,
+        context: types.BindingContext,
+    },
 ) ![]types.InputBinding {
     var bindings: std.ArrayList(types.InputBinding) = .empty;
     for (specs) |spec| {
@@ -3386,6 +3430,7 @@ fn testOwnedBindings(
             .input = .{ .key = try allocator.dupe(u8, spec.key) },
             .modifiers = .{ .ctrl = spec.ctrl },
             .action = spec.action,
+            .context = spec.context,
         });
     }
     return bindings.toOwnedSlice(allocator);
@@ -3401,9 +3446,9 @@ test "loadSettings injects default bindings for actions the user file doesn't me
     // Defaults: skip → Space, dump_event_log → ctrl+L, undo → ctrl+Z.
     const base = Settings{
         .input_bindings = try testOwnedBindings(allocator, &.{
-            .{ .key = "Space", .action = .skip },
-            .{ .key = "L", .ctrl = true, .action = .dump_event_log },
-            .{ .key = "Z", .ctrl = true, .action = .undo },
+            .{ .key = "Space", .action = .skip, .context = .game },
+            .{ .key = "L", .ctrl = true, .action = .dump_event_log, .context = .anytime },
+            .{ .key = "Z", .ctrl = true, .action = .undo, .context = .anytime },
         }),
     };
     // loadSettings CONSUMES the base's bindings (frees them on replace;
@@ -3420,11 +3465,12 @@ test "loadSettings injects default bindings for actions the user file doesn't me
         \\input_type key
         \\input_name Enter
         \\action skip
+        \\context game
     ;
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const merged = try loadSettings(sections, allocator, base);
+    const merged = try loadSettings(sections, allocator, base, null);
     defer freeSettings(merged, allocator);
 
     // The user's rebinding of skip wins (Enter), and the default Space→skip
@@ -3461,8 +3507,8 @@ test "loadSettings binding overlay is idempotent once injected bindings are writ
 
     const base = Settings{
         .input_bindings = try testOwnedBindings(allocator, &.{
-            .{ .key = "Space", .action = .skip },
-            .{ .key = "L", .ctrl = true, .action = .dump_event_log },
+            .{ .key = "Space", .action = .skip, .context = .game },
+            .{ .key = "L", .ctrl = true, .action = .dump_event_log, .context = .anytime },
         }),
     };
     // loadSettings consumes the base's bindings — free merged only.
@@ -3477,20 +3523,130 @@ test "loadSettings binding overlay is idempotent once injected bindings are writ
         \\input_type key
         \\input_name Space
         \\action skip
+        \\context game
         \\
         \\input_type key
         \\input_name L
         \\ctrl true
         \\action dump_event_log
+        \\context anytime
     ;
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const merged = try loadSettings(sections, allocator, base);
+    const merged = try loadSettings(sections, allocator, base, null);
     defer freeSettings(merged, allocator);
 
     // Exactly the user file's two bindings — no duplicate injection.
     try std.testing.expectEqual(@as(usize, 2), merged.input_bindings.len);
+}
+
+test "loadSettings drops a context-less binding with a warning and injects its default" {
+    // The pre-migration user file: bindings without a context key. The
+    // entry is warned + dropped — and a dropped entry leaves its action
+    // unmentioned, so the per-action overlay injects the action's default
+    // binding (with its default context). One boot with warnings, then the
+    // next debounced full-format write persists the context lines — the
+    // self-heal path for the one existing install. See DESIGN → Input →
+    // Binding overlay semantics.
+    const allocator = std.testing.allocator;
+
+    const base = Settings{
+        .input_bindings = try testOwnedBindings(allocator, &.{
+            .{ .key = "Space", .action = .skip, .context = .game },
+        }),
+    };
+    // loadSettings consumes the base's bindings on replace — free merged only.
+
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name Enter
+        \\action skip
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (warnings.items) |message| allocator.free(message);
+        warnings.deinit(allocator);
+    }
+    const merged = try loadSettings(sections, allocator, base, &warnings);
+    defer freeSettings(merged, allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "context") != null);
+    // The default binding (with its context) was injected in place of the
+    // dropped entry — skip is still bound, not lost.
+    try std.testing.expectEqual(@as(usize, 1), merged.input_bindings.len);
+    try std.testing.expectEqual(.skip, merged.input_bindings[0].action);
+    try std.testing.expectEqualStrings("Space", merged.input_bindings[0].input.key);
+    try std.testing.expectEqual(.game, merged.input_bindings[0].context);
+}
+
+test "loadSettings warns + drops a binding whose action never fires in its context" {
+    // select_editor_tool bound with context game: it could only fire on
+    // level/hub screens, where nothing consumes it — a dead binding.
+    // actionBindingContexts is the validity map; the loader enforces it.
+    const allocator = std.testing.allocator;
+
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name KeyZ
+        \\action select_editor_tool
+        \\context game
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (warnings.items) |message| allocator.free(message);
+        warnings.deinit(allocator);
+    }
+    const settings = try loadSettings(sections, allocator, null, &warnings);
+    defer freeSettings(settings, allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "cannot be bound") != null);
+    try std.testing.expectEqual(@as(usize, 0), settings.input_bindings.len);
+}
+
+test "loadSettings warns + drops a binding naming an unknown action" {
+    const allocator = std.testing.allocator;
+
+    const raw_text =
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\InputBindings
+        \\input_type key
+        \\input_name KeyZ
+        \\action no_such_action
+        \\context anytime
+    ;
+    const sections = try parseConfigFile(raw_text, allocator);
+    defer freeParsedSections(sections, allocator);
+
+    var warnings: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (warnings.items) |message| allocator.free(message);
+        warnings.deinit(allocator);
+    }
+    const settings = try loadSettings(sections, allocator, null, &warnings);
+    defer freeSettings(settings, allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), warnings.items.len);
+    try std.testing.expect(std.mem.indexOf(u8, warnings.items[0], "unknown action") != null);
+    try std.testing.expectEqual(@as(usize, 0), settings.input_bindings.len);
 }
 
 test "loadSettings without an InputBindings section keeps the base bindings untouched" {
@@ -3500,7 +3656,7 @@ test "loadSettings without an InputBindings section keeps the base bindings unto
 
     const base = Settings{
         .input_bindings = try testOwnedBindings(allocator, &.{
-            .{ .key = "Space", .action = .skip },
+            .{ .key = "Space", .action = .skip, .context = .game },
         }),
     };
     // No InputBindings section → the base's bindings are aliased into the
@@ -3516,7 +3672,7 @@ test "loadSettings without an InputBindings section keeps the base bindings unto
     const sections = try parseConfigFile(raw_text, allocator);
     defer freeParsedSections(sections, allocator);
 
-    const merged = try loadSettings(sections, allocator, base);
+    const merged = try loadSettings(sections, allocator, base, null);
     defer freeSettings(merged, allocator);
 
     try std.testing.expectEqual(@as(u32, 40), merged.master_volume);

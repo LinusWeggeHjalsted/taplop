@@ -9837,3 +9837,69 @@ Three pieces:
   panel on a dead target, keeping the view-gate coherent). Test: shared
   tile with lower-index corpse + living entity → the living one; lone
   corpse tile → pending cleared.
+
+## Input: binding contexts (slice 1 — the context model)
+
+Settled design: DESIGN → Input (Binding contexts + Action↔context validity
++ New keybind wiring sites). What landed:
+
+- **`BindingContext` + `BindingContextSet`** (types.zig): `anytime` / `game`
+  (level+hub) / `editor` / `menu` (main menu) / `error_popup`. Named
+  `error_popup` because `error` is a Zig keyword (can't be a bare enum
+  value). `menu` was added beyond the initially-agreed
+  anytime/game/editor/error set: the exhaustive classification switch needs
+  SOME context for main-menu-only actions (continue_game, load-save browser,
+  open_editor, …) — button-only today, classified for honesty + the future
+  binding UI; zero behavioral effect (no menu-context bindings ship).
+- **`InputBinding.context`** — a REQUIRED field (no default), so every
+  construction site states it and the compiler surfaces them all.
+- **`actionBindingContexts`** — the exhaustive no-else switch over Action
+  classifying each action into its valid contexts (the "where does this
+  action fire" single declaration). Multi-screen actions carry multiple
+  flags: `exit_to_menu` + `continue_after_mission` {game, editor} (the
+  editor's options menu / the validation stats overlay over the editor);
+  `open_settings` + `change_setting` {menu, game}. `overwrite_validation_
+  replay` + `validate_editor_mission` are editor (the stats screen renders
+  over the editor).
+- **Gating** — `frame()` computes the active set (pending_error →
+  `{error_popup}` ONLY, mirroring/preceding the handler-side modal gate;
+  else screen context + anytime) and threads it into `translateInput`;
+  `checkAction`/`isActionHeld`/`isSuppressed` skip inactive-context bindings
+  (an inactive binding is not a precedence competitor). Editor
+  playtest/validation runs are `.level` screens → game set active, editor
+  set dormant — free, no special cases. Button clicks (`applyAction`)
+  bypass the gate; buttons only render in their context.
+- **Load-time validation** — `loadSettings` gained a `warnings` out-param
+  (null on the shipped-defaults path via `loadSettingsWrapped` — the file is
+  round-trip-tested; real warnings on the user-file overlay path). Warn +
+  drop: missing/unknown `context`, unknown action, or an action bound in a
+  context it never fires in. A dropped entry counts as unmentioned → its
+  default (context included) is injected — the one existing context-less
+  user install self-heals: one boot of warnings, then the next debounced
+  full-format write persists the context lines. `settings_file_format_
+  version` deliberately NOT bumped (old files parse + migrate rather than
+  being rejected wholesale — scalars survive).
+- **`save_game` editor-run gate** (input_handlers options_action arm):
+  no-op while `editor.mode != .edit` — the run's player_data is throwaway,
+  same reasoning as the view hiding Export Save mid-run. Button-only action
+  today, so the gate is the defensive half for a future keybind (the
+  user-requested "saving player disabled when testing/validating").
+- **Files**: parser whitelist += `context`; `writeSettings` emits it;
+  `data/default_settings.txt` — all 38 bindings carry explicit context
+  lines (author decision: explicit everywhere, no implicit anytime).
+- **Tests**: context-gated firing (ArrowUp game/error_popup pair — exactly
+  one fires per active set; Digit1 skill-slot/select-tool pair), the
+  rewritten ctrl+S dispatch test (editor set), warn+drop+inject for
+  context-less entries, warn+drop for invalid action-context pairs +
+  unknown actions, writeSettings context round-trip. The old
+  "equal-specificity ties co-fire" test was REPLACED — its premise (the
+  ArrowUp dual-bind co-firing) is exactly what contexts removed.
+
+Why contexts over the old implicit co-fire: the shipped ArrowUp pattern
+relied on handler ordering (the popup branch consuming scroll + returning
+first) — undocumented at the binding sites and unscalable to the editor's
+1–5 keybinds (slice 2, see TODO). Contexts make the disambiguation
+declarative (the binding file states where a combo fires), give load-time
+validation a real rule (same combo + same context is the only collision
+class left, and the remaining un-validated case is documented), and the
+future binding-UI gets its grouping for free.

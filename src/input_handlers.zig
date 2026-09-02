@@ -886,6 +886,17 @@ pub fn handleAnytimeInput(
         const allocator = history.current_arena.allocator();
         switch (action) {
             .save_game => {
+                // Never during an editor run (playtest/validate): the run's
+                // player_data is temporary (rebuilt from the editor loadout,
+                // restored on exit), so a save would write the throwaway run
+                // data as a campaign save — the same reason buildOptionsMenu
+                // hides the Export Save button mid-run. `save_game` is
+                // button-only today (no binding ships), so this gate is the
+                // defensive half for a future keybind; the button half lives
+                // in the view.
+                if (current.editor) |editor| {
+                    if (editor.mode != .edit) return;
+                }
                 const timestamp = session_log.formatSessionTimestamp(allocator, history.io);
                 const save_path = std.fmt.allocPrint(
                     allocator,

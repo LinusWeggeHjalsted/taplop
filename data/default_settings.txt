@@ -23,161 +23,199 @@ input_type key
 input_name KeyZ
 ctrl true
 action undo
+context anytime
 
 input_type key
 input_name KeyY
 ctrl true
 action redo
+context anytime
 
 input_type key
 input_name KeyL
 ctrl true
 action dump_event_log
+context anytime
 
 input_type key
 input_name KeyS
 ctrl true
 action save_editor_mission
+context editor
 
 input_type key
 input_name KeyE
 ctrl true
 action export_editor_mission
+context editor
 
 input_type key
 input_name Enter
 ctrl true
 action skip_level
+context game
 
 input_type key
 input_name Delete
 action delete_editor_selection
+context editor
 
 input_type key
 input_name KeyD
 ctrl true
 action clear_editor_selection
+context editor
 
 input_type key
 input_name KeyA
 ctrl true
 action select_editor_all
+context editor
 
 input_type key
 input_name PageDown
 action zoom_in
+context anytime
 
 input_type key
 input_name PageUp
 action zoom_out
+context anytime
 
 input_type key
 input_name Digit0
 ctrl true
 action zoom_reset
+context anytime
 
 input_type key
 input_name KeyO
 ctrl true
 action toggle_editor_mission_browser
+context editor
 
 input_type key
 input_name KeyI
 ctrl true
 action import_editor_mission
+context editor
 
 input_type key
 input_name Escape
 action toggle_options_menu
+context anytime
 
 input_type key
 input_name Escape
 action dismiss_error
+context error_popup
 
 input_type key
 input_name Enter
 action dismiss_error
+context error_popup
 
 input_type key
 input_name KeyI
 action toggle_inventory
+context game
 
 input_type key
 input_name KeyG
 action toggle_gear
+context game
 
 input_type key
 input_name KeyS
 action toggle_skills
+context game
 
 input_type key
 input_name KeyM
 action toggle_world_map
+context game
 
 input_type key
 input_name Enter
 action confirm
+context game
 
 input_type key
 input_name Backspace
 action cancel
+context game
 
 input_type key
 input_name Space
 action skip
+context game
 
 input_type key
 input_name Digit1
 action skill_slot_1
+context game
 
 input_type key
 input_name Digit2
 action skill_slot_2
+context game
 
 input_type key
 input_name Digit3
 action skill_slot_3
+context game
 
 input_type key
 input_name Digit4
 action skill_slot_4
+context game
 
 input_type key
 input_name Digit5
 action skill_slot_5
+context game
 
 input_type key
 input_name Digit6
 action skill_slot_6
+context game
 
 input_type key
 input_name Digit7
 action skill_slot_7
+context game
 
 input_type key
 input_name Digit8
 action skill_slot_8
+context game
 
 input_type key
 input_name ArrowUp
 action move_cursor_up
+context game
 
 input_type key
 input_name ArrowUp
 action error_scroll_up
+context error_popup
 
 input_type key
 input_name ArrowDown
 action move_cursor_down
+context game
 
 input_type key
 input_name ArrowDown
 action error_scroll_down
+context error_popup
 
 input_type key
 input_name ArrowLeft
 action move_cursor_left
+context game
 
 input_type key
 input_name ArrowRight
 action move_cursor_right
+context game

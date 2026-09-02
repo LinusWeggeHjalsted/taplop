@@ -35,7 +35,7 @@ fn validateConfigFile(
 
     // Classify by path pattern + run the matching loader + key validation.
     if (std.mem.eql(u8, path, "data/default_settings.txt")) {
-        _ = try loaders.loadSettings(sections, allocator, null);
+        _ = try loaders.loadSettings(sections, allocator, null, null);
         parser.validateKeys(sections, parser.settings_key_map, path, allocator, warnings);
     } else if (std.mem.eql(u8, path, "data/color_themes.txt")) {
         _ = try loaders.loadColorThemeDefinitions(sections, allocator);

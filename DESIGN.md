@@ -707,6 +707,55 @@ combat-log UI rendering + replay-viewer UI still TODO)
 
 ## Input
 
+- **Binding contexts — a key combo may be bound once per context.** Every
+  InputBindings entry carries a REQUIRED `context` key: `anytime` (active on
+  every screen), `game` (level + hub), `editor`, `menu` (main menu),
+  `error_popup`. Bindings in DIFFERENT contexts may share the same combo
+  (Digit1 = skill 1 in game, select tool in editor) and never co-fire:
+  `frame()` computes the frame's active `BindingContextSet` and hands it to
+  `translateInput`; `checkAction`/`isActionHeld`/`isSuppressed` skip bindings
+  whose context isn't active (an inactive binding is not a precedence
+  competitor either). The active set: while `pending_error` is set, ONLY
+  `error_popup` is active — the popup is modal, even `anytime` is swallowed
+  (this makes the old ArrowUp dual-bind explicit: with the popup up only
+  `error_scroll_*` fires, without it only `move_cursor_*`; the handler-side
+  pending_error gate remains as the wheel-redirect + defense-in-depth).
+  Otherwise the screen picks its context and `anytime` rides along
+  (level/hub → game, editor → editor, main_menu → menu, replay_viewer →
+  none yet). An editor playtest/validation run is a `.level` screen, so the
+  game set activates and the editor set goes dormant — the run plays like
+  gameplay with zero special cases. `save_editor_mission` is editor-context
+  (ctrl+S is dead mid-run); `save_game` is game-context and additionally
+  handler-gated against editor runs (the run's player_data is throwaway —
+  same reasoning as the view hiding Export Save mid-run). Button clicks
+  bypass the gate entirely (`applyAction` sets actions directly) — buttons
+  only render in their context.
+- **Action↔context validity is declared, compiler-enforced, and
+  load-validated.** `types.actionBindingContexts` is an exhaustive no-else
+  switch classifying every Action into its valid contexts — the single
+  declaration of "where does this action fire", and a compile error to add
+  an Action without classifying it. `loadSettings` warns + drops a binding
+  whose `context` is missing/unknown, whose action is unknown, or whose
+  context isn't valid for its action (such a binding could only fire on
+  screens where nothing consumes it — a dead binding). A dropped entry
+  leaves its action unmentioned, so the per-action overlay injects the
+  action's default binding (context included) — a pre-migration
+  context-less user file self-heals on the next debounced full-format
+  write. `settings_file_format_version` did NOT bump: old files parse
+  (bindings warn+drop+re-inject, scalars untouched) rather than being
+  rejected wholesale.
+- **New keybind wiring sites (five, easily forgotten).** A new keybind
+  touches: (1) the binding entry in `data/default_settings.txt` (now
+  including its `context` line), (2) the backend's key table
+  (`raylib_backend.zig` `key_mappings` — only bound keys are mapped;
+  unmapped keys never reach `translateInput`), (3) the `Action` enum + its
+  `actionBindingContexts` case, (4) the `AnytimeInput`/`IdleInput` field +
+  `applyAction` + the consumption site, (5) the `translateInput`
+  `checkAction` dispatch line. Two historical instances of a site being
+  forgotten: ctrl+A select-all (missing backend entry) and ctrl+S
+  save-mission (missing dispatch line). The startup warning for bindings
+  naming inputs no backend mapping can produce is still TODO (see TODO →
+  New-keybind pipeline friction).
 - **Binding modifier match is subset, not exact.** A binding's modifiers are
   REQUIREMENTS, not an exact match: a plain binding fires regardless of held
   modifiers (so ctrl+key works for any plain-bound action — e.g. ctrl+Space
@@ -714,20 +763,17 @@ combat-log UI rendering + replay-viewer UI still TODO)
   `checkAction` skips only when a REQUIRED modifier is NOT held. This matches
   the button-click path (`applyAction` sets the action directly with no
   modifier filtering) so keyboard chords and clicks behave the same.
-- **Hybrid precedence — most-specific chord wins, ties co-fire.** When two
-  bindings share the same physical input (same key/button id), the one whose
-  required modifiers are a SUPERSET (in count, all held) wins and suppresses
-  the less-specific one: ctrl+Enter beats plain Enter. Equal-specificity
+- **Hybrid precedence — most-specific chord wins within the active
+  contexts, ties co-fire.** When two bindings share the same physical input
+  (same key/button id) AND both contexts are active, the one whose required
+  modifiers are a SUPERSET (in count, all held) wins and suppresses the
+  less-specific one: ctrl+Enter beats plain Enter. Equal-specificity
   bindings (same required-modifier count) CO-FIRE — disambiguation is by
-  handler context downstream, not here. This is how the shipped ArrowUp /
-  ArrowDown pairs work: `move_cursor_up` and `error_scroll_up` both fire on a
-  plain ArrowUp; the pending-error popup branch consumes the scroll action
-  and `return`s, so when no popup is up only the cursor action takes effect.
-  `checkAction` / `isActionHeld` suppress a matching binding when another
-  binding on the same input matches the held modifiers with strictly more
-  required modifiers (`isSuppressed`, `modifierSpecificity`). No load-time
-  collision validation today (the loader appends every binding; a same-combo
-  different-action pair is a tie, which co-fires by design, not an error).
+  handler context downstream, not here. Same-combo different-context pairs
+  are NOT ties — the context gate resolves them upstream (see Binding
+  contexts). `checkAction` / `isActionHeld` suppress a matching binding when
+  another ACTIVE binding on the same input matches the held modifiers with
+  strictly more required modifiers (`isSuppressed`, `modifierSpecificity`).
 - **Synthetic key repeat is owned by the engine, not the OS.** A held key
   fires its first repeat after `key_repeat_initial_delay_microseconds` (300ms)
   then repeats at `key_repeat_interval_microseconds` (40ms), tracked in
@@ -754,33 +800,39 @@ combat-log UI rendering + replay-viewer UI still TODO)
   `data/default_settings.txt` (embedded, read-only). User preferences live in
   `~/.ziglop/settings.txt` (persistent dir, same format). At startup the
   loader reads defaults, then overlays the user file: scalars per-field (user
-  value wins, missing keeps default); InputBindings, if present, REPLACE the
-  default binding set entirely (the user's bindings are authoritative —
-  changing official defaults only affects players with no user file). Writes
+  value wins, missing keeps default); InputBindings overlay PER-ACTION (see
+  Binding overlay semantics below). Writes
   are FULL-FORMAT (all sections including InputBindings) so the user file is
   the same format as the defaults. `Settings.camera_zoom` is the first
   persisted preference; other tunable fields mark dirty as their UI lands.
 - **Binding overlay semantics.** Per-action, not per-key-combo: a user file's
   binding for an action replaces the default's binding for that action
-  (rebind = replace, not duplicate). One combo → one action is the INTENT
-  (a same-combo different-action pair is a config error), but the loader does
-  not validate it today — it appends every binding, and equal-specificity ties
-  co-fire per the hybrid precedence rule above; one action → multiple combos
-  (additive — skip can live on Space AND Enter). The overlay implements
+  (rebind = replace, not duplicate — the binding's `context` comes with the
+  entry; a user rebinding an action states its context like any authored
+  binding, validated against `actionBindingContexts` at load). Same-combo
+  different-action pairs WITHIN one context are a config error in spirit;
+  the loader does not flag them today (equal-specificity ties co-fire per
+  the hybrid precedence rule) — across contexts they are fine and resolved
+  by the context gate. One action → multiple combos is additive (skip can
+  live on Space AND Enter). The overlay implements
   **full-set + migrate**: a user file with an InputBindings section carries
   the user's bindings for the actions it NAMES, plus INJECTED default
   bindings for every action it doesn't mention (load-time, in
   `loadSettings`) — so a new official binding (skip_level, future editor
   keys, a renamed action) reaches existing installs instead of being
-  shadowed by the user file. Idempotent by construction: the next debounced
-  settings write (always full-format) persists the injected bindings, so
-  later loads see those actions as mentioned and nothing re-injects; no
-  write-on-load. An old-name binding for a RENAMED action parses to nothing
-  (unknown enum value, dropped at load) — the renamed action then counts as
-  unmentioned and its new default is injected; the next write drops the
-  stale line from the file. Pre-release (one existing install), no alias
-  map is carried for old names; if a rename ever touches a heavily
-  customized action, add a one-time old-name→new-name alias step at load.
+  shadowed by the user file. A dropped entry (missing/invalid context,
+  unknown action — see Action↔context validity) equally counts as
+  unmentioned, so its default is injected: a pre-migration context-less
+  user file loses nothing permanently. Idempotent by construction: the next
+  debounced settings write (always full-format, context lines included)
+  persists the injected bindings, so later loads see those actions as
+  mentioned and nothing re-injects; no write-on-load. An old-name binding
+  for a RENAMED action parses to nothing (unknown enum value, dropped at
+  load with a warning) — the renamed action then counts as unmentioned and
+  its new default is injected; the next write drops the stale line from the
+  file. Pre-release (one existing install), no alias map is carried for old
+  names; if a rename ever touches a heavily customized action, add a
+  one-time old-name→new-name alias step at load.
 - **Debounced writes (`PendingWrite`).** A general debounce primitive on
   `SessionState` (settings, future editor autosave). `markWriteDirty(tag,
   write_fn, now)` coalesces by tag (a burst of changes → one write). Debounce

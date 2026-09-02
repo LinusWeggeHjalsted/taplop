@@ -484,6 +484,23 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     // Computed before translateInput so synthetic key-repeat cadence (see
     // DESIGN → Input) is framerate-independent too.
     const delta_microseconds = backend.deltaMicroseconds();
+    // Which binding contexts are live this frame (see DESIGN → Input →
+    // Binding contexts). The error popup is modal: while up, ONLY the
+    // error_popup context is active (everything else — including `anytime`
+    // — is swallowed until dismissal, mirroring the pending_error gate in
+    // handleAnytimeInput). Otherwise the current screen picks its context
+    // (an editor playtest/validation run is a `.level` screen, so the game
+    // set activates and the editor set goes dormant — the run plays like
+    // gameplay for free); `anytime` rides along everywhere. The replay
+    // viewer has no context-specific bindings yet (`anytime` only).
+    const active_contexts: types.BindingContextSet = if (history.session.pending_error != null)
+        .{ .error_popup = true }
+    else switch (history.current_state.screen) {
+        .level, .hub => .{ .anytime = true, .game = true },
+        .editor => .{ .anytime = true, .editor = true },
+        .main_menu => .{ .anytime = true, .menu = true },
+        .replay_viewer => .{ .anytime = true },
+    };
     const player_input = input.translateInput(
         platform_input,
         &history.session.input_state,
@@ -496,6 +513,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             &history.session.ui_state.text_edit.?
         else
             null,
+        active_contexts,
     );
 
     // Text-field keyboard resolution (Enter commits, Escape discards). Once

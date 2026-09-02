@@ -121,7 +121,10 @@ fn loadSettingsWrapped(
     sections: []const parser.Section,
     allocator: std.mem.Allocator,
 ) anyerror!Settings {
-    return loaders.loadSettings(sections, allocator, null);
+    // Null warnings: the shipped defaults file is round-trip-tested, so
+    // binding-level warnings on it are dev noise; the user-file overlay
+    // path (`overlayUserSettings`) passes real warnings.
+    return loaders.loadSettings(sections, allocator, null, null);
 }
 
 /// Load settings from data/default_settings.txt, falling back to the embedded
@@ -181,7 +184,7 @@ pub fn overlayUserSettings(
     // binding strings are freed on replace). A file_format_version mismatch
     // or parse failure is recoverable (warn + keep defaults) per DESIGN →
     // Error Handling.
-    const merged = loaders.loadSettings(user_sections, allocator, defaults) catch {
+    const merged = loaders.loadSettings(user_sections, allocator, defaults, warnings) catch {
         warnings.append(allocator, std.fmt.allocPrint(allocator,
             "Failed to load user settings.txt; using defaults.", .{}) catch
             @panic("failed to allocate startup warning")) catch
@@ -441,7 +444,7 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
         @panic("embedded default settings missing");
     const defaults_sections = parser.parseConfigFile(defaults_bytes, allocator) catch
         @panic("failed to parse embedded default settings");
-    const defaults = loaders.loadSettings(defaults_sections, allocator, null) catch
+    const defaults = loaders.loadSettings(defaults_sections, allocator, null, null) catch
         @panic("failed to load embedded default settings");
     parser.freeParsedSections(defaults_sections, allocator);
     allocator.free(defaults_bytes);
@@ -456,10 +459,12 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
         \\input_type key
         \\input_name KeyZ
         \\action undo
+        \\context anytime
         \\
         \\input_type key
         \\input_name KeyY
         \\action redo
+        \\context anytime
     ;
     dir.writeFile(io, .{ .sub_path = "settings.txt", .data = user_settings }) catch
         @panic("failed to write user settings.txt");
@@ -504,6 +509,9 @@ test "overlayUserSettings: leak-clean under testing.allocator (owned strings)" {
     defer allocator.free(written);
     try testing.expect(std.mem.indexOf(u8, written, "input_name KeyZ") != null);
     try testing.expect(std.mem.indexOf(u8, written, "input_name KeyY") != null);
+    // The write is full-format including the binding context (the field the
+    // next load REQUIRES — a written file must reparse cleanly).
+    try testing.expect(std.mem.indexOf(u8, written, "action undo\ncontext anytime") != null);
 
     // Free the merged bindings (owned strings + slice). testing.allocator's
     // leak detection at test-end catches if overlayUserSettings or

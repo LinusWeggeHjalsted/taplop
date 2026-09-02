@@ -590,12 +590,12 @@ pub const campaign_key_map = std.StaticStringMap([]const []const u8).initComptim
 //
 // Metadata carries file_format_version. Audio/Display/Gameplay carry their
 // respective keys. InputBindings entries carry input_type, input_name,
-// action + modifier flags.
+// action, context + modifier flags.
 
 const settings_audio_keys = [_][]const u8{ "master_volume", "music_volume", "sound_effects_volume" };
 const settings_display_keys = [_][]const u8{ "vsync", "render_fps_cap", "camera_zoom", "animation_fps" };
 const settings_gameplay_keys = [_][]const u8{ "auto_skip_attack_step_out_of_combat", "auto_target_at_cursor", "show_fps", "player_color_index" };
-const settings_input_bindings_keys = [_][]const u8{ "input_type", "input_name", "action", "ctrl", "shift", "alt" };
+const settings_input_bindings_keys = [_][]const u8{ "input_type", "input_name", "action", "context", "ctrl", "shift", "alt" };
 
 pub const settings_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &level_metadata_keys }, // Metadata keys are shared (file_format_version + name)

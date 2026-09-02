@@ -470,10 +470,202 @@ pub const Modifiers = struct {
     alt: bool = false,
 };
 
+/// Where a keybinding is active. Bindings in different contexts may share
+/// the same key combo (Digit1 = skill 1 in game, select tool in editor);
+/// only bindings whose context is active reach `checkAction`, so same-combo
+/// cross-context pairs never co-fire. `anytime` is active on every screen
+/// except while the error popup is up; `error_popup` is active ONLY while
+/// the popup is up (the popup is modal — see DESIGN → Input → Binding
+/// contexts). Named `error_popup`, not `error`, because `error` is a Zig
+/// keyword. `menu` is the main-menu screen (button-only actions today,
+/// classified for the future binding UI). See DESIGN → Input.
+pub const BindingContext = enum {
+    anytime,
+    game,
+    editor,
+    menu,
+    error_popup,
+};
+
+/// A set of active `BindingContext`s — what `translateInput` is handed each
+/// frame (computed by the caller from the screen + pending_error; see
+/// main.zig's frame). Backs the binding gate in `checkAction`/
+/// `isActionHeld`/`isSuppressed` and the load-time action↔context
+/// validation (`actionBindingContexts`).
+pub const BindingContextSet = struct {
+    anytime: bool = false,
+    game: bool = false,
+    editor: bool = false,
+    menu: bool = false,
+    error_popup: bool = false,
+
+    pub fn contains(self: BindingContextSet, context: BindingContext) bool {
+        return switch (context) {
+            .anytime => self.anytime,
+            .game => self.game,
+            .editor => self.editor,
+            .menu => self.menu,
+            .error_popup => self.error_popup,
+        };
+    }
+};
+
+/// Which `BindingContext`s an action may be bound in — the single
+/// declaration of "where does this action fire" (consumption sites mirror
+/// it). Exhaustive by construction (no else-arm): adding an Action variant
+/// is a compile error until it's classified here. `loadSettings` warns +
+/// drops a binding whose context isn't in this set (a dead binding would
+/// fire only on screens where nothing consumes it). Button clicks are NOT
+/// context-gated (`applyAction` sets actions directly) — buttons only
+/// render in their context, so this map governs keyboard/gamepad bindings
+/// only. Actions valid on multiple screens carry multiple flags (e.g.
+/// `exit_to_menu` fires from the level/hub options menu and the editor's).
+pub fn actionBindingContexts(action: Action) BindingContextSet {
+    return switch (action) {
+        // Always active (except during the error popup, where everything
+        // except `error` is inactive).
+        .undo,
+        .redo,
+        .toggle_options_menu,
+        .dump_event_log,
+        .zoom_in,
+        .zoom_out,
+        .zoom_reset,
+        => .{ .anytime = true },
+
+        // The recoverable-error popup only (modal — replaces every other
+        // context while up).
+        .dismiss_error,
+        .error_scroll_up,
+        .error_scroll_down,
+        => .{ .error_popup = true },
+
+        // Level + hub screens (playtest/validation runs are level screens,
+        // so the run's gameplay bindings come along for free).
+        .toggle_inventory,
+        .toggle_gear,
+        .toggle_skills,
+        .toggle_entity_inspect,
+        .toggle_world_map,
+        .confirm,
+        .cancel,
+        .skip,
+        .skill_slot_1,
+        .skill_slot_2,
+        .skill_slot_3,
+        .skill_slot_4,
+        .skill_slot_5,
+        .skill_slot_6,
+        .skill_slot_7,
+        .skill_slot_8,
+        .swap_weapons,
+        .move_cursor_up,
+        .move_cursor_down,
+        .move_cursor_left,
+        .move_cursor_right,
+        .save_game,
+        .restart_mission,
+        .exit_mission,
+        .replay_mission,
+        .overwrite_clone,
+        .skip_level,
+        => .{ .game = true },
+
+        // The editor screen (edit mode — during a playtest/validation run
+        // the screen is `.level`, so these go inactive and the game set
+        // above takes over).
+        .save_editor_mission,
+        .export_editor_mission,
+        .toggle_editor_palette_group,
+        .add_editor_palette_type,
+        .delete_editor_palette_type,
+        .add_editor_level,
+        .delete_editor_level,
+        .select_editor_tool,
+        .select_editor_level,
+        .toggle_editor_inspector,
+        .toggle_editor_metadata_sidebar,
+        .test_editor_level,
+        .validate_editor_mission,
+        .open_editor_level_gradient_picker,
+        .select_editor_level_gradient,
+        .toggle_editor_level_gradient_auto,
+        .toggle_editor_inspector_section,
+        .open_editor_sprite_picker,
+        .select_editor_entity_sprite,
+        .select_editor_decoration_sprite,
+        .select_editor_sprite_tab,
+        .import_editor_player,
+        .import_editor_max_player,
+        .select_editor_entity_color,
+        .select_editor_decoration_color,
+        .open_editor_entity_layer_picker,
+        .open_editor_decoration_layer_picker,
+        .select_editor_entity_layer,
+        .select_editor_decoration_layer,
+        .delete_editor_entity_layer,
+        .delete_editor_decoration_layer,
+        .select_editor_entity_layer_color,
+        .select_editor_decoration_layer_color,
+        .open_editor_footprint_picker,
+        .toggle_editor_footprint_tile,
+        .confirm_editor_footprint,
+        .toggle_editor_entity_displays_weapons,
+        .select_editor_weapon_type,
+        .add_editor_item,
+        .delete_editor_item,
+        .select_editor_item_type,
+        .select_editor_inventory_slot,
+        .add_editor_inventory_item,
+        .delete_editor_inventory_item,
+        .select_editor_inventory_item_type,
+        .open_editor_skill_picker,
+        .close_editor_picker,
+        .select_editor_utility_skill,
+        .delete_editor_selection,
+        .clear_editor_selection,
+        .select_editor_all,
+        .toggle_editor_mission_browser,
+        .select_editor_mission_tab,
+        .open_editor_mission_row,
+        .import_editor_mission,
+        .overwrite_validation_replay,
+        => .{ .editor = true },
+
+        // The main-menu screen.
+        .continue_game,
+        .new_game,
+        .toggle_load_save_menu,
+        .load_save_row,
+        .import_save,
+        .open_editor,
+        .open_credits,
+        => .{ .menu = true },
+
+        // Multi-screen: fires on more than one screen's surface.
+        // The settings overlay is reachable from the main menu AND the
+        // in-game options menu.
+        .open_settings,
+        .change_setting,
+        => .{ .menu = true, .game = true },
+        // Exit to Main Menu: the level/hub options menu and the editor's
+        // (where it ends an editor run + closes the editor).
+        .exit_to_menu,
+        // Continue on the mission-complete overlay: in the hub (campaign)
+        // or over the editor (the validation stats screen).
+        .continue_after_mission,
+        => .{ .game = true, .editor = true },
+    };
+}
+
 pub const InputBinding = struct {
     input: RawInput,
     modifiers: Modifiers = .{},
     action: Action,
+    /// Where this binding is active (required in the settings format —
+    /// `loadSettings` warns + drops an entry without it). See
+    /// `BindingContext` + `actionBindingContexts`.
+    context: BindingContext,
 };
 
 pub const Settings = struct {

@@ -708,15 +708,18 @@ fn sameInput(a: types.RawInput, b: types.RawInput) bool {
 /// pressed input) is suppressed if another binding on the SAME input matches
 /// the held modifiers with strictly MORE required modifiers — a more-specific
 /// chord wins, a plain binding gives way to it. Equal-specificity bindings
-/// co-fire (disambiguated by handler context downstream, e.g. ArrowUp →
-/// move_cursor_up + error_scroll_up). See DESIGN → Input.
+/// co-fire. Only ACTIVE-context bindings compete (see DESIGN → Input →
+/// Binding contexts): an inactive-context binding on the same key never
+/// suppresses or is suppressed. See DESIGN → Input.
 fn isSuppressed(
     binding: InputBinding,
     bindings: []const InputBinding,
     modifiers: Modifiers,
+    active_contexts: types.BindingContextSet,
 ) bool {
     const my_specificity = modifierSpecificity(binding.modifiers);
     for (bindings) |other| {
+        if (!active_contexts.contains(other.context)) continue;
         if (!sameInput(other.input, binding.input)) continue;
         // The competitor must also match the held modifiers to win.
         if (other.modifiers.ctrl and !modifiers.ctrl) continue;
@@ -739,9 +742,11 @@ fn isActionHeld(
     mouse_buttons_held: []const ?[]const u8,
     gamepad_buttons_held: []const ?[]const u8,
     modifiers: Modifiers,
+    active_contexts: types.BindingContextSet,
 ) bool {
     for (bindings) |binding| {
         if (binding.action != action) continue;
+        if (!active_contexts.contains(binding.context)) continue;
         if (binding.modifiers.ctrl and !modifiers.ctrl) continue;
         if (binding.modifiers.shift and !modifiers.shift) continue;
         if (binding.modifiers.alt and !modifiers.alt) continue;
@@ -751,7 +756,7 @@ fn isActionHeld(
             .gamepad_button => |gamepad| InputState.isHeld(gamepad_buttons_held, gamepad),
         };
         if (held) {
-            if (isSuppressed(binding, bindings, modifiers)) continue;
+            if (isSuppressed(binding, bindings, modifiers, active_contexts)) continue;
             return true;
         }
     }
@@ -770,9 +775,16 @@ fn checkAction(
     mouse_pressed: []const ?[]const u8,
     gamepad_pressed: []const ?[]const u8,
     modifiers: Modifiers,
+    active_contexts: types.BindingContextSet,
 ) bool {
     for (bindings) |binding| {
         if (binding.action != action) continue;
+
+        // Binding-context gate (see DESIGN → Input → Binding contexts):
+        // only bindings whose context is active this frame fire — same-combo
+        // cross-context pairs (Digit1 = skill 1 in game / select tool in
+        // editor) never co-fire; the active set is the single disambiguator.
+        if (!active_contexts.contains(binding.context)) continue;
 
         // A binding's modifiers are REQUIREMENTS, not an exact match: a plain
         // binding fires regardless of held modifiers (so ctrl+key works for
@@ -796,7 +808,7 @@ fn checkAction(
             // Hybrid precedence — see DESIGN → Input. A more-specific chord
             // on the same input suppresses this binding; equal-specificity
             // ties co-fire (gated by handler context downstream).
-            if (isSuppressed(binding, bindings, modifiers)) continue;
+            if (isSuppressed(binding, bindings, modifiers, active_contexts)) continue;
             return true;
         }
     }
@@ -805,6 +817,11 @@ fn checkAction(
 
 /// Process raw platform input events, update InputState, and produce
 /// a PlayerInput with semantic actions for the game logic.
+/// `active_contexts` is which BindingContexts are live this frame (the
+/// caller computes it from the screen + pending_error — see main.zig's
+/// frame); bindings in inactive contexts never fire. Button clicks bypass
+/// this gate entirely (`applyAction`), since buttons only render in their
+/// context.
 pub fn translateInput(
     platform: PlatformInput,
     state: *InputState,
@@ -812,6 +829,7 @@ pub fn translateInput(
     camera: Camera,
     delta_microseconds: u64,
     text_edit: ?*ui.TextEditState,
+    active_contexts: types.BindingContextSet,
 ) PlayerInput {
     // Track which inputs were just pressed this tick (edge detection)
     var keys_pressed: [InputState.max_held_keys]?[]const u8 = .{null} ** InputState.max_held_keys;
@@ -947,42 +965,42 @@ pub fn translateInput(
 
     // Anytime actions. Repeat whitelist: undo, redo, skip, error-scroll.
     // Toggles / dump_event_log / dismiss_error are press-only.
-    result.anytime.undo = checkAction(.undo, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.redo = checkAction(.redo, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.toggle_options_menu = checkAction(.toggle_options_menu, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.dump_event_log = checkAction(.dump_event_log, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.toggle_editor_mission_browser = checkAction(.toggle_editor_mission_browser, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.import_editor_mission = checkAction(.import_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.save_editor_mission = checkAction(.save_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.export_editor_mission = checkAction(.export_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.error_scroll_up = checkAction(.error_scroll_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.error_scroll_down = checkAction(.error_scroll_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.undo = checkAction(.undo, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.redo = checkAction(.redo, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.toggle_options_menu = checkAction(.toggle_options_menu, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.dump_event_log = checkAction(.dump_event_log, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.toggle_editor_mission_browser = checkAction(.toggle_editor_mission_browser, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.import_editor_mission = checkAction(.import_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.save_editor_mission = checkAction(.save_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.export_editor_mission = checkAction(.export_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.error_scroll_up = checkAction(.error_scroll_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.error_scroll_down = checkAction(.error_scroll_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.scroll_delta = scroll_delta;
-    result.anytime.zoom_in = checkAction(.zoom_in, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.zoom_out = checkAction(.zoom_out, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.zoom_reset = checkAction(.zoom_reset, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.zoom_in = checkAction(.zoom_in, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.zoom_out = checkAction(.zoom_out, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.zoom_reset = checkAction(.zoom_reset, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
 
     // In-game anytime actions. Repeat whitelist: movement cursors only.
     // Toggles / swap_weapons are press-only.
-    result.anytime.in_game.toggle_inventory = checkAction(.toggle_inventory, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.toggle_gear = checkAction(.toggle_gear, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.toggle_skills = checkAction(.toggle_skills, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.toggle_world_map = checkAction(.toggle_world_map, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.swap_weapons = checkAction(.swap_weapons, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.move_cursor_up = checkAction(.move_cursor_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.move_cursor_down = checkAction(.move_cursor_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.move_cursor_left = checkAction(.move_cursor_left, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.anytime.in_game.move_cursor_right = checkAction(.move_cursor_right, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.in_game.toggle_inventory = checkAction(.toggle_inventory, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.in_game.toggle_gear = checkAction(.toggle_gear, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.in_game.toggle_skills = checkAction(.toggle_skills, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.in_game.toggle_world_map = checkAction(.toggle_world_map, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.in_game.swap_weapons = checkAction(.swap_weapons, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.in_game.move_cursor_up = checkAction(.move_cursor_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.in_game.move_cursor_down = checkAction(.move_cursor_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.in_game.move_cursor_left = checkAction(.move_cursor_left, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.in_game.move_cursor_right = checkAction(.move_cursor_right, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     // Cursor direction from HELD cursor keys (not edges) so a diagonal nudge
     // fires when any one of the two held keys edges/repeats. Opposite keys on
     // one axis cancel.
     var dir_x: i32 = 0;
     var dir_y: i32 = 0;
-    if (isActionHeld(.move_cursor_up, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers)) dir_y -= 1;
-    if (isActionHeld(.move_cursor_down, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers)) dir_y += 1;
-    if (isActionHeld(.move_cursor_left, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers)) dir_x -= 1;
-    if (isActionHeld(.move_cursor_right, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers)) dir_x += 1;
+    if (isActionHeld(.move_cursor_up, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers, active_contexts)) dir_y -= 1;
+    if (isActionHeld(.move_cursor_down, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers, active_contexts)) dir_y += 1;
+    if (isActionHeld(.move_cursor_left, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers, active_contexts)) dir_x -= 1;
+    if (isActionHeld(.move_cursor_right, bindings, &state.keys_held, &state.mouse_buttons_held, &state.gamepad_buttons_held, modifiers, active_contexts)) dir_x += 1;
     result.anytime.in_game.cursor_direction = .{ .x = dir_x, .y = dir_y };
 
     // Raw mouse-over-tile (unvalidated; the cursor resolution in update()
@@ -992,13 +1010,13 @@ pub fn translateInput(
     result.anytime.in_game.mouse_moved_this_tick = mouse_moved_this_tick;
 
     // Idle actions. Repeat whitelist: skip. confirm/cancel are press-only.
-    result.idle.confirm = checkAction(.confirm, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.idle.cancel = checkAction(.cancel, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.idle.skip = checkAction(.skip, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.idle.skip_level = checkAction(.skip_level, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.idle.delete_editor_selection = checkAction(.delete_editor_selection, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.idle.clear_editor_selection = checkAction(.clear_editor_selection, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
-    result.idle.select_editor_all = checkAction(.select_editor_all, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.idle.confirm = checkAction(.confirm, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.idle.cancel = checkAction(.cancel, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.idle.skip = checkAction(.skip, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.idle.skip_level = checkAction(.skip_level, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.idle.delete_editor_selection = checkAction(.delete_editor_selection, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.idle.clear_editor_selection = checkAction(.clear_editor_selection, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.idle.select_editor_all = checkAction(.select_editor_all, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
 
     // Skill slots 1-8 (press-only — repeating would queue uses by accident).
     const skill_slot_actions = [_]types.Action{
@@ -1006,7 +1024,7 @@ pub fn translateInput(
         .skill_slot_5, .skill_slot_6, .skill_slot_7, .skill_slot_8,
     };
     for (skill_slot_actions, 1..) |action, slot| {
-        if (checkAction(action, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers)) {
+        if (checkAction(action, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
             result.idle.skill_slot_selected = @intCast(slot);
             break;
         }
@@ -1048,18 +1066,23 @@ fn pointerFacts(
 }
 
 // ============================================================
-// Tests — hybrid input precedence (see DESIGN → Input)
+// Tests — binding contexts + hybrid input precedence (DESIGN → Input)
 // ============================================================
 //
-// `checkAction` resolves a pressed input by SPECIFICITY: a more-specific
-// chord (more required modifiers, all held) on the same key suppresses a
-// less-specific binding; equal-specificity ties co-fire (disambiguated by
-// handler context, e.g. ArrowUp → move_cursor_up + error_scroll_up).
+// `checkAction` gates on the active binding-context set first (same-combo
+// cross-context pairs never co-fire), then resolves a pressed input by
+// SPECIFICITY within the active set: a more-specific chord (more required
+// modifiers, all held) on the same key suppresses a less-specific
+// binding; equal-specificity ties co-fire.
 
 const empty_mouse: [InputState.max_held_mouse]?[]const u8 = .{null} ** InputState.max_held_mouse;
 const empty_gamepad: [InputState.max_held_gamepad]?[]const u8 = .{null} ** InputState.max_held_gamepad;
 const no_repeat_keys: [0]?[]const u8 = .{};
 const no_keys: [0]?[]const u8 = .{};
+
+// The level-screen active set (anytime + game) — the context the chord-
+// precedence tests run under.
+const test_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
 
 test "translateInput: focused text field suppresses bindings, routes keys + chars" {
     // Enter is bound to confirm, Escape to the options menu. While a field
@@ -1067,8 +1090,8 @@ test "translateInput: focused text field suppresses bindings, routes keys + char
     // no binding may fire — the M2 suppression rule (DESIGN → UI Framework
     // → Text input widget).
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Enter" }, .action = .confirm },
-        .{ .input = .{ .key = "Escape" }, .action = .toggle_options_menu },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm, .context = .game },
+        .{ .input = .{ .key = "Escape" }, .action = .toggle_options_menu, .context = .anytime },
     };
     const settings: Settings = .{ .input_bindings = &bindings };
     const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -1077,11 +1100,12 @@ test "translateInput: focused text field suppresses bindings, routes keys + char
         .viewport = .{ .width = 2560, .height = 2160 },
         .text_characters = " Pup",
     };
+    const active_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
 
     // Control (unfocused): Enter fires its binding.
     {
         var input_state: InputState = .{};
-        const result = translateInput(platform, &input_state, settings, camera, 0, null);
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, active_contexts);
         try std.testing.expect(result.idle.confirm);
         try std.testing.expectEqual(types.TextEditOutcome.none, result.text_edit_outcome);
     }
@@ -1099,6 +1123,7 @@ test "translateInput: focused text field suppresses bindings, routes keys + char
             camera,
             0,
             &ui_state.text_edit.?,
+            active_contexts,
         );
         try std.testing.expectEqual(types.TextEditOutcome.commit, result.text_edit_outcome);
         try std.testing.expect(!result.idle.confirm);
@@ -1117,40 +1142,66 @@ test "checkAction: more-specific chord suppresses plain binding on same key" {
     // Enter → confirm (plain); Enter+ctrl → dump_event_log (ctrl).
     // Pressing ctrl+Enter fires dump_event_log only.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Enter" }, .action = .confirm },
-        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .dump_event_log },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm, .context = .game },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .dump_event_log, .context = .anytime },
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{ .ctrl = true };
-    try std.testing.expect(checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
-    try std.testing.expect(!checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+    try std.testing.expect(checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(!checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
 }
 
 test "checkAction: plain press (no chord modifiers) fires plain binding only" {
     // Same bindings, but ctrl NOT held. The ctrl binding's requirement isn't
     // met, so only the plain confirm fires.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Enter" }, .action = .confirm },
-        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .dump_event_log },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm, .context = .game },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .dump_event_log, .context = .anytime },
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{};
-    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
-    try std.testing.expect(!checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(!checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
 }
 
-test "checkAction: equal-specificity ties co-fire (no suppression)" {
-    // ArrowUp → move_cursor_up + error_scroll_up (both plain). Both win —
-    // disambiguation is by handler context, not here. This is the shipped
-    // ArrowUp/ArrowDown pattern; the hybrid model must not collapse it.
+test "checkAction: same key, different contexts — exactly one fires" {
+    // The shipped ArrowUp pattern under binding contexts: move_cursor_up
+    // (game) + error_scroll_up (error_popup) share ArrowUp. The active
+    // context set is the single disambiguator — with the game set active
+    // only the cursor binding fires, with the error-popup set active only
+    // the scroll binding fires. They never co-fire, and neither suppresses
+    // the other (an inactive-context binding is not a precedence
+    // competitor). See DESIGN → Input → Binding contexts.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "ArrowUp" }, .action = .move_cursor_up },
-        .{ .input = .{ .key = "ArrowUp" }, .action = .error_scroll_up },
+        .{ .input = .{ .key = "ArrowUp" }, .action = .move_cursor_up, .context = .game },
+        .{ .input = .{ .key = "ArrowUp" }, .action = .error_scroll_up, .context = .error_popup },
     };
     const pressed = keysPressedOne("ArrowUp");
     const mods = Modifiers{};
-    try std.testing.expect(checkAction(.move_cursor_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
-    try std.testing.expect(checkAction(.error_scroll_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+    const game_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
+    try std.testing.expect(checkAction(.move_cursor_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    try std.testing.expect(!checkAction(.error_scroll_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    const error_contexts: types.BindingContextSet = .{ .error_popup = true };
+    try std.testing.expect(!checkAction(.move_cursor_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, error_contexts));
+    try std.testing.expect(checkAction(.error_scroll_up, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, error_contexts));
+}
+
+test "checkAction: editor bindings inactive on the level screen" {
+    // Digit1 bound twice — skill_slot_1 (game) + the editor select tool
+    // (editor). On the level screen only the skill slot fires; on the
+    // editor screen only the tool shortcut fires.
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "Digit1" }, .action = .skill_slot_1, .context = .game },
+        .{ .input = .{ .key = "Digit1" }, .action = .select_editor_tool, .context = .editor },
+    };
+    const pressed = keysPressedOne("Digit1");
+    const mods = Modifiers{};
+    const game_contexts: types.BindingContextSet = .{ .anytime = true, .game = true };
+    try std.testing.expect(checkAction(.skill_slot_1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    try std.testing.expect(!checkAction(.select_editor_tool, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, game_contexts));
+    const editor_contexts: types.BindingContextSet = .{ .anytime = true, .editor = true };
+    try std.testing.expect(!checkAction(.skill_slot_1, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, editor_contexts));
+    try std.testing.expect(checkAction(.select_editor_tool, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, editor_contexts));
 }
 
 test "checkAction: a chord requiring an un-held modifier does not suppress" {
@@ -1158,13 +1209,13 @@ test "checkAction: a chord requiring an un-held modifier does not suppress" {
     // Enter with ctrl held (not shift): the shift binding doesn't match the
     // held modifiers, so it is NOT a competitor — confirm still fires.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Enter" }, .action = .confirm },
-        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .shift = true }, .action = .dump_event_log },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm, .context = .game },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .shift = true }, .action = .dump_event_log, .context = .anytime },
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{ .ctrl = true };
-    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
-    try std.testing.expect(!checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+    try std.testing.expect(checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(!checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
 }
 
 test "checkAction: most specific among three wins" {
@@ -1172,15 +1223,15 @@ test "checkAction: most specific among three wins" {
     // Enter+ctrl+shift → dump_event_log (ctrl+shift, spec2).
     // ctrl+shift+Enter fires dump_event_log only.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "Enter" }, .action = .confirm },
-        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .skip },
-        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true, .shift = true }, .action = .dump_event_log },
+        .{ .input = .{ .key = "Enter" }, .action = .confirm, .context = .game },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true }, .action = .skip, .context = .game },
+        .{ .input = .{ .key = "Enter" }, .modifiers = .{ .ctrl = true, .shift = true }, .action = .dump_event_log, .context = .anytime },
     };
     const pressed = keysPressedOne("Enter");
     const mods = Modifiers{ .ctrl = true, .shift = true };
-    try std.testing.expect(checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
-    try std.testing.expect(!checkAction(.skip, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
-    try std.testing.expect(!checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+    try std.testing.expect(checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(!checkAction(.skip, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
+    try std.testing.expect(!checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods, test_contexts));
 }
 
 test "translateInput: editor save/export chords reach the anytime flags" {
@@ -1188,13 +1239,14 @@ test "translateInput: editor save/export chords reach the anytime flags" {
     // every plumbing site wired, but translateInput never dispatched
     // checkAction for save_editor_mission — the keybind was dead while the
     // options-menu button (applyAction) worked. This test pins the dispatch
-    // itself, not just checkAction, so a missing line fails here. The same
-    // key's plain binding must also be suppressed while the chord fires
-    // (hybrid precedence).
+    // itself, not just checkAction, so a missing line fails here. Runs on
+    // the editor-screen context set; the same key's plain binding
+    // (toggle_skills, game context) is inactive there — the chord-vs-plain
+    // precedence itself is pinned by the checkAction tests above.
     const bindings = [_]InputBinding{
-        .{ .input = .{ .key = "KeyS" }, .action = .toggle_skills },
-        .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_editor_mission },
-        .{ .input = .{ .key = "KeyE" }, .modifiers = .{ .ctrl = true }, .action = .export_editor_mission },
+        .{ .input = .{ .key = "KeyS" }, .action = .toggle_skills, .context = .game },
+        .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_editor_mission, .context = .editor },
+        .{ .input = .{ .key = "KeyE" }, .modifiers = .{ .ctrl = true }, .action = .export_editor_mission, .context = .editor },
     };
     const settings: Settings = .{ .input_bindings = &bindings };
     const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -1207,7 +1259,8 @@ test "translateInput: editor save/export chords reach the anytime flags" {
         .viewport = .{ .width = 2560, .height = 2160 },
     };
     var input_state: InputState = .{};
-    const result = translateInput(platform, &input_state, settings, camera, 0, null);
+    const active_contexts: types.BindingContextSet = .{ .anytime = true, .editor = true };
+    const result = translateInput(platform, &input_state, settings, camera, 0, null, active_contexts);
     try std.testing.expect(result.anytime.save_editor_mission);
     try std.testing.expect(result.anytime.export_editor_mission);
     try std.testing.expect(!result.anytime.in_game.toggle_skills);

@@ -29,19 +29,23 @@ Test by running `zig build run` and clicking through.
 - **Combat-log UI** — render ViewState.combat_log (top-bar coarse recent-icons
   view + full-screen detailed log). Projection is DONE (combat_log.zig); see
   "Combat Log" below.
-- **Make co-fire-by-context disambiguation explicit** — the shipped ArrowUp /
-  ArrowDown bindings intentionally map one key to two actions
-  (`move_cursor_*` + `error_scroll_*`); both fire on every press and the
-  pending-error popup branch consumes the scroll action + `return`s first, so
-  context picks which takes effect. This is handler-ordering-dependent and
-  undocumented at the binding sites. Prefer making it explicit: either a
-  comment at each dual-binding explaining the context gate, or restructure so
-  `error_scroll_*` isn't a separate binding (the popup branch reads
-  `move_cursor_*` directly and the Action enum drops `error_scroll_up/down`).
-  The hybrid precedence rule (DESIGN → Input) handles chord-vs-plain
-  collisions but NOT same-specificity intentional dual-binds like this —
-  those still rely on the implicit context-gate. Small slice; lands with the
-  binding-UI work or standalone.
+- **Make co-fire-by-context disambiguation explicit** — DONE. Replaced by
+  binding contexts: every binding carries a required `context`
+  (`anytime`/`game`/`editor`/`menu`/`error_popup`), `translateInput` gates on
+  the frame's active context set, and the ArrowUp/ArrowDown dual-binds now
+  resolve upstream (popup up → only `error_scroll_*`; down → only
+  `move_cursor_*`) instead of via handler ordering. History in DONE.md.
+- **Editor tool/palette keybinds (1–5)** — slice 2 of the binding-contexts
+  work (slice 1, the context model, is DONE — see DONE.md): Digit1 = select
+  tool, Digit2 = tile tool, Digit3/4/5 = expand/collapse the enemy /
+  decoration / item palette groups. Five payload-less actions
+  (`.editor_select_tool`, `.editor_tile_tool`,
+  `.toggle_editor_enemy/decoration/item_group`) — the tool shortcuts push
+  the same `player_set_editor_tool` player actions the tool cells do
+  (undoable + replay-safe); the group toggles route to the same UiState
+  write as the group-header clicks. Bindings in `data/default_settings.txt`
+  with `context editor` (Digit1–8 are already in the backend key table).
+  Wiring sites: see DESIGN → Input → New keybind wiring sites.
 - **Replay viewer** — wire the .replay_viewer screen to STEP through a loaded
   log. The `--replay <path>` CLI flag (DONE — see DONE.md) loads a session
   log and reconstructs the session to its END state (resume mid-session);
@@ -69,25 +73,26 @@ Test by running `zig build run` and clicking through.
   `Action.inspect_cursor` bool via `checkAction`, consumed in
   `handleIdleInput` where the tile cursor is resolved; right-click is the
   only inspect path today. (Right-click-drag camera pan DONE — see DONE.md.)
-- **New-keybind pipeline friction** — a new keybind touches FOUR places:
-  the binding in `data/default_settings.txt`, the backend's key table
-  (`raylib_backend.zig` `key_mappings` — only bound keys are mapped;
-  unmapped keys never reach `translateInput`), the Action/input plumbing
-  (`Action` enum + `AnytimeInput`/`IdleInput` field + `applyAction` + the
-  consumption site), AND the `translateInput` `checkAction` dispatch line
-  for the action. Two instances of a site being forgotten: ctrl+A
-  select-all shipped broken on the missing backend entry, and ctrl+S
-  save-mission shipped broken on the missing dispatch line (the binding +
-  plumbing + button path were all wired; only the keyboard path was dead —
-  see DONE.md, “Editor save via ctrl+S”).
-  Make the coupling visible instead: warn at startup (dev-mode console or
-  the pending-error popup — advisory, not fatal) when a loaded binding
-  names an input id no backend mapping can produce, and/or consider
-  mapping the full W3C key set once so new bindings never need a backend
-  edit (cost: a slightly bigger poll loop — it's a fixed array, likely
-  negligible; verify with the input budget in mind). Either way, add a
-  line to AGENTS → Dev Tools or the Input design note naming the four
-  sites so the next binding doesn't rediscover this.
+- **New-keybind pipeline friction** — a new keybind touches FIVE places
+  (the list + the reason it's easy to forget one: see DESIGN → Input →
+  New keybind wiring sites — the doc line this item asked for has landed):
+  the binding in `data/default_settings.txt` (including its `context` line),
+  the backend's key table (`raylib_backend.zig` `key_mappings` — only bound
+  keys are mapped; unmapped keys never reach `translateInput`), the Action
+  enum + its `actionBindingContexts` case, the Action/input plumbing
+  (`AnytimeInput`/`IdleInput` field + `applyAction` + the consumption site),
+  AND the `translateInput` `checkAction` dispatch line for the action. Two
+  instances of a site being forgotten: ctrl+A select-all shipped broken on
+  the missing backend entry, and ctrl+S save-mission shipped broken on the
+  missing dispatch line (see DONE.md, “Editor save via ctrl+S”).
+  Still open from this item: warn at startup (dev-mode console or the
+  pending-error popup — advisory, not fatal) when a loaded binding names an
+  input id no backend mapping can produce, and/or consider mapping the full
+  W3C key set once so new bindings never need a backend edit (cost: a
+  slightly bigger poll loop — it's a fixed array, likely negligible; verify
+  with the input budget in mind). The action↔context + unknown-action
+  warning half landed with binding contexts (load-time, warn + drop — see
+  DESIGN → Input → Action↔context validity).
 - **Decoration occlusion readability** — inset outline of entities / ground
   items / flag poles occluded by decoration overhang. Settled design — see
   DESIGN → Decorations & Footprint → Occlusion inset. Slices:
