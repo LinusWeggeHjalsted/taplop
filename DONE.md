@@ -10122,3 +10122,13 @@ would-collide FIRST (the collision adds damage), then the focus-fire tail
   collisions → weakest), bash priority any-collide (the scan-first-open +
   second-walled case that distinguishes any from nearest), powerful shot
   useSkill (half collision damage 7→3, distance 2) + priority.
+
+## Skill: crossbow Head Shot (Tier A slice 3)
+
+Crossbow complete (3/3 skills). Head Shot: skill 3 (off hand, cd 4) — attack
+target for 1x off-hand damage + stun 1, range 3. Cleave's shape at range
+with off-hand damage; conventions identical: flat priority 3 (the stun
+rating — durations stack via the handler's `+=`, so an already-stunned
+target is not a wasted pick), weakestTarget selection, outgoing stun
+modifier applied at the skill site. Tests: useSkill (off-hand damage,
+stun payload, LIFO order) + priority 0/3/cooldown.

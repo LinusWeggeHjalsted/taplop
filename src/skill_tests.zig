@@ -12,6 +12,7 @@ const test_harness = @import("test_harness.zig");
 const shoot_skill = @import("skills/shoot.zig");
 const powerful_shot_skill = @import("skills/powerful_shot.zig");
 const bash_skill = @import("skills/bash.zig");
+const head_shot_skill = @import("skills/head_shot.zig");
 
 const Vector2 = types.Vector2;
 
@@ -426,5 +427,63 @@ test "powerful shot: priority is 3 when any in-range push collides, 2 otherwise"
         );
         setCooldown(game_state, 0, .powerful_shot, 1);
         try testing.expectEqual(@as(u32, 0), powerful_shot_skill.skill.priority(0, game_state));
+    }
+}
+
+test "head shot: useSkill emits attack + stun with off-hand damage" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .off_hand_weapon = .{ .weapon_damage = 9 },
+    };
+    const defender = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, defender },
+        &.{},
+    );
+
+    const result = head_shot_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 2), result.len);
+
+    // LIFO order — attack (first in execution order) sits LAST.
+    const stun = result[0].sub_level_event.stun;
+    try testing.expectEqual(@as(u32, 0), stun.attacker_index);
+    try testing.expectEqual(@as(u32, 1), stun.defender_index);
+    try testing.expectEqual(@as(u32, 1), stun.stun_duration);
+
+    const attack = result[1].sub_level_event.attack;
+    try testing.expectEqual(@as(u32, 9), attack.outgoing_damage);
+    try testing.expectEqual(@as(u32, 1), attack.defender_index);
+}
+
+test "head shot: priority is 3 with a hostile in range, 0 otherwise or on cooldown" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const in_range = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+    const out_of_range = types.Entity{ .team = 1, .position = .{ .x = 4, .y = 0 } };
+
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, out_of_range },
+            &.{},
+        );
+        try testing.expectEqual(@as(u32, 0), head_shot_skill.skill.priority(0, game_state));
+    }
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, in_range },
+            &.{},
+        );
+        try testing.expectEqual(@as(u32, 3), head_shot_skill.skill.priority(0, game_state));
+        setCooldown(game_state, 0, .head_shot, 1);
+        try testing.expectEqual(@as(u32, 0), head_shot_skill.skill.priority(0, game_state));
     }
 }
