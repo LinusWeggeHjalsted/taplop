@@ -10371,3 +10371,15 @@ dropped cells. The utility_skills census test drops its exact count (its
 policy assertions — weapon exclusion, eligibility, list consistency — are
 the real content) with a comment pointing at the picker test for the
 structural coverage. New skills no longer touch either test.
+
+## Skill: spell Piston Bolt (Tier A slice 9)
+
+Third spell. Single-target attack at range 3 for 1x effective spell damage
+with the DOUBLED converted momentum bonus — getEffectiveSpellDamage folds
+the conversion in once, the skill adds getConvertedMomentum a second time
+(the impale/skewer precedent, on the spell pipeline). cd 3, targeted,
+weakestTarget pick, flat 3 (impale's rating — conditional-bonus attack
+above the basic 2). Census tests untouched (the structural-count fix from
+the previous entry paying off immediately). Tests: the doubled-bonus
+arithmetic on an awkward value (amulet 6 + momentum 4 → log2 2 → 6+2+2 =
+10) + the option pick/rating.

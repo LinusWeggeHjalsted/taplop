@@ -28,6 +28,7 @@ const stab_skill = @import("skills/stab.zig");
 const worldfire_skill = @import("skills/worldfire.zig");
 const shockwave_skill = @import("skills/shockwave.zig");
 const slam_skill = @import("skills/slam.zig");
+const piston_bolt_skill = @import("skills/piston_bolt.zig");
 
 const Vector2 = types.Vector2;
 
@@ -1382,4 +1383,51 @@ test "slam: options on the stacked-bump ladder (retrofit)" {
         const options = slam_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(u32, 5), options[0].priority);
     }
+}
+
+test "piston bolt: useSkill attacks with the doubled momentum bonus" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // Amulet spell damage 6, momentum 4 (log2 → converted bonus 2):
+    // getEffectiveSpellDamage folds the conversion in once (6 + 2 = 8),
+    // the doubled bonus adds it again → 10.
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .amulet = .{ .spell_damage = 6 },
+        .momentum = 4,
+    };
+    const defender = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, defender },
+        &.{},
+    );
+
+    const result = piston_bolt_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), result.len);
+    const attack = result[0].sub_level_event.attack;
+    try testing.expectEqual(@as(u32, 0), attack.attacker_index);
+    try testing.expectEqual(@as(u32, 1), attack.defender_index);
+    try testing.expectEqual(@as(u32, 10), attack.outgoing_damage);
+}
+
+test "piston bolt: options offer the focus-fire pick at 3" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const in_range = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+    const out_of_range = types.Entity{ .team = 1, .position = .{ .x = 4, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, in_range, out_of_range },
+        &.{},
+    );
+
+    const options = piston_bolt_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), options.len);
+    try testing.expectEqual(in_range.position, options[0].target.?);
+    try testing.expectEqual(@as(u32, 3), options[0].priority);
 }
