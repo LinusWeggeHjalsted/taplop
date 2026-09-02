@@ -26,8 +26,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = 2,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -44,32 +43,25 @@ fn getValidTargets(
 
 /// AI priority: 0 if on cooldown, no target in range, or the caster is already
 /// at full health (nothing to heal — save it). Otherwise 3.
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: the weakest hostile (focus-fire) at rating 3 — offered only
+/// below full health (the lifesteal is wasted at full).
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
+    if (caster.skill_cooldowns.get(.vampiric_strike) > 0) return &.{};
+    if (caster.current_health >= caster.getEffectiveMaxHealth()) return &.{};
 
-    if (caster.skill_cooldowns.get(.vampiric_strike) > 0) return 0;
-    if (caster.current_health >= caster.getEffectiveMaxHealth()) return 0;
-
-    const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
-    for (level.entities, 0..) |entity, entity_index| {
-        if (entity_index == caster_index) continue;
-        if (entity.current_health == 0) continue;
-        if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) <= range) return 3;
-    }
-    return 0;
+    const valid_targets = getValidTargets(caster_index, game_state, allocator);
+    const target = helpers.weakestTarget(caster_index, valid_targets, game_state) orelse return &.{};
+    return helpers.singleOption(allocator, .{ .target = target, .priority = 3 });
 }
 
 /// AI target selection: the weakest hostile (focus-fire — helpers.weakestTarget).
-fn selectTarget(
-    caster_index: u32,
-    valid_targets: ?[]const Vector2,
-    game_state: GameState,
-) ?Vector2 {
-    return helpers.weakestTarget(caster_index, valid_targets, game_state);
-}
-
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,

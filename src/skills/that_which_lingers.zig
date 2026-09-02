@@ -3,6 +3,7 @@ const types = @import("../types.zig");
 const state = @import("../state.zig");
 const events = @import("../events.zig");
 const skill_mod = @import("skill.zig");
+const helpers = @import("helpers.zig");
 
 const Vector2 = types.Vector2;
 const GameState = state.GameState;
@@ -29,8 +30,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = 5,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -41,20 +41,21 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 }
 
 /// AI priority: 0 if on cooldown, otherwise low priority (cast when nothing better to do).
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: one self-cast at 1 (the enchantment's slot value; the
+/// duration extension on recast is handled by create_effect).
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
-
-    if (caster.skill_cooldowns.get(.that_which_lingers) > 0) return 0;
-    return 1;
+    if (caster.skill_cooldowns.get(.that_which_lingers) > 0) return &.{};
+    return helpers.singleOption(allocator, .{ .target = caster.position, .priority = 1 });
 }
 
 /// Self-cast — target is the caster's own position.
-fn selectTarget(caster_index: u32, _: ?[]const Vector2, game_state: GameState) ?Vector2 {
-    const level = game_state.level orelse return null;
-    return level.entities[caster_index].position;
-}
-
 /// Self-cast enchantment — no tile highlighting, just push the effect creation.
 fn playerPrepareSkill(
     caster_index: u32,

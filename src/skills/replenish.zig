@@ -25,8 +25,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = 5,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -38,19 +37,23 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 
 /// AI priority (cantrip): 0 if on cooldown or at/above half health (no need),
 /// else 3 — a wounded enemy values a full heal highly.
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: one self-cast at 3 — offered only below half health (a
+/// wounded enemy values the full heal highly; above that it has better
+/// things to do with the cantrip slot).
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
-    if (caster.skill_cooldowns.get(.replenish) > 0) return 0;
-    if (caster.current_health * 2 >= caster.getEffectiveMaxHealth()) return 0;
-    return 3;
+    if (caster.skill_cooldowns.get(.replenish) > 0) return &.{};
+    if (caster.current_health * 2 >= caster.getEffectiveMaxHealth()) return &.{};
+    return helpers.singleOption(allocator, .{ .target = null, .priority = 3 });
 }
 
 /// Self-cast — no meaningful target.
-fn selectTarget(_: u32, _: ?[]const Vector2, _: GameState) ?Vector2 {
-    return null;
-}
-
 /// Self-cast — fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;

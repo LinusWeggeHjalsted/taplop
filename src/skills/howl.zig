@@ -27,8 +27,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = 10,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -42,11 +41,18 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 /// 0 if no inactive entity within radius (nothing to aggro), 1 with one,
 /// 2 with two or more. Counts inactive entities of any team —
 /// aggro_in_radius rallies same-team entities too.
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: one self-centered cast at 1, bumped to 2 when two or more
+/// inactive entities are in radius (any team — aggro_in_radius rallies
+/// same-team entities too; the AoE bump convention).
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
-    if (caster.skill_cooldowns.get(.howl) > 0) return 0;
-
+    if (caster.skill_cooldowns.get(.howl) > 0) return &.{};
     const radius: i32 = @intCast(caster.getEffectiveRadius(skill.radius.?));
     var target_count: u32 = 0;
     for (level.entities, 0..) |entity, entity_index| {
@@ -55,14 +61,11 @@ fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinit
         if (entity.is_active) continue; // already aggroed
         if (functions.chebyshevDistance(caster.position, entity.position) <= radius) target_count += 1;
     }
-    return helpers.aoePriority(target_count, 1);
+    if (target_count == 0) return &.{};
+    return helpers.singleOption(allocator, .{ .target = null, .priority = helpers.aoePriority(target_count, 1) });
 }
 
 /// Self-centered — no meaningful target.
-fn selectTarget(_: u32, _: ?[]const Vector2, _: GameState) ?Vector2 {
-    return null;
-}
-
 /// Self-centered — fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;

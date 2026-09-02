@@ -27,8 +27,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = null,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -48,47 +47,27 @@ fn getValidTargets(
 /// Returns 0 if on cooldown or no targets in range.
 /// Returns 3 normally, 2 if target (nearest hostile) is below half health
 /// (prefer a different finisher skill for wounded targets).
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: the weakest hostile (focus-fire). Rated 3 when the pick is
+/// wounded (below half — Slice's 1.5x bonus pays there), else 2.
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
+    if (caster.skill_cooldowns.get(.slice) > 0) return &.{};
 
-    // Check cooldown
-    if (caster.skill_cooldowns.get(.slice) > 0) return 0;
-
-    const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
-
-    // Find hostiles in range; note whether any is below half health (integer
-    // compare: current * 2 < max), which is when Slice's 1.5x bonus pays off.
-    var found_target = false;
-    var found_wounded_target = false;
-    for (level.entities, 0..) |entity, entity_index| {
-        if (entity_index == caster_index) continue;
-        if (entity.current_health == 0) continue;
-        if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) <= range) {
-            found_target = true;
-            if (entity.current_health * 2 < entity.getEffectiveMaxHealth()) {
-                found_wounded_target = true;
-            }
-        }
-    }
-
-    if (!found_target) return 0;
-
-    // Higher priority when a target is wounded — that's when Slice's bonus kicks in.
-    if (found_wounded_target) return 3;
-    return 2;
+    const valid_targets = getValidTargets(caster_index, game_state, allocator);
+    const target = helpers.weakestTarget(caster_index, valid_targets, game_state) orelse return &.{};
+    const defender_index = helpers.hostileEntityAt(caster_index, target, game_state) orelse return &.{};
+    const defender = level.entities[defender_index];
+    const rating: u32 = if (defender.current_health * 2 < defender.getEffectiveMaxHealth()) 3 else 2;
+    return helpers.singleOption(allocator, .{ .target = target, .priority = rating });
 }
 
 /// AI target selection: the weakest hostile (focus-fire — helpers.weakestTarget).
-fn selectTarget(
-    caster_index: u32,
-    valid_targets: ?[]const Vector2,
-    game_state: GameState,
-) ?Vector2 {
-    return helpers.weakestTarget(caster_index, valid_targets, game_state);
-}
-
 /// Player prepare: returns a highlight_tiles event for all valid target positions.
 fn playerPrepareSkill(
     caster_index: u32,

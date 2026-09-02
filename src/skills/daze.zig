@@ -26,8 +26,7 @@ pub const skill = Skill{
     .stun_duration = 1,
     .cooldown = 3,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -47,38 +46,65 @@ fn getValidTargets(
 /// take the max, never stack). 2 if all in-range targets are stunned but
 /// one still has momentum (the drain still pays). 0 otherwise — a stunned,
 /// momentumless target gains nothing from Daze.
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: unstunned hostiles in range at 3 (the stun pays in full —
+/// stuns take the max, never stack); if none, stunned hostiles still
+/// carrying momentum at 2 (the drain still pays). A stunned, momentumless
+/// target offers nothing and emits no option. Within a class the
+/// focus-fire tail order applies (health, distance, entity index).
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
-    if (caster.skill_cooldowns.get(.daze) > 0) return 0;
-
+    if (caster.skill_cooldowns.get(.daze) > 0) return &.{};
     const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
-    var found_target = false;
-    var found_momentful_target = false;
+
+    var best_unstunned: ?u32 = null;
+    var best_unstunned_health: u32 = std.math.maxInt(u32);
+    var best_unstunned_distance: i32 = std.math.maxInt(i32);
+    var best_momentful: ?u32 = null;
+    var best_momentful_health: u32 = std.math.maxInt(u32);
+    var best_momentful_distance: i32 = std.math.maxInt(i32);
     for (level.entities, 0..) |entity, entity_index| {
         if (entity_index == caster_index) continue;
         if (entity.current_health == 0) continue;
         if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) > range) continue;
-        found_target = true;
-        if (entity.stun_duration == 0) return 3;
-        if (entity.momentum > 0) found_momentful_target = true;
+        const distance = functions.chebyshevDistance(caster.position, entity.position);
+        if (distance > range) continue;
+        const entity_index_u32: u32 = @intCast(entity_index);
+        if (entity.stun_duration == 0) {
+            if (entity.current_health < best_unstunned_health or
+                (entity.current_health == best_unstunned_health and distance < best_unstunned_distance))
+            {
+                best_unstunned_health = entity.current_health;
+                best_unstunned_distance = distance;
+                best_unstunned = entity_index_u32;
+            }
+        } else if (entity.momentum > 0) {
+            if (entity.current_health < best_momentful_health or
+                (entity.current_health == best_momentful_health and distance < best_momentful_distance))
+            {
+                best_momentful_health = entity.current_health;
+                best_momentful_distance = distance;
+                best_momentful = entity_index_u32;
+            }
+        }
     }
-    if (!found_target) return 0;
-    if (found_momentful_target) return 2;
-    return 0;
+
+    if (best_unstunned) |defender_index| {
+        return helpers.singleOption(allocator, .{ .target = level.entities[defender_index].position, .priority = 3 });
+    }
+    if (best_momentful) |defender_index| {
+        return helpers.singleOption(allocator, .{ .target = level.entities[defender_index].position, .priority = 2 });
+    }
+    return &.{};
 }
 
 /// AI target selection for the stun: prefer an unstunned target, then the
 /// focus-fire order (helpers.stunTarget).
-fn selectTarget(
-    caster_index: u32,
-    valid_targets: ?[]const Vector2,
-    game_state: GameState,
-) ?Vector2 {
-    return helpers.stunTarget(caster_index, valid_targets, game_state);
-}
-
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,

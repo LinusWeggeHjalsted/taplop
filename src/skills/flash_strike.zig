@@ -26,8 +26,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = 3,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -48,14 +47,25 @@ fn getValidTargets(
 /// would hit, take the max, then 0/3/4 (helpers.aoePriority). The old
 /// rating was a flat 3 whenever off cooldown — it let the caster flash
 /// into empty space; now a cast with no reachable hit rates 0.
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: the BEST landing tile — max hostiles within radius over
+/// the empty tiles in range (strict > keeps the first in scan order, the
+/// (y, x) convention), rated by the AoE bump (3 single-hit, 4 multi-hit).
+/// The cast lands exactly where the rating was earned; the old
+/// selectTarget picked the tile nearest a hostile instead — that
+/// rating/landing seam is gone.
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
-    if (caster.skill_cooldowns.get(.flash_strike) > 0) return 0;
-
+    if (caster.skill_cooldowns.get(.flash_strike) > 0) return &.{};
     const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
     const radius: i32 = @intCast(caster.getEffectiveRadius(skill.radius.?));
 
+    var best_tile: ?Vector2 = null;
     var best_count: u32 = 0;
     var delta_y: i32 = -range;
     while (delta_y <= range) : (delta_y += 1) {
@@ -66,43 +76,19 @@ fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinit
             if (!helpers.tileExists(game_state, tile)) continue;
             if (helpers.isOccupied(game_state, tile, null)) continue;
             const count = helpers.hostileCountWithinRadius(caster_index, game_state, tile, radius);
-            if (count > best_count) best_count = count;
+            if (count > best_count) {
+                best_count = count;
+                best_tile = tile;
+            }
         }
     }
-    return helpers.aoePriority(best_count, 3);
+
+    const tile = best_tile orelse return &.{};
+    return helpers.singleOption(allocator, .{ .target = tile, .priority = helpers.aoePriority(best_count, 3) });
 }
 
 /// AI target selection: the empty landing tile closest to a hostile, so the
 /// caster lands adjacent and the radius attack connects.
-fn selectTarget(
-    caster_index: u32,
-    valid_targets: ?[]const Vector2,
-    game_state: GameState,
-) ?Vector2 {
-    const targets = valid_targets orelse return null;
-    if (targets.len == 0) return null;
-    const level = game_state.level orelse return null;
-    const caster = level.entities[caster_index];
-
-    var best: ?Vector2 = null;
-    var best_distance: i32 = std.math.maxInt(i32);
-    for (targets) |candidate| {
-        var nearest_hostile: i32 = std.math.maxInt(i32);
-        for (level.entities, 0..) |entity, entity_index| {
-            if (entity_index == caster_index) continue;
-            if (entity.current_health == 0) continue;
-            if (entity.team == caster.team) continue;
-            const distance = functions.chebyshevDistance(candidate, entity.position);
-            if (distance < nearest_hostile) nearest_hostile = distance;
-        }
-        if (nearest_hostile < best_distance) {
-            best_distance = nearest_hostile;
-            best = candidate;
-        }
-    }
-    return best;
-}
-
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,

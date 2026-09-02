@@ -27,8 +27,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = null,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -47,39 +46,25 @@ fn getValidTargets(
 /// AI priority: 0 if on cooldown or no targets in range. Otherwise keyed on the
 /// caster's own health (Chop's 1.5x bonus applies while above half health):
 /// 3 if the caster is above half health, else 2.
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: the weakest hostile (focus-fire). Rated 3 when the CASTER
+/// is above half health (Chop's 1.5x bonus is self-conditioned), else 2.
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
+    if (caster.skill_cooldowns.get(.chop) > 0) return &.{};
 
-    if (caster.skill_cooldowns.get(.chop) > 0) return 0;
-
-    const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
-
-    var found_target = false;
-    for (level.entities, 0..) |entity, entity_index| {
-        if (entity_index == caster_index) continue;
-        if (entity.current_health == 0) continue;
-        if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) <= range) {
-            found_target = true;
-            break;
-        }
-    }
-
-    if (!found_target) return 0;
-    if (caster.current_health * 2 > caster.getEffectiveMaxHealth()) return 3;
-    return 2;
+    const valid_targets = getValidTargets(caster_index, game_state, allocator);
+    const target = helpers.weakestTarget(caster_index, valid_targets, game_state) orelse return &.{};
+    const rating: u32 = if (caster.current_health * 2 > caster.getEffectiveMaxHealth()) 3 else 2;
+    return helpers.singleOption(allocator, .{ .target = target, .priority = rating });
 }
 
 /// AI target selection: the weakest hostile (focus-fire — helpers.weakestTarget).
-fn selectTarget(
-    caster_index: u32,
-    valid_targets: ?[]const Vector2,
-    game_state: GameState,
-) ?Vector2 {
-    return helpers.weakestTarget(caster_index, valid_targets, game_state);
-}
-
 /// Player prepare: highlight all valid target positions.
 fn playerPrepareSkill(
     caster_index: u32,

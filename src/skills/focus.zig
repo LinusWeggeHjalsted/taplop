@@ -25,8 +25,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = 10,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -40,22 +39,24 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 /// Gated on the caster having any skill on cooldown — an approximation, since
 /// resolving which of those are weapon skills needs weapon_type_definitions
 /// (unreachable here). The reset_weapon_cooldowns handler resets precisely.
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: one self-cast at 2 — offered only while some cooldown is
+/// ticking (nothing to reset otherwise).
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
-    if (caster.skill_cooldowns.get(.focus) > 0) return 0;
-
+    if (caster.skill_cooldowns.get(.focus) > 0) return &.{};
     for (caster.skill_cooldowns.values) |cooldown| {
-        if (cooldown > 0) return 2;
+        if (cooldown > 0) return helpers.singleOption(allocator, .{ .target = null, .priority = 2 });
     }
-    return 0;
+    return &.{};
 }
 
 /// Self-cast — no meaningful target.
-fn selectTarget(_: u32, _: ?[]const Vector2, _: GameState) ?Vector2 {
-    return null;
-}
-
 /// Self-cast — fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;

@@ -10267,3 +10267,47 @@ diagonal-counts-as-1 case that caught my own wrong expectation), spinblade
 bump, flash_strike best-landing-tile max + the no-target regression,
 drain useSkill (per-hit heals_attacker, off-hand damage) + priority 3/4,
 howl bump.
+
+## Skills: unified AI options (priority + selectTarget → ai_options_fn)
+
+The double-work fix, landed before porting the remaining ~14 Tier A skills
+(so they're born on the unified interface). Old shape: priority fn = a
+SUMMARY over targets ("3 if any collides", "count in radius"), selectTarget
+fn = a separate argmax over a different key — the seams we kept documenting
+(bash, daze-momentum, flash-strike landing, stab any-healthy). New shape:
+ONE fn, `ai_options_fn`, enumerating the skill's meaningful casts as
+(target, rating) pairs, best-first; the skill-side rating and the target are
+a single decision. The handler (enemy_turn_attack) collects options across
+equipped off-cooldown skills, keeps the ending/non-ending pools, picks
+(priority desc, option order, slot order) — options arrive best-first, so
+the ordering conventions (focus-fire tail, collide/unstunned keys, AoE bump)
+live in emission order. Player path untouched (getValidTargets /
+player_prepare_skill / use_skill / legality validation all unchanged).
+
+- `skill.zig`: `AiOption{target, priority}` + `ai_options_fn` (+ `aiOptions`
+  convenience); `priority_fn`/`select_target_fn` and their convenience
+  methods removed; PORTING NOTE rewritten for options (Unity -1 = emit
+  nothing). `helpers.singleOption` added (the one-best-cast emitter; helpers
+  now imports skill.zig for AiOption — no cycle, skill.zig imports no skill
+  files).
+- 31 skills migrated via a one-shot script (asserted every transformation).
+  Most emit one option built from the existing helpers at the existing
+  ratings. Deliberate behavior changes — the seams closing:
+  - **stab** rates its actual pick (wounded weakest + healthy bystander → 2,
+    not the old any-healthy 3) — regression-tested.
+  - **daze** emits two target classes (unstunned at 3, stunned-with-momentum
+    at 2, focus-fire order within each) instead of rating "any" and picking
+    weakest — a stunned momentumless weakest can no longer waste the cast.
+  - **flash strike** option target IS the max-hit landing tile (old
+    selectTarget picked the tile nearest a hostile) — asserted.
+  - **blink** offers nothing when no empty tile helps (old pair could choose
+    it and cast a no-op); **howl/blink/etc.** all keep their ratings.
+- Handler: `SkillOption` struct, single pass over options, drop the
+  definition-tracking vars + the now-unused `Skill` import; computeMinRange
+  unchanged (already in threat.zig).
+- Tests: 39 rating assertions mechanically converted to option-list form;
+  bash/flash-strike/daze upgraded to also assert the option TARGET (the
+  unified decision made visible); new stab seam-fix regression test.
+- Docs: DESIGN → Architecture gains the "AI options" bullet (the unified
+  decision surface, above the threat-model + AoE-bump bullets that ride
+  it); the Determinism focus-fire bullet now speaks of AI options picking.

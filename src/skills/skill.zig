@@ -10,6 +10,14 @@ const Entity = types.Entity;
 const SkillId = types.SkillId;
 const SkillType = types.SkillType;
 
+/// One AI candidate cast: `target` is what gets passed to useSkill (null =
+/// self-cast / self-centered), `priority` is its rating (higher = better).
+/// 0-rated casts are not emitted.
+pub const AiOption = struct {
+    target: ?Vector2,
+    priority: u32,
+};
+
 /// The interface that every skill in the game implements.
 /// Each skill file (e.g. slice.zig) returns one of these from its `define()` function.
 pub const Skill = struct {
@@ -44,38 +52,32 @@ pub const Skill = struct {
         allocator: std.mem.Allocator,
     ) ?[]const Vector2,
 
-    /// AI priority: how much an enemy wants to use this skill right now.
-    /// Higher value = higher priority; 0 means the skill should not be used now.
-    /// Turn-ending vs non-turn-ending is decided by skill_type at the call site
-    /// (see enemy_turn_attack), not by the priority magnitude.
-    /// `weapon_type_definitions` is the session's weapon-type → skills
-    /// mapping — needed by skills whose evaluation reads other entities'
-    /// skill bars (the defensive skills' threat model, skills/threat.zig);
-    /// most skills ignore it.
+    /// AI options: enumerate this skill's meaningful casts as
+    /// (target, rating) pairs, best-first. Replaces the old
+    /// priority/selectTarget pair — the rating and the chosen target are
+    /// one decision, so they cannot disagree (the old split's seams: bash
+    /// rated "any colliding target" while selection attacked another;
+    /// flash strike rated one landing tile and landed on another).
+    /// The handler (enemy_turn_attack) picks the global best, breaking
+    /// ties by option order (the skill's own deterministic ordering), then
+    /// skill slot order. Result lives in `allocator` (consumed
+    /// synchronously by the handler).
     ///
-    /// PORTING NOTE: the Unity original INVERTS this (lower number = higher
-    /// priority, -1 = don't use). When porting a skill, FLIP the numbers to
-    /// higher = better, 0 = don't use (e.g. Unity 2/3 -> ziglop 3/2).
-    /// Unity also used 0 as a catch-all for non-turn-ending skills (cantrips/
-    /// enchantments), iterating them in skill-bar order. Here turn-ending is
-    /// decided separately by skill_type, so those get REAL positive priorities
-    /// (Unity -1 -> 0 don't-use; Unity 0 -> a positive value). Non-ending and
-    /// ending skills are chosen from separate pools (enemy_turn_attack), so
-    /// cantrip priorities only compete with each other; equal values keep
-    /// bar order (the AI replaces only on strictly-greater).
-    priority_fn: *const fn (
+    /// PORTING NOTE: the Unity original INVERTS priority (lower number =
+    /// higher priority, -1 = don't use). When porting a skill, FLIP the
+    /// numbers to higher = better (Unity -1 = don't cast = emit nothing;
+    /// Unity 0..N -> a positive rating). Turn-ending vs non-turn-ending is
+    /// decided by skill_type at the call site, not by the rating —
+    /// non-ending and ending skills are chosen from separate pools
+    /// (enemy_turn_attack), so cantrip ratings only compete with each
+    /// other; equal ratings keep bar order (the handler replaces only on
+    /// strictly-greater).
+    ai_options_fn: *const fn (
         caster_index: u32,
         game_state: GameState,
         weapon_type_definitions: types.WeaponTypeDefinitions,
-    ) u32,
-
-    /// AI target selection - enemy picks a target after getValidTargets provides the options
-    /// should return null if valid_targets is null
-    select_target_fn: *const fn (
-        caster_index: u32,
-        valid_targets: ?[]const Vector2,
-        game_state: GameState,
-    ) ?Vector2,
+        allocator: std.mem.Allocator,
+    ) []const AiOption,
 
     /// sets flags for targetable tiles to allow player input
     player_prepare_skill_fn: *const fn (
@@ -103,22 +105,14 @@ pub const Skill = struct {
         return self.get_valid_targets_fn(caster_index, game_state, allocator);
     }
 
-    pub fn priority(
+    pub fn aiOptions(
         self: Skill,
         caster_index: u32,
         game_state: GameState,
         weapon_type_definitions: types.WeaponTypeDefinitions,
-    ) u32 {
-        return self.priority_fn(caster_index, game_state, weapon_type_definitions);
-    }
-
-    pub fn selectTarget(
-        self: Skill,
-        caster_index: u32,
-        valid_targets: ?[]const Vector2,
-        game_state: GameState,
-    ) ?Vector2 {
-        return self.select_target_fn(caster_index, valid_targets, game_state);
+        allocator: std.mem.Allocator,
+    ) []const AiOption {
+        return self.ai_options_fn(caster_index, game_state, weapon_type_definitions, allocator);
     }
 
     pub fn playerPrepareSkill(

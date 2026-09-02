@@ -24,6 +24,7 @@ const spinblade_skill = @import("skills/spinblade.zig");
 const flash_strike_skill = @import("skills/flash_strike.zig");
 const drain_skill = @import("skills/drain.zig");
 const howl_skill = @import("skills/howl.zig");
+const stab_skill = @import("skills/stab.zig");
 
 const Vector2 = types.Vector2;
 
@@ -193,7 +194,8 @@ test "shoot: priority is 2 with a hostile in range, 0 otherwise or on cooldown" 
     // No hostile at all.
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
-        try testing.expectEqual(@as(u32, 0), shoot_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    shoot_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
     // Hostile beyond effective range 3.
     {
@@ -202,7 +204,8 @@ test "shoot: priority is 2 with a hostile in range, 0 otherwise or on cooldown" 
             &.{ caster, out_of_range },
             &.{},
         );
-        try testing.expectEqual(@as(u32, 0), shoot_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    shoot_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
     // Hostile exactly at range 3.
     {
@@ -211,7 +214,9 @@ test "shoot: priority is 2 with a hostile in range, 0 otherwise or on cooldown" 
             &.{ caster, in_range },
             &.{},
         );
-        try testing.expectEqual(@as(u32, 2), shoot_skill.skill.priority(0, game_state, undefined));
+        const options = shoot_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
     // On cooldown (a swap can leave one on a no-cooldown skill).
     {
@@ -221,7 +226,8 @@ test "shoot: priority is 2 with a hostile in range, 0 otherwise or on cooldown" 
             &.{},
         );
         setCooldown(game_state, 0, .shoot, 1);
-        try testing.expectEqual(@as(u32, 0), shoot_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    shoot_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -331,7 +337,7 @@ test "knockbackTarget: with no collisions, falls back to the weakest" {
     try testing.expectEqual(wounded.position, picked.?);
 }
 
-test "bash: priority is 3 when any in-range push collides, 2 otherwise" {
+test "bash: option is 3 with the colliding pick, 2 on an open path" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
@@ -345,10 +351,14 @@ test "bash: priority is 3 when any in-range push collides, 2 otherwise" {
             &.{ caster, adjacent },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
         );
-        try testing.expectEqual(@as(u32, 2), bash_skill.skill.priority(0, game_state, undefined));
+        const options = bash_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
     // Two adjacent targets — the FIRST in scan order is open, the second is
-    // walled. Any-collide (not nearest-only) bumps to 3.
+    // walled. The option carries BOTH the 3 rating and the walled target
+    // (one decision — the old split could rate off one target while
+    // selection attacked another).
     {
         const walled = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
         const game_state = test_harness.levelStateWithEntities(
@@ -356,7 +366,10 @@ test "bash: priority is 3 when any in-range push collides, 2 otherwise" {
             &.{ caster, adjacent, walled },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 0, .y = 1 } },
         );
-        try testing.expectEqual(@as(u32, 3), bash_skill.skill.priority(0, game_state, undefined));
+        const options = bash_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
+        try testing.expectEqual(walled.position, options[0].target.?);
     }
     // On cooldown.
     {
@@ -366,7 +379,8 @@ test "bash: priority is 3 when any in-range push collides, 2 otherwise" {
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
         );
         setCooldown(game_state, 0, .bash, 1);
-        try testing.expectEqual(@as(u32, 0), bash_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    bash_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -417,7 +431,9 @@ test "powerful shot: priority is 3 when any in-range push collides, 2 otherwise"
             &.{ caster, near_open },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
         );
-        try testing.expectEqual(@as(u32, 2), powerful_shot_skill.skill.priority(0, game_state, undefined));
+        const options = powerful_shot_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
     // Near target open, far target walled (its 2-step push runs off the
     // tile set) — both in range 3, any-collide bumps to 3.
@@ -427,7 +443,9 @@ test "powerful shot: priority is 3 when any in-range push collides, 2 otherwise"
             &.{ caster, near_open, far_walled },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
         );
-        try testing.expectEqual(@as(u32, 3), powerful_shot_skill.skill.priority(0, game_state, undefined));
+        const options = powerful_shot_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
     }
     // On cooldown.
     {
@@ -437,7 +455,8 @@ test "powerful shot: priority is 3 when any in-range push collides, 2 otherwise"
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
         );
         setCooldown(game_state, 0, .powerful_shot, 1);
-        try testing.expectEqual(@as(u32, 0), powerful_shot_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    powerful_shot_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -485,7 +504,8 @@ test "head shot: priority is 3 with a hostile in range, 0 otherwise or on cooldo
             &.{ caster, out_of_range },
             &.{},
         );
-        try testing.expectEqual(@as(u32, 0), head_shot_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    head_shot_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
     {
         const game_state = test_harness.levelStateWithEntities(
@@ -493,9 +513,12 @@ test "head shot: priority is 3 with a hostile in range, 0 otherwise or on cooldo
             &.{ caster, in_range },
             &.{},
         );
-        try testing.expectEqual(@as(u32, 3), head_shot_skill.skill.priority(0, game_state, undefined));
+        const options = head_shot_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
         setCooldown(game_state, 0, .head_shot, 1);
-        try testing.expectEqual(@as(u32, 0), head_shot_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    head_shot_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -512,7 +535,6 @@ test "idol heal: useSkill emits a self-heal for a fifth of max health" {
     );
 
     try testing.expectEqual(@as(?[]const Vector2, null), heal_skill.skill.getValidTargets(0, game_state, arena.allocator()));
-    try testing.expectEqual(@as(?Vector2, null), heal_skill.skill.selectTarget(0, null, game_state));
 
     const result = heal_skill.skill.useSkill(0, null, game_state, arena.allocator());
     try testing.expectEqual(@as(usize, 1), result.len);
@@ -529,22 +551,27 @@ test "idol heal: priority is 3 only below half health" {
     {
         const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 20 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
-        try testing.expectEqual(@as(u32, 0), heal_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    heal_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
     // Exactly half → 0 (at/above half).
     {
         const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 10 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
-        try testing.expectEqual(@as(u32, 0), heal_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    heal_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
     // Below half → 3.
     {
         const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 9 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
-        try testing.expectEqual(@as(u32, 3), heal_skill.skill.priority(0, game_state, undefined));
+        const options = heal_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
         // Cooldown overrides (a swap can leave one on a no-cooldown skill).
         setCooldown(game_state, 0, .heal, 1);
-        try testing.expectEqual(@as(u32, 0), heal_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    heal_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -596,12 +623,16 @@ test "cleave: priority is 3 with an unstunned target, 2 when all are stunned" {
 
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent }, &.{});
-        try testing.expectEqual(@as(u32, 3), cleave_skill.skill.priority(0, game_state, undefined));
+        const options = cleave_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
     }
     {
         const stunned = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .stun_duration = 2 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, stunned }, &.{});
-        try testing.expectEqual(@as(u32, 2), cleave_skill.skill.priority(0, game_state, undefined));
+        const options = cleave_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
 }
 
@@ -612,7 +643,9 @@ test "head shot: priority drops to 2 when the only target is already stunned" {
     const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
     const stunned = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .stun_duration = 2 };
     const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, stunned }, &.{});
-    try testing.expectEqual(@as(u32, 2), head_shot_skill.skill.priority(0, game_state, undefined));
+    const options = head_shot_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
 }
 
 test "daze: priority tiers by stun and momentum state" {
@@ -625,19 +658,42 @@ test "daze: priority tiers by stun and momentum state" {
     {
         const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
-        try testing.expectEqual(@as(u32, 3), daze_skill.skill.priority(0, game_state, undefined));
+        const options = daze_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
     }
-    // Stunned but carrying momentum → 2 (the drain still pays).
+    // Stunned but carrying momentum → 2 (the drain still pays), targeting
+    // the momentful entity.
     {
         const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .stun_duration = 2, .momentum = 3 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
-        try testing.expectEqual(@as(u32, 2), daze_skill.skill.priority(0, game_state, undefined));
+        const options = daze_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
+        try testing.expectEqual(target.position, options[0].target.?);
+    }
+    // Both classes present (unstunned + stunned-momentful) → the unstunned
+    // class wins at 3, and its focus-fire pick is the option's target.
+    {
+        const healthy_unstunned = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .current_health = 15 };
+        const wounded_unstunned = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 }, .current_health = 5 };
+        const stunned_momentful = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .stun_duration = 2, .momentum = 3 };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, healthy_unstunned, wounded_unstunned, stunned_momentful },
+            &.{},
+        );
+        const options = daze_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
+        try testing.expectEqual(wounded_unstunned.position, options[0].target.?);
     }
     // Stunned and momentumless → 0 (nothing to gain — no damage, no stack).
     {
         const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .stun_duration = 2 };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
-        try testing.expectEqual(@as(u32, 0), daze_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    daze_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -816,7 +872,9 @@ test "absorb: priority tiers by threat and health" {
             &.{ caster_full, sword_enemy_at(.{ .x = 1, .y = 0 }) },
             &.{},
         );
-        try testing.expectEqual(@as(u32, 2), absorb_skill.skill.priority(0, game_state, definitions));
+        const options = absorb_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
     // Threatened + below half → 4 (the panic tier).
     {
@@ -825,7 +883,9 @@ test "absorb: priority tiers by threat and health" {
             &.{ caster_wounded, sword_enemy_at(.{ .x = 1, .y = 0 }) },
             &.{},
         );
-        try testing.expectEqual(@as(u32, 4), absorb_skill.skill.priority(0, game_state, definitions));
+        const options = absorb_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 4), options[0].priority);
     }
     // Unthreatened (enemy far out of reach) → 0, even below half.
     {
@@ -834,7 +894,8 @@ test "absorb: priority tiers by threat and health" {
             &.{ caster_wounded, sword_enemy_at(.{ .x = 9, .y = 9 }) },
             &.{},
         );
-        try testing.expectEqual(@as(u32, 0), absorb_skill.skill.priority(0, game_state, definitions));
+        try testing.expectEqual(@as(usize, 0),
+    absorb_skill.skill.aiOptions(0, game_state, definitions, arena.allocator()).len);
     }
     // Threatened but on cooldown → 0.
     {
@@ -844,7 +905,8 @@ test "absorb: priority tiers by threat and health" {
             &.{},
         );
         setCooldown(game_state, 0, .absorb, 1);
-        try testing.expectEqual(@as(u32, 0), absorb_skill.skill.priority(0, game_state, definitions));
+        try testing.expectEqual(@as(usize, 0),
+    absorb_skill.skill.aiOptions(0, game_state, definitions, arena.allocator()).len);
     }
 }
 
@@ -893,7 +955,9 @@ test "reflect: priority tiers by threat and health" {
             &.{ caster_full, sword_enemy_at(.{ .x = 1, .y = 0 }) },
             &.{},
         );
-        try testing.expectEqual(@as(u32, 2), reflect_skill.skill.priority(0, game_state, definitions));
+        const options = reflect_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
     {
         const game_state = test_harness.levelStateWithEntities(
@@ -901,7 +965,9 @@ test "reflect: priority tiers by threat and health" {
             &.{ caster_wounded, sword_enemy_at(.{ .x = 1, .y = 0 }) },
             &.{},
         );
-        try testing.expectEqual(@as(u32, 4), reflect_skill.skill.priority(0, game_state, definitions));
+        const options = reflect_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 4), options[0].priority);
     }
     // The old heuristic fired on ANY hostile within 2 tiles, aggro or not —
     // an idle unaggroed enemy at distance 2 must not bait the cooldown.
@@ -912,7 +978,8 @@ test "reflect: priority tiers by threat and health" {
             &.{},
         );
         @constCast(game_state.level.?.entities)[1].is_active = false;
-        try testing.expectEqual(@as(u32, 0), reflect_skill.skill.priority(0, game_state, definitions));
+        try testing.expectEqual(@as(usize, 0),
+    reflect_skill.skill.aiOptions(0, game_state, definitions, arena.allocator()).len);
     }
 }
 
@@ -956,12 +1023,16 @@ test "spinblade: priority bumps to 4 with two hostiles in radius" {
 
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent }, &.{});
-        try testing.expectEqual(@as(u32, 3), spinblade_skill.skill.priority(0, game_state, undefined));
+        const options = spinblade_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
     }
     {
         const second = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent, second }, &.{});
-        try testing.expectEqual(@as(u32, 4), spinblade_skill.skill.priority(0, game_state, undefined));
+        const options = spinblade_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 4), options[0].priority);
     }
 }
 
@@ -981,17 +1052,22 @@ test "flash strike: priority counts hits over the best landing tile" {
             &.{caster},
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
         );
-        try testing.expectEqual(@as(u32, 0), flash_strike_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    flash_strike_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
     // A landing tile at (3,0) is within range 3 and radius 1 of BOTH
-    // hostiles → the max count is 2 → 4.
+    // hostiles → the max count is 2 → 4, and the option's target IS that
+    // tile — the cast lands where the rating was earned.
     {
         const game_state = test_harness.levelStateWithEntities(
             arena.allocator(),
             &.{ caster, pair_a, pair_b },
             &.{ .{ .x = 0, .y = 0 }, .{ .x = 3, .y = 0 } },
         );
-        try testing.expectEqual(@as(u32, 4), flash_strike_skill.skill.priority(0, game_state, undefined));
+        const options = flash_strike_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 4), options[0].priority);
+        try testing.expectEqual(Vector2{ .x = 3, .y = 0 }, options[0].target.?);
     }
 }
 
@@ -1035,14 +1111,19 @@ test "drain: priority follows the AoE bump (3 single, 4 double)" {
 
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent }, &.{});
-        try testing.expectEqual(@as(u32, 3), drain_skill.skill.priority(0, game_state, undefined));
+        const options = drain_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
     }
     {
         const second = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent, second }, &.{});
-        try testing.expectEqual(@as(u32, 4), drain_skill.skill.priority(0, game_state, undefined));
+        const options = drain_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 4), options[0].priority);
         setCooldown(game_state, 0, .drain, 1);
-        try testing.expectEqual(@as(u32, 0), drain_skill.skill.priority(0, game_state, undefined));
+        try testing.expectEqual(@as(usize, 0),
+    drain_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
     }
 }
 
@@ -1056,10 +1137,36 @@ test "howl: priority bumps with multiple inactive entities" {
 
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, inactive_a }, &.{});
-        try testing.expectEqual(@as(u32, 1), howl_skill.skill.priority(0, game_state, undefined));
+        const options = howl_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
     {
         const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, inactive_a, inactive_b }, &.{});
-        try testing.expectEqual(@as(u32, 2), howl_skill.skill.priority(0, game_state, undefined));
+        const options = howl_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
     }
+}
+
+test "stab: rating follows the pick, not any-healthy (seam fix)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // Weakest target is wounded (Stab's 1.5x bonus does NOT pay on it) while
+    // a healthy target stands in range. The old priority summarized "any
+    // healthy target" -> 3; the unified option rates the actual pick -> 2.
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const wounded_weakest = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 4, .max_health = 20 };
+    const healthy = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 }, .current_health = 20, .max_health = 20 };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, wounded_weakest, healthy },
+        &.{},
+    );
+
+    const options = stab_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), options.len);
+    try testing.expectEqual(wounded_weakest.position, options[0].target.?);
+    try testing.expectEqual(@as(u32, 2), options[0].priority);
 }

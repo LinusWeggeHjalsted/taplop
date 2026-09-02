@@ -28,8 +28,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = 4,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -44,20 +43,24 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 /// skills/threat.zig; an idle Reflect is a wasted cooldown). 2 when
 /// threatened. 4 when threatened AND below half health — prevention plus
 /// the reflected counterattack, the panic tier.
-fn priority(caster_index: u32, game_state: GameState, weapon_type_definitions: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: one self-cast — offered only when a hostile can reach and
+/// attack the caster next turn (the threat model, skills/threat.zig).
+/// Rated 2 when threatened, 4 when threatened AND below half health.
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    weapon_type_definitions: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
-    if (caster.skill_cooldowns.get(.reflect) > 0) return 0;
-    if (!threat.hostileCanAttackNextTurn(caster_index, game_state, weapon_type_definitions)) return 0;
-    if (caster.current_health * 2 < caster.getEffectiveMaxHealth()) return 4;
-    return 2;
+    if (caster.skill_cooldowns.get(.reflect) > 0) return &.{};
+    if (!threat.hostileCanAttackNextTurn(caster_index, game_state, weapon_type_definitions)) return &.{};
+    const rating: u32 = if (caster.current_health * 2 < caster.getEffectiveMaxHealth()) 4 else 2;
+    return helpers.singleOption(allocator, .{ .target = null, .priority = rating });
 }
 
 /// Self-cast — no meaningful target.
-fn selectTarget(_: u32, _: ?[]const Vector2, _: GameState) ?Vector2 {
-    return null;
-}
-
 /// Self-cast — fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;

@@ -11,10 +11,12 @@ const types = @import("../types.zig");
 const state = @import("../state.zig");
 const events = @import("../events.zig");
 const functions = @import("../functions.zig");
+const skill_mod = @import("skill.zig");
 
 const Vector2 = types.Vector2;
 const GameState = state.GameState;
 const Event = events.Event;
+const AiOption = skill_mod.AiOption;
 
 /// Positions of all living hostile entities within `range` (Chebyshev) of the
 /// caster. Returns null if there are none — matching `Skill.getValidTargets`.
@@ -326,6 +328,14 @@ pub fn hostileCountWithinRadius(
 pub fn aoePriority(target_count: u32, base_priority: u32) u32 {
     if (target_count == 0) return 0;
     return base_priority + @intFromBool(target_count >= 2);
+}
+
+/// Build a one-option AI list — the common case where a skill has a single
+/// best cast (the focus-fire pick, a self-cast buff, the best landing
+/// tile). Skills with genuinely competing casts (e.g. Daze's two target
+/// classes) build their own slice.
+pub fn singleOption(allocator: std.mem.Allocator, option: AiOption) []const AiOption {
+    return allocator.dupe(AiOption, &.{option}) catch @panic("failed to allocate AI option");
 }
 
 /// Empty walkable tiles within `range` (Chebyshev) of the caster — valid

@@ -705,19 +705,19 @@ combat-log UI rendering + replay-viewer UI still TODO)
   right tiebreak (lowest entity_index / first slot); document it with a comment
   rather than restructuring.
 - **AI skill target selection — focus-fire.** Every hostile-targeting
-  single-target offensive skill's `selectTarget` ranks candidates by the
-  focus-fire tail: LOWEST current health, then Chebyshev distance to the
-  caster, then `entity_index` (total order). Implemented once in
-  `skills/helpers.zig` and shared by every attack skill; two skills get a
-  preference key IN FRONT of the same tail: knockback skills prefer a
-  target the push will collide (`knockbackTarget`), stun skills prefer an
-  unstunned target (`stunTarget` — see Architecture, the stun rule).
-  `nearestTarget` remains only for the non-attack exceptions (Swap —
-  swapping with the nearest enemy is the sensible tactical read). Rationale:
-  focus-fire kills wounded enemies sooner than spreading damage. (Barely
-  observable with today's single-player hostile sets — enemy casters
-  usually see only the player — but it is the convention new skills follow
-  and matters once multi-entity teams exist.)
+  single-target offensive skill's AI OPTIONS pick the hostile with the
+  LOWEST current health; ties break by Chebyshev distance to the caster,
+  then `entity_index` (total order). Implemented once in
+  `skills/helpers.zig` (`weakestTarget`) and reused by every attack skill;
+  two skills get a preference key IN FRONT of the same tail: knockback
+  skills prefer a target the push will collide (`knockbackTarget`), stun
+  skills prefer an unstunned target (`stunTarget` — see Architecture, the
+  stun rule). `nearestTarget` remains only for the non-attack exceptions
+  (Swap — swapping with the nearest enemy is the sensible tactical read).
+  Rationale: focus-fire kills wounded enemies sooner than spreading
+  damage. (Barely observable with today's single-player hostile sets —
+  enemy casters usually see only the player — but it is the convention
+  new skills follow and matters once multi-entity teams exist.)
 
 ## Input
 
@@ -1730,6 +1730,22 @@ So a clone is a permanent, compounding material factory keyed by mission.
   a longer one replaces it). Stun skills' AI mirrors this: they rate up only
   when an unstunned target is in reach and select unstunned targets first
   (`skills/helpers.zig` `stunTarget`).
+- **AI options (the unified enemy decision surface).** A skill's
+  `ai_options_fn` enumerates its meaningful casts as (target, rating)
+  pairs, best-first — ONE decision instead of the old priority /
+  selectTarget pair, whose summary-vs-argmax split produced documented
+  seams (bash rated "any colliding target" while selection attacked
+  another; flash strike rated one landing tile and landed on another;
+  stab rated off a healthy target it then didn't attack). The handler
+  (`enemy_turn_attack`) collects options across equipped off-cooldown
+  skills, keeps the turn-ending / non-ending pools (by skill_type), and
+  picks `(priority desc, option order, slot order)` — options arrive
+  best-first so the ordering conventions (focus-fire tail, collide /
+  unstunned preference keys, the AoE bump) live in the emission order.
+  Only the enemy AI consumes this — the player path
+  (getValidTargets/player_prepare_skill/use_skill + legality validation)
+  is untouched. `target` is exactly what gets passed to useSkill (null =
+  self-cast / self-centered; flash strike's target is its landing tile).
 - **AI threat model (defensive-skill evaluation).** `Skill.deals_damage`
   (a required field on every skill definition) marks whether useSkill hurts
   anything. `skills/threat.zig` turns that into reach math:

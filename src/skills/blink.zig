@@ -25,8 +25,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = 3,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -44,28 +43,26 @@ fn getValidTargets(
 
 /// AI priority (cantrip, competes only with other non-turn-ending skills):
 /// 0 if on cooldown, else 1.
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
-    const caster = level.entities[caster_index];
-    if (caster.skill_cooldowns.get(.blink) > 0) return 0;
-    return 1;
-}
-
-/// AI target selection: the empty tile closest to a hostile (blink toward the
-/// nearest opponent).
-fn selectTarget(
+/// AI options: blink to the empty tile closest to a hostile (closing the
+/// gap) at rating 1 — the cantrip's repositioning value. With no hostiles
+/// (or no empty tiles) nothing is offered; the old pair could choose
+/// Blink and then cast it into a no-op.
+fn aiOptions(
     caster_index: u32,
-    valid_targets: ?[]const Vector2,
     game_state: GameState,
-) ?Vector2 {
-    const targets = valid_targets orelse return null;
-    if (targets.len == 0) return null;
-    const level = game_state.level orelse return null;
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
+    if (caster.skill_cooldowns.get(.blink) > 0) return &.{};
+    const valid_targets = getValidTargets(caster_index, game_state, allocator);
+    const candidates = valid_targets orelse return &.{};
+    if (candidates.len == 0) return &.{};
 
     var best: ?Vector2 = null;
     var best_distance: i32 = std.math.maxInt(i32);
-    for (targets) |candidate| {
+    for (candidates) |candidate| {
         var nearest_hostile: i32 = std.math.maxInt(i32);
         for (level.entities, 0..) |entity, entity_index| {
             if (entity_index == caster_index) continue;
@@ -79,9 +76,13 @@ fn selectTarget(
             best = candidate;
         }
     }
-    return best;
+
+    const target = best orelse return &.{};
+    return helpers.singleOption(allocator, .{ .target = target, .priority = 1 });
 }
 
+/// AI target selection: the empty tile closest to a hostile (blink toward the
+/// nearest opponent).
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,

@@ -174,6 +174,15 @@ lands with AI priority + target selection + tests in `src/skill_tests.zig`.
 Targeting/damage are done (part of the port — those old TODO lines were
 stale).
 
+- [x] **Unified AI options (priority + selectTarget → ai_options_fn).**
+      One decision instead of two: each skill enumerates its meaningful
+      casts as (target, rating) pairs best-first; the handler picks
+      (priority, option order, slot order). The four documented seams are
+      closed: stab rates its actual pick (not any-healthy), daze emits
+      unstunned-3 / momentful-2 classes with focus-fire picks, flash
+      strike's option target IS the max-hit landing tile, blink no longer
+      casts into a no-op. Design: DESIGN → Architecture (AI options);
+      interface + PORTING NOTE in skill.zig. History in DONE.md.
 - [x] **AoE priority bump (the drain interjection)** — every radius skill
       rates +1 when two or more hostiles would be hit
       (helpers.aoePriority + hostileCountWithinRadius). Retrofitted:

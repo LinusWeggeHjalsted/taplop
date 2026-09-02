@@ -25,8 +25,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = 3,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -42,27 +41,22 @@ fn getValidTargets(
 }
 
 /// AI priority (cantrip): 0 if on cooldown or no target in range, else 1.
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
-    const caster = level.entities[caster_index];
-    if (caster.skill_cooldowns.get(.swap) > 0) return 0;
-
-    const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
-    for (level.entities, 0..) |entity, entity_index| {
-        if (entity_index == caster_index) continue;
-        if (entity.current_health == 0) continue;
-        if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) <= range) return 1;
-    }
-    return 0;
-}
-
-fn selectTarget(
+/// AI options: the NEAREST hostile (not focus-fire — swapping with the
+/// nearest enemy is the sensible tactical read; helpers.nearestTarget) at
+/// rating 1.
+fn aiOptions(
     caster_index: u32,
-    valid_targets: ?[]const Vector2,
     game_state: GameState,
-) ?Vector2 {
-    return helpers.nearestTarget(caster_index, valid_targets, game_state);
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
+    const caster = level.entities[caster_index];
+    if (caster.skill_cooldowns.get(.swap) > 0) return &.{};
+
+    const valid_targets = getValidTargets(caster_index, game_state, allocator);
+    const target = helpers.nearestTarget(caster_index, valid_targets, game_state) orelse return &.{};
+    return helpers.singleOption(allocator, .{ .target = target, .priority = 1 });
 }
 
 fn playerPrepareSkill(

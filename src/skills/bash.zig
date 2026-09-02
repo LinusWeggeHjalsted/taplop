@@ -26,8 +26,7 @@ pub const skill = Skill{
     .stun_duration = null,
     .cooldown = null,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -47,40 +46,29 @@ fn getValidTargets(
 /// adds damage), else 2. Target-agnostic by design: the collide preference
 /// is reflected per-target by selectTarget (knockbackTarget), so priority
 /// and selection stay in sync without coupling them.
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: the knockback pick (collide-preferring, then focus-fire —
+/// helpers.knockbackTarget). Rated on the PICK: 3 when that target's push
+/// would collide (the collision adds damage), else 2.
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
-    if (caster.skill_cooldowns.get(.bash) > 0) return 0;
-
-    const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
+    if (caster.skill_cooldowns.get(.bash) > 0) return &.{};
     const push_distance = caster.getEffectiveDistance(skill.distance.?);
 
-    var found_target = false;
-    for (level.entities, 0..) |entity, entity_index| {
-        if (entity_index == caster_index) continue;
-        if (entity.current_health == 0) continue;
-        if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) > range) continue;
-        found_target = true;
-        if (helpers.knockbackWouldCollide(caster_index, @intCast(entity_index), push_distance, game_state)) return 3;
-    }
-    if (!found_target) return 0;
-    return 2;
+    const valid_targets = getValidTargets(caster_index, game_state, allocator);
+    const target = helpers.knockbackTarget(caster_index, valid_targets, push_distance, game_state) orelse return &.{};
+    const defender_index = helpers.hostileEntityAt(caster_index, target, game_state) orelse return &.{};
+    const rating: u32 = if (helpers.knockbackWouldCollide(caster_index, defender_index, push_distance, game_state)) 3 else 2;
+    return helpers.singleOption(allocator, .{ .target = target, .priority = rating });
 }
 
 /// AI target selection for the knockback: prefer a target the push will
 /// collide, then the focus-fire order (helpers.knockbackTarget).
-fn selectTarget(
-    caster_index: u32,
-    valid_targets: ?[]const Vector2,
-    game_state: GameState,
-) ?Vector2 {
-    const level = game_state.level orelse return null;
-    const caster = level.entities[caster_index];
-    const push_distance = caster.getEffectiveDistance(skill.distance.?);
-    return helpers.knockbackTarget(caster_index, valid_targets, push_distance, game_state);
-}
-
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,

@@ -25,8 +25,7 @@ pub const skill = Skill{
     .stun_duration = 1,
     .cooldown = 3,
     .get_valid_targets_fn = &getValidTargets,
-    .priority_fn = &priority,
-    .select_target_fn = &selectTarget,
+    .ai_options_fn = &aiOptions,
     .player_prepare_skill_fn = &playerPrepareSkill,
     .use_skill_fn = &useSkill,
 };
@@ -45,35 +44,29 @@ fn getValidTargets(
 /// target is unstunned (full stun + attack value); 2 when only stunned
 /// targets remain (the attack still pays, the stun does not — stuns take
 /// the max, never stack).
-fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
-    const level = game_state.level orelse return 0;
+/// AI options: the stun pick (unstunned-preferred, then focus-fire —
+/// helpers.stunTarget). Rated on the PICK: 3 when it is unstunned (the
+/// stun pays in full — stuns take the max, never stack), else 2 (the
+/// attack still pays).
+fn aiOptions(
+    caster_index: u32,
+    game_state: GameState,
+    _: types.WeaponTypeDefinitions,
+    allocator: std.mem.Allocator,
+) []const skill_mod.AiOption {
+    const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
-    if (caster.skill_cooldowns.get(.cleave) > 0) return 0;
+    if (caster.skill_cooldowns.get(.cleave) > 0) return &.{};
 
-    const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
-    var found_target = false;
-    for (level.entities, 0..) |entity, entity_index| {
-        if (entity_index == caster_index) continue;
-        if (entity.current_health == 0) continue;
-        if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) > range) continue;
-        found_target = true;
-        if (entity.stun_duration == 0) return 3;
-    }
-    if (!found_target) return 0;
-    return 2;
+    const valid_targets = getValidTargets(caster_index, game_state, allocator);
+    const target = helpers.stunTarget(caster_index, valid_targets, game_state) orelse return &.{};
+    const defender_index = helpers.hostileEntityAt(caster_index, target, game_state) orelse return &.{};
+    const rating: u32 = if (level.entities[defender_index].stun_duration == 0) 3 else 2;
+    return helpers.singleOption(allocator, .{ .target = target, .priority = rating });
 }
 
 /// AI target selection for the stun: prefer an unstunned target, then the
 /// focus-fire order (helpers.stunTarget).
-fn selectTarget(
-    caster_index: u32,
-    valid_targets: ?[]const Vector2,
-    game_state: GameState,
-) ?Vector2 {
-    return helpers.stunTarget(caster_index, valid_targets, game_state);
-}
-
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,
