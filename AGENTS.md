@@ -379,24 +379,29 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (`writeEventLog`/`loadEventLog`/`SessionLog`), comptime-generic over the
   `Event` union. See DESIGN → Logging & Replay.
 - `src/functions.zig` — pathfinding (A*), chebyshevDistance, helpers
-- `src/ui.zig` — facade over `src/ui/` + the panel/overlay builders not
-  yet moved out (tooltips, bottom bar, editor chrome/inspector/pickers,
-  in-game middle panels, menus/screens)
+- `src/ui.zig` — the facade: re-exports every pub symbol of `src/ui/` so
+  consumers keep `ui.X` (see DESIGN → UI Framework)
 - `src/ui/element.zig` — the UiElement union + variants, Rect algebra
-  (Row/Grid), layout constants, FontMetrics, hit-testing
+  (Row/Grid), layout constants, FontMetrics, hit-testing, wrapRow
 - `src/ui/state.zig` — UiState + drag/click/marquee/picker-target types
 - `src/ui/text_input.zig` — the text-field widget core + routing
 - `src/ui/tooltip.zig` — tooltip placement + content builders
-  (buildTooltip/buildSkillTooltip/buildItemTooltip, placeTooltip)
-- `src/ui/emit.zig` — shared builder primitives (panel headers, icon/
-  panel/skill buttons, number labels, skillIconSpriteId)
-- `src/ui/editor_chrome.zig` — editor tool palette (bottom bar), level
-  tabs, Test/Validate primary actions, palette group math
+- `src/ui/emit.zig` — shared builder primitives (buttons/headers/number
+  labels, sprite-id resolution, material icons)
+- `src/ui/editor_shell.zig` — the editor's always-present structural UI:
+  the tool palette (bottom bar), level tabs, Test/Validate primary
+  actions, palette group math
 - `src/ui/editor_inspector.zig` — buildEditorInspectorPanel +
-- `src/ui/editor_pickers.zig` — the centered pickers (skill / sprite /
-  theme / footprint editor) + the official sprite tables
   buildEditorMetadataSidebar, the inspector target inference, the field
   emitters, textEditPressProceeds
+- `src/ui/editor_pickers.zig` — the centered pickers (skill / sprite /
+  theme / footprint editor) + the official sprite tables
+- `src/ui/bottom_bar.zig` — the in-game bottom bar
+- `src/ui/panels.zig` — in-game middle panels (inventory/gear/skills/
+  entity inspect) + slot-content support
+- `src/ui/screens.zig` — error popup, top bar, mission complete/fail
+- `src/ui/menus.zig` — options/main menu, load-save + mission browsers,
+  credits, settings
 - `src/input.zig` — input pipeline, translateInput, bindings
 - `src/combat_log.zig` — combat-log projection (projectCombatLog + combatLogTier)
 - `src/file_source.zig` — unified file I/O (FileSource: embedded map +

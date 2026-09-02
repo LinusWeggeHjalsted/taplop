@@ -3,7 +3,7 @@
 //! FontMetrics, hit-testing), state.zig (UiState + drag/click/marquee
 //! types), text_input.zig (the text-field widget), tooltip.zig
 //! (placement + content builders), emit.zig (shared builder primitives),
-//! editor_chrome/editor_inspector/editor_pickers.zig (the editor UI),
+//! editor_shell/editor_inspector/editor_pickers.zig (the editor UI),
 //! bottom_bar/panels/screens/menus.zig (the in-game surfaces). The
 //! re-exports below keep `ui.X` working for every consumer. See DESIGN →
 //! UI Framework.
@@ -13,7 +13,7 @@ const ui_state = @import("ui/state.zig");
 const ui_text_input = @import("ui/text_input.zig");
 const ui_tooltip = @import("ui/tooltip.zig");
 const ui_emit = @import("ui/emit.zig");
-const ui_editor_chrome = @import("ui/editor_chrome.zig");
+const ui_editor_shell = @import("ui/editor_shell.zig");
 const ui_editor_inspector = @import("ui/editor_inspector.zig");
 const ui_editor_pickers = @import("ui/editor_pickers.zig");
 const ui_bottom_bar = @import("ui/bottom_bar.zig");
@@ -149,21 +149,21 @@ pub const materialCount = ui_emit.materialCount;
 pub const emitMaterialIcons = ui_emit.emitMaterialIcons;
 pub const itemIconSpriteId = ui_emit.itemIconSpriteId;
 pub const effectIconSpriteId = ui_emit.effectIconSpriteId;
-pub const editor_entity_frame_width = ui_editor_chrome.editor_entity_frame_width;
-pub const editor_entity_frame_height = ui_editor_chrome.editor_entity_frame_height;
-pub const tile_highlight_frame_size = ui_editor_chrome.tile_highlight_frame_size;
-pub const editor_group_header_font_size = ui_editor_chrome.editor_group_header_font_size;
-pub const editor_header_strip_height = ui_editor_chrome.editor_header_strip_height;
-pub const editor_plus_size = ui_editor_chrome.editor_plus_size;
-pub const editor_palette_max_tools = ui_editor_chrome.editor_palette_max_tools;
-pub const editorPaletteGroupSize = ui_editor_chrome.editorPaletteGroupSize;
-pub const editorPaletteGroupAt = ui_editor_chrome.editorPaletteGroupAt;
-pub const scaleToFit = ui_editor_chrome.scaleToFit;
-pub const buildEditorLevelTabs = ui_editor_chrome.buildEditorLevelTabs;
-pub const editor_primary_actions_width = ui_editor_chrome.editor_primary_actions_width;
-pub const editorLevelTabScrollRegion = ui_editor_chrome.editorLevelTabScrollRegion;
-pub const buildEditorPrimaryActions = ui_editor_chrome.buildEditorPrimaryActions;
-pub const buildEditorBottomBar = ui_editor_chrome.buildEditorBottomBar;
+pub const editor_entity_frame_width = ui_editor_shell.editor_entity_frame_width;
+pub const editor_entity_frame_height = ui_editor_shell.editor_entity_frame_height;
+pub const tile_highlight_frame_size = ui_editor_shell.tile_highlight_frame_size;
+pub const editor_group_header_font_size = ui_editor_shell.editor_group_header_font_size;
+pub const editor_header_strip_height = ui_editor_shell.editor_header_strip_height;
+pub const editor_plus_size = ui_editor_shell.editor_plus_size;
+pub const editor_palette_max_tools = ui_editor_shell.editor_palette_max_tools;
+pub const editorPaletteGroupSize = ui_editor_shell.editorPaletteGroupSize;
+pub const editorPaletteGroupAt = ui_editor_shell.editorPaletteGroupAt;
+pub const scaleToFit = ui_editor_shell.scaleToFit;
+pub const buildEditorLevelTabs = ui_editor_shell.buildEditorLevelTabs;
+pub const editor_primary_actions_width = ui_editor_shell.editor_primary_actions_width;
+pub const editorLevelTabScrollRegion = ui_editor_shell.editorLevelTabScrollRegion;
+pub const buildEditorPrimaryActions = ui_editor_shell.buildEditorPrimaryActions;
+pub const buildEditorBottomBar = ui_editor_shell.buildEditorBottomBar;
 pub const editor_inspector_width = ui_editor_inspector.editor_inspector_width;
 pub const editor_inventory_slots_per_row = ui_editor_inspector.editor_inventory_slots_per_row;
 pub const editor_inventory_row_count = ui_editor_inspector.editor_inventory_row_count;

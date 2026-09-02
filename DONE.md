@@ -9397,7 +9397,9 @@ call sites unchanged. Six slices, one commit each, `scripts/test.sh` green:
   the positive/negative comparison colors.
 - **emit.zig** (535) — shared builder primitives + sprite-id resolution
   (skillIconSpriteId/itemIconSpriteId/effectIconSpriteId) + material icons.
-- **editor_chrome.zig** (1,676) — tool palette, level tabs, primary
+- **editor_chrome.zig** (1,676 — since renamed
+  `editor_shell.zig`; same session, the author preferred "shell" over
+  "chrome") — tool palette, level tabs, primary
   actions, palette group math.
 - **editor_inspector.zig** (4,649) — the inspector + metadata sidebar +
   field emitters + target inference + M2 arbitration (+ ~1,700 lines of

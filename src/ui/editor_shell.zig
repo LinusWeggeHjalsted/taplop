@@ -1,4 +1,4 @@
-//! Editor chrome: the tool palette (bottom bar with fixed tools +
+//! Editor shell: the tool palette (bottom bar with fixed tools +
 //! palette groups + add-new "+" cells), the level tab row, and the
 //! Test/Validate primary actions — plus the shared editor layout
 //! constants and the palette group math used by the input-side wheel
