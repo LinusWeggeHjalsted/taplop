@@ -1375,15 +1375,71 @@ multipliers, computed at read time (not stored):
 Ceil (round up) so a medal target is always at least 1 turn more than the
 faster tier (very low author times can make tiers collide — accepted edge
 case). Multipliers live as constants in the file that uses them (the browser
-UI / mission-complete screen, when those land). The author time itself lives
-in the **validation replay file's metadata** (not mission.txt — keeps
-mission.txt pure authored config; the author time is result data tied to the
-replay that proved it). Medal derivation is a pure function of author_turns,
-so the browser/mission-complete derive at display time. A mission with no
-validation replay shows "unvalidated" (no medals). The validation replay
-format is the session-log format + reconstruction cache (`file_format_version`
-2), not yet built — so `listMissions` shows "unvalidated" for all
-missions until it lands.
+UI / mission-complete screen, when those land). The author time is DERIVED
+from the replay's events at read time (count the player's `turn_end`s —
+see Validation replay below), never stored anywhere, so it can't drift
+from the truth of the replay; the derived count must equal the
+replay-reproduced `Mission.turns_spent` (test-asserted). Medal derivation
+is a pure function of author_turns, so the browser/mission-complete
+derive at display time. A mission with no validation replay — or one
+whose content hash no longer matches the mission — shows "unvalidated"
+(no medals).
+
+### Validation replay (the mission-dir artifact + personal best)
+
+The validation replay is a session-log-format file at
+`<mission dir>/validation_replay.txt`, written by the `end_validation`
+success handler as a `!replaying`-gated side effect (the `save_game`
+class — it has a recorded event, so live-only by the standard gate; the
+dir comes from `current.mission.?.path`, no session state at write time).
+See DESIGN → Level Editor (playtest/validate framing + the exit guard)
+for the run-side design.
+
+- **The slice = `event_history` from the LAST `player_start_validation`
+  through the final `end_validation{success=true}`.** Because the
+  validate-restart re-entry rides the ORCHESTRATOR (not the machinery
+  event), every attempt in the linear stream begins with a top-level,
+  seedable player action — so "the last one" is the final attempt's
+  start, and restarts are excluded BY CONSTRUCTION: any restart inside a
+  candidate slice would have produced a later `player_start_validation`,
+  which would then be the slice start. No synthetic events, no log
+  editing — the file is a verbatim contiguous slice of `event_history`.
+  Restarting is a clean boundary precisely because `start_validation`
+  needs no prior state (it reads everything from files): a fresh-state
+  reconstruction of the final attempt ≡ the live re-entry.
+- **Self-contained given the mission files.** Reconstruction = fresh
+  state, seed the slice's events; every top-level event passes the
+  two-layer gates (`isPlayerAction` + `validatePlayerAction`) as-is —
+  the `player_start_validation` legality arm is "no active
+  level/mission", which a fresh state satisfies. The reconstruction
+  cache is NOT embedded in the file: the mission files always ship
+  alongside the replay (the mission dir, the export zip, the server
+  upload), and the metadata `content_hash` guards version skew (replay
+  from content v1 + mission v2 → hash mismatch → "unvalidated").
+  Session-log `file_format_version` 2 cache serialization stays what it
+  already was — the plan for general session-log sharing — unchanged by
+  this.
+- **Turns are DERIVED, never stored** (see Turn counters above): count
+  the slice's `turn_end{entity_index = 0}` events
+  (`validation_replay.deriveValidationTurns`). The future server-side
+  check reuses exactly this machinery: run the slice through
+  `reconstructFromEventLog` headlessly (the test build already is
+  headless — the crown test is the client-side prototype of the server
+  check) and read `turns_spent` off the reconstructed state.
+- **Personal-best overwrite guard** (the clone auto-save pattern —
+  auto-write on strictly-better, else offer manual overwrite): at
+  `end_validation` success, build the new replay bytes + derive the new
+  turns, then read the existing `validation_replay.txt`. Auto-WRITE when
+  the old file is absent/unparseable, its content hash no longer matches
+  the mission (an earlier mission version — the old replay certifies
+  different content), or the new run is strictly faster (ties keep the
+  old file — first-validated wins). Otherwise KEEP the old file, stash
+  the new bytes on SessionState + set an overwrite-offered flag → the
+  validation stats screen shows an Overwrite Replay button that writes
+  the STASHED bytes (not a re-slice of `event_history` — the stash stays
+  valid across later editor actions or undo that could trim the
+  timeline). The decision is a pure helper
+  (`validation_replay.replayOverwriteDecision`), directly tested.
 
 ### Balance bounds (parse-time, warn + clamp)
 
@@ -1946,20 +2002,21 @@ placement, runtime fields reset — EXCEPT the player's INVENTORY, which is
 loadout data (imported or authored), not a combat-runtime field: entity 0
 keeps `player_def.template.inventory`), copies `editor.mission` → `current.mission`
 (so gameplay handlers read unmodified), preserves the editor mode (only flips
-to `.playtest` when entering from `.edit`, so validate's next-level
-continuation via `start_playtest` stays `.validate`), transitions to `.level`,
+to `.playtest` when entering from `.edit`), transitions to `.level`,
 and pushes `pushGameplayStartEvents(sync_player=false)` — **the player sync is
 skipped** because the player is already fully instantiated from `player_def`
 (normal gameplay's `build_player_from_data` would clobber it with the
 campaign's PlayerData). **Playtest player_data (dormancy).** In-level
 events (`use_skill_tome`, skill-tome salvage) read + mutate
 `current.player_data` DIRECTLY, so a run can't share the session's real
-data: on ENTER (only from `.edit` — a validation run chains later levels
-via `start_playtest` in `.validate` mode, and re-backing-up would capture
-the run's own data) the real data is backed up onto the Editor
+data: on ENTER (only at `start_playtest` from `.edit` and at
+`start_validation` — the chained `start_level`s of a validation run don't
+touch the backup, and the restart re-entry's fresh `start_validation`
+re-backs-up AFTER the inline teardown restored the real data) the real
+data is backed up onto the Editor
 (`Editor.pre_playtest_player_data`, on the undo timeline) and the run's
-is BUILT from `player_def`'s loadout — the `build_player_from_data` field
-set (name, gear, inventory, utility skills) — with `learned_skills` =
+is BUILT from the loadout — `player_def`'s for playtest, the SAVED
+`player.txt`'s for validation — via
 EVERY utility skill (implied, never authored in player.txt): the editor
 player knows everything, so tome pickups read already-learned and any
 learned-gated path is permissive. `end_playtest` / `end_validation`
@@ -1967,11 +2024,29 @@ restore the backup (null = the fresh-session default) and clear it.
 `end_playtest` / `end_validation` discard
 `current.level` + `current.mission` (discard semantics — playtest/validate
 never write back to the editor's levels) and restore `screen = .editor`,
-`mode = .edit`. Validation is the same shape but starts at level 1 and forces
-a full playthrough; its per-level continuation is "next `start_playtest` from
-`editor.levels` or `end_validation`" (a restart continuation re-runs the
-whole mission from level 1 with fresh run data; an exit continuation
-aborts with `end_validation{success=false}` — see the exit guard below).
+`mode = .edit`. **Playtest and validation DIVERGE in their run source**
+(settled with the validation-replay design — DESIGN → Custom Missions &
+Online Services → Validation replay): playtest instantiates from the LIVE
+editor memory (quick iteration on the draft — the `start_playtest` path
+above, unchanged); validation runs the SAVED ARTIFACT.
+`player_start_validation` carries `mission_path` — the input layer saves
+the mission first (the editor-save flow; a failed save surfaces its popup
+and aborts without starting) and pushes the saved dir's path.
+`start_validation` is the `start_mission` shape: it reads `mission.txt` +
+`player.txt` from that dir via the reconstruction cache, builds the run's
+player data from the FILE loadout (`buildPlaytestPlayerData`,
+all-skills-learned), sets `current.mission` from the files, and pushes
+`start_level{path, 1}`. The per-level continuation is the campaign's own
+next-`start_level` chaining (turns accumulate across levels on
+`current.mission`, exactly like campaign play); the last level pushes
+`end_validation{success=true}` instead of the `end_mission` cascade.
+`end_validation` has a null-editor branch: live (editor present) it
+restores + returns to `.editor`; in cross-session replay of a validation
+replay there is no editor — restore nothing, transition to the main menu.
+Validation certifies the shipped FILES, not the editor memory: the save's
+bounding-box translation, palette dedup, and any writer bug make file ≠
+memory, so running from files doubles as a round-trip test of the writer
+(a save bug fails validation before upload).
 
 **Exit guard (the minimal editor-aware seam).** `end_level` checks
 `current.editor`. In `.playtest`: a RESTART continuation re-runs the level
@@ -1981,11 +2056,15 @@ so an `end_playtest` + queued re-entry pair can't ride the stack) followed
 by a fresh `start_playtest` on the same level, which takes the normal
 enter-from-edit path (backup + rebuild from `player_def`); any other exit
 (natural completion or Exit Playtest/Validation) pushes `end_playtest`. In
-`.validate`: restart does the same inline teardown + a fresh
-`start_validation` from level 1; an Exit Mission continuation ABORTS the
-run (`end_validation{success=false}` — the future validation-replay flow
-only cares about successful runs); the default continuation pushes the
-next `start_playtest` or `end_validation{success=true}`. In BOTH modes an
+`.validate`: restart does the same inline teardown + re-entry via the
+ORCHESTRATOR `player_start_validation{mission_path}` (not the machinery
+event — every attempt must begin with a seedable top-level player action
+for the validation-replay slice; see DESIGN → Custom Missions & Online
+Services → Validation replay); an Exit Mission continuation ABORTS the
+run (`end_validation{success=false}` — only successful runs write a
+replay); the default continuation is the campaign's own
+next-`start_level` push (file-based, cache-read) or, on the last level,
+`end_validation{success=true}`. In BOTH modes an
 Exit-to-Main-Menu continuation tears down inline (same transitionScreen
 constraint — and the restore must precede `close_editor`, whose scope swap
 discards the Editor carrying the backup) and chains `close_editor`: the

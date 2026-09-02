@@ -9455,3 +9455,51 @@ compiler-driven rewiring, one commit, tests green). input_handlers.zig went
 
 Comment references in zip_writer/zip_reader/types.zig re-pointed at
 editor/mission_io.zig.
+
+## Validation replay: slice 1 — pure machinery (validation_replay.zig)
+
+The first slice of the validation-replay design (settled this session —
+see DESIGN → Custom Missions & Online Services → Validation replay + the
+amended DESIGN → Level Editor framing/exit-guard paragraphs; the full
+slice plan lives in TODO → Level Editor → "Validation replay + file-based
+validation"). Decision recap: validation will run the SAVED artifact
+(the start_mission shape) rather than the in-memory editor, so the replay
+slice is self-contained given the mission files; restarts are cut by
+slicing from the LAST player_start_validation (the validate-restart
+re-entry will ride the orchestrator, not the machinery event, so the last
+one is always the final attempt's start — restarts excluded by
+construction); turns are DERIVED at read time, never stored (supersedes
+the old "author time lives in the replay's metadata" line); the
+personal-best guard auto-writes on absent/unreadable/hash-mismatch/
+strictly-faster and otherwise stashes + offers manual overwrite.
+
+What landed (all pure, no consumers yet — slices 2-5 are the consumers):
+
+- `src/validation_replay.zig`: `loadValidationReplay` (config sections →
+  `ValidationReplay`; bracket checks — first event
+  `player_start_validation`, last `end_validation{success=true}`, ≥2
+  events; requires `mission_uuid` + `content_hash` Metadata keys),
+  `deriveValidationTurns` (count `turn_end{entity_index = 0}` — mirrors
+  the turn_end handler's `mission.turns_spent` increment; equality with
+  the reconstructed state is asserted by the slice-5 crown test),
+  `medalTargets` (integer-form gold/silver/bronze via ceilRatio — the
+  settled ×1.2/×2.0/×5.0 multipliers, incl. the author_turns=1
+  gold==silver collision edge), and `replayOverwriteDecision` (the PB
+  guard as a pure enum decision: write vs keep_offer_overwrite, ties keep
+  the old file — first-validated wins).
+- `session_log.writeEventLogWithMetadata` + `MetadataPair`: the writer
+  gains optional extra Metadata lines (validation replays carry
+  mission_uuid + content_hash); the reader is permissive on unknown
+  Metadata keys (findValue-based, no key whitelist on session logs), so
+  no reader change. `writeEventLog` delegates with an empty slice —
+  same format, generic session logs unaffected.
+- 6 tests: turn derivation (player vs enemy indices), a full
+  write→parse→load→derive round trip, four non-bracket rejections (too
+  short / wrong first / wrong last variant / success=false), the
+  missing-metadata rejection (a plain session log is not a validation
+  replay), the PB decision table (null/hash-mismatch/faster/slower/tie),
+  and medal targets incl. the collision + a non-divisible ceil case.
+
+The module's pub surface has no external consumer yet by design — the
+TODO slices 2-5 (file-based validation, the slice write, the stats
+screen, the crown test) land next and consume it.

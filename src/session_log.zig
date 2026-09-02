@@ -54,11 +54,32 @@ pub const session_log_file_format_version: u32 = 1;
 // them (e.g. highlight_tiles) flatten into one space-separated line; enums via
 // @tagName.
 
+/// One extra Metadata line for a session-log artifact (`name value`, the
+/// same shape as the standard keys). Validation replays carry `mission_uuid`
+/// + `content_hash` this way; the reader ignores unknown Metadata keys, so
+/// generic session logs are unaffected by the extension.
+pub const MetadataPair = struct {
+    name: []const u8,
+    value: []const u8,
+};
+
 /// Serialize an event history (+ a created timestamp) into a session-log file
 /// body. `created` is expected as "YYYYMMDD_HHMMSS" but is written verbatim.
 pub fn writeEventLog(
     event_history: []const Event,
     created: []const u8,
+    allocator: std.mem.Allocator,
+) ![]const u8 {
+    return writeEventLogWithMetadata(event_history, created, &.{}, allocator);
+}
+
+/// writeEventLog with extra Metadata pairs appended after the standard
+/// keys (same file format — the reader is permissive on unknown Metadata
+/// keys). See MetadataPair.
+pub fn writeEventLogWithMetadata(
+    event_history: []const Event,
+    created: []const u8,
+    extra_metadata: []const MetadataPair,
     allocator: std.mem.Allocator,
 ) ![]const u8 {
     var buffer: std.ArrayList(u8) = .empty;
@@ -67,6 +88,9 @@ pub fn writeEventLog(
     try buffer.print(allocator, "file_format_version {d}\n", .{session_log_file_format_version});
     try buffer.print(allocator, "game_version {s}\n", .{build_info.game_version});
     try buffer.print(allocator, "created {s}\n", .{created});
+    for (extra_metadata) |pair| {
+        try buffer.print(allocator, "{s} {s}\n", .{ pair.name, pair.value });
+    }
 
     try buffer.appendSlice(allocator, "\nEventLog\n");
     for (event_history, 0..) |event, index| {

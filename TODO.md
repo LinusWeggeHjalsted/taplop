@@ -850,10 +850,58 @@ paragraph). Remaining work:
   Dropping the keys: remove from the shipped files + the parser
   whitelist (an old file still carrying them would warn — free
   pre-release, official data ships embedded with the exe).
-- Validation result + replay attachment: on successful validation, attach a
-  saved mission replay to the custom mission (next save writes it into the
-  custom mission dir) for re-validation before uploading to the online
-  database. NOT important right now — deferred with online services.
+- **Validation replay + file-based validation** — settled design: DESIGN →
+  Custom Missions & Online Services → Validation replay (the artifact,
+  slicing, personal-best guard) + DESIGN → Level Editor (the
+  playtest/validate framing + exit-guard `.validate` arm). Validation runs
+  the SAVED artifact (save-first, then `start_validation` reads mission.txt
+  + player.txt from the saved dir — the start_mission shape; playtest keeps
+  its in-memory quick-iteration role); the replay file is the final
+  attempt's event slice (restarts excluded by construction via
+  orchestrator re-entry); turns are DERIVED at read time (never stored); a
+  personal-best guard governs overwrites; no ffv-2 cache embedding needed
+  (mission files ship alongside; the content hash guards version skew).
+  Slices:
+  - [x] **1 — pure machinery:** `src/validation_replay.zig` — the structural
+        loader (first event `player_start_validation`, last
+        `end_validation{success=true}`), `deriveValidationTurns` (count the
+        player's `turn_end`s — must equal the replay-reproduced
+        `mission.turns_spent`, asserted in slice 5), the personal-best
+        overwrite decision helper, medal-target derivation, metadata
+        accessors (mission_uuid + content_hash); the session-log writer
+        gains optional extra Metadata pairs. Tests on crafted logs.
+  - [ ] **2 — file-based validation:** the input layer saves before pushing
+        (abort on save failure) + `player_start_validation` gains a
+        `mission_path` payload; `start_validation` reads the saved files via
+        the reconstruction cache + builds the run's player data from the
+        FILE player.txt; the exit-guard validate arm becomes the campaign's
+        own next-`start_level` chaining + ORCHESTRATOR re-entry on restart
+        (`player_start_validation{path}`, not the machinery event — every
+        attempt must begin with a seedable top-level action) +
+        `end_validation{success=true}` on the last level; `end_validation`
+        gains a null-editor branch (cross-session replay → main menu);
+        `validatePlayerAction`'s `player_start_validation` arm relaxes to
+        "no active level/mission".
+  - [ ] **3 — slice write + personal-best guard:** the `end_validation`
+        success handler writes `validation_replay.txt` (a `!replaying`-gated side
+        effect, the save_game class; the dir comes from
+        `current.mission.?.path`; slice = event_history from the LAST
+        `player_start_validation` through itself — scan backwards, verify
+        the scan is unambiguous). The PB decision: auto-write when the old
+        file is absent/unparseable, its content hash no longer matches the
+        mission, or the new run is strictly faster; otherwise keep the old
+        file + stash the new bytes on SessionState + offer manual overwrite
+        (the button writes the STASHED bytes, never a re-slice).
+  - [ ] **4 — validation stats screen:** `end_validation{success=true}`
+        populates `last_completed_mission` + the mission-complete overlay
+        renders over the editor (no clone column — the medal targets column
+        instead; Continue / Validate Again / Overwrite Replay buttons;
+        personal-best line when an old replay exists).
+  - [ ] **5 — crown test:** crafted mission → save → validate → scripted
+        completion → file written → load → cross-session
+        `reconstructFromEventLog` → derived turns == reconstructed
+        `mission.turns_spent`. The client-side prototype of the future
+        server-side check (the test build is headless).
 - Editor autosave: nice-to-have, not need-to-have (explicit save for now).
 - **Editor save-to-disk + export — DONE.** The mission writer
   (writers.writeEditorMission — the pure projection), the save

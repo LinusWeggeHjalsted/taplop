@@ -378,6 +378,10 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
 - `src/session_log.zig` — session-log serializer/deserializer
   (`writeEventLog`/`loadEventLog`/`SessionLog`), comptime-generic over the
   `Event` union. See DESIGN → Logging & Replay.
+- `src/validation_replay.zig` — the validation-replay artifact's pure
+  machinery: structural loader + turn derivation + medal targets + the
+  personal-best overwrite decision. See DESIGN → Custom Missions & Online
+  Services → Validation replay.
 - `src/functions.zig` — pathfinding (A*), chebyshevDistance, helpers
 - `src/ui.zig` — the facade: re-exports every pub symbol of `src/ui/` so
   consumers keep `ui.X` (see DESIGN → UI Framework)
