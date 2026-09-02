@@ -851,6 +851,12 @@ fn buildMiddlePanels(
                 const level = current_state.level orelse continue;
                 if (entity_index >= level.entities.len) continue;
                 const entity = level.entities[entity_index];
+                // A dead target renders no panel: death is derivable from
+                // health == 0 (the mission-fail-overlay precedent — no flag
+                // or event needed), and undo (target alive again) reopens
+                // it for free. The press site gates NEW inspects on alive;
+                // this arm only hides a target that died while inspected.
+                if (entity.current_health == 0) continue;
                 const bounds = Rectangle{
                     .x = cursor_x,
                     .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
@@ -2457,8 +2463,9 @@ fn buildPreparedSkillRadiusOutline(
 /// panel's "Aggro Range" stat row. Same shape as the skill-range outline
 /// (drawn in full, may extend past level edges / over gaps; theme lightest,
 /// unified 8px thickness). Levels only (inspect only opens in levels), any
-/// inspected entity including the player. Pure over SessionState + GameState
-/// reads → replay-safe by construction.
+/// inspected entity including the player, while ALIVE (the panel's
+/// dead-target gate — a dead target shows neither panel nor outline). Pure
+/// over SessionState + GameState reads → replay-safe by construction.
 fn buildInspectedAggroOutline(
     list: *std.ArrayList(types.TileOverlayDrawable),
     allocator: std.mem.Allocator,
@@ -2472,6 +2479,9 @@ fn buildInspectedAggroOutline(
     const entity_index = session.ui_state.inspected_entity_index orelse return;
     if (entity_index >= level.entities.len) return;
     const entity = level.entities[entity_index];
+    // The panel's dead-target gate (see the .entity_inspect view arm): a
+    // dead target shows neither the panel nor its aggro outline.
+    if (entity.current_health == 0) return;
 
     const n: i32 = @intCast(entity.aggro_range);
     const top_left = types.Vector2{ .x = entity.position.x - n, .y = entity.position.y - n };

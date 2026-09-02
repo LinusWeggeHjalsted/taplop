@@ -9805,3 +9805,35 @@ sanity (sleep between missions per the save-test tie discipline); a new
 recency test (png dropped into the OLDER mission bumps it to the front —
 max-across-files, not mission.txt-only); a comparator unit test pinning
 the name tiebreak + mtime-0-last.
+
+## Entity inspect: Momentum row + dead-target handling (view-gated, corpse shadowing fixed)
+
+Three pieces:
+
+- **Momentum stat row** (panels.zig): the inspect stat column's live-
+  combat lead is now Current Health, **Momentum**, Aggro Range (raw
+  `entity.momentum` — no effect modifier exists for momentum itself, it
+  feeds `getEffectiveOutgoingDamage`). Both inspect-panel tests pin the
+  sequence (adjacency, not just presence; count 9→10).
+
+- **Dead target renders no panel** (view.zig): the `.entity_inspect` arm
+  + `buildInspectedAggroOutline` skip when the target's
+  `current_health == 0` — the mission-fail-overlay precedent (death
+  derivable from health, no flag or event), so close-on-death needed no
+  handler change and undo reopens the panel for free. Chosen over the
+  handler-close variant because NO handler in the codebase writes
+  `ui_state` (exclusively the input layer's) — the handler-close would
+  have been the first exception. Known quirk accepted: while the target
+  is dead the panel's open slot lingers invisibly (heals on the next
+  inspect).
+
+- **Corpse shadowing fixed at the press site** (input_gestures.zig): the
+  right-press loop took the FIRST entity on the tile with no health
+  check — but corpses keep their tile (death removes nothing) and living
+  entities can stand on one (dead entities don't block movement), so a
+  lower-index corpse shadowed the living entity standing on it. The loop
+  now skips the dead and keeps scanning: first LIVING entity wins; a
+  tile holding only corpses inspects nothing (and can never open the
+  panel on a dead target, keeping the view-gate coherent). Test: shared
+  tile with lower-index corpse + living entity → the living one; lone
+  corpse tile → pending cleared.

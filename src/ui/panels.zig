@@ -682,13 +682,14 @@ pub fn buildEntityInspectPanel(
     const stats_top = gear_top_y + gear_cell_size + ui_gap;
     const stat_line_height: i32 = gear_stat_font_size + 16;
     // The inspect stat column leads with the entity's live combat state
-    // (current health, aggro range) before the effective gear stats — the
-    // player gear panel shares only the gear-stat tail.
-    const entity_stat_labels = [_][]const u8{ "Current Health", "Aggro Range" } ++ gear_stat_labels;
+    // (current health, momentum, aggro range) before the effective gear
+    // stats — the player gear panel shares only the gear-stat tail.
+    const entity_stat_labels = [_][]const u8{ "Current Health", "Momentum", "Aggro Range" } ++ gear_stat_labels;
     const main_damage = if (entity.main_hand_weapon) |w| entity.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
     const off_damage = if (entity.off_hand_weapon) |w| entity.getEffectiveOutgoingDamage(w.weapon_damage) else 0;
     const stat_values = [_]u32{
         entity.current_health,
+        entity.momentum,
         entity.aggro_range,
         main_damage,
         off_damage,
@@ -1052,6 +1053,8 @@ test "buildEntityInspectPanel: player entity emits skill + gear slots, read-only
     entity.main_hand_weapon = .{ .weapon_type = .sword };
     entity.off_hand_weapon = .{ .weapon_type = .shield };
     entity.equipped_utility_skills = .{ .slice, .stab, null, null, null };
+    entity.current_health = 30;
+    entity.momentum = 4;
 
     const bounds = Rectangle{
         .x = 0,
@@ -1084,6 +1087,30 @@ test "buildEntityInspectPanel: player entity emits skill + gear slots, read-only
         else => {},
     };
     try std.testing.expect(found_skill_frame);
+
+    // The stat column leads with live combat state in order: Current
+    // Health, then Momentum (immediately below it), then Aggro Range,
+    // before the gear-stat tail. Adjacency in emission order pins the
+    // row's position, not just its presence.
+    var stat_lines: [24][]const u8 = undefined;
+    var stat_line_count: usize = 0;
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| {
+            if (stat_line_count == stat_lines.len) @panic("stat-line overflow in test");
+            stat_lines[stat_line_count] = label.text;
+            stat_line_count += 1;
+        },
+        else => {},
+    };
+    var current_health_index: ?usize = null;
+    for (stat_lines[0..stat_line_count], 0..) |line, index| {
+        if (std.mem.startsWith(u8, line, "Current Health ")) current_health_index = index;
+    }
+    try std.testing.expect(current_health_index != null);
+    try std.testing.expectEqualStrings("Momentum 4", stat_lines[current_health_index.? + 1]);
+    try std.testing.expect(
+        std.mem.startsWith(u8, stat_lines[current_health_index.? + 2], "Aggro Range "),
+    );
 }
 
 test "buildEntityInspectPanel: enemy entity uses enemy gradient" {
@@ -1122,9 +1149,10 @@ test "buildEntityInspectPanel: enemy entity uses enemy gradient" {
     var found_enemy_frame = false;
     // The stat column LEADS with the entity's live combat state.
     var found_current_health = false;
+    var found_momentum = false;
     var found_aggro_range = false;
     var stat_lines: usize = 0;
-    var first_stat_lines: [2][]const u8 = undefined;
+    var first_stat_lines: [3][]const u8 = undefined;
     for (elements.items) |element| switch (element) {
         .image => |img| if (std.mem.eql(u8, img.sprite_id, "ui/skill_button")) {
             try std.testing.expectEqual(enemy_color, img.color);
@@ -1135,9 +1163,10 @@ test "buildEntityInspectPanel: enemy entity uses enemy gradient" {
             // (x = 16 + 128); the panel title shares the font size, so gate
             // on position, not just text.
             if (label.screen_position.x == ui_gap + inventory_slot_size and label.font_size == gear_stat_font_size) {
-                if (stat_lines < 2) first_stat_lines[stat_lines] = label.text;
+                if (stat_lines < 3) first_stat_lines[stat_lines] = label.text;
                 stat_lines += 1;
                 if (std.mem.eql(u8, label.text, "Current Health 7")) found_current_health = true;
+                if (std.mem.eql(u8, label.text, "Momentum 0")) found_momentum = true;
                 if (std.mem.eql(u8, label.text, "Aggro Range 5")) found_aggro_range = true;
             }
         },
@@ -1145,11 +1174,13 @@ test "buildEntityInspectPanel: enemy entity uses enemy gradient" {
     };
     try std.testing.expect(found_enemy_frame);
     try std.testing.expect(found_current_health);
+    try std.testing.expect(found_momentum);
     try std.testing.expect(found_aggro_range);
-    // The two live-state rows lead the column (before the gear stats).
-    try std.testing.expect(stat_lines == 9);
+    // The three live-state rows lead the column (before the gear stats).
+    try std.testing.expect(stat_lines == 10);
     try std.testing.expectEqualStrings("Current Health 7", first_stat_lines[0]);
-    try std.testing.expectEqualStrings("Aggro Range 5", first_stat_lines[1]);
+    try std.testing.expectEqualStrings("Momentum 0", first_stat_lines[1]);
+    try std.testing.expectEqualStrings("Aggro Range 5", first_stat_lines[2]);
 }
 
 test "buildEntityInspectPanel: cooldown overlay + number when skill on cooldown" {

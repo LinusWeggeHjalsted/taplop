@@ -629,10 +629,10 @@ pub fn handleRightClickInspect(
         return;
     };
 
-    // Right-press: if over a world tile (not blocking UI) with an entity,
-    // record a pending right-click. Over blocking UI or an empty tile, clear
-    // any stale pending (a right-click on a panel or empty ground inspects
-    // nothing).
+    // Right-press: if over a world tile (not blocking UI) with a LIVING
+    // entity, record a pending right-click. Over blocking UI, an empty
+    // tile, or a tile holding only corpses, clear any stale pending (a
+    // right-click on a panel, empty ground, or a corpse inspects nothing).
     if (pointer.right_pressed) {
         if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
             clearPendingRightClick(ui_state, .inspect);
@@ -644,7 +644,13 @@ pub fn handleRightClickInspect(
             camera_zoom,
             viewport,
         );
+        // First ALIVE entity on the tile wins: corpses keep their tile
+        // (death removes nothing from the entities array) and living
+        // entities can stand on one (dead entities don't block movement),
+        // so a lower-index corpse must not shadow the living entity on its
+        // tile — skip the dead, keep scanning.
         for (level.entities, 0..) |entity, index| {
+            if (entity.current_health == 0) continue;
             if (entity.position.x == mouse_tile.x and entity.position.y == mouse_tile.y) {
                 ui_state.pending_right_click = .{ .inspect = .{
                     .entity_index = @intCast(index),
@@ -1147,3 +1153,72 @@ test "skillsSlotUnderPointer: true over a learned_skill slot, false elsewhere" {
     try std.testing.expect(!skillsSlotUnderPointer(&elements, .{ .x = 500, .y = 500 }));
 }
 
+
+test "handleRightClickInspect: first LIVING entity on the tile wins; corpse tiles inspect nothing" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    const harness_module = @import("test_harness.zig");
+    var harness = harness_module.Harness.init(backing.allocator());
+
+    // A corpse and a living entity SHARE tile (1,1) — the corpse has the
+    // LOWER index, so a first-match loop would shadow the living one. A
+    // lone corpse sits at (2,2). Entity 0 is a living player elsewhere.
+    var player: types.Entity = .{};
+    player.position = .{ .x = 0, .y = 0 };
+    player.current_health = 30;
+    var corpse: types.Entity = .{};
+    corpse.position = .{ .x = 1, .y = 1 };
+    corpse.current_health = 0;
+    var living: types.Entity = .{};
+    living.position = .{ .x = 1, .y = 1 };
+    living.current_health = 10;
+    var lone_corpse: types.Entity = .{};
+    lone_corpse.position = .{ .x = 2, .y = 2 };
+    lone_corpse.current_health = 0;
+    const entities = [_]types.Entity{ player, corpse, living, lone_corpse };
+    const tiles = [_]types.Vector2{
+        .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 1 }, .{ .x = 2, .y = 2 },
+    };
+    var history = harness.newHistory(harness_module.levelStateWithEntities(
+        backing.allocator(),
+        &entities,
+        &tiles,
+    ));
+
+    // The editor-marquee test's camera math: screen center = tile (0,0),
+    // +256px per tile, zoom 1, reference viewport.
+    const camera = types.Camera{ .position = .{ .x = 128, .y = 128 } };
+    const viewport = input.ViewportSize{ .width = 3840, .height = 2160 };
+    const center = types.ScreenPosition{ .x = 1920, .y = 1080 };
+    const at = struct {
+        fn call(tile: types.Vector2) types.ScreenPosition {
+            return .{ .x = center.x + tile.x * 256, .y = center.y + tile.y * 256 };
+        }
+    }.call;
+
+    // Right-press on the shared tile: the LIVING entity (index 2) wins
+    // over the lower-index corpse on the same tile.
+    handleRightClickInspect(
+        &history,
+        .{ .right_pressed = true, .position = at(.{ .x = 1, .y = 1 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    const shared_pending = history.session.ui_state.pending_right_click.?;
+    try std.testing.expect(shared_pending == .inspect);
+    try std.testing.expectEqual(@as(u32, 2), shared_pending.inspect.entity_index);
+
+    // Right-press on the lone corpse's tile: nothing to inspect — the
+    // stale pending from the press above is cleared.
+    handleRightClickInspect(
+        &history,
+        .{ .right_pressed = true, .position = at(.{ .x = 2, .y = 2 }) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.ui_state.pending_right_click == null);
+}
