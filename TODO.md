@@ -269,8 +269,12 @@ stale).
         largest-component target (focus-fire tail ties), rated
         aoePriority(component, 1) — 1-link chains rate like plain attacks.
         History in DONE.md.
-  - [ ] spell adrenaline surge — reset all target's skill cooldowns +
-        attack per cooldown reset, range 1, cd 5.
+  - [x] spell adrenaline surge — reset the target's on-bar cooldowns
+        (both weapons' full sets incl. swap-available thirds + utility —
+        Entity.onBarSkillIds, shared by handler + rating) + one attack per
+        reset. Machinery event (the reset_weapon_cooldowns precedent —
+        enumeration needs defs); options rate = reset count. Lands with
+        Entity.onBarSkillIds. History in DONE.md.
   - [ ] cantrip burst — AoE attack, radius 1, cd 10.
   - [ ] cantrip meditate — reset each other equipped utility skill
         cooldown, cd 10 (composable directly — utility skills live on the
@@ -287,6 +291,10 @@ stale).
         + end-of-turn heal. NOTE: interceptors are attack-only by design
         (collision damage still lands — the Reflect counterplay rule);
         confirm that's intended here too.
+All five spells done. Tier A remaining: cantrips (burst, meditate,
+accelerate) + enchantments (that which reaches, bull form, that which
+rushes, that which explodes, promise of death, diamond form).
+
 - [ ] **Tier B — small engine additions** (gap → the skills it unlocks):
   - effect-kind classification (enchantment vs curse) → cleanse,
         disenchant

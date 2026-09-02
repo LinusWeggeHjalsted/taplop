@@ -32,6 +32,9 @@ const piston_bolt_skill = @import("skills/piston_bolt.zig");
 const blitz_skill = @import("skills/blitz.zig");
 const chain_lightning_skill = @import("skills/chain_lightning.zig");
 const adrenaline_surge_skill = @import("skills/adrenaline_surge.zig");
+const burst_skill = @import("skills/burst.zig");
+const meditate_skill = @import("skills/meditate.zig");
+const accelerate_skill = @import("skills/accelerate.zig");
 
 const Vector2 = types.Vector2;
 
@@ -1640,4 +1643,87 @@ test "adrenaline surge: useSkill delegates to the machinery event" {
     const surge = result[0].sub_level_event.adrenaline_surge;
     try testing.expectEqual(@as(u32, 0), surge.attacker_index);
     try testing.expectEqual(@as(u32, 1), surge.defender_index);
+}
+
+test "burst: useSkill attacks each hostile in radius with spell damage" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .amulet = .{ .spell_damage = 5 },
+    };
+    const adjacent_a = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const adjacent_b = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+    const beyond = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, adjacent_a, adjacent_b, beyond },
+        &.{},
+    );
+
+    const result = burst_skill.skill.useSkill(0, null, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 2), result.len);
+    for (result) |event| {
+        const attack = event.sub_level_event.attack;
+        try testing.expectEqual(@as(u32, 5), attack.outgoing_damage);
+        try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
+    }
+
+    const options = burst_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+    try testing.expectEqual(@as(u32, 2), options[0].priority); // 1 per target hit
+}
+
+test "meditate: resets each OTHER equipped utility skill, itself excluded" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .equipped_utility_skills = .{ .meditate, .blink, null, .howl, null },
+    };
+    const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
+    setCooldown(game_state, 0, .blink, 2);
+    setCooldown(game_state, 0, .howl, 1);
+    setCooldown(game_state, 0, .meditate, 0); // casting it now
+    setCooldown(game_state, 0, .skewer, 4); // off-bar preserved: untouched
+
+    const result = meditate_skill.skill.useSkill(0, null, game_state, arena.allocator());
+    // Blink + howl reset; meditate itself and the off-bar skewer excluded.
+    try testing.expectEqual(@as(usize, 2), result.len);
+    for (result) |event| {
+        const change = event.sub_level_event.change_cooldown;
+        try testing.expect(change.skill_id == .blink or change.skill_id == .howl);
+        try testing.expect(change.entity_index == 0);
+    }
+
+    const options = meditate_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+    try testing.expectEqual(@as(u32, 2), options[0].priority); // the reset count
+}
+
+test "accelerate: gains 1 momentum per enemy within radius" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const near_a = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 } };
+    const near_b = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 3 } };
+    const far = types.Entity{ .team = 1, .position = .{ .x = 4, .y = 0 } };
+    const ally = types.Entity{ .team = 0, .position = .{ .x = 1, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, near_a, near_b, far, ally },
+        &.{},
+    );
+
+    const result = accelerate_skill.skill.useSkill(0, null, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), result.len);
+    const change = result[0].sub_level_event.change_momentum;
+    try testing.expectEqual(@as(u32, 0), change.entity_index);
+    try testing.expectEqual(@as(i32, 2), change.delta); // two enemies within 3
+
+    const options = accelerate_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+    try testing.expectEqual(@as(u32, 2), options[0].priority); // direct enemy count
 }

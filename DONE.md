@@ -10489,3 +10489,27 @@ skewer's off-bar cd untouched, 3×4 damage; the kill case zeroes cooldowns
 despite death; nothing-ticking no-op), options (count outranks
 focus-fire; the off-bar cd not counted — also caught my test forgetting
 to EQUIP blink, which the count rightly ignored), useSkill delegation.
+
+## Skills: cantrips Burst, Meditate, Accelerate (Tier A slice 12)
+
+Cantrips done. Design note settled on the way: the non-ending pool's
+ratings only ORDER the cantrips/enchantments/curses — enemy_turn_attack
+re-pushes itself after each non-ending cast, so every worthwhile one fires
+before the turn-ender. Ratings there don't gate "whether", just "which
+first".
+
+- Burst: spinblade's shape with spell damage, cantrip (non-ending) — a
+  mini-Worldfire at a tenth of the cooldown. aoePriority(count, 1).
+- Meditate: resets each OTHER equipped utility skill (itself excluded).
+  Simpler than Focus — utility slots live on the entity, so useSkill
+  composes change_cooldown directly (no defs, no machinery event). Rating
+  = the reset count.
+- Accelerate: +1 momentum per enemy within radius 3, one change_momentum
+  of the counted amount (the use_skill handler's universal +1 lands on
+  top, the toss precedent). Rating = direct enemy count (the author's
+  call over my log2-sublinear discounting — pool ordering only).
+
+Tests: burst (radius filter + spell damage + rating 2), meditate (blink +
+  howl reset, itself and an off-bar preserved cooldown excluded, rating =
+  reset count), accelerate (two-of-three enemies counted, ally excluded,
+  delta +2, rating 2).
