@@ -37,9 +37,10 @@ test "utility-skill policy: weapon skills excluded, the rest eligible" {
     try std.testing.expect(!isUtilitySkill(.spinblade));
     try std.testing.expect(isUtilitySkill(.blink));
     try std.testing.expect(isUtilitySkill(.stone_form));
-    // The shipped census: 18 weapon skills, 5 cantrips, 2 enchantments,
-    // 2 spells — 9 eligible today (grows as spells/curses land).
-    try std.testing.expectEqual(@as(usize, 9), utility_skill_ids.len);
+    // No snapshot count — the list grows with every new spell/cantrip/
+    // enchantment/curse, and a hardcoded number was churn on every landing.
+    // The structural coverage (one picker cell per offered skill) lives in
+    // the editor skill-picker test, derived from this same list.
     for (utility_skill_ids) |skill_id| {
         try std.testing.expect(isUtilitySkill(skill_id));
     }

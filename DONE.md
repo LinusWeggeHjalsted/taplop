@@ -10358,3 +10358,16 @@ path and was a genuine second collision), shockwave useSkill (attack+
 knockback pairs, 7/2=3 collision, LIFO order) + full ladder 3/4/5, slam
 retrofit 3/5. Census: second utility-eligible spell → utility_skills 9,
 picker counts 23/10.
+
+## Tests: utility-skill census made structural (no per-skill churn)
+
+Every new spell/cantrip landed broke two snapshot counts (utility_skills
+census + the editor skill-picker's element/button totals) — pure churn
+during the Tier A spree. Fix: derive, don't snapshot. The picker test now
+asserts `5 + 2 * utility_skill_ids.len` elements and
+`1 + utility_skill_ids.len` buttons — the same list the picker iterates,
+so it self-updates per skill while still catching double-emitted or
+dropped cells. The utility_skills census test drops its exact count (its
+policy assertions — weapon exclusion, eligibility, list consistency — are
+the real content) with a comment pointing at the picker test for the
+structural coverage. New skills no longer touch either test.
