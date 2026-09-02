@@ -329,7 +329,9 @@ pub const ValidationCompleteContext = struct {
 /// - VALIDATION (validation != null — the editor's post-run stats screen;
 ///   end_validation populated the info so the overlay renders over the
 ///   editor): "{name} validated" header, a "Validated in N turns — Personal
-///   best: M turns" summary, the author-medal targets column, and Continue
+///   best: M turns" summary, the medal ladder (Author / Gold / Silver /
+///   Bronze — the author's own validated turns crowning the derived
+///   targets), and Continue
 ///   + Validate Again (+ Overwrite Replay while the personal-best guard's
 ///   slower-run stash is on offer). See DESIGN → Custom Missions & Online
 ///   Services → Validation replay.
@@ -453,24 +455,19 @@ pub fn buildMissionComplete(
     //    context. ──
     const material_right = screen.x + screen.width - ui_gap * 4;
     if (validation) |context| {
-        // "Author medals" — the gold/silver/bronze turn targets players
-        // must beat, derived from the author's validated turns at display
-        // time (never stored). See DESIGN → Custom Missions & Online
-        // Services → Turn counters + author medals.
-        const medal_header_text = "Author medals";
-        const medal_header_width = font_metrics.measureSpanWidth(text(medal_header_text), stat_font_size);
-        try elements.append(allocator, .{ .text_label = .{
-            .text = medal_header_text,
-            .screen_position = .{ .x = material_right - medal_header_width, .y = content_y },
-            .font_size = stat_font_size,
-            .blocks_input = false,
-        } });
+        // The medal ladder, Trackmania-style: the Author row is the
+        // author's own validated turns — the SAME value the targets derive
+        // from (the replay file's turns; this run's as the fallback when
+        // no replay landed). Derived at display time, never stored. See
+        // DESIGN → Custom Missions & Online Services → Turn counters +
+        // author medals.
         const medal_lines = [_]struct { label: []const u8, turns: u32 }{
+            .{ .label = "Author", .turns = context.personal_best_turns orelse info.turns_spent },
             .{ .label = "Gold", .turns = context.medal_targets.gold },
             .{ .label = "Silver", .turns = context.medal_targets.silver },
             .{ .label = "Bronze", .turns = context.medal_targets.bronze },
         };
-        var medal_y = content_y + stat_font_size + ui_gap * 2;
+        var medal_y = content_y;
         for (medal_lines) |medal_line| {
             const medal_line_text = try std.fmt.allocPrint(
                 allocator,
@@ -763,6 +760,7 @@ fn missionCompleteDummyTheme() types.ActiveColorTheme {
 const MissionCompleteScan = struct {
     header_validated: bool = false,
     header_completed: bool = false,
+    author_line: bool = false,
     gold_line: bool = false,
     silver_line: bool = false,
     bronze_line: bool = false,
@@ -782,6 +780,7 @@ const MissionCompleteScan = struct {
                 if (std.mem.eql(u8, label.text, "New Mission validated")) found.header_validated = true;
                 if (std.mem.eql(u8, label.text, "New Mission completed")) found.header_completed = true;
                 if (std.mem.eql(u8, label.text, "Author medals")) found.medal_header = true;
+                if (std.mem.eql(u8, label.text, "Author: 3 turns")) found.author_line = true;
                 if (std.mem.eql(u8, label.text, "Gold: 4 turns")) found.gold_line = true;
                 if (std.mem.eql(u8, label.text, "Silver: 6 turns")) found.silver_line = true;
                 if (std.mem.eql(u8, label.text, "Bronze: 15 turns")) found.bronze_line = true;
@@ -824,11 +823,12 @@ test "buildMissionComplete: the validation variant swaps the clone content for m
     );
 
     const found = MissionCompleteScan.scan(elements.items);
-    // The validation surface: "validated" header, the medal column (the
-    // derived targets), Validate Again / Continue / the offered Overwrite
+    // The validation surface: "validated" header, the medal ladder
+    // (Author crowning the derived targets — pb 3 → gold 4 / silver 6 /
+    // bronze 15), Validate Again / Continue / the offered Overwrite
     // Replay.
     try testing.expect(found.header_validated);
-    try testing.expect(found.medal_header);
+    try testing.expect(found.author_line);
     try testing.expect(found.gold_line);
     try testing.expect(found.silver_line);
     try testing.expect(found.bronze_line);
@@ -836,10 +836,11 @@ test "buildMissionComplete: the validation variant swaps the clone content for m
     try testing.expect(found.continue_button);
     try testing.expect(found.overwrite_replay_button);
     // NO campaign content: no clone summary/harvest, no Replay Mission, no
-    // Overwrite Clone.
+    // Overwrite Clone, no leftover column header.
     try testing.expect(!found.header_completed);
     try testing.expect(!found.new_clone_label);
     try testing.expect(!found.harvest_header);
+    try testing.expect(!found.medal_header);
     try testing.expect(!found.replay_mission_button);
     try testing.expect(!found.overwrite_clone_button);
 }
@@ -871,6 +872,7 @@ test "buildMissionComplete: the campaign variant is unchanged (regression)" {
     try testing.expect(found.overwrite_clone_button);
     // NO validation content.
     try testing.expect(!found.header_validated);
+    try testing.expect(!found.author_line);
     try testing.expect(!found.medal_header);
     try testing.expect(!found.validate_again_button);
     try testing.expect(!found.overwrite_replay_button);

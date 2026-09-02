@@ -1447,7 +1447,9 @@ for the run-side design.
   the campaign and validation variants share one surface with
   context-branched content. The validation variant swaps the clone
   summary/harvest for a "Validated in N turns — Personal best: M turns"
-  line + the author-medal targets column, and the buttons are Continue /
+  line + the medal ladder (Author / Gold / Silver / Bronze — the Author
+  row shows the author's own validated turns, the SAME value the targets
+  derive from), and the buttons are Continue /
   Validate Again (the same action as the top-bar Validate button — saves
   first, then re-runs) / Overwrite Replay (while offered — writes the
   stashed bytes; the stash is SELF-DESCRIBING, its first event names the
