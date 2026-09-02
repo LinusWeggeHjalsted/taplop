@@ -17,6 +17,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Skewer",
     .skill_type = .weapon_skill,
+    .deals_damage = true,
     .description = "Attack target for 2x damage with double converted momentum bonus",
     .uses_targeting = true,
     .range = 1,
@@ -44,7 +45,7 @@ fn getValidTargets(
 
 /// AI priority: 0 if on cooldown or no target in range, else 4 (Skewer is the
 /// highest-priority single-target attack — it hits hardest).
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
 

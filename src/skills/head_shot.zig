@@ -16,6 +16,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Head Shot",
     .skill_type = .weapon_skill,
+    .deals_damage = true,
     .description = "Attack and stun target",
     .uses_targeting = true,
     .range = 3,
@@ -45,7 +46,7 @@ fn getValidTargets(
 /// target is unstunned (full stun + attack value); 2 when only stunned
 /// targets remain (the attack still pays, the stun does not — stuns take
 /// the max, never stack).
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.head_shot) > 0) return 0;

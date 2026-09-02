@@ -1730,6 +1730,25 @@ So a clone is a permanent, compounding material factory keyed by mission.
   a longer one replaces it). Stun skills' AI mirrors this: they rate up only
   when an unstunned target is in reach and select unstunned targets first
   (`skills/helpers.zig` `stunTarget`).
+- **AI threat model (defensive-skill evaluation).** `Skill.deals_damage`
+  (a required field on every skill definition) marks whether useSkill hurts
+  anything. `skills/threat.zig` turns that into reach math:
+  `computeMaxDamageRange` = max effective (range ?? radius) over an entity's
+  equipped, off-cooldown, DAMAGING skills; `hostileCanAttackNextTurn` = any
+  hostile that is alive, active, unstunned, and within
+  `effective speed + max damage reach` (Chebyshev — obstacle-blind, the
+  overestimate being the safe direction for a defensive cooldown; a
+  pathfinding refinement is a later polish pass). Defensive skills (Absorb,
+  Reflect) rate on it: 0 unthreatened, 2 threatened, 4 threatened + below
+  half health (the 4 must outrank Heal's 3 on the idol bar — prevention +
+  conversion beats a flat 20% when the hit is coming). `computeMinRange`
+  (moved to threat.zig from the level handler) deliberately still counts
+  every usable skill — min answers "when can I act", max answers "how far
+  can I hurt"; a control-only enemy (e.g. Daze) should stop and cast from
+  its range, not walk adjacent first. To reach this math from a skill
+  priority fn, `priority_fn` receives the session's
+  `weapon_type_definitions` (slot resolution needs the mapping — the same
+  constraint that made Focus an orchestrator; most skills ignore the param).
 - **One top-level event per player action (orchestrator convention).** Each
   player input (`handleIdleInput`) pushes exactly ONE top-level event; if the
   action needs several verbs, the event is an orchestrator whose handler

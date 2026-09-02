@@ -174,6 +174,14 @@ lands with AI priority + target selection + tests in `src/skill_tests.zig`.
 Targeting/damage are done (part of the port — those old TODO lines were
 stale).
 
+- [x] **AI threat model + deals_damage (the absorb interjection)** —
+      `Skill.deals_damage` (required — every skill declares it);
+      `priority_fn` widened to receive `weapon_type_definitions` (the
+      alias `types.WeaponTypeDefinitions`); `skills/threat.zig` (computeMinRange
+      moved there + computeMaxDamageRange + hostileCanAttackNextTurn: alive
+      + active + unstunned + within speed + max damaging reach).
+      Reflect's flat within-2 heuristic replaced with the same 0/2/4 tiers.
+      Design: DESIGN → Architecture (AI threat model). History in DONE.md.
 - [x] **Stun rule fix — max, not sum (anti-stunlock).** A new stun takes
       the max of current vs incoming duration, never stacks — multiple
       stunning enemies can't mega-stunlock the player. Stun skills' AI
@@ -203,8 +211,10 @@ stale).
         half / 0 otherwise (the replenish threshold logic — a flat
         below-full rating would tie attacks at 2 and slot order would make
         it heal every turn).
-  - [ ] idol absorb (2, main, cd 5) — interceptor: incoming damage →
-        healing (reflect shape).
+  - [x] idol absorb (2, main, cd 5) — interceptor: incoming damage →
+        healing (reflect shape). Priority on the threat model (0/2/4);
+        effect_sprite null until art ships. Lands with the threat-model
+        interjection below. History in DONE.md.
   - [ ] idol drain (3, off, cd 5) — AoE attack + lifesteal. OPEN: heal
         per-target or for the total damage dealt?
   - [ ] spell worldfire — AoE attack, radius 5, cd 10.

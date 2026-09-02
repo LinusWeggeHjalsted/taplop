@@ -18,6 +18,12 @@ pub const Skill = struct {
     skill_type: SkillType,
     description: []const u8,
     uses_targeting: bool,
+    /// Whether the skill's useSkill deals damage (directly or via
+    /// collision/knockback). Drives AI threat math — an enemy's damaging
+    /// reach (skills/threat.zig computeMaxDamageRange); control, mobility,
+    /// and buff skills are false. Required (no default): a forgotten flag
+    /// on a future damaging skill would silently under-report threat.
+    deals_damage: bool,
 
     // --- skill stats ---
     range: ?u32, // used for skills with targeting
@@ -42,6 +48,10 @@ pub const Skill = struct {
     /// Higher value = higher priority; 0 means the skill should not be used now.
     /// Turn-ending vs non-turn-ending is decided by skill_type at the call site
     /// (see enemy_turn_attack), not by the priority magnitude.
+    /// `weapon_type_definitions` is the session's weapon-type → skills
+    /// mapping — needed by skills whose evaluation reads other entities'
+    /// skill bars (the defensive skills' threat model, skills/threat.zig);
+    /// most skills ignore it.
     ///
     /// PORTING NOTE: the Unity original INVERTS this (lower number = higher
     /// priority, -1 = don't use). When porting a skill, FLIP the numbers to
@@ -56,6 +66,7 @@ pub const Skill = struct {
     priority_fn: *const fn (
         caster_index: u32,
         game_state: GameState,
+        weapon_type_definitions: types.WeaponTypeDefinitions,
     ) u32,
 
     /// AI target selection - enemy picks a target after getValidTargets provides the options
@@ -96,8 +107,9 @@ pub const Skill = struct {
         self: Skill,
         caster_index: u32,
         game_state: GameState,
+        weapon_type_definitions: types.WeaponTypeDefinitions,
     ) u32 {
-        return self.priority_fn(caster_index, game_state);
+        return self.priority_fn(caster_index, game_state, weapon_type_definitions);
     }
 
     pub fn selectTarget(

@@ -10188,3 +10188,45 @@ The AI mirrors the rule so it doesn't waste stuns:
 Tests: handler regression (pre-stunned 2 → new 1 stays 2, new 3 → rises
 to 3), stunTarget (unstunned beats weaker stunned; all-stunned → weakest),
 priority tiers for cleave (3/2), head_shot (2 stunned-only), daze (3/2/0).
+
+## Skills: AI threat model (deals_damage + threat.zig) + idol Absorb (Tier A slice 5)
+
+Idol 2/3, landed with the threat-model interjection it motivated. Absorb:
+skill 2 (main hand, cd 5, turn-ending) — self-cast create_effect for one
+round; the effect is an interceptor (reflect's shape) that zeroes incoming
+ATTACK damage and heals the receiver for the pre-defense amount (attack-
+only by the interceptor rule — collision damage still lands, the deliberate
+Reflect counterplay). effect_sprite null until art ships (only
+reflect.png/stun.png exist).
+
+The threat model (design in DESIGN → Architecture, "AI threat model"):
+- `Skill.deals_damage` — required field (no default; a forgotten flag on a
+  future damaging skill would silently under-report threat). 19 true / 10
+  false across the 29 existing skills.
+- `priority_fn` widened to receive `weapon_type_definitions` (new alias
+  `types.WeaponTypeDefinitions`): slot resolution needs the session's
+  weapon-type → skills mapping — the same GameStateHistory constraint that
+  forced Focus to be an orchestrator. One production call site
+  (enemy_turn_attack, which has history in scope); 30 fns gained a mostly-
+  ignored param.
+- `skills/threat.zig` (excluded from the SkillId scan; imports
+  generated_lookups directly — imports no skill file, so no cycle):
+  computeMinRange MOVED here from handlers/level.zig, new
+  computeMaxDamageRange (damaging-only max of effective range ?? radius),
+  new hostileCanAttackNextTurn (alive + active + unstunned + within
+  effective speed + max damaging reach, Chebyshev). Deliberate design call
+  kept from the discussion: computeMinRange still counts ALL usable skills
+  — min answers "when can I act" (a Daze-only enemy should cast from 3),
+  max answers "how far can I hurt".
+- Absorb + Reflect priorities on the predicate: 0 unthreatened (absorbing
+  into the void wastes the cooldown), 2 threatened, 4 threatened + below
+  half (4 must beat Heal's 3 on the idol bar). Reflect's old heuristic —
+  flat 4 on ANY hostile within 2 tiles — ignored speed, range, cooldowns,
+  stun, and aggro; an idle unaggroed enemy could bait the cooldown.
+
+Tests: computeMaxDamageRange (main-only 1, +off-hand 3, cooldown fallback,
+unarmed null), hostileCanAttackNextTurn (reach geometry, stun, aggro,
+unarmed), absorb useSkill/priority tiers + the interceptor unit contract,
+reflect priority tiers incl. the unaggroed-bait regression, and a handler-
+level integration test (attack into absorb → 10+5=15; a 999-damage hit
+heals to max instead of killing).

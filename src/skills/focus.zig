@@ -15,6 +15,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Focus",
     .skill_type = .cantrip,
+    .deals_damage = false,
     .description = "Reset each equipped weapon skill cooldown",
     .uses_targeting = false,
     .range = null,
@@ -39,7 +40,7 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 /// Gated on the caster having any skill on cooldown — an approximation, since
 /// resolving which of those are weapon skills needs weapon_type_definitions
 /// (unreachable here). The reset_weapon_cooldowns handler resets precisely.
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.focus) > 0) return 0;

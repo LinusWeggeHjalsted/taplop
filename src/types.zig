@@ -816,6 +816,12 @@ pub const WeaponTypeDefinition = struct {
     skill_3: SkillId,
 };
 
+/// The session's weapon-type → skills mapping (session config, owned by
+/// SessionSetup / GameStateHistory — see DESIGN → Architecture). Alias so
+/// the many fns that receive it (skillInSlot, the AI range/threat math,
+/// every skill priority fn) don't spell out the array-pointer type.
+pub const WeaponTypeDefinitions = *const [weapon_type_count]WeaponTypeDefinition;
+
 pub const ItemType = union(enum) {
     weapon: WeaponType,
     amulet: void,

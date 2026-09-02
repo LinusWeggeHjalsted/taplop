@@ -1,8 +1,8 @@
 //! Combat turn-flow + level mechanics: the `.level_event` and
 //! `.sub_level_event` arms of processEvent (`handleLevelEvent` /
 //! `handleSubLevelEvent`) plus their helpers — entity activation, the
-//! enemy AI min-range computation, turn-flow pacing constants, the
 //! damage/heal number anim direction, and the current-mission accessor.
+//! The enemy AI range/threat math lives in `skills/threat.zig`.
 //! Pure state transforms; sound/anim side effects gate on `!replaying`
 //! via `history.session` (see DESIGN → Replay & Side Effects).
 
@@ -13,6 +13,7 @@ const state = @import("../state.zig");
 const functions = @import("../functions.zig");
 const lookups = @import("../generated_lookups.zig");
 const Skill = @import("../skills/skill.zig").Skill;
+const threat = @import("../skills/threat.zig");
 const event_push = @import("../event_push.zig");
 const shared = @import("shared.zig");
 
@@ -76,44 +77,6 @@ fn activateEntity(
         .kind = .{ .aggro_indicator = .{ .entity_index = entity_index } },
         .duration_us = aggro_indicator_duration_microseconds,
     });
-}
-
-/// Compute the minimum effective range across all off-cooldown skills an entity
-/// has — the closest distance it needs to be to use at least one skill. Uses
-/// range if the skill has it, radius if not. Returns null if no skills are off
-/// cooldown (shouldn't normally happen).
-fn computeMinRange(
-    entity: Entity,
-    weapon_type_definitions: *const [weapon_type_count]WeaponTypeDefinition,
-) ?u32 {
-    const skill_ids = entity.collectSkillSlots(weapon_type_definitions);
-    var min_range: ?u32 = null;
-
-    for (&skill_ids) |maybe_skill_id| {
-        const skill_id = maybe_skill_id orelse continue;
-        if (entity.skill_cooldowns.get(skill_id) > 0) continue;
-
-        const skill_definition = lookups.getSkillDefinition(skill_id) orelse continue;
-
-        // Self/no-target skills (no range and no radius) don't require closing
-        // on the target, so they must not drag min_range down to 0 (which would
-        // let the enemy path onto the target's own tile).
-        const effective_range: u32 = blk: {
-            if (skill_definition.range) |range| break :blk entity.getEffectiveRange(range);
-            if (skill_definition.radius) |radius| break :blk entity.getEffectiveRadius(radius);
-            continue;
-        };
-
-        if (min_range) |current_min| {
-            if (effective_range < current_min) {
-                min_range = effective_range;
-            }
-        } else {
-            min_range = effective_range;
-        }
-    }
-
-    return min_range;
 }
 
 /// Pointer to the current mission, or null if the acting entity isn't the
@@ -371,7 +334,7 @@ pub fn handleLevelEvent(
 
             if (nearest_target) |target_position| {
                 // Compute min range from off-cooldown skills
-                const min_range: i32 = @intCast(computeMinRange(entity, history.weapon_type_definitions) orelse 1);
+                const min_range: i32 = @intCast(threat.computeMinRange(entity, history.weapon_type_definitions) orelse 1);
 
                 // If already within min range, don't move
                 if (nearest_distance <= min_range) {
@@ -513,7 +476,11 @@ pub fn handleLevelEvent(
                 if (entity.skill_cooldowns.get(skill_id) > 0) continue;
                 const skill_definition = lookups.getSkillDefinition(skill_id) orelse continue;
 
-                const skill_priority = skill_definition.priority(enemy_attack.entity_index, current.*);
+                const skill_priority = skill_definition.priority(
+                    enemy_attack.entity_index,
+                    current.*,
+                    history.weapon_type_definitions,
+                );
                 if (skill_priority == 0) continue;
 
                 const ends_turn = skill_definition.skill_type == .weapon_skill or

@@ -17,6 +17,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Chop",
     .skill_type = .weapon_skill,
+    .deals_damage = true,
     .description = "Attack target, dealing 1.5x damage if you have more than half health",
     .uses_targeting = true,
     .range = 1,
@@ -46,7 +47,7 @@ fn getValidTargets(
 /// AI priority: 0 if on cooldown or no targets in range. Otherwise keyed on the
 /// caster's own health (Chop's 1.5x bonus applies while above half health):
 /// 3 if the caster is above half health, else 2.
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
 

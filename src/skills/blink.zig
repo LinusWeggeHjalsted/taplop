@@ -15,6 +15,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Blink",
     .skill_type = .cantrip,
+    .deals_damage = false,
     .description = "Teleport",
     .uses_targeting = true,
     .range = 3,
@@ -43,7 +44,7 @@ fn getValidTargets(
 
 /// AI priority (cantrip, competes only with other non-turn-ending skills):
 /// 0 if on cooldown, else 1.
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.blink) > 0) return 0;

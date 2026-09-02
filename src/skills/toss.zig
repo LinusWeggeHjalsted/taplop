@@ -16,6 +16,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Toss",
     .skill_type = .weapon_skill,
+    .deals_damage = true,
     .description = "Attack target and gain 1 momentum",
     .uses_targeting = true,
     .range = 3,
@@ -42,7 +43,7 @@ fn getValidTargets(
 }
 
 /// AI priority: 0 if on cooldown or no target in range, else 2.
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.toss) > 0) return 0;

@@ -230,6 +230,38 @@ test "attack: heals_attacker lifesteals the damage dealt" {
     try testing.expectEqual(@as(u32, 13), levelEntity(&history, 0).current_health);
 }
 
+test "attack: absorb converts incoming damage into healing (interceptor)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 } },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 10, .max_health = 20, .active_effects = &.{.{ .effect_id = .absorb, .duration = 1, .additive_effect_modifiers = .{} }} },
+        },
+        &three_by_three,
+    ));
+    pushAndRunSub(&history, .{ .attack = .{
+        .attacker_index = 0,
+        .defender_index = 1,
+        .outgoing_damage = 5,
+    } });
+    // The interceptor zeroes the damage and heals the receiver for the
+    // pre-defense amount: 10 + 5 = 15, no damage taken.
+    try testing.expectEqual(@as(u32, 15), levelEntity(&history, 1).current_health);
+
+    // A lethal hit cannot kill through absorb either — the heal clamps
+    // to max instead.
+    pushAndRunSub(&history, .{ .attack = .{
+        .attacker_index = 0,
+        .defender_index = 1,
+        .outgoing_damage = 999,
+    } });
+    try testing.expectEqual(@as(u32, 20), levelEntity(&history, 1).current_health);
+    try testing.expect(levelEntity(&history, 1).current_health > 0);
+}
+
 // ───────────────────────── death ─────────────────────────
 
 test "death: non-player entity drops equipped gear + inventory + skill tomes" {

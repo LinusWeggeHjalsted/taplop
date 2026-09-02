@@ -19,6 +19,7 @@ pub const effect = @import("../effects/that_which_lingers.zig").effect;
 pub const skill = Skill{
     .name = "That Which Lingers",
     .skill_type = .enchantment,
+    .deals_damage = false,
     .description = "Increase all skill durations by 1",
     .uses_targeting = false,
     .range = null,
@@ -40,7 +41,7 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 }
 
 /// AI priority: 0 if on cooldown, otherwise low priority (cast when nothing better to do).
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
 

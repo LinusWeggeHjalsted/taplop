@@ -16,6 +16,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Flash Strike",
     .skill_type = .weapon_skill,
+    .deals_damage = true,
     .description = "Teleport then attack each target within radius",
     .uses_targeting = true,
     .range = 3,
@@ -44,7 +45,7 @@ fn getValidTargets(
 
 /// AI priority: 0 if on cooldown, else 3 (Flash Strike closes distance and
 /// hits an area — the enemy wants it whenever it is available).
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.flash_strike) > 0) return 0;

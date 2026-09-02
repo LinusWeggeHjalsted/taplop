@@ -16,6 +16,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Bash",
     .skill_type = .weapon_skill,
+    .deals_damage = true,
     .description = "Attack and knockback target, dealing +0.5x damage on collision",
     .uses_targeting = true,
     .range = 1,
@@ -46,7 +47,7 @@ fn getValidTargets(
 /// adds damage), else 2. Target-agnostic by design: the collide preference
 /// is reflected per-target by selectTarget (knockbackTarget), so priority
 /// and selection stay in sync without coupling them.
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.bash) > 0) return 0;

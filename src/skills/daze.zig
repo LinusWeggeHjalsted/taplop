@@ -16,6 +16,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Daze",
     .skill_type = .weapon_skill,
+    .deals_damage = false,
     .description = "Stun target and remove all momentum from them",
     .uses_targeting = true,
     .range = 3,
@@ -46,7 +47,7 @@ fn getValidTargets(
 /// take the max, never stack). 2 if all in-range targets are stunned but
 /// one still has momentum (the drain still pays). 0 otherwise — a stunned,
 /// momentumless target gains nothing from Daze.
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.daze) > 0) return 0;

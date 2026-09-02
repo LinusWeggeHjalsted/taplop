@@ -16,6 +16,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Blitz",
     .skill_type = .weapon_skill,
+    .deals_damage = true,
     .description = "Attack and stun each target within radius",
     .uses_targeting = false,
     .range = null,
@@ -38,7 +39,7 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 
 /// AI priority: 0 if on cooldown or no hostile within radius, else 4 (Blitz is
 /// a strong AoE with stun — high priority when it connects).
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.blitz) > 0) return 0;

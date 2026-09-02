@@ -16,6 +16,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Vampiric Strike",
     .skill_type = .weapon_skill,
+    .deals_damage = true,
     .description = "Attack target and heal for damage dealt",
     .uses_targeting = true,
     .range = 1,
@@ -43,7 +44,7 @@ fn getValidTargets(
 
 /// AI priority: 0 if on cooldown, no target in range, or the caster is already
 /// at full health (nothing to heal — save it). Otherwise 3.
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
 

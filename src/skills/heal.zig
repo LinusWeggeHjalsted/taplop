@@ -15,6 +15,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Heal",
     .skill_type = .weapon_skill,
+    .deals_damage = false,
     .description = "Heal for 20% of max health",
     .uses_targeting = false,
     .range = null,
@@ -39,7 +40,7 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 /// isn't worth a turn — and rating it while merely below full would tie
 /// with the attack skills at 2, where slot order would make heal win and
 /// the caster would heal every turn instead of attacking), else 3.
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.heal) > 0) return 0;

@@ -17,6 +17,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Slice",
     .skill_type = .weapon_skill,
+    .deals_damage = true,
     .description = "Attack target, dealing 1.5x damage if they have less than half health",
     .uses_targeting = true,
     .range = 1,
@@ -47,7 +48,7 @@ fn getValidTargets(
 /// Returns 0 if on cooldown or no targets in range.
 /// Returns 3 normally, 2 if target (nearest hostile) is below half health
 /// (prefer a different finisher skill for wounded targets).
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
 

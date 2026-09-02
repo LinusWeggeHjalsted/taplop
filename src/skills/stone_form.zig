@@ -16,6 +16,7 @@ const Skill = skill_mod.Skill;
 pub const skill = Skill{
     .name = "Stone Form",
     .skill_type = .enchantment,
+    .deals_damage = false,
     .description = "Reduce incoming stun durations by 1, increase outgoing stun durations by 1, and heal 20% of max health at end of turn",
     .uses_targeting = false,
     .range = null,
@@ -38,7 +39,7 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 
 /// AI priority (enchantment): 0 if on cooldown or at full health, else 2
 /// (worth the stun resistance + heal-over-time once damaged).
-fn priority(caster_index: u32, game_state: GameState) u32 {
+fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.stone_form) > 0) return 0;
