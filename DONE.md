@@ -10523,3 +10523,40 @@ the non-ending skills). Reaches: range/radius +1; Bull Form: distance +10
 set, in use_skill) + speed +1. effect_sprite null on all three until art
 ships. Tests: create_effect payloads + the modifier fields on each effect
 definition via generated_lookups + the flat-1 option.
+
+## Skills: enchantments Explodes, Promise of Death, Diamond Form (Tier A slice 14) — TIER A COMPLETE
+
+Tier A finished: 20 skills, zero engine changes beyond what the
+convention interjections themselves added. Three reactive enchantments,
+with two author rulings recorded in DESIGN → Architecture:
+
+- **Utility-spell-damage rule**: any damage a utility skill deals —
+  directly or via reactive effect attacks — is getEffectiveSpellDamage.
+  That Which Explodes' retaliation attacks use it.
+- **Cooldown-reset scopes differ by direction**: Adrenaline (enemy-
+  targeted) = on-bar only (the swap-inheritance count exploit: rotate
+  many skills, each inherited cd adds a reflectable attack — hidden and
+  broken); Promise of Death (self-buff) = FULL sweep incl. off-bar
+  preserved cooldowns (nothing to inflate).
+
+The skills:
+- That Which Explodes (duration 2, cd 10): on_incoming_damage → attacks
+  every hostile within radius 1 of the holder. Options on the threat
+  model (2 threatened, nothing unthreatened). Note: reactor callbacks
+  get (entity, state, allocator) — no attacker/damage context (the known
+  Tier C gap); explode doesn't need it.
+- Promise of Death (duration 1, cd 10): on_opponent_death → change_
+  cooldown per ticking SkillId (runtime loop over the hole-free generated
+  enum) + heal to full. Flat 1 when an active hostile exists.
+- Diamond Form (duration/stun 5, cd 10): useSkill = self-stun then
+  create_effect; the effect is a zero-everything interceptor (attack-only
+  — collision still lands, the interceptor rule) + on_end_turn heal of
+  max/10 (fires while stunned: a stunned turn still cycles start/end).
+  Options under the desperation gate — threatened AND below half → 2
+  (casting it otherwise trades five turns of actions for nothing).
+
+Tests: explodes' reactor (radius/team/spell-damage) + threat gate;
+promise's full sweep (on-bar + swap-available + utility + OFF-BAR skewer
+all reset, heal-to-full) ; diamond's self-stun+effect ordering, the
+  999-damage interception, the 23/10→2 heal truncation, and the
+  three-branch desperation gate.

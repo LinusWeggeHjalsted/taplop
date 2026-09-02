@@ -1786,6 +1786,20 @@ So a clone is a permanent, compounding material factory keyed by mission.
   spells (the cheaper slot, generally the shorter cooldown). This is what
   resolves "1-target Spinblade vs Piston Bolt": 1 < 2, the single-target
   skill wins.
+- **Utility skills deal spell damage — always.** Any damage a utility
+  skill (spell / cantrip / enchantment / curse) deals — directly or via
+  its effect's reactive attacks (That Which Explodes) — uses
+  `Entity.getEffectiveSpellDamage` (the amulet pipeline). Weapon skills
+  use their hand's weapon damage; idol weapon skills are weapon skills,
+  not utilities, and follow the weapon rule.
+- **Cooldown-reset scopes differ by direction.** Adrenaline Surge (cast on
+  an ENEMY) resets only the target's ON-BAR cooldowns
+  (Entity.onBarSkillIds) — the bar scope keeps the swap-inheritance
+  exploit out: a player rotating many skills stacks inherited cooldowns,
+  and each would add an attack (reflectable by shield 3) — hidden and
+  broken. Promise of Death (cast on SELF) does the FULL sweep, including
+  off-bar preserved cooldowns — a self-buff has no count-driven damage to
+  inflate, so there is nothing to exploit.
 - **One top-level event per player action (orchestrator convention).** Each
   player input (`handleIdleInput`) pushes exactly ONE top-level event; if the
   action needs several verbs, the event is an orchestrator whose handler

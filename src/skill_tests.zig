@@ -38,6 +38,12 @@ const accelerate_skill = @import("skills/accelerate.zig");
 const that_which_reaches_skill = @import("skills/that_which_reaches.zig");
 const bull_form_skill = @import("skills/bull_form.zig");
 const that_which_rushes_skill = @import("skills/that_which_rushes.zig");
+const that_which_explodes_skill = @import("skills/that_which_explodes.zig");
+const promise_of_death_skill = @import("skills/promise_of_death.zig");
+const diamond_form_skill = @import("skills/diamond_form.zig");
+const that_which_explodes_effect = @import("effects/that_which_explodes.zig");
+const promise_of_death_effect = @import("effects/promise_of_death.zig");
+const diamond_form_effect = @import("effects/diamond_form.zig");
 
 const Vector2 = types.Vector2;
 
@@ -1765,5 +1771,179 @@ test "modifier enchantments: reaching, bull, rushing apply their effects" {
         const modifiers = lookups.getEffectDefinition(.that_which_rushes).additive_effect_modifiers;
         try testing.expectEqual(@as(i32, -1), modifiers.cooldown);
         try testing.expectEqual(@as(i32, 1), modifiers.speed);
+    }
+}
+
+test "that which explodes: the effect attacks hostiles in radius for spell damage" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const holder = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .amulet = .{ .spell_damage = 6 },
+    };
+    const adjacent_a = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const adjacent_b = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+    const far = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+    const ally = types.Entity{ .team = 0, .position = .{ .x = 1, .y = 1 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ holder, adjacent_a, adjacent_b, far, ally },
+        &.{},
+    );
+
+    const events = that_which_explodes_effect.effect.onIncomingDamage(0, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 2), events.?.len);
+    for (events.?) |event| {
+        const attack = event.sub_level_event.attack;
+        try testing.expectEqual(@as(u32, 0), attack.attacker_index);
+        try testing.expectEqual(@as(u32, 6), attack.outgoing_damage); // spell damage rule
+        try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
+    }
+}
+
+test "that which explodes: options gate on the threat model" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const sword_enemy_at = struct {
+        fn make(position: Vector2) types.Entity {
+            return .{
+                .team = 1,
+                .position = position,
+                .is_active = true,
+                .speed = 1,
+                .main_hand_weapon = .{ .weapon_type = .sword },
+            };
+        }
+    }.make;
+
+    // Threatened (adjacent active sword enemy) → 2.
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, sword_enemy_at(.{ .x = 1, .y = 0 }) },
+            &.{},
+        );
+        const options = that_which_explodes_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
+    }
+    // Unthreatened (far away) → no option (exploding into the void).
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, sword_enemy_at(.{ .x = 9, .y = 9 }) },
+            &.{},
+        );
+        try testing.expectEqual(@as(usize, 0), that_which_explodes_skill.skill.aiOptions(0, game_state, definitions, arena.allocator()).len);
+    }
+}
+
+test "promise of death: full-sweep reset + full heal on opponent death" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const holder = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .max_health = 20,
+        .current_health = 7,
+        .main_hand_weapon = .{ .weapon_type = .sword },
+        .equipped_utility_skills = .{ .blink, null, null, null, null },
+    };
+    const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{holder}, &.{});
+    setCooldown(game_state, 0, .slice, 2); // on-bar
+    setCooldown(game_state, 0, .flash_strike, 3); // swap-available third
+    setCooldown(game_state, 0, .blink, 1); // utility
+    setCooldown(game_state, 0, .skewer, 4); // OFF-BAR preserved — still swept
+
+    const events = promise_of_death_effect.effect.onOpponentDeath(0, game_state, arena.allocator());
+    // Four resets (the full sweep incl. skewer) + the heal.
+    try testing.expectEqual(@as(usize, 5), events.?.len);
+    var resets: usize = 0;
+    var saw_heal = false;
+    for (events.?) |event| switch (event.sub_level_event) {
+        .change_cooldown => resets += 1,
+        .heal => |heal| {
+            saw_heal = true;
+            try testing.expectEqual(@as(u32, 20), heal.amount); // heal to full
+        },
+        else => try testing.expect(false),
+    };
+    try testing.expectEqual(@as(usize, 4), resets);
+    try testing.expect(saw_heal);
+}
+
+test "diamond form: useSkill stuns the caster then applies the effect" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
+
+    const result = diamond_form_skill.skill.useSkill(0, null, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 2), result.len);
+    // LIFO: the stun (listed first in execution order) sits LAST in the slice.
+    const create = result[0].sub_level_event.create_effect;
+    try testing.expectEqual(types.EffectId.diamond_form, create.effect_id);
+    try testing.expectEqual(@as(u32, 5), create.duration);
+    const stun = result[1].sub_level_event.stun;
+    try testing.expectEqual(@as(u32, 0), stun.attacker_index);
+    try testing.expectEqual(@as(u32, 0), stun.defender_index); // self-stun
+    try testing.expectEqual(@as(u32, 5), stun.stun_duration);
+}
+
+test "diamond form: the interceptor prevents all attack damage; the end-of-turn heal fires" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const holder = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 23, .current_health = 9 };
+    const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{holder}, &.{});
+
+    const intercepted = diamond_form_effect.effect.interceptIncomingDamage(0, 1, 999, game_state, arena.allocator());
+    try testing.expectEqual(@as(u32, 0), intercepted.damage);
+    try testing.expectEqual(@as(usize, 0), intercepted.events.len);
+
+    const heals = diamond_form_effect.effect.onEndTurn(0, game_state, arena.allocator());
+    try testing.expectEqual(@as(u32, 2), heals.?[0].sub_level_event.heal.amount); // 23 / 10, truncated
+}
+
+test "diamond form: options only under the desperation gate" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    const sword_enemy = types.Entity{
+        .team = 1,
+        .position = .{ .x = 1, .y = 0 },
+        .is_active = true,
+        .speed = 1,
+        .main_hand_weapon = .{ .weapon_type = .sword },
+    };
+
+    // Threatened but healthy → no option (throwing the fight).
+    {
+        const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 20 };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, sword_enemy }, &.{});
+        try testing.expectEqual(@as(usize, 0), diamond_form_skill.skill.aiOptions(0, game_state, definitions, arena.allocator()).len);
+    }
+    // Threatened + below half → 2.
+    {
+        const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 9 };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, sword_enemy }, &.{});
+        const options = diamond_form_skill.skill.aiOptions(0, game_state, definitions, arena.allocator());
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
+    }
+    // Wounded but unthreatened → no option.
+    {
+        const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 9 };
+        const far_enemy = types.Entity{ .team = 1, .position = .{ .x = 9, .y = 9 }, .is_active = true, .speed = 1, .main_hand_weapon = .{ .weapon_type = .sword } };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, far_enemy }, &.{});
+        try testing.expectEqual(@as(usize, 0), diamond_form_skill.skill.aiOptions(0, game_state, definitions, arena.allocator()).len);
     }
 }

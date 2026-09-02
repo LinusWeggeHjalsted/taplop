@@ -285,17 +285,23 @@ stale).
         Rating = direct enemy count (cantrip-pool ratings only ORDER the
         non-ending skills — all worthwhile ones fire before the
         turn-ender). History in DONE.md.
-  - [ ] enchantment that which reaches — range/radius +1 modifiers.
-  - [ ] enchantment bull form — distance +10 modifier.
-  - [ ] enchantment that which rushes — cooldown −1 + speed +1 modifiers.
-  - [ ] enchantment that which explodes — on_incoming_damage AoE attack
-        (works with the current callback signature).
-  - [ ] enchantment promise of death — on_opponent_death: reset all
-        cooldowns + full heal.
-  - [ ] enchantment diamond form — self-stun + invulnerability interceptor
-        + end-of-turn heal. NOTE: interceptors are attack-only by design
-        (collision damage still lands — the Reflect counterplay rule);
-        confirm that's intended here too.
+  - [x] enchantment that which reaches — range/radius +1 modifiers.
+  - [x] enchantment bull form — distance +10 modifier.
+  - [x] enchantment that which rushes — cooldown −1 + speed +1 modifiers.
+  - [x] enchantment that which explodes — on_incoming_damage AoE attack
+        (spell damage — the utility rule), options gated on the threat
+        model (2 when threatened).
+  - [x] enchantment promise of death — on_opponent_death: FULL-sweep
+        reset (incl. off-bar preserved cds — self-buff, no exploit;
+        contrast adrenaline's on-bar scope) + heal to full. Flat 1 when
+        any active hostile exists.
+  - [x] enchantment diamond form — self-stun + invulnerability
+        interceptor + end-of-turn 10% heal. Options under the desperation
+        gate (threatened AND below half → 2). Collision damage still lands
+        (the interceptor rule). History in DONE.md.
+
+**TIER A COMPLETE — 20 skills, 0 engine changes.** Remaining new-design
+work is Tier B (four small engine gaps) and Tier C (two design sessions).
 All five spells done. Tier A remaining: cantrips (burst, meditate,
 accelerate) + enchantments (that which reaches, bull form, that which
 rushes, that which explodes, promise of death, diamond form).
