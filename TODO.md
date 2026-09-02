@@ -237,9 +237,16 @@ stale).
         interpretation would need new post-batch machinery); priority on the
         AoE bump (3/4). Lands with the bump interjection below. History in
         DONE.md.
-  - [ ] spell worldfire — AoE attack, radius 5, cd 10.
-  - [ ] spell shockwave — AoE knockback + collision damage, radius 1,
-        distance 2, cd 5 (slam shape).
+  - [x] spell worldfire — AoE attack, radius 5, cd 10. First spell: damage
+        is getEffectiveSpellDamage (amulet-based — the number the curse
+        designs reference); born on the unified ai_options interface;
+        priority on the AoE bump (3/4 — base 3 encodes "save it for
+        clusters": singles lose to slot order, clusters fire). History in
+        DONE.md.
+  - [x] spell shockwave — AoE attack + knockback + collision, radius 1,
+        distance 2, cd 5 (slam shape minus stun, spell damage). Lands with
+        the stacked-bump ladder (aoeKnockbackPriority: base + AoE bump +
+        collision bump); slam retrofitted onto it. History in DONE.md.
   - [ ] spell piston bolt — attack with double converted momentum, range 3,
         cd 3 (impale shape).
   - [ ] spell chain lightning — attack target + each entity connected via

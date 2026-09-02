@@ -1082,9 +1082,9 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
     try std.testing.expectEqual(@as(i32, 1760), editorPickerOverlayRect().width);
     try std.testing.expectEqual(@as(i32, 1328), editorPickerOverlayRect().height);
 
-    // Panel + header label + close + None (button + label) + 8 ×
-    // (button + full-size icon) = 21 — real skills are icon-only.
-    try std.testing.expectEqual(@as(usize, 21), elements.items.len);
+    // Panel + header label + close + None (button + label) + 9 ×
+    // (button + full-size icon) = 23 — real skills are icon-only.
+    try std.testing.expectEqual(@as(usize, 23), elements.items.len);
 
     var picker_buttons: usize = 0;
     var highlighted_skill: ?types.SkillId = null;
@@ -1106,7 +1106,7 @@ test "buildEditorSkillPicker: header + close + None + one cell per utility skill
         },
         else => {},
     };
-    try std.testing.expectEqual(@as(usize, 9), picker_buttons); // None + 8 skills
+    try std.testing.expectEqual(@as(usize, 10), picker_buttons); // None + 9 skills
     try std.testing.expectEqual(types.SkillId.blink, highlighted_skill.?);
     try std.testing.expect(!none_highlighted);
     try std.testing.expect(saw_blink_cell);

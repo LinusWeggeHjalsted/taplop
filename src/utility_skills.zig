@@ -38,8 +38,8 @@ test "utility-skill policy: weapon skills excluded, the rest eligible" {
     try std.testing.expect(isUtilitySkill(.blink));
     try std.testing.expect(isUtilitySkill(.stone_form));
     // The shipped census: 18 weapon skills, 5 cantrips, 2 enchantments,
-    // 1 spell — 8 eligible today (grows as spells/curses land).
-    try std.testing.expectEqual(@as(usize, 8), utility_skill_ids.len);
+    // 2 spells — 9 eligible today (grows as spells/curses land).
+    try std.testing.expectEqual(@as(usize, 9), utility_skill_ids.len);
     for (utility_skill_ids) |skill_id| {
         try std.testing.expect(isUtilitySkill(skill_id));
     }

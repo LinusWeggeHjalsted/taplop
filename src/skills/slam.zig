@@ -38,9 +38,10 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 
 /// AI priority: the AoE bump convention (helpers.aoePriority) — 0 with no
 /// hostile within radius, 3 with one, 4 with two or more.
-/// AI options: one self-centered cast, rated by the AoE bump convention
-/// (helpers.aoePriority over the hostile count in radius) — 3 with one
-/// target, 4 with two or more.
+/// AI options: one self-centered cast on the stacked-bump ladder
+/// (helpers.aoeKnockbackPriority) — 3 single open-field target, +1 for a
+/// cluster, +1 for any collision. Slam's damage IS the 1x collision, so a
+/// colliding target adds a full hit's worth.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -50,10 +51,16 @@ fn aiOptions(
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.slam) > 0) return &.{};
+
     const radius: i32 = @intCast(caster.getEffectiveRadius(skill.radius.?));
+    const push_distance = caster.getEffectiveDistance(skill.distance.?);
     const target_count = helpers.hostileCountWithinRadius(caster_index, game_state, caster.position, radius);
     if (target_count == 0) return &.{};
-    return helpers.singleOption(allocator, .{ .target = null, .priority = helpers.aoePriority(target_count, 3) });
+    const colliding_count = helpers.collidingTargetCount(caster_index, game_state, caster.position, radius, push_distance);
+    return helpers.singleOption(allocator, .{
+        .target = null,
+        .priority = helpers.aoeKnockbackPriority(target_count, colliding_count, 3),
+    });
 }
 
 /// Self-centered — no meaningful target.

@@ -338,6 +338,43 @@ pub fn singleOption(allocator: std.mem.Allocator, option: AiOption) []const AiOp
     return allocator.dupe(AiOption, &.{option}) catch @panic("failed to allocate AI option");
 }
 
+/// Number of hostiles within `radius` (Chebyshev) of `center` whose knockback
+/// push from the caster (by `push_distance`) would COLLIDE — the
+/// AoE-knockback collision count. Allocation-free; reuses
+/// knockbackWouldCollide so the prediction cannot drift from the handler.
+pub fn collidingTargetCount(
+    caster_index: u32,
+    game_state: GameState,
+    center: Vector2,
+    radius: i32,
+    push_distance: u32,
+) u32 {
+    const level = game_state.level orelse return 0;
+    const caster = level.entities[caster_index];
+
+    var count: u32 = 0;
+    for (level.entities, 0..) |entity, entity_index| {
+        if (entity_index == caster_index) continue;
+        if (entity.current_health == 0) continue;
+        if (entity.team == caster.team) continue;
+        if (functions.chebyshevDistance(center, entity.position) > radius) continue;
+        if (knockbackWouldCollide(caster_index, @intCast(entity_index), push_distance, game_state)) count += 1;
+    }
+    return count;
+}
+
+/// The stacked-bump ladder for AoE knockback skills: base, +1 when two or
+/// more targets would be hit (the AoE bump), +1 when any target's push
+/// would collide (the collision bump — an AoE cast has no target choice, so
+/// a colliding target genuinely adds value to this exact cast; contrast
+/// the single-target skills, whose collision bump rides their pick).
+/// 0 when nothing would be hit. See DESIGN → Architecture (AoE priority
+/// bump).
+pub fn aoeKnockbackPriority(target_count: u32, colliding_count: u32, base_priority: u32) u32 {
+    if (target_count == 0) return 0;
+    return base_priority + @intFromBool(target_count >= 2) + @intFromBool(colliding_count >= 1);
+}
+
 /// Empty walkable tiles within `range` (Chebyshev) of the caster — valid
 /// teleport destinations (Blink, FlashStrike). Null if there are none.
 pub fn emptyTilesInRange(

@@ -26,6 +26,8 @@ const drain_skill = @import("skills/drain.zig");
 const howl_skill = @import("skills/howl.zig");
 const stab_skill = @import("skills/stab.zig");
 const worldfire_skill = @import("skills/worldfire.zig");
+const shockwave_skill = @import("skills/shockwave.zig");
+const slam_skill = @import("skills/slam.zig");
 
 const Vector2 = types.Vector2;
 
@@ -1230,5 +1232,154 @@ test "worldfire: options follow the AoE bump at radius 5" {
         try testing.expectEqual(@as(u32, 4), options[0].priority);
         setCooldown(game_state, 0, .worldfire, 1);
         try testing.expectEqual(@as(usize, 0), worldfire_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
+    }
+}
+
+test "aoeKnockbackPriority: the stacked-bump ladder" {
+    try testing.expectEqual(@as(u32, 0), helpers.aoeKnockbackPriority(0, 0, 3));
+    try testing.expectEqual(@as(u32, 3), helpers.aoeKnockbackPriority(1, 0, 3));
+    try testing.expectEqual(@as(u32, 4), helpers.aoeKnockbackPriority(1, 1, 3));
+    try testing.expectEqual(@as(u32, 4), helpers.aoeKnockbackPriority(2, 0, 3));
+    try testing.expectEqual(@as(u32, 5), helpers.aoeKnockbackPriority(2, 1, 3));
+    try testing.expectEqual(@as(u32, 5), helpers.aoeKnockbackPriority(4, 2, 3));
+}
+
+test "collidingTargetCount: counts only in-radius hostiles whose push collides" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const open = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const walled = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+    const out_of_radius = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 3 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, open, walled, out_of_radius },
+        // open's 2-step push path ((2,0),(3,0)) exists; walled's ((0,2))
+        // does not.
+        &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 }, .{ .x = 0, .y = 1 } },
+    );
+
+    try testing.expectEqual(@as(u32, 1), helpers.collidingTargetCount(0, game_state, .{ .x = 0, .y = 0 }, 1, 2));
+}
+
+test "shockwave: useSkill attacks then knockbacks each hostile in radius" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .amulet = .{ .spell_damage = 7 },
+    };
+    const adjacent_a = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const adjacent_b = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+    const far = types.Entity{ .team = 1, .position = .{ .x = 5, .y = 5 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, adjacent_a, adjacent_b, far },
+        &.{},
+    );
+
+    const result = shockwave_skill.skill.useSkill(0, null, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 4), result.len); // 2 attacks + 2 knockbacks
+
+    var attacks: usize = 0;
+    var knockbacks: usize = 0;
+    for (result) |event| switch (event.sub_level_event) {
+        .attack => |attack| {
+            attacks += 1;
+            try testing.expectEqual(@as(u32, 0), attack.attacker_index);
+            try testing.expectEqual(@as(u32, 7), attack.outgoing_damage);
+            try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
+        },
+        .knockback => |knockback| {
+            knockbacks += 1;
+            try testing.expectEqual(@as(u32, 2), knockback.distance);
+            try testing.expectEqual(@as(u32, 3), knockback.knockback_damage); // 7 / 2
+            try testing.expect(knockback.defender_index == 1 or knockback.defender_index == 2);
+        },
+        else => try testing.expect(false),
+    };
+    try testing.expectEqual(@as(usize, 2), attacks);
+    try testing.expectEqual(@as(usize, 2), knockbacks);
+    // LIFO: the pair listed first (defender 1's attack) runs first — its
+    // knockback sits at the BOTTOM of the reversed slice.
+    try testing.expectEqual(@as(u32, 1), result[3].sub_level_event.attack.defender_index);
+    try testing.expectEqual(@as(u32, 1), result[2].sub_level_event.knockback.defender_index);
+}
+
+test "shockwave: options follow the stacked-bump ladder" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+
+    // Single open-field target (push path clear through 2 steps) → 3.
+    {
+        const single = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, single },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
+        );
+        const options = shockwave_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
+    }
+    // Single walled target (push runs off the tile set) → 4.
+    {
+        const single = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, single },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
+        );
+        const options = shockwave_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(u32, 4), options[0].priority);
+    }
+    // Two targets, one open one walled → 3 + 1 (cluster) + 1 (collision).
+    {
+        const open = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+        const walled = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, open, walled },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 }, .{ .x = 0, .y = 1 } },
+        );
+        const options = shockwave_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(u32, 5), options[0].priority);
+    }
+}
+
+test "slam: options on the stacked-bump ladder (retrofit)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+
+    // Single open target → 3 (as before the retrofit).
+    {
+        const single = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, single },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
+        );
+        const options = slam_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
+    }
+    // Cluster with one walled → 5 (the old AoE-bump-only rating said 4 —
+    // it under-sold Slam's full-damage collisions).
+    {
+        const open = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+        const walled = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, open, walled },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 }, .{ .x = 0, .y = 1 } },
+        );
+        const options = slam_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(u32, 5), options[0].priority);
     }
 }

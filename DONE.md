@@ -10331,3 +10331,30 @@ utility_skills 7 → 8 (the test's comment anticipated this), the editor
 skill-picker element/button counts 19→21 / 8→9. Tests: useSkill
 (Chebyshev-diagonal edge at (3,4) hits, (6,0) doesn't, amulet spell
 damage 6 on every hit) + options 3/4 + the cooldown gate.
+
+## Skills: stacked-bump ladder + spell Shockwave (Tier A slice 8)
+
+Second spell. Shockwave: radius 1, distance 2, cd 5 — per hostile in
+radius, attack for 1x effective spell damage then knock back with +0.5x
+collision (bash's pair, AoE'd; the knockback handler no-ops dead defenders
+so a killing attack doesn't push a corpse). Born on ai_options.
+
+The new convention it motivated — the STACKED-BUMP ladder: an AoE skill
+with multiple value components adds +1 per component that pays beyond the
+base. AoE-knockback skills: base + 1 (two or more targets) + 1 (any
+target's push would collide). "Any collides" is honest for an AoE — the
+cast has no target choice, so a colliding target genuinely adds value to
+that exact cast (contrast old bash's summary seam). Helpers:
+collidingTargetCount (allocation-free, reuses knockbackWouldCollide so
+prediction can't drift) + aoeKnockbackPriority (the ladder in one place,
+next to aoePriority). Slam RETROFITTED onto the ladder — its damage IS the
+1x collision, so the old AoE-bump-only rating under-sold clustered+walled
+casts (4 → now 5; single-target unchanged at 3). Blitz stays on plain
+aoePriority (no knockback; different weapon bar, no competition).
+
+Tests: aoeKnockbackPriority table, collidingTargetCount (caught my own
+layout bug — the "out of radius" entity stood on the open target's push
+path and was a genuine second collision), shockwave useSkill (attack+
+knockback pairs, 7/2=3 collision, LIFO order) + full ladder 3/4/5, slam
+retrofit 3/5. Census: second utility-eligible spell → utility_skills 9,
+picker counts 23/10.

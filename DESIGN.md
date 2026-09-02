@@ -1765,7 +1765,7 @@ So a clone is a permanent, compounding material factory keyed by mission.
   priority fn, `priority_fn` receives the session's
   `weapon_type_definitions` (slot resolution needs the mapping — the same
   constraint that made Focus an orchestrator; most skills ignore the param).
-- **AoE priority bump.** Every radius skill's priority goes through
+- **AoE priority bump.** Every radius skill's rating goes through
   `helpers.aoePriority(target_count, base)`: 0 when nothing would be hit,
   `base` for a single target, `base + 1` when two or more would — an AoE's
   value scales with hit count. The count comes from
@@ -1773,6 +1773,15 @@ So a clone is a permanent, compounding material factory keyed by mission.
   so Flash Strike reuses it per candidate landing tile, taking the max).
   Howl counts inactive entities of any team (aggro_in_radius rallies
   same-team entities too) but shares the same bump arithmetic.
+  **The stacked-bump ladder** for AoE skills with more than one value
+  component: each component that pays beyond the base adds its own +1 —
+  AoE knockback skills (Slam, Shockwave) go through
+  `helpers.aoeKnockbackPriority(target_count, colliding_count, base)` =
+  base + (2+ targets) + (any target's push would collide, counted via
+  `helpers.collidingTargetCount`). "Any collides" is honest for an AoE —
+  the cast has no target choice, so a colliding target genuinely adds
+  value to that exact cast (contrast the single-target skills, whose
+  collision bump rides their pick).
 - **One top-level event per player action (orchestrator convention).** Each
   player input (`handleIdleInput`) pushes exactly ONE top-level event; if the
   action needs several verbs, the event is an orchestrator whose handler
