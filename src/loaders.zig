@@ -887,7 +887,7 @@ pub fn decorationFootprintEqual(a: []const types.Vector2, b: []const types.Vecto
 
 /// User-facing palette id for a ground-item type: the item's own name, or
 /// "<Skill> Tome" for skill tomes (which carry no name field — mirrors the
-/// item-tooltip naming in ui.zig).
+/// item-tooltip naming in ui/tooltip.zig).
 /// The item's palette display name (the Items group's label; the editor's
 /// item defs keep `id` synced to this — the decoration id-tracks-the-sprite
 /// rule). pub: shared by the editor item-def handlers.

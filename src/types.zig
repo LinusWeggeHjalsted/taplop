@@ -2217,7 +2217,8 @@ pub const WorldOverlayDrawable = union(enum) {
 };
 
 // -- Layer 4+5: UI elements --
-// UI is a flat list of UiElement from ui.zig, sorted back to front.
+// UI is a flat list of UiElement from the ui module (src/ui/), sorted back
+// to front.
 // The view function builds and flattens the full UI layout.
 // Options menu elements are included at the end when open.
 

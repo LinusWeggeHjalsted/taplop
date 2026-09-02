@@ -717,7 +717,7 @@ test "handleDrag: drag a bar skill onto another bar slot swaps (not clear)" {
 // ───────────────────────── drag no-op gate ─────────────────────────
 // A drop that would change nothing (unfitting item→gear or gear→occupied
 // pair, re-assigning the skill already in the slot) never fires — no dead
-// undo step. The pure predicate is covered in input_handlers.zig; these
+// undo step. The pure predicate is covered in input_gestures.zig; these
 // pin the wiring through handleDrag.
 
 fn inventorySlotElement(slot: u32, pos: types.ScreenPosition) ui.UiElement {

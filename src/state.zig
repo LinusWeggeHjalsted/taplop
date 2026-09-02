@@ -202,7 +202,7 @@ pub const SessionState = struct {
     // undoable GameState, replay-safe by construction (like tile_cursor / the
     // animation clock). Levels/hubs only; cleared on screen transition and on
     // player move (the camera recenters when the player moves). See
-    // handleCameraPan in input_handlers.zig.
+    // handleCameraPan in input_gestures.zig.
     camera_pan: ?types.Vector2 = null,
     camera_pan_anchor: ?CameraPanAnchor = null,
 

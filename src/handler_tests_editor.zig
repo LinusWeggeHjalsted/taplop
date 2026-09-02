@@ -4341,8 +4341,7 @@ test "player_select_editor_all: no-op without the select tool, and when everythi
 }
 
 /// Membership check for a `Selectable` entry in a selection slice (test-
-/// local; the production `selectionContains` is file-private in
-/// event_handlers.zig).
+/// local; the production `selectionContains` lives in editor/planning.zig).
 fn selectionContainsEntry(selection: []const types.Selectable, entry: types.Selectable) bool {
     for (selection) |selected| {
         if (std.meta.eql(selected, entry)) return true;

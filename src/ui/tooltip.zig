@@ -452,9 +452,10 @@ pub fn buildItemTooltip(
     }
 }
 
-/// Whether `skill_id` is in `learned_skills`. The event_handlers version
-/// (`isSkillLearned`) takes the same args; this local copy keeps the tooltip
-/// builder self-contained (ui.zig doesn't import event_handlers).
+/// Whether `skill_id` is in `learned_skills`. The handler-side version
+/// (`handlers/player.zig` isSkillLearned) takes the same args; this local
+/// copy keeps the tooltip builder self-contained (src/ui/ doesn't import
+/// the handlers).
 fn isSkillLearnedIn(learned_skills: []const types.SkillId, skill_id: types.SkillId) bool {
     for (learned_skills) |learned| {
         if (learned == skill_id) return true;

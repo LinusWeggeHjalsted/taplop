@@ -267,7 +267,7 @@ pub const UiState = struct {
     /// disambiguation (levels only). Cancels if the pointer moves beyond
     /// the drag threshold (became a camera pan); on a clean release toggles
     /// the entity inspect panel on `inspected_entity_index`. See
-    /// `handleRightClickInspect` in input_handlers.
+    /// `handleRightClickInspect` in input_gestures.zig.
     pending_right_click: ?PendingRightClick = null,
 
     /// Most recent plain single click on a content inventory slot, for

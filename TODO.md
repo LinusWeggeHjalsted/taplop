@@ -148,7 +148,7 @@ Test by running `zig build run` and clicking through.
   `std.StaticStringMap` key maps per file type. All file types wired: level,
   hub, mission, campaign, settings, color-theme, weapon-type, salvage,
   player-save, player-loadout. The `validateConfigKeys` helper
-  (event_handlers.zig) centralizes the warning-collection + popup surfacing
+  (handlers/shared.zig) centralizes the warning-collection + popup surfacing
   for in-event reads; `loadConfigWithFallback` (session_setup.zig) validates
   startup config. History in DONE.md.
 
@@ -804,7 +804,7 @@ paragraph). Remaining work:
   INPUT: drag-paint. All tools
   have left-click input + cursor previews + the right-click delete.
   No-op clicks never fire: each tool's effect is computed by a pure
-  planner (`planEditor*Actions`, event_handlers.zig) shared by the
+  planner (`planEditor*Actions`, editor/planning.zig) shared by the
   handler + the input layer, and an empty plan means no player action
   (no undo/replay pollution); exact-duplicate decoration placements
   (same type + anchor) no-op too. See DESIGN → Level Editor →
@@ -964,7 +964,7 @@ Open:
 - Draw offset support (decoration overhang; SpriteDrawable.draw_offset).
 - Programmatic edge highlight for highlighted Button/Image (shader outline of
   opaque pixels, or fallback highlight sprite) — currently ignored.
-- Real font: TTF loaded + per-glyph metrics feed the ui.zig measurement seam
+- Real font: TTF loaded + per-glyph metrics feed the ui measurement seam (ui/element.zig `FontMetrics`)
   (DONE — see DONE.md). `drawTextLabel` still ignores bold/italic (only the
   regular face is loaded); honoring TextLabel bold/italic + color is a
   follow-up (needs separate bold/italic faces).

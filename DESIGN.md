@@ -140,7 +140,7 @@ next session meets it as a surprise instead of a known.
   editor viewport; cleared on player move (recenter) and screen transition.
   In the editor the camera centers on the active level's `player_start`
   (`playerPosition` editor arm), so pan is relative to that. `handleCameraPan`
-  (input_handlers.zig) runs anytime (mid-wait / mid-turn), grabs the world
+  (input_gestures.zig) runs anytime (mid-wait / mid-turn), grabs the world
   point under the cursor at drag start (sub-tile float precision via
   `input.floatWorldPoint`, the float inverse of the camera transform), and
   solves for the camera that keeps it under the cursor. Pan-start is
@@ -2647,7 +2647,7 @@ selection tool above) is the landed hit-testing: '!' / '=' singletons,
 first covering decoration, else tile + occupants; the render-order
 priority below is the future selection-op refinement. **Inspector tool-type
 inference (LANDED, player-as-fallback):** the inspector's target is
-resolved by `editorInspectorTarget` (ui.zig) — a non-optional
+resolved by `editorInspectorTarget` (ui/editor_inspector.zig) — a non-optional
 `EditorInspectorTarget = { entity_type | decoration_type | item_type |
 player }` where
 the PLAYER is the FALLBACK (the '!' spawn's loadout): the active enemy,
@@ -3148,8 +3148,8 @@ streamed at runtime but still downloaded).
 - UI is a flat `[]const UiElement` (tagged union: nine_slice_panel, slot,
   button, text_label, fill_sprite, image, solid_rect), appended in back-to-
   front draw order — no sorting
-- Builders (`buildBottomBar`, etc. in ui.zig) take a `bounds: Rectangle` and append into a shared `std.ArrayList(UiElement)`; everything positions relative to `bounds`
-- Layout is Rect algebra: `Rectangle` has pure methods (`position/right/bottom/centerX/centerY`, `translate`, `inset`, and 3×3 `place*` anchors like `placeCenter`, `placeBottomCenter`, `placeCenterRight`). Plus `screenRect()`, `rowWidth()`, `Row`, `Grid` helpers in ui.zig
+- Builders (`buildBottomBar`, etc. in `src/ui/`) take a `bounds: Rectangle` and append into a shared `std.ArrayList(UiElement)`; everything positions relative to `bounds`
+- Layout is Rect algebra: `Rectangle` has pure methods (`position/right/bottom/centerX/centerY`, `translate`, `inset`, and 3×3 `place*` anchors like `placeCenter`, `placeBottomCenter`, `placeCenterRight`). Plus `screenRect()`, `rowWidth()`, `Row`, `Grid` helpers in `ui/element.zig`
 - Screen-space dimensions (widths/heights/sizes/offsets) are `i32` (rendering, not gameplay). Gameplay quantities (health, counts) stay `u32`
 - Buttons carry an `Action` (same enum as keybinds) so clicks feed the one input path; skill buttons map slot 1-8 → `skill_slot_N`. Slots are for inventory/gear items only
 - Cooldown = semi-transparent overlay image + centered number TextLabel (not a fill fraction). Health globe = `FillSprite` (two sprites: empty drawn whole, full cropped to fraction)
@@ -3315,7 +3315,7 @@ The shared freeform-editing widget (first consumers: the editor
 inspector's name/sprite/stat fields; later the settings screen's deferred
 freeform-integer entry). Design:
 
-- **Pure core, unit-tested:** `TextField` (ui.zig) — a fixed-capacity
+- **Pure core, unit-tested:** `TextField` (ui/text_input.zig) — a fixed-capacity
   (128-byte) UTF-8 buffer with `length`, a byte-index `caret`, and a
   `selection_anchor`. All edit operations are pure methods over the
   struct (insert / deleteBackward / deleteForward / moveCaretTo with a

@@ -50,7 +50,8 @@ const button_background_sprite_id = emit.button_background_sprite_id;
 const spanRow = @import("tooltip.zig").spanRow;
 
 /// All entity sprites share one 512x640 frame (view.zig `entity_frame_*`).
-/// Duplicated here because ui.zig can't import view.zig (view imports ui).
+/// Duplicated here because src/ui/ can't import view.zig (view imports the
+/// ui facade).
 pub const editor_entity_frame_width: i32 = 512;
 pub const editor_entity_frame_height: i32 = 640;
 

@@ -36,7 +36,7 @@ const read_limit: std.Io.Limit = .limited(256 * 1024 * 1024);
 /// "data/campaigns/main_campaign/missions/beginnings") — the mission
 /// browser's Official tab. Comptime from the embedded map (shipped content
 /// is immutable per build); sorted for a stable browser order. Mirrors
-/// ui.zig's `official_entity_sprite_stems` comptime scan.
+/// ui/editor_pickers.zig's `official_entity_sprite_stems` comptime scan.
 const official_mission_dir_paths: []const []const u8 = build: {
     @setEvalBranchQuota(20000);
     var paths: []const []const u8 = &.{};
