@@ -10513,3 +10513,13 @@ Tests: burst (radius filter + spell damage + rating 2), meditate (blink +
   howl reset, itself and an off-bar preserved cooldown excluded, rating =
   reset count), accelerate (two-of-three enemies counted, ally excluded,
   delta +2, rating 2).
+
+## Skills: enchantments That Which Reaches, Bull Form, That Which Rushes (Tier A slice 13)
+
+The pure-modifier trio, on the That Which Lingers template (self-cast
+create_effect, options flat 1 — the enchantment pool's ratings only order
+the non-ending skills). Reaches: range/radius +1; Bull Form: distance +10
+(knockback + retreat); Rushes: cooldown -1 (applied where cooldowns are
+set, in use_skill) + speed +1. effect_sprite null on all three until art
+ships. Tests: create_effect payloads + the modifier fields on each effect
+definition via generated_lookups + the flat-1 option.

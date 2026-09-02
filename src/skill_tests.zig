@@ -35,6 +35,9 @@ const adrenaline_surge_skill = @import("skills/adrenaline_surge.zig");
 const burst_skill = @import("skills/burst.zig");
 const meditate_skill = @import("skills/meditate.zig");
 const accelerate_skill = @import("skills/accelerate.zig");
+const that_which_reaches_skill = @import("skills/that_which_reaches.zig");
+const bull_form_skill = @import("skills/bull_form.zig");
+const that_which_rushes_skill = @import("skills/that_which_rushes.zig");
 
 const Vector2 = types.Vector2;
 
@@ -1726,4 +1729,41 @@ test "accelerate: gains 1 momentum per enemy within radius" {
 
     const options = accelerate_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
     try testing.expectEqual(@as(u32, 2), options[0].priority); // direct enemy count
+}
+
+test "modifier enchantments: reaching, bull, rushing apply their effects" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const lookups = @import("generated_lookups.zig");
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
+
+    // That Which Reaches: range +1 and radius +1 modifiers on the effect
+    // definition, applied to the caster for 2 turns.
+    {
+        const result = that_which_reaches_skill.skill.useSkill(0, null, game_state, arena.allocator());
+        const create = result[0].sub_level_event.create_effect;
+        try testing.expectEqual(types.EffectId.that_which_reaches, create.effect_id);
+        try testing.expectEqual(@as(u32, 2), create.duration);
+        const modifiers = lookups.getEffectDefinition(.that_which_reaches).additive_effect_modifiers;
+        try testing.expectEqual(@as(i32, 1), modifiers.range);
+        try testing.expectEqual(@as(i32, 1), modifiers.radius);
+        const options = that_which_reaches_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(u32, 1), options[0].priority);
+    }
+    // Bull Form: distance +10.
+    {
+        const result = bull_form_skill.skill.useSkill(0, null, game_state, arena.allocator());
+        try testing.expectEqual(types.EffectId.bull_form, result[0].sub_level_event.create_effect.effect_id);
+        try testing.expectEqual(@as(i32, 10), lookups.getEffectDefinition(.bull_form).additive_effect_modifiers.distance);
+    }
+    // That Which Rushes: cooldown -1 and speed +1.
+    {
+        const result = that_which_rushes_skill.skill.useSkill(0, null, game_state, arena.allocator());
+        try testing.expectEqual(types.EffectId.that_which_rushes, result[0].sub_level_event.create_effect.effect_id);
+        const modifiers = lookups.getEffectDefinition(.that_which_rushes).additive_effect_modifiers;
+        try testing.expectEqual(@as(i32, -1), modifiers.cooldown);
+        try testing.expectEqual(@as(i32, 1), modifiers.speed);
+    }
 }

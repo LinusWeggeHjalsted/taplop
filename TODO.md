@@ -275,11 +275,16 @@ stale).
         reset. Machinery event (the reset_weapon_cooldowns precedent —
         enumeration needs defs); options rate = reset count. Lands with
         Entity.onBarSkillIds. History in DONE.md.
-  - [ ] cantrip burst — AoE attack, radius 1, cd 10.
-  - [ ] cantrip meditate — reset each other equipped utility skill
-        cooldown, cd 10 (composable directly — utility skills live on the
-        entity, no orchestrator needed).
-  - [ ] cantrip accelerate — +1 momentum per enemy within radius 3, cd 3.
+  - [x] cantrip burst — AoE attack, radius 1, cd 10 (mini worldfire,
+        non-turn-ending cantrip pool).
+  - [x] cantrip meditate — reset each other equipped utility skill
+        cooldown, cd 10 (composes change_cooldown directly — utility
+        slots live on the entity, no machinery needed). Rating = reset
+        count.
+  - [x] cantrip accelerate — +1 momentum per enemy within radius 3, cd 3.
+        Rating = direct enemy count (cantrip-pool ratings only ORDER the
+        non-ending skills — all worthwhile ones fire before the
+        turn-ender). History in DONE.md.
   - [ ] enchantment that which reaches — range/radius +1 modifiers.
   - [ ] enchantment bull form — distance +10 modifier.
   - [ ] enchantment that which rushes — cooldown −1 + speed +1 modifiers.
