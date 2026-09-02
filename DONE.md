@@ -10132,3 +10132,21 @@ rating — durations stack via the handler's `+=`, so an already-stunned
 target is not a wasted pick), weakestTarget selection, outgoing stun
 modifier applied at the skill site. Tests: useSkill (off-hand damage,
 stun payload, LIFO order) + priority 0/3/cooldown.
+
+## Skill: idol Heal (Tier A slice 4)
+
+Idol 1/3. Heal: skill 1 (main hand, no cooldown, turn-ending weapon skill)
+— self-heal for 20% of max health, no targeting (the replenish template:
+getValidTargets/selectTarget/playerPrepareSkill all null, useSkill ignores
+the target param).
+
+Priority decision worth recording: 3 only BELOW half health, 0 at/above
+(the replenish threshold logic). The tempting alternative — rate whenever
+below full — would tie the attack skills at 2, and ties resolve by slot
+order, so the idol would spend EVERY turn topping off instead of attacking.
+The half threshold means it heals only when meaningfully wounded (and being
+a 20% heal, it climbs back over half in a couple of turns, not forever).
+Heal amount getEffectiveMaxHealth()/5 (the stone-form end-of-turn precedent
+for "20% of max"). Tests: heal amount truncation on an awkward value
+(23/5 → 4), null targeting surface, priority at full/exactly-half/below-
+half + the swap-inherited cooldown case.

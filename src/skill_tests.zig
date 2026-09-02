@@ -13,6 +13,7 @@ const shoot_skill = @import("skills/shoot.zig");
 const powerful_shot_skill = @import("skills/powerful_shot.zig");
 const bash_skill = @import("skills/bash.zig");
 const head_shot_skill = @import("skills/head_shot.zig");
+const heal_skill = @import("skills/heal.zig");
 
 const Vector2 = types.Vector2;
 
@@ -485,5 +486,54 @@ test "head shot: priority is 3 with a hostile in range, 0 otherwise or on cooldo
         try testing.expectEqual(@as(u32, 3), head_shot_skill.skill.priority(0, game_state));
         setCooldown(game_state, 0, .head_shot, 1);
         try testing.expectEqual(@as(u32, 0), head_shot_skill.skill.priority(0, game_state));
+    }
+}
+
+test "idol heal: useSkill emits a self-heal for a fifth of max health" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // Awkward value on purpose: 23 / 5 must truncate to 4 (integer math).
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 23, .current_health = 9 };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{caster},
+        &.{},
+    );
+
+    try testing.expectEqual(@as(?[]const Vector2, null), heal_skill.skill.getValidTargets(0, game_state, arena.allocator()));
+    try testing.expectEqual(@as(?Vector2, null), heal_skill.skill.selectTarget(0, null, game_state));
+
+    const result = heal_skill.skill.useSkill(0, null, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), result.len);
+    const heal = result[0].sub_level_event.heal;
+    try testing.expectEqual(@as(u32, 0), heal.entity_index);
+    try testing.expectEqual(@as(u32, 4), heal.amount);
+}
+
+test "idol heal: priority is 3 only below half health" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // Full health → 0 (the no-op gate).
+    {
+        const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 20 };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
+        try testing.expectEqual(@as(u32, 0), heal_skill.skill.priority(0, game_state));
+    }
+    // Exactly half → 0 (at/above half).
+    {
+        const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 10 };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
+        try testing.expectEqual(@as(u32, 0), heal_skill.skill.priority(0, game_state));
+    }
+    // Below half → 3.
+    {
+        const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .max_health = 20, .current_health = 9 };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{caster}, &.{});
+        try testing.expectEqual(@as(u32, 3), heal_skill.skill.priority(0, game_state));
+        // Cooldown overrides (a swap can leave one on a no-cooldown skill).
+        setCooldown(game_state, 0, .heal, 1);
+        try testing.expectEqual(@as(u32, 0), heal_skill.skill.priority(0, game_state));
     }
 }
