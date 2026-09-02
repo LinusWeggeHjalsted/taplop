@@ -1440,6 +1440,22 @@ for the run-side design.
   valid across later editor actions or undo that could trim the
   timeline). The decision is a pure helper
   (`validation_replay.replayOverwriteDecision`), directly tested.
+- **The validation stats screen** is the mission-complete overlay rendered
+  OVER THE EDITOR: `end_validation{success=true}` populates
+  `last_completed_mission` (`MissionCompleteInfo.validation = true`), and
+  `view()` draws the overlay whenever the info is set — no hub gating, so
+  the campaign and validation variants share one surface with
+  context-branched content. The validation variant swaps the clone
+  summary/harvest for a "Validated in N turns — Personal best: M turns"
+  line + the author-medal targets column, and the buttons are Continue /
+  Validate Again (the same action as the top-bar Validate button — saves
+  first, then re-runs) / Overwrite Replay (while offered — writes the
+  stashed bytes; the stash is SELF-DESCRIBING, its first event names the
+  mission dir, so the write needs no session memo). The personal-best /
+  medal context is session-side (`validation_personal_best_turns`,
+  captured at the write site in both guard branches; view stays
+  file-free) while the stats + the validation flag ride GameState with
+  the info (replay-reproduced; the overlay itself is view-side).
 
 ### Balance bounds (parse-time, warn + clamp)
 

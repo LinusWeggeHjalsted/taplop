@@ -328,6 +328,10 @@ pub fn writeValidationReplay(history: *GameStateHistory) void {
         .keep_offer_overwrite => {
             stashValidationReplay(history, replay_bytes);
             history.session.validation_replay_overwrite_offered = true;
+            // The personal-best line follows the FILE — the kept old run.
+            if (existing) |old| {
+                history.session.validation_personal_best_turns = old.turns;
+            }
         },
         .write => {
             const replay_path = std.fmt.allocPrint(
@@ -343,8 +347,54 @@ pub fn writeValidationReplay(history: *GameStateHistory) void {
                 return;
             };
             clearPendingValidationReplay(history);
+            history.session.validation_personal_best_turns = new_turns;
         },
     }
+}
+
+/// Write the stashed (slower-run) validation replay over the personal
+/// best — the validation stats screen's manual Overwrite Replay button
+/// (a pure input-layer side effect, the dump_event_log class — the bytes
+/// are session-side, no GameState component to record). The stash was
+/// captured at end_validation (the BYTES, not a re-slice — the timeline
+/// may have moved since) and is SELF-DESCRIBING: its first event carries
+/// the mission dir the run validated, so that's where it goes back — no
+/// session-memo dependency (a stashed run always has one, but the stash
+/// naming its own target is stricter). Clears the stash + the offer on
+/// success and follows the personal-best line to the newly written file;
+/// a write failure surfaces the popup and KEEPS the offer (re-clickable).
+pub fn overwritePendingValidationReplay(history: *GameStateHistory) void {
+    const stashed = history.session.pending_validation_replay orelse return;
+    const scratch = history.current_arena.allocator();
+
+    // The stash is our own serialized output — a parse failure is
+    // impossible, but a corrupt stash must never overwrite the best:
+    // drop the offer instead of writing garbage.
+    const sections = parser.parseConfigFile(stashed, scratch) catch {
+        clearPendingValidationReplay(history);
+        return;
+    };
+    const replay = validation_replay.loadValidationReplay(sections, scratch) catch {
+        clearPendingValidationReplay(history);
+        return;
+    };
+    const mission_path = replay.events[0].player_input_event.player_start_validation.mission_path;
+    const replay_path = std.fmt.allocPrint(
+        scratch,
+        "{s}/validation_replay.txt",
+        .{mission_path},
+    ) catch @panic("failed to allocate validation replay path");
+    history.file_source.writeFile(replay_path, stashed) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to overwrite the validation replay: could not write validation_replay.txt",
+        );
+        return;
+    };
+    // The offer is consumed; the personal-best line follows the file.
+    clearPendingValidationReplay(history);
+    history.session.validation_personal_best_turns =
+        validation_replay.deriveValidationTurns(replay.events);
 }
 
 /// Read one file from the persistent dir and append it to the export

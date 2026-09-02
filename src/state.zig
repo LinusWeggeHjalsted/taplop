@@ -213,6 +213,15 @@ pub const SessionState = struct {
     /// personal best and the validation stats screen should show the
     /// manual Overwrite Replay button. Cleared with the stash.
     validation_replay_overwrite_offered: bool = false,
+
+    /// The validated mission's personal-best turn count (the replay
+    /// FILE's derived turns — what the author medal targets derive from).
+    /// Captured at the validation-replay write site (both guard branches:
+    /// the kept old file's turns, or the just-written run's). Null when
+    /// no replay has landed (a failed write — the popup says so). Display
+    /// state for the validation stats screen; the browser/UI derives from
+    /// the file itself later.
+    validation_personal_best_turns: ?u32 = null,
     save_files_last_scan_us: u64 = save_files_never_scanned,
     // Camera pan (right-drag): offset in world pixels added to the player-
     // centered camera, plus the drag anchor. Transient view state — off the

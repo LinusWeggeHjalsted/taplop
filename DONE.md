@@ -9627,3 +9627,49 @@ effect, replay never re-fires, undo past the run doesn't rewrite):
   keys on `player_start_validation` — the helper now pushes the
   orchestrator (the realistic button shape; the machinery event is
   never a slice start).
+
+## Validation replay: slice 4 — the validation stats screen (the overlay over the editor)
+
+The mission-complete overlay doubles as the post-validation stats
+screen — one surface, context-branched:
+
+- **`MissionCompleteInfo.validation: bool`** (new field, on the timeline):
+  `end_validation{success=true}` populates `last_completed_mission` with
+  the run's stats (name/uuid/path from the file-loaded mission,
+  turns/tiles/skills/damage, clone fields zeroed — discard semantics).
+  A pure GameState write, replay-reproduced; the overlay itself renders
+  view-side (view() draws it whenever the info is set — no hub gating,
+  which is what makes the editor reuse free). Undo/redo across the run
+  end re-shows/dismisses naturally (the info is in snapshots).
+- **`buildMissionComplete` gains a `?ValidationCompleteContext` param**:
+  the campaign branch is byte-identical (regression-tested); the
+  validation branch swaps the "New clone:" icon line for a "Validated in
+  N turns — Personal best: M turns" summary, the clone-harvest column for
+  the "Author medals" column (gold/silver/bronze derived at display time
+  via medalTargets), and the buttons for Continue / Validate Again /
+  Overwrite Replay (offered only). Validate Again REUSES the
+  `.validate_editor_mission` action — the same dispatch that saves first
+  then re-runs; no new action for it.
+- **The session-side context** (`validation_personal_best_turns` on
+  SessionState): captured at the write site in BOTH guard branches (the
+  kept old file's turns or the just-written run's), so the PB line +
+  medal targets always derive from the FILE's turns (view stays
+  file-free); medal targets fall back to this run's turns when no replay
+  landed.
+- **The manual Overwrite Replay path**: new Action
+  `.overwrite_validation_replay` → options_action dispatch (offer-gated;
+  a stale click no-ops) → `mission_io.overwritePendingValidationReplay`.
+  Mid-implementation correction: the write target was first derived from
+  the session memo — wrong, because a run doesn't require a save this
+  session (hand-authored mission dirs, imported missions). The stash is
+  SELF-DESCRIBING (its first event carries the mission dir), so the
+  overwrite writes there — no memo dependency, and the bytes provably
+  return to the dir they came from. Consumes the offer, updates the PB
+  line; a write failure keeps the offer (re-clickable).
+- **Tests**: the overlay builder's two variants (validation: "validated"
+  header + medal lines from medalTargets(3) + the three buttons, NO
+  clone content; campaign regression: unchanged); the handler-side flow
+  (info populated + flagged with the run's data, PB captured, the stale
+  overwrite click no-ops, Continue dismisses on the timeline, the slower
+  run offers, the manual overwrite writes the stash + follows the PB
+  line + consumes the offer).

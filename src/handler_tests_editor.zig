@@ -7349,3 +7349,66 @@ test "player_import_editor_max_player: loads the shipped max loadout, undo rever
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expect(history.current_state.editor.?.player_def.template.amulet == null);
 }
+
+test "the validation stats screen: info populated, personal best captured, manual overwrite writes the stash" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    try writeValidationFixtureMission(&harness);
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+
+    // Run A (the beeline — 0 turns): auto-writes (no prior file).
+    try playFixtureRunToCompletion(&history, true);
+
+    // The stats info: populated + validation-flagged, carrying the run's
+    // data from the FILE-loaded mission. The clone fields are zeroed.
+    {
+        const info = history.current_state.last_completed_mission.?;
+        try testing.expect(info.validation);
+        try testing.expectEqualStrings("Validation Fixture", info.name);
+        try testing.expectEqualStrings("33333333-3333-3333-3333-333333333333", info.uuid);
+        try testing.expectEqualStrings(validation_fixture_path, info.path);
+        try testing.expectEqual(@as(u32, 0), info.turns_spent);
+        try testing.expect(!info.overwrite_offered);
+    }
+    // The personal-best line was captured at the write site (the file's
+    // turns — this run's).
+    try testing.expectEqual(@as(u32, 0), history.session.validation_personal_best_turns.?);
+    // Not offered — no slower run is stashed; a stale overwrite click
+    // no-ops.
+    try testing.expect(!history.session.validation_replay_overwrite_offered);
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .overwrite_validation_replay,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(u32, 0), (try readFixtureReplay(&harness, arena)).turns);
+
+    // Continue (the overlay's button path): dismiss clears the info on
+    // the undo timeline.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .continue_after_mission,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(history.current_state.last_completed_mission == null);
+
+    // Run B (2 turns): SLOWER than the 0-turn best → keep + stash + offer.
+    try playFixtureRunToCompletion(&history, false);
+    try testing.expect(history.session.validation_replay_overwrite_offered);
+    // The PB line follows the FILE (still the 0-turn best).
+    try testing.expectEqual(@as(u32, 0), history.session.validation_personal_best_turns.?);
+
+    // The manual Overwrite Replay: the STASHED slower run becomes the
+    // file, the offer is consumed, and the PB line follows the new file.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .overwrite_validation_replay,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expectEqual(@as(u32, 2), (try readFixtureReplay(&harness, arena)).turns);
+    try testing.expectEqual(@as(u32, 2), history.session.validation_personal_best_turns.?);
+    try testing.expect(history.session.pending_validation_replay == null);
+    try testing.expect(!history.session.validation_replay_overwrite_offered);
+}

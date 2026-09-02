@@ -213,6 +213,7 @@ pub const error_scrollbar_gap = ui_screens.error_scrollbar_gap;
 pub const buildErrorPopup = ui_screens.buildErrorPopup;
 pub const buildTopBar = ui_screens.buildTopBar;
 pub const buildMissionComplete = ui_screens.buildMissionComplete;
+pub const ValidationCompleteContext = ui_screens.ValidationCompleteContext;
 pub const buildMissionFail = ui_screens.buildMissionFail;
 pub const buildOptionsMenu = ui_menus.buildOptionsMenu;
 pub const buildMainMenu = ui_menus.buildMainMenu;

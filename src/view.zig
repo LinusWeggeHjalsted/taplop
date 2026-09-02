@@ -19,6 +19,7 @@ const parser = @import("parser.zig");
 const loaders = @import("loaders.zig");
 const functions = @import("functions.zig");
 const combat_log = @import("combat_log.zig");
+const validation_replay = @import("validation_replay.zig");
 const event_handlers = @import("event_handlers.zig");
 const lookups = @import("generated_lookups.zig");
 const test_harness = @import("test_harness.zig");
@@ -556,14 +557,27 @@ pub fn view(
         ) catch @panic("failed to build mission fail overlay");
     }
 
-    // Mission-complete overlay: full-screen modal shown in the hub after
-    // the player completes the last level of a mission. Derived from
+    // Mission-complete overlay: full-screen modal shown after the player
+    // completes the last level of a mission — in the HUB for campaign
+    // missions, or OVER THE EDITOR as the validation stats screen (the
+    // info's validation flag; end_validation populated it). Derived from
     // GameState.last_completed_mission (on the undo timeline) so undo/redo
     // handles it naturally — undo to before completion clears it, redo re-
     // shows it, dismiss_mission_complete (Continue) clears it on the timeline.
-    // Drawn on top of the mission_fail overlay (mutually exclusive) but under
-    // the error popup. See DESIGN → Architecture.
+    // The validation context (personal best + medal targets + the overwrite
+    // offer) is session-side — built here; view is file-free, so the write
+    // site captured the best. Drawn on top of the mission_fail overlay
+    // (mutually exclusive) but under the error popup. See DESIGN →
+    // Architecture + DESIGN → Custom Missions & Online Services →
+    // Validation replay.
     if (current_state.last_completed_mission) |info| {
+        const validation: ?ui.ValidationCompleteContext = if (info.validation) .{
+            .personal_best_turns = session.validation_personal_best_turns,
+            .medal_targets = validation_replay.medalTargets(
+                session.validation_personal_best_turns orelse info.turns_spent,
+            ),
+            .overwrite_offered = session.validation_replay_overwrite_offered,
+        } else null;
         ui.buildMissionComplete(
             &ui_elements,
             frame_allocator,
@@ -571,6 +585,7 @@ pub fn view(
             ui.screenRect(),
             info,
             active_theme,
+            validation,
         ) catch @panic("failed to build mission complete overlay");
     }
 

@@ -350,6 +350,30 @@ pub fn handleMetaEvent(
             if (end.success and !history.replaying) {
                 editor_mission_io.writeValidationReplay(history);
             }
+            if (end.success) {
+                // The stats screen: populate the mission-complete info so
+                // the overlay renders over the editor (view() draws it
+                // whenever last_completed_mission is set — no hub gating).
+                // A pure GameState write — reproduced on replay (the
+                // overlay itself is view-side; the session-side personal
+                // best / medal context is captured at the write site).
+                // The clone fields are zeroed — validation is
+                // discard-semantics, no clone harvest.
+                if (current.mission) |*mission| {
+                    current.last_completed_mission = .{
+                        .uuid = mission.uuid,
+                        .name = mission.name,
+                        .path = mission.path,
+                        .turns_spent = mission.turns_spent,
+                        .converted_materials = mission.converted_materials_collected,
+                        .tiles_moved = mission.tiles_moved,
+                        .damage_dealt = mission.damage_dealt,
+                        .damage_taken = mission.damage_taken,
+                        .skills_used = mission.skills_used,
+                        .validation = true,
+                    };
+                }
+            }
             // Restore after a validation run. Live (editor present): edit
             // mode + the editor screen, the session's real player data
             // restored, the run's mission + level discarded by the

@@ -123,6 +123,11 @@ pub const Action = enum {
     continue_after_mission,
     replay_mission,
     overwrite_clone,
+    // The validation stats screen's manual Overwrite Replay button — writes
+    // the stashed slower-run replay bytes over the personal best (a
+    // session-side side effect, no recorded event). See DESIGN → Custom
+    // Missions & Online Services → Validation replay.
+    overwrite_validation_replay,
     // Dev tool: skip the current level (pushes end_level with the default
     // continuation — next level or mission-end). Bound to ctrl+Enter; gated
     // to dev builds via `@import("build_info").dev_mode` at the handler site,
@@ -438,7 +443,8 @@ pub fn releaseSoundForAction(action: Action) ?SoundId {
         .undo, .redo => .menu,
         .save_game => .menu,
         .restart_mission, .exit_mission, .exit_to_menu => .menu,
-        .continue_after_mission, .replay_mission, .overwrite_clone => .menu,
+        .continue_after_mission, .replay_mission, .overwrite_clone,
+        .overwrite_validation_replay => .menu,
         // Skill slots: suppress the generic button-up (the use_skill event
         // plays weapon_swing/spell on auto-fire; the prepare path plays
         // button_click_up explicitly). See DESIGN → Audio.
@@ -1722,6 +1728,14 @@ pub const MissionCompleteInfo = struct {
     /// "Overwrite Clone" button. False on a first completion (auto-saved) or a
     /// strictly-better run (auto-overwrote). See DESIGN → Clones (clone system).
     overwrite_offered: bool = false,
+    /// True when this "completion" was a VALIDATION RUN — end_validation
+    /// populated the info so the mission-complete overlay renders over the
+    /// editor as the validation stats screen (the session-side personal
+    /// best / medal context rides SessionState; view() builds it). False
+    /// for ordinary campaign completions (the end_mission → start_hub
+    /// cascade). See DESIGN → Custom Missions & Online Services →
+    /// Validation replay.
+    validation: bool = false,
 };
 
 pub const Mission = struct {

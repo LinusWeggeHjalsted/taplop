@@ -892,7 +892,7 @@ paragraph). Remaining work:
         mission, or the new run is strictly faster; otherwise keep the old
         file + stash the new bytes on SessionState + offer manual overwrite
         (the button writes the STASHED bytes, never a re-slice).
-  - [ ] **4 — validation stats screen:** `end_validation{success=true}`
+  - [x] **4 — validation stats screen:** `end_validation{success=true}`
         populates `last_completed_mission` + the mission-complete overlay
         renders over the editor (no clone column — the medal targets column
         instead; Continue / Validate Again / Overwrite Replay buttons;

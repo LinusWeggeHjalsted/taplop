@@ -927,6 +927,17 @@ pub fn handleAnytimeInput(
                 if (!info.overwrite_offered) return;
                 pushPlayerActionAndDrain(history, .player_overwrite_clone);
             },
+            // The validation stats screen's manual Overwrite Replay button:
+            // write the STASHED slower-run replay bytes over the personal
+            // best (a pure side effect — the bytes are session-side, no
+            // recorded event; the mission_io fn owns the write + the
+            // stash/offer/pb cleanup). Gated on the offer: the button only
+            // shows while offered, but a stale click (an offer retired by
+            // a newer run) no-ops.
+            .overwrite_validation_replay => {
+                if (!history.session.validation_replay_overwrite_offered) return;
+                mission_io.overwritePendingValidationReplay(history);
+            },
             // Settings button (main menu OR options menu): toggle the
             // settings overlay. From the options menu it opens on top
             // (drill-in; Back returns here); from the main menu it opens

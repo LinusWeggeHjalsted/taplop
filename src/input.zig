@@ -514,7 +514,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .zoom_reset => player_input.anytime.zoom_reset = true,
         .save_game => player_input.anytime.options_action = action,
         .restart_mission, .exit_mission, .exit_to_menu => player_input.anytime.options_action = action,
-        .continue_after_mission, .replay_mission, .overwrite_clone => player_input.anytime.options_action = action,
+        .continue_after_mission, .replay_mission, .overwrite_clone, .overwrite_validation_replay => player_input.anytime.options_action = action,
         // Settings is reachable from both the main-menu button and the
         // options-menu button; routing through `options_action` lets one
         // handler (in `handleAnytimeInput`) serve both contexts — the

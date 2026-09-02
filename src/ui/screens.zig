@@ -9,6 +9,7 @@ const ui_element = @import("element.zig");
 const emit = @import("emit.zig");
 const ui_tooltip = @import("tooltip.zig");
 const state = @import("../state.zig");
+const validation_replay = @import("../validation_replay.zig");
 
 const Action = types.Action;
 const Rectangle = types.Rectangle;
@@ -302,15 +303,36 @@ pub fn buildTopBar(
     );
 }
 
+/// The validation stats screen's session-side context — view() builds this
+/// from SessionState when the completed "mission" was a validation run
+/// (MissionCompleteInfo.validation). The personal best + medal targets
+/// derive from the replay FILE's turns (captured at the write site — view
+/// is file-free); the targets fall back to this run's turns when no replay
+/// landed (a failed write — the popup says so). See DESIGN → Custom
+/// Missions & Online Services → Validation replay.
+pub const ValidationCompleteContext = struct {
+    personal_best_turns: ?u32,
+    medal_targets: validation_replay.MedalTargets,
+    overwrite_offered: bool,
+};
+
 /// Build the mission-complete overlay: a full-screen 9-slice panel with a
-/// "{mission_name} completed" header centered at the top, a centered "New
-/// clone: [icons]" summary line below it, a two-column area (left stats,
-/// right clone-harvest rewards with its own sub-header) extending downward,
-/// and Continue + Replay Mission (+ Overwrite Clone if offered) buttons side
-/// by side at the bottom. Rendered when `GameState.last_completed_mission`
-/// is set (the player completed the last level of a mission; the cascade has
-/// already transitioned to the hub). See DESIGN → Architecture + DESIGN →
-/// Clones (clone system).
+/// header centered at the top, a centered summary line below it, a
+/// two-column area (left stats, right column) extending downward, and
+/// buttons at the bottom. Rendered when `GameState.last_completed_mission`
+/// is set. Two contexts share the surface:
+/// - CAMPAIGN (validation == null — the hub after the player completes the
+///   last level of a mission): "{name} completed" header, a "New clone:
+///   [icons]" summary line, the clone-harvest rewards column, and Continue
+///   + Replay Mission (+ Overwrite Clone if offered) buttons. See DESIGN →
+///   Architecture + DESIGN → Clones (clone system).
+/// - VALIDATION (validation != null — the editor's post-run stats screen;
+///   end_validation populated the info so the overlay renders over the
+///   editor): "{name} validated" header, a "Validated in N turns — Personal
+///   best: M turns" summary, the author-medal targets column, and Continue
+///   + Validate Again (+ Overwrite Replay while the personal-best guard's
+///   slower-run stash is on offer). See DESIGN → Custom Missions & Online
+///   Services → Validation replay.
 pub fn buildMissionComplete(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -318,6 +340,7 @@ pub fn buildMissionComplete(
     screen: Rectangle,
     info: types.MissionCompleteInfo,
     active_theme: types.ActiveColorTheme,
+    validation: ?ValidationCompleteContext,
 ) !void {
     // Button panels tint with player gradient index 5 to read as buttons
     // against the theme-`darkest` background panel.
@@ -330,9 +353,13 @@ pub fn buildMissionComplete(
         .height = screen.height,
     } });
 
-    // ── Header: "{name} completed", centered at the top. ──
+    // ── Header, centered at the top. ──
     const header_font_size: i32 = 128;
-    const header_text = try std.fmt.allocPrint(allocator, "{s} completed", .{info.name});
+    const header_text = try std.fmt.allocPrint(
+        allocator,
+        "{s} {s}",
+        .{ info.name, if (validation != null) "validated" else "completed" },
+    );
     const header_width = font_metrics.measureSpanWidth(text(header_text), header_font_size);
     const header_box = screen.placeTopCenter(header_width, header_font_size, ui_gap * 4);
     try elements.append(allocator, .{ .text_label = .{
@@ -342,37 +369,61 @@ pub fn buildMissionComplete(
         .blocks_input = false,
     } });
 
-    // ── "New clone: [horizontal icons]" — centered below the header. ──
-    // Shows the just-completed run's converted_materials (the clone's
-    // rate numerator). The icon row is horizontal + compact (96px icons)
-    // so the whole line reads as one summary.
-    const new_clone_icon_size: i32 = 96;
-    const new_clone_label_text = "New clone:";
-    const new_clone_label_font_size: i32 = 64;
-    const new_clone_label_width = font_metrics.measureSpanWidth(text(new_clone_label_text), new_clone_label_font_size);
-    const new_clone_icon_row_width = rowWidth(5, new_clone_icon_size, ui_gap);
-    const new_clone_total_width = new_clone_label_width + ui_gap + new_clone_icon_row_width;
-    const new_clone_y = header_box.y + header_font_size + ui_gap * 3;
-    const new_clone_start_x = screen.x + @divTrunc(screen.width - new_clone_total_width, 2);
-    try elements.append(allocator, .{ .text_label = .{
-        .text = new_clone_label_text,
-        .screen_position = .{ .x = new_clone_start_x, .y = new_clone_y + (new_clone_icon_size - new_clone_label_font_size) / 2 },
-        .font_size = new_clone_label_font_size,
-        .blocks_input = false,
-    } });
-    try emitMaterialIcons(
-        elements,
-        allocator,
-        font_metrics,
-        .{ .x = new_clone_start_x + new_clone_label_width + ui_gap, .y = new_clone_y },
-        new_clone_icon_size,
-        .horizontal,
-        info.converted_materials,
-        active_theme,
-    );
-
-    // ── Two columns extending down from below the new-clone line. ──
-    const content_y = new_clone_y + new_clone_icon_size + ui_gap * 4;
+    // ── Summary line, centered below the header — branch by context. ──
+    const summary_y = header_box.y + header_font_size + ui_gap * 3;
+    var content_y: i32 = undefined;
+    if (validation) |context| {
+        // "Validated in N turns" (+ the personal best when one exists).
+        const summary_font_size: i32 = 64;
+        const summary_text = if (context.personal_best_turns) |best|
+            try std.fmt.allocPrint(
+                allocator,
+                "Validated in {d} turns — Personal best: {d} turns",
+                .{ info.turns_spent, best },
+            )
+        else
+            try std.fmt.allocPrint(allocator, "Validated in {d} turns", .{info.turns_spent});
+        const summary_width = font_metrics.measureSpanWidth(text(summary_text), summary_font_size);
+        const summary_x = screen.x + @divTrunc(screen.width - summary_width, 2);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = summary_text,
+            .screen_position = .{ .x = summary_x, .y = summary_y },
+            .font_size = summary_font_size,
+            .blocks_input = false,
+        } });
+        content_y = summary_y + summary_font_size + ui_gap * 4;
+    } else {
+        // "New clone: [horizontal icons]" — shows the just-completed run's
+        // converted_materials (the clone's rate numerator). The icon row is
+        // horizontal + compact (96px icons) so the whole line reads as one
+        // summary.
+        const new_clone_icon_size: i32 = 96;
+        const new_clone_label_text = "New clone:";
+        const new_clone_label_font_size: i32 = 64;
+        const new_clone_label_width = font_metrics.measureSpanWidth(text(new_clone_label_text), new_clone_label_font_size);
+        const new_clone_icon_row_width = rowWidth(5, new_clone_icon_size, ui_gap);
+        const new_clone_total_width = new_clone_label_width + ui_gap + new_clone_icon_row_width;
+        const new_clone_y = header_box.y + header_font_size + ui_gap * 3;
+        const new_clone_start_x = screen.x + @divTrunc(screen.width - new_clone_total_width, 2);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = new_clone_label_text,
+            .screen_position = .{ .x = new_clone_start_x, .y = new_clone_y + (new_clone_icon_size - new_clone_label_font_size) / 2 },
+            .font_size = new_clone_label_font_size,
+            .blocks_input = false,
+        } });
+        try emitMaterialIcons(
+            elements,
+            allocator,
+            font_metrics,
+            .{ .x = new_clone_start_x + new_clone_label_width + ui_gap, .y = new_clone_y },
+            new_clone_icon_size,
+            .horizontal,
+            info.converted_materials,
+            active_theme,
+        );
+        content_y = new_clone_y + new_clone_icon_size + ui_gap * 4;
+    }
+    // ── Two columns extending down from below the summary line. ──
 
     // Left column: stats (flush left, top-aligned at content_y).
     const stat_font_size: i32 = 64;
@@ -398,54 +449,119 @@ pub fn buildMissionComplete(
         stat_y += stat_line_height;
     }
 
-    // Right column: "Clone material harvest" sub-header + vertical material
-    // icon stack (flush right, top-aligned at content_y).
-    const harvest_header_font_size: i32 = 64;
-    const harvest_header_text = "Clone material harvest";
-    const harvest_header_width = font_metrics.measureSpanWidth(text(harvest_header_text), harvest_header_font_size);
+    // ── Right column (flush right, top-aligned at content_y) — branch by
+    //    context. ──
     const material_right = screen.x + screen.width - ui_gap * 4;
-    try elements.append(allocator, .{ .text_label = .{
-        .text = harvest_header_text,
-        .screen_position = .{ .x = material_right - harvest_header_width, .y = content_y },
-        .font_size = harvest_header_font_size,
-        .blocks_input = false,
-    } });
-    const icon_top = content_y + harvest_header_font_size + ui_gap * 2;
-    try emitMaterialIcons(
-        elements,
-        allocator,
-        font_metrics,
-        .{ .x = material_right - inventory_slot_size, .y = icon_top },
-        inventory_slot_size,
-        .vertical,
-        info.harvested_materials,
-        active_theme,
-    );
+    if (validation) |context| {
+        // "Author medals" — the gold/silver/bronze turn targets players
+        // must beat, derived from the author's validated turns at display
+        // time (never stored). See DESIGN → Custom Missions & Online
+        // Services → Turn counters + author medals.
+        const medal_header_text = "Author medals";
+        const medal_header_width = font_metrics.measureSpanWidth(text(medal_header_text), stat_font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = medal_header_text,
+            .screen_position = .{ .x = material_right - medal_header_width, .y = content_y },
+            .font_size = stat_font_size,
+            .blocks_input = false,
+        } });
+        const medal_lines = [_]struct { label: []const u8, turns: u32 }{
+            .{ .label = "Gold", .turns = context.medal_targets.gold },
+            .{ .label = "Silver", .turns = context.medal_targets.silver },
+            .{ .label = "Bronze", .turns = context.medal_targets.bronze },
+        };
+        var medal_y = content_y + stat_font_size + ui_gap * 2;
+        for (medal_lines) |medal_line| {
+            const medal_line_text = try std.fmt.allocPrint(
+                allocator,
+                "{s}: {d} turns",
+                .{ medal_line.label, medal_line.turns },
+            );
+            const medal_line_width = font_metrics.measureSpanWidth(text(medal_line_text), stat_font_size);
+            try elements.append(allocator, .{ .text_label = .{
+                .text = medal_line_text,
+                .screen_position = .{ .x = material_right - medal_line_width, .y = medal_y },
+                .font_size = stat_font_size,
+                .blocks_input = false,
+            } });
+            medal_y += stat_line_height;
+        }
+    } else {
+        // "Clone material harvest" sub-header + vertical material icon
+        // stack.
+        const harvest_header_font_size: i32 = 64;
+        const harvest_header_text = "Clone material harvest";
+        const harvest_header_width = font_metrics.measureSpanWidth(text(harvest_header_text), harvest_header_font_size);
+        try elements.append(allocator, .{ .text_label = .{
+            .text = harvest_header_text,
+            .screen_position = .{ .x = material_right - harvest_header_width, .y = content_y },
+            .font_size = harvest_header_font_size,
+            .blocks_input = false,
+        } });
+        const icon_top = content_y + harvest_header_font_size + ui_gap * 2;
+        try emitMaterialIcons(
+            elements,
+            allocator,
+            font_metrics,
+            .{ .x = material_right - inventory_slot_size, .y = icon_top },
+            inventory_slot_size,
+            .vertical,
+            info.harvested_materials,
+            active_theme,
+        );
+    }
 
-    // ── Bottom buttons: Replay Mission in the bottom-left corner, Continue
-    //    in the bottom-right corner. Overwrite Clone (when offered) sits
-    //    centered between them. ──
+    // ── Bottom buttons — branch by context. Continue always sits in the
+    //    bottom-right corner; the left button + the conditional centered
+    //    button differ. ──
     const buttons_row = screen.placeBottomCenter(menu_button_width, panel_button_height, ui_gap * 4);
     const button_y = buttons_row.y;
     const margin = ui_gap * 4;
-    // Replay Mission — bottom-left.
-    try emitPanelButton(elements, allocator, font_metrics, .{
-        .x = screen.x + margin,
-        .y = button_y,
-        .width = menu_button_width,
-        .height = panel_button_height,
-    }, "Replay Mission", menu_button_font_size, .replay_mission, button_color, null);
-    // Continue — bottom-right.
-    try emitPanelButton(elements, allocator, font_metrics, .{
-        .x = screen.x + screen.width - margin - menu_button_width,
-        .y = button_y,
-        .width = menu_button_width,
-        .height = panel_button_height,
-    }, "Continue", menu_button_font_size, .continue_after_mission, button_color, null);
-    // Overwrite Clone — centered (only when offered).
-    if (info.overwrite_offered) {
-        const centered = screen.placeBottomCenter(menu_button_width, panel_button_height, ui_gap * 4);
-        try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Clone", menu_button_font_size, .overwrite_clone, button_color, null);
+    if (validation) |context| {
+        // Validate Again — bottom-left. The same action as the top-bar
+        // Validate button: the dispatch saves first, then starts the run
+        // (the overlay disappears on the level transition — start_validation
+        // retires the stats info).
+        try emitPanelButton(elements, allocator, font_metrics, .{
+            .x = screen.x + margin,
+            .y = button_y,
+            .width = menu_button_width,
+            .height = panel_button_height,
+        }, "Validate Again", menu_button_font_size, .validate_editor_mission, button_color, null);
+        // Continue — bottom-right.
+        try emitPanelButton(elements, allocator, font_metrics, .{
+            .x = screen.x + screen.width - margin - menu_button_width,
+            .y = button_y,
+            .width = menu_button_width,
+            .height = panel_button_height,
+        }, "Continue", menu_button_font_size, .continue_after_mission, button_color, null);
+        // Overwrite Replay — centered, only while the personal-best guard
+        // kept the old file and this slower run's slice is stashed. Writes
+        // the STASHED bytes (a session-side side effect, no recorded event).
+        if (context.overwrite_offered) {
+            const centered = screen.placeBottomCenter(menu_button_width, panel_button_height, ui_gap * 4);
+            try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Replay", menu_button_font_size, .overwrite_validation_replay, button_color, null);
+        }
+    } else {
+        // Replay Mission — bottom-left.
+        try emitPanelButton(elements, allocator, font_metrics, .{
+            .x = screen.x + margin,
+            .y = button_y,
+            .width = menu_button_width,
+            .height = panel_button_height,
+        }, "Replay Mission", menu_button_font_size, .replay_mission, button_color, null);
+        // Continue — bottom-right.
+        try emitPanelButton(elements, allocator, font_metrics, .{
+            .x = screen.x + screen.width - margin - menu_button_width,
+            .y = button_y,
+            .width = menu_button_width,
+            .height = panel_button_height,
+        }, "Continue", menu_button_font_size, .continue_after_mission, button_color, null);
+        // Overwrite Clone — centered (only when offered).
+        if (info.overwrite_offered) {
+            const centered = screen.placeBottomCenter(menu_button_width, panel_button_height, ui_gap * 4);
+            try emitPanelButton(elements, allocator, font_metrics, centered, "Overwrite Clone", menu_button_font_size, .overwrite_clone, button_color, null);
+        }
     }
 }
 
@@ -630,4 +746,132 @@ test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
     // but it must be > 0 and < the original 100_000.
     try std.testing.expect(session.error_scroll_offset > 0);
     try std.testing.expect(session.error_scroll_offset < 100_000);
+}
+
+const testing = std.testing;
+
+fn missionCompleteDummyTheme() types.ActiveColorTheme {
+    return .{
+        .lightest = .{ .r = 255, .g = 255, .b = 255 },
+        .darkest = .{ .r = 0, .g = 0, .b = 0 },
+        .world_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .enemy_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+        .player_gradient = .{ .colors = [_]types.Color{.{ .r = 0, .g = 0, .b = 0 }} ** 6 },
+    };
+}
+
+const MissionCompleteScan = struct {
+    header_validated: bool = false,
+    header_completed: bool = false,
+    gold_line: bool = false,
+    silver_line: bool = false,
+    bronze_line: bool = false,
+    medal_header: bool = false,
+    new_clone_label: bool = false,
+    harvest_header: bool = false,
+    validate_again_button: bool = false,
+    replay_mission_button: bool = false,
+    continue_button: bool = false,
+    overwrite_replay_button: bool = false,
+    overwrite_clone_button: bool = false,
+
+    fn scan(elements: []const ui_element.UiElement) MissionCompleteScan {
+        var found: MissionCompleteScan = .{};
+        for (elements) |element| switch (element) {
+            .text_label => |label| {
+                if (std.mem.eql(u8, label.text, "New Mission validated")) found.header_validated = true;
+                if (std.mem.eql(u8, label.text, "New Mission completed")) found.header_completed = true;
+                if (std.mem.eql(u8, label.text, "Author medals")) found.medal_header = true;
+                if (std.mem.eql(u8, label.text, "Gold: 4 turns")) found.gold_line = true;
+                if (std.mem.eql(u8, label.text, "Silver: 6 turns")) found.silver_line = true;
+                if (std.mem.eql(u8, label.text, "Bronze: 15 turns")) found.bronze_line = true;
+                if (std.mem.eql(u8, label.text, "New clone:")) found.new_clone_label = true;
+                if (std.mem.eql(u8, label.text, "Clone material harvest")) found.harvest_header = true;
+            },
+            .button => |button| switch (button.action) {
+                .validate_editor_mission => found.validate_again_button = true,
+                .replay_mission => found.replay_mission_button = true,
+                .continue_after_mission => found.continue_button = true,
+                .overwrite_validation_replay => found.overwrite_replay_button = true,
+                .overwrite_clone => found.overwrite_clone_button = true,
+                else => {},
+            },
+            else => {},
+        };
+        return found;
+    }
+};
+
+test "buildMissionComplete: the validation variant swaps the clone content for medals + Validate Again" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    var elements: UiElementList = .empty;
+    try buildMissionComplete(
+        &elements,
+        arena.allocator(),
+        metrics,
+        screenRect(),
+        .{ .name = "New Mission", .path = "missions/x", .turns_spent = 4, .validation = true },
+        missionCompleteDummyTheme(),
+        .{
+            .personal_best_turns = 3,
+            // medalTargets(3): gold = ceil(3.6) = 4, silver = 6, bronze = 15.
+            .medal_targets = validation_replay.medalTargets(3),
+            .overwrite_offered = true,
+        },
+    );
+
+    const found = MissionCompleteScan.scan(elements.items);
+    // The validation surface: "validated" header, the medal column (the
+    // derived targets), Validate Again / Continue / the offered Overwrite
+    // Replay.
+    try testing.expect(found.header_validated);
+    try testing.expect(found.medal_header);
+    try testing.expect(found.gold_line);
+    try testing.expect(found.silver_line);
+    try testing.expect(found.bronze_line);
+    try testing.expect(found.validate_again_button);
+    try testing.expect(found.continue_button);
+    try testing.expect(found.overwrite_replay_button);
+    // NO campaign content: no clone summary/harvest, no Replay Mission, no
+    // Overwrite Clone.
+    try testing.expect(!found.header_completed);
+    try testing.expect(!found.new_clone_label);
+    try testing.expect(!found.harvest_header);
+    try testing.expect(!found.replay_mission_button);
+    try testing.expect(!found.overwrite_clone_button);
+}
+
+test "buildMissionComplete: the campaign variant is unchanged (regression)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    var elements: UiElementList = .empty;
+    try buildMissionComplete(
+        &elements,
+        arena.allocator(),
+        metrics,
+        screenRect(),
+        .{ .name = "New Mission", .path = "missions/x", .turns_spent = 4, .overwrite_offered = true },
+        missionCompleteDummyTheme(),
+        null,
+    );
+
+    const found = MissionCompleteScan.scan(elements.items);
+    // The campaign surface: "completed" header, clone summary + harvest,
+    // Replay Mission / Continue / the offered Overwrite Clone.
+    try testing.expect(found.header_completed);
+    try testing.expect(found.new_clone_label);
+    try testing.expect(found.harvest_header);
+    try testing.expect(found.replay_mission_button);
+    try testing.expect(found.continue_button);
+    try testing.expect(found.overwrite_clone_button);
+    // NO validation content.
+    try testing.expect(!found.header_validated);
+    try testing.expect(!found.medal_header);
+    try testing.expect(!found.validate_again_button);
+    try testing.expect(!found.overwrite_replay_button);
 }
