@@ -10092,3 +10092,33 @@ Exactly RetreatingSwipe's shape at range, with plain 1x damage.
   getValidTargets filters team/dead/range.
 - Not yet equippable in-game: WeaponType enum + weapon-type data wiring is
   the separate tracked TODO (crossbow + idol).
+
+## Skills: knockback target selection (knockbackTarget) + crossbow Powerful Shot (Tier A slice 2)
+
+Second convention interjection of the Tier A batch, landed with Powerful
+Shot because the skill motivated it. Knockback skills now select targets by:
+would-collide FIRST (the collision adds damage), then the focus-fire tail
+(lowest health, then distance to caster, then entity index).
+
+- `helpers.knockbackWouldCollide` — the push-collision prediction extracted
+  from bash's priority so prediction and the knockback handler can't drift
+  (same rule: per-axis sign direction away from the caster; missing tile or
+  living occupant = collision; the defender itself and dead entities are not
+  obstacles). Takes the caster's EFFECTIVE push distance.
+- `helpers.knockbackTarget` — the 4-key selection (collide, health,
+  distance, entity index). selectTarget has no allocator param, so it's a
+  min-scan over a candidate key rather than a filter + weakestTarget
+  compose; the tail keys match weakestTarget by doc contract.
+- Bash REFACTORED onto both: priority is now the flat any-collide bump (3 if
+  ANY in-range target's push collides, else 2 — was nearest-target-only,
+  which under-reported when the nearest target stood in the open but a
+  second adjacent one was walled), selectTarget on knockbackTarget. The
+  bump and the selection now agree by construction.
+- Powerful Shot (crossbow skill 2, main hand, cd 2): attack + knockback,
+  +0.5x effective outgoing as collision damage, range 3, distance 2 —
+  bash's shape at range, on both new helpers.
+- Tests: knockbackWouldCollide (edge / occupant / clear path / dead
+  occupant), knockbackTarget (collide beats weaker open-field target; no
+  collisions → weakest), bash priority any-collide (the scan-first-open +
+  second-walled case that distinguishes any from nearest), powerful shot
+  useSkill (half collision damage 7→3, distance 2) + priority.

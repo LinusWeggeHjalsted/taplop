@@ -163,6 +163,99 @@ pub fn weakestTarget(
     return best;
 }
 
+/// Per-axis sign of an i32 delta: −1 / 0 / +1 (the knockback direction
+/// normalization).
+fn sign(value: i32) i32 {
+    return if (value > 0) 1 else if (value < 0) @as(i32, -1) else 0;
+}
+
+/// Whether knocking `defender_index` back from `caster_index` by `distance`
+/// steps would COLLIDE — a missing tile (level edge) or a living occupant
+/// along the push path. Mirrors the knockback handler exactly: direction =
+/// each axis of defender − caster normalized to −1/0/+1; the defender itself
+/// is not an obstacle (it moves with the push); dead entities are not
+/// obstacles. `distance` is the caster's EFFECTIVE push distance (the caller
+/// applies getEffectiveDistance). Shared by the knockback skills' AI priority
+/// and target selection so the prediction cannot drift from the handler.
+pub fn knockbackWouldCollide(
+    caster_index: u32,
+    defender_index: u32,
+    distance: u32,
+    game_state: GameState,
+) bool {
+    const level = game_state.level orelse return false;
+    const caster = level.entities[caster_index];
+    const defender = level.entities[defender_index];
+
+    const direction = Vector2{
+        .x = sign(defender.position.x - caster.position.x),
+        .y = sign(defender.position.y - caster.position.y),
+    };
+    var position = defender.position;
+    var step: u32 = 0;
+    while (step < distance) : (step += 1) {
+        position = .{ .x = position.x + direction.x, .y = position.y + direction.y };
+        if (!tileExists(game_state, position) or
+            isOccupied(game_state, position, defender_index))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// AI target selection for knockback skills: prefer a target the push will
+/// COLLIDE (the collision adds damage), then the focus-fire tail — lowest
+/// current health, then Chebyshev distance to the caster, then entity index
+/// (total order). `distance` is the caster's EFFECTIVE push distance. The
+/// tail keys match `weakestTarget`; this adds the collide key in front.
+pub fn knockbackTarget(
+    caster_index: u32,
+    valid_targets: ?[]const Vector2,
+    distance: u32,
+    game_state: GameState,
+) ?Vector2 {
+    const targets = valid_targets orelse return null;
+    if (targets.len == 0) return null;
+
+    const level = game_state.level orelse return null;
+    const caster = level.entities[caster_index];
+
+    const Candidate = struct {
+        position: Vector2,
+        collides: bool,
+        health: u32,
+        distance: i32,
+        entity_index: u32,
+    };
+
+    var best: ?Candidate = null;
+    for (targets) |position| {
+        // Valid targets come from getValidTargets, so the lookup should
+        // never miss; skip defensively rather than panic on a stale list.
+        const entity_index = hostileEntityAt(caster_index, position, game_state) orelse continue;
+        const entity = level.entities[entity_index];
+        const candidate = Candidate{
+            .position = position,
+            .collides = knockbackWouldCollide(caster_index, entity_index, distance, game_state),
+            .health = entity.current_health,
+            .distance = functions.chebyshevDistance(caster.position, position),
+            .entity_index = entity_index,
+        };
+        if (best == null or candidateLessThan(candidate, best.?)) best = candidate;
+    }
+    return if (best) |candidate| candidate.position else null;
+}
+
+/// The `knockbackTarget` ordering: colliding candidates first, then the
+/// weakestTarget tail (health, distance, entity index).
+fn candidateLessThan(a: anytype, b: @TypeOf(a)) bool {
+    if (a.collides != b.collides) return a.collides;
+    if (a.health != b.health) return a.health < b.health;
+    if (a.distance != b.distance) return a.distance < b.distance;
+    return a.entity_index < b.entity_index;
+}
+
 /// Empty walkable tiles within `range` (Chebyshev) of the caster — valid
 /// teleport destinations (Blink, FlashStrike). Null if there are none.
 pub fn emptyTilesInRange(

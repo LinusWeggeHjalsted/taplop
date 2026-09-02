@@ -41,64 +41,43 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-fn sign(value: i32) i32 {
-    return if (value > 0) 1 else if (value < 0) @as(i32, -1) else 0;
-}
-
-/// AI priority: 0 if no target in range. Otherwise prefer a knockback that will
-/// collide (into a wall/edge/entity), since collision adds damage: 3 if the
-/// push would collide, else 2.
+/// AI priority: 0 if on cooldown or no target in range. Otherwise 3 if ANY
+/// in-range target's push would collide (into a wall/edge/entity — collision
+/// adds damage), else 2. Target-agnostic by design: the collide preference
+/// is reflected per-target by selectTarget (knockbackTarget), so priority
+/// and selection stay in sync without coupling them.
 fn priority(caster_index: u32, game_state: GameState) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.bash) > 0) return 0;
 
     const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
+    const push_distance = caster.getEffectiveDistance(skill.distance.?);
 
-    // Nearest hostile in range.
-    var target_index: ?u32 = null;
-    var target_position: Vector2 = undefined;
-    var best_distance: i32 = std.math.maxInt(i32);
+    var found_target = false;
     for (level.entities, 0..) |entity, entity_index| {
         if (entity_index == caster_index) continue;
         if (entity.current_health == 0) continue;
         if (entity.team == caster.team) continue;
-        const distance = functions.chebyshevDistance(caster.position, entity.position);
-        if (distance <= range and distance < best_distance) {
-            best_distance = distance;
-            target_index = @intCast(entity_index);
-            target_position = entity.position;
-        }
+        if (functions.chebyshevDistance(caster.position, entity.position) > range) continue;
+        found_target = true;
+        if (helpers.knockbackWouldCollide(caster_index, @intCast(entity_index), push_distance, game_state)) return 3;
     }
-    const defender_index = target_index orelse return 0;
-
-    // Would the knockback collide within its distance? Step from the target
-    // away from the caster; a missing tile (edge) or an occupant is a collision.
-    const direction = Vector2{
-        .x = sign(target_position.x - caster.position.x),
-        .y = sign(target_position.y - caster.position.y),
-    };
-    const push_distance = caster.getEffectiveDistance(skill.distance.?);
-    var position = target_position;
-    var step: u32 = 0;
-    while (step < push_distance) : (step += 1) {
-        position = .{ .x = position.x + direction.x, .y = position.y + direction.y };
-        if (!helpers.tileExists(game_state, position) or
-            helpers.isOccupied(game_state, position, defender_index))
-        {
-            return 3;
-        }
-    }
+    if (!found_target) return 0;
     return 2;
 }
 
-/// AI target selection: the weakest hostile (focus-fire — helpers.weakestTarget).
+/// AI target selection for the knockback: prefer a target the push will
+/// collide, then the focus-fire order (helpers.knockbackTarget).
 fn selectTarget(
     caster_index: u32,
     valid_targets: ?[]const Vector2,
     game_state: GameState,
 ) ?Vector2 {
-    return helpers.weakestTarget(caster_index, valid_targets, game_state);
+    const level = game_state.level orelse return null;
+    const caster = level.entities[caster_index];
+    const push_distance = caster.getEffectiveDistance(skill.distance.?);
+    return helpers.knockbackTarget(caster_index, valid_targets, push_distance, game_state);
 }
 
 fn playerPrepareSkill(

@@ -10,6 +10,8 @@ const types = @import("types.zig");
 const helpers = @import("skills/helpers.zig");
 const test_harness = @import("test_harness.zig");
 const shoot_skill = @import("skills/shoot.zig");
+const powerful_shot_skill = @import("skills/powerful_shot.zig");
+const bash_skill = @import("skills/bash.zig");
 
 const Vector2 = types.Vector2;
 
@@ -229,4 +231,200 @@ test "shoot: getValidTargets returns only living hostiles within range" {
     const targets = shoot_skill.skill.getValidTargets(0, game_state, arena.allocator());
     try testing.expectEqual(@as(usize, 1), targets.?.len);
     try testing.expectEqual(in_range.position, targets.?[0]);
+}
+
+test "knockbackWouldCollide: edge, occupant, clear path, dead occupant" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const defender = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+
+    // Push runs off the tile set (level edge).
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, defender },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } },
+        );
+        try testing.expect(helpers.knockbackWouldCollide(0, 1, 1, game_state));
+    }
+    // A living entity on the push path.
+    {
+        const obstacle = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 } };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, defender, obstacle },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
+        );
+        try testing.expect(helpers.knockbackWouldCollide(0, 1, 1, game_state));
+    }
+    // Clear path over existing empty tiles.
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, defender },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
+        );
+        try testing.expect(!helpers.knockbackWouldCollide(0, 1, 2, game_state));
+    }
+    // A dead occupant is not an obstacle.
+    {
+        const corpse = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 }, .current_health = 0 };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, defender, corpse },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
+        );
+        try testing.expect(!helpers.knockbackWouldCollide(0, 1, 1, game_state));
+    }
+}
+
+test "knockbackTarget: a colliding target beats a weaker open-field target" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // Caster (0,0). The wounded target at (1,0) has a clear push path; the
+    // healthy target at (3,0) would be pushed off the tile set. Collision
+    // outranks focus-fire.
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const wounded_open = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 5 };
+    const healthy_walled = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .current_health = 15 };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, wounded_open, healthy_walled },
+        &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
+    );
+
+    const targets: []const Vector2 = &.{ wounded_open.position, healthy_walled.position };
+    const picked = helpers.knockbackTarget(0, targets, 1, game_state);
+    try testing.expectEqual(healthy_walled.position, picked.?);
+}
+
+test "knockbackTarget: with no collisions, falls back to the weakest" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const wounded = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 5 };
+    const healthy = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .current_health = 15 };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, wounded, healthy },
+        &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 }, .{ .x = 4, .y = 0 } },
+    );
+
+    const targets: []const Vector2 = &.{ wounded.position, healthy.position };
+    const picked = helpers.knockbackTarget(0, targets, 1, game_state);
+    try testing.expectEqual(wounded.position, picked.?);
+}
+
+test "bash: priority is 3 when any in-range push collides, 2 otherwise" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const adjacent = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+
+    // Open field: adjacent target, clear push path.
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, adjacent },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
+        );
+        try testing.expectEqual(@as(u32, 2), bash_skill.skill.priority(0, game_state));
+    }
+    // Two adjacent targets — the FIRST in scan order is open, the second is
+    // walled. Any-collide (not nearest-only) bumps to 3.
+    {
+        const walled = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, adjacent, walled },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 0, .y = 1 } },
+        );
+        try testing.expectEqual(@as(u32, 3), bash_skill.skill.priority(0, game_state));
+    }
+    // On cooldown.
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, adjacent },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
+        );
+        setCooldown(game_state, 0, .bash, 1);
+        try testing.expectEqual(@as(u32, 0), bash_skill.skill.priority(0, game_state));
+    }
+}
+
+test "powerful shot: useSkill emits attack + knockback with half collision damage" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .main_hand_weapon = .{ .weapon_damage = 7 },
+    };
+    const defender = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, defender },
+        &.{},
+    );
+
+    const result = powerful_shot_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 2), result.len);
+
+    // ownedEvents returns LIFO order — attack (first in execution order)
+    // sits LAST in the slice.
+    const knockback = result[0].sub_level_event.knockback;
+    try testing.expectEqual(@as(u32, 0), knockback.attacker_index);
+    try testing.expectEqual(@as(u32, 1), knockback.defender_index);
+    try testing.expectEqual(@as(u32, 2), knockback.distance);
+    try testing.expectEqual(@as(u32, 3), knockback.knockback_damage); // 7 / 2
+
+    const attack = result[1].sub_level_event.attack;
+    try testing.expectEqual(@as(u32, 7), attack.outgoing_damage);
+    try testing.expectEqual(@as(u32, 1), attack.defender_index);
+}
+
+test "powerful shot: priority is 3 when any in-range push collides, 2 otherwise" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const near_open = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const far_walled = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+
+    // Only the near target, open path (tiles extend past its push).
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, near_open },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
+        );
+        try testing.expectEqual(@as(u32, 2), powerful_shot_skill.skill.priority(0, game_state));
+    }
+    // Near target open, far target walled (its 2-step push runs off the
+    // tile set) — both in range 3, any-collide bumps to 3.
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, near_open, far_walled },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
+        );
+        try testing.expectEqual(@as(u32, 3), powerful_shot_skill.skill.priority(0, game_state));
+    }
+    // On cooldown.
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, near_open },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
+        );
+        setCooldown(game_state, 0, .powerful_shot, 1);
+        try testing.expectEqual(@as(u32, 0), powerful_shot_skill.skill.priority(0, game_state));
+    }
 }
