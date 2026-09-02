@@ -22,6 +22,8 @@ const ui = @import("ui.zig");
 const parser = @import("parser.zig");
 const loaders = @import("loaders.zig");
 const zip_writer = @import("zip_writer.zig");
+const session_log = @import("session_log.zig");
+const validation_replay = @import("validation_replay.zig");
 
 const Harness = test_harness.Harness;
 const runToIdle = test_harness.runToIdle;
@@ -4980,12 +4982,84 @@ test "start_playtest builds its own player_data (all skills learned), end_playte
     try testing.expect(history.current_state.editor.?.mode == .edit);
 }
 
-test "a validation run's chained level start_playtest does not re-back-up" {
+/// The mission dir the file-based validation tests run against (the
+/// harness's scratch persistent dir): a small two-level mission whose
+/// files deliberately differ from the in-memory editor state the tests
+/// also set up — asserts can then prove the run read the FILES, not the
+/// editor memory. Level 1's player starts at x=0 ('!='), level 2's at
+/// x=2 ('..!='), so a test can tell which level file instantiated the
+/// current level; the player.txt loadout carries a distinctive
+/// damage-7 sword (the loadout format carries no name, so it reads back
+/// as "Player").
+const validation_fixture_path = "missions/validation_fixture";
+
+fn writeValidationFixtureMission(harness: *Harness) !void {
+    try harness.file_source.writeFile(
+        validation_fixture_path ++ "/mission.txt",
+        \\Metadata
+        \\file_format_version 2
+        \\mission_uuid 33333333-3333-3333-3333-333333333333
+        \\name Validation Fixture
+        \\level_count 2
+        \\
+    );
+    try harness.file_source.writeFile(
+        validation_fixture_path ++ "/level_1.txt",
+        \\Metadata
+        \\file_format_version 1
+        \\name Fixture Level One
+        \\
+        \\Layout
+        \\!=
+        \\
+    );
+    try harness.file_source.writeFile(
+        validation_fixture_path ++ "/level_2.txt",
+        \\Metadata
+        \\file_format_version 1
+        \\name Fixture Level Two
+        \\
+        \\Layout
+        \\..!=
+        \\
+    );
+    try harness.file_source.writeFile(
+        validation_fixture_path ++ "/player.txt",
+        \\Metadata
+        \\file_format_version 2
+        \\
+        \\MainHandWeapon
+        \\item_name Fixture Sword
+        \\weapon_type sword
+        \\damage 7
+        \\
+        \\OffHandWeapon
+        \\
+        \\Amulet
+        \\
+        \\Coat
+        \\
+        \\Gloves
+        \\
+        \\Pants
+        \\
+        \\Boots
+        \\
+        \\UtilitySkills
+        \\
+    );
+}
+
+test "start_validation runs the SAVED mission files, not the editor memory" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
+    try writeValidationFixtureMission(&harness);
 
-    const levels = [_]types.EditorLevel{ .{}, .{} };
+    // The in-memory editor differs from the fixture files on purpose:
+    // THREE levels (the fixture has two) + a bare player_def, so any
+    // value the run shows can be attributed to its source.
+    const levels = [_]types.EditorLevel{ .{}, .{}, .{} };
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
         .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
@@ -4993,40 +5067,58 @@ test "a validation run's chained level start_playtest does not re-back-up" {
     runToIdle(&history);
     history.current_state.player_data = .{ .player_name = "Campaign Player" };
 
-    // Level 1 of the validation run: backs up + builds.
     event_push.pushEvents(
         &history.current_state,
-        &.{.{ .meta_event = .start_validation }},
-        history.current_arena.allocator(),
-    );
-    runToIdle(&history);
-    try testing.expectEqualStrings("Editor Player", history.current_state.player_data.player_name);
-
-    // Mid-run mutation (an in-level event), then the chained next-level
-    // start_playtest (mode is .validate, not .edit).
-    history.current_state.player_data.player_name = "Mutated In Run";
-    event_push.pushEvents(
-        &history.current_state,
-        &.{.{ .meta_event = .{ .start_playtest = .{ .level_index = 1 } } }},
+        &.{.{ .meta_event = .{ .start_validation = .{
+            .mission_path = validation_fixture_path,
+        } } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
 
-    // The chained start neither rebuilt the run's data (the mutation
-    // survives) nor re-captured the backup (still the campaign data).
-    try testing.expectEqualStrings("Mutated In Run", history.current_state.player_data.player_name);
+    // The run is up, in validate mode, on the FILE's level 1: the level
+    // name + the player position come from level_1.txt ('!' at x=0), not
+    // from the editor's memory.
+    try testing.expect(history.current_state.screen == .level);
+    try testing.expect(history.current_state.editor.?.mode == .validate);
+    try testing.expect(history.current_state.mission.?.validation_run);
+    try testing.expectEqualStrings(validation_fixture_path, history.current_state.mission.?.path);
+    try testing.expectEqualStrings("Fixture Level One", history.current_state.level.?.name);
+    try testing.expectEqual(
+        types.Vector2{ .x = 0, .y = 0 },
+        history.current_state.level.?.entities[0].position,
+    );
+
+    // The editor is untouched (dormant): its three in-memory levels + the
+    // editor player_def survive — the run never read them.
+    try testing.expectEqual(@as(usize, 3), history.current_state.editor.?.levels.len);
+    try testing.expectEqualStrings(
+        "Editor Player",
+        history.current_state.editor.?.player_def.template.name,
+    );
+
+    // The run's player data was built from the SAVED player.txt: the
+    // loadout name reads back as "Player" (the format carries no name)
+    // and the fixture's damage-7 sword synced onto the level player via
+    // the chained start_level's build_player_from_data. Learned = every
+    // utility skill (the validation player knows everything).
+    try testing.expectEqualStrings("Player", history.current_state.player_data.player_name);
+    try testing.expectEqual(@as(u32, 7), history.current_state.player_data.main_hand_weapon.?.weapon_damage);
+    try testing.expectEqual(
+        @as(u32, 7),
+        history.current_state.level.?.entities[0].main_hand_weapon.?.weapon_damage,
+    );
+    const utility_skills = @import("utility_skills.zig");
+    try testing.expectEqual(
+        @as(usize, utility_skills.utility_skill_ids.len),
+        history.current_state.player_data.learned_skills.len,
+    );
+
+    // The session's real data is backed up on the Editor.
     try testing.expectEqualStrings(
         "Campaign Player",
         history.current_state.editor.?.pre_playtest_player_data.?.player_name,
     );
-
-    event_push.pushEvents(
-        &history.current_state,
-        &.{.{ .meta_event = .{ .end_validation = .{ .success = true } } }},
-        history.current_arena.allocator(),
-    );
-    runToIdle(&history);
-    try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
 }
 
 test "player_start_playtest starts the active level; the exit returns to the editor" {
@@ -5072,15 +5164,17 @@ test "player_start_playtest starts the active level; the exit returns to the edi
     try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
 }
 
-test "player_start_validation plays the whole mission; completion ends back in the editor" {
+test "a validation run chains the mission's levels (turns accumulate) and completes back in the editor" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
+    try writeValidationFixtureMission(&harness);
 
-    const levels = [_]types.EditorLevel{ .{}, .{} };
+    // ONE in-memory editor level (the fixture has TWO): the chaining
+    // follows the file's level_count, not editor.levels.len.
+    const levels = [_]types.EditorLevel{.{} };
     var history = harness.newHistory(editorStateWith(.{
         .levels = &levels,
-        .active_level_index = 1, // ignored: validation always starts at 0
         .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
     }));
     runToIdle(&history);
@@ -5088,15 +5182,32 @@ test "player_start_validation plays the whole mission; completion ends back in t
 
     event_push.pushEvents(
         &history.current_state,
-        &.{.{ .player_input_event = .player_start_validation }},
+        &.{.{ .meta_event = .{ .start_validation = .{
+            .mission_path = validation_fixture_path,
+        } } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expect(history.current_state.screen == .level);
-    try testing.expect(history.current_state.editor.?.mode == .validate);
     try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.current_level_index);
 
-    // Completing level 1 chains level 2 (not the active tab — level 0).
+    // Spend a turn on level 1 (the turn_end machinery, as the skip
+    // orchestrators would push it — no enemies, so the round is empty).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
+
+    // A mid-run mutation (an in-level event) — the chained level start
+    // must neither rebuild the run data nor re-capture the backup.
+    history.current_state.player_data.player_name = "Mutated In Run";
+
+    // Completing level 1 chains level 2 FROM THE FILE (the editor's
+    // single level is irrelevant): level_2.txt's '!' is at x=2, the
+    // mission working copy persists (turns carried over), the mutation
+    // survives, and the backup is still the campaign data.
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{} } }},
@@ -5104,9 +5215,27 @@ test "player_start_validation plays the whole mission; completion ends back in t
     );
     runToIdle(&history);
     try testing.expect(history.current_state.screen == .level);
+    try testing.expectEqualStrings("Fixture Level Two", history.current_state.level.?.name);
+    try testing.expectEqual(
+        types.Vector2{ .x = 2, .y = 0 },
+        history.current_state.level.?.entities[0].position,
+    );
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
+    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
+    try testing.expectEqualStrings("Mutated In Run", history.current_state.player_data.player_name);
+    try testing.expectEqualStrings(
+        "Campaign Player",
+        history.current_state.editor.?.pre_playtest_player_data.?.player_name,
+    );
 
-    // Completing the LAST level ends the run: editor, edit mode, restored.
+    // Spend a turn + complete the LAST level: the run ends — editor, edit
+    // mode, real data restored, run state discarded, backup cleared.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{} } }},
@@ -5115,13 +5244,17 @@ test "player_start_validation plays the whole mission; completion ends back in t
     runToIdle(&history);
     try testing.expect(history.current_state.screen == .editor);
     try testing.expect(history.current_state.editor.?.mode == .edit);
+    try testing.expect(history.current_state.level == null);
+    try testing.expect(history.current_state.mission == null);
     try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
+    try testing.expect(history.current_state.editor.?.pre_playtest_player_data == null);
 }
 
-test "a validation run's restart/exit continuation aborts to the editor (success=false)" {
+test "a validation run's exit continuation aborts to the editor (success=false)" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
+    try writeValidationFixtureMission(&harness);
 
     const levels = [_]types.EditorLevel{ .{}, .{} };
     var history = harness.newHistory(editorStateWith(.{
@@ -5133,7 +5266,9 @@ test "a validation run's restart/exit continuation aborts to the editor (success
 
     event_push.pushEvents(
         &history.current_state,
-        &.{.{ .meta_event = .start_validation }},
+        &.{.{ .meta_event = .{ .start_validation = .{
+            .mission_path = validation_fixture_path,
+        } } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
@@ -5198,10 +5333,11 @@ test "a playtest restart continuation re-runs the same level fresh" {
     );
 }
 
-test "a validation restart continuation re-runs the whole mission from level 1" {
+test "a validation restart re-runs the whole mission from level 1 via the orchestrator" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
+    try writeValidationFixtureMission(&harness);
 
     const levels = [_]types.EditorLevel{ .{}, .{} };
     var history = harness.newHistory(editorStateWith(.{
@@ -5213,11 +5349,19 @@ test "a validation restart continuation re-runs the whole mission from level 1" 
 
     event_push.pushEvents(
         &history.current_state,
-        &.{.{ .meta_event = .start_validation }},
+        &.{.{ .meta_event = .{ .start_validation = .{
+            .mission_path = validation_fixture_path,
+        } } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    // Advance to level 2 (the natural completion path).
+    // Spend a turn + advance to level 2 (the natural completion path).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .meta_event = .{ .end_level = .{} } }},
@@ -5225,9 +5369,13 @@ test "a validation restart continuation re-runs the whole mission from level 1" 
     );
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
+    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
 
     // Mid-run mutation, then the restart: back to level 1 with fresh run
-    // data (NOT the mutated carry-over, NOT a next-level advance).
+    // data (NOT the mutated carry-over, NOT a next-level advance) — the
+    // re-entry rides the player_start_validation ORCHESTRATOR (the
+    // seedable-top-level rule for the validation-replay slice), which
+    // re-reads the files fresh: mission counter reset, loadout rebuilt.
     history.current_state.player_data.player_name = "Mutated In Run";
     event_push.pushEvents(
         &history.current_state,
@@ -5237,8 +5385,14 @@ test "a validation restart continuation re-runs the whole mission from level 1" 
     runToIdle(&history);
     try testing.expect(history.current_state.screen == .level);
     try testing.expect(history.current_state.editor.?.mode == .validate);
+    try testing.expectEqualStrings("Fixture Level One", history.current_state.level.?.name);
     try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.current_level_index);
-    try testing.expectEqualStrings("Editor Player", history.current_state.player_data.player_name);
+    try testing.expectEqual(@as(u32, 0), history.current_state.mission.?.turns_spent);
+    try testing.expectEqualStrings("Player", history.current_state.player_data.player_name);
+    try testing.expectEqual(
+        @as(u32, 7),
+        history.current_state.player_data.main_hand_weapon.?.weapon_damage,
+    );
     try testing.expectEqualStrings(
         "Campaign Player",
         history.current_state.editor.?.pre_playtest_player_data.?.player_name,
@@ -5249,11 +5403,14 @@ test "exit to main menu during an editor run ends the run and closes the editor"
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
+    try writeValidationFixtureMission(&harness);
 
     const levels = [_]types.EditorLevel{ .{}, .{} };
     const enter_run = [_]events.Event{
         .{ .player_input_event = .player_start_playtest },
-        .{ .player_input_event = .player_start_validation },
+        .{ .player_input_event = .{ .player_start_validation = .{
+            .mission_path = validation_fixture_path,
+        } } },
     };
     for (enter_run) |start| {
         var history = harness.newHistory(editorStateWith(.{
@@ -5287,6 +5444,118 @@ test "exit to main menu during an editor run ends the run and closes the editor"
         try testing.expect(history.current_state.mission == null);
         try testing.expectEqualStrings("Campaign Player", history.current_state.player_data.player_name);
     }
+}
+
+test "a validation run's slice reconstructs from a fresh state (no editor — the cross-session shape)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    try writeValidationFixtureMission(&harness);
+
+    // No editor at all — the cross-session shape a validation replay is
+    // reconstructed in (the future server-side check; the mission files
+    // ship alongside the replay). Drive the run exactly as a player
+    // session would: every top-level event is a whitelisted orchestrator,
+    // so the slice passes the replay-seam legality gates as-is.
+    var history = harness.newHistory(null);
+    runToIdle(&history);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_start_validation = .{
+            .mission_path = validation_fixture_path,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .level);
+    try testing.expect(history.current_state.editor == null);
+    try testing.expect(history.current_state.mission.?.validation_run);
+
+    // Level 1: end the turn (skip orchestrator → auto-skip attack with no
+    // enemies → turn_end), then step onto the level end ('=' at x=1).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_skip_move = .{} } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_move_action = .{
+            .destination = .{ .x = 1, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqualStrings("Fixture Level Two", history.current_state.level.?.name);
+
+    // Level 2: end the turn first (turn_end #2), then step onto the
+    // level end ('=' at x=3). NOTE: stepping onto the level end cuts the
+    // FINAL turn short — check_level_end → end_level runs before the
+    // pending attack step/turn_end (the transition clears the stack) —
+    // so a beeline finish contributes no turn_end; turns_spent counts
+    // COMPLETED turns. The explicit skip keeps the count honest here.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_skip_move = .{} } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.turns_spent);
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_move_action = .{
+            .destination = .{ .x = 3, .y = 0 },
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    // No editor existed, so end_validation lands on the main menu.
+    try testing.expect(history.current_state.screen == .main_menu);
+    try testing.expect(history.current_state.editor == null);
+    try testing.expect(history.current_state.mission == null);
+
+    // The slice: from the LAST player_start_validation through the end —
+    // here the whole run (the only earlier event is the boot
+    // open_main_menu). Restarts would make "last" matter; this run has
+    // none.
+    var slice_start: usize = 0;
+    for (history.event_history.items, 0..) |event, index| {
+        if (event == .player_input_event and event.player_input_event == .player_start_validation) {
+            slice_start = index;
+        }
+    }
+    const slice = history.event_history.items[slice_start..];
+    // Derived turns == the live run's counter (one turn per level).
+    try testing.expectEqual(@as(u32, 2), validation_replay.deriveValidationTurns(slice));
+
+    // Serialize + reconstruct the slice in a SECOND fresh history: the
+    // server-side validation primitive, client-side. Reconstruct to just
+    // BEFORE the final end_validation so the mission is still live — the
+    // replay-reproduced turn counter must equal the derived count.
+    const body = try session_log.writeEventLog(slice, "20260101_000000", backing.allocator());
+    const sections = try parser.parseConfigFile(body, backing.allocator());
+    const log = try session_log.loadEventLog(sections, backing.allocator());
+    // The reconstruction base: the post-boot state (main menu, nothing
+    // queued) — the slice starts at the run's entry orchestrator, so the
+    // fresh history's stack must be EMPTY (newHistory(null) queues the
+    // boot open_main_menu, which the slice deliberately excludes).
+    var reconstruction_start = test_harness.defaultStartingState();
+    reconstruction_start.event_stack = &.{};
+    var history2 = harness.newHistory(reconstruction_start);
+    history2.reconstructFromEventLog(log.events, @intCast(log.events.len - 1), &event_handlers.processEvent);
+    try testing.expect(history2.current_state.mission != null);
+    try testing.expect(history2.current_state.mission.?.validation_run);
+    try testing.expectEqual(@as(u32, 2), history2.current_state.mission.?.turns_spent);
+
+    // The full slice (end_validation included) lands on the main menu,
+    // exactly as the live no-editor run did.
+    var history3 = harness.newHistory(reconstruction_start);
+    history3.reconstructFromEventLog(log.events, @intCast(log.events.len), &event_handlers.processEvent);
+    try testing.expect(history3.current_state.screen == .main_menu);
+    try testing.expect(history3.current_state.editor == null);
+    try testing.expect(history3.current_state.mission == null);
 }
 
 test "open_editor: a mission without player.txt falls back to the maxed default loadout" {

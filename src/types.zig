@@ -208,10 +208,13 @@ pub const Action = enum {
     // editor guard returns to the editor. See DESIGN → Architecture →
     // Level Editor → Editor UI layout (primary actions).
     test_editor_level,
-    // The top-bar Validate button (right of Test): start a full-mission
-    // validation run from level 1. Pushes `player_start_validation` →
-    // `start_validation`; completing the last level (or any restart/exit
-    // continuation) ends the run back in the editor.
+    // The top-bar Validate button (right of Test): save the mission, then
+    // start a full-mission validation run of the SAVED dir. Pushes
+    // `player_start_validation{mission_path}` → `start_validation` (which
+    // reads the files — the run certifies the artifact, not the editor
+    // memory); completing the last level (or any restart/exit continuation)
+    // ends the run back in the editor. See DESIGN → Level Editor
+    // (playtest/validate framing).
     validate_editor_mission,
     // A settings-sidebar gradient swatch (world / enemy / player row):
     // open the centered theme picker for that role. The role rides in
@@ -1729,6 +1732,15 @@ pub const Mission = struct {
     path: []const u8 = &.{},
     level_count: u32 = 0,
     current_level_index: u32 = 0,
+    /// Runtime working-copy flag: this mission is a VALIDATION RUN (loaded
+    /// from the saved dir by start_validation). The live editor ALSO keys
+    /// run behavior on editor.mode == .validate, but a cross-session replay
+    /// of a validation replay has no Editor — this flag is what end_level's
+    /// guard reads for the no-editor case. It rides the working copy so
+    /// replay reproduces it and the end_validation transition discards it
+    /// with the mission. Campaign missions never set it. See DESIGN →
+    /// Custom Missions & Online Services → Validation replay.
+    validation_run: bool = false,
     start_hub: ?[]const u8 = null,
     end_hub: ?[]const u8 = null,
     turns_spent: u32 = 0,

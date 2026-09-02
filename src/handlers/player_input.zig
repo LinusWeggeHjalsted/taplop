@@ -349,9 +349,15 @@ pub fn handlePlayerInputEvent(
             } } }}, allocator);
         },
         // Top-bar Validate button: start the full-mission validation run
-        // from level 1 (the machinery handler always instantiates level 0).
-        .player_start_validation => {
-            pushEvents(current, &.{.{ .meta_event = .start_validation }}, allocator);
+        // from the SAVED mission dir (the input layer saved first — the
+        // machinery handler reads the files, not the editor memory). Also
+        // the validate-RESTART re-entry (pushed by end_level's guard):
+        // every attempt begins with this seedable orchestrator, which is
+        // what lets the validation replay slice start at the last one.
+        .player_start_validation => |start| {
+            pushEvents(current, &.{.{ .meta_event = .{ .start_validation = .{
+                .mission_path = start.mission_path,
+            } } }}, allocator);
         },
         // Player inspector Import-button click: push the machinery event
         // (the loadout fields ride GameState — the import is undoable).

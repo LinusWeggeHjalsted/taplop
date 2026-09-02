@@ -561,10 +561,12 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // UI panels/drag and the tile cursor are transient view/input state,
         // not part of the undoable GameState. Reset them whenever the screen
         // changes OR a new world is installed (start_hub / start_level /
-        // start_playtest / start_validation all bump world_generation even
+        // start_playtest all bump world_generation even
         // when the Screen enum stays the same — e.g. level-to-level keeps
         // screen == .level, so the screen check alone would leave a stale
-        // tile cursor positioned in the old level's grid). undo/redo across
+        // tile cursor positioned in the old level's grid; start_validation
+        // chains start_level, so its world installs bump the same way).
+        // undo/redo across
         // a screen boundary runs through update() too, so both signals fire
         // there as well. Input state is deliberately left alone — it is live
         // hardware state.

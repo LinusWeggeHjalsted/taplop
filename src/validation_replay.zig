@@ -185,7 +185,7 @@ fn expectReplayError(
 
 test "deriveValidationTurns counts only the player's turn ends" {
     const events = [_]Event{
-        .{ .player_input_event = .player_start_validation },
+        .{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } },
         .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
         .{ .level_event = .{ .turn_end = .{ .entity_index = 1 } } },
         .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
@@ -202,7 +202,7 @@ test "validation replay round trip through the session-log format" {
     const allocator = arena.allocator();
 
     const events = [_]Event{
-        .{ .player_input_event = .player_start_validation },
+        .{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } },
         .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
         .{ .level_event = .{ .turn_end = .{ .entity_index = 1 } } },
         .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
@@ -245,7 +245,7 @@ test "loadValidationReplay rejects non-bracket event streams" {
     // closing event.
     {
         const body = try session_log.writeEventLogWithMetadata(
-            &[_]Event{.{ .player_input_event = .player_start_validation }},
+            &[_]Event{.{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } }},
             "20260101_000000",
             &metadata,
             allocator,
@@ -269,7 +269,7 @@ test "loadValidationReplay rejects non-bracket event streams" {
     // Wrong last event variant.
     {
         const events = [_]Event{
-            .{ .player_input_event = .player_start_validation },
+            .{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } },
             .{ .meta_event = .end_playtest },
         };
         const body = try session_log.writeEventLogWithMetadata(
@@ -284,7 +284,7 @@ test "loadValidationReplay rejects non-bracket event streams" {
     // one, so a hand-crafted success=false file is rejected).
     {
         const events = [_]Event{
-            .{ .player_input_event = .player_start_validation },
+            .{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } },
             .{ .meta_event = .{ .end_validation = .{ .success = false } } },
         };
         const body = try session_log.writeEventLogWithMetadata(
@@ -303,7 +303,7 @@ test "loadValidationReplay requires the mission metadata keys" {
     const allocator = arena.allocator();
 
     const events = [_]Event{
-        .{ .player_input_event = .player_start_validation },
+        .{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } },
         .{ .meta_event = .{ .end_validation = .{ .success = true } } },
     };
     // writeEventLog (no extra pairs) — a plain session log is not a

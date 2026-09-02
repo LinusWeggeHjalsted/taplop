@@ -864,7 +864,9 @@ pub fn handleAnytimeInput(
         // layer). Editor-only; every other screen no-ops (the
         // delete_editor_selection discipline).
         if (history.current_state.screen == .editor and history.current_state.editor != null) {
-            mission_io.saveEditorMission(history);
+            // The popup on failure is surfaced inside; the return value is
+            // irrelevant to the bare save button.
+            _ = mission_io.saveEditorMission(history);
         }
     }
 
@@ -1653,10 +1655,21 @@ pub fn handleAnytimeInput(
                 pushPlayerActionAndDrain(history, .player_start_playtest);
             },
             // Top-bar Validate button: start the full-mission validation
-            // run from level 1.
+            // run of the SAVED mission dir (file-based — the run certifies
+            // the artifact a player receives, not the editor memory; see
+            // DESIGN → Level Editor → Playtest/validate framing). SAVE
+            // FIRST: the run needs a dir to read, and the eventual
+            // validation_replay.txt needs a dir to live in. A failed save
+            // surfaces its own popup — abort without starting the run.
+            // The payload borrows the memo's durable dir string: valid
+            // through the drain (no other save can run mid-drain), and
+            // deep-copied when the orchestrator is recorded.
             .validate_editor_mission => {
                 if (current.editor == null) return;
-                pushPlayerActionAndDrain(history, .player_start_validation);
+                const saved_dir = mission_io.saveEditorMission(history) orelse return;
+                pushPlayerActionAndDrain(history, .{ .player_start_validation = .{
+                    .mission_path = saved_dir,
+                } });
             },
             // Player inspector Import button: copy the session's player
             // data (or the new-game default, with none) into the editor

@@ -92,6 +92,14 @@ fn sanitizeMissionNameForPath(name: []const u8, allocator: std.mem.Allocator) []
 /// level_N.txt under `missions/<uuid>_<name>/`. The session memo records
 /// the uuid + dir for subsequent saves.
 ///
+/// Returns the saved dir path on success (borrowed from the session memo
+/// — stable until the NEXT save replaces the memo; deep-copy if kept past
+/// that), null on failure. On failure a recoverable popup is already
+/// surfaced and the memo is NOT updated — callers must not read it after
+/// a null return (it would point at a PREVIOUS save's dir). Callers that
+/// need the save to have landed (validate — the run reads the dir; export
+/// — the bundle reads the files) gate on the return value.
+///
 /// A pure side effect — the dump_event_log class, NOT the save_game class:
 /// there is no GameState component to record, so it pushes no event and
 /// takes no undo step (a recorded event would mint dead undo steps), and
@@ -104,8 +112,8 @@ fn sanitizeMissionNameForPath(name: []const u8, allocator: std.mem.Allocator) []
 /// recoverable (the pending_error popup; nothing to revert — state is
 /// fine, the files just didn't land). See DESIGN → Level Editor → Mission
 /// identity.
-pub fn saveEditorMission(history: *GameStateHistory) void {
-    const editor = if (history.current_state.editor) |*some_editor| some_editor else return;
+pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
+    const editor = if (history.current_state.editor) |*some_editor| some_editor else return null;
     const scratch = history.current_arena.allocator();
     const durable = history.backing_allocator;
 
@@ -131,7 +139,7 @@ pub fn saveEditorMission(history: *GameStateHistory) void {
         };
         history.session.setPendingError(history.history_arena.allocator(), message);
         if (minted_uuid) |minted| durable.free(minted);
-        return;
+        return null;
     };
 
     // 3. Write into missions/<uuid>_<name>/.
@@ -152,7 +160,7 @@ pub fn saveEditorMission(history: *GameStateHistory) void {
         );
         durable.free(dir_path);
         if (minted_uuid) |minted| durable.free(minted);
-        return;
+        return null;
     };
     history.file_source.writeFile(player_path, written.player_txt) catch {
         history.session.setPendingError(
@@ -161,7 +169,7 @@ pub fn saveEditorMission(history: *GameStateHistory) void {
         );
         durable.free(dir_path);
         if (minted_uuid) |minted| durable.free(minted);
-        return;
+        return null;
     };
     for (written.level_txts, 0..) |level_txt, level_index| {
         const level_path = std.fmt.allocPrint(
@@ -178,7 +186,7 @@ pub fn saveEditorMission(history: *GameStateHistory) void {
             history.session.setPendingError(history.history_arena.allocator(), message);
             durable.free(dir_path);
             if (minted_uuid) |minted| durable.free(minted);
-            return;
+            return null;
         };
     }
 
@@ -207,6 +215,7 @@ pub fn saveEditorMission(history: *GameStateHistory) void {
         .uuid = memo_uuid,
         .dir_path = dir_path,
     };
+    return dir_path;
 }
 
 /// Read one file from the persistent dir and append it to the export
@@ -236,9 +245,11 @@ fn appendExportFile(
 /// no-op on native). A pure side effect like the save (the dump_event_log
 /// class). See DESIGN → Level Editor (the export flow).
 pub fn exportEditorMission(history: *GameStateHistory) void {
-    saveEditorMission(history);
-    // The save failed (or no editor): its popup is already surfaced.
-    const saved = history.session.editor_saved_mission orelse return;
+    // Save first (the settled order — the bundle is always the current
+    // state). A failed save surfaces its own popup and the memo is NOT
+    // current (it would point at a PREVIOUS save's dir) — abort.
+    if (saveEditorMission(history) == null) return;
+    const saved = history.session.editor_saved_mission.?;
     const editor = if (history.current_state.editor) |*some_editor| some_editor else return;
     const scratch = history.current_arena.allocator();
 

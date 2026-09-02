@@ -141,11 +141,14 @@ pub fn loadCampaignAndPushHub(
 
 /// Push the gameplay start batch for a freshly-loaded level: player sync
 /// (build_player_from_data, runs first) + per-entity aggro checks + the
-/// player's turn_start (runs last). Shared by start_level (normal gameplay,
-/// sync_player=true — the level's bare player entity gets its loadout from
-/// PlayerData) and start_playtest / start_validation (editor, sync_player=
-/// false — the player is already fully instantiated from editor.player_def,
-/// so build_player_from_data would clobber it with the campaign's PlayerData).
+/// player's turn_start (runs last). Shared by start_level (normal gameplay
+/// AND validation runs — sync_player=true — the level's bare player entity
+/// gets its loadout from PlayerData; a validation run's player_data was
+/// built from the saved player.txt at start_validation, and
+/// playerLoadoutEntity maps the same field set, so the sync round-trips
+/// the loadout identically) and start_playtest (editor, sync_player=false —
+/// the player is already fully instantiated from editor.player_def, so
+/// build_player_from_data would clobber it with the campaign's PlayerData).
 pub fn pushGameplayStartEvents(current: *GameState, allocator: std.mem.Allocator, sync_player: bool) void {
     var start_events: std.ArrayList(Event) = .empty;
     // Player turn_start at bottom of LIFO (processed last, after sync + aggro).

@@ -110,15 +110,23 @@ pub const MetaEvent = union(enum) {
     end_hub: void,
     // Editor framing (see DESIGN → Architecture → Level Editor). open_editor
     // reads a mission from disk into an Editor session; start_playtest /
-    // end_playtest bracket a single-level playtest; start_validation /
-    // end_validation bracket a forced full-mission playthrough. The gameplay
-    // events stay pristine — end_level's guard defers to these.
+    // end_playtest bracket a single-level playtest (in-memory, the editor
+    // draft); start_validation / end_validation bracket a full-mission
+    // validation run of the SAVED mission dir (file-based — the artifact a
+    // player receives; the handler reads the dir's files through the
+    // reconstruction cache). The gameplay events stay pristine — end_level's
+    // guard defers to these.
     close_editor: void,
     start_playtest: struct {
         level_index: u32, // 0-based into editor.levels
     },
     end_playtest: void,
-    start_validation: void,
+    start_validation: struct {
+        /// The saved mission dir the run certifies (the input layer saves
+        /// first and passes the dir here). A top-level string field —
+        /// verbatim in the session log, spaces-safe.
+        mission_path: []const u8,
+    },
     end_validation: struct {
         success: bool,
     },
@@ -713,12 +721,22 @@ pub const PlayerInputEvent = union(enum) {
     // metadata sidebar. The handler pushes `editor_toggle_metadata_sidebar`.
     player_toggle_editor_metadata_sidebar: void,
     // Top-bar Test/Validate button clicks: start a single-level playtest
-    // of the active level / a full-mission validation run from level 1.
+    // of the active level / a full-mission validation run of the SAVED
+    // mission dir (the input layer saves first and passes the dir).
     // Thin orchestrators — the machinery handlers (start_playtest /
     // start_validation) own instantiation, PlayerData dormancy, and the
     // screen transition; end_level's editor guard owns the return path.
+    // player_start_validation also serves as the validate-RESTART
+    // re-entry (handler-pushed by end_level's guard): every attempt in
+    // the linear stream begins with this seedable orchestrator, which is
+    // what lets the validation replay slice start at the last one (see
+    // DESIGN → Custom Missions & Online Services → Validation replay).
     player_start_playtest: void,
-    player_start_validation: void,
+    player_start_validation: struct {
+        /// The saved mission dir to run (borrowed from the push site;
+        /// deep-copied when the event is recorded).
+        mission_path: []const u8,
+    },
     // Player inspector Import-button click: copy the session's player data
     // (or, with none, the new-game default save) into the editor player
     // loadout. The handler pushes `editor_import_player` — the loadout

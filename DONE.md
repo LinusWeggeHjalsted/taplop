@@ -9503,3 +9503,76 @@ What landed (all pure, no consumers yet — slices 2-5 are the consumers):
 The module's pub surface has no external consumer yet by design — the
 TODO slices 2-5 (file-based validation, the slice write, the stats
 screen, the crown test) land next and consume it.
+
+## Validation replay: slice 2 — file-based validation (the run certifies the saved artifact)
+
+The handler restructure at the core of the validation-replay design (see
+DESIGN → Level Editor → Playtest/validate framing + the exit guard, both
+rewritten this slice; DESIGN → Custom Missions & Online Services →
+Validation replay). Playtest keeps its in-memory quick-iteration role;
+validation now runs the SAVED mission dir:
+
+- **`player_start_validation` / `start_validation` gain `mission_path`**
+  (top-level string payloads — session-log verbatim, spaces-safe). The
+  input layer's Validate button saves FIRST via the editor-save flow and
+  aborts on failure; the payload borrows the memo's durable dir string.
+- **`start_validation` is the `start_mission` shape**: reads mission.txt +
+  player.txt from the dir via the reconstruction cache (+ key
+  validation), sets `current.mission` from the files with
+  `validation_run = true`, builds the run's player data from the FILE
+  loadout (loadPlayerLoadout → buildPlaytestPlayerData, all-skills-
+  learned), dormancy backup + mode flip only when an editor exists, then
+  chains `start_level{path, 1}`. The chained levels ride the campaign's
+  own start_level path (turns accumulate on the mission across levels);
+  the player sync round-trips the loadout because playerLoadoutEntity
+  maps the same field set build_player_from_data maps.
+- **`Mission.validation_run`** (new runtime working-copy field): the
+  no-editor marker. Live runs have editor.mode == .validate AND the
+  flag; a cross-session replay of a validation replay has only the flag
+  (no Editor exists) — end_level's guard reads it there, replay
+  reproduces it, and the end_validation transition discards it with the
+  mission. Self-cleaning: no manual clearing across abort paths.
+- **The exit guard hoists a `validation_run` branch** before the editor
+  block: restart → inline teardown (editor only) + re-entry via the
+  ORCHESTRATOR `player_start_validation{path}` (every attempt begins
+  with a seedable top-level action — the slice rule); exit-to-menu →
+  teardown + close_editor / open_main_menu (no editor); Exit Mission →
+  `end_validation{success=false}`; default → next `start_level{path,N+1}`
+  (mission level_count from the file, not editor.levels.len) or
+  `end_validation{success=true}` on the last level. The editor switch
+  keeps only the playtest arm. end_mission's defensive guard extends to
+  validation_run.
+- **`end_validation` dual-context**: editor present → restore + .editor;
+  absent (cross-session replay) → .main_menu. `validatePlayerAction`'s
+  player_start_validation arm relaxes to "no active level/mission"
+  (fresh state + editor-idle both satisfy; player_start_playtest keeps
+  its editor/edit-mode arm) — this is what lets a validation replay seed
+  its first event on a fresh state.
+- **Bug fix riding along: `saveEditorMission` returns `?[]const u8`**
+  (the saved dir, borrowed from the memo) instead of void. Consumers
+  previously read `session.editor_saved_mission` after calling it — but
+  the memo survives a FAILED save pointing at the PREVIOUS save's dir,
+  so validate/export could have used a stale dir (e.g. save-once, rename,
+  failed re-save → validate runs the old name's dir). Export now gates
+  on the return value; the bare save button ignores it (popup inside).
+- **Tests**: the five in-memory validation tests reworked onto an
+  on-disk two-level fixture (`missions/validation_fixture` — levels with
+  distinct '!' positions, player.txt with a distinctive damage-7 sword;
+  the in-memory editor deliberately differs so asserts prove the run
+  read the FILES): file-based start (level name/positions/loadout from
+  the files, editor untouched, all-skills-learned, dormancy), chaining
+  (file level_count, turns accumulate, no re-back-up, mutation
+  survives), completion restore, exit abort, orchestrator restart
+  (fresh mission, turns reset, loadout rebuilt), exit-to-menu loop. NEW
+  crown-precursor test: a NO-EDITOR run driven entirely by whitelisted
+  orchestrators (skip_move / move_action), sliced from the last
+  player_start_validation, serialized, and reconstructed
+  cross-session into fresh histories — replay-reproduced turns_spent ==
+  derived turns, and the full slice lands on the main menu. That test is
+  the client-side prototype of the future server-side check.
+- Discovered semantics (documented in the test): stepping onto the level
+  end cuts the final turn short — check_level_end → end_level runs
+  before the pending attack step/turn_end (the transition clears the
+  stack) — so a beeline finish contributes no turn_end;
+  turns_spent counts COMPLETED turns. deriveValidationTurns mirrors the
+  turn_end handler exactly, so the two agree either way.

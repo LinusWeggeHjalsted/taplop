@@ -870,7 +870,7 @@ paragraph). Remaining work:
         overwrite decision helper, medal-target derivation, metadata
         accessors (mission_uuid + content_hash); the session-log writer
         gains optional extra Metadata pairs. Tests on crafted logs.
-  - [ ] **2 — file-based validation:** the input layer saves before pushing
+  - [x] **2 — file-based validation:** the input layer saves before pushing
         (abort on save failure) + `player_start_validation` gains a
         `mission_path` payload; `start_validation` reads the saved files via
         the reconstruction cache + builds the run's player data from the

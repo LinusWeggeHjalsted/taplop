@@ -1313,18 +1313,31 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_exit_to_menu outside level/hub/editor screen");
                     }
                 },
-                // Editor Test/Validate buttons: only from the editor's edit
-                // mode — the buttons exist only there, so anything else in
-                // a crafted log is rejected.
-                .player_start_playtest, .player_start_validation => {
+                // Editor Test button: only from the editor's edit mode —
+                // the button exists only there, so anything else in a
+                // crafted log is rejected.
+                .player_start_playtest => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: editor playtest/validation start outside editor screen");
+                        @panic("replay validation: editor playtest start outside editor screen");
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: editor playtest/validation start with no editor");
+                        @panic("replay validation: editor playtest start with no editor");
                     };
                     if (editor.mode != .edit) {
-                        @panic("replay validation: editor playtest/validation start outside edit mode");
+                        @panic("replay validation: editor playtest start outside edit mode");
+                    }
+                },
+                // Validate: file-based (the handler needs no editor), so
+                // the legality bar is just "no run active" — which a
+                // fresh state satisfies, letting a cross-session
+                // validation replay seed this as its first event (see
+                // DESIGN → Custom Missions & Online Services → Validation
+                // replay). The mission files themselves are read in the
+                // handler (missing/unreadable → the recoverable-read
+                // path).
+                .player_start_validation => {
+                    if (self.current_state.level != null or self.current_state.mission != null) {
+                        @panic("replay validation: player_start_validation with an active level/mission");
                     }
                 },
                 .player_set_editor_level => |set| {

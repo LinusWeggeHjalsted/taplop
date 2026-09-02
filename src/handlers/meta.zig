@@ -257,31 +257,111 @@ pub fn handleMetaEvent(
             editor_handlers.restorePrePlaytestPlayerData(current);
             current.transitionScreen(.editor);
         },
-        .start_validation => {
-            // Forced full-mission playthrough from level 1. Same as
-            // playtest but mode=.validate and always level 0. end_level's
-            // guard pushes the next level or end_validation.
-            const editor = &current.editor.?;
-            current.level = loaders.instantiateEditorLevel(editor.*, 0, allocator);
-            current.mission = deepCopy(types.Mission, editor.mission, allocator);
+        .start_validation => |start| {
+            // File-based validation: run the SAVED artifact, not the editor
+            // memory — the run certifies the files a player receives (the
+            // save's bounding-box translation + palette dedup make file ≠
+            // memory, so this doubles as a round-trip test of the writer).
+            // Reads mission.txt + player.txt from the saved dir through the
+            // reconstruction cache, then chains the campaign's own
+            // start_level path (which reads each level_N.txt the same
+            // way). The editor stays dormant and untouched. See DESIGN →
+            // Level Editor → Playtest/validate framing + DESIGN → Custom
+            // Missions & Online Services → Validation replay.
+            const mission_file_path = std.fmt.allocPrint(
+                allocator,
+                "{s}/mission.txt",
+                .{start.mission_path},
+            ) catch @panic("failed to allocate mission path");
+            const mission_sections = blk: {
+                const bytes = history.readReconstructionFile(mission_file_path) catch {
+                    failReconstructionRead(history, "failed to read mission file");
+                    return;
+                };
+                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                    failReconstructionRead(history, "failed to parse mission file");
+                    return;
+                };
+            };
+            validateConfigKeys(history, mission_sections, parser.mission_key_map, mission_file_path, allocator);
+            current.mission = loaders.loadMission(mission_sections, allocator) catch {
+                failReconstructionRead(history, "failed to parse mission file");
+                return;
+            };
+            current.mission.?.path = start.mission_path;
             current.mission.?.current_level_index = 1;
-            // Dormancy — same as start_playtest (the run's own
-            // player_data, all skills learned; the real data backed
-            // up for restore on end_validation).
-            editor.pre_playtest_player_data = deepCopy(types.PlayerData, current.player_data, allocator);
-            current.player_data = editor_handlers.buildPlaytestPlayerData(allocator, editor.player_def.template);
-            editor.mode = .validate;
-            current.world_generation +%= 1;
-            current.transitionScreen(.level);
-            pushGameplayStartEvents(current, allocator, false);
+            // The no-editor validation marker (end_level's guard reads it
+            // when no Editor exists — cross-session replay of a validation
+            // replay). Rides the working copy: replay reproduces it, and
+            // the end_validation transition discards it with the mission.
+            current.mission.?.validation_run = true;
+            // Entering a run retires any prior completion overlay info.
+            current.last_completed_mission = null;
+
+            // The run's player data: the SAVED player.txt loadout with
+            // every utility skill learned (the playtest path builds from
+            // the in-memory player_def instead — quick iteration on the
+            // draft). playerLoadoutEntity maps the same field set
+            // build_player_from_data maps, so the chained start_level's
+            // player sync round-trips the loadout identically.
+            const player_file_path = std.fmt.allocPrint(
+                allocator,
+                "{s}/player.txt",
+                .{start.mission_path},
+            ) catch @panic("failed to allocate player path");
+            const player_sections = blk: {
+                const bytes = history.readReconstructionFile(player_file_path) catch {
+                    failReconstructionRead(history, "failed to read player file");
+                    return;
+                };
+                break :blk parser.parseConfigFile(bytes, allocator) catch {
+                    failReconstructionRead(history, "failed to parse player file");
+                    return;
+                };
+            };
+            validateConfigKeys(history, player_sections, parser.player_loadout_key_map, player_file_path, allocator);
+            const player_template = loaders.loadPlayerLoadout(
+                player_sections,
+                allocator,
+                player_file_path,
+                null,
+            ) catch {
+                failReconstructionRead(history, "failed to parse player file");
+                return;
+            };
+            // Dormancy — the playtest shape, but only when an Editor
+            // exists: a cross-session replay of a validation replay starts
+            // with no editor, and there is nothing to back up or restore
+            // (the run data is rebuilt below either way).
+            if (current.editor) |*editor| {
+                editor.pre_playtest_player_data = deepCopy(types.PlayerData, current.player_data, allocator);
+                editor.mode = .validate;
+            }
+            current.player_data = editor_handlers.buildPlaytestPlayerData(allocator, player_template);
+            // start_level owns the transition, the level read, and the
+            // player sync (the campaign path — its world_generation bump
+            // is the editor→level UI reset signal).
+            pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
+                .mission_path = start.mission_path,
+                .level_index = 1,
+            } } } }, allocator);
         },
         .end_validation => {
-            // Restore the editor after a validation run. Returns to
-            // edit mode; validation result + replay attachment are
-            // not wired.
-            current.editor.?.mode = .edit;
-            editor_handlers.restorePrePlaytestPlayerData(current);
-            current.transitionScreen(.editor);
+            // Restore after a validation run. Live (editor present): edit
+            // mode + the editor screen, the session's real player data
+            // restored, the run's mission + level discarded by the
+            // transition (validation_run dies with the mission). In
+            // cross-session replay of a validation replay there is no
+            // editor — nothing to restore, land on the main menu (this is
+            // the slice's last event; the post-run state is irrelevant to
+            // what the replay certifies).
+            if (current.editor) |*editor| {
+                editor.mode = .edit;
+                editor_handlers.restorePrePlaytestPlayerData(current);
+                current.transitionScreen(.editor);
+            } else {
+                current.transitionScreen(.main_menu);
+            }
         },
         .start_mission => |start| {
             const mission_file_path = std.fmt.allocPrint(
@@ -345,8 +425,11 @@ pub fn handleMetaEvent(
             // Editor exit guard: in an editor session, end_mission
             // should never be reached (end_level's guard redirects to
             // end_validation / end_playtest), but suppress the
-            // start_hub continuation defensively if it ever is.
+            // start_hub continuation defensively if it ever is. Same for
+            // a no-editor validation run (cross-session replay — the
+            // mission working copy carries the marker).
             if (current.editor != null) return;
+            if (current.mission != null and current.mission.?.validation_run) return;
             // Return to the destination hub. Pass completed_mission
             // through so start_hub sets last_completed_mission (the
             // mission-complete overlay). Null for abandon/exits.
@@ -403,13 +486,82 @@ pub fn handleMetaEvent(
             pushGameplayStartEvents(current, allocator, true);
         },
         .end_level => |end| {
-            // Editor exit guard: when an editor session is active, it
-            // owns the exit continuation — the gameplay default
-            // (next start_level / end_mission → start_hub) is
-            // suppressed/redirected. build_data_from_player is also
-            // skipped (playtest/validate are discard-semantics; the
-            // player's real PlayerData is unchanged). See DESIGN →
-            // Architecture → Level Editor.
+            // Validation-run exit guard: a validation run owns its exit
+            // continuation whether an Editor is present (live) or not
+            // (cross-session replay of a validation replay — the marker
+            // rides the mission working copy, so replay reproduces it).
+            // The continuation mirrors the campaign's own next-
+            // start_level chaining, with validation ends instead of
+            // end_mission → start_hub. build_data_from_player + the
+            // autosave are skipped (discard semantics). See DESIGN →
+            // Level Editor (exit guard) + DESIGN → Custom Missions &
+            // Online Services → Validation replay.
+            const validation_run = if (current.editor) |editor|
+                editor.mode == .validate
+            else
+                current.mission != null and current.mission.?.validation_run;
+            if (validation_run) {
+                if (end.continuation == .restart_mission) {
+                    // Re-run the whole mission from level 1: inline
+                    // teardown (an editor's real player data + edit
+                    // mode — a transitionScreen would CLEAR the event
+                    // stack, eating the queued re-entry), then re-entry
+                    // via the ORCHESTRATOR so every attempt in the
+                    // linear stream begins with a seedable top-level
+                    // player action (the validation-replay slice rule).
+                    // start_validation needs no prior state, so a
+                    // fresh-state reconstruction of the final attempt ≡
+                    // the live re-entry.
+                    if (current.editor) |*editor| {
+                        editor.mode = .edit;
+                        editor_handlers.restorePrePlaytestPlayerData(current);
+                    }
+                    pushEvents(current, &.{.{ .player_input_event = .{ .player_start_validation = .{
+                        .mission_path = current.mission.?.path,
+                    } } }}, allocator);
+                } else if (end.continuation == .exit_to_menu) {
+                    // The button means the MAIN MENU. With an editor:
+                    // inline teardown + close_editor (the restore must
+                    // precede close_editor, whose scope swap discards
+                    // the Editor carrying the backup). Without one
+                    // (cross-session replay): nothing to tear down.
+                    if (current.editor) |*editor| {
+                        editor.mode = .edit;
+                        editor_handlers.restorePrePlaytestPlayerData(current);
+                        pushEvents(current, &.{.{ .meta_event = .close_editor }}, allocator);
+                    } else {
+                        pushEvents(current, &.{.{ .meta_event = .open_main_menu }}, allocator);
+                    }
+                } else if (end.continuation != .default) {
+                    // Exit Mission: abort the run — only successful
+                    // runs write a replay.
+                    pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{
+                        .success = false,
+                    } } }}, allocator);
+                } else if (current.mission.?.current_level_index < current.mission.?.level_count) {
+                    // Natural completion with levels left: the
+                    // campaign's own next-level chain (start_level
+                    // re-reads the level file through the cache; turns
+                    // accumulate on the mission across levels).
+                    pushEvents(current, &.{.{ .meta_event = .{ .start_level = .{
+                        .mission_path = current.mission.?.path,
+                        .level_index = current.mission.?.current_level_index + 1,
+                    } } }}, allocator);
+                } else {
+                    // Last level done: the run succeeded.
+                    pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{
+                        .success = true,
+                    } } }}, allocator);
+                }
+                return;
+            }
+            // Editor PLAYTEST exit guard (the validation case is owned
+            // above): when an editor session is active, it owns the exit
+            // continuation — the gameplay default (next start_level /
+            // end_mission → start_hub) is suppressed/redirected.
+            // build_data_from_player is also skipped (playtest is
+            // discard-semantics; the player's real PlayerData is
+            // unchanged). See DESIGN → Architecture → Level Editor.
             if (current.editor) |editor| {
                 switch (editor.mode) {
                     .playtest => {
@@ -445,45 +597,8 @@ pub fn handleMetaEvent(
                             pushEvents(current, &.{.{ .meta_event = .end_playtest }}, allocator);
                         }
                     },
-                    .validate => {
-                        // A restart re-runs the WHOLE run fresh from
-                        // level 1: same inline-teardown shape as the
-                        // playtest restart (end_validation's
-                        // transitionScreen would clear the queued
-                        // re-entry), then a fresh start_validation.
-                        // Exit-to-menu tears down inline + closes the
-                        // editor (same as the playtest arm). Any OTHER
-                        // exit continuation (Exit Mission) aborts the
-                        // run: success=false, back to the editor.
-                        // Only the natural level completion advances
-                        // the run.
-                        if (end.continuation == .restart_mission) {
-                            current.editor.?.mode = .edit; // the capture is by value — mutate through the optional
-                            editor_handlers.restorePrePlaytestPlayerData(current);
-                            pushEvents(current, &.{.{ .meta_event = .start_validation }}, allocator);
-                        } else if (end.continuation == .exit_to_menu) {
-                            current.editor.?.mode = .edit; // the capture is by value — mutate through the optional
-                            editor_handlers.restorePrePlaytestPlayerData(current);
-                            pushEvents(current, &.{.{ .meta_event = .close_editor }}, allocator);
-                        } else if (end.continuation != .default) {
-                            pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{
-                                .success = false,
-                            } } }}, allocator);
-                        } else {
-                            const current_level_index = current.mission.?.current_level_index;
-                            if (current_level_index < editor.levels.len) {
-                                const next_index = current_level_index; // 0-based: current is 1-based, next is current
-                                pushEvents(current, &.{.{ .meta_event = .{ .start_playtest = .{
-                                    .level_index = next_index,
-                                } } }}, allocator);
-                            } else {
-                                pushEvents(current, &.{.{ .meta_event = .{ .end_validation = .{
-                                    .success = true,
-                                } } }}, allocator);
-                            }
-                        }
-                    },
                     .edit => {}, // shouldn't happen (no level loaded in edit mode)
+                    .validate => {}, // unreachable — the validation_run block above owns the validate continuation
                 }
                 return;
             }
