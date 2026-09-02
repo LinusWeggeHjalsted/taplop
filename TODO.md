@@ -69,19 +69,24 @@ Test by running `zig build run` and clicking through.
   `Action.inspect_cursor` bool via `checkAction`, consumed in
   `handleIdleInput` where the tile cursor is resolved; right-click is the
   only inspect path today. (Right-click-drag camera pan DONE — see DONE.md.)
-- **New-keybind pipeline friction** — a new keybind touches THREE places:
+- **New-keybind pipeline friction** — a new keybind touches FOUR places:
   the binding in `data/default_settings.txt`, the backend's key table
   (`raylib_backend.zig` `key_mappings` — only bound keys are mapped;
-  unmapped keys never reach `translateInput`), and the Action/input
-  plumbing. The ctrl+A select-all shipped broken because the backend
-  entry was the one nobody remembers (see DONE.md, Level editor UI).
+  unmapped keys never reach `translateInput`), the Action/input plumbing
+  (`Action` enum + `AnytimeInput`/`IdleInput` field + `applyAction` + the
+  consumption site), AND the `translateInput` `checkAction` dispatch line
+  for the action. Two instances of a site being forgotten: ctrl+A
+  select-all shipped broken on the missing backend entry, and ctrl+S
+  save-mission shipped broken on the missing dispatch line (the binding +
+  plumbing + button path were all wired; only the keyboard path was dead —
+  see DONE.md, “Editor save via ctrl+S”).
   Make the coupling visible instead: warn at startup (dev-mode console or
   the pending-error popup — advisory, not fatal) when a loaded binding
   names an input id no backend mapping can produce, and/or consider
   mapping the full W3C key set once so new bindings never need a backend
   edit (cost: a slightly bigger poll loop — it's a fixed array, likely
   negligible; verify with the input budget in mind). Either way, add a
-  line to AGENTS → Dev Tools or the Input design note naming the three
+  line to AGENTS → Dev Tools or the Input design note naming the four
   sites so the next binding doesn't rediscover this.
 - **Decoration occlusion readability** — inset outline of entities / ground
   items / flag poles occluded by decoration overhang. Settled design — see

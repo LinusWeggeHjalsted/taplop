@@ -40,6 +40,11 @@ ctrl true
 action save_editor_mission
 
 input_type key
+input_name KeyE
+ctrl true
+action export_editor_mission
+
+input_type key
 input_name Enter
 ctrl true
 action skip_level

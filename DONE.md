@@ -9673,3 +9673,35 @@ screen — one surface, context-branched:
   overwrite click no-ops, Continue dismisses on the timeline, the slower
   run offers, the manual overwrite writes the stash + follows the PB
   line + consumes the offer).
+
+## Editor save via ctrl+S (missing translateInput dispatch) + ctrl+E export binding
+
+ctrl+S didn't save a mission in the editor — only the options-menu Save
+button worked. Root cause: the keybind pipeline has FOUR sites and the
+save slice wired three of them (the binding in `data/default_settings.txt`,
+the `KeyS` backend key-table entry, and the `Action`/`AnytimeInput` +
+`applyAction` + `handleAnytimeInput` consumption). The fourth — the
+`translateInput` `checkAction` dispatch line that sets
+`anytime.save_editor_mission` from a KEYPRESS — was never added, so the
+flag was only ever set by `applyAction` (the button path). Same bug class
+as the ctrl+A select-all (that one forgot the backend key-table entry);
+TODO's "New-keybind pipeline friction" item now names all four sites and
+both instances.
+
+Changes:
+
+- `src/input.zig`: the two missing dispatch lines
+  (`save_editor_mission` + `export_editor_mission`, press-only/`no_repeat`,
+  the dump_event_log discipline).
+- `data/default_settings.txt`: new default binding ctrl+KeyE →
+  `export_editor_mission` (was button-only; the per-action overlay
+  migration injects it into existing user settings on next load).
+- `src/raylib_backend.zig`: `KeyE` added to `key_mappings` (the ctrl+A
+  lesson — the backend entry is the site nobody remembers; not covered by
+  the test build since the backend is excluded from it, verified via
+  `zig build`).
+- Regression test at the `translateInput` level (not just `checkAction`
+  — the bug was precisely that `checkAction` was never called): ctrl held
+  + KeyS + KeyE edges set both anytime flags, and the plain KeyS
+  `toggle_skills` binding on the same key is suppressed by the chord
+  (hybrid precedence).

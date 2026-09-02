@@ -954,6 +954,8 @@ pub fn translateInput(
     result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.toggle_editor_mission_browser = checkAction(.toggle_editor_mission_browser, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.import_editor_mission = checkAction(.import_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.save_editor_mission = checkAction(.save_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
+    result.anytime.export_editor_mission = checkAction(.export_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.error_scroll_up = checkAction(.error_scroll_up, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.error_scroll_down = checkAction(.error_scroll_down, bindings, &keys_pressed, &keys_repeated, &mouse_pressed, &gamepad_pressed, modifiers);
     result.anytime.scroll_delta = scroll_delta;
@@ -1179,4 +1181,34 @@ test "checkAction: most specific among three wins" {
     try std.testing.expect(checkAction(.dump_event_log, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
     try std.testing.expect(!checkAction(.skip, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
     try std.testing.expect(!checkAction(.confirm, &bindings, &pressed, &no_repeat_keys, &empty_mouse, &empty_gamepad, mods));
+}
+
+test "translateInput: editor save/export chords reach the anytime flags" {
+    // Regression: ctrl+S shipped bound in data/default_settings.txt with
+    // every plumbing site wired, but translateInput never dispatched
+    // checkAction for save_editor_mission — the keybind was dead while the
+    // options-menu button (applyAction) worked. This test pins the dispatch
+    // itself, not just checkAction, so a missing line fails here. The same
+    // key's plain binding must also be suppressed while the chord fires
+    // (hybrid precedence).
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "KeyS" }, .action = .toggle_skills },
+        .{ .input = .{ .key = "KeyS" }, .modifiers = .{ .ctrl = true }, .action = .save_editor_mission },
+        .{ .input = .{ .key = "KeyE" }, .modifiers = .{ .ctrl = true }, .action = .export_editor_mission },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const platform = PlatformInput{
+        .events = &.{
+            .{ .key_down = "ControlLeft" },
+            .{ .key_down = "KeyS" },
+            .{ .key_down = "KeyE" },
+        },
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+    var input_state: InputState = .{};
+    const result = translateInput(platform, &input_state, settings, camera, 0, null);
+    try std.testing.expect(result.anytime.save_editor_mission);
+    try std.testing.expect(result.anytime.export_editor_mission);
+    try std.testing.expect(!result.anytime.in_game.toggle_skills);
 }
