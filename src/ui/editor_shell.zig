@@ -671,15 +671,17 @@ pub fn buildEditorBottomBar(
     // button (square ui/panel cells, same visual class as the level tabs)
     // and its visible window of type cells in the row (none when
     // collapsed). An EXPANDED group's header + "+" sit in the strip above
-    // the bar (labeling the cells below); a COLLAPSED (or empty) group has
-    // no cells to label, so they drop flush against the bottom of the
-    // screen instead of hovering above the bar — same condition the
-    // footprint math uses.
+    // the bar — even when the group is EMPTY (the header rises on expand,
+    // consistently, instead of staying pinned to the bottom edge); a
+    // COLLAPSED group has no cells to label, so it drops flush against
+    // the bottom of the screen instead of hovering above the bar. The
+    // footprint math keeps its own `or size == 0` (an empty group has no
+    // cells to size, so its row extent is just the header + "+").
     for (group_labels, 0..) |label, group_index| {
         const size = group_sizes[group_index];
         const group_left = bar.x + row.cursor_x;
         const footprint = footprints[group_index];
-        const header_y: i32 = if (collapsed[group_index] or size == 0)
+        const header_y: i32 = if (collapsed[group_index])
             screen.bottom() - editor_header_strip_height
         else
             bar.y - ui_gap - editor_header_strip_height;
@@ -1517,6 +1519,43 @@ test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover ab
         plus_glyph_ys[2],
     );
     try std.testing.expect(decoration_header_x != null);
+
+    // An EXPANDED group with NO tools rises to the strip too: the header
+    // moves on expand consistently — it doesn't stay pinned to the bottom
+    // edge just because there are no cells to label. (The editor above
+    // has no decoration types, so group 1 expanded = the empty case.)
+    {
+        var empty_expanded_elements: UiElementList = .empty;
+        var empty_expanded_scroll_offsets: [3]i32 = .{ 0, 0, 0 };
+        // Enemies collapsed; Decorations (EMPTY) expanded; Items collapsed.
+        var empty_expanded_collapsed: [3]bool = .{ true, false, true };
+        try buildEditorBottomBar(
+            &empty_expanded_elements,
+            arena.allocator(),
+            metrics,
+            screenRect(),
+            editor,
+            theme,
+            &empty_expanded_scroll_offsets,
+            &empty_expanded_collapsed,
+            .select,
+        );
+        var empty_group_header_y: ?i32 = null;
+        var empty_group_plus_y: ?i32 = null;
+        for (empty_expanded_elements.items) |element| switch (element) {
+            .button => |button| {
+                if (button.editor_group != 1) continue;
+                if (button.action == .toggle_editor_palette_group) {
+                    empty_group_header_y = button.screen_position.y;
+                } else if (button.action == .add_editor_palette_type) {
+                    empty_group_plus_y = button.screen_position.y;
+                }
+            },
+            else => {},
+        };
+        try std.testing.expectEqual(hovering_y, empty_group_header_y.?);
+        try std.testing.expectEqual(hovering_y, empty_group_plus_y.?);
+    }
 }
 
 test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {

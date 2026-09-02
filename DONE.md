@@ -9744,3 +9744,16 @@ entity-inspect skill grid's image-carried tooltip sits topmost; slot
 tooltips are on the interactive slot itself). The doc comment on
 `emitEditorPlusCell` records the rule: a tooltip on an element drawn under
 a blocking element never shows.
+
+## Editor palette: an expanded EMPTY group's header rises to the strip too
+
+Expanding a tool group with no tools left its header + "+" pinned flush
+against the bottom of the screen — the placement condition was
+`collapsed or size == 0`, so "empty" read as "collapsed" for placement.
+Now `header_y` keys off `collapsed` only: an expanded group rises to the
+strip above the bar whether or not it has cells to label. The footprint
+math KEEPS its `or size == 0` (an empty group's row extent is still just
+the header + "+", so the neighboring group's header can't overlap it) —
+the two conditions are now intentionally different, noted in the comment.
+Test: the collapsed/expanded placement test gains an empty-Decorations
+expanded build asserting header + "+" both sit at the hovering y.
