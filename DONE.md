@@ -9942,3 +9942,52 @@ built for:
 
 - Digit6–8 have no editor binding yet — free for future editor shortcuts
   if wanted; nothing reserves them.
+
+## Bug fix: error popup scrolling (built day one, broken until first real use)
+
+Surface: the user booted with the new binding-context settings and the
+startup warning popup finally got scrolled for real — revealing three
+compounding bugs in the one scroller that predated every other scroller in
+the game (built with the error-handling slice 1, never exercised until
+now; the other scrollers that later defined the conventions — skills
+panel, inspector, browsers, palette — were all built correct).
+
+- **Wheel direction flipped**: the gate ADDED `scroll_delta` to the offset
+  (positive delta = wheel up = should scroll toward the top = offset
+  decreases; every other scroll site does `offset -= delta`). Fixed: the
+  game-wide sign convention.
+- **Window drawn at its unscrolled position**: the view emitted the
+  window's lines but placed them at `body_top + first_visible_line ×
+  line_height` — blank space above, bottom lines overflowing the panel
+  ("renders the wrong text, cuts it off weirdly"). Fixed: the window's
+  first line renders AT the body region's top.
+- **Step unit out of sync with the view**: the input stepped in pixels
+  using a hardcoded `error_scroll_line_height` (56) while the view's line
+  height is `lineHeight(56) = 67` — offsets were never line-aligned, so
+  the window math (`@divTrunc(offset, line_height)`) was garbage on every
+  scrolled frame.
+
+The fix aligns the popup with the settled game-wide scroll convention
+instead of patching the pixel model: `error_scroll_offset` is now the
+index of the first visible body LINE (rows, not pixels); wheel = one line
+per notch (wheel-up = earlier lines, offset decreases, lower clamp at the
+input site); arrows = 3 lines per press; the view clamps the upper bound
+in place (authoritative — only it knows the wrapped line count) and emits
+exactly the visible window drawn from the body top, whole lines only (the
+region height is a multiple of the line height, so placement is identical
+at every offset). The hardcoded `error_scroll_line_height` constant is
+DELETED (the view derives everything from `lineHeight`; the input steps in
+lines, so no pixel constant exists to drift).
+
+Also discovered while writing tests: `wrapRow` does NOT treat `\n` as a
+line break (width-only breaking at spaces and '/') — the old tests'
+"60 lines" comments were wrong (their messages flowed into ~25 wrapped
+lines); the new tests use width-deterministic 40-char tokens so the
+wrapped line count is exact (60 lines, 23 visible, max_scroll 37) and the
+scrolled window is assertable by content ("line 10 renders at the body
+top") and position, not just counts.
+
+Tests: window content + placement + exact clamp (screens.zig), wheel sign
++ line steps + lower clamp + dismiss (input_handlers.zig, direct
+handleAnytimeInput through the pending_error gate). Design: DESIGN →
+Error Handling → Recoverable error surface (scrolling paragraph).

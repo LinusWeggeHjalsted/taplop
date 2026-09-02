@@ -910,12 +910,27 @@ silently.
 `SessionState.pending_error: ?[]const u8` (off the undoable GameState, so
 replay-safe by construction) carries a message; `view()` renders it as a
 modal centered popup (`ui.buildErrorPopup`), appended last so it draws on
-top. `Action.dismiss_error` (bound to Escape + Enter) clears it.
-`handleAnytimeInput` gates all input when a pending error is set — only
-`dismiss_error` gets through; `update()` pauses the game (drag/camera/wait/
-idle blocked), mirroring the options-menu pause. The message is duped into
-`history_arena` (durable across frames; overwrite leaks the prior bytes —
-accepted, same unbounded-arena tradeoff as `event_history`).
+top. `Action.dismiss_error` (bound to Escape + Enter, context `error_popup`)
+clears it. `handleAnytimeInput` gates all input when a pending error is set
+— only `dismiss_error` and the scroll actions get through; `update()` pauses
+the game (drag/camera/wait/idle blocked), mirroring the options-menu pause.
+The message is duped into `history_arena` (durable across frames; overwrite
+leaks the prior bytes — accepted, same unbounded-arena tradeoff as
+`event_history`).
+
+**Scrolling** follows the game-wide row-scroll convention (the inspector /
+skills-panel / browser model): `error_scroll_offset` is the index of the
+first visible body LINE, the wheel scrolls one line per notch with wheel-up
+= earlier lines (offset decreases, lower-clamped at the input site), the
+arrow keys (`error_scroll_up/down`) 3 lines per press, and the view clamps
+the upper bound in place (authoritative — only it knows the wrapped line
+count) and emits exactly the window's lines drawn from the top of the body
+region. Whole visible lines only — the region height is the visible count ×
+line height, so text placement is identical at every offset. (The popup was
+originally built with a pixel offset that predated every other scroller in
+the game: the wheel sign was flipped, the window was drawn at its
+unscrolled y, and the input step unit (a hardcoded 56px) didn't match the
+view's `lineHeight` — see DONE.md.)
 
 ### Three contexts for recoverable failures
 

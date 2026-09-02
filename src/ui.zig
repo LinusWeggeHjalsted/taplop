@@ -206,7 +206,6 @@ pub const error_header_gap = ui_screens.error_header_gap;
 pub const error_button_gap = ui_screens.error_button_gap;
 pub const error_dismiss_button_width = ui_screens.error_dismiss_button_width;
 pub const error_dismiss_button_font_size = ui_screens.error_dismiss_button_font_size;
-pub const error_scroll_line_height = ui_screens.error_scroll_line_height;
 pub const error_popup_max_body_height = ui_screens.error_popup_max_body_height;
 pub const error_scrollbar_width = ui_screens.error_scrollbar_width;
 pub const error_scrollbar_gap = ui_screens.error_scrollbar_gap;

@@ -53,12 +53,11 @@ pub const error_header_gap: i32 = 24; // gap below the "Error" header
 pub const error_button_gap: i32 = 32; // gap above the Dismiss button
 pub const error_dismiss_button_width: i32 = 512;
 pub const error_dismiss_button_font_size: i32 = 64;
-/// One body text line's height — also the scroll-step unit (arrow keys scroll
-/// 3 lines at a time; see handleAnytimeInput). Kept in sync with
-/// `lineHeight(error_body_font_size)`.
-pub const error_scroll_line_height: i32 = 56;
 /// Max body region height before scrolling kicks in. Leaves room for the
 /// header + Dismiss button + padding within the 2160px reference height.
+/// The visible line count is derived from this via `lineHeight` — whole
+/// lines only (the region height is the visible count × line height, so
+/// text placement is identical at every scroll offset).
 pub const error_popup_max_body_height: i32 = 1600;
 /// Scrollbar geometry (reference-space pixels). Drawn only when the body
 /// content overflows the visible region.
@@ -73,11 +72,15 @@ pub const error_scrollbar_gap: i32 = 16; // gap between body text and scrollbar
 /// SessionState.pending_error).
 ///
 /// When the wrapped body exceeds `error_popup_max_body_height`, the body
-/// scrolls: only lines within the visible window are emitted, and a
-/// scrollbar is drawn. `session.error_scroll_offset` is clamped to
-/// `[0, max_scroll]` here (the view is the only place that knows
-/// `max_scroll`, which depends on the wrapped line count). Pure over the
-/// message + frame arena, aside from that scroll-offset clamp.
+/// scrolls by LINES — the game-wide row-scroll convention (the inspector /
+/// skills-panel / browser model): `session.error_scroll_offset` is the
+/// index of the first visible body line, the wheel scrolls one line per
+/// notch (wheel-up = earlier lines), and the arrow keys 3 lines per press
+/// (see handleAnytimeInput). Only the window's lines are emitted, drawn
+/// from the top of the body region. The offset is clamped to
+/// `[0, max_scroll_lines]` here (the view is the only place that knows the
+/// wrapped line count); the input site clamps the lower bound. Pure over
+/// the message + frame arena, aside from that scroll-offset clamp.
 pub fn buildErrorPopup(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -104,15 +107,20 @@ pub fn buildErrorPopup(
     );
 
     const body_line_height = lineHeight(error_body_font_size);
+    // Whole visible lines only — the region height is a multiple of the
+    // line height, so text placement is identical at every offset.
+    const max_visible_lines: usize = @intCast(@divTrunc(error_popup_max_body_height, body_line_height));
+    const visible_line_count: usize = @min(body_lines.len, max_visible_lines);
+    const scrolls = body_lines.len > visible_line_count;
     const body_content_height: i32 = @intCast(body_lines.len * @as(usize, @intCast(body_line_height)));
-    const visible_body_height = @min(body_content_height, error_popup_max_body_height);
-    const max_scroll = @max(@as(i32, 0), body_content_height - visible_body_height);
-    // Clamp the scroll offset (authoritative — the input handler can't know
-    // max_scroll without wrapping the text itself).
+    const visible_body_height: i32 = @intCast(visible_line_count * @as(usize, @intCast(body_line_height)));
+    // Clamp the scroll offset (authoritative — the input handler can't
+    // know the wrapped line count). Offset is in LINES: the index of the
+    // first visible body line.
+    const max_scroll_lines: i32 = @intCast(body_lines.len - visible_line_count);
     if (session.error_scroll_offset < 0) session.error_scroll_offset = 0;
-    if (session.error_scroll_offset > max_scroll) session.error_scroll_offset = max_scroll;
-    const scroll_offset = session.error_scroll_offset;
-    const scrolls = body_content_height > visible_body_height;
+    if (session.error_scroll_offset > max_scroll_lines) session.error_scroll_offset = max_scroll_lines;
+    const first_visible_line: usize = @intCast(session.error_scroll_offset);
 
     // Content width = widest visual line, capped to the limit. The Dismiss
     // button + scrollbar also constrain width so they fit inside the panel.
@@ -173,17 +181,12 @@ pub fn buildErrorPopup(
     }
     y += error_header_gap;
 
-    // Body: emit only the lines within the scroll window. Lines above
-    // scroll_offset are above the visible region; lines below
-    // (scroll_offset + visible_body_height) are below it. The renderer
-    // would clip them anyway, but skipping them keeps the element list small
-    // and the hit-test set clean.
+    // Body: emit only the window's lines, drawn from the TOP of the body
+    // region (the window's first line renders at `body_top` — lines above
+    // the window are simply not emitted). Skipping the out-of-window
+    // lines keeps the element list small and the hit-test set clean.
     const body_top = y;
-    const first_visible_line: usize = @intCast(@divTrunc(scroll_offset, body_line_height));
-    const visible_line_count: usize = @intCast(@divTrunc(visible_body_height, body_line_height));
-    const last_visible_line = @min(body_lines.len, first_visible_line + visible_line_count);
-    // Skip the height of the lines above the scroll window.
-    y += @intCast(first_visible_line * @as(usize, @intCast(body_line_height)));
+    const last_visible_line = first_visible_line + visible_line_count;
     for (body_lines[first_visible_line..last_visible_line]) |line| {
         var x = content_x;
         for (line) |span| {
@@ -201,7 +204,8 @@ pub fn buildErrorPopup(
 
     // Scrollbar (only when the body overflows). Track + thumb on the right
     // edge of the body region. The thumb is proportional to the visible /
-    // total ratio and positioned by the scroll offset.
+    // total ratio and positioned by the scroll offset (line offset over
+    // line max — the same ratio as pixels).
     if (scrolls) {
         const scrollbar_x = content_x + content_width - error_scrollbar_width;
         const track_color: types.Color = .{ .r = 80, .g = 80, .b = 80 };
@@ -215,7 +219,10 @@ pub fn buildErrorPopup(
             @as(i32, 40),
             @divTrunc(visible_body_height * visible_body_height, body_content_height),
         );
-        const thumb_y = body_top + @divTrunc(scroll_offset * (visible_body_height - thumb_height), max_scroll);
+        const thumb_y = body_top + @divTrunc(
+            session.error_scroll_offset * (visible_body_height - thumb_height),
+            max_scroll_lines,
+        );
         const thumb_color: types.Color = .{ .r = 180, .g = 180, .b = 180 };
         try elements.append(allocator, .{ .solid_rect = .{
             .screen_position = .{ .x = scrollbar_x, .y = thumb_y },
@@ -695,13 +702,15 @@ test "buildErrorPopup: long message — scrollbar present, only visible lines em
 
     var session: state.SessionState = .{};
 
-    // Build a message long enough to overflow error_popup_max_body_height.
-    // Each line is ~56px; 1600px / 56 ≈ 28 lines fit. Generate 60 lines.
+    // Build a message long enough to overflow error_popup_max_body_height:
+    // the 40-char-token shape from the scrolled-window test (exactly 60
+    // visual lines — one token per line at these metrics; a '\n' does NOT
+    // break lines, wrapRow only breaks on width).
     var msg: std.ArrayList(u8) = .empty;
     defer msg.deinit(std.testing.allocator);
     for (0..60) |i| {
-        if (i > 0) msg.appendSlice(std.testing.allocator, "\n") catch @panic("msg");
-        msg.appendSlice(std.testing.allocator, "This is warning line number X with some text.") catch @panic("msg");
+        if (i > 0) msg.appendSlice(std.testing.allocator, " ") catch @panic("msg");
+        msg.print(std.testing.allocator, "L{d:0>39}", .{i}) catch @panic("msg");
     }
 
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
@@ -720,29 +729,105 @@ test "buildErrorPopup: long message — scrollbar present, only visible lines em
     try std.testing.expectEqual(@as(i32, 0), session.error_scroll_offset);
 }
 
-test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
+test "buildErrorPopup: scrolled window renders at the body top" {
+    // The regression this pins: the old pixel-offset view drew the window's
+    // lines at their UNSCROLLED y (blank space above, bottom lines
+    // overflowing the panel) — "scrolls but renders the wrong text, cut
+    // off weirdly". The window's first line must render AT the body
+    // region's top, and be the offset'th line of the message.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
     var session: state.SessionState = .{};
-    session.error_scroll_offset = 100_000; // way past max_scroll
+    session.error_scroll_offset = 10; // first visible line = line 10
 
+    // 60 space-separated 40-char tokens ("L" + zero-padded index). At these
+    // metrics each token is 40×28 = 1120px — it fits the 1216px wrap limit
+    // alone, but two can never share a line (1120+28+1120 > 1216) — so the
+    // message wraps to EXACTLY 60 visual lines, one span (one label) each,
+    // with deterministic content per line. (A '\n' in the message does NOT
+    // break lines — wrapRow only breaks on width, at spaces and '/'.)
     var msg: std.ArrayList(u8) = .empty;
     defer msg.deinit(std.testing.allocator);
     for (0..60) |i| {
-        if (i > 0) msg.appendSlice(std.testing.allocator, "\n") catch @panic("msg");
-        msg.appendSlice(std.testing.allocator, "This is warning line number X with some text.") catch @panic("msg");
+        if (i > 0) msg.appendSlice(std.testing.allocator, " ") catch @panic("msg");
+        msg.print(std.testing.allocator, "L{d:0>39}", .{i}) catch @panic("msg");
     }
 
     const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     var elements: UiElementList = .empty;
     try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items, .{ .r = 50, .g = 50, .b = 50 });
 
-    // Clamped to max_scroll (which is body_content_height - visible_body_height,
-    // both positive since content overflows). Exact value depends on wrapping,
-    // but it must be > 0 and < the original 100_000.
-    try std.testing.expect(session.error_scroll_offset > 0);
-    try std.testing.expect(session.error_scroll_offset < 100_000);
+    // Collect the body labels (font_size == error_body_font_size). One
+    // label per visual line at these metrics (single-span lines).
+    var body_labels: usize = 0;
+    var first_body: ?text_label_attrs = null;
+    for (elements.items) |element| switch (element) {
+        .text_label => |label| if (label.font_size == error_body_font_size) {
+            if (first_body == null) first_body = .{
+                .text = label.text,
+                .y = label.screen_position.y,
+            };
+            body_labels += 1;
+        },
+        else => {},
+    };
+
+    // Whole visible lines only: min(60, 1600 / 67) = 23.
+    const expected_visible: usize = @min(
+        @as(usize, 60),
+        @as(usize, @intCast(@divTrunc(error_popup_max_body_height, lineHeight(error_body_font_size)))),
+    );
+    try std.testing.expectEqual(expected_visible, body_labels);
+
+    // The first visible line is line 10 of the message...
+    const first = first_body orelse return error.TestUnexpectedResult;
+    var expected_text: std.ArrayList(u8) = .empty;
+    defer expected_text.deinit(std.testing.allocator);
+    try expected_text.print(std.testing.allocator, "L{d:0>39}", .{10});
+    try std.testing.expectEqualStrings(expected_text.items, first.text);
+
+    // ...and it renders AT the body region's top: panel top + padding +
+    // header lines + header gap (the header "Error" wraps to 1 line here).
+    const panel = elements.items[0].nine_slice_panel;
+    const expected_body_top = panel.screen_position.y +
+        error_popup_padding +
+        lineHeight(error_header_font_size) +
+        error_header_gap;
+    try std.testing.expectEqual(expected_body_top, first.y);
+
+    // The offset stays 10 — well within max_scroll (60 - 23 = 37 lines of
+    // scroll available); only out-of-range offsets clamp.
+    try std.testing.expectEqual(@as(i32, 10), session.error_scroll_offset);
+}
+
+const text_label_attrs = struct {
+    text: []const u8,
+    y: i32,
+};
+
+test "buildErrorPopup: scroll offset clamped to max_scroll on long message" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var session: state.SessionState = .{};
+    session.error_scroll_offset = 100_000; // way past max_scroll (lines)
+
+    // The same 60-token message (exactly 60 visual lines, 23 visible):
+    // max_scroll = 60 - 23 = 37 lines.
+    var msg: std.ArrayList(u8) = .empty;
+    defer msg.deinit(std.testing.allocator);
+    for (0..60) |i| {
+        if (i > 0) msg.appendSlice(std.testing.allocator, " ") catch @panic("msg");
+        msg.print(std.testing.allocator, "L{d:0>39}", .{i}) catch @panic("msg");
+    }
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    var elements: UiElementList = .empty;
+    try buildErrorPopup(&elements, arena.allocator(), metrics, &session, msg.items, .{ .r = 50, .g = 50, .b = 50 });
+
+    // Clamped to exactly max_scroll: 60 lines - 23 visible.
+    try std.testing.expectEqual(@as(i32, 37), session.error_scroll_offset);
 }
 
 const testing = std.testing;

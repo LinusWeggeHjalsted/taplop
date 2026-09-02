@@ -800,24 +800,29 @@ pub fn handleAnytimeInput(
     // wheel) is swallowed until the popup is dismissed. The state has
     // already been reverted by the time the error is set, so there is
     // nothing to undo. The wheel (`scroll_delta`) is redirected here to
-    // scroll the popup body instead of zooming the camera. The scroll offset
-    // is clamped in `buildErrorPopup` (the view is the only place that knows
-    // `max_scroll`, which depends on the wrapped line count). See DESIGN →
-    // Error Handling.
+    // scroll the popup body instead of zooming the camera. Scrolling is
+    // LINE-based — the game-wide row-scroll convention (the inspector /
+    // skills-panel / browser model): the offset is the first visible body
+    // line, the wheel scrolls one line per notch with wheel-up = earlier
+    // lines (offset decreases), and the arrow keys 3 lines per press.
+    // Lower clamp here; `buildErrorPopup` clamps the upper bound in place
+    // (authoritative — only the view knows the wrapped line count).
+    // See DESIGN → Error Handling → Recoverable error surface.
     if (history.session.pending_error != null) {
         if (anytime.dismiss_error) {
             history.session.clearPendingError();
             return;
         }
-        const scroll_step: i32 = 3 * ui.error_scroll_line_height;
         if (anytime.error_scroll_up) {
-            history.session.error_scroll_offset -= scroll_step;
+            history.session.error_scroll_offset -= 3;
         }
         if (anytime.error_scroll_down) {
-            history.session.error_scroll_offset += scroll_step;
+            history.session.error_scroll_offset += 3;
         }
-        if (anytime.scroll_delta != 0) {
-            history.session.error_scroll_offset += @intFromFloat(anytime.scroll_delta * @as(f32, @floatFromInt(scroll_step)));
+        const delta_lines: i32 = @intFromFloat(anytime.scroll_delta);
+        history.session.error_scroll_offset -= delta_lines;
+        if (history.session.error_scroll_offset < 0) {
+            history.session.error_scroll_offset = 0;
         }
         return;
     }
@@ -3874,6 +3879,55 @@ test "select_editor_tool: changing tools clears the selection, re-selecting keep
     const selection = history.current_state.editor.?.selection;
     try std.testing.expectEqual(@as(usize, 1), selection.len);
     try std.testing.expectEqual(types.Selectable{ .tile = .{ .x = 1, .y = 1 } }, selection[0]);
+}
+
+test "error popup scroll: line-based offset, wheel-up scrolls toward the top" {
+    // The game-wide scroll convention, pinned for the error popup (the
+    // old code stepped in pixels, added the wheel delta — wheel-up scrolled
+    // DOWN — and its step unit (56px) didn't even match the view's line
+    // height (67px), so windows were never line-aligned). See DESIGN →
+    // Error Handling → Recoverable error surface.
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+    var history = harness.newHistory(.{
+        .screen = .main_menu,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+    history.session.setPendingError(backing.allocator(), "some recoverable failure");
+
+    // Arrows: 3 lines per press, up = toward the top.
+    handleAnytimeInput(&history, .{ .error_scroll_down = true }, .{ .x = 0, .y = 0 }, &.{});
+    try std.testing.expectEqual(@as(i32, 3), history.session.error_scroll_offset);
+    handleAnytimeInput(&history, .{ .error_scroll_up = true }, .{ .x = 0, .y = 0 }, &.{});
+    try std.testing.expectEqual(@as(i32, 0), history.session.error_scroll_offset);
+
+    // Wheel: one line per notch; POSITIVE delta (wheel up) scrolls toward
+    // the top — offset DECREASES (the load-save browser / inspector /
+    // skills-panel model).
+    history.session.error_scroll_offset = 5;
+    handleAnytimeInput(&history, .{ .scroll_delta = 1.0 }, .{ .x = 0, .y = 0 }, &.{});
+    try std.testing.expectEqual(@as(i32, 4), history.session.error_scroll_offset);
+    handleAnytimeInput(&history, .{ .scroll_delta = -2.0 }, .{ .x = 0, .y = 0 }, &.{});
+    try std.testing.expectEqual(@as(i32, 6), history.session.error_scroll_offset);
+
+    // Lower clamp at the input site (the upper clamp is the view's — only
+    // the view knows the wrapped line count).
+    history.session.error_scroll_offset = 1;
+    handleAnytimeInput(&history, .{ .error_scroll_up = true }, .{ .x = 0, .y = 0 }, &.{});
+    try std.testing.expectEqual(@as(i32, 0), history.session.error_scroll_offset);
+
+    // Dismiss still clears through the same gate.
+    handleAnytimeInput(&history, .{ .dismiss_error = true }, .{ .x = 0, .y = 0 }, &.{});
+    try std.testing.expect(history.session.pending_error == null);
 }
 
 // --- Prepared-skill toggle (same-slot re-activation) ------------------------

@@ -87,11 +87,13 @@ pub const Action = enum {
     // reaches the game; all other input is swallowed until the popup is
     // dismissed. Bound to Escape + Enter so either key clears it.
     dismiss_error,
-    // Scroll the error popup body (arrows; the mouse wheel also scrolls
-    // it via a redirect in the modal input gate). Only consumed while a
-    // pending error is shown. Bound to the same Up/Down keys as the tile-
-    // cursor nudge — the modal gate routes them to scroll, not cursor, while
-    // the popup is up. See DESIGN → Error Handling.
+    // Scroll the error popup body (arrow keys, 3 lines per press; the
+    // mouse wheel also scrolls it — one line per notch — via a redirect in
+    // the modal input gate). Only consumed while a pending error is shown.
+    // Bound to the same Up/Down keys as the tile-cursor nudge — the
+    // binding contexts resolve the pair (error_popup context is active
+    // only while the popup is up, so the cursor binding never co-fires;
+    // see DESIGN → Input → Binding contexts). See DESIGN → Error Handling.
     error_scroll_up,
     error_scroll_down,
     // Camera zoom (keyboard shortcuts; the mouse wheel also zooms via

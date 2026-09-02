@@ -349,11 +349,12 @@ pub const SessionState = struct {
     // tradeoff as `event_history`). See DESIGN → Error Handling.
     pending_error: ?[]const u8 = null,
 
-    /// Scroll offset (reference-space pixels) within the error popup's body.
-    /// Reset to 0 by `setPendingError`. Clamped to `[0, max_scroll]` in
-    /// `buildErrorPopup` (the view is the only place that knows `max_scroll`,
-    /// since it depends on the wrapped line count). See DESIGN → Error
-    /// Handling.
+    /// Scroll offset for the error popup's body, in LINES — the index of
+    /// the first visible body line (the game-wide row-scroll convention;
+    /// see DESIGN → Error Handling → Recoverable error surface). Reset to
+    /// 0 by `setPendingError`. Lower-clamped at the input site; upper-
+    /// clamped in `buildErrorPopup` (the view is the only place that knows
+    /// the wrapped line count).
     error_scroll_offset: i32 = 0,
 
     /// Copy `msg` into the durable history arena and set it as the pending
