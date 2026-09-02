@@ -295,6 +295,39 @@ pub fn stunTarget(
     return if (best) |candidate| candidate.position else null;
 }
 
+/// Number of living hostile entities within `radius` (Chebyshev) of
+/// `center` — the AoE hit-count around an arbitrary point (the caster's
+/// own position for self-centered skills, a candidate landing tile for
+/// Flash Strike). Allocation-free so priority fns can call it.
+pub fn hostileCountWithinRadius(
+    caster_index: u32,
+    game_state: GameState,
+    center: Vector2,
+    radius: i32,
+) u32 {
+    const level = game_state.level orelse return 0;
+    const caster = level.entities[caster_index];
+
+    var count: u32 = 0;
+    for (level.entities, 0..) |entity, entity_index| {
+        if (entity_index == caster_index) continue;
+        if (entity.current_health == 0) continue;
+        if (entity.team == caster.team) continue;
+        if (functions.chebyshevDistance(center, entity.position) <= radius) count += 1;
+    }
+    return count;
+}
+
+/// The AoE priority-bump convention as one function: 0 when nothing would
+/// be hit, `base_priority` for a single target, `base_priority + 1` when
+/// two or more would (an AoE's value scales with hit count). Every radius
+/// skill's priority goes through here so the convention can't drift —
+/// see DESIGN → Architecture (AoE priority bump).
+pub fn aoePriority(target_count: u32, base_priority: u32) u32 {
+    if (target_count == 0) return 0;
+    return base_priority + @intFromBool(target_count >= 2);
+}
+
 /// Empty walkable tiles within `range` (Chebyshev) of the caster — valid
 /// teleport destinations (Blink, FlashStrike). Null if there are none.
 pub fn emptyTilesInRange(

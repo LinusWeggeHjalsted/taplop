@@ -43,13 +43,33 @@ fn getValidTargets(
     return helpers.emptyTilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority: 0 if on cooldown, else 3 (Flash Strike closes distance and
-/// hits an area — the enemy wants it whenever it is available).
+/// AI priority: the AoE bump convention applied over the BEST landing
+/// tile — for each empty tile within range, count the hostiles its radius
+/// would hit, take the max, then 0/3/4 (helpers.aoePriority). The old
+/// rating was a flat 3 whenever off cooldown — it let the caster flash
+/// into empty space; now a cast with no reachable hit rates 0.
 fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.flash_strike) > 0) return 0;
-    return 3;
+
+    const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
+    const radius: i32 = @intCast(caster.getEffectiveRadius(skill.radius.?));
+
+    var best_count: u32 = 0;
+    var delta_y: i32 = -range;
+    while (delta_y <= range) : (delta_y += 1) {
+        var delta_x: i32 = -range;
+        while (delta_x <= range) : (delta_x += 1) {
+            if (delta_x == 0 and delta_y == 0) continue;
+            const tile = Vector2{ .x = caster.position.x + delta_x, .y = caster.position.y + delta_y };
+            if (!helpers.tileExists(game_state, tile)) continue;
+            if (helpers.isOccupied(game_state, tile, null)) continue;
+            const count = helpers.hostileCountWithinRadius(caster_index, game_state, tile, radius);
+            if (count > best_count) best_count = count;
+        }
+    }
+    return helpers.aoePriority(best_count, 3);
 }
 
 /// AI target selection: the empty landing tile closest to a hostile, so the

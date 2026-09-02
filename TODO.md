@@ -174,6 +174,14 @@ lands with AI priority + target selection + tests in `src/skill_tests.zig`.
 Targeting/damage are done (part of the port — those old TODO lines were
 stale).
 
+- [x] **AoE priority bump (the drain interjection)** — every radius skill
+      rates +1 when two or more hostiles would be hit
+      (helpers.aoePriority + hostileCountWithinRadius). Retrofitted:
+      spinblade/slam (3→4), blitz (4→5), howl (1→2, counts inactive
+      entities of any team), flash_strike (best-landing-tile max count;
+      also fixes its old flat-3 whenever-available rating that let it
+      flash into empty space). Design: DESIGN → Architecture (AoE priority
+      bump). History in DONE.md.
 - [x] **AI threat model + deals_damage (the absorb interjection)** —
       `Skill.deals_damage` (required — every skill declares it);
       `priority_fn` widened to receive `weapon_type_definitions` (the
@@ -215,8 +223,11 @@ stale).
         healing (reflect shape). Priority on the threat model (0/2/4);
         effect_sprite null until art ships. Lands with the threat-model
         interjection below. History in DONE.md.
-  - [ ] idol drain (3, off, cd 5) — AoE attack + lifesteal. OPEN: heal
-        per-target or for the total damage dealt?
+  - [x] idol drain (3, off, cd 5) — AoE attack + lifesteal. Per-target heal
+        via heals_attacker (post-defense applied damage — a "total"
+        interpretation would need new post-batch machinery); priority on the
+        AoE bump (3/4). Lands with the bump interjection below. History in
+        DONE.md.
   - [ ] spell worldfire — AoE attack, radius 5, cd 10.
   - [ ] spell shockwave — AoE knockback + collision damage, radius 1,
         distance 2, cd 5 (slam shape).

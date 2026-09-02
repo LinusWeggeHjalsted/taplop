@@ -20,6 +20,10 @@ const threat_mod = @import("skills/threat.zig");
 const absorb_skill = @import("skills/absorb.zig");
 const reflect_skill = @import("skills/reflect.zig");
 const absorb_effect = @import("effects/absorb.zig");
+const spinblade_skill = @import("skills/spinblade.zig");
+const flash_strike_skill = @import("skills/flash_strike.zig");
+const drain_skill = @import("skills/drain.zig");
+const howl_skill = @import("skills/howl.zig");
 
 const Vector2 = types.Vector2;
 
@@ -909,5 +913,153 @@ test "reflect: priority tiers by threat and health" {
         );
         @constCast(game_state.level.?.entities)[1].is_active = false;
         try testing.expectEqual(@as(u32, 0), reflect_skill.skill.priority(0, game_state, definitions));
+    }
+}
+
+test "aoePriority: the bump convention (0 / base / base+1)" {
+    try testing.expectEqual(@as(u32, 0), helpers.aoePriority(0, 3));
+    try testing.expectEqual(@as(u32, 3), helpers.aoePriority(1, 3));
+    try testing.expectEqual(@as(u32, 4), helpers.aoePriority(2, 3));
+    try testing.expectEqual(@as(u32, 4), helpers.aoePriority(9, 3));
+    try testing.expectEqual(@as(u32, 5), helpers.aoePriority(4, 4));
+}
+
+test "hostileCountWithinRadius: counts living hostiles around a center" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const in_radius_a = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const in_radius_b = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+    const out_of_radius = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 2 } };
+    const same_team = types.Entity{ .team = 0, .position = .{ .x = 1, .y = 1 } };
+    const dead = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 1 }, .current_health = 0 };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, in_radius_a, in_radius_b, out_of_radius, same_team, dead },
+        &.{},
+    );
+
+    try testing.expectEqual(@as(u32, 2), helpers.hostileCountWithinRadius(0, game_state, .{ .x = 0, .y = 0 }, 1));
+    // Centered at (1,1): all three hostiles sit within radius 1
+    // ((2,2) included — Chebyshev diagonals count as 1).
+    try testing.expectEqual(@as(u32, 3), helpers.hostileCountWithinRadius(0, game_state, .{ .x = 1, .y = 1 }, 1));
+    try testing.expectEqual(@as(u32, 1), helpers.hostileCountWithinRadius(0, game_state, .{ .x = 2, .y = 2 }, 1));
+}
+
+test "spinblade: priority bumps to 4 with two hostiles in radius" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const adjacent = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+
+    {
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent }, &.{});
+        try testing.expectEqual(@as(u32, 3), spinblade_skill.skill.priority(0, game_state, undefined));
+    }
+    {
+        const second = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent, second }, &.{});
+        try testing.expectEqual(@as(u32, 4), spinblade_skill.skill.priority(0, game_state, undefined));
+    }
+}
+
+test "flash strike: priority counts hits over the best landing tile" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const pair_a = types.Entity{ .team = 1, .position = .{ .x = 4, .y = 0 } };
+    const pair_b = types.Entity{ .team = 1, .position = .{ .x = 4, .y = 1 } };
+
+    // No hostiles anywhere near → no reachable hit → 0 (the old flat-3
+    // rating flashed into empty space).
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{caster},
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 } },
+        );
+        try testing.expectEqual(@as(u32, 0), flash_strike_skill.skill.priority(0, game_state, undefined));
+    }
+    // A landing tile at (3,0) is within range 3 and radius 1 of BOTH
+    // hostiles → the max count is 2 → 4.
+    {
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, pair_a, pair_b },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 3, .y = 0 } },
+        );
+        try testing.expectEqual(@as(u32, 4), flash_strike_skill.skill.priority(0, game_state, undefined));
+    }
+}
+
+test "drain: useSkill attacks each hostile in radius with lifesteal" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .off_hand_weapon = .{ .weapon_damage = 6 },
+    };
+    const adjacent_a = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const adjacent_b = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+    const far = types.Entity{ .team = 1, .position = .{ .x = 5, .y = 5 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, adjacent_a, adjacent_b, far },
+        &.{},
+    );
+
+    const result = drain_skill.skill.useSkill(0, null, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 2), result.len);
+    // ownedEvents reverses execution order; both events are attacks with
+    // the off-hand damage and lifesteal on.
+    for (result) |event| {
+        const attack = event.sub_level_event.attack;
+        try testing.expectEqual(@as(u32, 0), attack.attacker_index);
+        try testing.expectEqual(@as(u32, 6), attack.outgoing_damage);
+        try testing.expect(attack.heals_attacker);
+        try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
+    }
+}
+
+test "drain: priority follows the AoE bump (3 single, 4 double)" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const adjacent = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+
+    {
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent }, &.{});
+        try testing.expectEqual(@as(u32, 3), drain_skill.skill.priority(0, game_state, undefined));
+    }
+    {
+        const second = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent, second }, &.{});
+        try testing.expectEqual(@as(u32, 4), drain_skill.skill.priority(0, game_state, undefined));
+        setCooldown(game_state, 0, .drain, 1);
+        try testing.expectEqual(@as(u32, 0), drain_skill.skill.priority(0, game_state, undefined));
+    }
+}
+
+test "howl: priority bumps with multiple inactive entities" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 0 } };
+    const inactive_a = types.Entity{ .team = 0, .position = .{ .x = 3, .y = 0 } };
+    const inactive_b = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 3 } };
+
+    {
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, inactive_a }, &.{});
+        try testing.expectEqual(@as(u32, 1), howl_skill.skill.priority(0, game_state, undefined));
+    }
+    {
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, inactive_a, inactive_b }, &.{});
+        try testing.expectEqual(@as(u32, 2), howl_skill.skill.priority(0, game_state, undefined));
     }
 }

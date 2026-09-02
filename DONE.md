@@ -10230,3 +10230,40 @@ unarmed), absorb useSkill/priority tiers + the interceptor unit contract,
 reflect priority tiers incl. the unaggroed-bait regression, and a handler-
 level integration test (attack into absorb → 10+5=15; a 999-damage hit
 heals to max instead of killing).
+
+## Skills: AoE priority bump + idol Drain (Tier A slice 6)
+
+Idol complete (3/3). New AI convention, motivated by Drain: every radius
+skill's priority bumps +1 when two or more hostiles would be hit — an AoE's
+value scales with hit count.
+
+- `helpers.aoePriority(target_count, base)` — the convention as ONE
+  function (0 / base / base+1) so callers can't drift;
+  `helpers.hostileCountWithinRadius(caster, state, center, radius)` —
+  allocation-free (priority fns have no allocator), center-parameterized
+  so a skill can count around an arbitrary point, not just itself.
+- Retrofits: spinblade + slam (3 → 4 on two targets), blitz (4 → 5), howl
+  (1 → 2; it counts INACTIVE entities of any team — aggro_in_radius
+  rallies same-team entities too — but shares the bump arithmetic).
+- flash_strike: the interesting one. Its AoE centers on the LANDING tile,
+  so "targets that would be hit" = max over candidate empty tiles in range
+  of hostileCountWithinRadius(tile, radius). This also fixed a latent flaw:
+  its old rating was a flat 3 whenever off cooldown — no target check at
+  all, so an enemy could flash into empty space; a cast with no reachable
+  hit now rates 0. Residual seam (accepted, daze-momentum-shaped):
+  selectTarget still picks the tile NEAREST a hostile, not the max-hit
+  tile, so a 4 rating earned by one landing spot can land on another.
+- Drain: idol skill 3 (off hand, cd 5) — spinblade's shape with off-hand
+  damage, every attack carrying heals_attacker. Settles the triage's open
+  question: PER-TARGET lifesteal (the flag heals the post-defense applied
+  damage, which the skill can't know ahead of the handler); a "heal for
+  the total" reading would need post-batch accumulation machinery and
+  leave Tier A. Priority 3/4 on the bump — the lifesteal is a rider, not a
+  tier: threatened + below half, Absorb's 4 wins (ties resolve to Absorb
+  by slot order anyway) — prevention first.
+
+Tests: aoePriority table, hostileCountWithinRadius (incl. the
+diagonal-counts-as-1 case that caught my own wrong expectation), spinblade
+bump, flash_strike best-landing-tile max + the no-target regression,
+drain useSkill (per-hit heals_attacker, off-hand damage) + priority 3/4,
+howl bump.

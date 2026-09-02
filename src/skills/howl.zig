@@ -38,21 +38,24 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority (cantrip): 0 if on cooldown or no inactive entity within
-/// radius (nothing to aggro), else 1.
+/// AI priority (cantrip): the AoE bump convention (helpers.aoePriority) —
+/// 0 if no inactive entity within radius (nothing to aggro), 1 with one,
+/// 2 with two or more. Counts inactive entities of any team —
+/// aggro_in_radius rallies same-team entities too.
 fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.howl) > 0) return 0;
 
     const radius: i32 = @intCast(caster.getEffectiveRadius(skill.radius.?));
+    var target_count: u32 = 0;
     for (level.entities, 0..) |entity, entity_index| {
         if (entity_index == caster_index) continue;
         if (entity.current_health == 0) continue;
         if (entity.is_active) continue; // already aggroed
-        if (functions.chebyshevDistance(caster.position, entity.position) <= radius) return 1;
+        if (functions.chebyshevDistance(caster.position, entity.position) <= radius) target_count += 1;
     }
-    return 0;
+    return helpers.aoePriority(target_count, 1);
 }
 
 /// Self-centered — no meaningful target.

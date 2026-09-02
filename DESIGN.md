@@ -1749,6 +1749,14 @@ So a clone is a permanent, compounding material factory keyed by mission.
   priority fn, `priority_fn` receives the session's
   `weapon_type_definitions` (slot resolution needs the mapping — the same
   constraint that made Focus an orchestrator; most skills ignore the param).
+- **AoE priority bump.** Every radius skill's priority goes through
+  `helpers.aoePriority(target_count, base)`: 0 when nothing would be hit,
+  `base` for a single target, `base + 1` when two or more would — an AoE's
+  value scales with hit count. The count comes from
+  `helpers.hostileCountWithinRadius` (allocation-free, center-parameterized
+  so Flash Strike reuses it per candidate landing tile, taking the max).
+  Howl counts inactive entities of any team (aggro_in_radius rallies
+  same-team entities too) but shares the same bump arithmetic.
 - **One top-level event per player action (orchestrator convention).** Each
   player input (`handleIdleInput`) pushes exactly ONE top-level event; if the
   action needs several verbs, the event is an orchestrator whose handler

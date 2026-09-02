@@ -2,7 +2,6 @@ const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
 const events = @import("../events.zig");
-const functions = @import("../functions.zig");
 const skill_mod = @import("skill.zig");
 const helpers = @import("helpers.zig");
 
@@ -38,20 +37,16 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority: 0 if on cooldown or no hostile within radius, else 3.
+/// AI priority: the AoE bump convention (helpers.aoePriority) — 0 with no
+/// hostile within radius, 3 with one, 4 with two or more.
 fn priority(caster_index: u32, game_state: GameState, _: types.WeaponTypeDefinitions) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.slam) > 0) return 0;
 
     const radius: i32 = @intCast(caster.getEffectiveRadius(skill.radius.?));
-    for (level.entities, 0..) |entity, entity_index| {
-        if (entity_index == caster_index) continue;
-        if (entity.current_health == 0) continue;
-        if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) <= radius) return 3;
-    }
-    return 0;
+    const target_count = helpers.hostileCountWithinRadius(caster_index, game_state, caster.position, radius);
+    return helpers.aoePriority(target_count, 3);
 }
 
 /// Self-centered — no meaningful target.
