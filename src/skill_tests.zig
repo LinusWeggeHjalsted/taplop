@@ -30,6 +30,7 @@ const shockwave_skill = @import("skills/shockwave.zig");
 const slam_skill = @import("skills/slam.zig");
 const piston_bolt_skill = @import("skills/piston_bolt.zig");
 const blitz_skill = @import("skills/blitz.zig");
+const chain_lightning_skill = @import("skills/chain_lightning.zig");
 
 const Vector2 = types.Vector2;
 
@@ -1486,4 +1487,83 @@ test "drain: lifesteal adds a hit's worth below half health" {
     const options = drain_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
     try testing.expectEqual(@as(usize, 1), options.len);
     try testing.expectEqual(@as(u32, 3), options[0].priority);
+}
+
+test "chain lightning: useSkill arcs through the connected hostile component" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .amulet = .{ .spell_damage = 6 },
+    };
+    // A line of three hostiles, each within radius 1 of the next → all
+    // chained. The ally is not a node; the far hostile is not adjacent to
+    // any of them.
+    const first = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const second = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 } };
+    const third = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+    const ally = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 1 } };
+    const far = types.Entity{ .team = 1, .position = .{ .x = 6, .y = 6 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, first, second, third, ally, far },
+        &.{},
+    );
+
+    const result = chain_lightning_skill.skill.useSkill(0, first.position, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 3), result.len);
+    for (result) |event| {
+        const attack = event.sub_level_event.attack;
+        try testing.expectEqual(@as(u32, 6), attack.outgoing_damage);
+        try testing.expect(attack.defender_index == 1 or attack.defender_index == 2 or attack.defender_index == 3);
+    }
+}
+
+test "chain lightning: an ally between hostiles breaks the chain" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 }, .amulet = .{ .spell_damage = 6 } };
+    // Hostile — ally — hostile in a line: the two hostiles are Chebyshev 2
+    // apart (the ally occupies the middle), beyond radius 1 → not
+    // connected. Lightning arcs between enemies only.
+    const near = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const ally = types.Entity{ .team = 0, .position = .{ .x = 2, .y = 0 } };
+    const beyond = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, near, ally, beyond },
+        &.{},
+    );
+
+    const result = chain_lightning_skill.skill.useSkill(0, near.position, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), result.len);
+    try testing.expectEqual(@as(u32, 1), result[0].sub_level_event.attack.defender_index);
+}
+
+test "chain lightning: options pick the target with the largest component" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    // Two in-range candidates, geometrically separate: the lone target at
+    // (-1,0) (component 1) and the head of a pair at (1,1)-(2,2)
+    // (component 2 — the pair head is NOT within radius of the lone one,
+    // unlike my first attempt at this test where a diagonal made them one
+    // component). The pair wins, rated 2 in value units.
+    const lone = types.Entity{ .team = 1, .position = .{ .x = -1, .y = 0 }, .current_health = 5 };
+    const pair_head = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 1 }, .current_health = 15 };
+    const pair_tail = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 2 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, lone, pair_head, pair_tail },
+        &.{},
+    );
+
+    const options = chain_lightning_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), options.len);
+    try testing.expectEqual(pair_head.position, options[0].target.?);
+    try testing.expectEqual(@as(u32, 2), options[0].priority);
 }

@@ -174,6 +174,17 @@ lands with AI priority + target selection + tests in `src/skill_tests.zig`.
 Targeting/damage are done (part of the port — those old TODO lines were
 stale).
 
+- [x] **AI rating scale re-anchored to VALUE UNITS (the tuning
+      interjection).** Priority ≈ cast value in units of a plain 1x hit:
+      0 = don't cast, 1 = plain attack, +1 per significant bonus
+      (conditional multiplier, stun-on-unstunned, collision, control worth
+      a hit; lifesteal only below half health). AoE sums per target
+      (aoePriority = base + count − 1; aoeKnockbackPriority adds +1 per
+      colliding target); blitz = count + unstunned count; flash strike
+      base 2 (teleport rider). Full retune table in DONE.md; design: DESIGN
+      → Architecture (AI rating scale). Resolves "1-target AoE ties
+      conditional singles and slot order picks the worse cast". History in
+      DONE.md.
 - [x] **Unified AI options (priority + selectTarget → ai_options_fn).**
       One decision instead of two: each skill enumerates its meaningful
       casts as (target, rating) pairs best-first; the handler picks

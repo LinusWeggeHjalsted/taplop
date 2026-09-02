@@ -10430,3 +10430,29 @@ slot-order bias reads "at equal value prefer the cheaper slot".
   "cluster of two" block actually contains three targets and now correctly
   rates 3); new blitz formula coverage (2/3/4) + drain's lifesteal bonus
   (2 targets + wounded caster → 3).
+
+## Skill: spell Chain Lightning (Tier A slice 10)
+
+Fourth spell, landing on the freshly re-anchored value-unit scale.
+Attacks the target and every hostile in its CONNECTED COMPONENT: flood
+fill over hostiles where two hostiles within the skill's EFFECTIVE radius
+(Chebyshev) of each other are connected, transitively. Connection rule
+settled in discussion: allies are not chain nodes — they cannot conduct,
+so a hostile line broken by an ally does not arc (two hostiles only bridge
+if within radius of each other; the ally occupying the middle tile makes
+that impossible in a line). Damage 1x effective spell damage per member,
+cd 5, range 1 for the initial target.
+
+The option is the first genuinely multi-candidate targeted rating: argmax
+over valid targets by (component size, then the focus-fire tail), rated
+aoePriority(size, 1) — under value units a 1-link chain rates like a plain
+attack (1) and a 3-web rates 3, so the AI saves it for webs exactly like
+the AoE skills. chainComponentIndices is file-local (one consumer family;
+BFS with an append-only marching queue — no alloc/free churn beyond the
+visited set).
+
+Tests: the 3-hostile line arcs fully (ally + far hostile excluded); the
+ally-between-hostiles line breaks at 1; the options test picks the larger
+component — my first layout was wrong (the "lone" target sat diagonally
+adjacent to the pair head, silently merging the components into one
+size-3 tie) and the failure output caught it.
