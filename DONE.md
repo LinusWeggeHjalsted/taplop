@@ -10311,3 +10311,23 @@ player_prepare_skill / use_skill / legality validation all unchanged).
 - Docs: DESIGN → Architecture gains the "AI options" bullet (the unified
   decision surface, above the threat-model + AoE-bump bullets that ride
   it); the Determinism focus-fire bullet now speaks of AI options picking.
+
+## Skill: spell Worldfire (Tier A slice 7)
+
+First spell, and the first skill born on the unified ai_options interface
+(one self-centered option, aoePriority(count, 3) — trivial on the new
+shape). Radius 5, cd 10, `deals_damage`. Damage-source decision: spells
+draw on Entity.getEffectiveSpellDamage (amulet base + gloves bonus +
+converted momentum + outgoing modifier) — the method already existed,
+mirroring getEffectiveOutgoingDamage, and it's the number the curse
+designs ("increase damage by spell damage") reference, so the amulet is
+the spell-casting stat by construction. Priority base 3 on the AoE bump
+encodes "save it for clusters" for free: a single-target cast ties the
+basic attack at 3 and loses to slot order (cheaper weapon skill fires);
+a cluster rates 4 and the nuke goes off exactly when it should.
+
+Census tests grew with the first utility-eligible spell:
+utility_skills 7 → 8 (the test's comment anticipated this), the editor
+skill-picker element/button counts 19→21 / 8→9. Tests: useSkill
+(Chebyshev-diagonal edge at (3,4) hits, (6,0) doesn't, amulet spell
+damage 6 on every hit) + options 3/4 + the cooldown gate.

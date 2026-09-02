@@ -25,6 +25,7 @@ const flash_strike_skill = @import("skills/flash_strike.zig");
 const drain_skill = @import("skills/drain.zig");
 const howl_skill = @import("skills/howl.zig");
 const stab_skill = @import("skills/stab.zig");
+const worldfire_skill = @import("skills/worldfire.zig");
 
 const Vector2 = types.Vector2;
 
@@ -1169,4 +1170,65 @@ test "stab: rating follows the pick, not any-healthy (seam fix)" {
     try testing.expectEqual(@as(usize, 1), options.len);
     try testing.expectEqual(wounded_weakest.position, options[0].target.?);
     try testing.expectEqual(@as(u32, 2), options[0].priority);
+}
+
+test "worldfire: useSkill attacks each hostile within radius 5 for spell damage" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .amulet = .{ .spell_damage = 6 },
+    };
+    const at_edge = types.Entity{ .team = 1, .position = .{ .x = 5, .y = 0 } };
+    const at_diagonal_edge = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 4 } };
+    const beyond = types.Entity{ .team = 1, .position = .{ .x = 6, .y = 0 } };
+    const same_team = types.Entity{ .team = 0, .position = .{ .x = 1, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, at_edge, at_diagonal_edge, beyond, same_team },
+        &.{},
+    );
+
+    const result = worldfire_skill.skill.useSkill(0, null, game_state, arena.allocator());
+    // Both radius-5 hostiles hit (Chebyshev diagonal = 5); beyond + ally not.
+    try testing.expectEqual(@as(usize, 2), result.len);
+    for (result) |event| {
+        const attack = event.sub_level_event.attack;
+        try testing.expectEqual(@as(u32, 0), attack.attacker_index);
+        try testing.expectEqual(@as(u32, 6), attack.outgoing_damage);
+        try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
+    }
+}
+
+test "worldfire: options follow the AoE bump at radius 5" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const far_single = types.Entity{ .team = 1, .position = .{ .x = 5, .y = 0 } };
+
+    // One target in the big radius → 3.
+    {
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, far_single }, &.{});
+        const options = worldfire_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 3), options[0].priority);
+    }
+    // A distant cluster of two (both within 5, nothing else near) → 4.
+    {
+        const cluster_a = types.Entity{ .team = 1, .position = .{ .x = 4, .y = 4 } };
+        const cluster_b = types.Entity{ .team = 1, .position = .{ .x = 5, .y = 4 } };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, far_single, cluster_a, cluster_b },
+            &.{},
+        );
+        const options = worldfire_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 4), options[0].priority);
+        setCooldown(game_state, 0, .worldfire, 1);
+        try testing.expectEqual(@as(usize, 0), worldfire_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
+    }
 }
