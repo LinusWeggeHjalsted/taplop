@@ -122,6 +122,47 @@ pub fn hostileIndicesInRadius(
     return indices.items;
 }
 
+/// AI target selection for attack skills: the hostile with the LOWEST
+/// current health from `valid_targets` — focus-fire concentrates damage
+/// on nearly-dead enemies so they die sooner (more effective than nearest-
+/// first when several enemies are engaged). Ties break by Chebyshev distance
+/// to the caster, then by entity index (unique, so the order is total).
+/// Convention: see DESIGN → Determinism & Tiebreaking. `nearestTarget`
+/// remains for the non-attack exceptions (Swap).
+pub fn weakestTarget(
+    caster_index: u32,
+    valid_targets: ?[]const Vector2,
+    game_state: GameState,
+) ?Vector2 {
+    const targets = valid_targets orelse return null;
+    if (targets.len == 0) return null;
+
+    const level = game_state.level orelse return null;
+    const caster = level.entities[caster_index];
+
+    var best: ?Vector2 = null;
+    var best_health: u32 = std.math.maxInt(u32);
+    var best_distance: i32 = std.math.maxInt(i32);
+    var best_entity_index: u32 = std.math.maxInt(u32);
+    for (targets) |position| {
+        // Valid targets come from getValidTargets, so the lookup should
+        // never miss; skip defensively rather than panic on a stale list.
+        const entity_index = hostileEntityAt(caster_index, position, game_state) orelse continue;
+        const entity = level.entities[entity_index];
+        const distance = functions.chebyshevDistance(caster.position, position);
+        if (entity.current_health < best_health or
+            (entity.current_health == best_health and distance < best_distance) or
+            (entity.current_health == best_health and distance == best_distance and entity_index < best_entity_index))
+        {
+            best_health = entity.current_health;
+            best_distance = distance;
+            best_entity_index = entity_index;
+            best = position;
+        }
+    }
+    return best;
+}
+
 /// Empty walkable tiles within `range` (Chebyshev) of the caster — valid
 /// teleport destinations (Blink, FlashStrike). Null if there are none.
 pub fn emptyTilesInRange(

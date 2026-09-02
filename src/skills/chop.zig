@@ -70,13 +70,13 @@ fn priority(caster_index: u32, game_state: GameState) u32 {
     return 2;
 }
 
-/// AI target selection: nearest hostile from valid targets.
+/// AI target selection: the weakest hostile (focus-fire — helpers.weakestTarget).
 fn selectTarget(
     caster_index: u32,
     valid_targets: ?[]const Vector2,
     game_state: GameState,
 ) ?Vector2 {
-    return helpers.nearestTarget(caster_index, valid_targets, game_state);
+    return helpers.weakestTarget(caster_index, valid_targets, game_state);
 }
 
 /// Player prepare: highlight all valid target positions.

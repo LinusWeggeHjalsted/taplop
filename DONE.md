@@ -10036,3 +10036,40 @@ no label carries a newline). Sweep: no other UI text source emits `\n`
 relied on). Design: the wrapRow contract is its doc comment in
 element.zig; DESIGN → Error Handling → Recoverable error surface notes the
 newline join + the contract.
+
+## Skills: focus-fire AI target selection (weakestTarget)
+
+The AI target-selection convention for attack skills, set before the Tier A
+skill-design batch lands (~20 new skills — the convention had to be settled
+first so they're all born consistent). Decision: focus-fire —
+`selectTarget` picks the hostile with the LOWEST current health; ties break
+by Chebyshev distance to the caster, then entity index (total, deterministic
+order). Rationale: concentrating damage on nearly-dead enemies kills them
+sooner than nearest-first; strictly more effective in practice.
+
+- `helpers.weakestTarget` (skills/helpers.zig) implements the ordering once;
+  resolves each valid-target position back to its entity via
+  `hostileEntityAt` (skips a stale position defensively rather than
+  panicking — lists come from getValidTargets, so a miss means a crafted
+  input, and selectTarget is advisory for the AI).
+- 13 single-target offensive skills switched (slice, stab, chop, cleave,
+  throw, toss, impale, skewer, bash, retreating_swipe, vampiric_strike,
+  spark, daze). Daze included deliberately: one uniform rule for every
+  hostile-targeting single-target skill (control skills too) beats
+  special-casing; revisit only if control targeting ever wants threat
+  awareness instead.
+- `nearestTarget` KEEPT for Swap (not an attack; swapping with the nearest
+  enemy is the sensible tactical read). Not dead code.
+- Barely observable live today: enemy casters usually see exactly one
+  hostile (the player, entity 0), so weakest == nearest in practice. The
+  convention matters for the new skills + future multi-entity teams.
+- Tests: `src/skill_tests.zig` (new file — direct contract tests on the
+  pure Skill-interface fns, the convention the Tier A skills follow):
+  health-beats-proximity, health-tie → distance, full-tie → entity index
+  (target list reversed to prove list order can't decide), null/empty,
+  and nearestTarget's still-nearest behavior.
+- Convention recorded in DESIGN → Determinism & Tiebreaking (it owns the
+  explicit tiebreak conventions); TODO → Skill Logic now carries the full
+  Tier A/B/C triage of the remaining designs (the open design questions —
+  drain's heal scope, chain lightning's connection rule, diamond form vs
+  collision counterplay, etc. — live inline there).

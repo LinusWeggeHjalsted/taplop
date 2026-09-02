@@ -704,6 +704,16 @@ combat-log UI rendering + replay-viewer UI still TODO)
   accumulation loop that iterates in the convention's order already yields the
   right tiebreak (lowest entity_index / first slot); document it with a comment
   rather than restructuring.
+- **AI skill target selection — focus-fire.** Every hostile-targeting
+  single-target offensive skill's `selectTarget` picks the hostile with the
+  LOWEST current health; ties break by Chebyshev distance to the caster, then
+  `entity_index` (total order). Implemented once in `skills/helpers.zig`
+  (`weakestTarget`) and reused by every attack skill; `nearestTarget` remains
+  only for the non-attack exceptions (Swap — swapping with the nearest enemy
+  is the sensible tactical read). Rationale: focus-fire kills wounded enemies
+  sooner than spreading damage. (Barely observable with today's single-player
+  hostile sets — enemy casters usually see only the player — but it is the
+  convention new skills follow and matters once multi-entity teams exist.)
 
 ## Input
 

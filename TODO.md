@@ -168,12 +168,76 @@ KNOWN DEFERRED BUGS: (none currently — combat turn-flow issues from earlier
 
 ## Skill Logic
 
-All 25 skills ported (no stubs); port history in DONE.md. Remaining:
+All 25 ported skills done (history in DONE.md). The remaining designs
+(from the original Unity design doc) are triaged into tiers; each new skill
+lands with AI priority + target selection + tests in `src/skill_tests.zig`.
+Targeting/damage are done (part of the port — those old TODO lines were
+stale).
 
-- Wire weapon-type definitions (data) to reference each skill so they are
-  equippable/testable (separate from the code port).
-- Targeting (range, valid tiles, team filtering).
-- Damage calculation with modifiers and effects.
+- [x] **Focus-fire target selection (the convention interjection)** — every
+      hostile-targeting single-target offensive skill now picks the
+      lowest-health hostile (ties: Chebyshev distance, then entity index) via
+      `helpers.weakestTarget`; 13 skills updated (daze included — uniform
+      rule for all hostile-targeting single-target skills), Swap keeps
+      `nearestTarget`. Convention: DESIGN → Determinism & Tiebreaking.
+      History in DONE.md.
+- [ ] **Tier A — pure composition, no engine changes** (one at a time):
+  - [ ] crossbow shoot (skill 1, main, no cd) — attack + retreat, range 3,
+        distance 1. Priority 2 (the toss precedent).
+  - [ ] crossbow powerful shot (2, main, cd 2) — attack + knockback +
+        collision damage, range 3, distance 2 (bash shape).
+  - [ ] crossbow head shot (3, off, cd 4) — attack + stun, range 3 (cleave
+        shape).
+  - [ ] idol heal (1, main, no cd) — heal 20% max health.
+  - [ ] idol absorb (2, main, cd 5) — interceptor: incoming damage →
+        healing (reflect shape).
+  - [ ] idol drain (3, off, cd 5) — AoE attack + lifesteal. OPEN: heal
+        per-target or for the total damage dealt?
+  - [ ] spell worldfire — AoE attack, radius 5, cd 10.
+  - [ ] spell shockwave — AoE knockback + collision damage, radius 1,
+        distance 2, cd 5 (slam shape).
+  - [ ] spell piston bolt — attack with double converted momentum, range 3,
+        cd 3 (impale shape).
+  - [ ] spell chain lightning — attack target + each entity connected via
+        neighboring entities, range 1, radius 1, cd 5. OPEN: connection
+        rule — Chebyshev-1 entity-to-entity adjacency BFS?
+  - [ ] spell adrenaline surge — reset all target's skill cooldowns +
+        attack per cooldown reset, range 1, cd 5.
+  - [ ] cantrip burst — AoE attack, radius 1, cd 10.
+  - [ ] cantrip meditate — reset each other equipped utility skill
+        cooldown, cd 10 (composable directly — utility skills live on the
+        entity, no orchestrator needed).
+  - [ ] cantrip accelerate — +1 momentum per enemy within radius 3, cd 3.
+  - [ ] enchantment that which reaches — range/radius +1 modifiers.
+  - [ ] enchantment bull form — distance +10 modifier.
+  - [ ] enchantment that which rushes — cooldown −1 + speed +1 modifiers.
+  - [ ] enchantment that which explodes — on_incoming_damage AoE attack
+        (works with the current callback signature).
+  - [ ] enchantment promise of death — on_opponent_death: reset all
+        cooldowns + full heal.
+  - [ ] enchantment diamond form — self-stun + invulnerability interceptor
+        + end-of-turn heal. NOTE: interceptors are attack-only by design
+        (collision damage still lands — the Reflect counterplay rule);
+        confirm that's intended here too.
+- [ ] **Tier B — small engine additions** (gap → the skills it unlocks):
+  - effect-kind classification (enchantment vs curse) → cleanse,
+        disenchant
+  - momentum-gain transform hook (intercept-style) → mark of the snail,
+        deacceleration, that which accelerates
+  - movement hook (on_move in move_entity) → explosive stride. OPEN:
+        voluntary moves only, or forced (knockback/retreat) too?
+  - event context in on_* callbacks (defender / applied damage) → that
+        which splinters, that which leeches
+- [ ] **Tier C — design sessions before any code**:
+  - per-instance effect data (caster reference, dynamic modifiers,
+        cast-time snapshots; extends create_effect + the session-log
+        schema) → mark of pain, glass form, mark of the wasp,
+        weightlessness, temporal anchor
+  - extra-turn mechanism (round builder consumes a counter) → time walk.
+    OPEN: stacking; enemy-cast semantics.
+- Wire weapon-type definitions (data) + the WeaponType enum (idol,
+  crossbow — "wand" in the design doc was renamed staff) so the new
+  weapons' skills are equippable/testable (separate from the code port).
 
 ## View Function Implementation
 
