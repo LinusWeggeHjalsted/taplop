@@ -1015,6 +1015,28 @@ pub fn handleAnytimeInput(
                 // A failed defaults read reverts the action (the popup path)
                 // — no picker on top of a reverted creation.
                 if (history.load_error) return;
+                // The new type lands at the END of its group's list (the
+                // handler appends + points the active tool at it), so the
+                // group expands — accordion: the others collapse, the
+                // header-toggle discipline — and its window scrolls to the
+                // end, making the new cell the last visible one. View-side
+                // display state, off the undo timeline (the toggle branch's
+                // class).
+                {
+                    const editor_after_add = &(history.current_state.editor orelse return);
+                    const group_size: usize = switch (group_index) {
+                        0 => editor_after_add.entity_types.len,
+                        1 => editor_after_add.decoration_types.len,
+                        2 => editor_after_add.item_types.len,
+                        else => return,
+                    };
+                    for (&history.session.ui_state.editor_palette_collapsed) |*is_collapsed| {
+                        is_collapsed.* = true;
+                    }
+                    history.session.ui_state.editor_palette_collapsed[group_index] = false;
+                    history.session.ui_state.editor_palette_scroll[group_index] =
+                        @intCast(group_size -| ui.editor_palette_max_tools);
+                }
                 // The tool switch the handler made retargets the inspector —
                 // any picker still open is stale, so it closes (dropdown
                 // semantics; groups 0/1 immediately open the fresh one).

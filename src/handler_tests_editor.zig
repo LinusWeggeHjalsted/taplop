@@ -3157,6 +3157,9 @@ test "palette + click: default type creation, tool switch, picker routing" {
         .mission = .{ .path = "missions/artists_den" },
     }));
     runToIdle(&history);
+    // All groups expanded going in: the add's accordion must collapse the
+    // two the new type doesn't belong to.
+    history.session.ui_state.editor_palette_collapsed = .{ false, false, false };
 
     // Enemies "+": the shipped default lands, becomes the active tool, and
     // the base-sprite picker opens on it (Mission tab, the mission scan).
@@ -3183,6 +3186,10 @@ test "palette + click: default type creation, tool switch, picker routing" {
         history.session.ui_state.editor_picker_sprite_tab,
     );
     try testing.expectEqual(@as(usize, 1), history.session.editor_mission_sprites.len);
+    // The add expanded the Enemies group (accordion) — and a 1-type
+    // group's window sits at the top.
+    try testing.expectEqual([3]bool{ false, true, true }, history.session.ui_state.editor_palette_collapsed);
+    try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_palette_scroll[0]);
 
     // Decorations "+": the stone_1 default + the decoration picker (the
     // stale entity picker from the previous click closes).
@@ -3200,6 +3207,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
         ui.EditorPickerTarget.decoration_sprite,
         history.session.ui_state.editor_picker.?,
     );
+    try testing.expectEqual([3]bool{ true, false, true }, history.session.ui_state.editor_palette_collapsed);
 
     // Items "+": the New Sword default, NO picker (nothing to pick) — and
     // the decoration picker from the previous click closes.
@@ -3214,6 +3222,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
         history.current_state.editor.?.item_types[0].item.weapon.name,
     );
     try testing.expect(history.session.ui_state.editor_picker == null);
+    try testing.expectEqual([3]bool{ true, true, false }, history.session.ui_state.editor_palette_collapsed);
 
     // A crafted out-of-range group index does nothing (no event, no
     // picker).
@@ -3224,6 +3233,43 @@ test "palette + click: default type creation, tool switch, picker routing" {
     runToIdle(&history);
     try testing.expectEqual(@as(usize, 1), history.current_state.editor.?.entity_types.len);
     try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
+test "palette + click: the group's window scrolls to the newly added tool" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // 9 preset enemy types: at window offset 0 the 8-cell window shows
+    // types 0..7, so the appended 10th would be OUT of view without the
+    // scroll-to-the-new-tool.
+    var entity_types: [9]types.EntityTypeDef = undefined;
+    for (&entity_types, 0..) |*type_definition, index| {
+        type_definition.* = .{ .id = try std.fmt.allocPrint(
+            backing.allocator(),
+            "Preset {d}",
+            .{index},
+        ) };
+    }
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+    }));
+    runToIdle(&history);
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .add_editor_palette_type,
+        .clicked_editor_group = 0,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+
+    try testing.expectEqual(@as(usize, 10), history.current_state.editor.?.entity_types.len);
+    // Accordion: the group expands, the others collapse.
+    try testing.expectEqual([3]bool{ false, true, true }, history.session.ui_state.editor_palette_collapsed);
+    // 10 types in an 8-cell window: offset 10 -| 8 = 2 — the new cell is
+    // the window's last visible one (the minimal scroll that shows it).
+    try testing.expectEqual(@as(i32, 2), history.session.ui_state.editor_palette_scroll[0]);
 }
 
 test "palette tool delete button: input arm deletes the type + placements; fixed tools no-op" {

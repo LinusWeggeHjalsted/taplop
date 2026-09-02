@@ -9757,3 +9757,22 @@ the header + "+", so the neighboring group's header can't overlap it) —
 the two conditions are now intentionally different, noted in the comment.
 Test: the collapsed/expanded placement test gains an empty-Decorations
 expanded build asserting header + "+" both sit at the hovering y.
+
+## Editor palette: adding a tool expands its group + scrolls to the new cell
+
+The palette "+" (add-new type) left the accordion alone — a new tool could
+land in a collapsed group (invisible until expanded) or beyond the group's
+8-cell window (invisible until scrolled). The `.add_editor_palette_type`
+input arm now, after a successful add (post load_error revert gate):
+expands the target group with the header-toggle accordion discipline (the
+others collapse), and scrolls the group's window to
+`size -| editor_palette_max_tools` — the new type (always appended last by
+the handler) becomes the window's last visible cell, which is also the
+MINIMAL scroll that shows it. View-side display state, off the undo
+timeline (the toggle branch's class); a failed/reverted add touches
+nothing.
+
+Tests: the add-path test now drives all-groups-expanded going in and
+asserts the accordion after each of the three "+" clicks (one group open,
+the other two collapsed); a new test with 9 preset enemy types asserts
+offset 10 -| 8 = 2 with the accordion.
