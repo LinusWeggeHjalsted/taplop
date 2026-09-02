@@ -196,6 +196,23 @@ pub const SessionState = struct {
     /// Backing-owned strings, freed + replaced on each save; the FINAL
     /// value leaks at process exit (the editor_mission_sprites pattern).
     editor_saved_mission: ?EditorSavedMission = null,
+
+    /// The stashed bytes of a validation replay that was NOT auto-written
+    /// (the run was slower than the personal best — the personal-best
+    /// overwrite guard; see DESIGN → Custom Missions & Online Services →
+    /// Validation replay). Backing-allocator owned (survives arena
+    /// compaction); freed + replaced by the next validation's stash, freed
+    /// when the manual Overwrite Replay button writes it, freed when the
+    /// next run starts (a new run retires the previous offer). Null when no
+    /// overwrite is on offer. Set by mission_io.writeValidationReplay;
+    /// cleared at start_validation (both gated `!replaying` — side-effect
+    /// state, replay must not eat a pending offer on undo/redo scrubbing).
+    pending_validation_replay: ?[]const u8 = null,
+
+    /// True when the just-finished validation run was slower than the
+    /// personal best and the validation stats screen should show the
+    /// manual Overwrite Replay button. Cleared with the stash.
+    validation_replay_overwrite_offered: bool = false,
     save_files_last_scan_us: u64 = save_files_never_scanned,
     // Camera pan (right-drag): offset in world pixels added to the player-
     // centered camera, plus the drag anchor. Transient view state — off the

@@ -18,6 +18,8 @@ const event_push = @import("../event_push.zig");
 const shared = @import("shared.zig");
 const player_handlers = @import("player.zig");
 const editor_handlers = @import("../editor/handlers.zig");
+const editor_mission_io = @import("../editor/mission_io.zig");
+const session_log = @import("../session_log.zig");
 
 const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
@@ -130,27 +132,14 @@ pub fn handleMetaEvent(
                 return;
             };
             defer allocator.free(autosave_bytes);
-            // Timestamp format "YYYYMMDD_HHMMSS" — mirrors
-            // `input_handlers.formatSessionTimestamp` /
-            // `crash_dump.formatTimestamp` (inlined here to avoid a
-            // circular import; event_handlers is imported by
-            // input_handlers). See TODO → Logging & Replay.
-            const seconds: u64 = @intCast(std.Io.Clock.now(.real, history.io).toSeconds());
-            const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = seconds };
-            const year_day = epoch_seconds.getEpochDay().calculateYearDay();
-            const month_day = year_day.calculateMonthDay();
-            const day_seconds = epoch_seconds.getDaySeconds();
+            // The backup file name: the shared session-log timestamp with
+            // the autosave- prefix. See TODO → Logging & Replay.
+            const timestamp = session_log.formatSessionTimestamp(allocator, history.io);
+            defer allocator.free(timestamp);
             const backup_path = std.fmt.allocPrint(
                 allocator,
-                "saves/autosave-{d:0>4}{d:0>2}{d:0>2}_{d:0>2}{d:0>2}{d:0>2}.txt",
-                .{
-                    year_day.year,
-                    month_day.month.numeric(),
-                    @as(u32, month_day.day_index) + 1,
-                    day_seconds.getHoursIntoDay(),
-                    day_seconds.getMinutesIntoHour(),
-                    day_seconds.getSecondsIntoMinute(),
-                },
+                "saves/autosave-{s}.txt",
+                .{timestamp},
             ) catch @panic("failed to allocate backup path");
             defer allocator.free(backup_path);
             history.file_source.writeFile(backup_path, autosave_bytes) catch {
@@ -258,6 +247,12 @@ pub fn handleMetaEvent(
             current.transitionScreen(.editor);
         },
         .start_validation => |start| {
+            // A new run retires the previous validation's manual-overwrite
+            // offer (side-effect state — gated so replay scrubbing can't
+            // eat a pending offer).
+            if (!history.replaying) {
+                editor_mission_io.clearPendingValidationReplay(history);
+            }
             // File-based validation: run the SAVED artifact, not the editor
             // memory — the run certifies the files a player receives (the
             // save's bounding-box translation + palette dedup make file ≠
@@ -346,7 +341,15 @@ pub fn handleMetaEvent(
                 .level_index = 1,
             } } } }, allocator);
         },
-        .end_validation => {
+        .end_validation => |end| {
+            // A successful run writes its replay (the personal-best guard
+            // decides auto-write vs stash+offer) — a save_game-class side
+            // effect: the recorded event owns it, replay never re-fires.
+            // See DESIGN → Custom Missions & Online Services →
+            // Validation replay.
+            if (end.success and !history.replaying) {
+                editor_mission_io.writeValidationReplay(history);
+            }
             // Restore after a validation run. Live (editor present): edit
             // mode + the editor screen, the session's real player data
             // restored, the run's mission + level discarded by the

@@ -3,7 +3,9 @@
 //! Separate from the config-file format layer (parser.zig): a session log is
 //! `event_history` linearized to config sections, one entry group per event.
 //! New events serialize/deserialize with no changes here (comptime reflection
-//! over the union).
+//! over the union). Also owns the session-log timestamp formatter (the
+//! `created` stamp shared by the dump, the autosave backup naming, and the
+//! validation replay write).
 
 const std = @import("std");
 const build_info = @import("build_info");
@@ -62,6 +64,33 @@ pub const MetadataPair = struct {
     name: []const u8,
     value: []const u8,
 };
+
+/// Format the current wall-clock time (UTC) as "YYYYMMDD_HHMMSS" — the
+/// `created` stamp for session-log-shaped artifacts (the ctrl+L dump, the
+/// autosave backup file name, the validation replay). A side-effect-adjacent
+/// util (reads the clock): called only from live paths, never replay.
+pub fn formatSessionTimestamp(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+) []const u8 {
+    const seconds: u64 = @intCast(std.Io.Clock.now(.real, io).toSeconds());
+    const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = seconds };
+    const year_day = epoch_seconds.getEpochDay().calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const day_seconds = epoch_seconds.getDaySeconds();
+    return std.fmt.allocPrint(
+        allocator,
+        "{d:0>4}{d:0>2}{d:0>2}_{d:0>2}{d:0>2}{d:0>2}",
+        .{
+            year_day.year,
+            month_day.month.numeric(),
+            @as(u32, month_day.day_index) + 1,
+            day_seconds.getHoursIntoDay(),
+            day_seconds.getMinutesIntoHour(),
+            day_seconds.getSecondsIntoMinute(),
+        },
+    ) catch @panic("failed to format session-log timestamp");
+}
 
 /// Serialize an event history (+ a created timestamp) into a session-log file
 /// body. `created` is expected as "YYYYMMDD_HHMMSS" but is written verbatim.

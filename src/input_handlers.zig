@@ -98,7 +98,7 @@ pub fn dumpEventLog(history: *GameStateHistory) void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    const created = formatSessionTimestamp(allocator, history.io);
+    const created = session_log.formatSessionTimestamp(allocator, history.io);
     const file_name = std.fmt.allocPrint(
         allocator,
         "logs/session_log_{s}.txt",
@@ -129,30 +129,6 @@ pub fn dumpEventLog(history: *GameStateHistory) void {
         file_name,
         history.event_history.items.len,
     });
-}
-
-/// Format the current wall-clock time (UTC) as "YYYYMMDD_HHMMSS".
-pub fn formatSessionTimestamp(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-) []const u8 {
-    const seconds: u64 = @intCast(std.Io.Clock.now(.real, io).toSeconds());
-    const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = seconds };
-    const year_day = epoch_seconds.getEpochDay().calculateYearDay();
-    const month_day = year_day.calculateMonthDay();
-    const day_seconds = epoch_seconds.getDaySeconds();
-    return std.fmt.allocPrint(
-        allocator,
-        "{d:0>4}{d:0>2}{d:0>2}_{d:0>2}{d:0>2}{d:0>2}",
-        .{
-            year_day.year,
-            month_day.month.numeric(),
-            @as(u32, month_day.day_index) + 1,
-            day_seconds.getHoursIntoDay(),
-            day_seconds.getMinutesIntoHour(),
-            day_seconds.getSecondsIntoMinute(),
-        },
-    ) catch @panic("failed to format session-log timestamp");
 }
 
 /// Push a player-action orchestrator event and drain it (plus its handler-
@@ -910,7 +886,7 @@ pub fn handleAnytimeInput(
         const allocator = history.current_arena.allocator();
         switch (action) {
             .save_game => {
-                const timestamp = formatSessionTimestamp(allocator, history.io);
+                const timestamp = session_log.formatSessionTimestamp(allocator, history.io);
                 const save_path = std.fmt.allocPrint(
                     allocator,
                     "saves/save_{s}.txt",

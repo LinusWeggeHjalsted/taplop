@@ -882,7 +882,7 @@ paragraph). Remaining work:
         gains a null-editor branch (cross-session replay → main menu);
         `validatePlayerAction`'s `player_start_validation` arm relaxes to
         "no active level/mission".
-  - [ ] **3 — slice write + personal-best guard:** the `end_validation`
+  - [x] **3 — slice write + personal-best guard:** the `end_validation`
         success handler writes `validation_replay.txt` (a `!replaying`-gated side
         effect, the save_game class; the dir comes from
         `current.mission.?.path`; slice = event_history from the LAST
@@ -897,11 +897,13 @@ paragraph). Remaining work:
         renders over the editor (no clone column — the medal targets column
         instead; Continue / Validate Again / Overwrite Replay buttons;
         personal-best line when an old replay exists).
-  - [ ] **5 — crown test:** crafted mission → save → validate → scripted
-        completion → file written → load → cross-session
-        `reconstructFromEventLog` → derived turns == reconstructed
-        `mission.turns_spent`. The client-side prototype of the future
-        server-side check (the test build is headless).
+  - [x] **5 — crown test:** landed with slice 3 — "the Validate button
+        saves first and the finished run writes a reconstructable
+        validation_replay.txt" (editor save → validate via the real
+        button path → scripted completion → file written → load →
+        cross-session reconstructFromEventLog → derived turns ==
+        reconstructed turns_spent). The client-side prototype of the
+        future server-side check (the test build is headless).
 - Editor autosave: nice-to-have, not need-to-have (explicit save for now).
 - **Editor save-to-disk + export — DONE.** The mission writer
   (writers.writeEditorMission — the pure projection), the save
@@ -940,8 +942,11 @@ Session log read/write/reconstruct + combat-log projection DONE (see AGENTS
   reconstructFromEventLog/restoreTo at successive targets. Steps = the
   combat-log filter (derived, not idle_points). Needs the projection (DONE) +
   replay-viewer UI.
-- formatSessionTimestamp is a generic time util living in main.zig — move to
-  a small util/time module when the main.zig split happens.
+- [x] formatSessionTimestamp moved to session_log.zig (its natural home —
+      the `created` stamp of session-log-shaped artifacts); consumers: the
+      session dump, the autosave backup naming (meta's inline copy
+      collapsed), the validation replay write. crash_dump keeps its own
+      fallible/transient variant.
 
 Logging follow-ups (open):
 

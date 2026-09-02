@@ -343,7 +343,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   selection move drag).
 - `src/editor/mission_io.zig` — editor mission save/export/import (uuid
   resolution, STORE zip bundling, the web import marker poll) + the
-  mission list/sprite rescans.
+  mission list/sprite rescans + the validation-replay write
+  (`writeValidationReplay`, the one handler-owned side effect — the
+  end_validation success path calls it gated `!replaying`).
 - `src/view.zig` — `view()` (builds ViewState each frame from GameState +
   SessionState + the per-frame arena) + world drawable builders (tiles,
   overlays, entities, decoration pieces, ground items, flag poles, occlusion
@@ -376,8 +378,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   `writePlayerSave`/`writeSettings`/`writePlayerSaveToFile`. The inverse of
   `loaders.zig`.
 - `src/session_log.zig` — session-log serializer/deserializer
-  (`writeEventLog`/`loadEventLog`/`SessionLog`), comptime-generic over the
-  `Event` union. See DESIGN → Logging & Replay.
+  (`writeEventLog`/`loadEventLog`/`SessionLog`, comptime-generic over the
+  `Event` union) + the shared session-log timestamp formatter. See
+  DESIGN → Logging & Replay.
 - `src/validation_replay.zig` — the validation-replay artifact's pure
   machinery: structural loader + turn derivation + medal targets + the
   personal-best overwrite decision. See DESIGN → Custom Missions & Online

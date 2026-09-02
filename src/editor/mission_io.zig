@@ -1,11 +1,14 @@
 //! Editor mission file I/O: save-to-disk (uuid resolution + dir naming),
 //! export (save + configs + sprites bundled into a STORE zip, browser
 //! download on web), import (the web zip-upload marker poll + extraction
-//! with junk/root-strip/safety filtering), and the mission-list /
-//! mission-sprite rescans. Side-effect paths off the undo timeline
-//! (dump_event_log-class — no recorded events). See DESIGN → Level Editor
-//! (the save/export flow + the mission browser) + DESIGN → File System &
-//! IO.
+//! with junk/root-strip/safety filtering), the mission-list /
+//! mission-sprite rescans, and the validation-replay write (the one
+//! HANDLER-owned side effect here — the end_validation success handler
+//! calls it gated `!replaying`; everything else is an input-layer side
+//! effect off the undo timeline, dump_event_log-class — no recorded
+//! events). See DESIGN → Level Editor (the save/export flow + the mission
+//! browser) + DESIGN → Custom Missions & Online Services → Validation
+//! replay + DESIGN → File System & IO.
 const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
@@ -15,6 +18,9 @@ const writers = @import("../writers.zig");
 const file_source_mod = @import("../file_source.zig");
 const zip_writer = @import("../zip_writer.zig");
 const zip_reader = @import("../zip_reader.zig");
+const session_log = @import("../session_log.zig");
+const validation_replay = @import("../validation_replay.zig");
+const content_hash = @import("../content_hash.zig");
 
 const GameStateHistory = state.GameStateHistory;
 
@@ -216,6 +222,129 @@ pub fn saveEditorMission(history: *GameStateHistory) ?[]const u8 {
         .dir_path = dir_path,
     };
     return dir_path;
+}
+
+/// Free the previous stash + store the new replay bytes on the session,
+/// backing-owned (the editor_saved_mission ownership pattern — the stash
+/// must survive arena compaction; the Overwrite Replay button may be
+/// clicked long after the run's idle point).
+fn stashValidationReplay(history: *GameStateHistory, bytes: []const u8) void {
+    const durable = history.backing_allocator;
+    if (history.session.pending_validation_replay) |previous| durable.free(previous);
+    history.session.pending_validation_replay = durable.dupe(u8, bytes) catch
+        @panic("failed to stash the validation replay");
+}
+
+/// Drop the stash + the offer flag: after an auto-write, after a manual
+/// overwrite write, or when the next run starts (a new run retires the
+/// previous offer). The callers gate on `!replaying` — side-effect state,
+/// replay must not eat a pending offer on undo/redo scrubbing.
+pub fn clearPendingValidationReplay(history: *GameStateHistory) void {
+    if (history.session.pending_validation_replay) |stashed| {
+        history.backing_allocator.free(stashed);
+    }
+    history.session.pending_validation_replay = null;
+    history.session.validation_replay_overwrite_offered = false;
+}
+
+/// Write the validation replay for a just-SUCCEEDED validation run — the
+/// end_validation success handler calls this, gated `!replaying` at the
+/// call site (the save_game class: a recorded event owns the side effect,
+/// replay never re-fires it, undo past the run doesn't rewrite). The
+/// artifact is the final attempt's verbatim event slice — event_history
+/// from the LAST player_start_validation through the end_validation itself
+/// — with `mission_uuid` + `content_hash` Metadata (the replay certifies
+/// THIS content; a later hash mismatch reads as "unvalidated"). The
+/// personal-best guard decides: auto-write when the old file is
+/// absent/unreadable, its hash no longer matches the mission, or the new
+/// run is strictly faster; otherwise keep the old file + stash the new
+/// bytes + flag the manual-overwrite offer (the stats screen's Overwrite
+/// Replay button writes the STASHED bytes — never a re-slice of a possibly
+/// trimmed timeline). Turn count is DERIVED from the events (never
+/// stored). See DESIGN → Custom Missions & Online Services → Validation
+/// replay.
+pub fn writeValidationReplay(history: *GameStateHistory) void {
+    const current = &history.current_state;
+    const mission = if (current.mission) |*some_mission| some_mission else return;
+    const scratch = history.current_arena.allocator();
+
+    // The slice start: the LAST player_start_validation in the recorded
+    // stream. Every attempt begins with that orchestrator (the edit-mode
+    // button or the restart re-entry), so the last one is the final
+    // attempt's start — restarts and failed attempts fall outside the
+    // slice by construction.
+    var slice_start: ?usize = null;
+    for (history.event_history.items, 0..) |event, index| {
+        if (event == .player_input_event and event.player_input_event == .player_start_validation) {
+            slice_start = index;
+        }
+    }
+    const start = slice_start orelse return; // unreachable live; nothing to write
+    if (start + 2 > history.event_history.items.len) return;
+    const slice = history.event_history.items[start..];
+
+    const hash = content_hash.computeMissionHash(
+        history.file_source,
+        scratch,
+        mission.path,
+        mission.level_count,
+    ) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "failed to save the validation replay: could not hash the mission files",
+        );
+        return;
+    };
+    const hash_hex = content_hash.hashToHex(hash);
+    const created = session_log.formatSessionTimestamp(scratch, history.io);
+    const replay_bytes = session_log.writeEventLogWithMetadata(
+        slice,
+        created,
+        &.{
+            .{ .name = "mission_uuid", .value = mission.uuid },
+            .{ .name = "content_hash", .value = &hash_hex },
+        },
+        scratch,
+    ) catch @panic("failed to serialize the validation replay");
+
+    // The personal-best decision: what does the existing replay (if any)
+    // say? Unreadable/absent → treated as absent (auto-write).
+    const new_turns = validation_replay.deriveValidationTurns(slice);
+    const existing: ?validation_replay.ExistingReplaySummary = blk: {
+        const replay_path = std.fmt.allocPrint(
+            scratch,
+            "{s}/validation_replay.txt",
+            .{mission.path},
+        ) catch @panic("failed to allocate validation replay path");
+        const bytes = history.file_source.readFile(scratch, replay_path) catch break :blk null;
+        const sections = parser.parseConfigFile(bytes, scratch) catch break :blk null;
+        const replay = validation_replay.loadValidationReplay(sections, scratch) catch break :blk null;
+        break :blk .{
+            .turns = validation_replay.deriveValidationTurns(replay.events),
+            .content_hash = replay.content_hash,
+        };
+    };
+    switch (validation_replay.replayOverwriteDecision(existing, new_turns, &hash_hex)) {
+        .keep_offer_overwrite => {
+            stashValidationReplay(history, replay_bytes);
+            history.session.validation_replay_overwrite_offered = true;
+        },
+        .write => {
+            const replay_path = std.fmt.allocPrint(
+                scratch,
+                "{s}/validation_replay.txt",
+                .{mission.path},
+            ) catch @panic("failed to allocate validation replay path");
+            history.file_source.writeFile(replay_path, replay_bytes) catch {
+                history.session.setPendingError(
+                    history.history_arena.allocator(),
+                    "failed to save the validation replay: could not write validation_replay.txt",
+                );
+                return;
+            };
+            clearPendingValidationReplay(history);
+        },
+    }
 }
 
 /// Read one file from the persistent dir and append it to the export

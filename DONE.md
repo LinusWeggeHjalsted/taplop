@@ -9576,3 +9576,54 @@ validation now runs the SAVED mission dir:
   stack) — so a beeline finish contributes no turn_end;
   turns_spent counts COMPLETED turns. deriveValidationTurns mirrors the
   turn_end handler exactly, so the two agree either way.
+
+## Validation replay: slice 3 (+ slice 5 early) — the slice write + personal-best guard + the crown test
+
+`end_validation{success=true}` now writes the mission-dir artifact
+(mission_io.writeValidationReplay, called from the handler gated
+`!replaying` — the save_game class: a recorded event owns the side
+effect, replay never re-fires, undo past the run doesn't rewrite):
+
+- **The slice** = event_history from the LAST `player_start_validation`
+  through the closing `end_validation` — a backwards scan; unambiguous
+  because the orchestrator is pushed only by the edit-mode button and the
+  restart re-entry, both attempt starts. Restarts/failed attempts fall
+  outside by construction (any restart inside a candidate slice would
+  have produced a later orchestrator, which then IS the start).
+- **Metadata**: `mission_uuid` (from the file-loaded mission) +
+  `content_hash` (computeMissionHash over the saved dir) + the shared
+  `created` stamp — writeEventLogWithMetadata.
+- **The personal-best guard** (the clone auto-save pattern):
+  replayOverwriteDecision over {existing file's turns + hash, new turns,
+  new hash} — auto-write on absent/unreadable/hash-mismatch/strictly-
+  faster; ties keep the old file (first-validated wins); otherwise keep
+  the old file + `session.pending_validation_replay` (backing-owned
+  stash — the Overwrite Replay button writes the STASHED bytes, never a
+  re-slice) + `validation_replay_overwrite_offered`. The stash + flag are
+  retired at start_validation (gated — replay scrubbing can't eat a
+  pending offer) and cleared by any auto-write. Turn count is DERIVED
+  from the events, never stored.
+- **formatSessionTimestamp moved input_handlers → session_log.zig** (its
+  natural home — the `created` stamp of session-log-shaped artifacts;
+  the TODO's "move to a util module" item done). Consumers updated: the
+  session dump, the autosave backup naming (meta's inline copy
+  collapsed onto the shared fn — the format was the only difference),
+  the validation replay write. crash_dump keeps its own fallible/
+  transient variant.
+- **Tests (crown test = slice 5, landed early)**: the Validate-button
+  path end-to-end — editor save → validate (real input path, payload =
+  the saved dir) → scripted completion (skip + move per level) →
+  `validation_replay.txt` next to the mission files with the minted uuid
+  + matching content hash + derived turns 2 → cross-session
+  reconstructFromEventLog from the WRITTEN FILE: replay-reproduced
+  turns_spent == derived, full slice lands on the main menu. Plus the PB
+  sequence on the fixture: first run auto-writes; the beeline (0 turns —
+  each level ends before its pending attack step runs) strictly-faster
+  auto-overwrites; a slower re-run keeps the 0-turn file + stashes its
+  own 2-turn slice + sets the offer; an edited level (hash mismatch)
+  auto-overwrites DESPITE being slower, clearing the stash/offer.
+- A test-shape gotcha worth remembering: driving runs via the
+  start_validation MACHINERY skips the orchestrator, and the slice scan
+  keys on `player_start_validation` — the helper now pushes the
+  orchestrator (the realistic button shape; the machinery event is
+  never a slice start).

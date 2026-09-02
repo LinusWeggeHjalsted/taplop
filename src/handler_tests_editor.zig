@@ -24,6 +24,7 @@ const loaders = @import("loaders.zig");
 const zip_writer = @import("zip_writer.zig");
 const session_log = @import("session_log.zig");
 const validation_replay = @import("validation_replay.zig");
+const content_hash = @import("content_hash.zig");
 
 const Harness = test_harness.Harness;
 const runToIdle = test_harness.runToIdle;
@@ -5556,6 +5557,220 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
     try testing.expect(history3.current_state.screen == .main_menu);
     try testing.expect(history3.current_state.editor == null);
     try testing.expect(history3.current_state.mission == null);
+}
+
+/// Script one full validation run through the fixture mission: push
+/// start_validation, then per level either a full turn (skip + step onto
+/// the level end — 1 turn_end per level) or a beeline (straight onto the
+/// end — 0 turn_endsWith: the level ends before the pending attack step
+/// runs). The run completes back in the editor.
+fn playFixtureRunToCompletion(history: *state.GameStateHistory, beeline: bool) !void {
+    // The ORCHESTRATOR (the button path — also the shape the replay slice
+    // keys on: every attempt begins with player_start_validation).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_start_validation = .{
+            .mission_path = validation_fixture_path,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(history);
+    var level_index: u32 = 0;
+    while (level_index < 2) : (level_index += 1) {
+        if (!beeline) {
+            event_push.pushEvents(
+                &history.current_state,
+                &.{.{ .player_input_event = .{ .player_skip_move = .{} } }},
+                history.current_arena.allocator(),
+            );
+            runToIdle(history);
+        }
+        // The level end: x=1 on level 1, x=3 on level 2.
+        const end_x: i32 = if (level_index == 0) 1 else 3;
+        event_push.pushEvents(
+            &history.current_state,
+            &.{.{ .player_input_event = .{ .player_move_action = .{
+                .destination = .{ .x = end_x, .y = 0 },
+            } } }},
+            history.current_arena.allocator(),
+        );
+        runToIdle(history);
+    }
+    try testing.expect(history.current_state.screen == .editor);
+    try testing.expect(history.current_state.mission == null);
+}
+
+/// Read the fixture mission's validation_replay.txt + derive its turn
+/// count (the file's observable state).
+fn readFixtureReplay(
+    harness: *Harness,
+    arena: std.mem.Allocator,
+) !struct { turns: u32, replay: validation_replay.ValidationReplay } {
+    const bytes = try harness.file_source.readFile(
+        arena,
+        validation_fixture_path ++ "/validation_replay.txt",
+    );
+    const sections = try parser.parseConfigFile(bytes, arena);
+    const replay = try validation_replay.loadValidationReplay(sections, arena);
+    return .{ .turns = validation_replay.deriveValidationTurns(replay.events), .replay = replay };
+}
+
+test "the Validate button saves first and the finished run writes a reconstructable validation_replay.txt" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+
+    // The editor-save test's shape, with TWO levels (each the minimal
+    // '!=' layout — the save's translation is identity at the bbox).
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const levels = [_]types.EditorLevel{
+        .{ .level_tiles = &tiles, .player_start = .{ .x = 0, .y = 0 }, .level_end = .{ .x = 1, .y = 0 } },
+        .{ .level_tiles = &tiles, .player_start = .{ .x = 0, .y = 0 }, .level_end = .{ .x = 1, .y = 0 } },
+    };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .mission = .{ .name = "New Mission", .path = "missions/New Mission", .level_count = 2 },
+        .player_def = .{ .id = "Player", .template = .{ .name = "New Player", .sprite = "player", .team = 0 } },
+    }));
+    runToIdle(&history);
+
+    // The REAL button path: the input layer saves first, then pushes the
+    // run with the saved dir as the payload.
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .validate_editor_mission,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+    try testing.expect(history.current_state.screen == .level);
+    const saved = history.session.editor_saved_mission.?;
+    try testing.expectEqualStrings(saved.dir_path, history.current_state.mission.?.path);
+
+    // Play it to completion: a full turn per level, then the level end.
+    var level_index: u32 = 0;
+    while (level_index < 2) : (level_index += 1) {
+        event_push.pushEvents(
+            &history.current_state,
+            &.{.{ .player_input_event = .{ .player_skip_move = .{} } }},
+            history.current_arena.allocator(),
+        );
+        runToIdle(&history);
+        event_push.pushEvents(
+            &history.current_state,
+            &.{.{ .player_input_event = .{ .player_move_action = .{
+                .destination = .{ .x = 1, .y = 0 },
+            } } }},
+            history.current_arena.allocator(),
+        );
+        runToIdle(&history);
+    }
+    try testing.expect(history.current_state.screen == .editor);
+
+    // The replay landed next to the mission files, with the mission's
+    // identity + the content hash of the dir the run certified.
+    const replay_path = try std.fmt.allocPrint(
+        arena,
+        "{s}/validation_replay.txt",
+        .{saved.dir_path},
+    );
+    const replay_bytes = try harness.file_source.readFile(arena, replay_path);
+    const sections = try parser.parseConfigFile(replay_bytes, arena);
+    const replay = try validation_replay.loadValidationReplay(sections, arena);
+    try testing.expectEqualStrings(saved.uuid, replay.mission_uuid);
+    const hash = try content_hash.computeMissionHash(&harness.file_source, arena, saved.dir_path, 2);
+    const hash_hex = content_hash.hashToHex(hash);
+    try testing.expectEqualStrings(&hash_hex, replay.content_hash);
+    // Derived turns == the live run's completed-turn counter (one full
+    // turn per level).
+    try testing.expectEqual(@as(u32, 2), validation_replay.deriveValidationTurns(replay.events));
+    // First validation (no prior file): auto-write — nothing stashed, no
+    // manual-overwrite offer.
+    try testing.expect(history.session.pending_validation_replay == null);
+    try testing.expect(!history.session.validation_replay_overwrite_offered);
+
+    // Cross-session reconstruction from the WRITTEN FILE (the server-side
+    // check's client-side prototype): replay-reproduced turns == derived.
+    var reconstruction_start = test_harness.defaultStartingState();
+    reconstruction_start.event_stack = &.{};
+    var history2 = harness.newHistory(reconstruction_start);
+    history2.reconstructFromEventLog(replay.events, @intCast(replay.events.len - 1), &event_handlers.processEvent);
+    try testing.expectEqual(@as(u32, 2), history2.current_state.mission.?.turns_spent);
+    var history3 = harness.newHistory(reconstruction_start);
+    history3.reconstructFromEventLog(replay.events, @intCast(replay.events.len), &event_handlers.processEvent);
+    try testing.expect(history3.current_state.screen == .main_menu);
+    try testing.expect(history3.current_state.mission == null);
+}
+
+test "the personal-best guard: first/faster/hash-mismatch write, slower keeps + stashes" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    try writeValidationFixtureMission(&harness);
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+
+    // Run A (2 turns): the FIRST validation — no prior file → auto-write.
+    try playFixtureRunToCompletion(&history, false);
+    {
+        const result = try readFixtureReplay(&harness, arena);
+        try testing.expectEqual(@as(u32, 2), result.turns);
+    }
+    try testing.expect(history.session.pending_validation_replay == null);
+    try testing.expect(!history.session.validation_replay_overwrite_offered);
+
+    // Run B (the beeline — 0 turns): strictly faster → auto-overwrite.
+    try playFixtureRunToCompletion(&history, true);
+    {
+        const result = try readFixtureReplay(&harness, arena);
+        try testing.expectEqual(@as(u32, 0), result.turns);
+    }
+    try testing.expect(history.session.pending_validation_replay == null);
+    try testing.expect(!history.session.validation_replay_overwrite_offered);
+
+    // Run C (2 turns again): SLOWER than the 0-turn best → keep the old
+    // file, stash the new bytes, offer the manual overwrite.
+    try playFixtureRunToCompletion(&history, false);
+    {
+        const result = try readFixtureReplay(&harness, arena);
+        try testing.expectEqual(@as(u32, 0), result.turns); // the file is UNCHANGED (the best run)
+    }
+    try testing.expect(history.session.pending_validation_replay != null);
+    try testing.expect(history.session.validation_replay_overwrite_offered);
+    {
+        // The stash holds the slower run's slice (2 turns) — what the
+        // Overwrite Replay button would write.
+        const sections = try parser.parseConfigFile(history.session.pending_validation_replay.?, arena);
+        const stashed = try validation_replay.loadValidationReplay(sections, arena);
+        try testing.expectEqual(@as(u32, 2), validation_replay.deriveValidationTurns(stashed.events));
+    }
+
+    // Run D after EDITING the mission: the old replay's hash no longer
+    // matches (it certifies an earlier version) → auto-overwrite
+    // regardless of turns — even though this run (2 turns) is slower than
+    // the 0-turn file.
+    try harness.file_source.writeFile(
+        validation_fixture_path ++ "/level_1.txt",
+        \\Metadata
+        \\file_format_version 1
+        \\name Fixture Level One Prime
+        \\
+        \\Layout
+        \\!=
+        \\
+    );
+    try playFixtureRunToCompletion(&history, false);
+    {
+        const result = try readFixtureReplay(&harness, arena);
+        try testing.expectEqual(@as(u32, 2), result.turns); // the new run's — overwritten despite being slower
+    }
+    // The auto-write cleared the stash + the offer.
+    try testing.expect(history.session.pending_validation_replay == null);
+    try testing.expect(!history.session.validation_replay_overwrite_offered);
 }
 
 test "open_editor: a mission without player.txt falls back to the maxed default loadout" {

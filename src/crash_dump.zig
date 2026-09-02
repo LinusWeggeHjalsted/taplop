@@ -84,9 +84,8 @@ pub fn dump(history: *GameStateHistory) void {
 }
 
 /// Format the current wall-clock time (UTC) as "YYYYMMDD_HHMMSS" — mirrors
-/// `input_handlers.formatSessionTimestamp` but uses the transient allocator
-/// and
-/// never panics (returns an error on allocation/clock failure so the caller
+/// `session_log.formatSessionTimestamp` but uses the transient allocator
+/// and never panics (returns an error on allocation/clock failure so the caller
 /// can fall back).
 fn formatTimestamp(allocator: std.mem.Allocator, io: std.Io) ![]const u8 {
     const seconds: u64 = @intCast(std.Io.Clock.now(.real, io).toSeconds());
