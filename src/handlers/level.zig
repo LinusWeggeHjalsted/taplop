@@ -867,7 +867,12 @@ pub fn handleSubLevelEvent(
             const effective_duration = defender.getEffectiveIncomingStunDuration(stun.stun_duration);
 
             if (effective_duration > 0) {
-                defender.stun_duration += effective_duration;
+                // MAX, not sum: a new stun takes the longer of current vs
+                // incoming, never stacks — a player facing multiple stunning
+                // enemies can't be mega-stunlocked. Stun skills' AI reflects
+                // this (they rate/prefer unstunned targets). See DESIGN →
+                // Architecture (the stun rule).
+                defender.stun_duration = @max(defender.stun_duration, effective_duration);
 
                 for (attacker.active_effects) |active_effect| {
                     const definition = lookups.getEffectDefinition(active_effect.effect_id);

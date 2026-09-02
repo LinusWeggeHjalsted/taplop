@@ -122,6 +122,34 @@ pub fn hostileIndicesInRadius(
     return indices.items;
 }
 
+/// A resolved valid-target for the selection scans. `preferred` is the
+/// leading key of the keyed selections (knockback: the push collides;
+/// stun: the target is not already stunned).
+const TargetCandidate = struct {
+    position: Vector2,
+    preferred: bool,
+    health: u32,
+    distance: i32,
+    entity_index: u32,
+};
+
+/// The focus-fire tail order shared by EVERY selection helper: lowest
+/// current health, then Chebyshev distance to the caster, then entity
+/// index (unique — total order). Convention: DESIGN → Determinism &
+/// Tiebreaking.
+fn focusFireTailLessThan(a: TargetCandidate, b: TargetCandidate) bool {
+    if (a.health != b.health) return a.health < b.health;
+    if (a.distance != b.distance) return a.distance < b.distance;
+    return a.entity_index < b.entity_index;
+}
+
+/// Preferred candidates first, then the focus-fire tail — the ordering for
+/// the keyed selection helpers (knockbackTarget, stunTarget).
+fn preferredThenTailLessThan(a: TargetCandidate, b: TargetCandidate) bool {
+    if (a.preferred != b.preferred) return a.preferred;
+    return focusFireTailLessThan(a, b);
+}
+
 /// AI target selection for attack skills: the hostile with the LOWEST
 /// current health from `valid_targets` — focus-fire concentrates damage
 /// on nearly-dead enemies so they die sooner (more effective than nearest-
@@ -140,27 +168,22 @@ pub fn weakestTarget(
     const level = game_state.level orelse return null;
     const caster = level.entities[caster_index];
 
-    var best: ?Vector2 = null;
-    var best_health: u32 = std.math.maxInt(u32);
-    var best_distance: i32 = std.math.maxInt(i32);
-    var best_entity_index: u32 = std.math.maxInt(u32);
+    var best: ?TargetCandidate = null;
     for (targets) |position| {
         // Valid targets come from getValidTargets, so the lookup should
         // never miss; skip defensively rather than panic on a stale list.
         const entity_index = hostileEntityAt(caster_index, position, game_state) orelse continue;
         const entity = level.entities[entity_index];
-        const distance = functions.chebyshevDistance(caster.position, position);
-        if (entity.current_health < best_health or
-            (entity.current_health == best_health and distance < best_distance) or
-            (entity.current_health == best_health and distance == best_distance and entity_index < best_entity_index))
-        {
-            best_health = entity.current_health;
-            best_distance = distance;
-            best_entity_index = entity_index;
-            best = position;
-        }
+        const candidate = TargetCandidate{
+            .position = position,
+            .preferred = false,
+            .health = entity.current_health,
+            .distance = functions.chebyshevDistance(caster.position, position),
+            .entity_index = entity_index,
+        };
+        if (best == null or focusFireTailLessThan(candidate, best.?)) best = candidate;
     }
-    return best;
+    return if (best) |candidate| candidate.position else null;
 }
 
 /// Per-axis sign of an i32 delta: −1 / 0 / +1 (the knockback direction
@@ -221,39 +244,55 @@ pub fn knockbackTarget(
     const level = game_state.level orelse return null;
     const caster = level.entities[caster_index];
 
-    const Candidate = struct {
-        position: Vector2,
-        collides: bool,
-        health: u32,
-        distance: i32,
-        entity_index: u32,
-    };
+    var best: ?TargetCandidate = null;
+    for (targets) |position| {
+        // Valid targets come from getValidTargets, so the lookup should
+        // never miss; skip defensively rather than panic on a stale list.
+        const entity_index = hostileEntityAt(caster_index, position, game_state) orelse continue;
+        const candidate = TargetCandidate{
+            .position = position,
+            .preferred = knockbackWouldCollide(caster_index, entity_index, distance, game_state),
+            .health = level.entities[entity_index].current_health,
+            .distance = functions.chebyshevDistance(caster.position, position),
+            .entity_index = entity_index,
+        };
+        if (best == null or preferredThenTailLessThan(candidate, best.?)) best = candidate;
+    }
+    return if (best) |candidate| candidate.position else null;
+}
 
-    var best: ?Candidate = null;
+/// AI target selection for stun skills: prefer a target that is NOT already
+/// stunned (stuns take the max of current vs incoming, never stack — a stun
+/// on a stunned target only pays if the new duration is longer), then the
+/// focus-fire tail (lowest health, distance, entity index). See DESIGN →
+/// Architecture (the stun rule).
+pub fn stunTarget(
+    caster_index: u32,
+    valid_targets: ?[]const Vector2,
+    game_state: GameState,
+) ?Vector2 {
+    const targets = valid_targets orelse return null;
+    if (targets.len == 0) return null;
+
+    const level = game_state.level orelse return null;
+    const caster = level.entities[caster_index];
+
+    var best: ?TargetCandidate = null;
     for (targets) |position| {
         // Valid targets come from getValidTargets, so the lookup should
         // never miss; skip defensively rather than panic on a stale list.
         const entity_index = hostileEntityAt(caster_index, position, game_state) orelse continue;
         const entity = level.entities[entity_index];
-        const candidate = Candidate{
+        const candidate = TargetCandidate{
             .position = position,
-            .collides = knockbackWouldCollide(caster_index, entity_index, distance, game_state),
+            .preferred = entity.stun_duration == 0,
             .health = entity.current_health,
             .distance = functions.chebyshevDistance(caster.position, position),
             .entity_index = entity_index,
         };
-        if (best == null or candidateLessThan(candidate, best.?)) best = candidate;
+        if (best == null or preferredThenTailLessThan(candidate, best.?)) best = candidate;
     }
     return if (best) |candidate| candidate.position else null;
-}
-
-/// The `knockbackTarget` ordering: colliding candidates first, then the
-/// weakestTarget tail (health, distance, entity index).
-fn candidateLessThan(a: anytype, b: @TypeOf(a)) bool {
-    if (a.collides != b.collides) return a.collides;
-    if (a.health != b.health) return a.health < b.health;
-    if (a.distance != b.distance) return a.distance < b.distance;
-    return a.entity_index < b.entity_index;
 }
 
 /// Empty walkable tiles within `range` (Chebyshev) of the caster — valid

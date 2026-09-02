@@ -487,6 +487,26 @@ test "stun: applies the duration to the defender" {
     try testing.expectEqual(@as(u32, 3), levelEntity(&history, 1).stun_duration);
 }
 
+test "stun: takes the max, not the sum (no mega-stunlock)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 } },
+            .{ .team = 1, .position = .{ .x = 1, .y = 0 }, .stun_duration = 2 },
+        },
+        &three_by_three,
+    ));
+    // A shorter new stun must not extend the ongoing one...
+    pushAndRunSub(&history, .{ .stun = .{ .attacker_index = 0, .defender_index = 1, .stun_duration = 1 } });
+    try testing.expectEqual(@as(u32, 2), levelEntity(&history, 1).stun_duration);
+    // ...but a longer one replaces it.
+    pushAndRunSub(&history, .{ .stun = .{ .attacker_index = 0, .defender_index = 1, .stun_duration = 3 } });
+    try testing.expectEqual(@as(u32, 3), levelEntity(&history, 1).stun_duration);
+}
+
 test "stun: zero effective duration adds nothing" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

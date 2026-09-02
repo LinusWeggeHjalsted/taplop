@@ -14,6 +14,8 @@ const powerful_shot_skill = @import("skills/powerful_shot.zig");
 const bash_skill = @import("skills/bash.zig");
 const head_shot_skill = @import("skills/head_shot.zig");
 const heal_skill = @import("skills/heal.zig");
+const cleave_skill = @import("skills/cleave.zig");
+const daze_skill = @import("skills/daze.zig");
 
 const Vector2 = types.Vector2;
 
@@ -535,5 +537,98 @@ test "idol heal: priority is 3 only below half health" {
         // Cooldown overrides (a swap can leave one on a no-cooldown skill).
         setCooldown(game_state, 0, .heal, 1);
         try testing.expectEqual(@as(u32, 0), heal_skill.skill.priority(0, game_state));
+    }
+}
+
+test "stunTarget: an unstunned target beats a weaker stunned one" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // The wounded target is already stunned (a new 1-turn stun can't lower
+    // or usefully extend its 2) — the healthy unstunned one is the better
+    // stun victim despite focus-fire saying otherwise.
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const wounded_stunned = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 5, .stun_duration = 2 };
+    const healthy_unstunned = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .current_health = 15 };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, wounded_stunned, healthy_unstunned },
+        &.{},
+    );
+
+    const targets: []const Vector2 = &.{ wounded_stunned.position, healthy_unstunned.position };
+    const picked = helpers.stunTarget(0, targets, game_state);
+    try testing.expectEqual(healthy_unstunned.position, picked.?);
+}
+
+test "stunTarget: all stunned falls back to the weakest" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const wounded = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .current_health = 5, .stun_duration = 1 };
+    const healthy = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .current_health = 15, .stun_duration = 1 };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, wounded, healthy },
+        &.{},
+    );
+
+    const targets: []const Vector2 = &.{ wounded.position, healthy.position };
+    const picked = helpers.stunTarget(0, targets, game_state);
+    try testing.expectEqual(wounded.position, picked.?);
+}
+
+test "cleave: priority is 3 with an unstunned target, 2 when all are stunned" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const adjacent = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+
+    {
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, adjacent }, &.{});
+        try testing.expectEqual(@as(u32, 3), cleave_skill.skill.priority(0, game_state));
+    }
+    {
+        const stunned = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .stun_duration = 2 };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, stunned }, &.{});
+        try testing.expectEqual(@as(u32, 2), cleave_skill.skill.priority(0, game_state));
+    }
+}
+
+test "head shot: priority drops to 2 when the only target is already stunned" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+    const stunned = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .stun_duration = 2 };
+    const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, stunned }, &.{});
+    try testing.expectEqual(@as(u32, 2), head_shot_skill.skill.priority(0, game_state));
+}
+
+test "daze: priority tiers by stun and momentum state" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
+
+    // Unstunned (momentum irrelevant) → 3.
+    {
+        const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
+        try testing.expectEqual(@as(u32, 3), daze_skill.skill.priority(0, game_state));
+    }
+    // Stunned but carrying momentum → 2 (the drain still pays).
+    {
+        const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .stun_duration = 2, .momentum = 3 };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
+        try testing.expectEqual(@as(u32, 2), daze_skill.skill.priority(0, game_state));
+    }
+    // Stunned and momentumless → 0 (nothing to gain — no damage, no stack).
+    {
+        const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .stun_duration = 2 };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
+        try testing.expectEqual(@as(u32, 0), daze_skill.skill.priority(0, game_state));
     }
 }

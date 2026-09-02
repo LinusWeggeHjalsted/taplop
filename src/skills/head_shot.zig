@@ -41,31 +41,37 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority: 0 if on cooldown or no target in range, else 3 (the stun
-/// rating — the cleave precedent; stun durations stack, so an already-stunned
-/// target is not a wasted pick).
+/// AI priority: 0 if on cooldown or no target in range. 3 if any in-range
+/// target is unstunned (full stun + attack value); 2 when only stunned
+/// targets remain (the attack still pays, the stun does not — stuns take
+/// the max, never stack).
 fn priority(caster_index: u32, game_state: GameState) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.head_shot) > 0) return 0;
 
     const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
+    var found_target = false;
     for (level.entities, 0..) |entity, entity_index| {
         if (entity_index == caster_index) continue;
         if (entity.current_health == 0) continue;
         if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) <= range) return 3;
+        if (functions.chebyshevDistance(caster.position, entity.position) > range) continue;
+        found_target = true;
+        if (entity.stun_duration == 0) return 3;
     }
-    return 0;
+    if (!found_target) return 0;
+    return 2;
 }
 
-/// AI target selection: the weakest hostile (focus-fire — helpers.weakestTarget).
+/// AI target selection for the stun: prefer an unstunned target, then the
+/// focus-fire order (helpers.stunTarget).
 fn selectTarget(
     caster_index: u32,
     valid_targets: ?[]const Vector2,
     game_state: GameState,
 ) ?Vector2 {
-    return helpers.weakestTarget(caster_index, valid_targets, game_state);
+    return helpers.stunTarget(caster_index, valid_targets, game_state);
 }
 
 fn playerPrepareSkill(

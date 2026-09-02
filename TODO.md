@@ -174,6 +174,14 @@ lands with AI priority + target selection + tests in `src/skill_tests.zig`.
 Targeting/damage are done (part of the port — those old TODO lines were
 stale).
 
+- [x] **Stun rule fix — max, not sum (anti-stunlock).** A new stun takes
+      the max of current vs incoming duration, never stacks — multiple
+      stunning enemies can't mega-stunlock the player. Stun skills' AI
+      mirrors it: rate up only with an unstunned target in reach
+      (cleave/head_shot 3→2, daze 3/2/0 by momentum), select unstunned
+      targets first (new helpers.stunTarget — preference key in front of
+      the focus-fire tail, the knockbackTarget pattern). Rule: DESIGN →
+      Architecture (the stun rule). History in DONE.md.
 - [x] **Focus-fire target selection (the convention interjection)** — every
       hostile-targeting single-target offensive skill now picks the
       lowest-health hostile (ties: Chebyshev distance, then entity index) via
@@ -189,8 +197,12 @@ stale).
         knockback-target-selection convention (see the focus-fire entry
         above) applied to bash too. History in DONE.md.
   - [x] crossbow head shot (3, off, cd 4) — attack + stun, range 3 (cleave
-        shape, off-hand damage). Priority 3 (cleave precedent; stun stacks).
-  - [ ] idol heal (1, main, no cd) — heal 20% max health.
+        shape, off-hand damage). Priority 3 unstunned / 2 stunned-only;
+        stunTarget selection (see the stun-rule interjection below).
+  - [x] idol heal (1, main, no cd) — heal 20% max health. Priority 3 below
+        half / 0 otherwise (the replenish threshold logic — a flat
+        below-full rating would tie attacks at 2 and slot order would make
+        it heal every turn).
   - [ ] idol absorb (2, main, cd 5) — interceptor: incoming damage →
         healing (reflect shape).
   - [ ] idol drain (3, off, cd 5) — AoE attack + lifesteal. OPEN: heal

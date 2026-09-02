@@ -41,29 +41,41 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority: 0 if on cooldown or no target in range, else 3.
+/// AI priority: Daze deals no damage, so its value is control only.
+/// 3 if any in-range target is unstunned (the stun pays in full — stuns
+/// take the max, never stack). 2 if all in-range targets are stunned but
+/// one still has momentum (the drain still pays). 0 otherwise — a stunned,
+/// momentumless target gains nothing from Daze.
 fn priority(caster_index: u32, game_state: GameState) u32 {
     const level = game_state.level orelse return 0;
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.daze) > 0) return 0;
 
     const range: i32 = @intCast(caster.getEffectiveRange(skill.range.?));
+    var found_target = false;
+    var found_momentful_target = false;
     for (level.entities, 0..) |entity, entity_index| {
         if (entity_index == caster_index) continue;
         if (entity.current_health == 0) continue;
         if (entity.team == caster.team) continue;
-        if (functions.chebyshevDistance(caster.position, entity.position) <= range) return 3;
+        if (functions.chebyshevDistance(caster.position, entity.position) > range) continue;
+        found_target = true;
+        if (entity.stun_duration == 0) return 3;
+        if (entity.momentum > 0) found_momentful_target = true;
     }
+    if (!found_target) return 0;
+    if (found_momentful_target) return 2;
     return 0;
 }
 
-/// AI target selection: the weakest hostile (focus-fire — helpers.weakestTarget).
+/// AI target selection for the stun: prefer an unstunned target, then the
+/// focus-fire order (helpers.stunTarget).
 fn selectTarget(
     caster_index: u32,
     valid_targets: ?[]const Vector2,
     game_state: GameState,
 ) ?Vector2 {
-    return helpers.weakestTarget(caster_index, valid_targets, game_state);
+    return helpers.stunTarget(caster_index, valid_targets, game_state);
 }
 
 fn playerPrepareSkill(

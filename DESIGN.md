@@ -705,15 +705,19 @@ combat-log UI rendering + replay-viewer UI still TODO)
   right tiebreak (lowest entity_index / first slot); document it with a comment
   rather than restructuring.
 - **AI skill target selection — focus-fire.** Every hostile-targeting
-  single-target offensive skill's `selectTarget` picks the hostile with the
-  LOWEST current health; ties break by Chebyshev distance to the caster, then
-  `entity_index` (total order). Implemented once in `skills/helpers.zig`
-  (`weakestTarget`) and reused by every attack skill; `nearestTarget` remains
-  only for the non-attack exceptions (Swap — swapping with the nearest enemy
-  is the sensible tactical read). Rationale: focus-fire kills wounded enemies
-  sooner than spreading damage. (Barely observable with today's single-player
-  hostile sets — enemy casters usually see only the player — but it is the
-  convention new skills follow and matters once multi-entity teams exist.)
+  single-target offensive skill's `selectTarget` ranks candidates by the
+  focus-fire tail: LOWEST current health, then Chebyshev distance to the
+  caster, then `entity_index` (total order). Implemented once in
+  `skills/helpers.zig` and shared by every attack skill; two skills get a
+  preference key IN FRONT of the same tail: knockback skills prefer a
+  target the push will collide (`knockbackTarget`), stun skills prefer an
+  unstunned target (`stunTarget` — see Architecture, the stun rule).
+  `nearestTarget` remains only for the non-attack exceptions (Swap —
+  swapping with the nearest enemy is the sensible tactical read). Rationale:
+  focus-fire kills wounded enemies sooner than spreading damage. (Barely
+  observable with today's single-player hostile sets — enemy casters
+  usually see only the player — but it is the convention new skills follow
+  and matters once multi-entity teams exist.)
 
 ## Input
 
@@ -1719,7 +1723,13 @@ So a clone is a permanent, compounding material factory keyed by mission.
   intended difference. The seam between sibling implementations is where
   silent drift bugs live; composition removes the seam.
   Scalar-field primitives clamp (heal to max_health; momentum/cooldown at 0 via
-  functions.applySignedDelta)
+  functions.applySignedDelta). Stun is the one scalar shaped by counterplay
+  rather than clamping: a new stun takes the MAX of current vs incoming
+  duration, never the sum — multiple stunning enemies cannot mega-stunlock
+  the player (a shorter stun on an already-stunned target changes nothing;
+  a longer one replaces it). Stun skills' AI mirrors this: they rate up only
+  when an unstunned target is in reach and select unstunned targets first
+  (`skills/helpers.zig` `stunTarget`).
 - **One top-level event per player action (orchestrator convention).** Each
   player input (`handleIdleInput`) pushes exactly ONE top-level event; if the
   action needs several verbs, the event is an orchestrator whose handler

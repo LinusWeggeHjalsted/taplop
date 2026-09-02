@@ -10150,3 +10150,41 @@ Heal amount getEffectiveMaxHealth()/5 (the stone-form end-of-turn precedent
 for "20% of max"). Tests: heal amount truncation on an awkward value
 (23/5 → 4), null targeting surface, priority at full/exactly-half/below-
 half + the swap-inherited cooldown case.
+
+## Bug fix: stun takes the max, not the sum (anti-stunlock) + stun-aware AI
+
+The stun handler did `stun_duration += effective_duration` — consecutive
+stuns STACKED. Intent (surfaced while porting Head Shot): a player facing
+multiple stunning enemies must not be mega-stunlocked, so a new stun takes
+the MAX of current vs incoming; a shorter stun on an already-stunned target
+changes nothing, a longer one replaces it. (This also invalidated the
+reasoning recorded in the Head Shot entry above — "stun durations stack, so
+an already-stunned target is not a wasted pick" — written hours before the
+rule was caught.)
+
+The AI mirrors the rule so it doesn't waste stuns:
+- `helpers.stunTarget` — new selection for single-target stun skills:
+  unstunned first, then the focus-fire tail. Restructured the selection
+  family while adding it: a shared `TargetCandidate` + `focusFireTailLessThan`
+  (health → distance → entity index, the convention in ONE place) +
+  `preferredThenTailLessThan`; weakestTarget now scans via the shared tail
+  comparator, knockbackTarget via the preferred-then-tail one (its local
+  Candidate/anytype comparator removed). No signature changes.
+- cleave + head_shot: priority 3 with any unstunned target in range, 2 when
+  only stunned targets remain (the attack still pays), 0 otherwise;
+  selection on stunTarget.
+- daze (no damage): 3 unstunned; 2 stunned-with-momentum (the drain still
+  pays); 0 stunned-and-momentumless (nothing to gain). Selection on
+  stunTarget — note the residual seam: among all-stunned targets the tail
+  is health-based, so daze can pick a momentumless target while its 2
+  rating was earned by a different one; rare, one wasted turn at most,
+  accepted rather than growing a momentum key into the helper.
+- slam/blitz (AoE stunners) untouched: no target choice, and their damage
+  component pays regardless of stun state.
+- Rule recorded in DESIGN → Architecture (the stun-rule paragraph on the
+  events bullet); the Determinism focus-fire bullet now describes the
+  selection FAMILY (tail + preference keys).
+
+Tests: handler regression (pre-stunned 2 → new 1 stays 2, new 3 → rises
+to 3), stunTarget (unstunned beats weaker stunned; all-stunned → weakest),
+priority tiers for cleave (3/2), head_shot (2 stunned-only), daze (3/2/0).
