@@ -320,14 +320,14 @@ pub fn hostileCountWithinRadius(
     return count;
 }
 
-/// The AoE priority-bump convention as one function: 0 when nothing would
-/// be hit, `base_priority` for a single target, `base_priority + 1` when
-/// two or more would (an AoE's value scales with hit count). Every radius
-/// skill's priority goes through here so the convention can't drift —
-/// see DESIGN → Architecture (AoE priority bump).
+/// The AoE rating in VALUE UNITS (see DESIGN → Architecture, AI rating
+/// scale): `base` is what ONE target's plain hit is worth (1 for a plain
+/// AoE; 2 when the cast carries a global rider worth a hit, e.g. Flash
+/// Strike's teleport), +1 per additional target. 0 when nothing would be
+/// hit.
 pub fn aoePriority(target_count: u32, base_priority: u32) u32 {
     if (target_count == 0) return 0;
-    return base_priority + @intFromBool(target_count >= 2);
+    return base_priority + target_count - 1;
 }
 
 /// Build a one-option AI list — the common case where a skill has a single
@@ -363,16 +363,15 @@ pub fn collidingTargetCount(
     return count;
 }
 
-/// The stacked-bump ladder for AoE knockback skills: base, +1 when two or
-/// more targets would be hit (the AoE bump), +1 when any target's push
-/// would collide (the collision bump — an AoE cast has no target choice, so
-/// a colliding target genuinely adds value to this exact cast; contrast
-/// the single-target skills, whose collision bump rides their pick).
-/// 0 when nothing would be hit. See DESIGN → Architecture (AoE priority
-/// bump).
+/// The value-unit rating for AoE knockback skills: one hit's worth per
+/// target (`base` for the first — 1 for a plain per-target hit), +1 per
+/// target whose push would collide (the collision adds ~a hit of damage
+/// to that target). "Per colliding target" is honest for an AoE — the
+/// cast has no target choice (contrast the single-target skills, whose
+/// collision bump rides their pick). 0 when nothing would be hit.
 pub fn aoeKnockbackPriority(target_count: u32, colliding_count: u32, base_priority: u32) u32 {
     if (target_count == 0) return 0;
-    return base_priority + @intFromBool(target_count >= 2) + @intFromBool(colliding_count >= 1);
+    return base_priority + target_count - 1 + colliding_count;
 }
 
 /// Empty walkable tiles within `range` (Chebyshev) of the caster — valid

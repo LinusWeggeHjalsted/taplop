@@ -36,12 +36,9 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority: the AoE bump convention (helpers.aoePriority) — 0 with no
-/// hostile within radius, 3 with one, 4 with two or more.
-/// AI options: one self-centered cast on the stacked-bump ladder
-/// (helpers.aoeKnockbackPriority) — 3 single open-field target, +1 for a
-/// cluster, +1 for any collision. Slam's damage IS the 1x collision, so a
-/// colliding target adds a full hit's worth.
+/// AI options: one self-centered cast in value units
+/// (helpers.aoeKnockbackPriority) — 1 per target (the stun; Slam's damage
+/// IS the 1x collision) + 1 per target whose push would collide.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -59,11 +56,10 @@ fn aiOptions(
     const colliding_count = helpers.collidingTargetCount(caster_index, game_state, caster.position, radius, push_distance);
     return helpers.singleOption(allocator, .{
         .target = null,
-        .priority = helpers.aoeKnockbackPriority(target_count, colliding_count, 3),
+        .priority = helpers.aoeKnockbackPriority(target_count, colliding_count, 1),
     });
 }
 
-/// Self-centered — no meaningful target.
 /// Self-centered — fires immediately, no highlight step.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;

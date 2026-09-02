@@ -39,9 +39,10 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI options: one self-centered cast, rated by the AoE bump convention
-/// (helpers.aoePriority over the hostile count in radius) — 3 with one
-/// target, 4 with two or more.
+/// AI options: one self-centered cast in value units (helpers.aoePriority
+/// over the hostile count in radius) — 1 per target hit. The long cooldown
+/// makes it the "save it for clusters" nuke: a single-target cast ties the
+/// plain attacks at 1 and loses to slot order.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -57,7 +58,7 @@ fn aiOptions(
     if (target_count == 0) return &.{};
     return helpers.singleOption(allocator, .{
         .target = null,
-        .priority = helpers.aoePriority(target_count, 3),
+        .priority = helpers.aoePriority(target_count, 1),
     });
 }
 

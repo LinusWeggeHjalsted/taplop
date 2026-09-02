@@ -36,8 +36,6 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority (enchantment): 0 if on cooldown or at full health, else 2
-/// (worth the stun resistance + heal-over-time once damaged).
 /// AI options: one self-cast at 2 — offered once damaged (the stun
 /// resistance + heal-over-time pay below full health).
 fn aiOptions(

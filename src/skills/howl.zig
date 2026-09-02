@@ -37,13 +37,9 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority (cantrip): the AoE bump convention (helpers.aoePriority) —
-/// 0 if no inactive entity within radius (nothing to aggro), 1 with one,
-/// 2 with two or more. Counts inactive entities of any team —
-/// aggro_in_radius rallies same-team entities too.
-/// AI options: one self-centered cast at 1, bumped to 2 when two or more
-/// inactive entities are in radius (any team — aggro_in_radius rallies
-/// same-team entities too; the AoE bump convention).
+/// AI options: one self-centered cast in value units — 1 per inactive
+/// entity rallied (any team — aggro_in_radius rallies same-team entities
+/// too; helpers.aoePriority, base 1).
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -65,7 +61,6 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = null, .priority = helpers.aoePriority(target_count, 1) });
 }
 
-/// Self-centered — no meaningful target.
 /// Self-centered — fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;

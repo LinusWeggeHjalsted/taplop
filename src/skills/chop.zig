@@ -43,11 +43,8 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority: 0 if on cooldown or no targets in range. Otherwise keyed on the
-/// caster's own health (Chop's 1.5x bonus applies while above half health):
-/// 3 if the caster is above half health, else 2.
-/// AI options: the weakest hostile (focus-fire). Rated 3 when the CASTER
-/// is above half health (Chop's 1.5x bonus is self-conditioned), else 2.
+/// AI options: the weakest hostile (focus-fire). Rated 2 when the CASTER
+/// is above half health (the 1.5x bonus is worth ~a hit), else 1 (value units).
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -60,11 +57,10 @@ fn aiOptions(
 
     const valid_targets = getValidTargets(caster_index, game_state, allocator);
     const target = helpers.weakestTarget(caster_index, valid_targets, game_state) orelse return &.{};
-    const rating: u32 = if (caster.current_health * 2 > caster.getEffectiveMaxHealth()) 3 else 2;
+    const rating: u32 = if (caster.current_health * 2 > caster.getEffectiveMaxHealth()) 2 else 1;
     return helpers.singleOption(allocator, .{ .target = target, .priority = rating });
 }
 
-/// AI target selection: the weakest hostile (focus-fire — helpers.weakestTarget).
 /// Player prepare: highlight all valid target positions.
 fn playerPrepareSkill(
     caster_index: u32,

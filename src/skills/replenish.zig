@@ -35,8 +35,6 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority (cantrip): 0 if on cooldown or at/above half health (no need),
-/// else 3 — a wounded enemy values a full heal highly.
 /// AI options: one self-cast at 3 — offered only below half health (a
 /// wounded enemy values the full heal highly; above that it has better
 /// things to do with the cantrip slot).

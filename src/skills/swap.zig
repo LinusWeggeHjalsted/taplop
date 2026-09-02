@@ -40,7 +40,6 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority (cantrip): 0 if on cooldown or no target in range, else 1.
 /// AI options: the NEAREST hostile (not focus-fire — swapping with the
 /// nearest enemy is the sensible tactical read; helpers.nearestTarget) at
 /// rating 1.

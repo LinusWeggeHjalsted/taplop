@@ -41,10 +41,9 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority: 0 if on cooldown, no target in range, or the caster is already
-/// at full health (nothing to heal — save it). Otherwise 3.
-/// AI options: the weakest hostile (focus-fire) at rating 3 — offered only
-/// below full health (the lifesteal is wasted at full).
+/// AI options: the weakest hostile (focus-fire). Rated 2 when the caster
+/// is below half health (the lifesteal then pays ~a hit's worth of value),
+/// else 1 — a plain hit with a rider (value units).
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -54,14 +53,13 @@ fn aiOptions(
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.vampiric_strike) > 0) return &.{};
-    if (caster.current_health >= caster.getEffectiveMaxHealth()) return &.{};
 
     const valid_targets = getValidTargets(caster_index, game_state, allocator);
     const target = helpers.weakestTarget(caster_index, valid_targets, game_state) orelse return &.{};
-    return helpers.singleOption(allocator, .{ .target = target, .priority = 3 });
+    const rating: u32 = if (caster.current_health * 2 < caster.getEffectiveMaxHealth()) 2 else 1;
+    return helpers.singleOption(allocator, .{ .target = target, .priority = rating });
 }
 
-/// AI target selection: the weakest hostile (focus-fire — helpers.weakestTarget).
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,

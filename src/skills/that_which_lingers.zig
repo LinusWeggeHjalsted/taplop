@@ -40,7 +40,6 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority: 0 if on cooldown, otherwise low priority (cast when nothing better to do).
 /// AI options: one self-cast at 1 (the enchantment's slot value; the
 /// duration extension on recast is handled by create_effect).
 fn aiOptions(

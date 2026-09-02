@@ -63,6 +63,16 @@ pub const Skill = struct {
     /// skill slot order. Result lives in `allocator` (consumed
     /// synchronously by the handler).
     ///
+    /// RATING SCALE (value units): priority ≈ the cast's value in units of
+    /// a plain 1x hit — 0 = don't cast, 1 = a plain attack, +1 per
+    /// significant bonus (a conditional damage multiplier, a stun landing
+    /// on a non-stunned target, collision damage, a control effect worth a
+    /// hit; lifesteal only when the caster is below half health). AoE
+    /// ratings sum per target (helpers.aoePriority / aoeKnockbackPriority);
+    /// global riders (e.g. Flash Strike's teleport) count once. Ties mean
+    /// equal value — the handler's slot-order tiebreak then prefers the
+    /// skill further left. See DESIGN → Architecture (AI rating scale).
+    ///
     /// PORTING NOTE: the Unity original INVERTS priority (lower number =
     /// higher priority, -1 = don't use). When porting a skill, FLIP the
     /// numbers to higher = better (Unity -1 = don't cast = emit nothing;

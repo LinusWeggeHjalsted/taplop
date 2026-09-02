@@ -38,14 +38,11 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority: the AoE bump convention (helpers.aoePriority) — 0 with no
-/// hostile within radius, 3 with one, 4 with two or more. The lifesteal is
-/// a rider on the damage, not a separate tier: threatened + below half
-/// health, Absorb's 4 wins (and ties resolve to Absorb by slot order) —
-/// prevention first, per the threat model.
-/// AI options: one self-centered cast, rated by the AoE bump convention
-/// (helpers.aoePriority over the hostile count in radius) — 3 with one
-/// target, 4 with two or more.
+/// AI options: one self-centered cast in value units — 1 per target hit
+/// (helpers.hostileCountWithinRadius), +1 more when the caster is below
+/// half health (the per-hit lifesteal then pays ~a hit's worth). Priority
+/// note: threatened + below half, Absorb's 4 wins (and ties resolve to
+/// Absorb by slot order) — prevention first, per the threat model.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -58,10 +55,12 @@ fn aiOptions(
     const radius: i32 = @intCast(caster.getEffectiveRadius(skill.radius.?));
     const target_count = helpers.hostileCountWithinRadius(caster_index, game_state, caster.position, radius);
     if (target_count == 0) return &.{};
-    return helpers.singleOption(allocator, .{ .target = null, .priority = helpers.aoePriority(target_count, 3) });
+    // Value units: 1 per target hit, +1 more when the caster is below half
+    // health (the per-hit lifesteal then pays ~a hit's worth).
+    const lifesteal_bonus: u32 = @intFromBool(caster.current_health * 2 < caster.getEffectiveMaxHealth());
+    return helpers.singleOption(allocator, .{ .target = null, .priority = target_count + lifesteal_bonus });
 }
 
-/// Self-centered — no meaningful target.
 /// Self-centered — fires immediately.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;

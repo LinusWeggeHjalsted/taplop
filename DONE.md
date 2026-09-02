@@ -10383,3 +10383,50 @@ above the basic 2). Census tests untouched (the structural-count fix from
 the previous entry paying off immediately). Tests: the doubled-bonus
 arithmetic on an awkward value (amulet 6 + momentum 4 → log2 2 → 6+2+2 =
 10) + the option pick/rating.
+
+## Skills: AI rating scale re-anchored to value units (+ stale-doc cleanup
+
+The tuning interjection, settled before chain lightning lands on it. The
+scale now has a semantic: priority ≈ the cast's value in units of a plain
+1x hit — 0 = don't cast, 1 = a plain attack, +1 per significant bonus (a
+conditional damage multiplier, a stun landing on a non-stunned target,
+collision damage, a control effect worth ~a hit; lifesteal only when the
+caster is below half health — sustainability is not tempo; minor riders
+like ±1 momentum and non-colliding displacement count 0).
+
+Motivating case: a 1-target spinblade tied piston bolt at 3 and slot order
+(weapon left of spell) picked the strictly worse cast. Under value units
+1 < 2 and the single-target skill wins; ties now mean equal value, so the
+slot-order bias reads "at equal value prefer the cheaper slot".
+
+- aoePriority(count, base) = base + count − 1 (base 1 = plain per-target
+  hit; 2 = a global rider worth a hit, flash strike's teleport).
+  aoeKnockbackPriority = base + count − 1 + colliding_count (+1 PER
+  colliding target, not +1 for any — an AoE has no target choice, each
+  collision genuinely adds a hit's worth).
+- Full retune: plain attacks (shoot/toss/spark/unwounded slice/low chop/
+  open-field bash+powerful shot) 2→1; one-bonus casts (wounded slice,
+  healthy stab/chop, impale, cleave+head_shot unstunned, colliding bash/
+  powerful shot, throw, retreating swipe, piston bolt, heal-below-half)
+  3→2; skewer 4→3 (two bonuses); plain AoE base 3→1 (rating = count);
+  blitz base 4→ inline count + unstunned count; flash strike base 3→2;
+  howl base 1 (rating = inactive count); slam/shockwave base 3→1.
+- vampiric_strike: the full-health gate REMOVED — offered always, rated
+  1 / 2 (below half). The handler_tests_ai on-cooldown test relied on the
+  old gate (stab on cd + full-health player = no skills); now sets
+  vampiric on cd too.
+- daze: re-rated as pure control (no base hit): unstunned pick = 1 + its
+  momentum, stunned-momentful = 1, else no option — strictly more precise
+  than the old flat 3/2.
+- STALE-DOC cleanup discovered en route: the ai_options migration had left
+  every file's OLD `/// AI priority` doc (and the orphaned
+  `/// AI target selection` docs, sometimes fused with kept docs) stacked
+  above the new `/// AI options` docs — the migration's doc-walk stopped at
+  a blank line between doc and fn. Harmless to compilation, hence invisible
+  until now; swept by marker (leading stale run up to a kept-doc marker).
+- Tests: both helper tables rewritten for the linear formulas; every
+  rating assertion moved down a rung (two cascade bugs in my scoped-swap
+  script caught by the suite — cleave's two sub-blocks swapped, worldfire's
+  "cluster of two" block actually contains three targets and now correctly
+  rates 3); new blitz formula coverage (2/3/4) + drain's lifesteal bonus
+  (2 targets + wounded caster → 3).

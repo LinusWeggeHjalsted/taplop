@@ -1765,23 +1765,27 @@ So a clone is a permanent, compounding material factory keyed by mission.
   priority fn, `priority_fn` receives the session's
   `weapon_type_definitions` (slot resolution needs the mapping — the same
   constraint that made Focus an orchestrator; most skills ignore the param).
-- **AoE priority bump.** Every radius skill's rating goes through
-  `helpers.aoePriority(target_count, base)`: 0 when nothing would be hit,
-  `base` for a single target, `base + 1` when two or more would — an AoE's
-  value scales with hit count. The count comes from
-  `helpers.hostileCountWithinRadius` (allocation-free, center-parameterized
-  so Flash Strike reuses it per candidate landing tile, taking the max).
-  Howl counts inactive entities of any team (aggro_in_radius rallies
-  same-team entities too) but shares the same bump arithmetic.
-  **The stacked-bump ladder** for AoE skills with more than one value
-  component: each component that pays beyond the base adds its own +1 —
-  AoE knockback skills (Slam, Shockwave) go through
-  `helpers.aoeKnockbackPriority(target_count, colliding_count, base)` =
-  base + (2+ targets) + (any target's push would collide, counted via
-  `helpers.collidingTargetCount`). "Any collides" is honest for an AoE —
-  the cast has no target choice, so a colliding target genuinely adds
-  value to that exact cast (contrast the single-target skills, whose
-  collision bump rides their pick).
+- **AI rating scale (value units).** A cast's priority ≈ its value in
+  units of a plain 1x hit: 0 = don't cast, 1 = a plain attack, +1 per
+  significant bonus — a conditional damage multiplier, a stun landing on a
+  non-stunned target, collision damage, a control effect worth ~a hit.
+  Lifesteal counts only when the caster is below half health (sustainability
+  is not tempo). Minor riders (±1 momentum, non-colliding knockback
+  displacement) count 0. AoE ratings sum PER TARGET
+  (`helpers.aoePriority(count, base)` = base + count − 1, base 1 for a
+  plain per-target hit, 2 with a global rider worth a hit — Flash Strike's
+  teleport; `helpers.aoeKnockbackPriority` adds +1 per target whose push
+  would collide, counted via `helpers.collidingTargetCount` — per-
+  colliding-target is honest for an AoE, the cast has no target choice).
+  Counts come from `helpers.hostileCountWithinRadius` (allocation-free,
+  center-parameterized so Flash Strike reuses it per candidate landing
+  tile, taking the max); Howl counts inactive entities of any team
+  (aggro_in_radius rallies same-team entities too). Ties mean equal value,
+  and the handler's slot-order tiebreak then prefers the skill further
+  left — which makes weapon skills win equal-value ties against utility
+  spells (the cheaper slot, generally the shorter cooldown). This is what
+  resolves "1-target Spinblade vs Piston Bolt": 1 < 2, the single-target
+  skill wins.
 - **One top-level event per player action (orchestrator convention).** Each
   player input (`handleIdleInput`) pushes exactly ONE top-level event; if the
   action needs several verbs, the event is an orchestrator whose handler

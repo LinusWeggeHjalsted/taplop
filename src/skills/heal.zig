@@ -35,14 +35,11 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority: 0 if on cooldown or at/above half health (a scratch heal
-/// isn't worth a turn — and rating it while merely below full would tie
-/// with the attack skills at 2, where slot order would make heal win and
-/// the caster would heal every turn instead of attacking), else 3.
-/// AI options: one self-cast at 3 — offered only below half health (a
-/// scratch heal isn't worth a turn, and a flat below-full rating would
-/// tie the attack skills at 2, where slot order would make Heal win and
-/// the caster would heal every turn instead of attacking).
+/// AI options: one self-cast at 2 (a 20% heal ≈ one bonus-hit of
+/// value) — offered only below half health (a scratch heal isn't worth a
+/// turn; a flat below-full rating would tie the plain attacks at 1, where
+/// slot order would make Heal win and the caster would heal every turn
+/// instead of attacking).
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -53,7 +50,7 @@ fn aiOptions(
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.heal) > 0) return &.{};
     if (caster.current_health * 2 >= caster.getEffectiveMaxHealth()) return &.{};
-    return helpers.singleOption(allocator, .{ .target = null, .priority = 3 });
+    return helpers.singleOption(allocator, .{ .target = null, .priority = 2 });
 }
 
 /// Self-cast — no meaningful target.

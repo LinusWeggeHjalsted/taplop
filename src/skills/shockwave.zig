@@ -37,9 +37,9 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI options: one self-centered cast on the stacked-bump ladder
-/// (helpers.aoeKnockbackPriority) — 3 single open-field target, +1 for a
-/// cluster, +1 for any collision.
+/// AI options: one self-centered cast in value units
+/// (helpers.aoeKnockbackPriority) — 1 per target hit + 1 per target whose
+/// push would collide.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -57,7 +57,7 @@ fn aiOptions(
     const colliding_count = helpers.collidingTargetCount(caster_index, game_state, caster.position, radius, push_distance);
     return helpers.singleOption(allocator, .{
         .target = null,
-        .priority = helpers.aoeKnockbackPriority(target_count, colliding_count, 3),
+        .priority = helpers.aoeKnockbackPriority(target_count, colliding_count, 1),
     });
 }
 

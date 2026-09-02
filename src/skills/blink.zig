@@ -41,8 +41,6 @@ fn getValidTargets(
     return helpers.emptyTilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority (cantrip, competes only with other non-turn-ending skills):
-/// 0 if on cooldown, else 1.
 /// AI options: blink to the empty tile closest to a hostile (closing the
 /// gap) at rating 1 — the cantrip's repositioning value. With no hostiles
 /// (or no empty tiles) nothing is offered; the old pair could choose
@@ -81,8 +79,6 @@ fn aiOptions(
     return helpers.singleOption(allocator, .{ .target = target, .priority = 1 });
 }
 
-/// AI target selection: the empty tile closest to a hostile (blink toward the
-/// nearest opponent).
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,

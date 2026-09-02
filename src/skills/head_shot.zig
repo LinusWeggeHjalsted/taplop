@@ -41,14 +41,10 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority: 0 if on cooldown or no target in range. 3 if any in-range
-/// target is unstunned (full stun + attack value); 2 when only stunned
-/// targets remain (the attack still pays, the stun does not — stuns take
-/// the max, never stack).
 /// AI options: the stun pick (unstunned-preferred, then focus-fire —
-/// helpers.stunTarget). Rated on the PICK: 3 when it is unstunned (the
-/// stun pays in full — stuns take the max, never stack), else 2 (the
-/// attack still pays).
+/// helpers.stunTarget). Rated on the PICK (value units): 2 when it is
+/// unstunned (attack 1 + stun worth ~a hit; stuns take the max, never
+/// stack), else 1 (the attack only).
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -62,12 +58,10 @@ fn aiOptions(
     const valid_targets = getValidTargets(caster_index, game_state, allocator);
     const target = helpers.stunTarget(caster_index, valid_targets, game_state) orelse return &.{};
     const defender_index = helpers.hostileEntityAt(caster_index, target, game_state) orelse return &.{};
-    const rating: u32 = if (level.entities[defender_index].stun_duration == 0) 3 else 2;
+    const rating: u32 = if (level.entities[defender_index].stun_duration == 0) 2 else 1;
     return helpers.singleOption(allocator, .{ .target = target, .priority = rating });
 }
 
-/// AI target selection for the stun: prefer an unstunned target, then the
-/// focus-fire order (helpers.stunTarget).
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,

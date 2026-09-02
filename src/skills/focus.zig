@@ -35,10 +35,6 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority (cantrip): 0 if on cooldown or nothing to reset, else 2.
-/// Gated on the caster having any skill on cooldown — an approximation, since
-/// resolving which of those are weapon skills needs weapon_type_definitions
-/// (unreachable here). The reset_weapon_cooldowns handler resets precisely.
 /// AI options: one self-cast at 2 — offered only while some cooldown is
 /// ticking (nothing to reset otherwise).
 fn aiOptions(

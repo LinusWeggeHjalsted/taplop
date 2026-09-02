@@ -247,8 +247,10 @@ stale).
         distance 2, cd 5 (slam shape minus stun, spell damage). Lands with
         the stacked-bump ladder (aoeKnockbackPriority: base + AoE bump +
         collision bump); slam retrofitted onto it. History in DONE.md.
-  - [ ] spell piston bolt — attack with double converted momentum, range 3,
-        cd 3 (impale shape).
+  - [x] spell piston bolt — attack with double converted momentum,
+        range 3, cd 3 (impale shape, spell damage + the extra
+        getConvertedMomentum). Priority 3, weakestTarget pick. History in
+        DONE.md.
   - [ ] spell chain lightning — attack target + each entity connected via
         neighboring entities, range 1, radius 1, cd 5. OPEN: connection
         rule — Chebyshev-1 entity-to-entity adjacency BFS?

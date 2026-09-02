@@ -43,12 +43,8 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority for using Slice.
-/// Returns 0 if on cooldown or no targets in range.
-/// Returns 3 normally, 2 if target (nearest hostile) is below half health
-/// (prefer a different finisher skill for wounded targets).
-/// AI options: the weakest hostile (focus-fire). Rated 3 when the pick is
-/// wounded (below half — Slice's 1.5x bonus pays there), else 2.
+/// AI options: the weakest hostile (focus-fire). Rated 2 when the pick is
+/// wounded (below half — the 1.5x bonus is worth ~a hit), else 1 (value units).
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -63,11 +59,10 @@ fn aiOptions(
     const target = helpers.weakestTarget(caster_index, valid_targets, game_state) orelse return &.{};
     const defender_index = helpers.hostileEntityAt(caster_index, target, game_state) orelse return &.{};
     const defender = level.entities[defender_index];
-    const rating: u32 = if (defender.current_health * 2 < defender.getEffectiveMaxHealth()) 3 else 2;
+    const rating: u32 = if (defender.current_health * 2 < defender.getEffectiveMaxHealth()) 2 else 1;
     return helpers.singleOption(allocator, .{ .target = target, .priority = rating });
 }
 
-/// AI target selection: the weakest hostile (focus-fire — helpers.weakestTarget).
 /// Player prepare: returns a highlight_tiles event for all valid target positions.
 fn playerPrepareSkill(
     caster_index: u32,

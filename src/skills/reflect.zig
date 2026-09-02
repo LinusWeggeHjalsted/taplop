@@ -38,11 +38,6 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority: cast only when it will matter. 0 if on cooldown or no
-/// hostile can reach and attack the caster next turn (the threat model —
-/// skills/threat.zig; an idle Reflect is a wasted cooldown). 2 when
-/// threatened. 4 when threatened AND below half health — prevention plus
-/// the reflected counterattack, the panic tier.
 /// AI options: one self-cast — offered only when a hostile can reach and
 /// attack the caster next turn (the threat model, skills/threat.zig).
 /// Rated 2 when threatened, 4 when threatened AND below half health.

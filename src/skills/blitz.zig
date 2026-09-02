@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
 const events = @import("../events.zig");
+const functions = @import("../functions.zig");
 const skill_mod = @import("skill.zig");
 const helpers = @import("helpers.zig");
 
@@ -35,12 +36,9 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
     return null;
 }
 
-/// AI priority: the AoE bump convention (helpers.aoePriority) on a strong
-/// base (AoE attack + stun) — 0 with no hostile within radius, 4 with one,
-/// 5 with two or more.
-/// AI options: one self-centered cast on a strong base (AoE attack +
-/// stun), rated by the AoE bump convention — 4 with one target, 5 with
-/// two or more.
+/// AI options: one self-centered cast in value units — 1 per target hit
+/// + 1 per target the stun actually pays on (unstunned; stuns take the
+/// max, never stack): rating = count + unstunned count.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -50,13 +48,22 @@ fn aiOptions(
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
     if (caster.skill_cooldowns.get(.blitz) > 0) return &.{};
+
     const radius: i32 = @intCast(caster.getEffectiveRadius(skill.radius.?));
-    const target_count = helpers.hostileCountWithinRadius(caster_index, game_state, caster.position, radius);
+    var target_count: u32 = 0;
+    var unstunned_count: u32 = 0;
+    for (level.entities, 0..) |entity, entity_index| {
+        if (entity_index == caster_index) continue;
+        if (entity.current_health == 0) continue;
+        if (entity.team == caster.team) continue;
+        if (functions.chebyshevDistance(caster.position, entity.position) > radius) continue;
+        target_count += 1;
+        if (entity.stun_duration == 0) unstunned_count += 1;
+    }
     if (target_count == 0) return &.{};
-    return helpers.singleOption(allocator, .{ .target = null, .priority = helpers.aoePriority(target_count, 4) });
+    return helpers.singleOption(allocator, .{ .target = null, .priority = target_count + unstunned_count });
 }
 
-/// Self-centered — no meaningful target.
 /// Self-centered — fires immediately, no highlight step.
 fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;

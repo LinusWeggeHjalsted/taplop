@@ -43,8 +43,8 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI options: the weakest hostile (focus-fire) at rating 3 (the impale
-/// precedent — a conditional-bonus attack, above the basic 2).
+/// AI options: the weakest hostile (focus-fire) at rating 2 — one
+/// significant bonus (doubled momentum) over a plain hit.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -57,7 +57,7 @@ fn aiOptions(
 
     const valid_targets = getValidTargets(caster_index, game_state, allocator);
     const target = helpers.weakestTarget(caster_index, valid_targets, game_state) orelse return &.{};
-    return helpers.singleOption(allocator, .{ .target = target, .priority = 3 });
+    return helpers.singleOption(allocator, .{ .target = target, .priority = 2 });
 }
 
 fn playerPrepareSkill(

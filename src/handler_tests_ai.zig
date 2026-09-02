@@ -322,8 +322,11 @@ test "enemy_turn_attack: on-cooldown skill is skipped" {
         },
         &five_by_five,
     ));
-    // Put stab on cooldown → no usable skills → turn_end, no damage.
+    // Put stab AND vampiric_strike on cooldown (vampiric is now always
+    // offered — rating 1 at full health, the lifesteal bonus only applies
+    // below half) → no usable cast → turn_end, no damage.
     levelEntity(&history, 0).skill_cooldowns.set(.stab, 2);
+    levelEntity(&history, 0).skill_cooldowns.set(.vampiric_strike, 2);
     pushAndRunLevel(&history, .{ .enemy_turn_attack = .{ .entity_index = 0 } });
     try testing.expectEqual(@as(u32, 20), levelEntity(&history, 1).current_health);
 }

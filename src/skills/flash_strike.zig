@@ -42,14 +42,10 @@ fn getValidTargets(
     return helpers.emptyTilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority: the AoE bump convention applied over the BEST landing
-/// tile — for each empty tile within range, count the hostiles its radius
-/// would hit, take the max, then 0/3/4 (helpers.aoePriority). The old
-/// rating was a flat 3 whenever off cooldown — it let the caster flash
-/// into empty space; now a cast with no reachable hit rates 0.
 /// AI options: the BEST landing tile — max hostiles within radius over
 /// the empty tiles in range (strict > keeps the first in scan order, the
-/// (y, x) convention), rated by the AoE bump (3 single-hit, 4 multi-hit).
+/// (y, x) convention), rated in value units: base 2 (the teleport is a
+/// hit's worth of gap-closing) + 1 per target hit.
 /// The cast lands exactly where the rating was earned; the old
 /// selectTarget picked the tile nearest a hostile instead — that
 /// rating/landing seam is gone.
@@ -84,11 +80,9 @@ fn aiOptions(
     }
 
     const tile = best_tile orelse return &.{};
-    return helpers.singleOption(allocator, .{ .target = tile, .priority = helpers.aoePriority(best_count, 3) });
+    return helpers.singleOption(allocator, .{ .target = tile, .priority = helpers.aoePriority(best_count, 2) });
 }
 
-/// AI target selection: the empty landing tile closest to a hostile, so the
-/// caster lands adjacent and the radius attack connects.
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,

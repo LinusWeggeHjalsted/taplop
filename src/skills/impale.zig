@@ -42,8 +42,8 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority: 0 if on cooldown or no target in range, else 3.
-/// AI options: the weakest hostile (focus-fire) at rating 3.
+/// AI options: the weakest hostile (focus-fire) at rating 2 — one
+/// significant bonus (1.5x + doubled momentum) over a plain hit.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -56,10 +56,9 @@ fn aiOptions(
 
     const valid_targets = getValidTargets(caster_index, game_state, allocator);
     const target = helpers.weakestTarget(caster_index, valid_targets, game_state) orelse return &.{};
-    return helpers.singleOption(allocator, .{ .target = target, .priority = 3 });
+    return helpers.singleOption(allocator, .{ .target = target, .priority = 2 });
 }
 
-/// AI target selection: the weakest hostile (focus-fire — helpers.weakestTarget).
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,

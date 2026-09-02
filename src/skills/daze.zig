@@ -41,14 +41,10 @@ fn getValidTargets(
     return helpers.hostilesInRange(caster_index, game_state, range, allocator);
 }
 
-/// AI priority: Daze deals no damage, so its value is control only.
-/// 3 if any in-range target is unstunned (the stun pays in full — stuns
-/// take the max, never stack). 2 if all in-range targets are stunned but
-/// one still has momentum (the drain still pays). 0 otherwise — a stunned,
-/// momentumless target gains nothing from Daze.
-/// AI options: unstunned hostiles in range at 3 (the stun pays in full —
-/// stuns take the max, never stack); if none, stunned hostiles still
-/// carrying momentum at 2 (the drain still pays). A stunned, momentumless
+/// AI options: Daze deals no damage — its whole value is the bonuses.
+/// Unstunned hostiles in range at 1 (the stun) + 1 more when the pick
+/// carries momentum (the drain); if none unstunned, stunned hostiles
+/// still carrying momentum at 1 (the drain only). A stunned, momentumless
 /// target offers nothing and emits no option. Within a class the
 /// focus-fire tail order applies (health, distance, entity index).
 fn aiOptions(
@@ -95,16 +91,17 @@ fn aiOptions(
     }
 
     if (best_unstunned) |defender_index| {
-        return helpers.singleOption(allocator, .{ .target = level.entities[defender_index].position, .priority = 3 });
+        const defender = level.entities[defender_index];
+        const rating: u32 = 1 + @intFromBool(defender.momentum > 0); // stun + drain
+        return helpers.singleOption(allocator, .{ .target = defender.position, .priority = rating });
     }
     if (best_momentful) |defender_index| {
-        return helpers.singleOption(allocator, .{ .target = level.entities[defender_index].position, .priority = 2 });
+        // Stunned pick: the drain only.
+        return helpers.singleOption(allocator, .{ .target = level.entities[defender_index].position, .priority = 1 });
     }
     return &.{};
 }
 
-/// AI target selection for the stun: prefer an unstunned target, then the
-/// focus-fire order (helpers.stunTarget).
 fn playerPrepareSkill(
     caster_index: u32,
     game_state: GameState,
