@@ -9705,3 +9705,24 @@ Changes:
   + KeyS + KeyE edges set both anytime flags, and the plain KeyS
   `toggle_skills` binding on the same key is suppressed by the chord
   (hybrid precedence).
+
+## Editor tooltip pass: "+" tooltips reworded, self-explanatory tooltips removed
+
+The "+" cells already carried tooltips (panel-level in `emitEditorPlusCell`
+— `tooltipAt` picks the topmost tooltip-BEARING element, so the tooltip
+shows through the spriteless button on top); they said "Add level" /
+"Add new <Plural> type". Reworded to the requested exact strings: "Add
+Level", "Add Enemy Tool", "Add Decoration Tool", "Add Item Tool" (a
+parallel `group_plus_tooltips` array — the group labels are plural names,
+the tooltips are singular tool-shaped).
+
+Removed the tooltip-noise surfaces (each already labeled itself):
+level-tab buttons, palette group-header toggles (dropped the
+"{label} (collapsed)" allocPrint with it), the inspector toggle, and the
+metadata-sidebar toggle. The tab × "Delete level" tooltip STAYS — it
+warns of a destructive action rather than restating a visible label.
+
+`emitEditorPlusCell` cleanup while there: `action` was `?types.Action`
+with an "inert until its edit verb lands" null branch + stale comments,
+but both call sites (add-level + palette pluses) pass an action — made
+the param required and dropped the dead branch + the stale prose.

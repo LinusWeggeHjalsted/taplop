@@ -410,7 +410,6 @@ pub fn buildEditorLevelTabs(
             .action = .select_editor_level,
             .editor_level = @intCast(index),
             .highlighted = index == editor.active_level_index,
-            .tooltip = .{ .header = try spanRow(allocator, text(label)) },
         } });
         try elements.append(allocator, .{ .text_label = .{
             .text = label,
@@ -461,7 +460,7 @@ pub fn buildEditorLevelTabs(
         plus_cell,
         button_color,
         active_theme.lightest,
-        "Add level",
+        "Add Level",
         .add_editor_level,
         null,
     );
@@ -590,6 +589,9 @@ pub fn buildEditorBottomBar(
     const enemy = active_theme.enemy_gradient.colors;
 
     const group_labels = [_][]const u8{ "Enemies", "Decorations", "Items" };
+    // The groups' "+" add-new tooltips (singular, tool-shaped — the
+    // labels are plural group names).
+    const group_plus_tooltips = [_][]const u8{ "Add Enemy Tool", "Add Decoration Tool", "Add Item Tool" };
     const group_sizes = [3]usize{
         editor.entity_types.len,
         editor.decoration_types.len,
@@ -705,9 +707,6 @@ pub fn buildEditorBottomBar(
             .height = editor_header_strip_height,
             .action = .toggle_editor_palette_group,
             .editor_group = group_index,
-            .tooltip = .{ .header = try spanRow(allocator, text(
-                try std.fmt.allocPrint(allocator, "{s} {s}", .{ label, if (collapsed[group_index]) "(collapsed)" else "" }),
-            )) },
         } });
         const label_width = font_metrics.measureSpanWidth(text(label), editor_group_header_font_size);
         try elements.append(allocator, .{ .text_label = .{
@@ -738,7 +737,7 @@ pub fn buildEditorBottomBar(
             plus_cell,
             button_color,
             active_theme.lightest,
-            try std.fmt.allocPrint(allocator, "Add new {s} type", .{label}),
+            group_plus_tooltips[group_index],
             .add_editor_palette_type,
             group_index,
         );
@@ -859,9 +858,9 @@ fn cellAt(bar_y: i32, group_left: i32, ordinal: usize) Rectangle {
 }
 
 /// A square ui/panel "+" cell (the editor's add-new affordance — palette
-/// group pluses and the level-tab add-level plus). Inert until its edit
-/// verb lands: a tooltip-carrying panel + a non-blocking centered "+"
-/// glyph, same visual class as the level tabs. `cell` should be square.
+/// group pluses and the level-tab add-level plus): a tooltip-carrying
+/// panel + a spriteless button over it (the group-header class) + a
+/// centered "+" glyph. `cell` should be square.
 fn emitEditorPlusCell(
     elements: *UiElementList,
     allocator: std.mem.Allocator,
@@ -870,7 +869,7 @@ fn emitEditorPlusCell(
     panel_color: Color,
     text_color: Color,
     tooltip_header: []const u8,
-    action: ?types.Action,
+    action: types.Action,
     editor_group: ?usize,
 ) !void {
     try elements.append(allocator, .{ .nine_slice_panel = .{
@@ -881,20 +880,14 @@ fn emitEditorPlusCell(
         .color = panel_color,
         .tooltip = .{ .header = try spanRow(allocator, text(tooltip_header)) },
     } });
-    // Interactive "+" cells (the palette groups' add-new) carry a
-    // spriteless button over the panel, the group-header class; a null
-    // action leaves the cell inert (the add-level "+" until its handler
-    // lands) — tooltip only.
-    if (action) |some_action| {
-        try elements.append(allocator, .{ .button = .{
-            .sprite_id = null,
-            .screen_position = cell.position(),
-            .width = cell.width,
-            .height = cell.height,
-            .action = some_action,
-            .editor_group = editor_group,
-        } });
-    }
+    try elements.append(allocator, .{ .button = .{
+        .sprite_id = null,
+        .screen_position = cell.position(),
+        .width = cell.width,
+        .height = cell.height,
+        .action = action,
+        .editor_group = editor_group,
+    } });
     const plus_width = font_metrics.measureSpanWidth(text("+"), editor_group_header_font_size);
     try elements.append(allocator, .{ .text_label = .{
         .text = "+",

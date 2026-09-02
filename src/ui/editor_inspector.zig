@@ -136,7 +136,6 @@ pub fn buildEditorInspectorPanel(
         .width = width,
         .height = editor_header_strip_height,
         .action = .toggle_editor_inspector,
-        .tooltip = .{ .header = try spanRow(allocator, text(label)) },
     } });
     try elements.append(allocator, .{ .text_label = .{
         .text = label,
@@ -252,7 +251,6 @@ pub fn buildEditorMetadataSidebar(
         .width = width,
         .height = editor_header_strip_height,
         .action = .toggle_editor_metadata_sidebar,
-        .tooltip = .{ .header = try spanRow(allocator, text(label)) },
     } });
     try elements.append(allocator, .{ .text_label = .{
         .text = label,
@@ -2990,7 +2988,9 @@ fn expectInspectorToggleShape(elements: *const UiElementList) !void {
     try std.testing.expectEqual(Action.toggle_editor_inspector, button.action);
     try std.testing.expect(!button.highlighted);
     try std.testing.expect(button.sprite_id == null);
-    try std.testing.expect(button.tooltip != null);
+    // The toggle is self-explanatory (its label says what it does) — no
+    // tooltip by design.
+    try std.testing.expect(button.tooltip == null);
 
     const label = elements.items[2].text_label;
     try std.testing.expectEqualStrings("Inspector", label.text);
