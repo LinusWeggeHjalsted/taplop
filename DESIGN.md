@@ -1813,6 +1813,37 @@ So a clone is a permanent, compounding material factory keyed by mission.
   priority fn, `priority_fn` receives the session's
   `weapon_type_definitions` (slot resolution needs the mapping — the same
   constraint that made Focus an orchestrator; most skills ignore the param).
+- **AI movement modes (`skills/movement.zig`).** `enemy_turn_move` picks
+  ONE mode per entity per turn (`selectMovementMode`), off the CURRENT
+  cooldown state — a point-blank skill on cooldown does not shape that
+  turn's movement:
+  - `Skill.point_blank_area_of_effect` (defaults false — a forgotten flag
+    only makes the AI dumber, not wrong) marks skills whose AoE is centered
+    on the caster (spinblade, slam, blitz, howl, worldfire, burst, drain,
+    shockwave). An OFF-COOLDOWN offensive (deals_damage) point-blank skill on
+    the exposed combat bar (collectSkillSlots — the same pool
+    enemy_turn_attack casts from) selects `.point_blank_cluster`: the
+    entity moves to the reachable tile (current tile included) with the
+    most hostiles inside one of those skills' effective radius, preferring
+    the current tile on ties (no shuffling). Null when no candidate has
+    any hostile in radius → approach (nothing to cluster around).
+  - Otherwise, when the kit's off-cooldown `computeMinRange` exceeds melee
+    (> 1), `.keep_range`: among reachable tiles from which the entity can
+    still act (some hostile within min range), pick the one FARTHEST from
+    its nearest hostile — approach converges on min range from outside,
+    kiting opens to it from inside; both modes meet at the same distance.
+    Cornered → the current tile stands. Null when nothing is act-capable →
+    approach (close the gap first).
+  - `.approach` (the historical behavior): converge on the nearest hostile
+    up to min range, pathfinding with a reachable-tile fallback — kept in
+    the handler (level.zig `enemyApproachTurn`), unchanged.
+  Destination ties break by the (x, y) tile convention (Determinism &
+  Tiebreaking). The modes are MOVEMENT only — the attack phase's
+  ai_options evaluation is untouched; a cluster-seeker that moved in but
+  has its skill stolen by slot order still attacks from the cluster tile.
+  Known limitation: keep_range maximizes distance to the NEAREST single
+  hostile — retreating toward a second enemy is possible; multi-hostile
+  avoidance is a future mode.
 - **AI rating scale (value units).** A cast's priority ≈ its value in
   units of a plain 1x hit: 0 = don't cast, 1 = a plain attack, +1 per
   significant bonus — a conditional damage multiplier, a stun landing on a

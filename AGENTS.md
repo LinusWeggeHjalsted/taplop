@@ -443,7 +443,9 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   verification (`verifyReplayMatch`). See DESIGN → Determinism & Tiebreaking.
 - `src/tween.zig` — pure easing fns (`easeOutCubic`); read by `view()` for
   one-shot anim interpolation. See DESIGN → Animation.
-- `src/skills/` — one file per skill, Skill interface
+- `src/skills/` — one file per skill, Skill interface (+ threat.zig AI
+  range/threat math, helpers.zig target selection, movement.zig AI
+  movement modes)
 - `src/effects/` — Effect interface with 18 callbacks (interception +
   on-effect/turn/attack hooks + outgoing/incoming pairs for damage/stun/effect/
   knockback/collision + onRetreat + onOpponentDeath)

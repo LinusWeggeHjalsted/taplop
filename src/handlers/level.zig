@@ -13,6 +13,7 @@ const state = @import("../state.zig");
 const functions = @import("../functions.zig");
 const lookups = @import("../generated_lookups.zig");
 const threat = @import("../skills/threat.zig");
+const movement = @import("../skills/movement.zig");
 const event_push = @import("../event_push.zig");
 const shared = @import("shared.zig");
 
@@ -86,6 +87,147 @@ fn activateEntity(
 fn playerMissionPtr(current: *GameState) ?*types.Mission {
     if (current.mission) |*mission| return mission;
     return null;
+}
+
+/// Push the enemy-turn continuation for "attack from where I stand".
+fn pushEnemyAttack(
+    current: *GameState,
+    entity_index: u32,
+    allocator: std.mem.Allocator,
+) void {
+    pushEvents(current, &.{.{ .level_event = .{ .enemy_turn_attack = .{
+        .entity_index = entity_index,
+    } } }}, allocator);
+}
+
+/// Push the enemy-turn sequence for "move to `destination`, then attack".
+/// LIFO order (last pushed runs first): the wait paces the turn, the move
+/// lands under it, the attack resolves once the move has completed.
+fn pushEnemyMoveThenAttack(
+    current: *GameState,
+    entity_index: u32,
+    destination: Vector2,
+    allocator: std.mem.Allocator,
+) void {
+    pushEvents(current, &.{
+        .{ .level_event = .{ .enemy_turn_attack = .{ .entity_index = entity_index } } },
+        .{ .level_event = .{ .move_entity = .{ .entity_index = entity_index, .destination = destination } } },
+        .{ .meta_event = .{ .wait = .{ .duration_milliseconds = turn_flow_wait_milliseconds } } },
+    }, allocator);
+}
+
+/// Approach movement (the historical behavior): converge on the nearest
+/// hostile, stopping at `computeMinRange` ("close enough to act"). Falls
+/// back to reachable tiles when no direct path exists. See DESIGN →
+/// Architecture (AI movement modes).
+fn enemyApproachTurn(
+    current: *GameState,
+    weapon_type_definitions: types.WeaponTypeDefinitions,
+    entity_index: u32,
+    allocator: std.mem.Allocator,
+) void {
+    const level = &current.level.?;
+    const entity = level.entities[entity_index];
+
+    // Find nearest alive entity from a different team
+    var nearest_target: ?Vector2 = null;
+    var nearest_distance: i32 = std.math.maxInt(i32);
+    for (level.entities, 0..) |other_entity, other_index| {
+        if (other_index == entity_index) continue;
+        if (other_entity.current_health == 0) continue;
+        if (other_entity.team == entity.team) continue;
+        const distance = functions.chebyshevDistance(entity.position, other_entity.position);
+        // Strict < keeps the first at the minimum distance; since
+        // we iterate entities in index order, ties resolve to the
+        // lowest entity_index (the tiebreaking convention).
+        if (distance < nearest_distance) {
+            nearest_distance = distance;
+            nearest_target = other_entity.position;
+        }
+    }
+
+    if (nearest_target) |target_position| {
+        // Compute min range from off-cooldown skills
+        const min_range: i32 = @intCast(threat.computeMinRange(entity, weapon_type_definitions) orelse 1);
+
+        // If already within min range, don't move
+        if (nearest_distance <= min_range) {
+            // Skip to attack
+            pushEnemyAttack(current, entity_index, allocator);
+        } else {
+            // Try pathfinding to target
+            const path = functions.shortestPath(
+                level.*,
+                entity.position,
+                target_position,
+                allocator,
+            );
+
+            if (path) |path_tiles| {
+                const effective_speed = entity.getEffectiveSpeed();
+
+                // Walk along path up to speed steps, but don't get closer than min_range
+                var destination = entity.position;
+                const max_steps = @min(effective_speed, @as(u32, @intCast(path_tiles.len)));
+                for (0..max_steps) |step_index| {
+                    const step_position = path_tiles[step_index];
+                    // Never step onto the target's own tile: shortestPath
+                    // includes the (occupied) destination as its final
+                    // tile, so stop before it regardless of min_range.
+                    if (step_position.x == target_position.x and step_position.y == target_position.y) break;
+                    const distance_from_target = functions.chebyshevDistance(step_position, target_position);
+                    if (distance_from_target < min_range) break;
+                    destination = step_position;
+                }
+
+                if (destination.x != entity.position.x or destination.y != entity.position.y) {
+                    pushEnemyMoveThenAttack(current, entity_index, destination, allocator);
+                } else {
+                    pushEnemyAttack(current, entity_index, allocator);
+                }
+            } else {
+                // No direct path — use reachable tiles, pick closest to target
+                const reachable = functions.reachableTiles(
+                    level.*,
+                    entity.position,
+                    entity.getEffectiveSpeed(),
+                    allocator,
+                );
+
+                // Pick the reachable tile closest to the target
+                // (but no nearer than min_range, and only if it
+                // improves on the current position). Ties in
+                // distance break by the (x, y) tile convention so
+                // the choice is defined, not scan-order-dependent.
+                var best_tile: ?Vector2 = null;
+                var best_distance: i32 = nearest_distance;
+                for (reachable) |tile| {
+                    const distance = functions.chebyshevDistance(tile, target_position);
+                    if (distance < min_range) continue;
+                    if (distance >= nearest_distance) continue; // must improve on current
+                    const is_better = best_tile == null or
+                        distance < best_distance or
+                        (distance == best_distance and tileBefore(tile, best_tile.?));
+                    if (is_better) {
+                        best_distance = distance;
+                        best_tile = tile;
+                    }
+                }
+
+                if (best_tile) |destination| {
+                    pushEnemyMoveThenAttack(current, entity_index, destination, allocator);
+                } else {
+                    // Can't improve position — just attack
+                    pushEnemyAttack(current, entity_index, allocator);
+                }
+            }
+        }
+    } else {
+        // No targets — skip to turn end
+        pushEvents(current, &.{.{ .level_event = .{ .turn_end = .{
+            .entity_index = entity_index,
+        } } }}, allocator);
+    }
 }
 
 /// Handle a `LevelEvent` — the turn-flow machinery (turn start/end,
@@ -314,130 +456,44 @@ pub fn handleLevelEvent(
                 return;
             }
 
-            // Find nearest alive entity from a different team
-            var nearest_target: ?Vector2 = null;
-            var nearest_distance: i32 = std.math.maxInt(i32);
-            for (level.entities, 0..) |other_entity, other_index| {
-                if (other_index == enemy_move.entity_index) continue;
-                if (other_entity.current_health == 0) continue;
-                if (other_entity.team == entity.team) continue;
-                const distance = functions.chebyshevDistance(entity.position, other_entity.position);
-                // Strict < keeps the first at the minimum distance; since
-                // we iterate entities in index order, ties resolve to the
-                // lowest entity_index (the tiebreaking convention).
-                if (distance < nearest_distance) {
-                    nearest_distance = distance;
-                    nearest_target = other_entity.position;
-                }
-            }
-
-            if (nearest_target) |target_position| {
-                // Compute min range from off-cooldown skills
-                const min_range: i32 = @intCast(threat.computeMinRange(entity, history.weapon_type_definitions) orelse 1);
-
-                // If already within min range, don't move
-                if (nearest_distance <= min_range) {
-                    // Skip to attack
-                    pushEvents(current, &.{.{ .level_event = .{ .enemy_turn_attack = .{
-                        .entity_index = enemy_move.entity_index,
-                    } } }}, allocator);
+            // Movement mode (skills/movement.zig): cluster-seek when an
+            // offensive point-blank skill is ready; kite at min range when
+            // the whole kit outranges melee; else approach. A mode
+            // destination of null means the mode found nothing to work
+            // with this turn (no cluster, nobody in reach) — approach flows
+            // through the same path. See DESIGN → Architecture (AI
+            // movement modes).
+            const entity_index = enemy_move.entity_index;
+            const mode = movement.selectMovementMode(
+                entity_index,
+                current.*,
+                history.weapon_type_definitions,
+            );
+            const destination: ?Vector2 = switch (mode) {
+                .approach => null,
+                .point_blank_cluster => movement.pointBlankClusterDestination(
+                    entity_index,
+                    current.*,
+                    history.weapon_type_definitions,
+                    allocator,
+                ),
+                .keep_range => movement.keepRangeDestination(
+                    entity_index,
+                    current.*,
+                    history.weapon_type_definitions,
+                    allocator,
+                ),
+            };
+            if (destination) |mode_destination| {
+                if (mode_destination.x != entity.position.x or mode_destination.y != entity.position.y) {
+                    pushEnemyMoveThenAttack(current, entity_index, mode_destination, allocator);
                 } else {
-                    // Try pathfinding to target
-                    const path = functions.shortestPath(
-                        level.*,
-                        entity.position,
-                        target_position,
-                        allocator,
-                    );
-
-                    if (path) |path_tiles| {
-                        const effective_speed = entity.getEffectiveSpeed();
-
-                        // Walk along path up to speed steps, but don't get closer than min_range
-                        var destination = entity.position;
-                        const max_steps = @min(effective_speed, @as(u32, @intCast(path_tiles.len)));
-                        for (0..max_steps) |step_index| {
-                            const step_position = path_tiles[step_index];
-                            // Never step onto the target's own tile: shortestPath
-                            // includes the (occupied) destination as its final
-                            // tile, so stop before it regardless of min_range.
-                            if (step_position.x == target_position.x and step_position.y == target_position.y) break;
-                            const distance_from_target = functions.chebyshevDistance(step_position, target_position);
-                            if (distance_from_target < min_range) break;
-                            destination = step_position;
-                        }
-
-                        if (destination.x != entity.position.x or destination.y != entity.position.y) {
-                            // Order (LIFO, last runs first): wait, then move, then attack.
-                            pushEvents(current, &.{
-                                .{ .level_event = .{ .enemy_turn_attack = .{
-                                    .entity_index = enemy_move.entity_index,
-                                } } },
-                                .{ .level_event = .{ .move_entity = .{
-                                    .entity_index = enemy_move.entity_index,
-                                    .destination = destination,
-                                } } },
-                                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = turn_flow_wait_milliseconds } } },
-                            }, allocator);
-                        } else {
-                            pushEvents(current, &.{.{ .level_event = .{ .enemy_turn_attack = .{
-                                .entity_index = enemy_move.entity_index,
-                            } } }}, allocator);
-                        }
-                    } else {
-                        // No direct path — use reachable tiles, pick closest to target
-                        const reachable = functions.reachableTiles(
-                            level.*,
-                            entity.position,
-                            entity.getEffectiveSpeed(),
-                            allocator,
-                        );
-
-                        // Pick the reachable tile closest to the target
-                        // (but no nearer than min_range, and only if it
-                        // improves on the current position). Ties in
-                        // distance break by the (x, y) tile convention so
-                        // the choice is defined, not scan-order-dependent.
-                        var best_tile: ?Vector2 = null;
-                        var best_distance: i32 = nearest_distance;
-                        for (reachable) |tile| {
-                            const distance = functions.chebyshevDistance(tile, target_position);
-                            if (distance < min_range) continue;
-                            if (distance >= nearest_distance) continue; // must improve on current
-                            const is_better = best_tile == null or
-                                distance < best_distance or
-                                (distance == best_distance and tileBefore(tile, best_tile.?));
-                            if (is_better) {
-                                best_distance = distance;
-                                best_tile = tile;
-                            }
-                        }
-
-                        if (best_tile) |destination| {
-                            // Order (LIFO, last runs first): wait, then move, then attack.
-                            pushEvents(current, &.{
-                                .{ .level_event = .{ .enemy_turn_attack = .{
-                                    .entity_index = enemy_move.entity_index,
-                                } } },
-                                .{ .level_event = .{ .move_entity = .{
-                                    .entity_index = enemy_move.entity_index,
-                                    .destination = destination,
-                                } } },
-                                .{ .meta_event = .{ .wait = .{ .duration_milliseconds = turn_flow_wait_milliseconds } } },
-                            }, allocator);
-                        } else {
-                            // Can't improve position — just attack
-                            pushEvents(current, &.{.{ .level_event = .{ .enemy_turn_attack = .{
-                                .entity_index = enemy_move.entity_index,
-                            } } }}, allocator);
-                        }
-                    }
+                    // The mode's best tile is the entity's own — stand and
+                    // attack from here.
+                    pushEnemyAttack(current, entity_index, allocator);
                 }
             } else {
-                // No targets — skip to turn end
-                pushEvents(current, &.{.{ .level_event = .{ .turn_end = .{
-                    .entity_index = enemy_move.entity_index,
-                } } }}, allocator);
+                enemyApproachTurn(current, history.weapon_type_definitions, entity_index, allocator);
             }
         },
         .enemy_turn_attack => |enemy_attack| {

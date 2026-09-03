@@ -271,6 +271,93 @@ test "enemy_turn_move: moves up to speed steps toward the target" {
     try testing.expectEqual(@as(i32, 2), levelEntity(&history, 0).position.x);
 }
 
+// ────────────── movement modes (skills/movement.zig) ──────────────
+
+/// Corridor grid: only column x = 1 — forced one-axis movement so
+/// stand-off distances are unambiguous.
+const corridor = [_]Vector2{
+    .{ .x = 1, .y = 0 }, .{ .x = 1, .y = 1 }, .{ .x = 1, .y = 2 },
+    .{ .x = 1, .y = 3 }, .{ .x = 1, .y = 4 }, .{ .x = 1, .y = 5 },
+    .{ .x = 1, .y = 6 }, .{ .x = 1, .y = 7 }, .{ .x = 1, .y = 8 },
+};
+
+test "enemy_turn_move: ready point-blank skill cluster-seeks" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    // Dual staff: spark + daze exposed, blitz (radius-1 point-blank) as the
+    // off hand's third skill — blitz ready → cluster mode. Three targets
+    // clustered around (0,2)-(0,4): tile (1,3) is within radius 1 of all
+    // three, reachable in 3 steps from (4,3).
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{
+                .team = 1,
+                .position = .{ .x = 4, .y = 3 },
+                .speed = 3,
+                .main_hand_weapon = .{ .weapon_type = .staff },
+                .off_hand_weapon = .{ .weapon_type = .staff },
+            },
+            .{ .team = 0, .position = .{ .x = 0, .y = 2 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 0, .position = .{ .x = 0, .y = 3 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 0, .position = .{ .x = 0, .y = 4 }, .current_health = 10, .max_health = 10 },
+        },
+        &five_by_five,
+    ));
+    pushAndRunLevel(&history, .{ .enemy_turn_move = .{ .entity_index = 0 } });
+    try testing.expectEqual(@as(i32, 1), levelEntity(&history, 0).position.x);
+    try testing.expectEqual(@as(i32, 3), levelEntity(&history, 0).position.y);
+}
+
+test "enemy_turn_move: point-blank skill on cooldown kites instead" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    // Same dual staff, blitz on cooldown: no point-blank skill ready, the
+    // kit's min range is 3 (spark) → keep_range. Corridor: the entity at
+    // (1,4) with the hostile adjacent at (1,3) retreats to the standoff —
+    // (1,6) is the farthest act-capable tile (distance 3).
+    const game_state = test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{
+                .team = 1,
+                .position = .{ .x = 1, .y = 4 },
+                .speed = 2,
+                .main_hand_weapon = .{ .weapon_type = .staff },
+                .off_hand_weapon = .{ .weapon_type = .staff },
+            },
+            .{ .team = 0, .position = .{ .x = 1, .y = 3 }, .current_health = 10, .max_health = 10 },
+        },
+        &corridor,
+    );
+    @constCast(game_state.level.?.entities)[0].skill_cooldowns.set(.blitz, 5);
+    var history = harness.newHistory(game_state);
+    pushAndRunLevel(&history, .{ .enemy_turn_move = .{ .entity_index = 0 } });
+    try testing.expectEqual(@as(i32, 1), levelEntity(&history, 0).position.x);
+    try testing.expectEqual(@as(i32, 6), levelEntity(&history, 0).position.y);
+}
+
+test "enemy_turn_move: ranged kit holds the standoff when closing in" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    // Main-hand staff only (spark + daze, min range 3): keep_range. The
+    // entity starts at the standoff (distance 3) — no reachable tile is
+    // farther while staying act-capable, so it stands and attacks.
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 1, .position = .{ .x = 1, .y = 6 }, .speed = 2, .main_hand_weapon = .{ .weapon_type = .staff } },
+            .{ .team = 0, .position = .{ .x = 1, .y = 3 }, .current_health = 10, .max_health = 10 },
+        },
+        &corridor,
+    ));
+    pushAndRunLevel(&history, .{ .enemy_turn_move = .{ .entity_index = 0 } });
+    try testing.expectEqual(@as(i32, 6), levelEntity(&history, 0).position.y);
+}
+
 // ───────────────────────── enemy_turn_attack ─────────────────────────
 
 test "enemy_turn_attack: no usable skills → turn_end (no skill use)" {

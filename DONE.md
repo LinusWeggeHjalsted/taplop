@@ -10867,3 +10867,47 @@ bounds follow the active tab (two levels sharing a player_start, big →
 small layout), pan completely free (±100k world px passes through), empty
 level unclamped, recenter key changes on tab switch with identical
 player_starts, editor region = the game band, main-menu region null.
+
+## AI movement modes (point-blank cluster-seek + kiting)
+
+Modal movement selection for AI entities: `enemy_turn_move` picks ONE
+movement mode per entity per turn instead of always approaching.
+
+- `Skill.point_blank_area_of_effect` (defaults false): marks skills whose
+  AoE is centered on the caster — spinblade, slam, blitz, howl, worldfire,
+  burst, drain, shockwave (that_which_explodes is reactive, not a cast —
+  false; flash strike targets landing tiles — false). Deliberately NOT
+  required like deals_damage: a forgotten flag only makes the AI dumber
+  (walks instead of cluster-seeks), it corrupts no mechanic.
+- `src/skills/movement.zig` (excluded from the build.zig SkillId scan
+  alongside skill.zig/helpers.zig/threat.zig): `MovementMode`
+  (approach / point_blank_cluster / keep_range) + `selectMovementMode` +
+  the two destination fns — pure, in-file tested. Cooldown-dependent by
+  author decision: an off-cooldown offensive point-blank skill on the
+  EXPOSED bar (collectSkillSlots — the pool enemy_turn_attack casts from;
+  a main-hand weapon's third skill is NOT exposed) → cluster-seek; else
+  off-cooldown computeMinRange > 1 → kite at that range; else approach.
+  The user's "keeping min-range distance" reading: computeMinRange is THE
+  standoff — approach converges on it from outside, kiting opens to it
+  from inside; both modes meet at the same distance.
+- Handler wiring (level.zig): the approach logic extracted into
+  `enemyApproachTurn` (unchanged behavior — the existing handler tests
+  pass untouched) + `pushEnemyAttack`/`pushEnemyMoveThenAttack` (the
+  wait→move→attack LIFO shape, previously inlined twice). The arm selects
+  the mode, gets a destination (null → approach fallback — no cluster to
+  seek / nobody in reach), and pushes move-then-attack or attack-only
+  (destination == own tile → stand and cast).
+
+A test-authoring note worth keeping: the first movement tests gave the
+entity a MAIN-HAND staff and expected blitz — but a weapon's third skill
+is only exposed in the off hand, and movement (like the attack phase)
+reads collectSkillSlots, so the tests needed dual-wield staff (blitz via
+the off hand's slot 3). The exposed-slot shape is now pinned in test
+comments. Handler-drain tests: cluster-seek through processEvent
+(position lands on the max-hit tile), blitz-on-cooldown → kite retreat to
+the standoff, already-at-standoff → stands.
+
+Design: DESIGN → Architecture (AI movement modes). Known limitation
+recorded there: keep_range maximizes distance to the nearest SINGLE
+hostile — retreating toward a second enemy is possible; multi-hostile
+avoidance is a future mode.
