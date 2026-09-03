@@ -139,12 +139,15 @@ next session meets it as a surprise instead of a known.
   (+panned) camera into a VIEW REGION (`view.cameraViewRegion`: reference
   space, bounded vertically by the top/bottom bars, from the left by open
   middle panels, null elsewhere). Two rules with different applicability:
-  - **Level-flush bounds ALWAYS** (pan included): the visible world window
+  - **Level-flush bounds** (pan included): the visible world window
     stays inside the level's tile bounding box (levels are non-rectangular;
-    the bbox of `level_tiles`/`hub_tiles` is the "level rectangle"), so no
-    void shows beyond an edge — a deliberate pan stops dead at the level
-    edge. On an axis where the level fits inside the region, the level is
-    CENTERED as a whole and pan is a no-op there.
+    the bbox of `level_tiles`/`hub_tiles` is the "level rectangle"), so the
+    AUTOMATIC camera never shows void beyond an edge. A deliberate pan
+    gets `camera_pan_void_tiles` (4 tiles, tunable) of wiggle: it may push
+    that much void past an edge before the clamp stops it, so the edge
+    doesn't feel like a hard wall. On an axis where the level fits inside
+    the region, the level is CENTERED as a whole (and a pan wiggles ±4
+    tiles around the centered position instead of being a no-op).
   - **Player-margin band, automatic camera only** (`pan == null`): the
     camera may not deviate from the player-centered position further than
     (region half-extent − `camera_edge_margin_tiles`, a tunable 2-tile

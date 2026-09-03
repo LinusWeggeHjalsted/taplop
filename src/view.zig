@@ -981,18 +981,21 @@ fn screenWorldBounds(
 
 /// One axis of the camera clamp (pure, directly tested):
 ///
-/// - Level-flush bounds ALWAYS (pan included): the visible world window
-///   stays inside the level, so neither auto-centering nor a deliberate pan
-///   can drift into void — panning stops dead at the level edge.
-/// - When the level is narrower than the region, it is centered as a whole
-///   (pan becomes a no-op on that axis — nothing off-screen to pan to).
+/// - Level-flush bounds for the AUTOMATIC camera (pan_slack == 0): the
+///   visible world window stays inside the level, so auto-centering never
+///   shows void. When the level is narrower than the region, it is centered
+///   as a whole.
 /// - The player-margin band (player keeps `margin` clearance from the
-///   region edge) applies ONLY to the automatic camera (`!pan_active`) and
-///   only when the level overflows the region: it caps how far the flush
-///   clamp may push the camera away from the player-centered position.
-///   Sequential clamping gives the spec'd behavior — shift toward the
-///   flush bound as far as possible WITHOUT pushing the player past the
-///   margin.
+///   region edge) applies only to the automatic camera and only when the
+///   level overflows the region: it caps how far the flush clamp may push
+///   the camera away from the player-centered position. Sequential
+///   clamping gives the spec'd behavior — shift toward the flush bound as
+///   far as possible WITHOUT pushing the player past the margin.
+/// - A deliberate pan (pan_slack > 0, `camera_pan_void_tiles` scaled to
+///   world pixels) skips the margin band and widens the bounds by the
+///   slack: the pan may push that many tiles of void past an edge (or past
+///   the centered position on a fitting axis) before stopping — wiggle
+///   room, so the edge clamp doesn't feel like a hard wall.
 fn clampCameraAxis(
     camera_center: f32,
     world_lo: f32,
@@ -1002,20 +1005,24 @@ fn clampCameraAxis(
     reference_half: f32,
     player_center: f32,
     margin: f32,
-    pan_active: bool,
+    pan_slack: f32,
 ) f32 {
     const a = region_lo - reference_half;
     const b = region_hi - reference_half;
     const flush_min = world_lo - a;
     const flush_max = world_hi - b;
+    const automatic = pan_slack == 0.0;
     if (flush_min > flush_max) {
         // The level fits inside the region on this axis: center it as a
         // whole. The margin band is skipped — centering wins (the whole
-        // level is already visible; nothing better exists).
-        return (world_lo + world_hi) / 2.0 - (a + b) / 2.0;
+        // level is already visible; nothing better exists). A pan wiggles
+        // around the centered position by the slack.
+        const centered = (world_lo + world_hi) / 2.0 - (a + b) / 2.0;
+        if (automatic) return centered;
+        return std.math.clamp(camera_center, centered - pan_slack, centered + pan_slack);
     }
-    var clamped = std.math.clamp(camera_center, flush_min, flush_max);
-    if (!pan_active) {
+    var clamped = std.math.clamp(camera_center, flush_min - pan_slack, flush_max + pan_slack);
+    if (automatic) {
         const margin_min = player_center - b + margin;
         const margin_max = player_center - a - margin;
         if (margin_min <= margin_max) clamped = std.math.clamp(clamped, margin_min, margin_max);
@@ -1026,7 +1033,8 @@ fn clampCameraAxis(
 /// Camera centered on the player (plus an optional right-drag pan offset):
 /// places the player tile's center at the screen center, then adds `pan`,
 /// then — when `view_region` is non-null (levels/hubs; see cameraViewRegion)
-/// — clamps the result: level-flush bounds always (pan included), the
+/// — clamps the result: level-flush bounds (a deliberate pan gets
+/// `camera_pan_void_tiles` of wiggle past them), the
 /// `camera_edge_margin_tiles` margin for the automatic (unpanned) camera.
 /// Position is in the same world-pixel space screenToTile inverts
 /// (tile coord * tile_size_pixels * zoom). `pan` is in world pixels too.
@@ -1056,7 +1064,14 @@ pub fn computeCamera(
         const bounds = screenWorldBounds(current_state, tile_pixels) orelse
             return .{ .position = pos };
         const margin = @as(f32, @floatFromInt(camera_edge_margin_tiles)) * tile_pixels;
-        const pan_active = pan != null;
+        // A deliberate pan buys camera_pan_void_tiles of void past the
+        // level edges (wiggle room); the automatic camera is strictly
+        // void-free. pan_slack == 0 is the "automatic camera" signal the
+        // axis clamp keys its margin band on.
+        const pan_slack: f32 = if (pan != null)
+            @as(f32, @floatFromInt(camera_pan_void_tiles)) * tile_pixels
+        else
+            0.0;
         const camera_x = clampCameraAxis(
             @floatFromInt(pos.x),
             bounds.min_x,
@@ -1066,7 +1081,7 @@ pub fn computeCamera(
             @as(f32, @floatFromInt(@divTrunc(types.reference_width, 2))),
             player_center_x,
             margin,
-            pan_active,
+            pan_slack,
         );
         const camera_y = clampCameraAxis(
             @floatFromInt(pos.y),
@@ -1077,7 +1092,7 @@ pub fn computeCamera(
             @as(f32, @floatFromInt(@divTrunc(types.reference_height, 2))),
             player_center_y,
             margin,
-            pan_active,
+            pan_slack,
         );
         pos = .{ .x = @intFromFloat(@round(camera_x)), .y = @intFromFloat(@round(camera_y)) };
     }
@@ -1088,6 +1103,11 @@ pub fn computeCamera(
 /// the player and the view region edge. Eyeball in `zig build run` (the
 /// `skill_icon_size_native` precedent).
 const camera_edge_margin_tiles: i32 = 2;
+
+/// Tunable: how many tiles of void a deliberate pan may show past a level
+/// edge before the clamp stops it (wiggle room past the strict bounds).
+/// The automatic camera never shows void. Eyeball in `zig build run`.
+const camera_pan_void_tiles: i32 = 4;
 
 /// The camera clamp region for the current screen: the reference-space
 /// rectangle the camera keeps level content inside (and the player inside
@@ -3980,8 +4000,7 @@ test "camera clamp: mid-level player stays exactly player-centered" {
 
 test "camera clamp: a level that fits is centered as a whole" {
     // 4x3 level (1024x768 world px) — fits inside the region on both axes,
-    // so it is centered in the band regardless of the player's position,
-    // and panning is a no-op (nothing off-screen to pan to).
+    // so it is centered in the band regardless of the player's position.
     const tiles = tileGrid(4, 3);
     var state_ = levelStateWithPlayer(&tiles, .{ .x = 1, .y = 1 });
     var camera = computeCamera(&state_, 1.0, null, fullBandRegion());
@@ -3994,11 +4013,12 @@ test "camera clamp: a level that fits is centered as a whole" {
     try std.testing.expectEqual(@as(i32, 512), camera.position.x);
     try std.testing.expectEqual(@as(i32, 384), camera.position.y);
 
-    // A pan offset cannot move it either.
+    // A pan wiggles the centered view by up to 4 tiles each way instead of
+    // being a no-op.
     state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
     camera = computeCamera(&state_, 1.0, .{ .x = 10_000, .y = -10_000 }, fullBandRegion());
-    try std.testing.expectEqual(@as(i32, 512), camera.position.x);
-    try std.testing.expectEqual(@as(i32, 384), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 1536), camera.position.x);
+    try std.testing.expectEqual(@as(i32, -640), camera.position.y);
 }
 
 test "camera clamp: one axis fits, the other clamps" {
@@ -4014,29 +4034,32 @@ test "camera clamp: one axis fits, the other clamps" {
     try std.testing.expectEqual(@as(i32, 1904 - 512), 10_112 - camera.position.y + 1080);
 }
 
-test "camera clamp: pan roams within the level but never into void" {
+test "camera clamp: pan gets 4 tiles of wiggle past the level edges" {
     // A deliberate pan skips the player margin (the point of panning is to
-    // look away from the player) but keeps the level-flush bounds: the
-    // camera can never show void beyond an edge.
+    // look away from the player) and may show up to camera_pan_void_tiles
+    // (4 tiles, 1024 px at zoom 1.0) of void past an edge before the clamp
+    // stops it — so the edge clamp doesn't feel like a hard wall.
     const tiles = tileGrid(30, 17);
     var state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
 
-    // Pan far right: stops flush at the level's right edge (cam 5760 makes
-    // the visible window exactly [0, 7680)).
+    // Pan far right: the window's right edge stops exactly 1024 px past
+    // the level's right edge (cam 6784 + 1920 = 8704 vs level 7680).
     var camera = computeCamera(&state_, 1.0, .{ .x = 10_000, .y = 0 }, fullBandRegion());
-    try std.testing.expectEqual(@as(i32, 5760), camera.position.x);
-    // The y margin is suspended too while panned (pan is one offset for
-    // both axes): the y camera sits at the plain flush bound.
-    try std.testing.expectEqual(@as(i32, 824), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 6784), camera.position.x);
+    // The y margin is suspended while panned: the plain player-centered y
+    // passes now (its 696 px of top void is inside the 4-tile budget).
+    try std.testing.expectEqual(@as(i32, 128), camera.position.y);
 
-    // Pan far left: stops flush at the level's left edge (visible window
-    // left edge exactly 0).
+    // Pan far left: the window's left edge stops exactly 1024 px before
+    // the level's left edge (cam 896 - 1920 = -1024).
     camera = computeCamera(&state_, 1.0, .{ .x = -10_000, .y = 0 }, fullBandRegion());
-    try std.testing.expectEqual(@as(i32, 1920), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 896), camera.position.x);
+
     // Interior pan passes through untouched: player at (0,0), pan +1000
-    // world px right still shows void-free left at cam 1920 (flush min).
+    // world px right leaves cam at the plain 1128 (792 px of left void,
+    // within budget).
     camera = computeCamera(&state_, 1.0, .{ .x = 1000, .y = 0 }, fullBandRegion());
-    try std.testing.expectEqual(@as(i32, 1920), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 1128), camera.position.x);
 }
 
 test "camera clamp: panels shift the margin band to the viewable region" {

@@ -10812,3 +10812,18 @@ implementation.
 Deferred remainder: the EDITOR viewport's framing (sidebars + no player
 following) is a different problem, untouched — the editor camera still
 centers on the active level's player_start, unclamped.
+
+## Camera clamping — follow-up: pan wiggle room
+
+Author request: the pan stopping dead at the level edge felt like a hard
+wall. `camera_pan_void_tiles` (tunable, 4): when a pan offset is active,
+`clampCameraAxis` widens the flush bounds by that many tiles of world
+pixels — the window may show up to 4 tiles of void past an edge before
+stopping. On a fitting axis, a pan wiggles ±4 tiles around the centered
+position instead of being a no-op. The automatic camera stays strictly
+void-free (slack 0); `pan_slack == 0` replaced the `pan_active` bool as
+the axis clamp's "automatic camera" signal. The margin band keys on the
+same zero test. Tests updated: far pans stop exactly 1024 px past each
+edge, an interior pan near the edge now passes through (its void is
+inside the budget), the suspended y margin lets the plain player-centered
+y pass while panned, and the small-level pan wiggles around the center.
