@@ -1058,7 +1058,11 @@ paragraph). Remaining work:
   the path, no unsaved-changes confirm (deliberate), `open_editor` bumps
   `world_generation` (the editor→editor UI reset). The WEB ZIP IMPORT is
   landed too (the Import button / ctrl+I → `zip_reader.zig` STORE+DEFLATE,
-  marker poll, extraction into `missions/`). Design + history: DESIGN →
+  marker poll, extraction into `missions/`). The options-menu NEW MISSION
+  button / ctrl+N is DONE too (`new_editor_mission` → `open_editor` null
+  path — the main-menu Editor button's action from inside the editor,
+  undo restores the swapped-out mission; see DESIGN → Level Editor → The
+  fresh-mission open). Design + history: DESIGN →
   Architecture → Level Editor → The mission browser + DONE.md.
   Browser polish (columns: author / level count / timestamp formatting,
   keyboard navigation) rides the load-save browser's polish slice when the

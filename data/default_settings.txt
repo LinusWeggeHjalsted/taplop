@@ -95,6 +95,12 @@ action toggle_editor_mission_browser
 context editor
 
 input_type key
+input_name KeyN
+ctrl true
+action new_editor_mission
+context editor
+
+input_type key
 input_name KeyI
 ctrl true
 action import_editor_mission

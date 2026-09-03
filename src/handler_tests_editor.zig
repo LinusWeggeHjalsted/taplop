@@ -2880,6 +2880,53 @@ test "tile-tool idle arm defers while a paint drag owns the press" {
     try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
 }
 
+test "new_editor_mission: the fresh-mission open replaces the editor state, undo restores" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // Start from an editor state with a distinguishable mission (crafted
+    // — the consumption site doesn't care how the editor was reached).
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 } };
+    const levels = [_]types.EditorLevel{.{ .name = "Old", .level_tiles = &tiles }};
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .mission = .{ .name = "Old", .path = "missions/Old", .level_count = 1 },
+    }));
+    runToIdle(&history);
+
+    // ctrl+N (the options-menu New Mission button dispatches through the
+    // same AnytimeInput flag): open_editor with a null path — the fresh-
+    // mission shape (one template level, the open_editor-null identity
+    // with no uuid).
+    input_handlers.handleAnytimeInput(&history, .{ .new_editor_mission = true }, .{ .x = 0, .y = 0 }, &.{});
+    // The consumption drains inline (pushPlayerActionAndDrain); the idle
+    // point for the undo step is the LIVE loop's post-update record — the
+    // test's runToIdle mirrors it (stack already empty; the call records).
+    runToIdle(&history);
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expect(history.current_state.screen == .editor);
+        try testing.expectEqualStrings("New Mission", editor.mission.name);
+        try testing.expectEqualStrings("missions/New Mission", editor.mission.path);
+        try testing.expectEqual(@as(u32, 1), editor.mission.level_count);
+        try testing.expectEqual(@as(usize, 1), editor.levels.len);
+    }
+
+    // One undo restores the previous mission (a recorded player action,
+    // not a side effect like save/export).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqualStrings("Old", history.current_state.editor.?.mission.name);
+
+    // Screen gate: outside the editor the flag no-ops (no event, no undo
+    // step — the save_editor_mission discipline).
+    var menu_history = harness.newHistory(null);
+    runToIdle(&menu_history);
+    input_handlers.handleAnytimeInput(&menu_history, .{ .new_editor_mission = true }, .{ .x = 0, .y = 0 }, &.{});
+    try testing.expect(menu_history.current_state.editor == null);
+    try testing.expectEqual(@as(usize, 0), menu_history.current_state.event_stack.len);
+}
+
 // --- Select-tool marquee (planEditorRegionSelectActions) --------------------
 
 const tall_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 0, .y = 1 } };

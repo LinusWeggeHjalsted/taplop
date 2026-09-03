@@ -171,6 +171,20 @@ pub fn buildOptionsMenu(
             ))}) },
         };
         button_count += 1;
+
+        // The fresh-mission open: the main-menu Editor button's action
+        // from inside the editor — replaces the mission being edited
+        // with a new one-level template mission (no unsaved-changes
+        // confirm, same as an open — save first if in doubt). Also on
+        // ctrl+N (the binding ships in default_settings.txt).
+        buttons[button_count] = .{
+            .label = "New Mission",
+            .action = .new_editor_mission,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
+                "Ctrl+N — replaces the mission being edited with a fresh one",
+            ))}) },
+        };
+        button_count += 1;
     }
 
     // Settings: opens the settings overlay on top of this one (drill-in).
@@ -1522,6 +1536,20 @@ test "buildOptionsMenu: Export Save tooltip reflects the save destination" {
         const save_tooltip = save_mission_button.?.tooltip orelse @panic("Save Mission button has no tooltip");
         const save_tooltip_text = save_tooltip.body[0][0].text;
         try std.testing.expectEqualStrings("Ctrl+S — saves to /home/tester/.ziglop/missions/", save_tooltip_text);
+
+        // The New Mission button (ctrl+N): the fresh-mission open from
+        // inside the editor, with the keybind tooltip.
+        var new_mission_button: ?Button = null;
+        for (elements.items) |element| switch (element) {
+            .button => |b| {
+                if (b.action == .new_editor_mission) new_mission_button = b;
+            },
+            else => {},
+        };
+        try std.testing.expect(new_mission_button != null);
+        const new_tooltip = new_mission_button.?.tooltip orelse @panic("New Mission button has no tooltip");
+        const new_tooltip_text = new_tooltip.body[0][0].text;
+        try std.testing.expectEqualStrings("Ctrl+N — replaces the mission being edited with a fresh one", new_tooltip_text);
     }
 }
 

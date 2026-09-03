@@ -404,6 +404,14 @@ pub const Action = enum {
     // ships in default_settings.txt and no-ops on native, where the button
     // is never emitted — the skip_level discipline).
     import_editor_mission,
+    // The fresh-mission open (the options-menu New Mission button + the
+    // ctrl+N binding): the main-menu Editor button's action from INSIDE
+    // the editor — pushes `open_editor` with a null path, replacing the
+    // mission being edited with a new one-level template mission (no
+    // unsaved-changes confirm — the mission-browser row discipline).
+    // Editor-screen-only at the consumption site (the
+    // save_editor_mission no-op discipline).
+    new_editor_mission,
     // Editor tool/palette keyboard shortcuts (Digit1–5, context editor —
     // the first same-combo cross-context pair: Digit1–8 are the in-game
     // skill slots). Payload-less keybind-only actions: `translateInput`
@@ -646,6 +654,7 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .select_editor_mission_tab,
         .open_editor_mission_row,
         .import_editor_mission,
+        .new_editor_mission,
         .overwrite_validation_replay,
         .editor_select_tool,
         .editor_tile_tool,

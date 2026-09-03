@@ -418,6 +418,11 @@ pub const AnytimeInput = struct {
     /// upload trigger is comptime-dead on native — the skip_level
     /// discipline); consumed only while the browser is open.
     import_editor_mission: bool = false,
+    /// The fresh-mission open (the options-menu New Mission button + the
+    /// ctrl+N binding): pushes `open_editor` with a null path from inside
+    /// the editor. Editor-screen-only at the consumption site (the
+    /// save_editor_mission no-op discipline).
+    new_editor_mission: bool = false,
 
     /// Only handled when the player is in a hub or level.
     in_game: InGameInput = .{},
@@ -572,6 +577,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         .close_editor_picker => player_input.anytime.options_action = action,
         .toggle_editor_mission_browser => player_input.anytime.toggle_editor_mission_browser = true,
         .import_editor_mission => player_input.anytime.import_editor_mission = true,
+        .new_editor_mission => player_input.anytime.new_editor_mission = true,
         // Keyboard-only editor shortcuts — no button carries these (the
         // palette cells use the payload-carrying click actions), so the
         // click bridge never sees them; the translateInput dispatch owns
@@ -982,6 +988,7 @@ pub fn translateInput(
     result.anytime.dismiss_error = checkAction(.dismiss_error, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.toggle_editor_mission_browser = checkAction(.toggle_editor_mission_browser, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     result.anytime.import_editor_mission = checkAction(.import_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
+    result.anytime.new_editor_mission = checkAction(.new_editor_mission, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts);
     // Editor tool/palette keybinds (Digit1–5, editor context — see the
     // Action docs): bridged onto the click paths' options_action + payload
     // pairs so keybind and click share the consumption sites exactly. The
@@ -1369,4 +1376,39 @@ test "translateInput: editor save/export chords reach the anytime flags" {
     try std.testing.expect(result.anytime.save_editor_mission);
     try std.testing.expect(result.anytime.export_editor_mission);
     try std.testing.expect(!result.anytime.in_game.toggle_skills);
+}
+
+test "translateInput: ctrl+N fires new_editor_mission on the editor set only" {
+    // The New Mission keybind's dispatch pin (the ctrl+S lesson: a binding
+    // with every other site wired but no checkAction line is dead).
+    const bindings = [_]InputBinding{
+        .{ .input = .{ .key = "KeyN" }, .modifiers = .{ .ctrl = true }, .action = .new_editor_mission, .context = .editor },
+    };
+    const settings: Settings = .{ .input_bindings = &bindings };
+    const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const platform = PlatformInput{
+        .events = &.{
+            .{ .key_down = "ControlLeft" },
+            .{ .key_down = "KeyN" },
+        },
+        .viewport = .{ .width = 2560, .height = 2160 },
+    };
+    // Editor screen: fires.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .editor = true });
+        try std.testing.expect(result.anytime.new_editor_mission);
+    }
+    // Level/hub (a playtest/validation run — the binding must go dormant
+    // there) and main menu: no fire.
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .game = true });
+        try std.testing.expect(!result.anytime.new_editor_mission);
+    }
+    {
+        var input_state: InputState = .{};
+        const result = translateInput(platform, &input_state, settings, camera, 0, null, .{ .anytime = true, .menu = true });
+        try std.testing.expect(!result.anytime.new_editor_mission);
+    }
 }

@@ -883,6 +883,21 @@ pub fn handleAnytimeInput(
         }
     }
 
+    if (anytime.new_editor_mission) {
+        // The fresh-mission open (the options-menu New Mission button,
+        // ctrl+N): the main-menu Editor button's action from INSIDE the
+        // editor — a RECORDED player action (`open_editor` with a null
+        // path, the same event the mission-browser rows fire with a
+        // path), so replay + undo reproduce the mission swap. The
+        // open_editor handler bumps world_generation, so the post-update
+        // UI reset closes the options menu / browser / pickers over it.
+        // Editor-only; every other screen no-ops (the
+        // save_editor_mission discipline).
+        if (history.current_state.screen == .editor and history.current_state.editor != null) {
+            pushPlayerActionAndDrain(history, .{ .open_editor = .{ .mission_path = null } });
+        }
+    }
+
     if (anytime.toggle_options_menu) {
         handleEscapeKey(history);
     }

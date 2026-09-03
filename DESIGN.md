@@ -2237,6 +2237,18 @@ shape). Three settled points:
 - **Undo across the swap works** — `open_editor` is on the timeline, so
   undo restores the previously-edited mission. Accepted as a feature.
 
+**The fresh-mission open (New Mission — LANDED).** The options menu's
+New Mission button (+ ctrl+N, the `new_editor_mission` action) fires the
+main-menu Editor button's action from INSIDE the editor: `open_editor`
+with a null path, consumed in the anytime block behind the editor-screen
+gate (every other screen no-ops — the save_editor_mission discipline).
+It's a RECORDED player action (`pushPlayerActionAndDrain`), so the three
+settled points above apply verbatim: no unsaved-changes confirm, the
+world_generation bump closes the options menu / browser / pickers over
+the swap, and undo restores the previously-edited mission. The fresh
+mission is the open_editor-null shape: "New Mission", one template
+level, no uuid (minted at save time).
+
 **The zip import (LANDED).** The browser's web-only Import button (also
 ctrl+I) opens a file picker; the picked `.zip` lands in
 `imported_missions/` + writes `.mission_import_marker` (the save import's

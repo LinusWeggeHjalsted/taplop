@@ -192,6 +192,7 @@ const key_mappings = [_]KeyMapping{
     .{ .key = .y, .id = "KeyY" },
     .{ .key = .i, .id = "KeyI" },
     .{ .key = .o, .id = "KeyO" },
+    .{ .key = .n, .id = "KeyN" },
     .{ .key = .page_up, .id = "PageUp" },
     .{ .key = .page_down, .id = "PageDown" },
     .{ .key = .g, .id = "KeyG" },

@@ -11139,3 +11139,45 @@ seeded-selection pattern the older tests already follow).
 Tests: ctrl+A from the tile tool fires + switches + selects everything;
 one undo restores the tile tool + empty selection; the all-selected
 no-op gate unchanged. DESIGN → Level Editor → Selection model updated.
+
+## Editor New Mission (ctrl+N + options-menu button)
+
+The fresh-mission open — the main-menu Editor button's action — is now
+reachable from INSIDE the editor: a "New Mission" button in the options
+menu (between Open Mission and Settings) and a ctrl+N binding
+(`new_editor_mission`, editor context).
+
+- The action pushes `open_editor` with a NULL path via
+  `pushPlayerActionAndDrain` — the exact event the main-menu button and
+  the mission-browser rows (with a path) fire, so the whole open handler
+  (template level read, max-player loadout, decoration registry,
+  world_generation bump, transition) and replay/undo come along for free:
+  undo restores the previously-edited mission (the browser-open semantics
+  — DESIGN's "no unsaved-changes confirm / generation bump / undo across
+  the swap" points apply verbatim).
+- Consumption sits in the anytime block next to
+  `toggle_editor_mission_browser`, behind the editor-screen gate (every
+  other screen no-ops — the save_editor_mission discipline). The
+  early-block placement means it works with the options menu open (the
+  button dispatches through the same flag via applyAction); the
+  generation bump's post-update UI reset closes the menu/browser/pickers
+  over the swap.
+- The five-site keybind checklist (AGENTS → New-keybind pipeline
+  friction) walked deliberately: default_settings.txt binding
+  (context editor), raylib_backend KeyN table entry, Action enum +
+  actionBindingContexts (editor set), AnytimeInput field + applyAction +
+  the translateInput checkAction line, the handleAnytimeInput
+  consumption. The ctrl+S lesson test (a dispatch pin, not just
+  checkAction) is mirrored for ctrl+N.
+
+Test note: `pushPlayerActionAndDrain` drains inline and records NO idle
+point — the LIVE loop's post-update `maybeRecordIdlePoint(events_processed)`
+is what makes such actions undo steps, so a handler test must call
+runToIdle after the consumption call to mirror it (the first version
+asserted undo without it and undid past the swap).
+
+Tests: the ctrl+N translateInput dispatch pin (editor set fires; game +
+menu sets dormant — a playtest/validation run deactivates the binding),
+the consumption swap (fresh "New Mission" state, one template level,
+undo restores the old mission, main-menu no-op), and the options-menu
+builder pins the New Mission button + its ctrl+N tooltip.
