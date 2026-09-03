@@ -154,16 +154,21 @@ pub fn levelEntity(history: *GameStateHistory, entity_index: usize) *types.Entit
 
 /// Drive event processing until the stack empties (test harness: no update()
 /// loop, so waits are cleared rather than timed). Mirrors the live gameLoop's
-/// idle bookkeeping: on stack-empty, recordIdlePoint (snapshot + compact), so
-/// a forward-played session accumulates the same idle points the live loop
-/// would — which reconstruction then derives from virtual depth.
+/// idle bookkeeping: on stack-empty, an idle point is recorded (snapshot +
+/// compact), so a forward-played session accumulates the same idle points
+/// the live loop would — which reconstruction then derives from virtual
+/// depth. DEDUPED via maybeRecordIdlePoint: some commit paths drain +
+/// record internally (resolveTextEditOutcome's pushPlayerActionAndDrain),
+/// and an unconditional recordIdlePoint would append the same event
+/// index twice — duplicate idle points make undo restore to the CURRENT
+/// state (a no-op undo step) instead of the previous one.
 pub fn runToIdle(history: *GameStateHistory) void {
     while (history.current_state.event_stack.len > 0) {
         event_handlers.processEvent(history);
         if (history.load_error) @panic("runToIdle: handler set load_error (test content should be valid)");
         history.current_state.waiting = null;
     }
-    history.recordIdlePoint();
+    history.maybeRecordIdlePoint(true);
 }
 
 test "harness: newHistory reaches the main menu and idles" {
