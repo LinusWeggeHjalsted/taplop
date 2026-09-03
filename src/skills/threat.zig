@@ -29,8 +29,8 @@ fn effectiveSkillReach(entity: Entity, skill_id: SkillId) ?u32 {
 /// The MINIMUM effective reach across the entity's off-cooldown skills —
 /// the "close enough to act at all" threshold for enemy approach (an enemy
 /// stops moving once within min range of its target). Counts every usable
-/// skill, not just damaging ones: a control-only enemy (e.g. Daze) should
-/// stop and cast from its range, not walk adjacent first. Min answers
+/// skill, not just damaging ones: a control-only enemy should stop and
+/// cast from its range, not walk adjacent first. Min answers
 /// "when can I act"; computeMaxDamageRange answers "how far can I hurt" —
 /// different questions, different filters. Null when nothing is usable.
 pub fn computeMinRange(

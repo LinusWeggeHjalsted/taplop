@@ -331,9 +331,8 @@ pub fn aoePriority(target_count: u32, base_priority: u32) u32 {
 }
 
 /// Build a one-option AI list — the common case where a skill has a single
-/// best cast (the focus-fire pick, a self-cast buff, the best landing
-/// tile). Skills with genuinely competing casts (e.g. Daze's two target
-/// classes) build their own slice.
+/// best cast (the focus-fire pick, a self-cast buff, the best strike
+/// center). Skills with genuinely competing casts build their own slice.
 pub fn singleOption(allocator: std.mem.Allocator, option: AiOption) []const AiOption {
     return allocator.dupe(AiOption, &.{option}) catch @panic("failed to allocate AI option");
 }

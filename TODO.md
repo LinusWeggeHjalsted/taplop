@@ -120,7 +120,8 @@ Test by running `zig build run` and clicking through.
 - **Cross-cutting polish** — 9-slice edge/center TILING
   (corners are aspect-true — fixed, see DONE.md), `highlighted` edge
   outlines, missing art
-  (ui/icon_swap, ui/momentum draw magenta). (Real TTF
+  (ui/icon_swap, ui/momentum draw magenta; skills/meteor icon is the
+  renamed daze.png placeholder — artist to draw a real meteor icon). (Real TTF
   font + glyph metrics DONE — see DONE.md.) Gear-tooltip comparison
   colors are full green/red placeholders — artist to pick softer shades
   (`ui.positive_color`/`ui.negative_color`, shared by tooltip comparisons

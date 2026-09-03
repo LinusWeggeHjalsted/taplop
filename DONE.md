@@ -10962,3 +10962,49 @@ u8 explicitly.
 The third nice-values escape this session (movement tie fixtures, the
 dangling test helper, now this) — each shipped green on fixtures that
 never touched the degenerate case.
+
+## Meteor replaces Daze (staff skill 2 rework)
+
+Daze (stun + full momentum drain, no damage) was underpowered and boring
+in playtesting — a pure-control single-target with no board impact. It is
+replaced by Meteor: attack each target within radius of the target tile —
+range 3, radius 1, cooldown 3, main-hand damage (the Spark damage model),
+the Worldfire per-target attack loop centered on a clicked tile.
+
+Design decisions (author-confirmed): the caster's own tile is a legal
+target (a point-blank cast — range-0 is not skipped, unlike Flash Strike
+which only skips (0,0) because it teleports); the AI scans ALL tiles in
+range including occupied ones, counting hostiles ON the candidate tile
+(distance 0 — hostileCountWithinRadius already counts them, so the
+"direct hit" requirement needed no helper change; the real Flash Strike
+difference was its empty-tile constraint, which Meteor doesn't share);
+rating is plain per-target value units (aoePriority(count, 1) — a
+1-target cast ties the basic attack and loses to slot order, so the staff
+saves it for clusters, the Worldfire posture at a third of the cooldown).
+
+Mechanically pure composition: no engine changes. The SkillId enum and
+the skill-icon table (`skillIconSpriteId` = `skills/<tag>`) are generated
+from filenames, so deleting `src/skills/daze.zig` + adding
+`src/skills/meteor.zig` + `data/weapon_types/staff.txt` `skill_2 meteor`
+was the whole wiring. assets/skills/daze.png renamed to meteor.png as
+placeholder art (TODO notes the artist owes a real meteor icon).
+
+Tests (skill_tests.zig): the max-cluster option pick (occupied-tile
+center beats off-tile centers), the point-blank own-tile cast, the
+unreachable → no-option case, single-target rating 1 + cooldown gate,
+and the useSkill multi-attack. One fixture lesson worth repeating: the
+first cluster fixture placed the pair at (3,0)/(3,1) expecting (3,0) to
+win outright — but Chebyshev makes (2,0)→(3,1) distance 1, so (2,0) ALSO
+counted 2 and won the scan-order tiebreak; the fixture now uses a
+diagonal neighbor so the on-tile center strictly wins. Same lesson as the
+movement-tie fixtures: hand-compute against the convention, not the first
+tile you eyeball.
+
+Stale-reference sweep: threat.zig + helpers.zig doc comments cited Daze
+as their example (the control-only min-range case; the one
+multi-cast-options skill — with it gone, every ai_options goes through
+singleOption); comments reworded generically. movement.zig +
+handler_tests_ai.zig test comments updated (spark + meteor, both range 3
+— min/max-range behavior unchanged: daze dealt no damage, meteor does at
+the same range 3, so computeMinRange/computeMaxDamageRange results are
+identical).

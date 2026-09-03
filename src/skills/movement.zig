@@ -284,7 +284,7 @@ test "selectMovementMode: off-cooldown point-blank skill cluster-seeks" {
     var harness = test_harness.Harness.init(arena.allocator());
     const definitions = &harness.weapon_type_definitions;
 
-    // Staff kit: spark (range 3) + daze (range 3) exposed on the main
+    // Staff kit: spark (range 3) + meteor (range 3) exposed on the main
     // hand, plus blitz (radius 1, point-blank, cooldown 5) exposed as the
     // OFF hand's third skill — the exposed-slot shape (collectSkillSlots,
     // the same pool enemy_turn_attack casts from).
@@ -430,7 +430,7 @@ test "keepRangeDestination: retreats to exactly the standoff distance" {
     var harness = test_harness.Harness.init(arena.allocator());
     const definitions = &harness.weapon_type_definitions;
 
-    // Staff kit: spark + daze (both range 3) exposed — min range 3, so the
+    // Staff kit: spark + meteor (both range 3) exposed — min range 3, so the
     // entity kites. Corridor: the entity at (1,4), the hostile at (1,3)
     // (distance 1 — too close). Reachable retreat tiles: (1,2) distance 1,
     // (1,5) distance 2, (1,6) distance 3 — the farthest act-capable tile is

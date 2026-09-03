@@ -285,7 +285,7 @@ test "enemy_turn_move: ready point-blank skill cluster-seeks" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
-    // Dual staff: spark + daze exposed, blitz (radius-1 point-blank) as the
+    // Dual staff: spark + meteor exposed, blitz (radius-1 point-blank) as the
     // off hand's third skill — blitz ready → cluster mode. Three targets
     // clustered around (0,2)-(0,4): tile (1,3) is within radius 1 of all
     // three, reachable in 3 steps from (4,3).
@@ -343,7 +343,7 @@ test "enemy_turn_move: ranged kit holds the standoff when closing in" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
-    // Main-hand staff only (spark + daze, min range 3): keep_range. The
+    // Main-hand staff only (spark + meteor, min range 3): keep_range. The
     // entity starts at the standoff (distance 3) — no reachable tile is
     // farther while staying act-capable, so it stands and attacks.
     var history = harness.newHistory(test_harness.levelStateWithEntities(

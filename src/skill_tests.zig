@@ -15,7 +15,7 @@ const bash_skill = @import("skills/bash.zig");
 const head_shot_skill = @import("skills/head_shot.zig");
 const heal_skill = @import("skills/heal.zig");
 const cleave_skill = @import("skills/cleave.zig");
-const daze_skill = @import("skills/daze.zig");
+const meteor_skill = @import("skills/meteor.zig");
 const threat_mod = @import("skills/threat.zig");
 const absorb_skill = @import("skills/absorb.zig");
 const reflect_skill = @import("skills/reflect.zig");
@@ -667,64 +667,104 @@ test "head shot: priority drops to 2 when the only target is already stunned" {
         try testing.expectEqual(@as(u32, 1), options[0].priority);
 }
 
-test "daze: priority tiers by stun and momentum state" {
+test "meteor: options pick the tile with the most hostiles within radius" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
     const caster = types.Entity{ .team = 0, .position = .{ .x = 0, .y = 0 } };
 
-    // Unstunned, no momentum → 1 (the stun bonus only).
+    // No hostiles reachable (range 3 + radius 1 can't reach the far
+    // corner) → no option.
     {
-        const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
-        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
-        const options = daze_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
-        try testing.expectEqual(@as(usize, 1), options.len);
-        try testing.expectEqual(@as(u32, 1), options[0].priority);
-    }
-    // Unstunned AND carrying momentum → 2 (stun + drain). This tier once
-    // crashed: `1 + @intFromBool(...)` resolves to u1 arithmetic, and
-    // 1 + 1 overflows u1 — every real player carries momentum (every
-    // use_skill grants +1), so the staff skeleton's daze evaluation
-    // panicked on live play (see DONE.md).
-    {
-        const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .momentum = 2 };
-        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
-        const options = daze_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
-        try testing.expectEqual(@as(usize, 1), options.len);
-        try testing.expectEqual(@as(u32, 2), options[0].priority);
-    }
-    // Stunned but carrying momentum → 1 (the drain bonus only), targeting
-    // the momentful entity.
-    {
-        const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .stun_duration = 2, .momentum = 3 };
-        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
-        const options = daze_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
-        try testing.expectEqual(@as(usize, 1), options.len);
-        try testing.expectEqual(@as(u32, 1), options[0].priority);
-        try testing.expectEqual(target.position, options[0].target.?);
-    }
-    // Both classes present: the unstunned class wins, and its focus-fire
-    // pick (the wounded one — which carries no momentum) rates 1.
-    {
-        const healthy_unstunned = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .current_health = 15 };
-        const wounded_unstunned = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 }, .current_health = 5 };
-        const stunned_momentful = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 }, .stun_duration = 2, .momentum = 3 };
         const game_state = test_harness.levelStateWithEntities(
             arena.allocator(),
-            &.{ caster, healthy_unstunned, wounded_unstunned, stunned_momentful },
-            &.{},
+            &.{ caster, types.Entity{ .team = 1, .position = .{ .x = 8, .y = 8 } } },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 8, .y = 8 } },
         );
-        const options = daze_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 0),
+            meteor_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
+    }
+    // A cluster straddling tile (3,0): the hostile ON the tile is a direct
+    // hit (distance 0), its diagonal neighbor at (4,1) is at distance 1 →
+    // the best center is the OCCUPIED tile itself — no off-tile center
+    // reaches both (Chebyshev makes (2,0)→(4,1) distance 2), and Flash
+    // Strike wouldn't even consider (3,0) because it only teleports to
+    // empty tiles → count 2 → priority 2.
+    {
+        const on_tile = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+        const diagonal_neighbor = types.Entity{ .team = 1, .position = .{ .x = 4, .y = 1 } };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, on_tile, diagonal_neighbor },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 }, .{ .x = 4, .y = 1 } },
+        );
+        const options = meteor_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
+        try testing.expectEqual(Vector2{ .x = 3, .y = 0 }, options[0].target.?);
+    }
+    // The caster's own tile is a legal center: two adjacent hostiles make
+    // (0,0) the max-count tile → a point-blank cast at the caster's feet.
+    {
+        const adjacent_a = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+        const adjacent_b = types.Entity{ .team = 1, .position = .{ .x = 0, .y = 1 } };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, adjacent_a, adjacent_b },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 } },
+        );
+        const options = meteor_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
+        try testing.expectEqual(caster.position, options[0].target.?);
+    }
+    // A lone reachable hostile → a single-target cast rates 1 (a plain hit —
+    // it ties the basic attack and loses to slot order, the cluster-saving
+    // posture); on cooldown → no option.
+    {
+        const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+        const game_state = test_harness.levelStateWithEntities(
+            arena.allocator(),
+            &.{ caster, target },
+            &.{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 }, .{ .x = 2, .y = 0 }, .{ .x = 3, .y = 0 } },
+        );
+        const options = meteor_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
-        try testing.expectEqual(wounded_unstunned.position, options[0].target.?);
-    }
-    // Stunned and momentumless → 0 (nothing to gain — no damage, no stack).
-    {
-        const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .stun_duration = 2 };
-        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
+        setCooldown(game_state, 0, .meteor, 1);
         try testing.expectEqual(@as(usize, 0),
-    daze_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
+            meteor_skill.skill.aiOptions(0, game_state, undefined, arena.allocator()).len);
+    }
+}
+
+test "meteor: useSkill attacks each hostile within radius of the target tile" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .main_hand_weapon = .{ .weapon_damage = 6 },
+    };
+    const on_tile = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+    const neighbor = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 1 } };
+    const beyond = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 2 } };
+    const same_team = types.Entity{ .team = 0, .position = .{ .x = 4, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, on_tile, neighbor, beyond, same_team },
+        &.{},
+    );
+
+    const result = meteor_skill.skill.useSkill(0, .{ .x = 3, .y = 0 }, game_state, arena.allocator());
+    // On-tile (distance 0) + neighbor (distance 1) hit at main-hand damage;
+    // beyond (distance 2) + the ally not.
+    try testing.expectEqual(@as(usize, 2), result.len);
+    for (result) |event| {
+        const attack = event.sub_level_event.attack;
+        try testing.expectEqual(@as(u32, 0), attack.attacker_index);
+        try testing.expectEqual(@as(u32, 6), attack.outgoing_damage);
+        try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
     }
 }
 

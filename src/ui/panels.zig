@@ -916,8 +916,8 @@ test "buildSkillsPanel: overflow — scrollbar present, only visible rows emitte
     const learned = [_]SkillId{
         .slice, .stab, .chop, .cleave,
         .slam, .skewer, .impale, .bash,
-        .blink, .blitz, .daze, .focus,
-        .howl, .reflect, .replenish, .retreating_swipe,
+        .blink, .blitz, .focus, .howl,
+        .meteor, .reflect, .replenish, .retreating_swipe,
         .spark, .spinblade, .stone_form, .swap,
         .that_which_lingers, .throw, .toss, .vampiric_strike,
         .flash_strike,

@@ -1,4 +1,4 @@
 Skills
 skill_1 spark
-skill_2 daze
+skill_2 meteor
 skill_3 blitz
