@@ -10635,3 +10635,72 @@ comptime machinery.
   out-of-range type id records nothing. The panic-path validation
   (player_def reject) is not unit-tested per the no-expectPanics
   convention (AGENTS → Testing discipline).
+
+## Enemy teams: inspector Team field + text-input commit (slice 3)
+
+The Team row in the enemy inspector's Identity section, wired through the
+existing scalar-field machinery end to end:
+
+- `EntityStatField` += `team` (types.zig) — the one lever. The enum drives
+  the digits-only buffer filter (`textFieldIsNumeric` keys on the union
+  tag), the value source (`Entity.textFieldValue` += team arm), and the
+  commit switch (input_handlers' `commitFocusedTextEdit` += team →
+  `player_set_editor_entity_team`). Team is identity-not-stat, noted on
+  the enum.
+- Content plan (editor_inspector.zig): "Team" row in Identity, after
+  Name — enemy content only (the player inspector stays read-only; the
+  commit's player_def target is rejected at the replay seam, slice 2).
+- Tests: the Team field's formatted value + label emission in the
+  scroll-0 window; end-to-end commit test (1→2, 2→0 helper, empty-buffer
+  no-op, same-value no-op, two undos revert both commits). The existing
+  windowed-emission tests re-anchored: the 2-unit field shifts every
+  downstream scroll offset by +2 (identity 9→11 units, 45→47 total,
+  clamp 35→37).
+
+### Test-harness side fix: duplicate idle points in runToIdle
+
+The new commit test exposed a latent harness footgun: `runToIdle`'s
+UNCONDITIONAL `recordIdlePoint` double-records when called after a
+commit path that drains + records internally
+(`resolveTextEditOutcome` → `pushPlayerActionAndDrain` →
+`maybeRecordIdlePoint`). Duplicate idle points at the same event index
+make `undo` restore to the CURRENT state — a no-op undo step: idle
+points {0,2,2,4,4}, undo → points[3] = 4 → same state. The max_health
+commit test had dodged it accidentally (no runToIdle after its second
+commit). Fix: `runToIdle` now calls `maybeRecordIdlePoint(true)` — the
+same dedupe the live gameLoop uses. No existing test relied on the
+duplicates (full suite green).
+
+Also noted: the edit tool again reported success for a batch where one
+edit silently didn't apply (the state.zig validate arm — caught by rg
+verification, not by the tool). Second occurrence this session; verify
+multi-edit batches explicitly.
+
+## Enemy teams: helper coloring (slice 4)
+
+Team-0 entities render with the PLAYER gradient — the "helper" reading of
+team 0 (DESIGN → Entity & UI Coloring updated with the settled rule):
+the gradient resolves by TEAM (0 → player, else enemy), the INDEX by
+player-ness — the player entity keeps the settings-driven
+`player_color_index`; every other entity (helpers included) uses its own
+authored `color_index`, so a helper sides with the player visually while
+staying distinguishable from the player's settings color.
+
+- `entityDrawable` (view.zig): `is_player: bool` param; body color =
+  team gradient + (settings index for the player, own index otherwise).
+  Layer colors already keyed per-layer own index; weapons/health bars
+  already gradient-by-team — both correct for helpers unchanged.
+  `collectEntityEntries` passes `index == 0` — the player is the FIRST
+  pointer in every caller's slice (level entities[0], hub player, editor
+  player template; the entity-index-0 invariant), noted at the site.
+- Editor inspector (editor_inspector.zig): `InspectorEntityContext`'s
+  gradient for an entity_type target resolves by the template's team — a
+  team-0 type's whole content tints player-gradient (the author sees
+  helper coloring live in the viewport too, via buildEditorScene's
+  entityDrawable path).
+- In-game entity inspect panel (panels.zig): already keyed its gradient
+  on `entity.team == 0` with fixed indices — correct for helpers with no
+  change.
+- Tests: entityDrawable color resolution (player settings-index vs
+  helper own-index vs team-2 enemy gradient, distinct theme gradients);
+  inspector strip tint for team-0 vs team-2 types.

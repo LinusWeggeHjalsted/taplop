@@ -3322,11 +3322,18 @@ Entities and UI are tinted by the active theme's gradients via the raylib
 
 **Entities** carry `color_index: u32` + `layers: []const EntityLayer` (same
 layer model as decorations: overlay sprites, same fixed 512×640 frame + pivot,
-colored independently, drawn after base and before weapons). The player
-(team 0) uses `settings.player_color_index` into the **player gradient**
-(overriding the entity field at render time); enemies (team != 0) use their
-own `color_index` into the **enemy gradient**. Entity layers resolve into the
-same team gradient as their base. `entityDefinitionsEqual` compares
+colored independently, drawn after base and before weapons). The GRADIENT is
+resolved by TEAM (team 0 → player gradient, team != 0 → enemy gradient);
+the INDEX — the player entity (entity index 0) uses
+`settings.player_color_index` (overriding its entity field at render time),
+every OTHER entity — enemy-authored team-0 helpers included — uses its own
+`color_index`. So a helper (team 0, not the player) renders player-gradient
+at its authored index, visually siding with the player while staying
+distinguishable from the player's settings color. Entity layers resolve into
+the same team gradient as their base. The editor inspector resolves the
+same rule for its content tinting (a team-0 entity type's controls tint with
+the player gradient), and the in-game entity-inspect panel already keyed
+its gradient on team 0. `entityDefinitionsEqual` compares
 color_index + layers for editor palette dedup. **Weapons** are team-gradient
 index 1 (player → player gradient, enemy → enemy gradient) and are suppressed
 when the entity's `displays_weapons: bool` is false (e.g. wolves); parsed

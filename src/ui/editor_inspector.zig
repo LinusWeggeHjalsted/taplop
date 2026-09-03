@@ -1364,7 +1364,13 @@ fn buildEditorInspectorContent(
         .entity_type => |index| .{
             .template = editor.entity_types[index].template,
             .edit_target = .{ .entity_type = index },
-            .gradient_colors = active_theme.enemy_gradient.colors,
+            // The team gradient, matching the in-game tinting: a team-0
+            // enemy type is a player-team helper and tints with the PLAYER
+            // gradient (see DESIGN → Entity & UI Coloring).
+            .gradient_colors = if (editor.entity_types[index].template.team == 0)
+                active_theme.player_gradient.colors
+            else
+                active_theme.enemy_gradient.colors,
         },
         .player => .{
             .template = editor.player_def.template,
@@ -4658,5 +4664,47 @@ test "inspector inventory grid: detail block inserts below the selected slot's r
             else => {},
         };
         try std.testing.expectEqual(@as(usize, 0), type_cells);
+    }
+}
+
+test "inspector team gradient: a team-0 entity type tints with the player gradient" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const player_five: types.Color = .{ .r = 40, .g = 40, .b = 40 };
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = .{ black, black, black, black, black, player_five } },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // Same type shape, differing only in team: 0 = helper (player
+    // gradient), 2 = enemy team (enemy gradient). The Identity section
+    // strip's panel color is the observable — the context's gradient[5].
+    const helper_types = [_]types.EntityTypeDef{.{
+        .id = "Helper",
+        .template = .{ .name = "Helper", .team = 0 },
+    }};
+    const enemy_types = [_]types.EntityTypeDef{.{
+        .id = "Brute",
+        .template = .{ .name = "Brute", .team = 2 },
+    }};
+
+    for ([_]struct { editor: types.Editor, expected: types.Color }{
+        .{ .editor = .{ .entity_types = &helper_types, .active_tool = .{ .entity_type = 0 } }, .expected = player_five },
+        .{ .editor = .{ .entity_types = &enemy_types, .active_tool = .{ .entity_type = 0 } }, .expected = black },
+    }) |case| {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{};
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, case.editor, theme, true, &ui_state);
+        // All sections collapsed by default — the first content element
+        // (index 4, after the toggle's 3 + the background panel) is the
+        // Identity strip; its panel tint is the team gradient's index 5.
+        try std.testing.expectEqualStrings("+ Identity", elements.items[6].text_label.text);
+        try std.testing.expectEqual(case.expected, elements.items[4].nine_slice_panel.color);
     }
 }

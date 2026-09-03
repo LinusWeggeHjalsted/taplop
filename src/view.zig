@@ -1478,6 +1478,7 @@ fn entityDrawable(
     entity: *const Entity,
     active_theme: types.ActiveColorTheme,
     player_color_index: u32,
+    is_player: bool,
     camera: types.Camera,
     zoom: f32,
     allocator: std.mem.Allocator,
@@ -1488,10 +1489,13 @@ fn entityDrawable(
     const base_sprite_id = std.fmt.allocPrint(allocator, "entities/{s}", .{entity.sprite}) catch
         @panic("failed to build entity sprite id");
 
-    // Body color: player uses the settings-driven player gradient index;
-    // enemies use their own color_index into the enemy gradient.
+    // Body color: the gradient by team (player team → player gradient,
+    // enemy teams → enemy gradient); the INDEX — the player entity uses
+    // the settings-driven player_color_index, every other entity (enemy-
+    // authored team-0 helpers included) its own color_index. See DESIGN →
+    // Entity & UI Coloring.
     const body_color = if (entity.team == 0)
-        playerColor(active_theme, player_color_index)
+        playerColor(active_theme, if (is_player) player_color_index else entity.color_index)
     else
         enemyColor(active_theme, entity.color_index);
 
@@ -1710,12 +1714,16 @@ fn collectEntityEntries(
 ) void {
     // Dead entities (current_health == 0) are not rendered — their sprite
     // vanishes on death.
-    for (entities) |entity| {
+    // The player entity is the FIRST pointer in every caller's slice
+    // (level entities[0], hub player, editor player template — the
+    // entity-index-0 invariant); only it renders with the settings-driven
+    // player_color_index.
+    for (entities, 0..) |entity, index| {
         if (entity.current_health == 0) continue;
         list.append(allocator, .{
             .sort_y = entity.position.y,
             .sort_x = entity.position.x,
-            .drawable = .{ .entity = entityDrawable(entity, active_theme, player_color_index, camera, zoom, allocator, sprite_bounds, show_health_bar) },
+            .drawable = .{ .entity = entityDrawable(entity, active_theme, player_color_index, index == 0, camera, zoom, allocator, sprite_bounds, show_health_bar) },
             .entity_sprite = entity.sprite,
         }) catch @panic("failed to append entity entry");
     }
@@ -3412,4 +3420,51 @@ test "editor selection overlay: lightest-color outlines around all selected regi
     try std.testing.expectEqual(@as(usize, 4), tile_outlines);
     // The 2-wide decoration's region = 6 boundary edges.
     try std.testing.expectEqual(@as(usize, 6), region_edges);
+}
+
+test "entity body color: gradient by team, index by player-vs-helper" {
+    // The coloring rule (DESIGN → Entity & UI Coloring): team 0 → player
+    // gradient, else enemy gradient; the player ENTITY (index 0) uses the
+    // settings player_color_index, every other entity — enemy-authored
+    // team-0 helpers included — its own color_index.
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const player_four: types.Color = .{ .r = 44, .g = 44, .b = 44 };
+    const enemy_four: types.Color = .{ .r = 55, .g = 55, .b = 55 };
+    const player_two: types.Color = .{ .r = 22, .g = 22, .b = 22 };
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    var player_gradient: [types.gradient_color_count]types.Color = .{black} ** types.gradient_color_count;
+    player_gradient[2] = player_two;
+    player_gradient[4] = player_four;
+    var enemy_gradient: [types.gradient_color_count]types.Color = .{black} ** types.gradient_color_count;
+    enemy_gradient[4] = enemy_four;
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** types.gradient_color_count },
+        .enemy_gradient = .{ .colors = enemy_gradient },
+        .player_gradient = .{ .colors = player_gradient },
+    };
+    const camera: types.Camera = .{ .position = .{ .x = 0, .y = 0 } };
+    const sprite_bounds: std.StringHashMapUnmanaged(?types.SpriteBounds) = .{};
+
+    // All three entities carry color_index 4 — the resolution differs only
+    // by team + player-ness.
+    const player_entity = types.Entity{ .team = 0, .color_index = 4 };
+    const helper_entity = types.Entity{ .team = 0, .color_index = 4 };
+    const enemy_entity = types.Entity{ .team = 2, .color_index = 4 };
+
+    const player_drawable = entityDrawable(&player_entity, theme, 2, true, camera, 1.0, arena, sprite_bounds, false);
+    const helper_drawable = entityDrawable(&helper_entity, theme, 2, false, camera, 1.0, arena, sprite_bounds, false);
+    const enemy_drawable = entityDrawable(&enemy_entity, theme, 2, false, camera, 1.0, arena, sprite_bounds, false);
+
+    // The player: settings index 2 into the player gradient (its own
+    // color_index ignored).
+    try std.testing.expect(std.meta.eql(player_two, player_drawable.base_sprite.color));
+    // The helper: same player GRADIENT, but its own color_index (4).
+    try std.testing.expect(std.meta.eql(player_four, helper_drawable.base_sprite.color));
+    // The team-2 enemy: enemy gradient at its own color_index.
+    try std.testing.expect(std.meta.eql(enemy_four, enemy_drawable.base_sprite.color));
 }
