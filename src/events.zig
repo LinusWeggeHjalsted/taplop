@@ -263,9 +263,9 @@ pub const EditorEvent = union(enum) {
     },
 
     // ── Level tiles ──
-    // Set a single tile (paint floor / erase). One event per cell — drag-
-    // painting pushes one editor_set_tile per cell crossed (per-field undo
-    // granularity by design).
+    // Set a single tile (paint floor / erase). One event per cell: the
+    // drag-paint gesture pushes one per tile the pointer enters (see
+    // handleEditorTileDrag), and undo granularity is per tile by design.
     editor_set_tile: struct {
         level_index: u32,
         position: Vector2,

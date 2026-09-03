@@ -300,6 +300,17 @@ pub const UiState = struct {
     /// move — each gesture's press clears the other's stale state.
     editor_move_drag: ?EditorMoveDrag = null,
 
+    /// In-progress tile-tool PAINT drag (see `handleEditorTileDrag` in
+    /// input_gestures.zig). A plain left press over the viewport (tile tool
+    /// active) sets it; the press tile paints immediately, then each tile
+    /// the held pointer enters paints until release or context loss (tool
+    /// switch away from tile / tab / screen change — the gesture's next
+    /// call clears). A bool because the drag needs no press data (no
+    /// threshold promotion — painting starts at press); the visited-tile
+    /// set lives on SessionState (`editor_tile_drag_visited`). While set,
+    /// the idle-input tile arm defers (the gesture owns the press).
+    editor_tile_drag: bool = false,
+
     pub fn toggleMiddlePanel(self: *UiState, panel_id: MiddlePanelId) void {
         // If already open, close it
         for (&self.open_middle_panels) |*slot| {

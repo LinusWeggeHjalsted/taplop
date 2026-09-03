@@ -391,6 +391,12 @@ fn update(
     // two gestures are exclusive by press modifier + selection hit).
     input_gestures.handleEditorMoveDrag(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
 
+    // Editor tile-tool paint drag (plain left press paints the press tile;
+    // held + move paints each newly-visited tile). Runs after the move
+    // drag — the gestures are exclusive by tool (tile vs select), and a
+    // tile-tool press never reaches the select gestures.
+    input_gestures.handleEditorTileDrag(history, player_input.pointer, ui_elements, camera, camera_zoom, viewport);
+
     // Turn-flow pause: while waiting, drain the timer and stall event
     // processing until it elapses. Anytime input and drag above still run, so
     // undo/redo/options remain responsive mid-wait (undo rebuilds state and

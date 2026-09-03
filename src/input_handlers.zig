@@ -2577,6 +2577,14 @@ pub fn handleIdleInput(
             if (current.editor) |*editor| {
                 switch (editor.active_tool) {
                     .tile => {
+                        // The paint-drag gesture owns the pointer press
+                        // (press paints immediately, held paints each
+                        // newly-visited tile — handleEditorTileDrag); the
+                        // arm defers while a drag is active so a claimed
+                        // press can't double-fire. The keyboard confirm-
+                        // at-cursor path still lands here when no drag is
+                        // in progress.
+                        if (history.session.ui_state.editor_tile_drag) return;
                         const plan = planning.planEditorTilePaintActions(editor, clicked_position, allocator);
                         if (plan.len > 0) {
                             event_push.pushPlayerAction(current, .{ .player_paint_editor_tile = .{

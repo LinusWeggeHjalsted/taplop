@@ -11050,3 +11050,53 @@ numbers; a mid-edit-shrunk live grid keeps the snapshot framing), handler
 (snapshot refreshed on switch, held across `editor_set_tile`, reverted
 verbatim by undo-of-switch; crafted states without open_editor carry no
 snapshot). DESIGN → Platform Seam → Camera clamping updated.
+
+## Editor tile-tool drag-painting (handleEditorTileDrag)
+
+The last remaining editor viewport input: left press + drag with the tile
+tool paints floor tiles continuously.
+
+- **Gesture** (`handleEditorTileDrag`, input_gestures.zig — the
+  marquee/move-drag pattern): a plain left press over the viewport (tile
+  tool active, not over blocking UI) claims the drag and paints the tile
+  directly under the cursor immediately — a clean click is
+  indistinguishable from the old click path (same
+  `planEditorTilePaintActions` planner, same empty-plan no-op gate; the
+  press paints on the press tick because the input state marks the button
+  held at the press edge). While held, each tile the pointer ENTERS that
+  the drag hasn't visited paints the same way; the visited set
+  (`SessionState.editor_tile_drag_visited`, reset at press,
+  `active_anims`-shape backing-allocator list — Session-owned, not
+  UiState, so the wholesale UiState reset on screen transitions can't
+  orphan the buffer) stops re-fires when the pointer wiggles back over
+  painted ground.
+- **Empty-stack firing rule**: paints push only when the event stack is
+  empty. A plan computed while earlier events sit unprocessed could
+  reference placement indices those events are about to shift — two
+  paints at tiles covered by the same multi-tile decoration would
+  double-delete the placement and panic (the reason the selection move
+  chains `editor_commit_selection_move` against live post-delete state).
+  In practice a paint drains within a frame, so the gate is invisible.
+- **Pause over blocking UI** (the marquee's last-valid-corner rule): while
+  the pointer is over a panel, no paint and no visited marks; painting
+  resumes at whatever tile is under the pointer on re-entry. A press over
+  blocking UI never claims — dragging out of a panel onto the world paints
+  nothing.
+- **Ownership split**: the gesture owns the pointer press — the idle-input
+  tile arm (`handleIdleInput`) defers while `UiState.editor_tile_drag` is
+  set, so a claimed press can't double-fire; the keyboard confirm-at-
+  cursor path still lands in the arm when no drag is in progress. Tool
+  switch away from tile / tab / screen change ends the drag on the
+  gesture's next call (context clear, the marquee pattern). Undo
+  granularity is PER TILE by design (events.zig `editor_set_tile`).
+
+Also in this commit: DESIGN's "Remaining: default level template
+(data/default_level.txt)" line was stale (the template landed with
+editor_add_level) — removed alongside the drag-painting remainder.
+
+Tests: press paints immediately / held paints entered tiles / visited
+wiggle never re-fires / release re-arms; press over blocking UI never
+claims + mid-drag pause + resume; mid-drain deferral (held crossing a new
+tile while the previous paint is still on the stack fires nothing, then
+fires once drained); tool-switch context clear; the idle-arm defer (+
+positive control). DESIGN → Level Editor → Active-tool model updated.

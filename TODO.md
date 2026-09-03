@@ -647,8 +647,9 @@ paragraph). Remaining work:
   DONE.md.) OPEN: those move events look superseded by the selection move's
   chained `editor_commit_selection_move` (delete + re-place via the
   placement planners — no per-placement move verb is ever pushed);
-  decide keep-or-remove when the drag-painting / move slices revisit
-  them.
+  decide keep-or-remove — both revisiting slices (the selection-move
+  drag + the tile drag-paint) have landed and neither pushed a
+  per-placement move verb, so nothing else on the horizon touches them.
 - Editor input/UI: the settled layout/interaction design (DESIGN →
   Architecture → Level Editor → Editor UI layout — four zones: tabs,
   left inspector, viewport, right metadata sidebar + bottom tool palette;
@@ -949,7 +950,10 @@ paragraph). Remaining work:
               the level-name pattern), the commit sites mirroring the
               item_def arms, tests. History in DONE.md.
   - [ ] **Remaining layer-adjacent opens:**
-  Deferred: drag-painting. The `.editor` screen renders the top row +
+  Drag-painting is DONE (tile tool — `handleEditorTileDrag`: press paints
+  the tile under the cursor immediately, held + move paints each
+  newly-visited tile; see DESIGN → Level Editor → Active-tool model +
+  DONE.md). The `.editor` screen renders the top row +
   bottom tool palette + the viewport world scene (tiles, palette-resolved
   placements, `!`/`=` markers; camera centered on the active level's
   player_start, right-drag pan) — reachable via the main-menu "Editor"
@@ -979,7 +983,7 @@ paragraph). Remaining work:
   ground clears it — the clicky deselect-all); shift+click = TOGGLE the
   group; shift+drag = marquee add; plain drag on a selected thing = move
   (see DESIGN → Level Editor → Selection model). Remaining viewport
-  INPUT: drag-paint. All tools
+  INPUT: none — the tile tool's drag-paint landed (see above). All tools
   have left-click input + cursor previews + the right-click delete.
   No-op clicks never fire: each tool's effect is computed by a pure
   planner (`planEditor*Actions`, editor/planning.zig) shared by the

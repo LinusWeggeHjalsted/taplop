@@ -313,6 +313,15 @@ pub const SessionState = struct {
     /// `event_history`); bounded in practice by short durations + the
     /// transition clear. See DESIGN → Animation.
     active_anims: std.ArrayListUnmanaged(types.ActiveAnim) = .empty,
+
+    /// The editor tile-tool paint drag's visited-tile set (see
+    /// `handleEditorTileDrag` in input_gestures.zig): tiles the current drag
+    /// has already entered, so wiggling back over painted ground never
+    /// re-fires. Reset (capacity retained) at every drag press. Session-
+    /// owned rather than UiState so the wholesale UiState reset on screen
+    /// transitions can't orphan the buffer; bounded by the longest drag.
+    /// Backed by `backing_allocator` (the `active_anims` shape).
+    editor_tile_drag_visited: std.ArrayListUnmanaged(types.Vector2) = .empty,
     /// Per-entity last number-anim start clock (session-relative us), for the
     /// 0.125s per-entity stagger: a same-entity multi-hit in one drain (e.g.
     /// Bash's attack+collision) spaces its numbers so they don't overlap.

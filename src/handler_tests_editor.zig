@@ -2638,6 +2638,248 @@ test "editor right-click delete with an empty plan fires no event" {
     try testing.expectEqual(@as(usize, 1), tiled_history.current_state.event_stack.len);
 }
 
+// --- Tile-tool paint drag (handleEditorTileDrag) ---------------------------
+
+/// Screen position of tile (x,y)'s center for the paint-drag tests:
+/// camera at the origin, zoom 1, the 1280x720 viewport — screenToTile's
+/// reference mapping (center 640,360 = tile origin).
+fn tileCenter(x: i32, y: i32) types.ScreenPosition {
+    return .{ .x = 640 + x * 256 + 128, .y = 360 + y * 256 + 128 };
+}
+
+test "tile-tool paint drag: press paints, held paints entered tiles, visited tiles never re-fire" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{ .levels = &levels }));
+    runToIdle(&history);
+    history.current_state.editor.?.active_tool = .tile;
+
+    const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
+    const viewport = input.ViewportSize{ .width = 1280, .height = 720 };
+
+    // Press at (5,5): the tile directly under the cursor paints
+    // immediately (as soon as the drag begins).
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .pressed = true, .held = true, .position = tileCenter(5, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expect(history.session.ui_state.editor_tile_drag);
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    runToIdle(&history);
+    try testing.expect(hasTile(history.current_state.editor.?.levels[0], .{ .x = 5, .y = 5 }));
+
+    // Held, pointer entered (6,5): the new tile paints.
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .held = true, .position = tileCenter(6, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    runToIdle(&history);
+    try testing.expect(hasTile(history.current_state.editor.?.levels[0], .{ .x = 6, .y = 5 }));
+
+    // Wiggling back over visited tiles fires nothing (the visited set —
+    // and the re-paint would be a no-op anyway).
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .held = true, .position = tileCenter(5, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .held = true, .position = tileCenter(6, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // Release ends the drag. A fresh press re-arms the visited set — and
+    // on the already-painted tile it plans empty, so no event (the no-op
+    // gate).
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .released = true, .position = tileCenter(6, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expect(!history.session.ui_state.editor_tile_drag);
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .pressed = true, .held = true, .position = tileCenter(5, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expect(history.session.ui_state.editor_tile_drag);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+}
+
+test "tile-tool paint drag: defers while events drain, pauses over blocking UI, ends on tool switch" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const levels = [_]types.EditorLevel{.{}};
+    var history = harness.newHistory(editorStateWith(.{ .levels = &levels }));
+    runToIdle(&history);
+    history.current_state.editor.?.active_tool = .tile;
+
+    const camera = types.Camera{ .position = .{ .x = 0, .y = 0 } };
+    const viewport = input.ViewportSize{ .width = 1280, .height = 720 };
+
+    // A press over blocking UI never claims — dragging out of the panel
+    // onto the world paints nothing (the press wasn't a world press).
+    const panel = ui.UiElement{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = tileCenter(5, 5),
+        .width = 10,
+        .height = 10,
+    } };
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .pressed = true, .held = true, .position = tileCenter(5, 5) },
+        &.{panel},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expect(!history.session.ui_state.editor_tile_drag);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .held = true, .position = tileCenter(6, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // A world press paints — but the paint is still on the stack when the
+    // pointer crosses into (6,5): the drag defers (no plan computed against
+    // state with pending events). Once the stack drains, the same held
+    // pointer fires.
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .pressed = true, .held = true, .position = tileCenter(5, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .held = true, .position = tileCenter(6, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    runToIdle(&history);
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .held = true, .position = tileCenter(6, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    runToIdle(&history);
+    try testing.expect(hasTile(history.current_state.editor.?.levels[0], .{ .x = 5, .y = 5 }));
+    try testing.expect(hasTile(history.current_state.editor.?.levels[0], .{ .x = 6, .y = 5 }));
+
+    // Mid-drag, over a panel covering the pointer's tile: the drag pauses
+    // (no paint, no visited mark — the marquee's last-valid-corner rule);
+    // back over the world at the same unvisited tile it resumes.
+    const panel_away = ui.UiElement{ .nine_slice_panel = .{
+        .sprite_id = "ui/panel",
+        .screen_position = tileCenter(7, 5),
+        .width = 10,
+        .height = 10,
+    } };
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .held = true, .position = tileCenter(7, 5) },
+        &.{panel_away},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .held = true, .position = tileCenter(7, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    runToIdle(&history);
+
+    // A tool switch away from tile (crafted directly — the event path does
+    // the same) ends the drag on the gesture's next call: no paint, and
+    // the idle arm owns presses again.
+    history.current_state.editor.?.active_tool = .select;
+    input_gestures.handleEditorTileDrag(
+        &history,
+        .{ .held = true, .position = tileCenter(8, 5) },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try testing.expect(!history.session.ui_state.editor_tile_drag);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expect(!hasTile(history.current_state.editor.?.levels[0], .{ .x = 8, .y = 5 }));
+}
+
+test "tile-tool idle arm defers while a paint drag owns the press" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const tiles = [_]types.Vector2{.{ .x = 1, .y = 1 }};
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &tiles }};
+    var history = harness.newHistory(editorStateWith(.{ .levels = &levels }));
+    runToIdle(&history);
+    history.current_state.editor.?.active_tool = .tile;
+
+    // While the paint drag is active, a tile_clicked (the press the gesture
+    // already claimed, or a keyboard confirm) fires nothing — the gesture
+    // owns the pointer press.
+    history.session.ui_state.editor_tile_drag = true;
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, .{});
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+
+    // No drag: the same click fires (the keyboard confirm-at-cursor path —
+    // the arm still works when no drag is in progress).
+    history.session.ui_state.editor_tile_drag = false;
+    input_handlers.handleIdleInput(&history, .{ .tile_clicked = .{ .x = 2, .y = 1 } }, .{});
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+}
+
 // --- Select-tool marquee (planEditorRegionSelectActions) --------------------
 
 const tall_footprint = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 0, .y = 1 } };

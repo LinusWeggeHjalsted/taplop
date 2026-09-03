@@ -1065,6 +1065,90 @@ pub fn handleEditorMoveDrag(
     }
 }
 
+/// Editor tile-tool PAINT drag (tile tool active, plain left press over
+/// the viewport). The press claims the gesture — and the tile directly
+/// under the cursor paints immediately, so a clean click is the same paint
+/// the idle-input arm always fired (same planner, same no-op gate; the arm
+/// defers while the drag is active so a claimed press can't double-fire).
+/// While the button is held, each tile the pointer ENTERS that the drag
+/// hasn't visited yet paints the same way; the visited set
+/// (`SessionState.editor_tile_drag_visited`, reset at press) stops re-
+/// fires when the pointer wiggles back over painted ground, and the
+/// planner's no-op gate additionally skips already-complete tiles the
+/// drag merely crosses. Paints fire only at an EMPTY event stack: a plan
+/// computed while earlier events sit unprocessed could reference
+/// placement indices those events are about to shift (the decoration-
+/// delete hazard; the chained selection-move planner exists for the same
+/// reason), and a paint drains within a frame anyway. Over blocking UI the
+/// drag PAUSES (no paint, no visited marks — the marquee's last-valid-
+/// corner rule); painting resumes on re-entry at whatever tile is under
+/// the pointer. Release (or context loss — tool switch away from tile,
+/// tab/screen change) ends the drag. Mirrors the marquee + move-drag
+/// gestures (input_gestures.zig); undo granularity is per tile by design
+/// (see `editor_set_tile` in events.zig).
+pub fn handleEditorTileDrag(
+    history: *GameStateHistory,
+    pointer: input.PointerInput,
+    ui_elements: []const ui.UiElement,
+    camera: types.Camera,
+    camera_zoom: f32,
+    viewport: input.ViewportSize,
+) void {
+    const current = &history.current_state;
+    const ui_state = &history.session.ui_state;
+
+    // Editor edit mode + the tile tool only. Not our context — clear any
+    // in-progress drag (a stale gesture must not fire later).
+    if (current.screen != .editor or current.editor == null or
+        current.editor.?.active_tool != .tile)
+    {
+        ui_state.editor_tile_drag = false;
+        return;
+    }
+
+    if (pointer.pressed) {
+        // A press over blocking UI belongs to the panel — the drag never
+        // starts there, and dragging out of a panel onto the world paints
+        // nothing (the press wasn't a world press).
+        if (ui.blockingElementAt(ui_elements, pointer.position) != null) return;
+        ui_state.editor_tile_drag = true;
+        history.session.editor_tile_drag_visited.clearRetainingCapacity();
+    }
+
+    if (!ui_state.editor_tile_drag) return;
+    if (pointer.released) {
+        ui_state.editor_tile_drag = false;
+        return;
+    }
+    // `held` is true on the press tick too (the input state marks the
+    // button held at the press edge), so the press tile paints in this
+    // same call — "as soon as the drag begins".
+    if (!pointer.held or current.event_stack.len != 0 or
+        ui.blockingElementAt(ui_elements, pointer.position) != null)
+    {
+        return;
+    }
+    const tile = input.screenToTile(
+        .{ .x = @floatFromInt(pointer.position.x), .y = @floatFromInt(pointer.position.y) },
+        camera,
+        camera_zoom,
+        viewport,
+    );
+    for (history.session.editor_tile_drag_visited.items) |seen| {
+        if (seen.x == tile.x and seen.y == tile.y) return;
+    }
+    history.session.editor_tile_drag_visited.append(history.backing_allocator, tile) catch
+        @panic("failed to append tile-drag visited entry");
+    if (current.editor) |*editor| {
+        const arena = history.current_arena.allocator();
+        if (planning.planEditorTilePaintActions(editor, tile, arena).len > 0) {
+            event_push.pushPlayerAction(current, .{ .player_paint_editor_tile = .{
+                .position = tile,
+            } }, arena);
+        }
+    }
+}
+
 test "dragToOrchestrator maps valid drags and blocks cross-domain drops" {
     // inventory → gear = player_equip_to_gear
     {

@@ -2071,7 +2071,7 @@ buttons carry `Action`s that dispatch via `handleAnytimeInput` (before any
    open on undo. Prefer the GameState-derived approach when the trigger is
    already in undoable state.
 
-### Level Editor (core + UI + save/export + mission browser landed; drag-painting pending)
+### Level Editor (core + UI + save/export + mission browser landed)
 
 A custom-mission editor. A mission is multiple sequential levels, so the
 editor is focused on a mission with per-level tabs (quick swap to edit each
@@ -2942,8 +2942,19 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   anchored so the decoration's ANCHOR tile sits at the cursor, and the
   select tool previews what a click would select (a covering
   decoration's footprint region, else the single tile).
-  Drag-painting (one `editor_set_tile` per
-  cell crossed) is still deferred. Does not modify the selection set.
+  Drag-painting is LANDED: a plain left press paints the tile directly
+  under the cursor immediately (a clean click is indistinguishable from
+  the old click path — same planner, same no-op gate), and while the
+  button is held each tile the pointer ENTERS that the drag hasn't
+  visited yet paints the same way (`handleEditorTileDrag` in
+  input_gestures.zig — the marquee/move-drag gesture pattern; the visited
+  set lives on SessionState, reset at press, so wiggling back over
+  painted ground never re-fires). Paints fire only at an EMPTY event
+  stack — a plan computed while earlier events sit unprocessed could
+  reference placement indices those events are about to shift (the
+  decoration-delete hazard) — and pause while the pointer is over
+  blocking UI (the marquee's last-valid-corner rule). Undo granularity
+  is PER TILE by design. Does not modify the selection set.
 - **Placement tools (entity/decoration/item type):** click places one
   instance of that type at the cursor position. The ENEMY tool is landed
   (`player_place_editor_entity` — the decoration/item tools mirror it
@@ -3118,8 +3129,10 @@ did the selection DELETE (Delete key → `player_delete_editor_selection`
 + `planEditorSelectionDeleteActions`; markers + their tiles protected),
 and the selection MOVE (`player_move_editor_selection` + the chained
 `editor_commit_selection_move` worklist + the `handleEditorMoveDrag`
-gesture — see Selection model). Remaining
-viewport input: drag-painting.
+gesture — see Selection model), and so did the tile-tool DRAG-PAINT
+(`handleEditorTileDrag` — press paints the tile under the cursor, held
+paints each newly-visited tile; see Active-tool model). Remaining
+viewport input: none.
 
 **Event structs DEFINED, handlers landing per slice.** Every edit-verb event
 struct exists in events.zig (`editor_add_level` / `editor_delete_level` /
@@ -3174,8 +3187,7 @@ bottom bar + inspector + metadata sidebar rendering with real data, no
 interaction; then wire input per tool + the edit-verb handlers). The
 viewport shell includes the editor drawable projection (see Editor viewport
 rendering above). Still-needed event structs: none — the gradient-override
-setters landed with the settings-sidebar slice. Remaining: default level
-template (`data/default_level.txt`), drag-painting. Validation result +
+setters landed with the settings-sidebar slice. Remaining: validation result +
 replay attachment (deferred with online services), editor autosave
 (nice-to-have).
 
