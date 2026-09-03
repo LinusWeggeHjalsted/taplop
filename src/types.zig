@@ -1017,6 +1017,11 @@ pub const EntityStatField = enum {
     defense,
     speed,
     aggro_range,
+    /// Team rides the stat-field machinery but is identity, not a stat:
+    /// 0 = the player's team (helpers the player doesn't control), 1+ =
+    /// mutually hostile enemy teams. Enemy-authorable only — the commit
+    /// path rejects the player_def target.
+    team,
 };
 
 /// One numeric stat an equipped item can carry. Not every item kind has
@@ -1305,6 +1310,7 @@ pub const Entity = struct {
                 .defense => try std.fmt.allocPrint(allocator, "{d}", .{self.defense}),
                 .speed => try std.fmt.allocPrint(allocator, "{d}", .{self.speed}),
                 .aggro_range => try std.fmt.allocPrint(allocator, "{d}", .{self.aggro_range}),
+                .team => try std.fmt.allocPrint(allocator, "{d}", .{self.team}),
             },
             .item_name => |slot| if (self.gearSlotItem(slot)) |item|
                 itemName(item)

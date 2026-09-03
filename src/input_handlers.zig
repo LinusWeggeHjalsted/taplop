@@ -466,6 +466,10 @@ pub fn commitFocusedTextEdit(history: *GameStateHistory) void {
                     .target = entity_target,
                     .value = parsed,
                 } },
+                .team => .{ .player_set_editor_entity_team = .{
+                    .target = entity_target,
+                    .value = parsed,
+                } },
             };
             pushPlayerActionAndDrain(history, action);
         },

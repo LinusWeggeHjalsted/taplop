@@ -1040,6 +1040,7 @@ fn editorInspectorEntityEntries(
     if (expanded[@intFromEnum(types.EditorInspectorSectionId.identity)]) {
         try entries.appendSlice(allocator, &.{
             .{ .field = .{ .label = "Name", .control = .{ .text = .entity_name } } },
+            .{ .field = .{ .label = "Team", .control = .{ .text = .{ .entity_stat = .team } } } },
             .{ .field = .{ .label = "Sprite", .control = .sprite_button } },
             .{ .field = .{ .label = "Color", .control = .swatches } },
             .{ .field = .{ .label = "Displays weapons", .control = .toggle } },
@@ -3110,17 +3111,27 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // Scroll 10 — the Stats section's four numeric fields are the window
+    // Scroll 12 — the Stats section's four numeric fields are the window
     // (the section-break spacer fills the tail): decimal-formatted values.
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 10, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 12, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{ "- Stats", "Max health", "Defense", "Speed", "Aggro range" });
         try std.testing.expectEqualStrings("20", findTextField(&elements, .{ .entity_stat = .max_health }).?.text);
         try std.testing.expectEqualStrings("0", findTextField(&elements, .{ .entity_stat = .defense }).?.text);
         try std.testing.expectEqualStrings("1", findTextField(&elements, .{ .entity_stat = .speed }).?.text);
         try std.testing.expectEqualStrings("3", findTextField(&elements, .{ .entity_stat = .aggro_range }).?.text);
+    }
+
+    // The Team field rides the same stat machinery (scroll 0 window,
+    // Identity section): the template's team, decimal-formatted.
+    {
+        var elements: UiElementList = .empty;
+        var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
+        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "skeleton_1", "Color" });
+        try std.testing.expectEqualStrings("1", findTextField(&elements, .{ .entity_stat = .team }).?.text);
     }
 
     // The Color control (scroll 0 window): six swatch fills in the ENEMY
@@ -3153,10 +3164,11 @@ test "inspector scalar controls: stat fields formatted, swatch row, toggle" {
     }
 
     // The Displays-weapons control: a full-width toggle showing the FORMAT
-    // vocabulary ("true"), highlighted while true.
+    // vocabulary ("true"), highlighted while true. Scroll 3 — the Team
+    // field pushed the toggle row out of the scroll-0 window.
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 3, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         var toggle_button: ?Button = null;
         var saw_true_label = false;
@@ -3279,12 +3291,13 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // Units: Identity 9 + spacer, Stats 9 + spacer → Weapons header at 20.
-    // Scroll 20 shows: the Weapons header, Main hand (equipped: type row +
-    // Delete + its fields), Off hand (empty: type row, no Delete).
+    // Units: Identity 11 (the Team field included) + spacer, Stats 9 +
+    // spacer → Weapons header at 22. Scroll 22 shows: the Weapons header,
+    // Main hand (equipped: type row + Delete + its fields), Off hand
+    // (empty: type row, no Delete).
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 20, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 22, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{ "- Weapons", "Main hand", "Delete", "Main hand name", "Main hand damage", "Off hand" });
 
@@ -3324,12 +3337,12 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
         try std.testing.expectEqual(@as(usize, 1), deletes);
     }
 
-    // The Gear section's items (scroll 30 — the window opens at the Gear
+    // The Gear section's items (scroll 32 — the window opens at the Gear
     // header): coat equipped → Delete + its fields; amulet empty → Add.
     // The coat's defense field doesn't fully fit the window.
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 30, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 32, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{ "- Gear", "Amulet", "Add", "Coat", "Delete", "Coat name", "Coat health bonus" });
 
@@ -3933,51 +3946,51 @@ test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scr
         .active_tool = .{ .entity_type = 0 },
     };
 
-    // 45 row units (6 sections × 1 + 17 two-unit entries — 4 identity
-    // fields, 4 stats, 2 weapon slots, 5 gear slots, the utility-skill
-    // row, the add-layer row — + 5 spacers); the panel fits 10 units, so
-    // 35 units scroll + the scrollbar shows.
+    // 47 row units (6 sections × 1 + 18 two-unit entries — 5 identity
+    // fields (Team included), 4 stats, 2 weapon slots, 5 gear slots, the
+    // utility-skill row, the add-layer row — + 5 spacers); the panel fits
+    // 10 units, so 37 units scroll + the scrollbar shows.
     const visible_rows = @divFloor(
         editorInspectorPanelRect().height - 2 * ui_gap,
         editor_inspector_row_height,
     );
     try std.testing.expectEqual(@as(i32, 10), visible_rows);
 
-    // Scroll 0: units 0..10 — Identity, Name, Sprite, Color, Displays
-    // weapons, then the section-break spacer (the Stats header starts at
-    // 10 and needs the spacer's unit too → next window).
+    // Scroll 0: units 0..10 — Identity, Name, Team, Sprite, Color (the
+    // Displays-weapons row needs units 9..11 → doesn't fully fit; one
+    // stat text field swaps in for the toggle row's four elements).
     // Elements: toggle 3 + bg 1 + Identity 3 (panel + button + label) +
-    // Name 1 (text field) + Sprite 3 (panel + picker button + label) +
-    // Color
-    // (label + 6 swatch fills + 6 swatch buttons = 13) + Displays weapons
-    // (label + panel + button + value label = 4) + scrollbar 2 = 29.
+    // Name + Team (two stat text fields) + Sprite 3 (panel + picker
+    // button + label) + Color
+    // (label + 6 swatch fills + 6 swatch buttons = 13) + scrollbar 2 = 30.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(usize, 32), elements.items.len);
-        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Sprite", "(none)", "Color", "Displays weapons", "true" });
+        try std.testing.expectEqual(@as(usize, 30), elements.items.len);
+        try expectInspectorLabels(&elements, &.{ "- Identity", "Name", "Team", "Sprite", "(none)", "Color" });
         // 6 swatch fills + the 2 scrollbar rects.
         try std.testing.expectEqual(@as(usize, 8), countSolidRects(&elements));
     }
 
-    // Scroll 3: the window opens at Sprite and runs through the spacer +
-    // the Stats header + Max health (Defense doesn't fully fit).
+    // Scroll 5 (the Team field pushes everything two units down): the
+    // window opens at Sprite and runs through the spacer + the Stats
+    // header + Max health (Defense doesn't fully fit).
     {
         var elements: UiElementList = .empty;
-        var ui_state: UiState = .{ .editor_inspector_scroll = 3, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
+        var ui_state: UiState = .{ .editor_inspector_scroll = 5, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
         try expectInspectorLabels(&elements, &.{ "Sprite", "(none)", "Color", "Displays weapons", "true", "- Stats", "Max health" });
     }
 
-    // Out-of-range scroll clamps to max (45 − 10 = 35, the five spacers
+    // Out-of-range scroll clamps to max (47 − 10 = 37, the five spacers
     // included): the window is the last gear slot + the utility section +
     // the skill row + the Layers tail.
     {
         var elements: UiElementList = .empty;
         var ui_state: UiState = .{ .editor_inspector_scroll = 999, .editor_inspector_section_expanded = allInspectorSectionsExpanded() };
         try buildEditorInspectorPanel(&elements, arena.allocator(), metrics, editor, theme, true, &ui_state);
-        try std.testing.expectEqual(@as(i32, 35), ui_state.editor_inspector_scroll);
+        try std.testing.expectEqual(@as(i32, 37), ui_state.editor_inspector_scroll);
         try expectInspectorLabels(&elements, &.{
             "Boots", "Add", "- Utility skills", "Skill bar", "- Layers", "Add layer", "Pick sprite",
         });

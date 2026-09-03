@@ -4383,6 +4383,61 @@ test "player_set_editor_entity_team: sets the template team (0 helpers, 2 enemy 
     try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.entity_types[0].template.team);
 }
 
+test "inspector team commits: numeric parse, would-change gate, empty no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton", .team = 1, .max_health = 20 },
+    }};
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+    }));
+    runToIdle(&history);
+
+    const no_keys: [0]?[]const u8 = .{};
+    const backspace_pressed: [1]?[]const u8 = .{"Backspace"};
+    const field: types.TextFieldRef = .{ .id = .{ .entity_stat = .team }, .target = .{ .entity = .{ .entity_type = 0 } } };
+
+    // Edit 1 → 2 (backspace, type 2): parsed + committed.
+    ui.beginTextEdit(&history.session.ui_state, field, "1");
+    _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "", &backspace_pressed, &no_keys, false);
+    _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "2", &no_keys, &no_keys, false);
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 2), history.current_state.editor.?.entity_types[0].template.team);
+
+    // Team 0 — the helper case — commits the same way.
+    ui.beginTextEdit(&history.session.ui_state, field, "2");
+    _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "", &backspace_pressed, &no_keys, false);
+    _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "0", &no_keys, &no_keys, false);
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.entity_types[0].template.team);
+
+    // Empty buffer commits nothing (no event, value intact).
+    ui.beginTextEdit(&history.session.ui_state, field, "0");
+    _ = ui.routeTextInput(&history.session.ui_state.text_edit.?, "", &backspace_pressed, &no_keys, false);
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.entity_types[0].template.team);
+    try testing.expect(history.session.ui_state.text_edit == null);
+
+    // Same-value input (0 → "0") records nothing: two undos revert both
+    // commits above.
+    ui.beginTextEdit(&history.session.ui_state, field, "0");
+    input_handlers.resolveTextEditOutcome(&history, .commit);
+    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(u32, 2), history.current_state.editor.?.entity_types[0].template.team);
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.entity_types[0].template.team);
+}
+
 test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
