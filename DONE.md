@@ -10755,3 +10755,60 @@ implied:
 - **Entity inspect panel** (panels): the stat column leads with
   "Team n" (author request) before Current Health / Momentum / Aggro
   Range. Test updated (11 stat lines, Team first).
+
+## Camera clamping (levels/hubs)
+
+The polishing pass on camera framing: small levels sat off-center (the
+camera is player-centered, so a level fitting on screen showed it pushed
+toward whichever edge the player stood on), and big levels showed void
+past their edges when the player stood near one. Spec + design in
+DESIGN → Platform Seam → Camera clamping. Two slices:
+
+1. **Region builder + panel-width extraction** (`view.zig`):
+   `middlePanelWidth`/`middlePanelsOccupiedWidth` extracted out of
+   `buildMiddlePanels` (the inspect panel's dead-target/dead-index/
+   hub-screen no-render conditions moved into the width helper; the
+   builder now force-unwraps what the helper guaranteed non-null — the
+   level-handler fail-fast precedent). `cameraViewRegion` derives the
+   clamp region per frame: y bounded by the top/bottom bars, x bounded
+   from the left by the panels' occupied width, null outside
+   levels/hubs. `cameraViewRegionFor` (pure) drops the panel bound when
+   the remaining width can't fit the margin band (4 tiles at the zoom)
+   — the "panels fully cover the screen → act as if none open" rule
+   falls out of feasibility, no threshold constant.
+2. **Clamp math + wiring**: `computeCamera` gained a `?Rectangle`
+   view_region param and applies `clampCameraAxis` per axis —
+   level-flush bounds ALWAYS (pan included: panning stops at the level
+   edge, never into void; a level narrower than the region is centered
+   as a whole and pan is a no-op on that axis), and the
+   `camera_edge_margin_tiles` (2) player-margin band ONLY for the
+   automatic camera (`pan == null`) — sequential clamping (flush then
+   margin) gives "shed the void as far as possible without pushing the
+   player past 2 tiles of clearance". A pan suspends the margin on both
+   axes until the next recenter (player move / screen transition).
+   `frame()` computes the region at both camera sites (pre-drain input,
+   post-drain render — panels can open mid-drain); the pan solve in
+   `handleCameraPan` passes `null` region for its reference so the
+   grabbed point tracks exactly in the level interior, with resistance
+   only at the edges. Levels clamp on `level_tiles`, hubs on
+   `hub_tiles` (bbox — levels are non-rectangular).
+
+Level bounds are the tile-grid bounding box, not authored dims — the
+only "level rectangle" that exists for non-rectangular layouts.
+
+Tests: the width helper's no-render conditions; occupied width (gaps
+only between rendered panels); the region's vertical/horizontal bounds,
+feasibility boundary (exactly-enough honored, one-pixel-short fallback,
+zoom-scaled band), null outside levels/hubs, hub band; clamp semantics —
+near-edge corners keep exactly 512 px (2 tiles) clearance from the
+region edge, mid-level player stays exactly player-centered, a fitting
+level centers as a whole (player position and pan both irrelevant), one
+axis fits/other clamps, pan roams within the level but stops flush at
+the edges (and suspends the y margin while panned), panels shift the
+margin band to the viewable region, hub bounds, null region = unclamped
+(the pan-solve contract). All hand-computed from the spec, not from the
+implementation.
+
+Deferred remainder: the EDITOR viewport's framing (sidebars + no player
+following) is a different problem, untouched — the editor camera still
+centers on the active level's player_start, unclamped.

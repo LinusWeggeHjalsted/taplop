@@ -938,26 +938,148 @@ pub fn playerPosition(current_state: *const GameState) types.Vector2 {
     return .{ .x = 0, .y = 0 };
 }
 
+/// World-pixel bounding box of the current screen's tile grid (levels and
+/// hubs), full tile extents (min tile origin .. max tile far edge). Levels
+/// are non-rectangular (`level_tiles` is a flat position list), so the bbox
+/// is the natural "level rectangle". Null when the screen has no live world
+/// or no tiles.
+const WorldPixelBounds = struct {
+    min_x: f32,
+    max_x: f32,
+    min_y: f32,
+    max_y: f32,
+};
+
+fn screenWorldBounds(
+    current_state: *const GameState,
+    tile_pixels: f32,
+) ?WorldPixelBounds {
+    const tiles = if (current_state.level) |level|
+        level.level_tiles
+    else if (current_state.hub) |hub|
+        hub.hub_tiles
+    else
+        return null;
+    if (tiles.len == 0) return null;
+    var min_x = tiles[0].x;
+    var max_x = tiles[0].x;
+    var min_y = tiles[0].y;
+    var max_y = tiles[0].y;
+    for (tiles[1..]) |tile| {
+        if (tile.x < min_x) min_x = tile.x;
+        if (tile.x > max_x) max_x = tile.x;
+        if (tile.y < min_y) min_y = tile.y;
+        if (tile.y > max_y) max_y = tile.y;
+    }
+    return .{
+        .min_x = @as(f32, @floatFromInt(min_x)) * tile_pixels,
+        .max_x = @as(f32, @floatFromInt(max_x + 1)) * tile_pixels,
+        .min_y = @as(f32, @floatFromInt(min_y)) * tile_pixels,
+        .max_y = @as(f32, @floatFromInt(max_y + 1)) * tile_pixels,
+    };
+}
+
+/// One axis of the camera clamp (pure, directly tested):
+///
+/// - Level-flush bounds ALWAYS (pan included): the visible world window
+///   stays inside the level, so neither auto-centering nor a deliberate pan
+///   can drift into void — panning stops dead at the level edge.
+/// - When the level is narrower than the region, it is centered as a whole
+///   (pan becomes a no-op on that axis — nothing off-screen to pan to).
+/// - The player-margin band (player keeps `margin` clearance from the
+///   region edge) applies ONLY to the automatic camera (`!pan_active`) and
+///   only when the level overflows the region: it caps how far the flush
+///   clamp may push the camera away from the player-centered position.
+///   Sequential clamping gives the spec'd behavior — shift toward the
+///   flush bound as far as possible WITHOUT pushing the player past the
+///   margin.
+fn clampCameraAxis(
+    camera_center: f32,
+    world_lo: f32,
+    world_hi: f32,
+    region_lo: f32,
+    region_hi: f32,
+    reference_half: f32,
+    player_center: f32,
+    margin: f32,
+    pan_active: bool,
+) f32 {
+    const a = region_lo - reference_half;
+    const b = region_hi - reference_half;
+    const flush_min = world_lo - a;
+    const flush_max = world_hi - b;
+    if (flush_min > flush_max) {
+        // The level fits inside the region on this axis: center it as a
+        // whole. The margin band is skipped — centering wins (the whole
+        // level is already visible; nothing better exists).
+        return (world_lo + world_hi) / 2.0 - (a + b) / 2.0;
+    }
+    var clamped = std.math.clamp(camera_center, flush_min, flush_max);
+    if (!pan_active) {
+        const margin_min = player_center - b + margin;
+        const margin_max = player_center - a - margin;
+        if (margin_min <= margin_max) clamped = std.math.clamp(clamped, margin_min, margin_max);
+    }
+    return clamped;
+}
+
 /// Camera centered on the player (plus an optional right-drag pan offset):
-/// places the player tile's center at the screen center, then adds `pan`.
+/// places the player tile's center at the screen center, then adds `pan`,
+/// then — when `view_region` is non-null (levels/hubs; see cameraViewRegion)
+/// — clamps the result: level-flush bounds always (pan included), the
+/// `camera_edge_margin_tiles` margin for the automatic (unpanned) camera.
 /// Position is in the same world-pixel space screenToTile inverts
 /// (tile coord * tile_size_pixels * zoom). `pan` is in world pixels too.
 /// Both the input camera and the render camera pass through here so input
-/// and rendering never drift relative to the pan offset.
+/// and rendering never drift relative to each other or the pan offset. The
+/// pan gesture's solve passes `view_region = null` to get the unclamped
+/// player-centered reference its pan math is relative to.
 pub fn computeCamera(
     current_state: *const GameState,
     zoom: f32,
     pan: ?types.Vector2,
+    view_region: ?Rectangle,
 ) types.Camera {
     const player_tile = playerPosition(current_state);
     const tile_pixels = input.tile_size_pixels * zoom;
+    const player_center_x = (@as(f32, @floatFromInt(player_tile.x)) + 0.5) * tile_pixels;
+    const player_center_y = (@as(f32, @floatFromInt(player_tile.y)) + 0.5) * tile_pixels;
     var pos = types.Vector2{
-        .x = @intFromFloat((@as(f32, @floatFromInt(player_tile.x)) + 0.5) * tile_pixels),
-        .y = @intFromFloat((@as(f32, @floatFromInt(player_tile.y)) + 0.5) * tile_pixels),
+        .x = @intFromFloat(player_center_x),
+        .y = @intFromFloat(player_center_y),
     };
     if (pan) |offset| {
         pos.x += offset.x;
         pos.y += offset.y;
+    }
+    if (view_region) |region| {
+        const bounds = screenWorldBounds(current_state, tile_pixels) orelse
+            return .{ .position = pos };
+        const margin = @as(f32, @floatFromInt(camera_edge_margin_tiles)) * tile_pixels;
+        const pan_active = pan != null;
+        const camera_x = clampCameraAxis(
+            @floatFromInt(pos.x),
+            bounds.min_x,
+            bounds.max_x,
+            @as(f32, @floatFromInt(region.x)),
+            @as(f32, @floatFromInt(region.x + region.width)),
+            @as(f32, @floatFromInt(@divTrunc(types.reference_width, 2))),
+            player_center_x,
+            margin,
+            pan_active,
+        );
+        const camera_y = clampCameraAxis(
+            @floatFromInt(pos.y),
+            bounds.min_y,
+            bounds.max_y,
+            @as(f32, @floatFromInt(region.y)),
+            @as(f32, @floatFromInt(region.y + region.height)),
+            @as(f32, @floatFromInt(@divTrunc(types.reference_height, 2))),
+            player_center_y,
+            margin,
+            pan_active,
+        );
+        pos = .{ .x = @intFromFloat(@round(camera_x)), .y = @intFromFloat(@round(camera_y)) };
     }
     return .{ .position = pos };
 }
@@ -3055,7 +3177,7 @@ test "editor scene: viewport projects tiles, placements, and markers" {
 
     // The camera centers on the active level's player_start (the editor's
     // "player position" analog): (0,0) -> world-pixel center (128, 128).
-    const camera = computeCamera(&state_, 1.0, null);
+    const camera = computeCamera(&state_, 1.0, null, null);
     try std.testing.expectEqual(@as(i32, 128), camera.position.x);
     try std.testing.expectEqual(@as(i32, 128), camera.position.y);
 
@@ -3124,7 +3246,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
     state_.editor.?.active_tool = .tile;
     session.tile_cursor = .{ .x = 2, .y = 1 };
 
-    const camera = computeCamera(&state_, 1.0, null);
+    const camera = computeCamera(&state_, 1.0, null, null);
     const view_state = view(
         &state_,
         &session,
@@ -3255,7 +3377,7 @@ test "editor cursor overlay: decoration tool outlines the footprint region conti
     state_.editor.?.active_tool = .{ .decoration_type = 0 };
     session.tile_cursor = .{ .x = 2, .y = 1 }; // the anchor tile
 
-    const camera = computeCamera(&state_, 1.0, null);
+    const camera = computeCamera(&state_, 1.0, null, null);
     const view_state = view(
         &state_,
         &session,
@@ -3340,7 +3462,7 @@ test "editor select tool: hover previews the covering decoration's footprint, el
     var session = state.SessionState{};
     state_.editor.?.active_tool = .select;
 
-    const camera = computeCamera(&state_, 1.0, null);
+    const camera = computeCamera(&state_, 1.0, null, null);
     const runView = struct {
         fn call(
             state__: *const GameState,
@@ -3446,7 +3568,7 @@ test "editor selection overlay: lightest-color outlines around all selected regi
     };
     state_.editor.?.selection = &seeded_selection;
 
-    const camera = computeCamera(&state_, 1.0, null);
+    const camera = computeCamera(&state_, 1.0, null, null);
     // The selection outlines use the active theme's lightest — the same
     // color as every other world outline (a fix: the first cut used
     // "pure white" {1,1,1}, but types.Color channels are u8 0-255, so that
@@ -3766,4 +3888,206 @@ test "camera view region: null outside levels and hubs" {
         },
         cameraViewRegion(&session, &hub_state, font_metrics, 1.0).?,
     );
+}
+
+// ============================================================
+// Camera clamp tests (slice 2: the clamp math inside computeCamera)
+// ============================================================
+
+/// Comptime rectangular tile grid.
+fn tileGrid(comptime width: i32, comptime height: i32) [width * height]types.Vector2 {
+    var tiles: [width * height]types.Vector2 = undefined;
+    var index: usize = 0;
+    var y: i32 = 0;
+    while (y < height) : (y += 1) {
+        var x: i32 = 0;
+        while (x < width) : (x += 1) {
+            tiles[index] = .{ .x = x, .y = y };
+            index += 1;
+        }
+    }
+    return tiles;
+}
+
+/// A level screen with a tile grid and the player (entity 0) at
+/// `player_position`.
+fn levelStateWithPlayer(
+    tiles: []const types.Vector2,
+    player_position: types.Vector2,
+) GameState {
+    const entities = [_]types.Entity{.{ .position = player_position }};
+    return .{
+        .screen = .level,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = .{ .level_tiles = tiles, .entities = &entities },
+        .hub = null,
+    };
+}
+
+/// The full-band clamp region (no panels): x [0, 3840), y [256, 1904).
+fn fullBandRegion() Rectangle {
+    return .{
+        .x = 0,
+        .y = ui.top_bar_height,
+        .width = types.reference_width,
+        .height = types.reference_height - ui.top_bar_height - ui.bottom_bar_height,
+    };
+}
+
+test "camera clamp: near-edge player keeps the 2-tile margin, void shed" {
+    // 30x17 level (7680x4352 world px) — overflows the region on both axes
+    // at zoom 1.0.
+    const tiles = tileGrid(30, 17);
+
+    // Player in the top-left corner: the camera shifts toward the level
+    // center (shedding the void) only until the player is exactly 2 tiles
+    // (512 px) inside the region's left/top edges.
+    var state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
+    var camera = computeCamera(&state_, 1.0, null, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 1536), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 440), camera.position.y);
+    // The player's screen position: 512 px inside both region edges
+    // (region x0 = 0, y0 = 256).
+    try std.testing.expectEqual(@as(i32, 512), 128 - camera.position.x + 1920);
+    try std.testing.expectEqual(@as(i32, 768), 128 - camera.position.y + 1080);
+
+    // Bottom-right corner: symmetric (512 px inside the region's right and
+    // bottom edges).
+    state_ = levelStateWithPlayer(&tiles, .{ .x = 29, .y = 16 });
+    camera = computeCamera(&state_, 1.0, null, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 6144), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 3912), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 3840 - 512), 7552 - camera.position.x + 1920);
+    try std.testing.expectEqual(@as(i32, 1904 - 512), 4224 - camera.position.y + 1080);
+}
+
+test "camera clamp: mid-level player stays exactly player-centered" {
+    const tiles = tileGrid(30, 17);
+    // No void to shed and the margin holds: the camera is the plain
+    // player-centered position (2 tiles of margin are available in every
+    // direction from here).
+    const state_ = levelStateWithPlayer(&tiles, .{ .x = 10, .y = 8 });
+    const camera = computeCamera(&state_, 1.0, null, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 2688), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 2176), camera.position.y);
+}
+
+test "camera clamp: a level that fits is centered as a whole" {
+    // 4x3 level (1024x768 world px) — fits inside the region on both axes,
+    // so it is centered in the band regardless of the player's position,
+    // and panning is a no-op (nothing off-screen to pan to).
+    const tiles = tileGrid(4, 3);
+    var state_ = levelStateWithPlayer(&tiles, .{ .x = 1, .y = 1 });
+    var camera = computeCamera(&state_, 1.0, null, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 512), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 384), camera.position.y);
+
+    // Even with the player at a corner — centering wins over the margin.
+    state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
+    camera = computeCamera(&state_, 1.0, null, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 512), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 384), camera.position.y);
+
+    // A pan offset cannot move it either.
+    state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
+    camera = computeCamera(&state_, 1.0, .{ .x = 10_000, .y = -10_000 }, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 512), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 384), camera.position.y);
+}
+
+test "camera clamp: one axis fits, the other clamps" {
+    // 4 wide (fits, centered) x 40 tall (overflows, flush + margin).
+    const tiles = tileGrid(4, 40);
+    const state_ = levelStateWithPlayer(&tiles, .{ .x = 1, .y = 39 });
+    const camera = computeCamera(&state_, 1.0, null, fullBandRegion());
+    // x: centered (the level is 1024 px wide, region 3840).
+    try std.testing.expectEqual(@as(i32, 512), camera.position.x);
+    // y: player one tile from the bottom -> margin band binds at 512 px
+    // above the bottom bar's edge.
+    try std.testing.expectEqual(@as(i32, 9800), camera.position.y);
+    try std.testing.expectEqual(@as(i32, 1904 - 512), 10_112 - camera.position.y + 1080);
+}
+
+test "camera clamp: pan roams within the level but never into void" {
+    // A deliberate pan skips the player margin (the point of panning is to
+    // look away from the player) but keeps the level-flush bounds: the
+    // camera can never show void beyond an edge.
+    const tiles = tileGrid(30, 17);
+    var state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
+
+    // Pan far right: stops flush at the level's right edge (cam 5760 makes
+    // the visible window exactly [0, 7680)).
+    var camera = computeCamera(&state_, 1.0, .{ .x = 10_000, .y = 0 }, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 5760), camera.position.x);
+    // The y margin is suspended too while panned (pan is one offset for
+    // both axes): the y camera sits at the plain flush bound.
+    try std.testing.expectEqual(@as(i32, 824), camera.position.y);
+
+    // Pan far left: stops flush at the level's left edge (visible window
+    // left edge exactly 0).
+    camera = computeCamera(&state_, 1.0, .{ .x = -10_000, .y = 0 }, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 1920), camera.position.x);
+    // Interior pan passes through untouched: player at (0,0), pan +1000
+    // world px right still shows void-free left at cam 1920 (flush min).
+    camera = computeCamera(&state_, 1.0, .{ .x = 1000, .y = 0 }, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 1920), camera.position.x);
+}
+
+test "camera clamp: panels shift the margin band to the viewable region" {
+    // The same 30x17 level with an inventory panel open: the region is
+    // x [1200, 3840). The player at the left edge is kept 512 px inside the
+    // PANEL's right edge, not the screen edge.
+    const tiles = tileGrid(30, 17);
+    const state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
+    const panel_region = Rectangle{
+        .x = ui.inventory_panel_width,
+        .y = ui.top_bar_height,
+        .width = types.reference_width - ui.inventory_panel_width,
+        .height = types.reference_height - ui.top_bar_height - ui.bottom_bar_height,
+    };
+    const camera = computeCamera(&state_, 1.0, null, panel_region);
+    try std.testing.expectEqual(@as(i32, 336), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 440), camera.position.y);
+    // Player screen x: 512 px right of the panel edge (1200).
+    try std.testing.expectEqual(@as(i32, ui.inventory_panel_width + 512), 128 - camera.position.x + 1920);
+}
+
+test "camera clamp: hub screens clamp against the hub tile grid" {
+    // The hub arm of screenWorldBounds: a 4x3 hub centers like a small
+    // level (the hub player rides `hub.player`, not entities).
+    const tiles = tileGrid(4, 3);
+    const state_ = GameState{
+        .screen = .hub,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = .{
+            .hub_tiles = &tiles,
+            .player = .{ .position = .{ .x = 1, .y = 1 } },
+        },
+    };
+    const camera = computeCamera(&state_, 1.0, null, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 512), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 384), camera.position.y);
+}
+
+test "camera clamp: null region is the unclamped behavior" {
+    // The pan-solve reference contract: no region, no clamp — the camera is
+    // the plain player-centered position plus pan, even at a level edge.
+    const tiles = tileGrid(30, 17);
+    const state_ = levelStateWithPlayer(&tiles, .{ .x = 0, .y = 0 });
+    const camera = computeCamera(&state_, 1.0, .{ .x = 10_000, .y = -10_000 }, null);
+    try std.testing.expectEqual(@as(i32, 10_128), camera.position.x);
+    try std.testing.expectEqual(@as(i32, -9872), camera.position.y);
 }

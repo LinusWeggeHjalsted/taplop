@@ -73,6 +73,11 @@ Test by running `zig build run` and clicking through.
   `Action.inspect_cursor` bool via `checkAction`, consumed in
   `handleIdleInput` where the tile cursor is resolved; right-click is the
   only inspect path today. (Right-click-drag camera pan DONE — see DONE.md.)
+  **Camera clamping** DONE — level-flush bounds (pan included, no void past
+  edges, small levels centered as a whole) + 2-tile player margin for the
+  automatic camera, over the bars/panels view region with a fully-covered
+  fallback; levels/hubs only. See DESIGN → Platform Seam → Camera clamping;
+  history in DONE.md. Editor viewport framing is the deferred remainder.
 - **New-keybind pipeline friction** — a new keybind touches FIVE places
   (the list + the reason it's easy to forget one: see DESIGN → Input →
   New keybind wiring sites — the doc line this item asked for has landed):

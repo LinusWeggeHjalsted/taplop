@@ -132,8 +132,37 @@ next session meets it as a surprise instead of a known.
   it tracks the state being drawn). Without the recompute, a move completed
   this frame draws the player at the new position under a camera still
   centered on the old one — a one-frame glitch. Both go through
-  `view.computeCamera(state, zoom, pan)` so they never drift relative to each
+  `view.computeCamera(state, zoom, pan, view_region)` so they never drift relative to each
   other or to the pan offset.
+- **Camera clamping** (levels/hubs; the editor viewport frames itself).
+  `computeCamera(state, zoom, pan, view_region)` clamps the player-centered
+  (+panned) camera into a VIEW REGION (`view.cameraViewRegion`: reference
+  space, bounded vertically by the top/bottom bars, from the left by open
+  middle panels, null elsewhere). Two rules with different applicability:
+  - **Level-flush bounds ALWAYS** (pan included): the visible world window
+    stays inside the level's tile bounding box (levels are non-rectangular;
+    the bbox of `level_tiles`/`hub_tiles` is the "level rectangle"), so no
+    void shows beyond an edge — a deliberate pan stops dead at the level
+    edge. On an axis where the level fits inside the region, the level is
+    CENTERED as a whole and pan is a no-op there.
+  - **Player-margin band, automatic camera only** (`pan == null`): the
+    camera may not deviate from the player-centered position further than
+    (region half-extent − `camera_edge_margin_tiles`, a tunable 2-tile
+    clearance). Sequential clamping (flush first, then margin) yields the
+    intended framing: shift toward the flush bound as far as possible
+    WITHOUT pushing the player past the margin — a player at the level's
+    left edge sheds most of the left void but keeps exactly 2 tiles of
+    clearance. A pan offset suspends the margin on BOTH axes (the point of
+    panning is to look away from the player); it clears on player move /
+    screen transition, so normal play always has the margin.
+  - **Panel fallback**: when the panel-occupied remainder is narrower than
+    the margin band (4 tiles at the current zoom) — the fully-covered
+    screen — the region ignores panels entirely ("act as if none open").
+  The clamp is pure math on the final camera (pan included); the pan solve
+  in `handleCameraPan` passes `view_region = null` for its reference so pan
+  stays exact in the level interior, with resistance only at the edges.
+  Panel widths come from `middlePanelWidth` (shared with
+  `buildMiddlePanels`) so layout and clamp region can't drift apart.
 - **Camera pan (right-drag)** is transient view state on `SessionState`
   (`camera_pan` + `camera_pan_anchor`), off `GameState` — replay-safe by
   construction (like `tile_cursor` / the animation clock). Levels/hubs + the

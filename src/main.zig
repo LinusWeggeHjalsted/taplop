@@ -470,15 +470,22 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     }
 
     const platform_input = backend.pollInput();
-    // Camera is derived (centered on the player), computed each frame so input
-    // (screenToTile) and rendering (tileToTile) stay in sync.
+    // Camera is derived (centered on the player + clamped to the view
+    // region — see DESIGN → Platform Seam → Camera clamping), computed
+    // each frame so input (screenToTile) and rendering stay in sync.
     const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
+    const view_region = view_mod.cameraViewRegion(
+        &history.session,
+        &history.current_state,
+        backend.fontMetrics(),
+        camera_zoom,
+    );
     // Input camera: computed BEFORE the drain, reflecting the previously-
     // rendered view (the player clicks against what's on screen). Includes
     // the current camera pan so screenToTile maps clicks against the panned
     // view. The render camera is recomputed post-update below so it tracks
     // the state being drawn (see the render gate).
-    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
+    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan, view_region);
     // Real-clock delta since the last frame (NOT frame-rate based), so the
     // wait timer drains in real time regardless of how often frame() is called.
     // Computed before translateInput so synthetic key-repeat cadence (see
@@ -772,8 +779,16 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         // new position under a camera still centered on the old one — a
         // one-frame glitch where the player appears jumped/shifted before the
         // camera catches up next frame. computeCamera is cheap; recompute it
-        // here so render never lags the state by a frame.
-        const render_camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
+        // here so render never lags the state by a frame. The view region is
+        // recomputed too — panels can open/close mid-drain (UiState writes
+        // are immediate), and the clamp must match the state being drawn.
+        const render_view_region = view_mod.cameraViewRegion(
+            &history.session,
+            &history.current_state,
+            backend.fontMetrics(),
+            camera_zoom,
+        );
+        const render_camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan, render_view_region);
         _ = frame_state.frame_arena.reset(.retain_capacity);
         // Per-frame lookup of entity-sprite top-y (topmost non-transparent
         // pixel), so `view()` can place floating indicators above the actual
@@ -2094,7 +2109,7 @@ test "anytime swap_weapons while idle: records an undoable idle point" {
     var player_input: input.PlayerInput = .{};
     player_input.anytime.in_game.swap_weapons = true;
     const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
-    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
+    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan, null);
     update(&history, player_input, null, 16_000, camera, camera_zoom, .{ .width = 3840, .height = 2160 });
 
     // The swap processed: weapons are now swapped.
@@ -2152,7 +2167,7 @@ test "anytime swap_weapons during a wait: handled immediately, no idle point, ab
     var player_input: input.PlayerInput = .{};
     player_input.anytime.in_game.swap_weapons = true;
     const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
-    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
+    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan, null);
     update(&history, player_input, null, 100_000, camera, camera_zoom, .{ .width = 3840, .height = 2160 });
 
     // The interjection was handled IMMEDIATELY (not delayed until the wait
@@ -2235,7 +2250,7 @@ test "undo/redo via anytime input does not record duplicate idle points (no cycl
 fn runIdleUpdate(history: *GameStateHistory, player_input: input.PlayerInput) void {
     const event_index_before = history.current_event_index;
     const camera_zoom = @as(f32, @floatFromInt(history.settings.camera_zoom)) / 100.0;
-    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan);
+    const camera = view_mod.computeCamera(&history.current_state, camera_zoom, history.session.camera_pan, null);
     update(history, player_input, null, 16_000, camera, camera_zoom, .{ .width = 3840, .height = 2160 });
     const events_processed = history.current_event_index != event_index_before;
     history.maybeRecordIdlePoint(events_processed);

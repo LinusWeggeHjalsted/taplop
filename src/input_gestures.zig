@@ -508,7 +508,11 @@ pub fn handleCameraPan(
         const target_camera_x = anchor.world_x * tile_pixels - (cursor_x - viewport.width / 2.0);
         const target_camera_y = anchor.world_y * tile_pixels - (cursor_y - viewport.height / 2.0);
 
-        const player_centered = view_mod.computeCamera(current, camera_zoom, null);
+        // Unclamped (view_region null): the solve's pan is relative to the
+        // recentered camera, and the clamp applies downstream — so the
+        // grabbed point stays exactly under the cursor in the level
+        // interior, with resistance only at the level edges.
+        const player_centered = view_mod.computeCamera(current, camera_zoom, null, null);
         session.camera_pan = .{
             .x = @intFromFloat(@round(target_camera_x - @as(f32, @floatFromInt(player_centered.position.x)))),
             .y = @intFromFloat(@round(target_camera_y - @as(f32, @floatFromInt(player_centered.position.y)))),
