@@ -10938,3 +10938,27 @@ taken). The keep-range "moves" fixture's expectation is (2,6), not the
 naive (4,6): on an open grid five reachable tiles sit at distance 3 and
 the reachable-vs-reachable tiebreak picks the leftmost — hand-compute
 fixtures against the convention, not the first tile you eyeball.
+
+## Daze AI rating crash (u1 arithmetic overflow)
+
+Live-play crash report (Seatown staff skeleton's turn, crash log
+crash_20260903_161841): `daze.aiOptions` panicked with integer overflow
+on `const rating: u32 = 1 + @intFromBool(defender.momentum > 0)`.
+@intFromBool yields u1; the peer type of `1 + u1` is u1, so the true case
+computes 1+1 = 2 — which overflows u1 and traps. The cast to u32 must be
+explicit: `1 + @as(u32, @intFromBool(...))`.
+
+Pre-existing (the line shipped with the daze port), not caused by the
+movement work — but data-dependent: it only fires when an UNSTUNNED
+defender within daze's range carries momentum, and every real player
+does (use_skill grants +1 momentum, persisting). The daze tier test
+covered unstunned-no-momentum (1), stunned-momentful (1), the mixed
+class pick, and the stunned-momentumless no-op — every tier EXCEPT the
+unstable one. Added the missing tier (unstunned + momentum → rating 2),
+verified it crashes on the unfixed line. Swept for the sibling shape:
+only input_gestures.zig adds @intFromBools, and it already casts each to
+u8 explicitly.
+
+The third nice-values escape this session (movement tie fixtures, the
+dangling test helper, now this) — each shipped green on fixtures that
+never touched the degenerate case.

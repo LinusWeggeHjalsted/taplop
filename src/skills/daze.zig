@@ -92,7 +92,9 @@ fn aiOptions(
 
     if (best_unstunned) |defender_index| {
         const defender = level.entities[defender_index];
-        const rating: u32 = 1 + @intFromBool(defender.momentum > 0); // stun + drain
+        // @as(u32): @intFromBool is u1 — a bare `1 + @intFromBool(...)`
+        // resolves to u1 arithmetic and overflows on the true case.
+        const rating: u32 = 1 + @as(u32, @intFromBool(defender.momentum > 0)); // stun + drain
         return helpers.singleOption(allocator, .{ .target = defender.position, .priority = rating });
     }
     if (best_momentful) |defender_index| {

@@ -681,6 +681,18 @@ test "daze: priority tiers by stun and momentum state" {
         try testing.expectEqual(@as(usize, 1), options.len);
         try testing.expectEqual(@as(u32, 1), options[0].priority);
     }
+    // Unstunned AND carrying momentum → 2 (stun + drain). This tier once
+    // crashed: `1 + @intFromBool(...)` resolves to u1 arithmetic, and
+    // 1 + 1 overflows u1 — every real player carries momentum (every
+    // use_skill grants +1), so the staff skeleton's daze evaluation
+    // panicked on live play (see DONE.md).
+    {
+        const target = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 }, .momentum = 2 };
+        const game_state = test_harness.levelStateWithEntities(arena.allocator(), &.{ caster, target }, &.{});
+        const options = daze_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+        try testing.expectEqual(@as(usize, 1), options.len);
+        try testing.expectEqual(@as(u32, 2), options[0].priority);
+    }
     // Stunned but carrying momentum → 1 (the drain bonus only), targeting
     // the momentful entity.
     {
