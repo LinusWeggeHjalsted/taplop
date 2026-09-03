@@ -600,6 +600,10 @@ pub fn handleEditorEvent(
             const template = editorEntityTemplate(editor, set.target) orelse return;
             template.aggro_range = set.value;
         },
+        .editor_set_entity_team => |set| {
+            const template = editorEntityTemplate(editor, set.target) orelse return;
+            template.team = set.value;
+        },
         // The equipped-slot commit (ONE slot-parameterized event — see
         // EntityGearPayload in events.zig). `equipped: false` clears the
         // slot; otherwise the slot's kind's fields rebuild the item, with

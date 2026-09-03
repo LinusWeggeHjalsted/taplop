@@ -436,6 +436,14 @@ pub const EditorEvent = union(enum) {
         target: EntityEditTarget,
         value: u32,
     },
+    // Team is ENEMY-authorable only: 0 = the player's team (helpers the
+    // player doesn't control), 1+ = mutually hostile enemy teams. The
+    // player_def target is rejected at the replay seam — the player's
+    // team is definitionally 0.
+    editor_set_entity_team: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
     // Gear: ONE slot-parameterized event (equip/unequip/retype/field
     // edit — the whole-definition commit, the editor_set_item_def /
     // editor_set_decoration_def shape). The item's fields are FLATTENED
@@ -975,6 +983,12 @@ pub const PlayerInputEvent = union(enum) {
         value: u32,
     },
     player_set_editor_entity_aggro_range: struct {
+        target: EntityEditTarget,
+        value: u32,
+    },
+    // Team: enemy-authorable only (see editor_set_entity_team) — the
+    // player_def target is rejected at the replay seam.
+    player_set_editor_entity_team: struct {
         target: EntityEditTarget,
         value: u32,
     },

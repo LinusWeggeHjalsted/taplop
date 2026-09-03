@@ -4325,6 +4325,64 @@ test "editor_set_item_def: out-of-range type id is a no-op (handler guard)" {
     }
 }
 
+test "player_set_editor_entity_team: sets the template team (0 helpers, 2 enemy teams), undo reverts; out-of-range type is a no-op" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Skeleton",
+        .template = .{ .name = "Skeleton", .team = 1, .max_health = 20 },
+    }};
+    const levels = [_]types.EditorLevel{.{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .entity_types = &entity_types,
+    }));
+    runToIdle(&history);
+
+    // Team 2 — a second, mutually hostile enemy team.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_entity_team = .{
+            .target = .{ .entity_type = 0 },
+            .value = 2,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 2), history.current_state.editor.?.entity_types[0].template.team);
+
+    // One undo reverts (the commit rides the timeline like every scalar).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(@as(u32, 1), history.current_state.editor.?.entity_types[0].template.team);
+
+    // Team 0 — a player-team helper (enemy-authorable, player-uncontrolled).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_entity_team = .{
+            .target = .{ .entity_type = 0 },
+            .value = 0,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.entity_types[0].template.team);
+
+    // A crafted out-of-range type id records nothing (the shared handler
+    // guard — editorEntityTemplate returns null and the arm returns).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_entity_team = .{
+            .target = .{ .entity_type = 99 },
+            .value = 1,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.entity_types[0].template.team);
+}
+
 test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

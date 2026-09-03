@@ -495,6 +495,12 @@ pub fn handlePlayerInputEvent(
                 .value = set.value,
             } } }}, allocator);
         },
+        .player_set_editor_entity_team => |set| {
+            pushEvents(current, &.{.{ .editor_event = .{ .editor_set_entity_team = .{
+                .target = set.target,
+                .value = set.value,
+            } } }}, allocator);
+        },
         // The equipped-slot commit: the shared payload forwards verbatim
         // (the EditorEvent owns the mutation + the stat clamps).
         .player_set_editor_entity_gear => |set| {

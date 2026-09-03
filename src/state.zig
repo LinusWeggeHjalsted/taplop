@@ -1564,6 +1564,16 @@ pub const GameStateHistory = struct {
                 .player_set_editor_entity_defense => |set| self.validateInspectorEntityEdit(set.target),
                 .player_set_editor_entity_speed => |set| self.validateInspectorEntityEdit(set.target),
                 .player_set_editor_entity_aggro_range => |set| self.validateInspectorEntityEdit(set.target),
+                // Team: enemy-authorable only — the player_def target is
+                // rejected (the player's team is definitionally 0; a
+                // crafted log setting it would corrupt the win
+                // condition's team comparison).
+                .player_set_editor_entity_team => |set| {
+                    self.validateInspectorEntityEdit(set.target);
+                    if (set.target == .player_def) {
+                        @panic("replay validation: player_set_editor_entity_team on the player target");
+                    }
+                },
                 // The equipped-slot commit (one slot-parameterized event):
                 // same structural legality — target in range. The payload's
                 // kind/slot match + stat bounds are the handler's defensive

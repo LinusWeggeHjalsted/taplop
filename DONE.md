@@ -10614,3 +10614,24 @@ Tooling note: the edit-tool call reported success for a two-edit batch
 where only the first edit applied (the team override silently missing —
 surfaced by the failing loader test, then re-applied). Lesson: verify
 multi-edit batches actually landed, not just the success message.
+
+## Enemy teams: editor event + handler (slice 2)
+
+`editor_set_entity_team` / `player_set_editor_entity_team` — the scalar-
+field shape (target EntityEditTarget + value u32), one field = one undo
+step. Wiring: the EditorEvent + player wrapper (events.zig), the handler
+arm (editor/handlers.zig — `template.team = value` behind the shared
+`editorEntityTemplate` null-guard), the thin forward
+(handlers/player_input.zig), and the `validatePlayerAction` arm
+(state.zig). Session-log serialization + deep-copy came free via the
+comptime machinery.
+
+- Team is ENEMY-authorable only: the validation arm rejects the
+  `player_def` target (the layer-event precedent) — the player's team is
+  definitionally 0, and a crafted log setting it would corrupt the win
+  condition's team comparison. Values are otherwise unrestricted u32
+  (same posture as the unbounded base stats).
+- Tests: team 2 + team 0 commits ride the timeline and undo; crafted
+  out-of-range type id records nothing. The panic-path validation
+  (player_def reject) is not unit-tested per the no-expectPanics
+  convention (AGENTS → Testing discipline).
