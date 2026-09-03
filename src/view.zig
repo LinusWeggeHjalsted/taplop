@@ -938,11 +938,15 @@ pub fn playerPosition(current_state: *const GameState) types.Vector2 {
     return .{ .x = 0, .y = 0 };
 }
 
-/// World-pixel bounding box of the current screen's tile grid (levels and
-/// hubs), full tile extents (min tile origin .. max tile far edge). Levels
-/// are non-rectangular (`level_tiles` is a flat position list), so the bbox
-/// is the natural "level rectangle". Null when the screen has no live world
-/// or no tiles.
+/// World-pixel bounding box of the current screen's tile grid (levels,
+/// hubs, and the editor's active level), full tile extents (min tile
+/// origin .. max tile far edge). Levels are non-rectangular
+/// (`level_tiles` is a flat position list), so the bbox is the natural
+/// "level rectangle". Null when the screen has no live world or no tiles
+/// (an empty editor level stays unclamped). The live level/hub take
+/// precedence over the editor arm — during playtest/validate the editor
+/// state persists on a `.level` screen and the INSTANTIATED level bounds
+/// apply.
 const WorldPixelBounds = struct {
     min_x: f32,
     max_x: f32,
@@ -954,10 +958,16 @@ fn screenWorldBounds(
     current_state: *const GameState,
     tile_pixels: f32,
 ) ?WorldPixelBounds {
+    const editor_level: ?*const types.EditorLevel = if (current_state.editor != null)
+        selectEditorLevel(&current_state.editor.?)
+    else
+        null;
     const tiles = if (current_state.level) |level|
         level.level_tiles
     else if (current_state.hub) |hub|
         hub.hub_tiles
+    else if (editor_level) |level|
+        level.level_tiles
     else
         return null;
     if (tiles.len == 0) return null;
@@ -1032,10 +1042,12 @@ fn clampCameraAxis(
 
 /// Camera centered on the player (plus an optional right-drag pan offset):
 /// places the player tile's center at the screen center, then adds `pan`,
-/// then — when `view_region` is non-null (levels/hubs; see cameraViewRegion)
-/// — clamps the result: level-flush bounds (a deliberate pan gets
-/// `camera_pan_void_tiles` of wiggle past them), the
+/// then — when `view_region` is non-null (levels/hubs/editor viewport; see
+/// cameraViewRegion) — clamps the result: level-flush bounds (a deliberate
+/// pan gets `camera_pan_void_tiles` of wiggle past them), the
 /// `camera_edge_margin_tiles` margin for the automatic (unpanned) camera.
+/// EXCEPT in the editor viewport, where a pan is completely free (no
+/// bounds at all): unpanned = clamped framing, panned = roam anywhere.
 /// Position is in the same world-pixel space screenToTile inverts
 /// (tile coord * tile_size_pixels * zoom). `pan` is in world pixels too.
 /// Both the input camera and the render camera pass through here so input
@@ -1061,6 +1073,12 @@ pub fn computeCamera(
         pos.y += offset.y;
     }
     if (view_region) |region| {
+        // The editor viewport's pan is completely free (no flush bounds, no
+        // wiggle). The level==null guard matters: during playtest/validate
+        // the editor state persists on a `.level` screen, and there the
+        // LEVEL clamp (with wiggle) applies.
+        const editor_viewport = current_state.editor != null and current_state.level == null;
+        if (editor_viewport and pan != null) return .{ .position = pos };
         const bounds = screenWorldBounds(current_state, tile_pixels) orelse
             return .{ .position = pos };
         const margin = @as(f32, @floatFromInt(camera_edge_margin_tiles)) * tile_pixels;
@@ -1099,6 +1117,18 @@ pub fn computeCamera(
     return .{ .position = pos };
 }
 
+/// The camera-recenter key: what a frame's pan-clear check compares
+/// before/after `update()` (main.zig). The player's tile, plus the editor's
+/// active level index — a level-tab switch recenters even when two levels
+/// share a player_start (fresh levels all come from the same template, so
+/// identical spawns across tabs are the common case, not a freak accident).
+pub fn cameraRecenterKey(current_state: *const GameState) struct { position: types.Vector2, editor_level_index: ?usize } {
+    return .{
+        .position = playerPosition(current_state),
+        .editor_level_index = if (current_state.editor) |editor| editor.active_level_index else null,
+    };
+}
+
 /// Tunable: minimum clearance (tiles) the automatic camera keeps between
 /// the player and the view region edge. Eyeball in `zig build run` (the
 /// `skill_icon_size_native` precedent).
@@ -1113,14 +1143,20 @@ const camera_pan_void_tiles: i32 = 4;
 /// rectangle the camera keeps level content inside (and the player inside
 /// with `camera_edge_margin_tiles` clearance, when not panning). The top
 /// and bottom bars bound it vertically; open middle panels bound it from
-/// the left. Levels/hubs only — null elsewhere (the editor viewport frames
-/// itself). See DESIGN → Platform Seam → Camera clamping.
+/// the left. The EDITOR viewport uses the same band at full width — the
+/// sidebars and pickers are deliberately ignored (they never reframe the
+/// camera). Null outside levels/hubs/the editor. See DESIGN → Platform
+/// Seam → Camera clamping.
 pub fn cameraViewRegion(
     session: *const state.SessionState,
     current_state: *const GameState,
     font_metrics: ui.FontMetrics,
     zoom: f32,
 ) ?Rectangle {
+    if (current_state.screen == .editor) {
+        if (current_state.editor == null) return null;
+        return cameraViewRegionFor(0, zoom);
+    }
     if (current_state.screen != .level and current_state.screen != .hub) return null;
     if (current_state.level == null and current_state.hub == null) return null;
     return cameraViewRegionFor(middlePanelsOccupiedWidth(session, current_state, font_metrics), zoom);
@@ -3849,7 +3885,7 @@ test "camera view region: fully covered screen acts as if no panels open" {
     );
 }
 
-test "camera view region: null outside levels and hubs" {
+test "camera view region: null outside levels, hubs, and the editor" {
     const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
     const editor_state = GameState{
         .screen = .editor,
@@ -3879,11 +3915,20 @@ test "camera view region: null outside levels and hubs" {
 
     try std.testing.expectEqual(
         @as(?types.Rectangle, null),
-        cameraViewRegion(&session, &editor_state, font_metrics, 1.0),
-    );
-    try std.testing.expectEqual(
-        @as(?types.Rectangle, null),
         cameraViewRegion(&session, &main_menu_state, font_metrics, 1.0),
+    );
+
+    // The editor viewport gets the same band as the game (top row + tool
+    // palette bound it vertically), at full width — sidebars and pickers
+    // are deliberately not accounted for.
+    try std.testing.expectEqual(
+        types.Rectangle{
+            .x = 0,
+            .y = ui.top_bar_height,
+            .width = types.reference_width,
+            .height = types.reference_height - ui.top_bar_height - ui.bottom_bar_height,
+        },
+        cameraViewRegion(&session, &editor_state, font_metrics, 1.0).?,
     );
 
     // A hub screen gets the same full band as a level.
@@ -3930,12 +3975,17 @@ fn tileGrid(comptime width: i32, comptime height: i32) [width * height]types.Vec
 }
 
 /// A level screen with a tile grid and the player (entity 0) at
-/// `player_position`.
+/// `player_position`. The player entity lives in file-scope storage: the
+/// returned GameState would otherwise dangle a pointer into this helper's
+/// dead frame (entities is a by-reference slice, and the old function-local
+/// array only worked by stack-layout luck).
+var level_state_player_storage: [1]types.Entity = undefined;
+
 fn levelStateWithPlayer(
     tiles: []const types.Vector2,
     player_position: types.Vector2,
 ) GameState {
-    const entities = [_]types.Entity{.{ .position = player_position }};
+    level_state_player_storage[0] = .{ .position = player_position };
     return .{
         .screen = .level,
         .event_stack = &.{},
@@ -3945,7 +3995,7 @@ fn levelStateWithPlayer(
         .replay_viewer = null,
         .campaign = null,
         .mission = null,
-        .level = .{ .level_tiles = tiles, .entities = &entities },
+        .level = .{ .level_tiles = tiles, .entities = &level_state_player_storage },
         .hub = null,
     };
 }
@@ -4113,4 +4163,130 @@ test "camera clamp: null region is the unclamped behavior" {
     const camera = computeCamera(&state_, 1.0, .{ .x = 10_000, .y = -10_000 }, null);
     try std.testing.expectEqual(@as(i32, 10_128), camera.position.x);
     try std.testing.expectEqual(@as(i32, -9872), camera.position.y);
+}
+
+// ============================================================
+// Editor viewport camera tests
+// ============================================================
+
+test "editor viewport: clamps the active level around its player_start" {
+    // The editor's "player position" is the active level's player_start
+    // (the '!' marker): the same clamp rules as gameplay apply around it.
+    const big_tiles = tileGrid(30, 17);
+    const small_tiles = tileGrid(4, 3);
+    // Two levels sharing a player_start (fresh levels come from one
+    // template) with different layouts — the bounds must follow the
+    // ACTIVE level's tab.
+    const levels = [_]types.EditorLevel{
+        .{ .level_tiles = &big_tiles, .player_start = .{ .x = 0, .y = 0 } },
+        .{ .level_tiles = &small_tiles, .player_start = .{ .x = 0, .y = 0 } },
+    };
+    var state_ = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    // Big level, player_start at the corner: same framing as the level
+    // test (margin band holds 512 px clearance).
+    state_.editor.?.active_level_index = 0;
+    var camera = computeCamera(&state_, 1.0, null, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 1536), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 440), camera.position.y);
+
+    // Tab to the small level: centered as a whole — the tab switch
+    // re-clamps on the new layout.
+    state_.editor.?.active_level_index = 1;
+    camera = computeCamera(&state_, 1.0, null, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 512), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 384), camera.position.y);
+}
+
+test "editor viewport: pan is completely free" {
+    const tiles = tileGrid(30, 17);
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+    }};
+    const state_ = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    // No flush bounds, no wiggle budget, no margin: a panned editor
+    // camera is the plain player_start-centered position plus the raw
+    // offset — roam anywhere. The pan clears on the next tab switch or
+    // screen transition (cameraRecenterKey), restoring the clamped frame.
+    const camera = computeCamera(&state_, 1.0, .{ .x = 100_000, .y = -100_000 }, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 100_128), camera.position.x);
+    try std.testing.expectEqual(@as(i32, -99_872), camera.position.y);
+}
+
+test "editor viewport: an empty level stays unclamped" {
+    // No tiles -> no bounds -> the plain player_start-centered camera.
+    const levels = [_]types.EditorLevel{.{ .player_start = .{ .x = 2, .y = 3 } }};
+    const state_ = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    const camera = computeCamera(&state_, 1.0, null, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 640), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 896), camera.position.y);
+}
+
+test "camera recenter key: editor level tabs change it even with identical player starts" {
+    // Two levels with the SAME player_start: the position alone wouldn't
+    // detect the tab switch — the active level index rides the key.
+    const levels = [_]types.EditorLevel{
+        .{ .player_start = .{ .x = 5, .y = 5 } },
+        .{ .player_start = .{ .x = 5, .y = 5 } },
+    };
+    var state_ = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    const key_zero = cameraRecenterKey(&state_);
+    try std.testing.expectEqual(@as(?usize, 0), key_zero.editor_level_index);
+    try std.testing.expectEqual(types.Vector2{ .x = 5, .y = 5 }, key_zero.position);
+
+    state_.editor.?.active_level_index = 1;
+    const key_one = cameraRecenterKey(&state_);
+    try std.testing.expect(std.meta.eql(key_zero, key_zero));
+    try std.testing.expect(!std.meta.eql(key_one, key_zero));
+
+    // Outside the editor there is no editor index to ride along.
+    const level_state = levelStateWithPlayer(&.{}, .{ .x = 0, .y = 0 });
+    try std.testing.expectEqual(@as(?usize, null), cameraRecenterKey(&level_state).editor_level_index);
 }

@@ -10827,3 +10827,43 @@ same zero test. Tests updated: far pans stop exactly 1024 px past each
 edge, an interior pan near the edge now passes through (its void is
 inside the budget), the suspended y margin lets the plain player-centered
 y pass while panned, and the small-level pan wiggles around the center.
+
+## Camera clamping — editor viewport
+
+The deferred remainder of the clamping pass (author request): the editor
+camera now clamps on the active level's layout, with completely free pan.
+
+- `screenWorldBounds` gained the editor arm (active level's `level_tiles`
+  bbox via `selectEditorLevel`; live level/hub take precedence — during
+  playtest/validate the editor state persists on a `.level` screen and the
+  instantiated level bounds apply). An empty editor level has no bounds →
+  unclamped player_start-centering (previous behavior).
+- `cameraViewRegion` on `.editor`: the same band as the game (top row +
+  tool palette bound it vertically) at FULL width — sidebars and pickers
+  deliberately ignored (they never reframe the camera), no panel logic.
+- `computeCamera`: in the editor viewport (`editor != null and level ==
+  null`) a pan skips the clamp ENTIRELY — no flush bounds, no wiggle.
+  Unpanned = clamped framing (same rules as gameplay: margin band around
+  the player_start marker, flush bounds, small levels centered as a
+  whole); panned = roam anywhere; the clamp resumes when the pan clears.
+- Tab-switch recentering: the pan-clear check in `update()` compared
+  `playerPosition` before/after — in the editor that's the active level's
+  player_start, so a tab switch already recenters, EXCEPT that fresh
+  levels all come from `data/default_level.txt` and share a player_start
+  (tabbing between them changed nothing). Replaced with
+  `view.cameraRecenterKey` (player position + editor active level index),
+  so every tab switch recenters and re-clamps on the new layout.
+
+Testing side note: the clamp-test helper `levelStateWithPlayer` returned a
+GameState whose `.entities` pointed into the helper's dead frame — a
+dangling pointer that survived on stack-layout luck until the new editor
+tests shifted the frames and turned it into a player-tile garbage read
+(`@intFromFloat` panic). The player entity now lives in file-scope test
+storage. The same arena-blind-spot class as the use-after-free note in
+AGENTS → Testing discipline, but in a test helper.
+
+Tests: editor clamps around player_start with the level-test numbers,
+bounds follow the active tab (two levels sharing a player_start, big →
+small layout), pan completely free (±100k world px passes through), empty
+level unclamped, recenter key changes on tab switch with identical
+player_starts, editor region = the game band, main-menu region null.

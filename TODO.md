@@ -77,7 +77,9 @@ Test by running `zig build run` and clicking through.
   edges, small levels centered as a whole) + 2-tile player margin for the
   automatic camera, over the bars/panels view region with a fully-covered
   fallback; levels/hubs only. See DESIGN → Platform Seam → Camera clamping;
-  history in DONE.md. Editor viewport framing is the deferred remainder.
+  history in DONE.md. Editor viewport framing: DONE (same clamp over the
+  full-width band — sidebars ignored, completely free pan, tab switches
+  recenter via cameraRecenterKey).
 - **New-keybind pipeline friction** — a new keybind touches FIVE places
   (the list + the reason it's easy to forget one: see DESIGN → Input →
   New keybind wiring sites — the doc line this item asked for has landed):

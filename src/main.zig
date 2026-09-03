@@ -531,12 +531,12 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
         input_handlers.resolveTextEditOutcome(history, player_input.text_edit_outcome);
     }
 
-    // Player position before the drain, for the pan-recenter check: if the
+    // Recenter key before the drain, for the pan-clear check: if the
     // player moved this frame (a move event in the drain, or a click-to-move
-    // in the idle update), clear the camera pan so the camera recenters on
-    // the player. Grabbing the pre-drain position lets us detect the move
-    // without inspecting events.
-    const player_position_before = view_mod.playerPosition(&history.current_state);
+    // in the idle update) OR the editor switched level tabs, clear the camera
+    // pan so the camera recenters on the (newly) clamped framing. Grabbing
+    // the pre-drain key lets us detect the change without inspecting events.
+    const recenter_key_before = view_mod.cameraRecenterKey(&history.current_state);
 
     // Advance the non-pause-gated session clock (used for debounced write
     // deadlines). Unlike animation_clock, this advances every frame regardless
@@ -710,12 +710,13 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
 
     // Player-move recenter: if the player's tile changed this frame (a move
     // event in the drain or a click-to-move in the idle update), clear the
-    // camera pan so the camera recenters on the player. Pan drifts off the
-    // player while looking around; a move is the natural "look, then go" hand-
-    // off back to player-centered framing.
-    const player_position_after = view_mod.playerPosition(&history.current_state);
-    if (player_position_after.x != player_position_before.x or
-        player_position_after.y != player_position_before.y)
+    // camera pan so the camera recenters on the player — pan drifts off the
+    // player while looking around, and a move is the natural "look, then go"
+    // hand-off back to player-centered framing. The editor's active level
+    // index rides the key too: a level-tab switch recenters even when two
+    // levels share a player_start (fresh levels all come from one template).
+    const recenter_key_after = view_mod.cameraRecenterKey(&history.current_state);
+    if (!std.meta.eql(recenter_key_after, recenter_key_before))
     {
         history.session.camera_pan = null;
         history.session.camera_pan_anchor = null;

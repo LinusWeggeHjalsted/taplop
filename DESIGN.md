@@ -134,14 +134,15 @@ next session meets it as a surprise instead of a known.
   centered on the old one — a one-frame glitch. Both go through
   `view.computeCamera(state, zoom, pan, view_region)` so they never drift relative to each
   other or to the pan offset.
-- **Camera clamping** (levels/hubs; the editor viewport frames itself).
+- **Camera clamping** (levels/hubs and the editor viewport).
   `computeCamera(state, zoom, pan, view_region)` clamps the player-centered
   (+panned) camera into a VIEW REGION (`view.cameraViewRegion`: reference
   space, bounded vertically by the top/bottom bars, from the left by open
   middle panels, null elsewhere). Two rules with different applicability:
   - **Level-flush bounds** (pan included): the visible world window
     stays inside the level's tile bounding box (levels are non-rectangular;
-    the bbox of `level_tiles`/`hub_tiles` is the "level rectangle"), so the
+    the bbox of `level_tiles`/`hub_tiles` is the "level rectangle"; the
+    editor uses the ACTIVE level's `level_tiles`), so the
     AUTOMATIC camera never shows void beyond an edge. A deliberate pan
     gets `camera_pan_void_tiles` (4 tiles, tunable) of wiggle: it may push
     that much void past an edge before the clamp stops it, so the edge
@@ -164,12 +165,27 @@ next session meets it as a surprise instead of a known.
   The clamp is pure math on the final camera (pan included); the pan solve
   in `handleCameraPan` passes `view_region = null` for its reference so pan
   stays exact in the level interior, with resistance only at the edges.
+  **Editor viewport**: same band as the game (the top row + tool palette
+  bound it vertically) at FULL width — the sidebars and pickers are
+  deliberately ignored (they never reframe the camera). The clamp shapes
+  the player_start-centered framing exactly like gameplay (margin band
+  around the '!' marker, flush bounds, small levels centered as a whole,
+  bounds follow the active level tab), but a deliberate pan is COMPLETELY
+  free there — no flush bounds, no wiggle. Unpanned = clamped framing;
+  panned = roam anywhere; the clamp resumes when the pan clears. Pan
+  clearing keys on `view.cameraRecenterKey` (player position + the
+  editor's active level index) so a level-tab switch recenters even when
+  two levels share a player_start (fresh levels all come from one
+  template). During playtest/validate the editor state persists on a
+  `.level` screen — the live level takes precedence everywhere, so the
+  run keeps the level clamp + wiggle, not the editor's free pan.
   Panel widths come from `middlePanelWidth` (shared with
   `buildMiddlePanels`) so layout and clamp region can't drift apart.
 - **Camera pan (right-drag)** is transient view state on `SessionState`
   (`camera_pan` + `camera_pan_anchor`), off `GameState` — replay-safe by
   construction (like `tile_cursor` / the animation clock). Levels/hubs + the
-  editor viewport; cleared on player move (recenter) and screen transition.
+  editor viewport; cleared on player move, editor level-tab switch, or
+  screen transition — the `cameraRecenterKey` check in `update()`.
   In the editor the camera centers on the active level's `player_start`
   (`playerPosition` editor arm), so pan is relative to that. `handleCameraPan`
   (input_gestures.zig) runs anytime (mid-wait / mid-turn), grabs the world
