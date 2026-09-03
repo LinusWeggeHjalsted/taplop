@@ -232,7 +232,7 @@ context editor
 
 input_type key
 input_name Digit3
-action toggle_editor_enemy_group
+action toggle_editor_entity_group
 context editor
 
 input_type key

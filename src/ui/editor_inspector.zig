@@ -1,6 +1,6 @@
 //! The editor inspector + metadata sidebar: `buildEditorInspectorPanel`
 //! (the left inspector: toggle + background + the windowed field-content
-//! pipeline over enemy/decoration/item/player targets) and
+//! pipeline over entity/decoration/item/player targets) and
 //! `buildEditorMetadataSidebar` (the right sidebar's mission/level name +
 //! gradient rows), the inspector target inference (`editorInspectorTarget`
 //! — shared with the input layer), the field-control emitters, and the
@@ -1251,7 +1251,7 @@ fn editorInspectorItemEntries(
 
 /// Build the inspector's content inside the open panel (called by
 /// `buildEditorInspectorPanel`): the resolved target's entries — the
-/// active enemy tool's field rows, or the player loadout (the fallback
+/// active entity tool's field rows, or the player loadout (the fallback
 /// target). View-relative windowed emission
 /// (the skills-panel model): only FULLY visible rows are emitted at the top
 /// of the content region, so nothing half-draws or overflows the panel; the
@@ -1354,7 +1354,7 @@ fn buildEditorInspectorContent(
     const visible_rows = @divFloor(content.height, editor_inspector_row_height);
     const scroll_offset = &ui_state.editor_inspector_scroll;
 
-    // Target resolution: the active enemy/decoration tool, a selection of
+    // Target resolution: the active entity/decoration tool, a selection of
     // placements that all reference one type, or the PLAYER fallback (the
     // '!' spawn's loadout) — see editorInspectorTarget. All paths share
     // the windowing machinery below; they differ in entries + context.
@@ -3374,7 +3374,7 @@ test "inspector weapons + gear sections: type rows, add/delete, item fields when
     }
 }
 
-test "editorInspectorTarget: active enemy/decoration/item tools pass through; tile falls back to the player" {
+test "editorInspectorTarget: active entity/decoration/item tools pass through; tile falls back to the player" {
     const entity_types = [_]types.EntityTypeDef{.{
         .id = "Skeleton",
         .template = .{ .name = "Skeleton", .sprite = "skeleton_1", .team = 1 },
@@ -3929,7 +3929,7 @@ test "buildEditorInspectorPanel: toggle button always, background panel only whe
     }
 }
 
-test "buildEditorInspectorPanel content: enemy tool rows windowed + clamped, scrollbar on overflow" {
+test "buildEditorInspectorPanel content: entity tool rows windowed + clamped, scrollbar on overflow" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 

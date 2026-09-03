@@ -60,7 +60,7 @@ pub const editor_entity_frame_height: i32 = 640;
 /// tool graphic is frame 0.
 pub const tile_highlight_frame_size: i32 = 256;
 
-/// Font size for the editor palette group headers ("Enemies", …).
+/// Font size for the editor palette group headers ("Entities", …).
 pub const editor_group_header_font_size: i32 = 64;
 
 /// Height of the group header buttons and the editor "+" cells: 128.
@@ -78,7 +78,7 @@ pub const editor_plus_size: i32 = 128;
 /// see `UiState.editor_palette_scroll`).
 pub const editor_palette_max_tools: usize = 8;
 
-/// A palette group's type count: 0 = Enemies, 1 = Decorations, 2 = Ground
+/// A palette group's type count: 0 = Entities, 1 = Decorations, 2 = Ground
 /// Items. Shared between the builder's window math and the wheel routing's
 /// emission-order segmentation.
 pub fn editorPaletteGroupSize(editor: types.Editor, group_index: usize) usize {
@@ -551,20 +551,20 @@ pub fn buildEditorPrimaryActions(
 }
 
 /// Editor bottom bar: the tool palette. Fixed tools first
-/// (Select, Tile), then three groups — Enemies, Decorations, Items —
+/// (Select, Tile), then three groups — Entities, Decorations, Items —
 /// each a header toggle + a square panel "+" (add-new) cell + one slot per
 /// palette type. Expanded groups put their header + "+" in the strip above
 /// the bar; collapsed (or empty) groups put them flush against the bottom
 /// of the screen. Every tool renders the shared button background plus a
 /// distinguishing graphic: Select = `world/tile_highlight` frame 0, Tile =
-/// `world/tile`, enemies = entity base sprite (enemy gradient at the
+/// `world/tile`, entities = entity base sprite (team gradient at the
 /// template's color_index), decorations = base sprite (world gradient at
 /// the type's color_index), ground items = the item icon (ground items
 /// always render as the shared ground bag in-world, so the palette shows
 /// the ITEM's icon for authoring distinction). Interaction is wired: tool
 /// cells make themselves the active tool (`player_set_editor_tool`),
 /// headers toggle collapse, and the "+" cells append a new type from the
-/// shipped defaults (`player_add_editor_*_type`) — the enemy/decoration
+/// shipped defaults (`player_add_editor_*_type`) — the entity/decoration
 /// ones also open the base-sprite picker. Horizontal
 /// scrolling: a group shows at most `editor_palette_max_tools` type cells;
 /// `scroll_offsets[group]` (clamped in place here to `[0, size - max]`) is
@@ -588,10 +588,10 @@ pub fn buildEditorBottomBar(
     const world = active_theme.world_gradient.colors;
     const enemy = active_theme.enemy_gradient.colors;
 
-    const group_labels = [_][]const u8{ "Enemies", "Decorations", "Items" };
+    const group_labels = [_][]const u8{ "Entities", "Decorations", "Items" };
     // The groups' "+" add-new tooltips (singular, tool-shaped — the
     // labels are plural group names).
-    const group_plus_tooltips = [_][]const u8{ "Add Enemy Tool", "Add Decoration Tool", "Add Item Tool" };
+    const group_plus_tooltips = [_][]const u8{ "Add Entity Tool", "Add Decoration Tool", "Add Item Tool" };
     const group_sizes = [3]usize{
         editor.entity_types.len,
         editor.decoration_types.len,
@@ -1369,7 +1369,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
             }
         },
         .text_label => |label| {
-            if (std.mem.eql(u8, label.text, "Enemies")) {
+            if (std.mem.eql(u8, label.text, "Entities")) {
                 enemies_header = label.screen_position;
                 try std.testing.expect(!label.blocks_input);
             } else if (std.mem.eql(u8, label.text, "+") or
@@ -1430,7 +1430,7 @@ test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover ab
 
     var elements: UiElementList = .empty;
     var scroll_offsets: [3]i32 = .{ 0, 0, 0 };
-    // Enemies (group 0) expanded; Decorations + Items collapsed.
+    // Entities (group 0) expanded; Decorations + Items collapsed.
     var collapsed: [3]bool = .{ false, true, true };
     try buildEditorBottomBar(
         &elements,
@@ -1527,7 +1527,7 @@ test "buildEditorBottomBar: collapsed groups sit flush bottom; expanded hover ab
     {
         var empty_expanded_elements: UiElementList = .empty;
         var empty_expanded_scroll_offsets: [3]i32 = .{ 0, 0, 0 };
-        // Enemies collapsed; Decorations (EMPTY) expanded; Items collapsed.
+        // Entities collapsed; Decorations (EMPTY) expanded; Items collapsed.
         var empty_expanded_collapsed: [3]bool = .{ true, false, true };
         try buildEditorBottomBar(
             &empty_expanded_elements,

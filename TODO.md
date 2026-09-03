@@ -37,7 +37,7 @@ Test by running `zig build run` and clicking through.
   `move_cursor_*`) instead of via handler ordering. History in DONE.md.
 - **Editor tool/palette keybinds (1–5)** — DONE (slice 2 of the
   binding-contexts work). Digit1 = select tool, Digit2 = tile tool,
-  Digit3/4/5 = expand/collapse the enemy/decoration/item palette groups —
+  Digit3/4/5 = expand/collapse the entity/decoration/item palette groups —
   context-`editor` bindings (Digit1–8 stay the in-game skill slots; the
   first shipped same-combo cross-context pair). Five payload-less actions
   bridged in `translateInput` onto the click paths' `options_action` +
@@ -45,7 +45,7 @@ Test by running `zig build run` and clicking through.
   Design: DESIGN → Input (Binding contexts) + DESIGN → Level Editor →
   Editor UI layout (tool palette); history in DONE.md. Optional polish
   follow-up: surface the shortcut numbers in the palette UI (fixed-tool
-  labels "1 Select" / group headers "Enemies 3", or tooltips).
+  labels "1 Select" / group headers "Entities 3", or tooltips).
 - **Replay viewer** — wire the .replay_viewer screen to STEP through a loaded
   log. The `--replay <path>` CLI flag (DONE — see DONE.md) loads a session
   log and reconstructs the session to its END state (resume mid-session);
@@ -700,7 +700,7 @@ paragraph). Remaining work:
         no-op gate, undo). The caret/selection RENDER lands with slice 3
         (a field element must exist to draw it in).
   - [x] **2 — inspector content scaffolding:** DONE — target resolution
-        (`editorInspectorEntityTarget`: the active enemy tool, else the
+        (`editorInspectorEntityTarget`: the active entity tool, else the
         empty-state hint; stale tool ids fall to the hint), the content
         plan (5 sections + 20 field rows over the full format field set,
         label-only — controls land with slices 3-5), view-relative

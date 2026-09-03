@@ -2026,7 +2026,7 @@ compatible). **Unused types are lost on editor close** (accepted as cleaner) —
 since save is inline, a type with zero placements has no on-disk trace.
 
 **Player loadout: `player.txt` in the mission directory, persistent.** The
-player isn't part of the enemy palette (it's not placed; the `!` in each
+player isn't part of the entity palette (it's not placed; the `!` in each
 level's Layout is the spawn position, already parsed). The loadout persists
 as `player.txt`, SAVE-SHAPED (the loadout sections of a player save —
 MainHandWeapon / OffHandWeapon / Amulet / Coat / Gloves / Pants / Boots /
@@ -2294,7 +2294,7 @@ layout + a left inspector + a right metadata sidebar:
 │              │       place/select)                │    able)     │
 │              │                                    │              │
 ├──────────────┴────────────────────────────────────┴──────────────┤
-│ [Select][Tile] [Enemies ▾] [Decorations ▾] [Items ▾] ⟷           │  tool palette (bottom bar)
+│ [Select][Tile] [Entities ▾] [Decorations ▾] [Items ▾] ⟷           │  tool palette (bottom bar)
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2333,8 +2333,8 @@ layout + a left inspector + a right metadata sidebar:
   prompts; the active tool determines what a viewport click does.
 - **Tool palette (bottom bar):** mirrors the in-game bottom bar's slot
   style. Fixed tools first ([Select] [Tile]), then three collapsible groups:
-  Enemies, Decorations, Items. Keyboard: Digit1 = select tool, Digit2 =
-  tile tool, Digit3/4/5 = expand/collapse the enemy/decoration/item groups
+  Entities, Decorations, Items. Keyboard: Digit1 = select tool, Digit2 =
+  tile tool, Digit3/4/5 = expand/collapse the entity/decoration/item groups
   (context-`editor` bindings — the same keys are the in-game skill slots;
   see DESIGN → Input → Binding contexts). The keybinds are payload-less
   actions (`editor_select_tool` etc.) bridged in `translateInput` onto the
@@ -2383,7 +2383,7 @@ layout + a left inspector + a right metadata sidebar:
   one `ui_gap` above the palette groups' header strip (the bottom bar is
   flush left, so an expanded group's header x-range overlaps the panel —
   the gap keeps them visually separate). Auto-opens on new
-  enemy/decoration/item creation (the author lands on the new type's
+  entity/decoration/item creation (the author lands on the new type's
   fields immediately). Field editing is inline within the inspector: skill
   assignment, gear equip, stat fields, footprint editing (decorations),
   etc. Base-sprite selection is the one exception — it goes through the
@@ -2403,7 +2403,7 @@ layout + a left inspector + a right metadata sidebar:
   the one-at-a-time behavior). The section-break SPACER belongs to the
   section above it — a collapsed section takes no gap after it (headers
   stack flush).
-- **Inspector fields (enemy types — settled):** the COUPLING CONTRACT is
+- **Inspector fields (entity types — settled):** the COUPLING CONTRACT is
   the parser: every key `parseEntityDefinition` reads maps to exactly
   one inspector control, and field bounds are single-sourced from the
   `max_*` constants in loaders.zig (the parser's clamp and the UI's
@@ -2852,7 +2852,7 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   decoration's footprint region, else the single tile).
   Drag-painting (one `editor_set_tile` per
   cell crossed) is still deferred. Does not modify the selection set.
-- **Placement tools (enemy/decoration/item type):** click places one
+- **Placement tools (entity/decoration/item type):** click places one
   instance of that type at the cursor position. The ENEMY tool is landed
   (`player_place_editor_entity` — the decoration/item tools mirror it
   later): the click's effect is computed from state as occupant
@@ -2937,8 +2937,8 @@ ACTIVE level (an out-of-range placement index or a stale palette type id
 is an unresolvable bug-state reference that forces the fallback —
 defensive only, the delete arms keep both valid). Exactly one distinct reference → that type's fields (editing
 the type updates every placement of it — selecting several tiles whose
-enemies are all the same type shows that enemy tool's fields); two or
-more distinct (two enemy types, an enemy plus a decoration, or either
+entities are all the same type shows that entity tool's fields); two or
+more distinct (two entity types, an entity plus a decoration, or either
 plus the player start) → the player. The input-side commit sites map
 the target to `EntityEditTarget` (player → `player_def`; decoration /
 item → null, the entity controls don't render for their content) through

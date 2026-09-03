@@ -3088,7 +3088,7 @@ test "editor cursor overlay: every tool outlines the cursor tile" {
 
     // The select tool draws the single-tile outline too (its hover
     // preview — a covering decoration's footprint region, else the tile);
-    // an enemy tool does (same overlay — its click target is a tile
+    // an entity tool does (same overlay — its click target is a tile
     // position too).
     state_.editor.?.active_tool = .select;
     const view_state_select = view(

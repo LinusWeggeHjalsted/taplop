@@ -10704,3 +10704,33 @@ staying distinguishable from the player's settings color.
 - Tests: entityDrawable color resolution (player settings-index vs
   helper own-index vs team-2 enemy gradient, distinct theme gradients);
   inspector strip tint for team-0 vs team-2 types.
+
+## Enemy teams: "enemy tools" → "entity tools" rename (slice 5)
+
+The editor's entity tooling is no longer enemy-only (team 0 = helpers,
+1+ = enemy teams), so the "enemy" naming lied. Renamed across the board:
+
+- **File format:** the level-file/editor-defaults section header
+  `Enemies` → `Entities` — parser section whitelists (level_sections,
+  editor_defaults_sections, valid_section_headers), the key map (+
+  `level_enemies_keys` → `level_entities_keys`), loaders (findSection ×2,
+  `enemy_definitions` → `entity_definitions`, `freeEnemyDefinitions` →
+  `freeEntityDefinitions`), the mission writer's emission + round-trip
+  tests, and all 14 shipped data files (13 campaign levels +
+  editor_defaults). Free pre-release: official data ships embedded.
+- **Palette UI:** group label "Enemies" → "Entities", "+"
+  tooltip "Add Enemy Tool" → "Add Entity Tool" (editor_shell), the
+  `toggle_editor_enemy_group` ACTION → `toggle_editor_entity_group`
+  (types.zig Action enum + input.zig dispatch/defaults/context +
+  default_settings.txt binding). The action rename self-heals on
+  existing user settings (the per-action binding migration warns +
+  drops unknown actions, injects unmentioned defaults).
+- **Editor defaults:** `EditorDefaults.enemy` → `.entity`;
+  the shipped default type name "New Enemy" → "New Entity"
+  (editor_defaults.txt + handler tests).
+- Comments/prose describing the tooling: "enemy tool" → "entity tool",
+  "enemy palette/group" → "entity palette/group" across src +
+  DESIGN (tool palette layout, inspector fields, selection inference,
+  placement tools) + TODO's active items. Combat-meaning "enemy"
+  (turns, AI, win condition, gradients — things that key on team
+  membership) is untouched.

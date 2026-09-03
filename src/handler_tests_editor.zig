@@ -194,8 +194,8 @@ test "player_add_editor_entity_type: default creation, tool + inspector, undo re
     // skeleton_1, color 4, base stats 20/0/1/3, nothing equipped.
     const editor = history.current_state.editor.?;
     try testing.expectEqual(@as(usize, 1), editor.entity_types.len);
-    try testing.expectEqualStrings("New Enemy", editor.entity_types[0].id);
-    try testing.expectEqualStrings("New Enemy", editor.entity_types[0].template.name);
+    try testing.expectEqualStrings("New Entity", editor.entity_types[0].id);
+    try testing.expectEqualStrings("New Entity", editor.entity_types[0].template.name);
     try testing.expectEqualStrings("skeleton_1", editor.entity_types[0].template.sprite);
     try testing.expectEqual(@as(u32, 1), editor.entity_types[0].template.team);
     try testing.expectEqual(@as(u32, 4), editor.entity_types[0].template.color_index);
@@ -3161,7 +3161,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
     // two the new type doesn't belong to.
     history.session.ui_state.editor_palette_collapsed = .{ false, false, false };
 
-    // Enemies "+": the shipped default lands, becomes the active tool, and
+    // Entities "+": the shipped default lands, becomes the active tool, and
     // the base-sprite picker opens on it (Mission tab, the mission scan).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .add_editor_palette_type,
@@ -3171,7 +3171,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
     {
         const editor = history.current_state.editor.?;
         try testing.expectEqual(@as(usize, 1), editor.entity_types.len);
-        try testing.expectEqualStrings("New Enemy", editor.entity_types[0].id);
+        try testing.expectEqualStrings("New Entity", editor.entity_types[0].id);
         try testing.expect(std.meta.eql(
             types.EditorToolId{ .entity_type = 0 },
             editor.active_tool,
@@ -3186,7 +3186,7 @@ test "palette + click: default type creation, tool switch, picker routing" {
         history.session.ui_state.editor_picker_sprite_tab,
     );
     try testing.expectEqual(@as(usize, 1), history.session.editor_mission_sprites.len);
-    // The add expanded the Enemies group (accordion) — and a 1-type
+    // The add expanded the Entities group (accordion) — and a 1-type
     // group's window sits at the top.
     try testing.expectEqual([3]bool{ false, true, true }, history.session.ui_state.editor_palette_collapsed);
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_palette_scroll[0]);
@@ -3824,7 +3824,7 @@ test "inspector scalar clicks: color swatch + displays-weapons toggle ride the t
     runToIdle(&history);
 
     // Swatch click: color_index 0 → 3 (the payload rode in
-    // clicked_editor_color; the target is the active enemy tool).
+    // clicked_editor_color; the target is the active entity tool).
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_color,
         .clicked_editor_color = 3,
@@ -3853,7 +3853,7 @@ test "inspector scalar clicks: color swatch + displays-weapons toggle ride the t
     try testing.expect(history.undo(event_handlers.processEvent));
     try testing.expectEqual(@as(u32, 0), history.current_state.editor.?.entity_types[0].template.color_index);
 
-    // No enemy tool active (select tool): both clicks no-op.
+    // No entity tool active (select tool): both clicks no-op.
     history.current_state.editor.?.active_tool = .select;
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .select_editor_entity_color,
@@ -5955,7 +5955,7 @@ test "open_editor: a mission without player.txt falls back to the maxed default 
         \\Layout
         \\!=
         \\
-        \\Enemies
+        \\Entities
         \\
         \\Decorations
         \\

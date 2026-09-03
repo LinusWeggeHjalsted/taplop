@@ -416,7 +416,7 @@ pub const Action = enum {
     // (the palette cells use the payload-carrying click actions).
     editor_select_tool,
     editor_tile_tool,
-    toggle_editor_enemy_group,
+    toggle_editor_entity_group,
     toggle_editor_decoration_group,
     toggle_editor_item_group,
 };
@@ -649,7 +649,7 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .overwrite_validation_replay,
         .editor_select_tool,
         .editor_tile_tool,
-        .toggle_editor_enemy_group,
+        .toggle_editor_entity_group,
         .toggle_editor_decoration_group,
         .toggle_editor_item_group,
         => .{ .editor = true },

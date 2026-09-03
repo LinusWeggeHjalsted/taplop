@@ -372,7 +372,7 @@ pub const EditorEvent = union(enum) {
         new_position: Vector2,
     },
     // Retype an entity placement to another palette type in place (the
-    // enemy-tool click on an occupied tile): identity (index) and position
+    // entity-tool click on an occupied tile): identity (index) and position
     // stay stable — nothing referencing the placement shifts. Preferred
     // over delete + re-place for exactly that reason.
     editor_set_entity_placement_type: struct {
@@ -754,7 +754,7 @@ pub const PlayerInputEvent = union(enum) {
     // data/max_player.txt loadout): pushes `editor_import_max_player`.
     player_import_editor_max_player: void,
     // Palette group "+" click: append a new type to that group's palette
-    // (Enemies / Decorations / Items). Thin orchestrator — the handler for
+    // (Entities / Decorations / Items). Thin orchestrator — the handler for
     // the `editor_add_*_type` event builds the type from the shipped
     // defaults (data/editor_defaults.txt, read through the reconstruction
     // cache), makes it the active tool, and opens the inspector. No payload
@@ -927,7 +927,7 @@ pub const PlayerInputEvent = union(enum) {
         position: Vector2,
     },
     // Ground-item-tool click: place the palette item type at the clicked
-    // tile. Same occupant-replacement shape as the enemy tool (see DESIGN →
+    // tile. Same occupant-replacement shape as the entity tool (see DESIGN →
     // Architecture → Level Editor → Active-tool model, placement tools):
     // missing tile → placed; covering decoration → deleted; '!' / '=' →
     // no-op; enemy on the tile → deleted; existing ground item → RETYPED

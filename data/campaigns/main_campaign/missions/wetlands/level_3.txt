@@ -17,7 +17,7 @@ D..E...
  H  I
 
 
-Enemies
+Entities
 
 character_code 1
 sprite crab

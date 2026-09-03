@@ -642,10 +642,10 @@ fn writeEditorLevel(
         try buffer.appendSlice(allocator, "\n");
     }
 
-    // Enemies — used entity types, palette order, the full definition in
+    // Entities — used entity types, palette order, the full definition in
     // the parser's exact key vocabulary (the coupling contract).
     if (codes.entity.len > 0) {
-        try buffer.appendSlice(allocator, "\nEnemies\n");
+        try buffer.appendSlice(allocator, "\nEntities\n");
         for (codes.entity, 0..) |assignment, index| {
             if (index > 0) try buffer.appendSlice(allocator, "\n");
             try writeEntityDefinition(&buffer, allocator, assignment.code, entity_types[assignment.type_id].template);
@@ -686,7 +686,7 @@ fn writeEditorLevel(
     return try buffer.toOwnedSlice(allocator);
 }
 
-/// One Enemies entry — every key `parseEntityDefinition` reads, in its
+/// One Entities entry — every key `parseEntityDefinition` reads, in its
 /// vocabulary (weapons / gear / utility skills / layers only when
 /// present, so absent-on-reload equals absent-on-write).
 fn writeEntityDefinition(
@@ -1270,10 +1270,10 @@ test "writeEditorMission round-trips through the load path" {
     // level 2's only the Brute; the never-placed coat item appears in NO
     // file.
     {
-        const level_0_enemies = parser.findSection(level_sections[0], "Enemies").?;
-        try std.testing.expectEqual(@as(usize, 1), level_0_enemies.entry_groups.len);
-        const level_1_enemies = parser.findSection(level_sections[1], "Enemies").?;
-        try std.testing.expectEqual(@as(usize, 1), level_1_enemies.entry_groups.len);
+        const level_0_entities = parser.findSection(level_sections[0], "Entities").?;
+        try std.testing.expectEqual(@as(usize, 1), level_0_entities.entry_groups.len);
+        const level_1_entities = parser.findSection(level_sections[1], "Entities").?;
+        try std.testing.expectEqual(@as(usize, 1), level_1_entities.entry_groups.len);
         try std.testing.expect(std.mem.indexOf(u8, written.level_txts[0], "Brute") == null);
         try std.testing.expect(std.mem.indexOf(u8, written.level_txts[1], "Archer") == null);
         for (written.level_txts) |level_txt| {

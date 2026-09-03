@@ -61,7 +61,7 @@ pub const Section = struct {
 const valid_section_headers = [_][]const u8{
     "Metadata",
     "Layout",
-    "Enemies",
+    "Entities",
     "Decorations",
     "Items",
     "Exits",
@@ -396,19 +396,19 @@ pub fn parseEnum(
 
 pub const settings_sections = [_][]const u8{ "Metadata", "Audio", "Display", "Gameplay", "InputBindings" };
 pub const weapon_type_sections = [_][]const u8{"Skills"};
-pub const level_sections = [_][]const u8{ "Metadata", "Layout", "Enemies", "Decorations", "Items" };
+pub const level_sections = [_][]const u8{ "Metadata", "Layout", "Entities", "Decorations", "Items" };
 pub const hub_sections = [_][]const u8{ "Metadata", "Layout", "NPCs", "Decorations", "Exits" };
 pub const campaign_sections = [_][]const u8{"Metadata"};
 pub const mission_sections = [_][]const u8{"Metadata"};
 pub const decoration_registry_sections = [_][]const u8{ "Metadata", "Decorations" };
 
 /// Section whitelist for the editor palette defaults (data/editor_defaults.txt):
-/// Metadata + one entry each in the level-file Enemies / Decorations / Items
+/// Metadata + one entry each in the level-file Entities / Decorations / Items
 /// formats (no Layout — nothing is placed; no character_code — the code is a
 /// level-Layout concern, the decoration-registry precedent). Key validation
 /// reuses `level_key_map` — the sections use the level key sets verbatim.
 /// See loaders.loadEditorDefaults.
-pub const editor_defaults_sections = [_][]const u8{ "Metadata", "Enemies", "Decorations", "Items" };
+pub const editor_defaults_sections = [_][]const u8{ "Metadata", "Entities", "Decorations", "Items" };
 
 pub const player_save_sections = [_][]const u8{
     "Metadata",       "Info",           "DiscoveredHubs",  "UnlockedSkills", "MainHandWeapon",
@@ -446,7 +446,7 @@ pub const player_loadout_sections = [_][]const u8{
 
 // --- Level file key whitelists ---
 //
-// Enemies entries use the full entity-definition key set (parseEntityDefinition)
+// Entities entries use the full entity-definition key set (parseEntityDefinition)
 // plus character_code. Items entries use item-type-specific keys. Decorations
 // entries use sprite/footprint/layer keys. Metadata carries level metadata.
 // Layout is a raw char grid (no key-value pairs) so it has no key whitelist.
@@ -461,7 +461,7 @@ const level_file_metadata_keys = [_][]const u8{
     "enemy_gradient_index", "player_gradient_index",
 };
 
-const level_enemies_keys = [_][]const u8{
+const level_entities_keys = [_][]const u8{
     "character_code",
     "name",
     "sprite",
@@ -531,7 +531,7 @@ const level_items_keys = [_][]const u8{
 /// validateKeys. Pass this to validateKeys when loading a level file.
 pub const level_key_map = std.StaticStringMap([]const []const u8).initComptime(.{
     .{ "Metadata", &level_file_metadata_keys },
-    .{ "Enemies", &level_enemies_keys },
+    .{ "Entities", &level_entities_keys },
     .{ "Decorations", &level_decorations_keys },
     .{ "Items", &level_items_keys },
 });
@@ -889,7 +889,7 @@ test "parseConfigFile handles layout grids as raw lines" {
         \\ ..!..
         \\   ..=
         \\
-        \\Enemies
+        \\Entities
         \\character_code 1
         \\name Skeleton
     ;
@@ -907,8 +907,8 @@ test "parseConfigFile handles layout grids as raw lines" {
     try std.testing.expectEqualStrings(" ..!..", sections[1].raw_lines[1]);
     try std.testing.expectEqualStrings("   ..=", sections[1].raw_lines[2]);
 
-    // Enemies section has key-value pairs as normal
-    try std.testing.expectEqualStrings("Enemies", sections[2].header);
+    // Entities section has key-value pairs as normal
+    try std.testing.expectEqualStrings("Entities", sections[2].header);
     try std.testing.expectEqual(1, sections[2].entry_groups.len);
     try std.testing.expectEqualStrings("character_code", sections[2].entry_groups[0].pairs[0].key);
     try std.testing.expectEqualStrings("1", sections[2].entry_groups[0].pairs[0].value);
@@ -1032,7 +1032,7 @@ test "validateKeys: warns on unknown keys in level file sections" {
         \\Layout
         \\!.
         \\
-        \\Enemies
+        \\Entities
         \\character_code 1
         \\name Skeleton
         \\chracter_code 1
@@ -1048,23 +1048,23 @@ test "validateKeys: warns on unknown keys in level file sections" {
     var warnings: std.ArrayList([]const u8) = .empty;
     validateKeys(sections, level_key_map, "test/level_1.txt", allocator, &warnings);
 
-    // chracter_code in Metadata (X) + chracter_code in Enemies + unknwon_key in Decorations.
+    // chracter_code in Metadata (X) + chracter_code in Entities + unknwon_key in Decorations.
     try std.testing.expectEqual(@as(usize, 3), warnings.items.len);
 
     // Each warning names the unknown key + section + file path.
     var found_chracter_metadata = false;
-    var found_chracter_enemies = false;
+    var found_chracter_entities = false;
     var found_unknown_deco = false;
     for (warnings.items) |warning| {
         if (std.mem.indexOf(u8, warning, "chracter_code") != null and std.mem.indexOf(u8, warning, "Metadata") != null)
             found_chracter_metadata = true;
-        if (std.mem.indexOf(u8, warning, "chracter_code") != null and std.mem.indexOf(u8, warning, "Enemies") != null)
-            found_chracter_enemies = true;
+        if (std.mem.indexOf(u8, warning, "chracter_code") != null and std.mem.indexOf(u8, warning, "Entities") != null)
+            found_chracter_entities = true;
         if (std.mem.indexOf(u8, warning, "unknwon_key") != null and std.mem.indexOf(u8, warning, "Decorations") != null)
             found_unknown_deco = true;
     }
     try std.testing.expect(found_chracter_metadata);
-    try std.testing.expect(found_chracter_enemies);
+    try std.testing.expect(found_chracter_entities);
     try std.testing.expect(found_unknown_deco);
 }
 
@@ -1081,7 +1081,7 @@ test "validateKeys: no warnings for valid keys" {
         \\Layout
         \\!.
         \\
-        \\Enemies
+        \\Entities
         \\character_code 1
         \\name Skeleton
         \\sprite skeleton_1

@@ -15,7 +15,7 @@ Layout
     ....2.
 
 
-Enemies
+Entities
 
 character_code 1
 sprite skeleton_1

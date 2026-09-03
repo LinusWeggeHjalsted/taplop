@@ -382,7 +382,7 @@ pub fn planEditorDecorationPlacementActions(
 }
 
 /// Ground-item-tool click: place the palette item type at the clicked tile
-/// — the same occupant replacement as the enemy tool, with the roles swapped
+/// — the same occupant replacement as the entity tool, with the roles swapped
 /// for the two placement kinds: an existing ground item is RETYPED in place
 /// (`editor_set_item_placement_type`) and an enemy on the tile is DELETED
 /// (the item can't coexist with it). The '!' / '=' → no-op; covering

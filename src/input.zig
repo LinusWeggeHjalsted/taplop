@@ -578,7 +578,7 @@ pub fn applyAction(player_input: *PlayerInput, action: types.Action) void {
         // the keybind→click-action bridging.
         .editor_select_tool,
         .editor_tile_tool,
-        .toggle_editor_enemy_group,
+        .toggle_editor_entity_group,
         .toggle_editor_decoration_group,
         .toggle_editor_item_group,
         => {},
@@ -996,7 +996,7 @@ pub fn translateInput(
         result.anytime.options_action = .select_editor_tool;
         result.anytime.clicked_editor_tool = .tile;
     }
-    if (checkAction(.toggle_editor_enemy_group, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
+    if (checkAction(.toggle_editor_entity_group, bindings, &keys_pressed, &no_repeat, &mouse_pressed, &gamepad_pressed, modifiers, active_contexts)) {
         result.anytime.options_action = .toggle_editor_palette_group;
         result.anytime.clicked_editor_group = 0;
     }
@@ -1284,7 +1284,7 @@ test "translateInput: editor tool/palette keybinds bridge onto the click actions
         .{ .input = .{ .key = "Digit2" }, .action = .skill_slot_2, .context = .game },
         .{ .input = .{ .key = "Digit1" }, .action = .editor_select_tool, .context = .editor },
         .{ .input = .{ .key = "Digit2" }, .action = .editor_tile_tool, .context = .editor },
-        .{ .input = .{ .key = "Digit3" }, .action = .toggle_editor_enemy_group, .context = .editor },
+        .{ .input = .{ .key = "Digit3" }, .action = .toggle_editor_entity_group, .context = .editor },
     };
     const settings: Settings = .{ .input_bindings = &bindings };
     const camera: Camera = .{ .position = .{ .x = 0, .y = 0 } };
@@ -1317,7 +1317,7 @@ test "translateInput: editor tool/palette keybinds bridge onto the click actions
         try std.testing.expectEqual(types.Action.select_editor_tool, result.anytime.options_action);
         try std.testing.expectEqual(types.EditorToolId.tile, result.anytime.clicked_editor_tool);
     }
-    // Editor screen: Digit3 → enemy group toggle (group index 0).
+    // Editor screen: Digit3 → entity group toggle (group index 0).
     {
         var input_state: InputState = .{};
         const result = translateInput(press_three, &input_state, settings, camera, 0, null, .{ .anytime = true, .editor = true });

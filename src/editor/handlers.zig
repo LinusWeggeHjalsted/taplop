@@ -174,7 +174,7 @@ pub fn addEditorPaletteType(
     const editor = &(current.editor orelse @panic("editor event with no editor"));
     switch (kind) {
         .entity => {
-            layerListAppend(types.EntityTypeDef, &editor.entity_types, defaults.enemy, allocator);
+            layerListAppend(types.EntityTypeDef, &editor.entity_types, defaults.entity, allocator);
             editor.active_tool = .{ .entity_type = @intCast(editor.entity_types.len - 1) };
         },
         .decoration => {

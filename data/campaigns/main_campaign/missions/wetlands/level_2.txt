@@ -14,7 +14,7 @@ C...D .11.....E
             =G
 
 
-Enemies
+Entities
 
 character_code 1
 sprite crab

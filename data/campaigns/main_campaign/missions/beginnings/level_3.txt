@@ -14,7 +14,7 @@ G........C
     1
 
 
-Enemies
+Entities
 
 character_code 1
 sprite skeleton_1

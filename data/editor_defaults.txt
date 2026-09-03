@@ -8,8 +8,8 @@ file_format_version 1
 # loaders.loadEditorDefaults; see DESIGN → Architecture → Level Editor →
 # Editor UI layout (tool palette).
 
-Enemies
-name New Enemy
+Entities
+name New Entity
 sprite skeleton_1
 color_index 4
 displays_weapons true

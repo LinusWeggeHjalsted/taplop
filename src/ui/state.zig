@@ -143,7 +143,7 @@ pub const UiState = struct {
     skills_scroll_offset: i32 = 0,
 
     /// Editor palette group scroll offsets, in TOOL CELLS — one wheel notch
-    /// = one cell. Index 0 = Enemies, 1 = Decorations, 2 = Items.
+    /// = one cell. Index 0 = Entities, 1 = Decorations, 2 = Items.
     /// A group shows at most `editor_palette_max_tools` type cells; scrolling
     /// shifts the visible window left/right. Clamped in place by
     /// `buildEditorBottomBar` (authoritative — it knows the group size) and

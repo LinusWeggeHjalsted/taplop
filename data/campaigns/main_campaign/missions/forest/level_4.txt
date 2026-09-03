@@ -15,7 +15,7 @@ AAC..AAA...AAA
       !
 
 
-Enemies
+Entities
 
 character_code 1
 sprite skeleton_1

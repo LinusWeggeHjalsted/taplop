@@ -453,7 +453,7 @@ pub fn freeSettings(settings: types.Settings, allocator: std.mem.Allocator) void
     }
 }
 
-/// Parse an entity definition (the shared body of an Enemies entry, a player
+/// Parse an entity definition (the shared body of an Entities entry, a player
 /// loadout, or an editor EntityTypeDef template) from a set of key-value
 /// pairs. `team` is set by the caller (enemies = 1, player = 0) since the
 /// format doesn't carry it. `default_name` / `default_sprite` are used when
@@ -1333,7 +1333,7 @@ pub fn loadDecorationRegistry(
 }
 
 /// The three editor palette "+" defaults (data/editor_defaults.txt): one
-/// entry per kind in the level-file section formats — Enemies (the shared
+/// entry per kind in the level-file section formats — Entities (the shared
 /// parseEntityDefinition body, team 1), Decorations (a registry-shaped entry:
 /// sprite + footprint + color_index + layers), Items (an Items entry). No
 /// character_code anywhere — the code is a level-Layout concern (the
@@ -1343,7 +1343,7 @@ pub fn loadDecorationRegistry(
 /// fallback. Key validation reuses the level key map — the sections are the
 /// level formats verbatim.
 pub const EditorDefaults = struct {
-    enemy: types.EntityTypeDef,
+    entity: types.EntityTypeDef,
     decoration: types.DecorationTypeDef,
     item: types.ItemTypeDef,
 };
@@ -1358,16 +1358,16 @@ pub fn loadEditorDefaults(
     try validateSections(sections, &parser.editor_defaults_sections);
     try validateFileFormatVersion(sections, "Metadata", editor_defaults_file_format_version);
 
-    // Enemy: the first Enemies entry. name + sprite are required — the
+    // Entity: the first Entities entry. name + sprite are required — the
     // template's other absent keys are exactly the "none of it" defaults
     // (no weapons / gear / utility skills / layers).
-    const enemies_section = findSection(sections, "Enemies") orelse return error.MissingDefaultEntry;
-    if (enemies_section.entry_groups.len == 0) return error.MissingDefaultEntry;
-    const enemy_pairs = enemies_section.entry_groups[0].pairs;
-    if (findValue(enemy_pairs, "name") == null or findValue(enemy_pairs, "sprite") == null) {
+    const entities_section = findSection(sections, "Entities") orelse return error.MissingDefaultEntry;
+    if (entities_section.entry_groups.len == 0) return error.MissingDefaultEntry;
+    const entity_pairs = entities_section.entry_groups[0].pairs;
+    if (findValue(entity_pairs, "name") == null or findValue(entity_pairs, "sprite") == null) {
         return error.MissingDefaultEntry;
     }
-    const enemy_template = parseEntityDefinition(enemy_pairs, 1, "", "", allocator, file_path, warnings);
+    const entity_template = parseEntityDefinition(entity_pairs, 1, "", "", allocator, file_path, warnings);
 
     // Decoration: the first Decorations entry, registry shape (a `sprite`
     // key is the entry's identity; footprint/color/layers as authored).
@@ -1384,7 +1384,7 @@ pub fn loadEditorDefaults(
         orelse return error.MissingDefaultEntry;
 
     return .{
-        .enemy = .{ .id = enemy_template.name, .template = enemy_template },
+        .entity = .{ .id = entity_template.name, .template = entity_template },
         .decoration = .{
             .id = decoration_definition.sprite,
             .sprite = decoration_definition.sprite,
@@ -1586,7 +1586,7 @@ fn freeDecorationDefinitions(definitions: *std.AutoHashMap(u8, DecorationDefinit
 
 /// Free owned arrays (layers) in an enemy-definitions hashmap, then deinit.
 /// String fields are borrowed.
-fn freeEnemyDefinitions(definitions: *std.AutoHashMap(u8, types.Entity), allocator: std.mem.Allocator) void {
+fn freeEntityDefinitions(definitions: *std.AutoHashMap(u8, types.Entity), allocator: std.mem.Allocator) void {
     var it = definitions.iterator();
     while (it.next()) |entry| {
         allocator.free(entry.value_ptr.layers);
@@ -1681,15 +1681,15 @@ pub fn loadLevel(
     // list — the layout walk now looks up the full definition per char.
     var decoration_definitions = parseDecorationDefinitions(sections, file_source, allocator);
     defer freeDecorationDefinitions(&decoration_definitions, allocator);
-    var enemy_definitions = std.AutoHashMap(u8, types.Entity).init(allocator);
-    defer freeEnemyDefinitions(&enemy_definitions, allocator);
-    if (findSection(sections, "Enemies")) |section| {
+    var entity_definitions = std.AutoHashMap(u8, types.Entity).init(allocator);
+    defer freeEntityDefinitions(&entity_definitions, allocator);
+    if (findSection(sections, "Entities")) |section| {
         for (section.entry_groups) |group| {
             const pairs = group.pairs;
             const code_string = findValue(pairs, "character_code") orelse continue;
             if (code_string.len != 1) continue;
             const entity = parseEntityDefinition(pairs, 1, &.{}, &.{}, allocator, file_path, warnings);
-            try enemy_definitions.put(code_string[0], entity);
+            try entity_definitions.put(code_string[0], entity);
         }
     }
 
@@ -1756,7 +1756,7 @@ pub fn loadLevel(
                             try tile_positions.append(allocator, position);
 
                             // Match character to enemy or item definition.
-                            if (enemy_definitions.get(character)) |definition| {
+                            if (entity_definitions.get(character)) |definition| {
                                 var entity = definition;
                                 entity.position = position;
                                 cloneEntityOwned(&entity, allocator);
@@ -2483,7 +2483,7 @@ test "loadLevel parses a complete level" {
         \\..!..
         \\  ..=
         \\
-        \\Enemies
+        \\Entities
         \\character_code 1
         \\name Skeleton
         \\max_health 10
@@ -2561,7 +2561,7 @@ test "loadLevel decorations do not create tiles" {
         \\.A.
         \\...
         \\
-        \\Enemies
+        \\Entities
         \\
         \\Decorations
         \\character_code A
@@ -2612,7 +2612,7 @@ test "loadLevel multi-tile decoration footprint" {
         \\...
         \\...
         \\
-        \\Enemies
+        \\Entities
         \\
         \\Decorations
         \\character_code T
@@ -2661,7 +2661,7 @@ test "loadLevel decoration with layers" {
         \\...
         \\...
         \\
-        \\Enemies
+        \\Entities
         \\
         \\Decorations
         \\character_code T
@@ -2768,30 +2768,30 @@ test "loadEditorDefaults parses the shipped palette defaults" {
     const sections = try parseConfigFile(bytes, allocator);
     const defaults = try loadEditorDefaults(sections, &file_source, allocator, "data/editor_defaults.txt", null);
 
-    // Enemy: "New Enemy" on skeleton_1, team 1, color 4, weapons shown,
+    // Entity: "New Entity" on skeleton_1, team 1, color 4, weapons shown,
     // 20/0/1/3 stats, and nothing else — no weapons, gear, utility skills,
     // or layers (the absent keys are the point).
-    try std.testing.expectEqualStrings("New Enemy", defaults.enemy.id);
-    try std.testing.expectEqualStrings("New Enemy", defaults.enemy.template.name);
-    try std.testing.expectEqualStrings("skeleton_1", defaults.enemy.template.sprite);
-    try std.testing.expectEqual(@as(u32, 1), defaults.enemy.template.team);
-    try std.testing.expectEqual(@as(u32, 4), defaults.enemy.template.color_index);
-    try std.testing.expect(defaults.enemy.template.displays_weapons);
-    try std.testing.expectEqual(@as(u32, 20), defaults.enemy.template.max_health);
-    try std.testing.expectEqual(@as(u32, 0), defaults.enemy.template.defense);
-    try std.testing.expectEqual(@as(u32, 1), defaults.enemy.template.speed);
-    try std.testing.expectEqual(@as(u32, 3), defaults.enemy.template.aggro_range);
-    try std.testing.expect(defaults.enemy.template.main_hand_weapon == null);
-    try std.testing.expect(defaults.enemy.template.off_hand_weapon == null);
-    try std.testing.expect(defaults.enemy.template.amulet == null);
-    try std.testing.expect(defaults.enemy.template.coat == null);
-    try std.testing.expect(defaults.enemy.template.gloves == null);
-    try std.testing.expect(defaults.enemy.template.pants == null);
-    try std.testing.expect(defaults.enemy.template.boots == null);
-    for (defaults.enemy.template.equipped_utility_skills) |slot| {
+    try std.testing.expectEqualStrings("New Entity", defaults.entity.id);
+    try std.testing.expectEqualStrings("New Entity", defaults.entity.template.name);
+    try std.testing.expectEqualStrings("skeleton_1", defaults.entity.template.sprite);
+    try std.testing.expectEqual(@as(u32, 1), defaults.entity.template.team);
+    try std.testing.expectEqual(@as(u32, 4), defaults.entity.template.color_index);
+    try std.testing.expect(defaults.entity.template.displays_weapons);
+    try std.testing.expectEqual(@as(u32, 20), defaults.entity.template.max_health);
+    try std.testing.expectEqual(@as(u32, 0), defaults.entity.template.defense);
+    try std.testing.expectEqual(@as(u32, 1), defaults.entity.template.speed);
+    try std.testing.expectEqual(@as(u32, 3), defaults.entity.template.aggro_range);
+    try std.testing.expect(defaults.entity.template.main_hand_weapon == null);
+    try std.testing.expect(defaults.entity.template.off_hand_weapon == null);
+    try std.testing.expect(defaults.entity.template.amulet == null);
+    try std.testing.expect(defaults.entity.template.coat == null);
+    try std.testing.expect(defaults.entity.template.gloves == null);
+    try std.testing.expect(defaults.entity.template.pants == null);
+    try std.testing.expect(defaults.entity.template.boots == null);
+    for (defaults.entity.template.equipped_utility_skills) |slot| {
         try std.testing.expect(slot == null);
     }
-    try std.testing.expectEqual(@as(usize, 0), defaults.enemy.template.layers.len);
+    try std.testing.expectEqual(@as(usize, 0), defaults.entity.template.layers.len);
 
     // Decoration: the stone_1 prefab duplicated — single (0,0) footprint,
     // color 5, 256x256 dims, no layers; the palette id tracks the sprite.
@@ -2828,14 +2828,14 @@ test "loadEditorDefaults rejects missing entries and format drift" {
             loadEditorDefaults(sections, null, allocator, "test/editor_defaults.txt", null),
         );
     }
-    // An Enemies entry without a name — a sprite-only entry is not a
+    // An Entities entry without a name — a sprite-only entry is not a
     // usable enemy default.
     {
         const sections = try parseConfigFile(
             \\Metadata
             \\file_format_version 1
             \\
-            \\Enemies
+            \\Entities
             \\sprite skeleton_1
             \\
             \\Decorations
@@ -2958,7 +2958,7 @@ test "loadLevel rejects unexpected sections" {
         \\Layout
         \\.!.
         \\
-        \\Enemies
+        \\Entities
         \\
         \\Decorations
         \\
@@ -3706,7 +3706,7 @@ test "entity utility slots: a weapon skill is warned + dropped, utility skills k
         \\..!..
         \\  ..=
         \\
-        \\Enemies
+        \\Entities
         \\character_code 1
         \\name Skeleton
         \\slot_4 slice
@@ -3903,7 +3903,7 @@ test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {
         \\!.
         \\.=
         \\
-        \\Enemies
+        \\Entities
         \\
         \\Decorations
         \\
@@ -3930,7 +3930,7 @@ test "loadLevel parses per-role gradient overrides, absent keys auto-derive" {
         \\!.
         \\.=
         \\
-        \\Enemies
+        \\Entities
         \\
         \\Decorations
         \\

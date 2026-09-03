@@ -3797,7 +3797,7 @@ test "resolveEditorTileCursor: mouse follows to any tile position, blocked over 
     );
     try std.testing.expectEqual(types.Vector2{ .x = 9, .y = 9 }, history.session.tile_cursor.?);
 
-    // The enemy tool is a tile-cursor tool too (same semantics — any
+    // The entity tool is a tile-cursor tool too (same semantics — any
     // position is a legal place target).
     history.current_state.editor.?.active_tool = .{ .entity_type = 0 };
     resolveTileCursor(
