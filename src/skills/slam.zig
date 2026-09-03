@@ -17,6 +17,7 @@ pub const skill = Skill{
     .name = "Slam",
     .skill_type = .weapon_skill,
     .deals_damage = true,
+    .point_blank_area_of_effect = true,
     .description = "Knockback and stun each target within radius, dealing 1x damage to targets on collision",
     .uses_targeting = false,
     .range = null,

@@ -19,6 +19,7 @@ pub const skill = Skill{
     .name = "Drain",
     .skill_type = .weapon_skill,
     .deals_damage = true,
+    .point_blank_area_of_effect = true,
     .description = "Attack each target within radius and heal for damage dealt",
     .uses_targeting = false,
     .range = null,

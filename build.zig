@@ -373,7 +373,7 @@ fn gitOutput(b: *std.Build, argv: []const []const u8) ?[]const u8 {
 fn generateIds(b: *std.Build) []const u8 {
     var content: std.ArrayListUnmanaged(u8) = .empty;
 
-    const skill_names = scanDir(b, "src/skills", &.{ "skill.zig", "helpers.zig", "threat.zig" });
+    const skill_names = scanDir(b, "src/skills", &.{ "skill.zig", "helpers.zig", "threat.zig", "movement.zig" });
     appendStr(b, &content, "pub const SkillId = enum {\n");
     for (skill_names) |name| {
         appendStr(b, &content, b.fmt("    {s},\n", .{name}));
@@ -427,7 +427,7 @@ fn generateLookupFile(b: *std.Build) void {
     appendStr(b, &content, "    };\n}\n\n");
 
     // Skill lookup
-    const skill_names = scanDir(b, "src/skills", &.{ "skill.zig", "helpers.zig", "threat.zig" });
+    const skill_names = scanDir(b, "src/skills", &.{ "skill.zig", "helpers.zig", "threat.zig", "movement.zig" });
     appendStr(b, &content, "pub fn getSkillDefinition(skill_id: SkillId) ?Skill {\n");
     appendStr(b, &content, "    return switch (skill_id) {\n");
     for (skill_names) |name| {

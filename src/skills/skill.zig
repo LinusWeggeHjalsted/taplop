@@ -33,6 +33,15 @@ pub const Skill = struct {
     /// on a future damaging skill would silently under-report threat.
     deals_damage: bool,
 
+    /// Whether the skill's effect region is centered on the caster
+    /// (a point-blank area of effect): the AoE hits around the caster's own
+    /// position, not a targeted tile. Drives AI movement-mode selection
+    /// (skills/movement.zig): an entity with an OFF-COOLDOWN offensive
+    /// point-blank skill seeks the tile with the most hostiles in radius.
+    /// Defaults false — a forgotten flag only makes the AI dumber (it walks
+    /// instead of cluster-seeking), it does not corrupt any mechanic.
+    point_blank_area_of_effect: bool = false,
+
     // --- skill stats ---
     range: ?u32, // used for skills with targeting
     radius: ?u32, // used by aoe skills

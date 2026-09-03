@@ -17,6 +17,7 @@ pub const skill = Skill{
     .name = "Blitz",
     .skill_type = .weapon_skill,
     .deals_damage = true,
+    .point_blank_area_of_effect = true,
     .description = "Attack and stun each target within radius",
     .uses_targeting = false,
     .range = null,

@@ -18,6 +18,7 @@ pub const skill = Skill{
     .name = "Howl",
     .skill_type = .cantrip,
     .deals_damage = false,
+    .point_blank_area_of_effect = true,
     .description = "Aggro each entity within radius",
     .uses_targeting = false,
     .range = null,
