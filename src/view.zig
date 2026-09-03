@@ -746,11 +746,63 @@ fn middleSectionRect() Rectangle {
     };
 }
 
+/// The width one open middle panel contributes to the left-flush stack,
+/// or null when it renders nothing this frame (the inspect panel disappears
+/// when its target is dead or absent). Shared by `buildMiddlePanels`
+/// (layout) and `middlePanelsOccupiedWidth` (the camera clamp region) so
+/// the two stay in lockstep.
+fn middlePanelWidth(
+    panel_id: ui.MiddlePanelId,
+    session: *const state.SessionState,
+    current_state: *const GameState,
+    font_metrics: ui.FontMetrics,
+) ?i32 {
+    return switch (panel_id) {
+        .inventory => ui.inventory_panel_width,
+        .gear => ui.gearPanelWidth(font_metrics),
+        .skills => ui.skills_panel_width,
+        // A dead target renders no panel: death is derivable from health
+        // == 0 (the mission-fail-overlay precedent — no flag or event
+        // needed), and undo (target alive again) reopens it for free. The
+        // press site gates NEW inspects on alive; this only hides a target
+        // that died while inspected.
+        .entity_inspect => blk: {
+            const entity_index = session.ui_state.inspected_entity_index orelse break :blk null;
+            const level = current_state.level orelse break :blk null;
+            if (entity_index >= level.entities.len) break :blk null;
+            if (level.entities[entity_index].current_health == 0) break :blk null;
+            break :blk ui.entity_inspect_panel_width;
+        },
+    };
+}
+
+/// Total reference-space width the open middle panels occupy (the right
+/// edge of the left-flush stack, `ui_gap` between consecutive rendered
+/// panels) — the x extent the camera clamp region excludes. 0 when nothing
+/// renders.
+fn middlePanelsOccupiedWidth(
+    session: *const state.SessionState,
+    current_state: *const GameState,
+    font_metrics: ui.FontMetrics,
+) i32 {
+    var occupied: i32 = 0;
+    var rendered: u32 = 0;
+    for (session.ui_state.open_middle_panels) |maybe_panel| {
+        const panel_id = maybe_panel orelse continue;
+        const panel_width = middlePanelWidth(panel_id, session, current_state, font_metrics) orelse continue;
+        if (rendered > 0) occupied += ui.ui_gap;
+        occupied += panel_width;
+        rendered += 1;
+    }
+    return occupied;
+}
+
 /// Dispatch each open middle panel to its builder, stacking them left-to-
 /// right flush against the left edge of the screen. Each panel is vertically
-/// centered within the middle section. Panels without a builder yet (enemy
-/// inspect) reserve no space — it'll slot in when its builder lands. The x
-/// cursor advances by `ui_gap` between consecutive built panels. See DESIGN
+/// centered within the middle section. A panel that renders nothing this
+/// frame (the inspect panel's target dying) reserves no space. The x cursor
+/// advances by `ui_gap` between consecutive built panels. Panel widths come
+/// from `middlePanelWidth`, shared with the camera clamp region. See DESIGN
 /// → UI Framework.
 fn buildMiddlePanels(
     elements: *std.ArrayList(ui.UiElement),
@@ -765,14 +817,15 @@ fn buildMiddlePanels(
     var cursor_x: i32 = 0;
     for (session.ui_state.open_middle_panels) |maybe_panel| {
         const panel_id = maybe_panel orelse continue;
-        const width: i32 = switch (panel_id) {
-            .inventory => blk: {
-                const bounds = Rectangle{
-                    .x = cursor_x,
-                    .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
-                    .width = ui.inventory_panel_width,
-                    .height = ui.middle_panel_height,
-                };
+        const panel_width = middlePanelWidth(panel_id, session, current_state, font_metrics) orelse continue;
+        const bounds = Rectangle{
+            .x = cursor_x,
+            .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
+            .width = panel_width,
+            .height = ui.middle_panel_height,
+        };
+        switch (panel_id) {
+            .inventory => {
                 // The live inventory rides on the player entity (in-level
                 // pickups land on `entity.inventory`; `player_data.inventory`
                 // is the persistent copy synced only on exit). Materials live
@@ -801,16 +854,8 @@ fn buildMiddlePanels(
                     session.held_modifiers,
                     session.ui_state.salvage_region,
                 );
-                break :blk ui.inventory_panel_width;
             },
-            .gear => blk: {
-                const panel_width = ui.gearPanelWidth(font_metrics);
-                const bounds = Rectangle{
-                    .x = cursor_x,
-                    .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
-                    .width = panel_width,
-                    .height = ui.middle_panel_height,
-                };
+            .gear => {
                 const player = if (ui.playerEntity(current_state)) |pl| pl else types.Entity{};
                 const drag_source: ?ui.SlotRef = if (session.ui_state.drag) |d| d.source else null;
                 try ui.buildGearPanel(
@@ -823,15 +868,8 @@ fn buildMiddlePanels(
                     active_theme,
                     drag_source,
                 );
-                break :blk panel_width;
             },
-            .skills => blk: {
-                const bounds = Rectangle{
-                    .x = cursor_x,
-                    .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
-                    .width = ui.skills_panel_width,
-                    .height = ui.middle_panel_height,
-                };
+            .skills => {
                 const drag_source: ?ui.SlotRef = if (session.ui_state.drag) |d| d.source else null;
                 try ui.buildSkillsPanel(
                     elements,
@@ -843,26 +881,13 @@ fn buildMiddlePanels(
                     &session.ui_state.skills_scroll_offset,
                     drag_source,
                 );
-                break :blk ui.skills_panel_width;
             },
-            // Builder pending — entity inspect reserves no space.
-            .entity_inspect => blk: {
-                const entity_index = session.ui_state.inspected_entity_index orelse continue;
-                const level = current_state.level orelse continue;
-                if (entity_index >= level.entities.len) continue;
+            .entity_inspect => {
+                // `middlePanelWidth` returned non-null above, so the target
+                // resolves (fail-fast unwrap, the level-handler precedent).
+                const entity_index = session.ui_state.inspected_entity_index.?;
+                const level = current_state.level.?;
                 const entity = level.entities[entity_index];
-                // A dead target renders no panel: death is derivable from
-                // health == 0 (the mission-fail-overlay precedent — no flag
-                // or event needed), and undo (target alive again) reopens
-                // it for free. The press site gates NEW inspects on alive;
-                // this arm only hides a target that died while inspected.
-                if (entity.current_health == 0) continue;
-                const bounds = Rectangle{
-                    .x = cursor_x,
-                    .y = section.y + @divTrunc(section.height - ui.middle_panel_height, 2),
-                    .width = ui.entity_inspect_panel_width,
-                    .height = ui.middle_panel_height,
-                };
                 try ui.buildEntityInspectPanel(
                     elements,
                     allocator,
@@ -877,10 +902,9 @@ fn buildMiddlePanels(
                     active_theme,
                     weapon_type_definitions,
                 );
-                break :blk ui.entity_inspect_panel_width;
             },
-        };
-        cursor_x += width + ui.ui_gap;
+        }
+        cursor_x += panel_width + ui.ui_gap;
     }
 }
 
@@ -936,6 +960,47 @@ pub fn computeCamera(
         pos.y += offset.y;
     }
     return .{ .position = pos };
+}
+
+/// Tunable: minimum clearance (tiles) the automatic camera keeps between
+/// the player and the view region edge. Eyeball in `zig build run` (the
+/// `skill_icon_size_native` precedent).
+const camera_edge_margin_tiles: i32 = 2;
+
+/// The camera clamp region for the current screen: the reference-space
+/// rectangle the camera keeps level content inside (and the player inside
+/// with `camera_edge_margin_tiles` clearance, when not panning). The top
+/// and bottom bars bound it vertically; open middle panels bound it from
+/// the left. Levels/hubs only — null elsewhere (the editor viewport frames
+/// itself). See DESIGN → Platform Seam → Camera clamping.
+pub fn cameraViewRegion(
+    session: *const state.SessionState,
+    current_state: *const GameState,
+    font_metrics: ui.FontMetrics,
+    zoom: f32,
+) ?Rectangle {
+    if (current_state.screen != .level and current_state.screen != .hub) return null;
+    if (current_state.level == null and current_state.hub == null) return null;
+    return cameraViewRegionFor(middlePanelsOccupiedWidth(session, current_state, font_metrics), zoom);
+}
+
+/// Pure core of `cameraViewRegion`. The panels' occupied width is dropped
+/// ("act as if no panels open") when the remaining width can't fit the
+/// player-margin band on both sides — the fully-covered-screen case, and
+/// any sliver too narrow to guarantee the margin.
+fn cameraViewRegionFor(occupied_width: i32, zoom: f32) Rectangle {
+    const margin_band: f32 = @as(f32, @floatFromInt(2 * camera_edge_margin_tiles)) * input.tile_size_pixels * zoom;
+    var x: i32 = 0;
+    if (occupied_width > 0) {
+        const remaining: f32 = @floatFromInt(types.reference_width - occupied_width);
+        if (remaining >= margin_band) x = occupied_width;
+    }
+    return .{
+        .x = x,
+        .y = ui.top_bar_height,
+        .width = types.reference_width - x,
+        .height = types.reference_height - ui.top_bar_height - ui.bottom_bar_height,
+    };
 }
 
 /// Convert a tile coordinate to its top-left screen position (reference space).
@@ -3467,4 +3532,238 @@ test "entity body color: gradient by team, index by player-vs-helper" {
     try std.testing.expect(std.meta.eql(player_four, helper_drawable.base_sprite.color));
     // The team-2 enemy: enemy gradient at its own color_index.
     try std.testing.expect(std.meta.eql(enemy_four, enemy_drawable.base_sprite.color));
+}
+
+// ============================================================
+// Camera clamp region tests (slice 1: region builder, no consumer yet)
+// ============================================================
+
+test "middle panel width: inspect panel renders only for a live in-range target" {
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const entities = [_]types.Entity{ .{}, .{ .current_health = 0 } };
+    const level = types.Level{ .entities = &entities };
+    const level_state = GameState{
+        .screen = .level,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = level,
+        .hub = null,
+    };
+    const hub_state = GameState{
+        .screen = .hub,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = types.Hub{},
+    };
+    var session = state.SessionState{};
+
+    session.ui_state.inspected_entity_index = 0;
+    try std.testing.expectEqual(
+        ui.entity_inspect_panel_width,
+        middlePanelWidth(.entity_inspect, &session, &level_state, font_metrics),
+    );
+    // Dead target: no panel, no space.
+    session.ui_state.inspected_entity_index = 1;
+    try std.testing.expectEqual(
+        @as(?i32, null),
+        middlePanelWidth(.entity_inspect, &session, &level_state, font_metrics),
+    );
+    // Out-of-range target index: no panel.
+    session.ui_state.inspected_entity_index = 5;
+    try std.testing.expectEqual(
+        @as(?i32, null),
+        middlePanelWidth(.entity_inspect, &session, &level_state, font_metrics),
+    );
+    // Inspect is level-only: a hub screen reserves no space.
+    session.ui_state.inspected_entity_index = 0;
+    try std.testing.expectEqual(
+        @as(?i32, null),
+        middlePanelWidth(.entity_inspect, &session, &hub_state, font_metrics),
+    );
+
+    // The unconditional panels have fixed widths.
+    try std.testing.expectEqual(
+        @as(?i32, ui.inventory_panel_width),
+        middlePanelWidth(.inventory, &session, &level_state, font_metrics),
+    );
+    try std.testing.expectEqual(
+        @as(?i32, ui.skills_panel_width),
+        middlePanelWidth(.skills, &session, &level_state, font_metrics),
+    );
+}
+
+test "middle panels occupied width: gaps only between rendered panels" {
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const entities = [_]types.Entity{ .{}, .{ .current_health = 0 } };
+    const level = types.Level{ .entities = &entities };
+    const level_state = GameState{
+        .screen = .level,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = level,
+        .hub = null,
+    };
+    var session = state.SessionState{};
+
+    // Two rendered panels: one ui_gap between them.
+    session.ui_state.open_middle_panels = .{ .inventory, .skills, null, null };
+    try std.testing.expectEqual(
+        ui.inventory_panel_width + ui.ui_gap + ui.skills_panel_width,
+        middlePanelsOccupiedWidth(&session, &level_state, font_metrics),
+    );
+
+    // A dead inspect target renders nothing, so it contributes neither
+    // width nor a gap on either side.
+    session.ui_state.inspected_entity_index = 1;
+    session.ui_state.open_middle_panels = .{ .inventory, .entity_inspect, .skills, null };
+    try std.testing.expectEqual(
+        ui.inventory_panel_width + ui.ui_gap + ui.skills_panel_width,
+        middlePanelsOccupiedWidth(&session, &level_state, font_metrics),
+    );
+
+    // A live inspect target: width plus the gap.
+    session.ui_state.inspected_entity_index = 0;
+    try std.testing.expectEqual(
+        ui.inventory_panel_width + 2 * ui.ui_gap + ui.skills_panel_width + ui.entity_inspect_panel_width,
+        middlePanelsOccupiedWidth(&session, &level_state, font_metrics),
+    );
+}
+
+test "camera view region: bars bound vertically, panels bound horizontally" {
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const level_state = GameState{
+        .screen = .level,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = types.Level{},
+        .hub = null,
+    };
+    var session = state.SessionState{};
+
+    // No panels: the full band between the bars.
+    const full = cameraViewRegion(&session, &level_state, font_metrics, 1.0).?;
+    try std.testing.expectEqual(types.Rectangle{
+        .x = 0,
+        .y = ui.top_bar_height,
+        .width = types.reference_width,
+        .height = types.reference_height - ui.top_bar_height - ui.bottom_bar_height,
+    }, full);
+
+    // Panels open: the region starts at the occupied right edge.
+    session.ui_state.open_middle_panels = .{ .inventory, null, null, null };
+    const occupied = cameraViewRegion(&session, &level_state, font_metrics, 1.0).?;
+    try std.testing.expectEqual(ui.inventory_panel_width, occupied.x);
+    try std.testing.expectEqual(types.reference_width - ui.inventory_panel_width, occupied.width);
+    // The vertical bounds are the same either way.
+    try std.testing.expectEqual(full.y, occupied.y);
+    try std.testing.expectEqual(full.height, occupied.height);
+}
+
+test "camera view region: fully covered screen acts as if no panels open" {
+    // The feasibility boundary at zoom 1.0: the margin band needs
+    // 2 * camera_edge_margin_tiles = 4 tiles = 1024 px of remaining width.
+    // Exactly enough: panels honored.
+    try std.testing.expectEqual(
+        @as(i32, 2816),
+        cameraViewRegionFor(types.reference_width - 1024, 1.0).x,
+    );
+    // One pixel short: fallback to the full band.
+    try std.testing.expectEqual(
+        @as(i32, 0),
+        cameraViewRegionFor(types.reference_width - 1023, 1.0).x,
+    );
+    // Lower zoom shrinks the band (4 tiles scale with zoom), so the same
+    // occupied width fits: 3328 occupied leaves 512 = exactly the band at
+    // zoom 0.5.
+    try std.testing.expectEqual(
+        @as(i32, 3328),
+        cameraViewRegionFor(3328, 0.5).x,
+    );
+    // Degenerate: occupied beyond the screen width — fallback.
+    try std.testing.expectEqual(
+        @as(i32, 0),
+        cameraViewRegionFor(types.reference_width, 1.0).x,
+    );
+}
+
+test "camera view region: null outside levels and hubs" {
+    const font_metrics = ui.FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const editor_state = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &.{} },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    const main_menu_state = GameState{
+        .screen = .main_menu,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    var session = state.SessionState{};
+
+    try std.testing.expectEqual(
+        @as(?types.Rectangle, null),
+        cameraViewRegion(&session, &editor_state, font_metrics, 1.0),
+    );
+    try std.testing.expectEqual(
+        @as(?types.Rectangle, null),
+        cameraViewRegion(&session, &main_menu_state, font_metrics, 1.0),
+    );
+
+    // A hub screen gets the same full band as a level.
+    const hub_state = GameState{
+        .screen = .hub,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = types.Hub{},
+    };
+    try std.testing.expectEqual(
+        types.Rectangle{
+            .x = 0,
+            .y = ui.top_bar_height,
+            .width = types.reference_width,
+            .height = types.reference_height - ui.top_bar_height - ui.bottom_bar_height,
+        },
+        cameraViewRegion(&session, &hub_state, font_metrics, 1.0).?,
+    );
 }
