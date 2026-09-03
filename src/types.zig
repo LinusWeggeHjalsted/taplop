@@ -1920,6 +1920,16 @@ pub const EditorSelectionMoveEntry = union(enum) {
     level_end: Vector2,
 };
 
+/// Inclusive tile-coordinate bounding box (min corner tile .. max
+/// corner tile, both inclusive) of a set of tiles. Zoom-independent —
+/// the camera clamp converts to world pixels per frame.
+pub const TileBounds = struct {
+    min_x: i32,
+    min_y: i32,
+    max_x: i32,
+    max_y: i32,
+};
+
 pub const Editor = struct {
     mission: Mission = .{}, // metadata + path (the mission being edited)
     levels: []const EditorLevel = &.{}, // all levels, reference-based
@@ -1938,6 +1948,16 @@ pub const Editor = struct {
     // players picking up a custom mission can see the author's loadout).
     player_def: EntityTypeDef = .{},
     active_level_index: usize = 0, // which tab is open
+    /// Snapshot of the ACTIVE level's tile bbox, refreshed only when the
+    /// active level switches (open_editor / editor_set_active_level /
+    /// editor_add_level / editor_delete_level clamping onto new content
+    /// — see `refreshEditorClampBounds`). The camera clamp reads THIS, not
+    /// the live tiles, so mid-edit tile changes never reframe the camera;
+    /// undo/redo + replay reproduce it because the refresh rides the same
+    /// events. Null = no tiles at snapshot time (the level was empty) —
+    /// the unclamped editor camera. See DESIGN → Platform Seam → Camera
+    /// clamping.
+    clamp_bounds: ?TileBounds = null,
     /// The currently active tool (see `EditorToolId`). Set only via the
     /// `editor_set_tool` event; invariant: the select tool's selection is
     /// nonempty only while this is `.select` (a tool switch away from

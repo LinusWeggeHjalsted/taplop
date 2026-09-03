@@ -95,6 +95,10 @@ pub fn processEvent(
                             // tab switch takes it with it (same event, so
                             // undo restores the tab AND its selection).
                             editor.selection = &.{};
+                            // The tab switch re-frames the camera clamp
+                            // onto the new level (see DESIGN → Platform
+                            // Seam → Camera clamping).
+                            editor_handlers.refreshEditorClampBounds(editor);
                         }
                     }
                 },

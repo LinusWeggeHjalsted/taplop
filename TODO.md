@@ -79,7 +79,9 @@ Test by running `zig build run` and clicking through.
   fallback; levels/hubs only. See DESIGN → Platform Seam → Camera clamping;
   history in DONE.md. Editor viewport framing: DONE (same clamp over the
   full-width band — sidebars ignored, completely free pan, tab switches
-  recenter via cameraRecenterKey).
+  recenter via cameraRecenterKey; clamp bounds are a level-switch-time
+  snapshot so mid-edit tile changes never reframe — see DESIGN → Platform
+  Seam → Camera clamping).
 - **New-keybind pipeline friction** — a new keybind touches FIVE places
   (the list + the reason it's easy to forget one: see DESIGN → Input →
   New keybind wiring sites — the doc line this item asked for has landed):

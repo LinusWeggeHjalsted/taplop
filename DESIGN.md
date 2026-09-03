@@ -169,11 +169,21 @@ next session meets it as a surprise instead of a known.
   bound it vertically) at FULL width — the sidebars and pickers are
   deliberately ignored (they never reframe the camera). The clamp shapes
   the player_start-centered framing exactly like gameplay (margin band
-  around the '!' marker, flush bounds, small levels centered as a whole,
-  bounds follow the active level tab), but a deliberate pan is COMPLETELY
-  free there — no flush bounds, no wiggle. Unpanned = clamped framing;
-  panned = roam anywhere; the clamp resumes when the pan clears. Pan
-  clearing keys on `view.cameraRecenterKey` (player position + the
+  around the '!' marker, flush bounds, small levels centered as a whole),
+  but a deliberate pan is COMPLETELY free there — no flush bounds, no
+  wiggle. Unpanned = clamped framing; panned = roam anywhere; the clamp
+  resumes when the pan clears. The clamp bounds come from
+  `Editor.clamp_bounds` — a SNAPSHOT of the active level's tile bbox,
+  refreshed ONLY when the active level switches (`open_editor` both
+  branches, `editor_set_active_level`, `editor_add_level`,
+  `editor_delete_level` clamping onto new content — `refreshEditorClampBounds`,
+  the single refresh site). Mid-edit tile changes deliberately never
+  refresh it: painting/erasing tiles changes the live bbox but must not
+  reframe the camera mid-edit (the author's viewport stays put; the next
+  level switch re-clamps). Because the refresh rides the same events, undo
+  /redo + replay reproduce the snapshot by construction. Null = the level
+  was empty at snapshot time — the unclamped editor camera. Pan clearing
+  keys on `view.cameraRecenterKey` (player position + the
   editor's active level index) so a level-tab switch recenters even when
   two levels share a player_start (fresh levels all come from one
   template). During playtest/validate the editor state persists on a

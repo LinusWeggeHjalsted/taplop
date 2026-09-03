@@ -938,15 +938,17 @@ pub fn playerPosition(current_state: *const GameState) types.Vector2 {
     return .{ .x = 0, .y = 0 };
 }
 
-/// World-pixel bounding box of the current screen's tile grid (levels,
-/// hubs, and the editor's active level), full tile extents (min tile
-/// origin .. max tile far edge). Levels are non-rectangular
-/// (`level_tiles` is a flat position list), so the bbox is the natural
-/// "level rectangle". Null when the screen has no live world or no tiles
-/// (an empty editor level stays unclamped). The live level/hub take
-/// precedence over the editor arm — during playtest/validate the editor
-/// state persists on a `.level` screen and the INSTANTIATED level bounds
-/// apply.
+/// World-pixel bounding box of the current screen's tile grid, full tile
+/// extents (min tile origin .. max tile far edge). Levels and hubs scan
+/// their LIVE tile lists (levels are non-rectangular (`level_tiles` is a
+/// flat position list), so the bbox is the natural "level rectangle"). The
+/// editor arm reads the ACTIVE level's `clamp_bounds` SNAPSHOT instead —
+/// taken at level-switch time, so mid-edit tile changes never reframe the
+/// camera (see DESIGN → Platform Seam → Camera clamping). Null when the
+/// screen has no live world or no tiles (a level that was empty at
+/// snapshot stays unclamped). The live level takes precedence over the
+/// editor arm — during playtest/validate the editor state persists on a
+/// `.level` screen and the INSTANTIATED level bounds apply.
 const WorldPixelBounds = struct {
     min_x: f32,
     max_x: f32,
@@ -958,18 +960,27 @@ fn screenWorldBounds(
     current_state: *const GameState,
     tile_pixels: f32,
 ) ?WorldPixelBounds {
-    const editor_level: ?*const types.EditorLevel = if (current_state.editor != null)
-        selectEditorLevel(&current_state.editor.?)
-    else
-        null;
-    const tiles = if (current_state.level) |level|
-        level.level_tiles
-    else if (current_state.hub) |hub|
-        hub.hub_tiles
-    else if (editor_level) |level|
-        level.level_tiles
-    else
-        return null;
+    if (current_state.level) |level| {
+        return tileListWorldBounds(level.level_tiles, tile_pixels);
+    } else if (current_state.hub) |hub| {
+        return tileListWorldBounds(hub.hub_tiles, tile_pixels);
+    } else if (current_state.editor) |editor| {
+        const snapshot = editor.clamp_bounds orelse return null;
+        return .{
+            .min_x = @as(f32, @floatFromInt(snapshot.min_x)) * tile_pixels,
+            .max_x = @as(f32, @floatFromInt(snapshot.max_x + 1)) * tile_pixels,
+            .min_y = @as(f32, @floatFromInt(snapshot.min_y)) * tile_pixels,
+            .max_y = @as(f32, @floatFromInt(snapshot.max_y + 1)) * tile_pixels,
+        };
+    }
+    return null;
+}
+
+/// The live tile-list scan behind the level/hub arms of `screenWorldBounds`.
+fn tileListWorldBounds(
+    tiles: []const types.Vector2,
+    tile_pixels: f32,
+) ?WorldPixelBounds {
     if (tiles.len == 0) return null;
     var min_x = tiles[0].x;
     var max_x = tiles[0].x;
@@ -4172,11 +4183,13 @@ test "camera clamp: null region is the unclamped behavior" {
 test "editor viewport: clamps the active level around its player_start" {
     // The editor's "player position" is the active level's player_start
     // (the '!' marker): the same clamp rules as gameplay apply around it.
+    // The clamp bounds come from `Editor.clamp_bounds` — the SNAPSHOT the
+    // level-switch handlers take (set here as refreshEditorClampBounds
+    // would) — so the bounds follow the ACTIVE level's tab.
     const big_tiles = tileGrid(30, 17);
     const small_tiles = tileGrid(4, 3);
     // Two levels sharing a player_start (fresh levels come from one
-    // template) with different layouts — the bounds must follow the
-    // ACTIVE level's tab.
+    // template) with different layouts.
     const levels = [_]types.EditorLevel{
         .{ .level_tiles = &big_tiles, .player_start = .{ .x = 0, .y = 0 } },
         .{ .level_tiles = &small_tiles, .player_start = .{ .x = 0, .y = 0 } },
@@ -4197,16 +4210,69 @@ test "editor viewport: clamps the active level around its player_start" {
     // Big level, player_start at the corner: same framing as the level
     // test (margin band holds 512 px clearance).
     state_.editor.?.active_level_index = 0;
+    state_.editor.?.clamp_bounds = .{ .min_x = 0, .min_y = 0, .max_x = 29, .max_y = 16 };
     var camera = computeCamera(&state_, 1.0, null, fullBandRegion());
     try std.testing.expectEqual(@as(i32, 1536), camera.position.x);
     try std.testing.expectEqual(@as(i32, 440), camera.position.y);
 
     // Tab to the small level: centered as a whole — the tab switch
-    // re-clamps on the new layout.
+    // re-clamps on the new layout (the snapshot refresh).
     state_.editor.?.active_level_index = 1;
+    state_.editor.?.clamp_bounds = .{ .min_x = 0, .min_y = 0, .max_x = 3, .max_y = 2 };
     camera = computeCamera(&state_, 1.0, null, fullBandRegion());
     try std.testing.expectEqual(@as(i32, 512), camera.position.x);
     try std.testing.expectEqual(@as(i32, 384), camera.position.y);
+}
+
+test "editor viewport: mid-edit tile changes never reframe the camera" {
+    // The clamp reads the SNAPSHOT, not the live tiles: after the level
+    // switch takes its bounds, painting/deleting tiles (which changes the
+    // live bbox) must not shift the camera. Only the next level switch
+    // re-clamps. See DESIGN → Platform Seam → Camera clamping.
+    const snapshot_tiles = tileGrid(30, 17);
+    const edited_tiles = tileGrid(4, 3);
+    const levels = [_]types.EditorLevel{.{
+        .level_tiles = &edited_tiles,
+        .player_start = .{ .x = 0, .y = 0 },
+    }};
+    const state_ = GameState{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{
+            .levels = &levels,
+            // The snapshot from switch time (the full 30x17 grid) — the
+            // live tiles have since been edited down to 4x3.
+            .clamp_bounds = tileBoundsOf(&snapshot_tiles),
+        },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+
+    // The clamp is against the SNAPSHOT bounds: the player_start-corner
+    // framing of the big grid, not the small live grid (which would
+    // center as a whole at 512, 384).
+    const camera = computeCamera(&state_, 1.0, null, fullBandRegion());
+    try std.testing.expectEqual(@as(i32, 1536), camera.position.x);
+    try std.testing.expectEqual(@as(i32, 440), camera.position.y);
+}
+
+/// Test helper: the tile bbox snapshot `refreshEditorClampBounds` would
+/// take of `tiles` (inclusive tile coords).
+fn tileBoundsOf(tiles: []const types.Vector2) ?types.TileBounds {
+    if (tiles.len == 0) return null;
+    var bounds = types.TileBounds{ .min_x = tiles[0].x, .min_y = tiles[0].y, .max_x = tiles[0].x, .max_y = tiles[0].y };
+    for (tiles[1..]) |tile| {
+        bounds.min_x = @min(bounds.min_x, tile.x);
+        bounds.max_x = @max(bounds.max_x, tile.x);
+        bounds.min_y = @min(bounds.min_y, tile.y);
+        bounds.max_y = @max(bounds.max_y, tile.y);
+    }
+    return bounds;
 }
 
 test "editor viewport: pan is completely free" {

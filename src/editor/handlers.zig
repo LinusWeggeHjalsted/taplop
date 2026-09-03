@@ -242,6 +242,37 @@ pub fn loadMaxPlayerLoadout(
     return loaders.playerLoadoutEntity(default_data);
 }
 
+/// Refresh `Editor.clamp_bounds` from the ACTIVE level's live tiles —
+/// the one place the camera-clamp snapshot is taken. Called only when the
+/// active level switches (open_editor both branches, editor_set_active_level,
+/// editor_add_level, editor_delete_level clamping onto new content): mid-edit
+/// tile changes deliberately do NOT re-run this, so the camera clamp stays
+/// fixed while the author paints (see DESIGN → Platform Seam → Camera
+/// clamping). Defensive against crafted states: an out-of-range active index
+/// or an empty tile list snapshots null (the unclamped editor camera).
+pub fn refreshEditorClampBounds(editor: *types.Editor) void {
+    if (editor.active_level_index >= editor.levels.len) {
+        editor.clamp_bounds = null;
+        return;
+    }
+    const tiles = editor.levels[editor.active_level_index].level_tiles;
+    if (tiles.len == 0) {
+        editor.clamp_bounds = null;
+        return;
+    }
+    var min_x = tiles[0].x;
+    var max_x = tiles[0].x;
+    var min_y = tiles[0].y;
+    var max_y = tiles[0].y;
+    for (tiles[1..]) |tile| {
+        if (tile.x < min_x) min_x = tile.x;
+        if (tile.x > max_x) max_x = tile.x;
+        if (tile.y < min_y) min_y = tile.y;
+        if (tile.y > max_y) max_y = tile.y;
+    }
+    editor.clamp_bounds = .{ .min_x = min_x, .min_y = min_y, .max_x = max_x, .max_y = max_y };
+}
+
 /// Append a new level built from the shipped template
 /// (data/default_level.txt — the minimal `!=` layout), switch the active
 /// tab to it, and sync mission.level_count. The template read goes through
@@ -264,6 +295,7 @@ pub fn addEditorLevel(
     editor.active_level_index = editor.levels.len - 1;
     editor.selection = &.{};
     editor.mission.level_count = @intCast(editor.levels.len);
+    refreshEditorClampBounds(editor);
 }
 
 /// The fresh-mission branch of open_editor (null mission_path — the
@@ -293,6 +325,7 @@ pub fn openFreshEditorMission(
         .levels = level_list.toOwnedSlice(allocator) catch @panic("failed to own editor levels slice"),
         .player_def = .{ .id = "Player", .template = player_entity },
     };
+    refreshEditorClampBounds(&current.editor.?);
 }
 
 /// Load the decoration registry (`data/decorations.txt` prefabs) into
@@ -432,6 +465,7 @@ pub fn handleEditorEvent(
             if (delete.level_index == editor.active_level_index) {
                 editor.active_level_index = @min(editor.active_level_index, editor.levels.len - 1);
                 editor.selection = &.{};
+                refreshEditorClampBounds(editor);
             } else if (delete.level_index < editor.active_level_index) {
                 editor.active_level_index -= 1;
             }

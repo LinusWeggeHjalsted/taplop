@@ -106,6 +106,73 @@ test "player_set_editor_level: out-of-range index is a no-op (handler guard)" {
     try testing.expectEqual(@as(usize, 0), history.current_state.editor.?.active_level_index);
 }
 
+test "editor clamp snapshot: refreshed on level switch, held across tile edits, reverted by undo" {
+    // The camera clamp reads `Editor.clamp_bounds` (the snapshot — see
+    // DESIGN → Platform Seam → Camera clamping): a level switch refreshes
+    // it from the new active level's live tiles; a tile edit mid-level
+    // must NOT touch it (mid-edit reframing is the bug this snapshot
+    // exists for); undo of the switch reverts it with the tab.
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    const level_0_tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 5, .y = 2 } };
+    const level_1_tiles = [_]types.Vector2{ .{ .x = 1, .y = 1 } };
+    const levels = [_]types.EditorLevel{
+        .{ .level_tiles = &level_0_tiles },
+        .{ .level_tiles = &level_1_tiles },
+    };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+    }));
+    runToIdle(&history);
+    // The starting state was crafted directly (no open_editor event), so
+    // no snapshot exists yet.
+    try testing.expect(history.current_state.editor.?.clamp_bounds == null);
+
+    // Tab switch: the snapshot follows the new active level's tiles.
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_set_editor_level = .{ .level_index = 1 } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(
+        types.TileBounds{ .min_x = 1, .min_y = 1, .max_x = 1, .max_y = 1 },
+        history.current_state.editor.?.clamp_bounds.?,
+    );
+
+    // A tile painted far outside the current bbox: the live tiles change,
+    // the snapshot does not (the camera stays framed).
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .editor_event = .{ .editor_set_tile = .{
+            .level_index = 1,
+            .position = .{ .x = 40, .y = 40 },
+            .is_floor = true,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(&history);
+    try testing.expectEqual(
+        types.TileBounds{ .min_x = 1, .min_y = 1, .max_x = 1, .max_y = 1 },
+        history.current_state.editor.?.clamp_bounds.?,
+    );
+
+    // Undo the tile edit (still held), then undo the switch: the snapshot
+    // reverts with the tab — back to the crafted starting state, which has
+    // NO snapshot (it never went through open_editor; real flows always
+    // do). The point: undo restores the pre-switch snapshot verbatim, it
+    // doesn't re-derive one.
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expectEqual(
+        types.TileBounds{ .min_x = 1, .min_y = 1, .max_x = 1, .max_y = 1 },
+        history.current_state.editor.?.clamp_bounds.?,
+    );
+    try testing.expect(history.undo(event_handlers.processEvent));
+    try testing.expect(history.current_state.editor.?.clamp_bounds == null);
+}
+
 test "level-tab click on the active tab fires nothing (no dead undo step)" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();

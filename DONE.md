@@ -11008,3 +11008,45 @@ handler_tests_ai.zig test comments updated (spark + meteor, both range 3
 — min/max-range behavior unchanged: daze dealt no damage, meteor does at
 the same range 3, so computeMinRange/computeMaxDamageRange results are
 identical).
+
+## Editor camera clamp snapshot (level-switch-only reframing)
+
+The editor's unpanned camera clamp was recomputed from the ACTIVE
+level's LIVE tile bbox every frame (`screenWorldBounds` scanned
+`level_tiles`), so any edit that moved the bbox reframed the camera
+mid-edit — painting a tile past the edge (or erasing an extreme tile)
+made the viewport jump. Author request: clamp only when switching the
+current level.
+
+- `types.TileBounds` (inclusive tile coords, zoom-independent) +
+  `Editor.clamp_bounds: ?TileBounds` — a SNAPSHOT of the active level's
+  tile bbox. Null = the level was empty at snapshot time (the unclamped
+  editor camera).
+- `refreshEditorClampBounds` (editor/handlers.zig) is the single refresh
+  site, called ONLY where the active level switches: `openFreshEditorMission`,
+  the open_editor mission branch (player_input.zig), the inline
+  `editor_set_active_level` handler, `addEditorLevel`, and the
+  `editor_delete_level` arm that clamps the active index onto new content
+  (a delete BELOW the active tab shifts the tab with its level — same
+  content, no refresh). Mid-edit tile events (`editor_set_tile`, the
+  placement verbs) deliberately never refresh it.
+- Because the refresh rides the same recorded events, undo/redo + replay
+  reproduce the snapshot by construction: undoing an edit keeps the
+  framing, undoing a tab switch restores the previous snapshot verbatim
+  (it does NOT re-derive one — a crafted/undone state simply carries the
+  snapshot its timeline says it should).
+- `screenWorldBounds` (view.zig): the editor arm now converts the
+  snapshot to world pixels instead of scanning live tiles; the live
+  level/hub arms are unchanged (during playtest/validate the editor state
+  persists on a `.level` screen, and the instantiated level's live bounds
+  still take precedence). The editor arm no longer uses
+  `selectEditorLevel` (rendering still does).
+- The camera CENTER still tracks the live player_start — only the CLAMP
+  bounds are snapshotted (recentering on a moved '!' is the center's job,
+  not a reframe).
+
+Tests: view (clamp follows the per-level snapshot with the old big/small
+numbers; a mid-edit-shrunk live grid keeps the snapshot framing), handler
+(snapshot refreshed on switch, held across `editor_set_tile`, reverted
+verbatim by undo-of-switch; crafted states without open_editor carry no
+snapshot). DESIGN → Platform Seam → Camera clamping updated.

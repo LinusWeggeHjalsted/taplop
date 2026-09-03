@@ -262,6 +262,7 @@ pub fn handlePlayerInputEvent(
             // start_mission's): the sprite picker's mission-local scan +
             // the editor save read it.
             current.editor.?.mission.path = mission_path;
+            editor_handlers.refreshEditorClampBounds(&current.editor.?);
             editor_handlers.loadEditorDecorationRegistry(history, allocator);
             surfaceWarnings(history, &balance_warnings, allocator);
             // Same new-world bump as the fresh branch above.
