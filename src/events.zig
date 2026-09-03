@@ -842,8 +842,12 @@ pub const PlayerInputEvent = union(enum) {
         start_position: Vector2,
         end_position: Vector2,
     },
-    // Select-tool ctrl+A: add EVERY selectable thing in the active level
-    // (tiles, entity / item / decoration placements, the '!' / '='). No
+    // ctrl+A: add EVERY selectable thing in the active level
+    // (tiles, entity / item / decoration placements, the '!' / '=').
+    // Tool-agnostic — when another tool is active the action also switches
+    // to select (the selection ⇔ select-tool invariant; the switch shares
+    // this action's idle point, so one undo restores the previous tool +
+    // the empty selection). No
     // payload — the handler computes the granular editor_select plan from
     // state (the marquee's membership rule with no region bound); entries
     // already in the selection are skipped, so an all-selected level never

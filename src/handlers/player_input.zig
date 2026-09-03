@@ -674,15 +674,31 @@ pub fn handlePlayerInputEvent(
                 );
             }
         },
-        // Select-tool ctrl+A: thin over the shared planner (the input layer
+        // ctrl+A select-all: thin over the shared planner (the input layer
         // fires only nonempty plans — see planning.planEditorSelectAllActions).
+        // Tool-agnostic: when another tool is active the action also
+        // switches to select — the selection can only live there (the
+        // selection ⇔ select-tool invariant), and the follow-ups (move /
+        // delete / refine) are select-tool verbs anyway. The switch rides
+        // the same idle point (one undo step restores the previous tool +
+        // the empty selection). It sits LAST in the push: the stack drains
+        // back-to-front, so the switch processes FIRST and the
+        // editor_select events run with the select tool active (keeping
+        // editor_select's defensive tool guard honest).
         .player_select_editor_all => {
             if (current.editor) |*editor| {
-                pushEvents(
-                    current,
-                    planning.planEditorSelectAllActions(editor, allocator),
-                    allocator,
-                );
+                const plan = planning.planEditorSelectAllActions(editor, allocator);
+                if (editor.active_tool == .select) {
+                    pushEvents(current, plan, allocator);
+                } else {
+                    var select_all_events: std.ArrayList(Event) = .empty;
+                    select_all_events.appendSlice(allocator, plan) catch
+                        @panic("failed to allocate select-all events");
+                    select_all_events.append(allocator, .{ .editor_event = .{ .editor_set_tool = .{
+                        .tool = .select,
+                    } } }) catch @panic("failed to allocate select-all events");
+                    pushEvents(current, select_all_events.items, allocator);
+                }
             }
         },
         // Select-tool Delete key: thin over the shared planner (the input

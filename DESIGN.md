@@ -2892,8 +2892,14 @@ gracefully — a redundant event in a log is harmless, it just plans empty).
   thing in the active level (`player_select_editor_all` → the marquee's
   granular-add planner with no region bound — tiles, placements, the '!' /
   '='; skips already-selected entries, so an all-selected level never
-  fires; one undo step reverts the whole batch; select-tool-only like
-  every selection op). The selection MOVE is landed:
+  fires; one undo step reverts the whole batch). Ctrl+A is TOOL-AGNOSTIC:
+  when another tool is active the action also switches to select — the
+  selection can only live there (the selection ⇔ select-tool invariant),
+  and the follow-ups (move / delete / refine) are select-tool verbs
+  anyway; the switch rides the action's idle point (one undo restores the
+  previous tool + the empty selection) and sits LAST in the push so the
+  LIFO drain processes it FIRST (the editor_select events run with the
+  select tool active). The selection MOVE is landed:
   a plain left press on a selected thing (tile / entity / item, a selected
   decoration's footprint, or a selected marker —
   `editorSelectionContainsPosition`) claims a drag; the threshold promotes

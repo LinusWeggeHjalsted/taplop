@@ -2560,16 +2560,15 @@ pub fn handleIdleInput(
                 }
             }
         }
-        // ctrl+A: select everything in the active level. Gated on the
-        // select tool (every selection op requires it — validation panics
-        // otherwise) and a nonempty plan (an all-selected level never
-        // fires — no dead undo step).
+        // ctrl+A: select everything in the active level. Tool-agnostic —
+        // the action switches to the select tool when it isn't active
+        // (the selection can only live there; see the handler). Gated on a
+        // nonempty plan (an all-selected level never fires — no dead undo
+        // step).
         if (idle.select_editor_all) {
             if (current.editor) |*editor| {
-                if (editor.active_tool == .select) {
-                    if (planning.planEditorSelectAllActions(editor, allocator).len > 0) {
-                        event_push.pushPlayerAction(current, .player_select_editor_all, allocator);
-                    }
+                if (planning.planEditorSelectAllActions(editor, allocator).len > 0) {
+                    event_push.pushPlayerAction(current, .player_select_editor_all, allocator);
                 }
             }
         }

@@ -4783,7 +4783,7 @@ test "inspector wheel routing: scrolls over the open panel, not elsewhere" {
     try testing.expectEqual(@as(i32, 0), history.session.ui_state.editor_inspector_scroll);
 }
 
-test "player_select_editor_all: no-op without the select tool, and when everything is already selected" {
+test "player_select_editor_all: tool-agnostic — switches to select, one undo restores tool + selection" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -4794,13 +4794,36 @@ test "player_select_editor_all: no-op without the select tool, and when everythi
         .player_start = .{ .x = 0, .y = 0 },
     }};
     var history = harness.newHistory(editorStateWith(marqueeTestEditor(&levels)));
+    // Seed the tile tool BEFORE runToIdle so the idle-point snapshot
+    // captures it (undo replays to that snapshot).
+    history.current_state.editor.?.active_tool = .tile;
     runToIdle(&history);
 
-    // Not the select tool (a paint tool): the selection ops are
-    // select-tool-only, so ctrl+A never fires.
-    history.current_state.editor.?.active_tool = .tile;
+    // ctrl+A from the TILE tool: the action fires, switches to the select
+    // tool (the selection can only live there), and selects everything
+    // (the tile + the '!').
     input_handlers.handleIdleInput(&history, .{ .select_editor_all = true }, .{});
-    try testing.expectEqual(@as(usize, 0), history.current_state.event_stack.len);
+    try testing.expectEqual(@as(usize, 1), history.current_state.event_stack.len);
+    try testing.expect(
+        history.current_state.event_stack[0].player_input_event == .player_select_editor_all,
+    );
+    runToIdle(&history);
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expect(editor.active_tool == .select);
+        try testing.expectEqual(@as(usize, 2), editor.selection.len);
+        try testing.expect(selectionContainsEntry(editor.selection, .{ .tile = .{ .x = 1, .y = 1 } }));
+        try testing.expect(selectionContainsEntry(editor.selection, .player_start));
+    }
+
+    // ONE undo step restores the previous tool AND the empty selection
+    // (the switch rode the select-all's idle point).
+    try testing.expect(history.undo(event_handlers.processEvent));
+    {
+        const editor = history.current_state.editor.?;
+        try testing.expect(editor.active_tool == .tile);
+        try testing.expectEqual(@as(usize, 0), editor.selection.len);
+    }
 
     // Select tool, but everything (the tile + the '!') is already
     // selected: the plan is empty, so nothing fires (no dead undo step).

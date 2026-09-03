@@ -11100,3 +11100,42 @@ claims + mid-drag pause + resume; mid-drain deferral (held crossing a new
 tile while the previous paint is still on the stack fires nothing, then
 fires once drained); tool-switch context clear; the idle-arm defer (+
 positive control). DESIGN → Level Editor → Active-tool model updated.
+
+## Editor ctrl+A select-all: tool-agnostic (switches to the select tool)
+
+ctrl+A previously fired only with the select tool active. Author request:
+fire from any tool — decided (after weighing "stay on current tool") that
+the action also SWITCHES to select, because the "selection nonempty ⇔
+select tool" invariant makes a selection on another tool incoherent (paint
+clicks would have to wonder what a selection means), and every reason to
+select all — move, delete, marquee-refine — is a select-tool verb anyway
+(the user would press 1 next regardless). Precedent: the palette add-type
+handler already bundles the tool switch that makes the result coherent
+("the author lands on the thing they just created").
+
+- Input gate (`handleIdleInput`): the select-tool condition dropped; the
+  nonempty-plan gate stays (an all-selected level never fires — note the
+  plan is never empty off the select tool, since the '!' is always
+  selectable and an off-tool selection can't exist).
+- Handler (`player_select_editor_all`): when another tool is active, an
+  `editor_set_tool{.select}` is appended AFTER the planner's editor_select
+  events — the stack drains back-to-front, so the switch processes FIRST
+  and the selects run with the select tool active (keeping
+  editor_select's defensive tool guard honest rather than relying on its
+  leniency). The switch rides the action's idle point: one undo restores
+  the previous tool + the empty selection.
+- `validatePlayerAction`: the "without the select tool active" panic arm
+  removed (the action is legal from any tool now).
+- ctrl+D and Delete needed NO change: they depend on a selection, which
+  can only exist on the select tool — ctrl+A is the only action that
+  CREATES a selection from nothing, so it's the only one needing the
+  switch.
+
+Test lesson (recurring): a crafted state mutation must land BEFORE
+runToIdle — the idle-point snapshot is what undo replays to, so a
+tool/selection seeded after it reverts to the pre-seed value on undo (the
+seeded-selection pattern the older tests already follow).
+
+Tests: ctrl+A from the tile tool fires + switches + selects everything;
+one undo restores the tile tool + empty selection; the all-selected
+no-op gate unchanged. DESIGN → Level Editor → Selection model updated.

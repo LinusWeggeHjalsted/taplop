@@ -1690,8 +1690,10 @@ pub const GameStateHistory = struct {
                         @panic("replay validation: player_select_editor_region without the select tool active");
                     }
                 },
-                // Same structural legality as the region select (ctrl+A is
-                // its unbounded form).
+                // Tool-agnostic (a non-select active tool is legal: the
+                // action switches to select — see the handler). Same other
+                // structural legality as the region select (ctrl+A is its
+                // unbounded form).
                 .player_select_editor_all => {
                     if (self.current_state.screen != .editor) {
                         @panic("replay validation: player_select_editor_all outside editor screen");
@@ -1701,9 +1703,6 @@ pub const GameStateHistory = struct {
                     };
                     if (editor.levels.len == 0) {
                         @panic("replay validation: player_select_editor_all with no levels");
-                    }
-                    if (editor.active_tool != .select) {
-                        @panic("replay validation: player_select_editor_all without the select tool active");
                     }
                 },
                 // Same structural legality as the toggle + region (the
