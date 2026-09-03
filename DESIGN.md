@@ -1837,8 +1837,11 @@ So a clone is a permanent, compounding material factory keyed by mission.
   - `.approach` (the historical behavior): converge on the nearest hostile
     up to min range, pathfinding with a reachable-tile fallback — kept in
     the handler (level.zig `enemyApproachTurn`), unchanged.
-  Destination ties break by the (x, y) tile convention (Determinism &
-  Tiebreaking). The modes are MOVEMENT only — the attack phase's
+  Destination ties: an equal-value candidate NEVER displaces the current
+  tile — stay put unless a strictly better tile exists (shuffling between
+  equal options reads as noise to the player); ties between reachable
+  tiles break by the (x, y) tile convention (Determinism & Tiebreaking).
+  The modes are MOVEMENT only — the attack phase's
   ai_options evaluation is untouched; a cluster-seeker that moved in but
   has its skill stolen by slot order still attacks from the cluster tile.
   Known limitation: keep_range maximizes distance to the NEAREST single

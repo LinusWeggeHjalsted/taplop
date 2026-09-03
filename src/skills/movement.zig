@@ -94,10 +94,11 @@ fn pointBlankClusterScore(
 /// point-blank skills: the reachable tile (current tile included) that has
 /// the most hostiles within one of those skills' effective radius.
 /// Null when no candidate has ANY hostile in radius (the caller should
-/// approach instead — there is nothing to cluster around yet). Ties
-/// prefer the current tile (no wasted shuffling), then the (x, y) tile
-/// convention. A destination equal to the caster's position means "stand
-/// and cast from here".
+/// approach instead — there is nothing to cluster around yet). The
+/// current tile wins ties — an equal-count candidate never displaces it;
+/// stay put unless a strictly more-targeted tile exists. Ties between
+/// reachable tiles break by the (x, y) tile convention. A destination
+/// equal to the caster's position means "stand and cast from here".
 pub fn pointBlankClusterDestination(
     caster_index: u32,
     game_state: GameState,
@@ -128,8 +129,10 @@ pub fn pointBlankClusterDestination(
         allocator,
     );
 
-    // Current tile first so it wins score ties (no shuffling between
-    // equal clusters).
+    // Current tile first so it wins score ties: an equal candidate NEVER
+    // displaces the current tile (stay put unless a strictly better tile
+    // exists — shuffling between equal clusters reads as noise to the
+    // player); tileBefore only orders reachable-vs-reachable ties.
     var best_tile: Vector2 = caster.position;
     var best_score: u32 = pointBlankClusterScore(
         caster_index,
@@ -144,8 +147,11 @@ pub fn pointBlankClusterDestination(
             tile,
             radii[0..radius_count],
         );
+        const incumbent_is_current = best_tile.x == caster.position.x and
+            best_tile.y == caster.position.y;
         const is_better = tile_score > best_score or
-            (tile_score == best_score and tile_score > 0 and functions.tileBefore(tile, best_tile));
+            (tile_score == best_score and tile_score > 0 and
+                !incumbent_is_current and functions.tileBefore(tile, best_tile));
         if (is_better) {
             best_score = tile_score;
             best_tile = tile;
@@ -182,9 +188,11 @@ fn nearestHostileDistance(
 /// approach converges on min range from outside, kiting opens to it from
 /// inside; both modes meet at the same distance. Null when no candidate
 /// is act-capable (opponents beyond reach — the caller should approach).
-/// Ties prefer the current tile, then the (x, y) tile convention. A
-/// destination equal to the caster's position means "stand and act from
-/// here" (cornered, or already at the standoff).
+/// The current tile wins ties — an equal-distance candidate never
+/// displaces it; stay put unless a strictly farther act-capable tile
+/// exists. Ties between reachable tiles break by the (x, y) tile
+/// convention. A destination equal to the caster's position means
+/// "stand and act from here" (cornered, or already at the standoff).
 pub fn keepRangeDestination(
     caster_index: u32,
     game_state: GameState,
@@ -217,9 +225,16 @@ pub fn keepRangeDestination(
         const distance = nearestHostileDistance(caster_index, game_state, tile);
         // Act-capable only: some hostile within min range of the tile.
         if (distance > standoff) continue;
+        // An equal candidate NEVER displaces the current tile (stay put
+        // unless a strictly farther act-capable tile exists); tileBefore
+        // only orders reachable-vs-reachable ties.
+        const incumbent_is_current = best_tile != null and
+            best_tile.?.x == caster.position.x and
+            best_tile.?.y == caster.position.y;
         const is_better = best_tile == null or
             distance > best_distance or
-            (distance == best_distance and functions.tileBefore(tile, best_tile.?));
+            (distance == best_distance and !incumbent_is_current and
+                functions.tileBefore(tile, best_tile.?));
         if (is_better) {
             best_tile = tile;
             best_distance = distance;
@@ -488,5 +503,90 @@ test "keepRangeDestination: cornered -> stands; hostile beyond reach -> null" {
     try testing.expectEqual(
         @as(?Vector2, null),
         keepRangeDestination(0, distant, definitions, arena.allocator()),
+    );
+}
+
+test "pointBlankClusterDestination: an equal-count tile never displaces the current tile" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    // Spinblade (radius 1). The caster at (2,2) already covers both
+    // hostiles (score 2) — and the UP-LEFT reachable tile (2,1) covers
+    // exactly the same two (score 2). The (x, y) tile convention must NOT
+    // lure the entity into shuffling there: as good as = stay.
+    const nine_by_nine = tileGrid(9, 9);
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{
+            .{ .team = 1, .position = .{ .x = 2, .y = 2 }, .speed = 2, .main_hand_weapon = .{ .weapon_type = .sword } },
+            .{ .team = 0, .position = .{ .x = 1, .y = 2 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 0, .position = .{ .x = 3, .y = 2 }, .current_health = 10, .max_health = 10 },
+        },
+        &nine_by_nine,
+    );
+    try testing.expectEqual(
+        Vector2{ .x = 2, .y = 2 },
+        pointBlankClusterDestination(0, game_state, definitions, arena.allocator()).?,
+    );
+
+    // A strictly better tile DOES move: one step up covers both hostiles
+    // PLUS a third one above — 3 beats 2.
+    const better_exists = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{
+            .{ .team = 1, .position = .{ .x = 2, .y = 2 }, .speed = 2, .main_hand_weapon = .{ .weapon_type = .sword } },
+            .{ .team = 0, .position = .{ .x = 1, .y = 2 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 0, .position = .{ .x = 3, .y = 2 }, .current_health = 10, .max_health = 10 },
+            .{ .team = 0, .position = .{ .x = 2, .y = 0 }, .current_health = 10, .max_health = 10 },
+        },
+        &nine_by_nine,
+    );
+    try testing.expectEqual(
+        Vector2{ .x = 2, .y = 1 },
+        pointBlankClusterDestination(0, better_exists, definitions, arena.allocator()).?,
+    );
+}
+
+test "keepRangeDestination: an equal-distance tile never displaces the current tile" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    var harness = test_harness.Harness.init(arena.allocator());
+    const definitions = &harness.weapon_type_definitions;
+
+    // Staff kit, standoff 3. The caster at (4,4) already sits at the
+    // standoff from the hostile at (4,1) — and the LEFT reachable tile
+    // (2,4) is also at distance 3. The (x, y) tile convention must NOT
+    // shuffle it sideways: as good as = stay.
+    const nine_by_nine = tileGrid(9, 9);
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{
+            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .speed = 2, .main_hand_weapon = .{ .weapon_type = .staff } },
+            .{ .team = 0, .position = .{ .x = 4, .y = 1 }, .current_health = 10, .max_health = 10 },
+        },
+        &nine_by_nine,
+    );
+    try testing.expectEqual(
+        Vector2{ .x = 4, .y = 4 },
+        keepRangeDestination(0, game_state, definitions, arena.allocator()).?,
+    );
+
+    // A strictly farther act-capable tile DOES move: hostile at distance 1
+    // (too close); the row 2 tiles up opens it to 3. Five reachable tiles
+    // sit at distance 3 ((2,6)..(6,6)) — the reachable-vs-reachable tie
+    // breaks by the (x, y) convention to the leftmost.
+    const too_close = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{
+            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .speed = 2, .main_hand_weapon = .{ .weapon_type = .staff } },
+            .{ .team = 0, .position = .{ .x = 4, .y = 3 }, .current_health = 10, .max_health = 10 },
+        },
+        &nine_by_nine,
+    );
+    try testing.expectEqual(
+        Vector2{ .x = 2, .y = 6 },
+        keepRangeDestination(0, too_close, definitions, arena.allocator()).?,
     );
 }

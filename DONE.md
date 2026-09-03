@@ -10911,3 +10911,30 @@ Design: DESIGN → Architecture (AI movement modes). Known limitation
 recorded there: keep_range maximizes distance to the nearest SINGLE
 hostile — retreating toward a second enemy is possible; multi-hostile
 avoidance is a future mode.
+
+## AI movement modes — follow-up: stay-put tie rule
+
+Author report: enemies shuffled up-left even when their current tile was
+already as good as any option. Root cause: the destination fns'
+"current tile wins ties" intent was half-implemented — the (x, y)
+tileBefore tiebreak could displace the CURRENT tile on equal scores, so
+any equal-valued up-left neighbor lured the enemy into a pointless move.
+The original fixtures never exercised the tie (no equal-valued
+alternative existed — the "nice values" trap), so the bug shipped green.
+
+Fix: an equal-value candidate never displaces the current tile; stay put
+unless a STRICTLY better tile exists (more targets / more standoff).
+tileBefore only orders reachable-vs-reachable ties (when the current tile
+is out of the running entirely). No minimum-improvement threshold —
+anything strictly better moves (author decision; integer scores make
+"strictly better" already the coarsest sensible step).
+
+New tie tests were verified load-bearing by reverting each guard
+individually: cluster (caster at a 2-target tile, an equal-2 up-left
+neighbor), keep-range (at the standoff, an equal-distance left neighbor)
+— both fail without their guard, pass with it. Each test also pins the
+strictly-better-moves half (a 3-target tile / a farther standoff tile is
+taken). The keep-range "moves" fixture's expectation is (2,6), not the
+naive (4,6): on an open grid five reachable tiles sit at distance 3 and
+the reachable-vs-reachable tiebreak picks the leftmost — hand-compute
+fixtures against the convention, not the first tile you eyeball.
