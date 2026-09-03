@@ -25,6 +25,7 @@ Enemies
 character_code 1
 sprite bear
 name Bear
+team 2
 max_health 20
 defense 0
 speed 1
@@ -43,6 +44,7 @@ main_hand_weapon_type shield
 character_code 2
 sprite wolf
 name Wolf
+team 2
 max_health 20
 defense 0
 speed 1

@@ -41,6 +41,7 @@ main_hand_weapon_type sword
 character_code 2
 sprite crab
 name Crab
+team 2
 max_health 20
 defense 0
 speed 1

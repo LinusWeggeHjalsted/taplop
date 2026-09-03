@@ -465,6 +465,7 @@ const level_enemies_keys = [_][]const u8{
     "character_code",
     "name",
     "sprite",
+    "team",
     "color_index",
     "displays_weapons",
     "max_health",

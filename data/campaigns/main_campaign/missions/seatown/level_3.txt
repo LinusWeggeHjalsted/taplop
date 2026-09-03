@@ -106,6 +106,7 @@ main_hand_weapon_type spear
 character_code 5
 sprite wolf
 name Wolf
+team 2
 max_health 20
 defense 0
 speed 1

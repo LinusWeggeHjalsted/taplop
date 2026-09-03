@@ -10580,3 +10580,37 @@ push path). Follow-ups recorded where they belong:
   shape errors), fix a test's shape when it breaks twice structurally,
   and write tests from the design doc's semantics rather than the code's
   behavior.
+
+## Enemy teams: level-format `team` key + official-content animal teams (slice 1)
+
+Multi-team levels: a `team` integer on every entity — 0 = the player's
+team (helpers the player doesn't control), 1+ = mutually hostile enemy
+teams (AI battles). Hostility was ALREADY team-generic across the combat/
+AI layer (`team != other.team` in skills/helpers/threat, aggro, turn
+flow, win condition, on_opponent_death), so this slice is pure authoring
+surface — no engine change.
+
+- `parseEntityDefinition` (loaders.zig): optional `team` key in the pairs
+  overrides the caller's default (enemies 1, player 0). u32, no artificial
+  cap. Player save/loadout paths never carried/will carry the key (the
+  player is always team 0).
+- Parser whitelist: `team` added to `level_enemies_keys`. (The
+  content-validation tests would have flagged shipped files with an
+  unwhitelisted key — the whitelist edit and the content sweep landed
+  together on purpose.)
+- `writeEntityDefinition` (writers.zig): emits `team {d}` only when ≠ 1 —
+  absent-on-reload equals absent-on-write, 1 is the load default.
+- Official content: all ANIMAL enemies (wolf, bear, crab, giant_crab) are
+  now explicit `team 2`; skeletons stay implicit team 1. Gameplay
+  consequence (deliberate): forest/seatown/wetlands levels now feature
+  animals-vs-skeleton AI battles when placed in each other's aggro range —
+  animals no longer side with the skeletons against the player.
+- Tests: loadLevel with a team-2 second enemy (key overrides default,
+  tiles/entities unchanged in shape); writeEditorMission fixture's Brute
+  is team 2 — asserts the team-1 file omits the key, the team-2 file
+  carries `team 2`, and the reload round-trips the value.
+
+Tooling note: the edit-tool call reported success for a two-edit batch
+where only the first edit applied (the team override silently missing —
+surfaced by the failing loader test, then re-applied). Lesson: verify
+multi-edit batches actually landed, not just the success message.

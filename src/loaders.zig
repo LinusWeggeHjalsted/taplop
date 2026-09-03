@@ -474,6 +474,9 @@ pub fn parseEntityDefinition(
     var entity: types.Entity = .{ .team = team };
     entity.name = findValue(pairs, "name") orelse default_name;
     entity.sprite = findValue(pairs, "sprite") orelse default_sprite;
+    if (findValue(pairs, "team")) |value| {
+        entity.team = asU32(value) orelse team;
+    }
     if (findValue(pairs, "color_index")) |value| {
         entity.color_index = asU32(value) orelse 0;
     }
@@ -2476,7 +2479,7 @@ test "loadLevel parses a complete level" {
         \\name Test Level
         \\
         \\Layout
-        \\  1..
+        \\  1.2
         \\..!..
         \\  ..=
         \\
@@ -2488,6 +2491,12 @@ test "loadLevel parses a complete level" {
         \\main_hand_weapon_name Bone Sword
         \\main_hand_weapon_type sword
         \\main_hand_weapon_damage 3
+        \\
+        \\character_code 2
+        \\name Wolf
+        \\sprite wolf
+        \\team 2
+        \\max_health 12
         \\
         \\Decorations
         \\
@@ -2511,7 +2520,7 @@ test "loadLevel parses a complete level" {
     try std.testing.expectEqual(0, level.entities[0].team);
 
     // Enemy is entity index 1
-    try std.testing.expectEqual(2, level.entities.len);
+    try std.testing.expectEqual(3, level.entities.len);
     try std.testing.expectEqualStrings("Skeleton", level.entities[1].name);
     try std.testing.expectEqual(1, level.entities[1].team);
     try std.testing.expectEqual(10, level.entities[1].max_health);
@@ -2519,9 +2528,14 @@ test "loadLevel parses a complete level" {
     try std.testing.expectEqualStrings("Bone Sword", level.entities[1].main_hand_weapon.?.name);
     try std.testing.expectEqual(3, level.entities[1].main_hand_weapon.?.weapon_damage);
 
-    // Tiles: all '.' and '!' and '=' positions, plus enemy position
+    // The team-2 enemy (an explicit `team` key overrides the load default)
+    try std.testing.expectEqualStrings("Wolf", level.entities[2].name);
+    try std.testing.expectEqual(2, level.entities[2].team);
+    try std.testing.expectEqual(12, level.entities[2].max_health);
+
+    // Tiles: all '.' and '!' and '=' positions, plus enemy positions
     // Layout (top row = y=0, natural reading order):
-    //   row 0 (y=0) "  1.." -> tiles at (2,0) enemy, (3,0), (4,0)
+    //   row 0 (y=0) "  1.2" -> tiles at (2,0) enemy, (3,0), (4,0) enemy
     //   row 1 (y=1) "..!.." -> tiles at (0,1), (1,1), (2,1) player, (3,1), (4,1)
     //   row 2 (y=2) "  ..=" -> tiles at (2,2), (3,2), (4,2) level_end
     try std.testing.expectEqual(11, level.level_tiles.len);

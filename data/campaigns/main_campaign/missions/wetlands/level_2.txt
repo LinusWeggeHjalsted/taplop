@@ -19,6 +19,7 @@ Enemies
 character_code 1
 sprite crab
 name Crab
+team 2
 max_health 20
 defense 0
 speed 1
@@ -38,6 +39,7 @@ slot_4 stone_form
 character_code 2
 sprite giant_crab
 name Giant Crab
+team 2
 max_health 20
 defense 0
 speed 1

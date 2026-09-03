@@ -698,6 +698,9 @@ fn writeEntityDefinition(
     try buffer.print(allocator, "character_code {s}\n", .{&[_]u8{code}});
     try buffer.print(allocator, "name {s}\n", .{template.name});
     try buffer.print(allocator, "sprite {s}\n", .{template.sprite});
+    if (template.team != 1) {
+        try buffer.print(allocator, "team {d}\n", .{template.team});
+    }
     try buffer.print(allocator, "color_index {d}\n", .{template.color_index});
     try buffer.print(allocator, "displays_weapons {s}\n", .{if (template.displays_weapons) "true" else "false"});
     try buffer.print(allocator, "max_health {d}\n", .{template.max_health});
@@ -1116,7 +1119,7 @@ const editor_write_fixture: types.Editor = .{
         .{ .id = "Brute", .template = .{
             .name = "Brute",
             .sprite = "wolf",
-            .team = 1,
+            .team = 2,
         } },
     },
     .decoration_types = &[_]types.DecorationTypeDef{
@@ -1276,6 +1279,16 @@ test "writeEditorMission round-trips through the load path" {
         for (written.level_txts) |level_txt| {
             try std.testing.expect(std.mem.indexOf(u8, level_txt, "Nice Coat") == null);
         }
+    }
+
+    // Team emission: the team-1 Archer omits the key (absent-on-reload
+    // equals absent-on-write — 1 is the load default); the team-2 Brute
+    // carries `team 2` and reloads with it.
+    {
+        try std.testing.expect(std.mem.indexOf(u8, written.level_txts[0], "team ") == null);
+        try std.testing.expect(std.mem.indexOf(u8, written.level_txts[1], "team 2") != null);
+        try std.testing.expectEqual(@as(u32, 2),
+            reloaded.entity_types[reloaded.levels[1].entity_placements[0].type_id].template.team);
     }
 }
 
