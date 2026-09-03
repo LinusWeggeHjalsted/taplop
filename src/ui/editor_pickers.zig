@@ -177,11 +177,19 @@ pub fn buildEditorSkillPicker(
     const content = try emitPanelHeader(elements, allocator, bounds, title, .close_editor_picker);
 
     // The entity-inspect panel's skill coloring convention: frame at the
-    // team gradient's index 3, icon at index 1 — the enemy gradient here
-    // (the picker edits an enemy type).
-    const enemy = active_theme.enemy_gradient.colors;
-    const skill_frame_color = enemy[@min(@as(u32, 3), types.gradient_color_count - 1)];
-    const skill_icon_color = enemy[@min(@as(u32, 1), types.gradient_color_count - 1)];
+    // team gradient's index 3, icon at index 1 — resolved by the
+    // inspector target's team (a team-0 helper and the player target tint
+    // with the player gradient; enemy teams with the enemy gradient).
+    const team_gradient: [types.gradient_color_count]types.Color = switch (editorInspectorTarget(editor)) {
+        .entity_type => |type_index| if (type_index < editor.entity_types.len and editor.entity_types[type_index].template.team == 0)
+            active_theme.player_gradient.colors
+        else
+            active_theme.enemy_gradient.colors,
+        .player => active_theme.player_gradient.colors,
+        .decoration_type, .item_type => active_theme.enemy_gradient.colors,
+    };
+    const skill_frame_color = team_gradient[@min(@as(u32, 3), types.gradient_color_count - 1)];
+    const skill_icon_color = team_gradient[@min(@as(u32, 1), types.gradient_color_count - 1)];
     const grid_width = columns * cell + (columns - 1) * ui_gap;
     const grid_height = rows * cell + (rows - 1) * ui_gap;
     const grid_origin: ScreenPosition = .{
@@ -275,7 +283,8 @@ pub fn buildEditorSpritePicker(
 
     // The edited definition (highlight target + tint source) — the target
     // resolution's single seam, same as the skill picker. Entity content
-    // tints with the enemy gradient; decoration content with the WORLD
+    // tints with the TEAM gradient (a team-0 type is a player-team
+    // helper); decoration content with the WORLD
     // gradient (the in-game decoration tinting). The player target keeps
     // the entity shape (the player has no sprite/layer rows, so the
     // picker only opens on it via a stale open — picks commit nothing).
@@ -287,7 +296,10 @@ pub fn buildEditorSpritePicker(
         .entity_type => |index| .{
             .template = editor.entity_types[index].template,
             .edit_target = .{ .entity_type = index },
-            .gradient_colors = active_theme.enemy_gradient.colors,
+            .gradient_colors = if (editor.entity_types[index].template.team == 0)
+                active_theme.player_gradient.colors
+            else
+                active_theme.enemy_gradient.colors,
         },
         .player => .{
             .template = editor.player_def.template,
@@ -341,7 +353,7 @@ pub fn buildEditorSpritePicker(
     const gradient = if (picker_kind == .decoration_base or picker_kind == .decoration_layer)
         active_theme.world_gradient.colors
     else
-        active_theme.enemy_gradient.colors;
+        entity_context.?.gradient_colors;
     const current_sprite: ?[]const u8 = if (layer_mode) edited_layer_sprite else base_sprite;
     const current_color_index: u32 = edited_layer_color_index orelse base_color_index;
     const graphic_color = gradient[@min(current_color_index, types.gradient_color_count - 1)];

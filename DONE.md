@@ -10734,3 +10734,24 @@ The editor's entity tooling is no longer enemy-only (team 0 = helpers,
   placement tools) + TODO's active items. Combat-meaning "enemy"
   (turns, AI, win condition, gradients — things that key on team
   membership) is untouched.
+
+## Enemy teams: follow-up — tool-cell/picker team tinting + inspect "Team" row
+
+Two author reports after playtesting, plus the picker sites the same rule
+implied:
+
+- **Palette tool cell** (editor_shell): the entity tool's sprite graphic
+  tinted enemy-gradient at the type's color_index regardless of team —
+  now resolves the team gradient (team 0 → player gradient), matching
+  the in-game/entityDrawable rule. Test: a team-0 helper cell tints
+  player-gradient[2]; the existing cell test's fixture pinned to team 1
+  (it defaulted to 0 and would have flipped meaning silently).
+- **Centered pickers** (editor_pickers): the sprite picker's
+  `InspectorEntityContext` (a copy of the inspector's resolution — slice
+  4 fixed only the inspector's) + its `gradient` const, and the skill
+  picker's frame/icon colors, now resolve by the target's team. The
+  skill picker also serves the PLAYER target — that had hardcoded the
+  enemy gradient pre-existing; both player + helper tint player now.
+- **Entity inspect panel** (panels): the stat column leads with
+  "Team n" (author request) before Current Health / Momentum / Aggro
+  Range. Test updated (11 stat lines, Team first).

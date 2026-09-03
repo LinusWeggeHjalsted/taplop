@@ -761,6 +761,10 @@ pub fn buildEditorBottomBar(
                         .{type_definition.template.sprite},
                     );
                     const color_index = @min(type_definition.template.color_index, types.gradient_color_count - 1);
+                    // The team gradient at the template's color_index — a
+                    // team-0 type is a player-team helper and tints with the
+                    // player gradient (DESIGN → Entity & UI Coloring).
+                    const team_gradient = if (type_definition.template.team == 0) p else enemy;
                     try emitEditorToolCell(
                         elements,
                         allocator,
@@ -771,7 +775,7 @@ pub fn buildEditorBottomBar(
                         editor_entity_frame_width,
                         editor_entity_frame_height,
                         1.0,
-                        enemy[color_index],
+                        team_gradient[color_index],
                         button_color,
                         type_definition.id,
                         active_tool,
@@ -1223,6 +1227,7 @@ test "buildEditorBottomBar: fixed tools + palette groups + plus cells" {
 
     var entity_template: types.Entity = .{};
     entity_template.sprite = "skeleton";
+    entity_template.team = 1;
     entity_template.color_index = 2;
     const entity_types = [_]types.EntityTypeDef{
         .{ .id = "Skeleton Warrior", .template = entity_template },
@@ -1714,4 +1719,56 @@ test "buildEditorBottomBar: group window clamps to max 8 tools + scrolls" {
         @as(?usize, null),
         editorPaletteGroupAt(editor, collapsed, elements.items, first_cell_center.?),
     );
+}
+
+test "buildEditorBottomBar: a team-0 entity tool cell tints with the player gradient" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    const black: types.Color = .{ .r = 0, .g = 0, .b = 0 };
+    const player_two: types.Color = .{ .r = 22, .g = 22, .b = 22 };
+    var player_gradient: [types.gradient_color_count]types.Color = .{black} ** types.gradient_color_count;
+    player_gradient[2] = player_two;
+    const theme: types.ActiveColorTheme = .{
+        .lightest = .{ .r = 1, .g = 1, .b = 1 },
+        .darkest = black,
+        .world_gradient = .{ .colors = .{black} ** 6 },
+        .enemy_gradient = .{ .colors = .{black} ** 6 },
+        .player_gradient = .{ .colors = player_gradient },
+    };
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+
+    // A player-team HELPER: team 0 with its own color_index (2) — the cell
+    // graphic tints player-gradient[2], not the enemy gradient (DESIGN →
+    // Entity & UI Coloring).
+    const entity_types = [_]types.EntityTypeDef{.{
+        .id = "Helper",
+        .template = .{ .name = "Helper", .sprite = "skeleton", .team = 0, .color_index = 2 },
+    }};
+    const editor: types.Editor = .{ .entity_types = &entity_types };
+
+    var elements: UiElementList = .empty;
+    var scroll_offsets: [3]i32 = .{ 0, 0, 0 };
+    var collapsed: [3]bool = .{ false, false, false };
+    try buildEditorBottomBar(
+        &elements,
+        arena.allocator(),
+        metrics,
+        screenRect(),
+        editor,
+        theme,
+        &scroll_offsets,
+        &collapsed,
+        .select,
+    );
+
+    var found_helper_cell = false;
+    for (elements.items) |element| switch (element) {
+        .image => |image| if (std.mem.eql(u8, image.sprite_id, "entities/skeleton")) {
+            try std.testing.expect(std.meta.eql(player_two, image.color));
+            found_helper_cell = true;
+        },
+        else => {},
+    };
+    try std.testing.expect(found_helper_cell);
 }
