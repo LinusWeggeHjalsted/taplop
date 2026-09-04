@@ -1496,14 +1496,18 @@ Two distinct IDs, serving different needs:
 
 ### Turn counters + author medals
 
-Two turn counters, incremented in the player's `turn_end` (entity_index 0)
+Two turn counters, incremented in the player's `turn_start` (entity_index 0)
 handler:
 
 - **Per-mission (`Mission.turns_spent`):** scopes a single playthrough. Used
   by the mission-complete screen for mission stats, and by the validation
   replay's author medal target. Discarded with the mission on exit (editor
   playtest/validate are discard-semantics, so it naturally doesn't persist
-  there). Increments whenever the player's turn ends, in any mode.
+  there). Increments when the player's turn BEGINS, in any mode — counting
+  at start (not end) means the final turn, spent walking onto the level
+  exit and never reaching `turn_end` (the end_level transition clears
+  the stack mid-turn), still counts; at any idle moment the counter
+  includes the in-progress turn.
 - **Cumulative (`PlayerData.turns`):** lifetime turns across the campaign,
   for historical stats. SKIPPED in editor playtest/validate (guard:
   `current.editor == null`) — the editor session must not inflate the
@@ -1525,7 +1529,7 @@ Ceil (round up) so a medal target is always at least 1 turn more than the
 faster tier (very low author times can make tiers collide — accepted edge
 case). Multipliers live as constants in the file that uses them (the browser
 UI / mission-complete screen, when those land). The author time is DERIVED
-from the replay's events at read time (count the player's `turn_end`s —
+from the replay's events at read time (count the player's `turn_start`s —
 see Validation replay below), never stored anywhere, so it can't drift
 from the truth of the replay; the derived count must equal the
 replay-reproduced `Mission.turns_spent` (test-asserted). Medal derivation

@@ -246,6 +246,30 @@ pub fn handleLevelEvent(
             // Skip dead entities
             if (entity.current_health == 0) return;
 
+            // Turn counters, incremented when the player's turn BEGINS:
+            // the final turn (walking onto the level exit) never reaches
+            // turn_end — end_level's screen transition clears the stack
+            // mid-turn — so end-counting silently dropped it. The
+            // per-mission counter (turns_spent) lives on the live mission
+            // working copy and is discarded with it on exit — it scopes a
+            // single playthrough for the mission-complete screen and the
+            // validation replay's author medal target. The cumulative
+            // lifetime counter (player_data.turns) persists across the
+            // campaign for historical stats; it is SKIPPED in editor
+            // playtest/validate (discard-semantics — the editor session
+            // must not inflate the player's real turn count). Both are
+            // direct GameState writes inside an event handler, so they
+            // are reproduced on replay. See DESIGN → Custom Missions &
+            // Online Services → Turn counters + author medals.
+            if (turn.entity_index == 0) {
+                if (current.mission) |*mission| {
+                    mission.turns_spent += 1;
+                }
+                if (current.editor == null) {
+                    current.player_data.turns += 1;
+                }
+            }
+
             // 1. Reduce all skill cooldowns by 1
             inline for (@typeInfo(SkillId).@"enum".fields) |field| {
                 const skill_id: SkillId = @as(SkillId, @enumFromInt(field.value));
@@ -313,26 +337,6 @@ pub fn handleLevelEvent(
             // current one; enemy turn_end doesn't build a round so the
             // order is moot there.)
             if (turn.entity_index == 0) {
-                // Turn counters. The per-mission counter (turns_spent)
-                // lives on the live mission working copy and is
-                // discarded with it on exit — it scopes a single
-                // playthrough for the mission-complete screen and the
-                // validation replay's author medal target. The
-                // cumulative lifetime counter (player_data.turns)
-                // persists across the campaign for historical stats;
-                // it is SKIPPED in editor playtest/validate
-                // (discard-semantics — the editor session must not
-                // inflate the player's real turn count). Both are
-                // direct GameState writes inside an event handler, so
-                // they are reproduced on replay. See DESIGN → Custom
-                // Missions & Online Services → Author time + medals.
-                if (current.mission) |*mission| {
-                    mission.turns_spent += 1;
-                }
-                if (current.editor == null) {
-                    current.player_data.turns += 1;
-                }
-
                 const level = &current.level.?;
                 level.turn_phase = null;
                 const player_position = level.entities[0].position;

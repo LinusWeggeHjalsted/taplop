@@ -5729,15 +5729,17 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.current_level_index);
 
-    // Spend a turn on level 1 (the turn_end machinery, as the skip
-    // orchestrators would push it — no enemies, so the round is empty).
+    // End the begun turn on level 1 (the turn_end machinery, as the skip
+    // orchestrators would push it — no enemies, so the round is empty);
+    // the round builder queues the next turn_start, so a SECOND turn has
+    // begun by idle.
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
+    try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.turns_spent);
 
     // A mid-run mutation (an in-level event) — the chained level start
     // must neither rebuild the run data nor re-capture the backup.
@@ -5760,7 +5762,8 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
         history.current_state.level.?.entities[0].position,
     );
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
-    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
+    // Turns carried over: the level-2 chain began the third turn.
+    try testing.expectEqual(@as(u32, 3), history.current_state.mission.?.turns_spent);
     try testing.expectEqualStrings("Mutated In Run", history.current_state.player_data.player_name);
     try testing.expectEqualStrings(
         "Campaign Player",
@@ -5908,13 +5911,15 @@ test "a validation restart re-runs the whole mission from level 1 via the orches
     );
     runToIdle(&history);
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
-    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
+    // Turns carried over: the level-2 chain began the third turn.
+    try testing.expectEqual(@as(u32, 3), history.current_state.mission.?.turns_spent);
 
     // Mid-run mutation, then the restart: back to level 1 with fresh run
     // data (NOT the mutated carry-over, NOT a next-level advance) — the
     // re-entry rides the player_start_validation ORCHESTRATOR (the
     // seedable-top-level rule for the validation-replay slice), which
-    // re-reads the files fresh: mission counter reset, loadout rebuilt.
+    // re-reads the files fresh: mission counter reset (then the
+    // re-entry's level start begins the first turn → 1), loadout rebuilt.
     history.current_state.player_data.player_name = "Mutated In Run";
     event_push.pushEvents(
         &history.current_state,
@@ -5926,7 +5931,7 @@ test "a validation restart re-runs the whole mission from level 1 via the orches
     try testing.expect(history.current_state.editor.?.mode == .validate);
     try testing.expectEqualStrings("Fixture Level One", history.current_state.level.?.name);
     try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.current_level_index);
-    try testing.expectEqual(@as(u32, 0), history.current_state.mission.?.turns_spent);
+    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
     try testing.expectEqualStrings("Player", history.current_state.player_data.player_name);
     try testing.expectEqual(
         @as(u32, 7),
@@ -6010,15 +6015,16 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
     try testing.expect(history.current_state.editor == null);
     try testing.expect(history.current_state.mission.?.validation_run);
 
-    // Level 1: end the turn (skip orchestrator → auto-skip attack with no
-    // enemies → turn_end), then step onto the level end ('=' at x=1).
+    // Level 1: end the begun turn (skip orchestrator → auto-skip attack
+    // with no enemies → turn_end → the round builder begins the next
+    // turn), then step onto the level end ('=' at x=1) during that turn.
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_skip_move = .{} } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
+    try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.turns_spent);
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_move_action = .{
@@ -6029,19 +6035,18 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
     runToIdle(&history);
     try testing.expectEqualStrings("Fixture Level Two", history.current_state.level.?.name);
 
-    // Level 2: end the turn first (turn_end #2), then step onto the
-    // level end ('=' at x=3). NOTE: stepping onto the level end cuts the
-    // FINAL turn short — check_level_end → end_level runs before the
-    // pending attack step/turn_end (the transition clears the stack) —
-    // so a beeline finish contributes no turn_end; turns_spent counts
-    // COMPLETED turns. The explicit skip keeps the count honest here.
+    // Level 2: end the turn first (skip → turn_end → the round builder
+    // begins turn 4), then step onto the level end ('=' at x=3) DURING
+    // that begun turn — end_level's transition clears the stack before
+    // turn_end, but the turn still counts: turns_spent counts BEGUN
+    // turns (the final exit turn included).
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_skip_move = .{} } }},
         history.current_arena.allocator(),
     );
     runToIdle(&history);
-    try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.turns_spent);
+    try testing.expectEqual(@as(u32, 4), history.current_state.mission.?.turns_spent);
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_move_action = .{
@@ -6066,8 +6071,9 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
         }
     }
     const slice = history.event_history.items[slice_start..];
-    // Derived turns == the live run's counter (one turn per level).
-    try testing.expectEqual(@as(u32, 2), validation_replay.deriveValidationTurns(slice));
+    // Derived turns == the live run's counter (two begun turns per
+    // level: the skip turn + the exit turn).
+    try testing.expectEqual(@as(u32, 4), validation_replay.deriveValidationTurns(slice));
 
     // Serialize + reconstruct the slice in a SECOND fresh history: the
     // server-side validation primitive, client-side. Reconstruct to just
@@ -6086,7 +6092,7 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
     history2.reconstructFromEventLog(log.events, @intCast(log.events.len - 1), &event_handlers.processEvent);
     try testing.expect(history2.current_state.mission != null);
     try testing.expect(history2.current_state.mission.?.validation_run);
-    try testing.expectEqual(@as(u32, 2), history2.current_state.mission.?.turns_spent);
+    try testing.expectEqual(@as(u32, 4), history2.current_state.mission.?.turns_spent);
 
     // The full slice (end_validation included) lands on the main menu,
     // exactly as the live no-editor run did.
@@ -6099,9 +6105,9 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
 
 /// Script one full validation run through the fixture mission: push
 /// start_validation, then per level either a full turn (skip + step onto
-/// the level end — 1 turn_end per level) or a beeline (straight onto the
-/// end — 0 turn_endsWith: the level ends before the pending attack step
-/// runs). The run completes back in the editor.
+/// the level end — 2 begun turns per level: the skip turn + the exit
+/// turn) or a beeline (straight onto the end during the level's first
+/// turn — 1 begun turn per level). The run completes back in the editor.
 fn playFixtureRunToCompletion(history: *state.GameStateHistory, beeline: bool) !void {
     // The ORCHESTRATOR (the button path — also the shape the replay slice
     // keys on: every attempt begins with player_start_validation).
@@ -6183,7 +6189,7 @@ test "the Validate button saves first and the finished run writes a reconstructa
     const saved = history.session.editor_saved_mission.?;
     try testing.expectEqualStrings(saved.dir_path, history.current_state.mission.?.path);
 
-    // Play it to completion: a full turn per level, then the level end.
+    // Play it to completion: a skip turn + an exit turn per level.
     var level_index: u32 = 0;
     while (level_index < 2) : (level_index += 1) {
         event_push.pushEvents(
@@ -6217,9 +6223,9 @@ test "the Validate button saves first and the finished run writes a reconstructa
     const hash = try content_hash.computeMissionHash(&harness.file_source, arena, saved.dir_path, 2);
     const hash_hex = content_hash.hashToHex(hash);
     try testing.expectEqualStrings(&hash_hex, replay.content_hash);
-    // Derived turns == the live run's completed-turn counter (one full
-    // turn per level).
-    try testing.expectEqual(@as(u32, 2), validation_replay.deriveValidationTurns(replay.events));
+    // Derived turns == the live run's begun-turn counter (two per level:
+    // the skip turn + the exit turn).
+    try testing.expectEqual(@as(u32, 4), validation_replay.deriveValidationTurns(replay.events));
     // First validation (no prior file): auto-write — nothing stashed, no
     // manual-overwrite offer.
     try testing.expect(history.session.pending_validation_replay == null);
@@ -6231,7 +6237,7 @@ test "the Validate button saves first and the finished run writes a reconstructa
     reconstruction_start.event_stack = &.{};
     var history2 = harness.newHistory(reconstruction_start);
     history2.reconstructFromEventLog(replay.events, @intCast(replay.events.len - 1), &event_handlers.processEvent);
-    try testing.expectEqual(@as(u32, 2), history2.current_state.mission.?.turns_spent);
+    try testing.expectEqual(@as(u32, 4), history2.current_state.mission.?.turns_spent);
     var history3 = harness.newHistory(reconstruction_start);
     history3.reconstructFromEventLog(replay.events, @intCast(replay.events.len), &event_handlers.processEvent);
     try testing.expect(history3.current_state.screen == .main_menu);
@@ -6252,8 +6258,17 @@ test "the personal-best guard: first/faster/hash-mismatch write, slower keeps + 
     }));
     runToIdle(&history);
 
-    // Run A (2 turns): the FIRST validation — no prior file → auto-write.
+    // Run A (4 turns): the FIRST validation — no prior file → auto-write.
     try playFixtureRunToCompletion(&history, false);
+    {
+        const result = try readFixtureReplay(&harness, arena);
+        try testing.expectEqual(@as(u32, 4), result.turns);
+    }
+    try testing.expect(history.session.pending_validation_replay == null);
+    try testing.expect(!history.session.validation_replay_overwrite_offered);
+
+    // Run B (the beeline — 2 turns): strictly faster (4 → 2) → auto-overwrite.
+    try playFixtureRunToCompletion(&history, true);
     {
         const result = try readFixtureReplay(&harness, arena);
         try testing.expectEqual(@as(u32, 2), result.turns);
@@ -6261,36 +6276,27 @@ test "the personal-best guard: first/faster/hash-mismatch write, slower keeps + 
     try testing.expect(history.session.pending_validation_replay == null);
     try testing.expect(!history.session.validation_replay_overwrite_offered);
 
-    // Run B (the beeline — 0 turns): strictly faster → auto-overwrite.
-    try playFixtureRunToCompletion(&history, true);
-    {
-        const result = try readFixtureReplay(&harness, arena);
-        try testing.expectEqual(@as(u32, 0), result.turns);
-    }
-    try testing.expect(history.session.pending_validation_replay == null);
-    try testing.expect(!history.session.validation_replay_overwrite_offered);
-
-    // Run C (2 turns again): SLOWER than the 0-turn best → keep the old
+    // Run C (4 turns again): SLOWER than the 2-turn best → keep the old
     // file, stash the new bytes, offer the manual overwrite.
     try playFixtureRunToCompletion(&history, false);
     {
         const result = try readFixtureReplay(&harness, arena);
-        try testing.expectEqual(@as(u32, 0), result.turns); // the file is UNCHANGED (the best run)
+        try testing.expectEqual(@as(u32, 2), result.turns); // the file is UNCHANGED (the best run)
     }
     try testing.expect(history.session.pending_validation_replay != null);
     try testing.expect(history.session.validation_replay_overwrite_offered);
     {
-        // The stash holds the slower run's slice (2 turns) — what the
+        // The stash holds the slower run's slice (4 turns) — what the
         // Overwrite Replay button would write.
         const sections = try parser.parseConfigFile(history.session.pending_validation_replay.?, arena);
         const stashed = try validation_replay.loadValidationReplay(sections, arena);
-        try testing.expectEqual(@as(u32, 2), validation_replay.deriveValidationTurns(stashed.events));
+        try testing.expectEqual(@as(u32, 4), validation_replay.deriveValidationTurns(stashed.events));
     }
 
     // Run D after EDITING the mission: the old replay's hash no longer
     // matches (it certifies an earlier version) → auto-overwrite
-    // regardless of turns — even though this run (2 turns) is slower than
-    // the 0-turn file.
+    // regardless of turns — even though this run (4 turns) is slower than
+    // the 2-turn file.
     try harness.file_source.writeFile(
         validation_fixture_path ++ "/level_1.txt",
         \\Metadata
@@ -6304,7 +6310,7 @@ test "the personal-best guard: first/faster/hash-mismatch write, slower keeps + 
     try playFixtureRunToCompletion(&history, false);
     {
         const result = try readFixtureReplay(&harness, arena);
-        try testing.expectEqual(@as(u32, 2), result.turns); // the new run's — overwritten despite being slower
+        try testing.expectEqual(@as(u32, 4), result.turns); // the new run's — overwritten despite being slower
     }
     // The auto-write cleared the stash + the offer.
     try testing.expect(history.session.pending_validation_replay == null);
@@ -7902,7 +7908,7 @@ test "the validation stats screen: info populated, personal best captured, manua
     }));
     runToIdle(&history);
 
-    // Run A (the beeline — 0 turns): auto-writes (no prior file).
+    // Run A (the beeline — 2 begun turns): auto-writes (no prior file).
     try playFixtureRunToCompletion(&history, true);
 
     // The stats info: populated + validation-flagged, carrying the run's
@@ -7913,19 +7919,19 @@ test "the validation stats screen: info populated, personal best captured, manua
         try testing.expectEqualStrings("Validation Fixture", info.name);
         try testing.expectEqualStrings("33333333-3333-3333-3333-333333333333", info.uuid);
         try testing.expectEqualStrings(validation_fixture_path, info.path);
-        try testing.expectEqual(@as(u32, 0), info.turns_spent);
+        try testing.expectEqual(@as(u32, 2), info.turns_spent);
         try testing.expect(!info.overwrite_offered);
     }
     // The personal-best line was captured at the write site (the file's
     // turns — this run's).
-    try testing.expectEqual(@as(u32, 0), history.session.validation_personal_best_turns.?);
+    try testing.expectEqual(@as(u32, 2), history.session.validation_personal_best_turns.?);
     // Not offered — no slower run is stashed; a stale overwrite click
     // no-ops.
     try testing.expect(!history.session.validation_replay_overwrite_offered);
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .overwrite_validation_replay,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expectEqual(@as(u32, 0), (try readFixtureReplay(&harness, arena)).turns);
+    try testing.expectEqual(@as(u32, 2), (try readFixtureReplay(&harness, arena)).turns);
 
     // Continue (the overlay's button path): dismiss clears the info on
     // the undo timeline.
@@ -7934,19 +7940,19 @@ test "the validation stats screen: info populated, personal best captured, manua
     }, .{ .x = 0, .y = 0 }, &.{});
     try testing.expect(history.current_state.last_completed_mission == null);
 
-    // Run B (2 turns): SLOWER than the 0-turn best → keep + stash + offer.
+    // Run B (4 turns): SLOWER than the 2-turn best → keep + stash + offer.
     try playFixtureRunToCompletion(&history, false);
     try testing.expect(history.session.validation_replay_overwrite_offered);
-    // The PB line follows the FILE (still the 0-turn best).
-    try testing.expectEqual(@as(u32, 0), history.session.validation_personal_best_turns.?);
+    // The PB line follows the FILE (still the 2-turn best).
+    try testing.expectEqual(@as(u32, 2), history.session.validation_personal_best_turns.?);
 
     // The manual Overwrite Replay: the STASHED slower run becomes the
     // file, the offer is consumed, and the PB line follows the new file.
     input_handlers.handleAnytimeInput(&history, .{
         .options_action = .overwrite_validation_replay,
     }, .{ .x = 0, .y = 0 }, &.{});
-    try testing.expectEqual(@as(u32, 2), (try readFixtureReplay(&harness, arena)).turns);
-    try testing.expectEqual(@as(u32, 2), history.session.validation_personal_best_turns.?);
+    try testing.expectEqual(@as(u32, 4), (try readFixtureReplay(&harness, arena)).turns);
+    try testing.expectEqual(@as(u32, 4), history.session.validation_personal_best_turns.?);
     try testing.expect(history.session.pending_validation_replay == null);
     try testing.expect(!history.session.validation_replay_overwrite_offered);
 }

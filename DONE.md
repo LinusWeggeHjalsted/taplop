@@ -11268,3 +11268,36 @@ collision / swap each activate an inactive defender placed beyond every
 aggro_range (proximity can't fire — only the new rule can). Smoke-tested
 that they run by flipping one assertion (expected failure observed, then
 reverted). DESIGN → Architecture (the aggro paragraph) documents the rule.
+
+## Turn counters increment at turn START (the final exit turn counts)
+
+Before, `mission.turns_spent` + `player_data.turns` incremented in the
+player's `turn_end` handler — so the final turn (walking onto the level
+exit) never counted: check_level_end → end_level's screen transition
+clears the stack mid-turn, and turn_end never runs. A two-turn-per-level
+playthrough recorded one turn per level; the mission-complete stats and
+the validation author medal undercounted.
+
+- The counter block moved from the `turn_end` player arm to the
+  `turn_start` player arm (handlers/level.zig) — after the dead-guard, so
+  a dead player never counts a turn, and before the stun branch, so a
+  stunned turn still counts (it did before, via turn_end).
+- Semantics: turns_spent counts turns BEGUN. At any idle moment it
+  includes the in-progress turn; the final exit turn is included.
+- `deriveValidationTurns` (validation_replay.zig) switched from counting
+  player `turn_end`s to counting player `turn_start`s — it is
+  test-asserted equal to the live counter, so it had to follow. Existing
+  stored validation replays derive slightly higher under the new rule
+  (pre-release; no shipped files to migrate).
+- DESIGN → Custom Missions & Online Services → Turn counters + author
+  medals updated (increment site, begin-not-end rationale, derived-count
+  source).
+
+Test ripple (all mechanical, values re-derived from the new semantics —
+not patched one-by-one: each playthrough was re-traced): a "skip turn +
+exit turn" per level = 2 begun turns/level (was 1 completed), a beeline
+= 1/level (was 0). handler_tests_editor: chaining/restart/crown/
+validate-button/personal-best/stats-screen tests; main.zig editor
+playtest counter test (level entry already counts turn 1, the skip
+round begins turn 2); handler_tests_turnflow counter test moved to
+turn_start; validation_replay fixtures switched to turn_start events.

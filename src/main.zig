@@ -1751,7 +1751,7 @@ test "fresh editor open: empty New Mission, template level, playtest round-trip"
 }
 
 test "turn counters: per-mission increments, cumulative skipped in editor mode" {
-    // The player's turn_end (entity_index == 0) increments the per-mission
+    // The player's turn_start (entity_index == 0) increments the per-mission
     // turns_spent (scoped to the current playthrough) and the cumulative
     // player_data.turns (lifetime). In editor playtest/validate the
     // cumulative counter is SKIPPED (discard-semantics — the editor session
@@ -1802,13 +1802,16 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
     runToIdle(&history);
 
     try std.testing.expectEqual(state.Screen.level, history.current_state.screen);
-    try std.testing.expectEqual(@as(u32, 0), history.current_state.mission.?.turns_spent);
+    // The first player turn has BEGUN (turn_start ran in the start drain).
+    try std.testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
     try std.testing.expectEqual(@as(u32, 0), history.current_state.player_data.turns);
 
     // Skip the player's move phase. If enemies are active, this enters the
     // attack phase; if not, auto_skip_attack_step_out_of_combat completes
-    // the whole turn (turn_end fires during the drain). The per-mission
-    // counter increments; the cumulative counter does NOT (editor mode).
+    // the whole turn (turn_end fires during the drain, and the round
+    // builder queues the NEXT turn_start — the second begun turn). The
+    // per-mission counter increments again; the cumulative counter does
+    // NOT (editor mode).
     event_push.pushEvents(&history.current_state, &.{.{ .player_input_event = .{ .player_skip_move = .{} } }}, history.current_arena.allocator());
     runToIdle(&history);
 
@@ -1820,7 +1823,7 @@ test "turn counters: per-mission increments, cumulative skipped in editor mode" 
         runToIdle(&history);
     }
 
-    try std.testing.expectEqual(@as(u32, 1), history.current_state.mission.?.turns_spent);
+    try std.testing.expectEqual(@as(u32, 2), history.current_state.mission.?.turns_spent);
     try std.testing.expectEqual(@as(u32, 0), history.current_state.player_data.turns);
 
     // End the playtest (discard semantics — counters are discarded with the

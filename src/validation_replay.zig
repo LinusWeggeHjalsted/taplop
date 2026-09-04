@@ -87,20 +87,22 @@ pub fn loadValidationReplay(
     };
 }
 
-/// The author time: count the player's `turn_end` events (entity_index 0)
-/// in the slice. Mirrors the `turn_end` handler's `mission.turns_spent`
+/// The author time: count the player's `turn_start` events (entity_index 0)
+/// in the slice. Mirrors the `turn_start` handler's `mission.turns_spent`
 /// increment exactly (any mode, while a mission is active) — the two must
 /// agree, asserted by the validation crown test against the reconstructed
-/// state. Derived, never stored, so it can't drift from the truth of the
-/// replay. See DESIGN → Custom Missions & Online Services → Turn counters
+/// state. Counting turn STARTS (not ends) means the final turn — spent
+/// walking onto the level exit, never reaching turn_end — counts. Derived,
+/// never stored, so it can't drift from the truth of the replay. See
+/// DESIGN → Custom Missions & Online Services → Turn counters
 /// + author medals.
 pub fn deriveValidationTurns(events: []const Event) u32 {
     var turns: u32 = 0;
     for (events) |event| {
         switch (event) {
             .level_event => |level_event| switch (level_event) {
-                .turn_end => |turn_end| {
-                    if (turn_end.entity_index == 0) turns += 1;
+                .turn_start => |turn_start| {
+                    if (turn_start.entity_index == 0) turns += 1;
                 },
                 else => {},
             },
@@ -183,13 +185,13 @@ fn expectReplayError(
     try std.testing.expectError(expected, loadValidationReplay(sections, allocator));
 }
 
-test "deriveValidationTurns counts only the player's turn ends" {
+test "deriveValidationTurns counts only the player's turn starts" {
     const events = [_]Event{
         .{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } },
-        .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
-        .{ .level_event = .{ .turn_end = .{ .entity_index = 1 } } },
-        .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
-        .{ .level_event = .{ .turn_end = .{ .entity_index = 2 } } },
+        .{ .level_event = .{ .turn_start = .{ .entity_index = 0 } } },
+        .{ .level_event = .{ .turn_start = .{ .entity_index = 1 } } },
+        .{ .level_event = .{ .turn_start = .{ .entity_index = 0 } } },
+        .{ .level_event = .{ .turn_start = .{ .entity_index = 2 } } },
         .{ .meta_event = .{ .end_validation = .{ .success = true } } },
     };
     try std.testing.expectEqual(@as(u32, 2), deriveValidationTurns(&events));
@@ -203,9 +205,9 @@ test "validation replay round trip through the session-log format" {
 
     const events = [_]Event{
         .{ .player_input_event = .{ .player_start_validation = .{ .mission_path = "" } } },
-        .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
-        .{ .level_event = .{ .turn_end = .{ .entity_index = 1 } } },
-        .{ .level_event = .{ .turn_end = .{ .entity_index = 0 } } },
+        .{ .level_event = .{ .turn_start = .{ .entity_index = 0 } } },
+        .{ .level_event = .{ .turn_start = .{ .entity_index = 1 } } },
+        .{ .level_event = .{ .turn_start = .{ .entity_index = 0 } } },
         .{ .meta_event = .{ .end_validation = .{ .success = true } } },
     };
     const body = try session_log.writeEventLogWithMetadata(

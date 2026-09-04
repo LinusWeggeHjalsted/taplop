@@ -261,7 +261,7 @@ test "turn_end: dead enemies are skipped" {
     try testing.expectEqual(@as(u32, 0), stack[0].level_event.turn_start.entity_index);
 }
 
-test "turn_end: increments turns_spent on the live mission" {
+test "turn_start: increments turns_spent on the live mission" {
     var backing = std.heap.ArenaAllocator.init(testing.allocator);
     defer backing.deinit();
     var harness = Harness.init(backing.allocator());
@@ -271,7 +271,7 @@ test "turn_end: increments turns_spent on the live mission" {
         &five_by_five,
     ));
     history.current_state.mission = .{ .turns_spent = 5 };
-    pushOne(&history, .{ .turn_end = .{ .entity_index = 0 } });
+    pushOne(&history, .{ .turn_start = .{ .entity_index = 0 } });
     stepOnce(&history);
     try testing.expectEqual(@as(u32, 6), history.current_state.mission.?.turns_spent);
 }
