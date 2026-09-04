@@ -1768,6 +1768,22 @@ So a clone is a permanent, compounding material factory keyed by mission.
   inactive entity and activates it if it sees an opposing entity within ITS
   OWN `aggro_range` — self-centric, one event covers the whole level. Pushed
   at level start (single event, not per-entity) and after every `move_entity`.
+  **Hostile-effect activation:** being the DEFENDER of a hostile effect
+  activates an inactive entity regardless of range — an `attack`, `stun`,
+  `knockback`, or `collision` landing on it, or being the `swap_positions`
+  target (entity_b). Targeting counts even when the effect is fully
+  mitigated (Reflect zeroing the damage, future invulnerability) — the
+  entity was targeted. Implemented as a one-line `activateEntity` call at
+  the top of those handler arms (no new event, no log/replay schema change
+  — the `is_active` flip is a pure state transform; the anim side effect is
+  already replay-gated inside the helper). Skills can therefore never snipe
+  an inactive enemy from beyond its `aggro_range` for free: damage or
+  targeting aggros it. `adrenaline_surge`'s strikes are emitted `attack`
+  events, so it's covered transitively. NOT covered: same-team/self buffs
+  (`heal`, `change_momentum`, `change_cooldown`) — hostile momentum
+  transforms (Tier B) extend the rule when they land. The player (entity 0)
+  may be "activated" by enemy attacks — harmless by convention (loops skip
+  entity 0).
   `check_level_end` (no payload) is the win condition: if the player is on
   `level_end` and no active enemies remain → push `end_level`. Pushed after
   `aggro_check` (LIFO → runs after, so newly-aggroed enemies are counted)
@@ -1779,8 +1795,9 @@ So a clone is a permanent, compounding material factory keyed by mission.
   primitive (push the existing event) instead of re-implementing the
   behavior — this keeps all post-effects in one place. `swap_positions`
   pushes two `move_entity` events (so sound, momentum, pickup, aggro,
-  level-end all fire uniformly); `aggro_in_radius` and `aggro_check` share an
-  `activateEntity` helper so the aggro-indicator anim can't drift between
+  level-end all fire uniformly); `aggro_in_radius`, `aggro_check`, and the
+  hostile-effect activation sites share an `activateEntity` helper so the
+  aggro-indicator anim can't drift between
   them. Where you can't compose (different range source or team filter),
   extract the shared core into a helper and leave a comment naming the ONE
   intended difference. The seam between sibling implementations is where

@@ -11227,3 +11227,44 @@ latches, release clears anchor/press while the offset persists). The
 existing symbolic threshold tests (marquee, move-drag, right-click
 cancel) pass unchanged — they were written against the constant, not the
 value.
+
+## Hostile-effect aggro (no more free sniping of inactive enemies)
+
+Before: an inactive enemy hit by a skill reaching beyond its aggro_range
+(worldfire radius 5, chain lightning, crossbow at range vs. aggro 3) stayed
+inactive — it never woke, never acted, a free kill.
+
+Rule: **being the DEFENDER of a hostile effect activates an inactive entity**,
+regardless of range. "Targeted" and "dealt damage" collapse into one rule
+because targeting IS event emission — the sub_level_events that name a
+defender are the record of it being targeted.
+
+- One-line `activateEntity` call at the top of five `handleSubLevelEvent`
+  arms: `attack` (covers plain weapon attacks + every damaging skill +
+  adrenaline_surge's emitted strikes transitively), `stun`, `knockback`,
+  `collision` (a shove into an uninvolved third entity aggros it), and
+  `swap_positions` (entity_b, the target).
+- No new event type, no log/replay schema change: the `is_active` flip is a
+  pure deterministic state transform inside the handler; the indicator anim
+  is already replay-gated inside the shared `activateEntity` helper (now
+  used by aggro_check + aggro_in_radius + the five hostile-effect sites).
+- Targeted-with-zero-effective-damage aggros (Reflect zeroing, future
+  invulnerability) — the entity was targeted, that's the semantic.
+- NOT covered (deliberate): same-team/self buffs (heal, change_momentum,
+  change_cooldown). Hostile momentum transforms are Tier B; the rule extends
+  when those land. Player "activation" by enemy attacks is harmless by the
+  entity-0 convention. No attacker-side activation — the only constructed
+  case (that_which_explodes interceptor) takes damage first, so the defender
+  rule covers it.
+- Side effect of the rule: aggroing an enemy via damage now also blocks the
+  level exit until it's killed (check_level_end counts active enemies) —
+  correct, that's what aggro means.
+- Cosmetic edge accepted: a killing hit flips is_active on the corpse +
+  queues the indicator anim over the dying enemy (500ms, harmless) — kept
+  the arm-top placement for the cleaner "targeted aggros" semantic.
+
+Tests (handler_tests_ai.zig, new section): attack / stun / knockback /
+collision / swap each activate an inactive defender placed beyond every
+aggro_range (proximity can't fire — only the new rule can). Smoke-tested
+that they run by flipping one assertion (expected failure observed, then
+reverted). DESIGN → Architecture (the aggro paragraph) documents the rule.

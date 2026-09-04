@@ -133,6 +133,121 @@ test "aggro_check: already-active entities stay active (no deactivation)" {
     try testing.expect(levelEntity(&history, 1).is_active);
 }
 
+// ───────────── hostile-effect activation (attack/stun/knockback/collision/swap) ─────────────
+// Being the defender of a hostile effect activates an inactive entity even
+// beyond aggro_range — the snipe fix. DESIGN → Architecture (the aggro
+// paragraph).
+
+test "attack: a hit from beyond aggro_range activates the inactive defender" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            // Player and enemy 4 tiles apart — far outside both aggro
+            // ranges, so proximity (aggro_check) can never fire.
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .aggro_range = 1 },
+            .{ .team = 1, .position = .{ .x = 0, .y = 4 }, .aggro_range = 1, .is_active = false },
+        },
+        &five_by_five,
+    ));
+    pushAndRunSub(&history, .{ .attack = .{
+        .attacker_index = 0,
+        .defender_index = 1,
+        .outgoing_damage = 3,
+    } });
+    try testing.expect(levelEntity(&history, 1).is_active);
+}
+
+test "stun: a stunned inactive defender activates (targeted, no damage)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .aggro_range = 1 },
+            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .aggro_range = 1, .is_active = false },
+        },
+        &five_by_five,
+    ));
+    pushAndRunSub(&history, .{ .stun = .{
+        .attacker_index = 0,
+        .defender_index = 1,
+        .stun_duration = 2,
+    } });
+    try testing.expect(levelEntity(&history, 1).is_active);
+    try testing.expect(levelEntity(&history, 1).stun_duration > 0);
+}
+
+test "knockback: shoving a distant inactive entity activates it" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            // Knockback direction (1,0): the defender ends at (4,0) — the
+            // forced move itself stays out of everyone's aggro_range, so
+            // only the hostile-effect rule can activate it.
+            .{ .team = 0, .position = .{ .x = 1, .y = 0 }, .aggro_range = 1 },
+            .{ .team = 1, .position = .{ .x = 2, .y = 0 }, .aggro_range = 1, .is_active = false },
+        },
+        &five_by_five,
+    ));
+    pushAndRunSub(&history, .{ .knockback = .{
+        .attacker_index = 0,
+        .defender_index = 1,
+        .distance = 2,
+        .knockback_damage = 1,
+    } });
+    try testing.expect(levelEntity(&history, 1).is_active);
+    try testing.expectEqual(Vector2{ .x = 4, .y = 0 }, levelEntity(&history, 1).position);
+}
+
+test "collision: a knockback shoved into an inactive third entity activates it" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .aggro_range = 1 },
+            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .aggro_range = 1, .is_active = false },
+        },
+        &five_by_five,
+    ));
+    // Direct collision event (the knockback handler emits this shape when a
+    // shoved entity runs into someone) — the uninvolved inactive entity is
+    // the defender.
+    pushAndRunSub(&history, .{ .collision = .{
+        .attacker_index = 0,
+        .defender_index = 1,
+        .damage = 2,
+    } });
+    try testing.expect(levelEntity(&history, 1).is_active);
+}
+
+test "swap_positions: the swap target activates (targeted, no damage)" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    var history = harness.newHistory(test_harness.levelStateWithEntities(
+        backing.allocator(),
+        &.{
+            .{ .team = 0, .position = .{ .x = 0, .y = 0 }, .aggro_range = 1 },
+            .{ .team = 1, .position = .{ .x = 4, .y = 4 }, .aggro_range = 1, .is_active = false },
+        },
+        &five_by_five,
+    ));
+    pushAndRunSub(&history, .{ .swap_positions = .{
+        .entity_a_index = 0,
+        .entity_b_index = 1,
+    } });
+    try testing.expect(levelEntity(&history, 1).is_active);
+}
+
 // ───────────────────────── pickup_around ─────────────────────────
 
 test "pickup_around: pushes one pickup_items per in-range ground stack" {

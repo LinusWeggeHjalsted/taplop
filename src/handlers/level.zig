@@ -870,6 +870,9 @@ pub fn handleSubLevelEvent(
             if (attacker.current_health == 0) return;
             if (defender.current_health == 0) return;
 
+            // Hostile-effect activation — see the attack arm.
+            if (!defender.is_active) activateEntity(history, defender, stun.defender_index);
+
             const effective_duration = defender.getEffectiveIncomingStunDuration(stun.stun_duration);
 
             if (effective_duration > 0) {
@@ -901,6 +904,9 @@ pub fn handleSubLevelEvent(
 
             if (attacker.current_health == 0) return;
             if (defender.current_health == 0) return;
+
+            // Hostile-effect activation — see the attack arm.
+            if (!defender.is_active) activateEntity(history, defender, knockback.defender_index);
 
             // Trigger on_outgoing_knockback / on_incoming_knockback
             for (attacker.active_effects) |active_effect| {
@@ -983,6 +989,10 @@ pub fn handleSubLevelEvent(
             const defender = getLevelEntity(current, collision.defender_index);
 
             if (defender.current_health == 0) return;
+
+            // Hostile-effect activation — a knockback shoved into an
+            // uninvolved inactive entity aggros it. See the attack arm.
+            if (!defender.is_active) activateEntity(history, defender, collision.defender_index);
 
             // Trigger on_outgoing_collision / on_incoming_collision
             for (attacker.active_effects) |active_effect| {
@@ -1082,6 +1092,12 @@ pub fn handleSubLevelEvent(
 
             if (attacker.current_health == 0) return;
             if (defender.current_health == 0) return;
+
+            // Being the defender of a hostile effect activates an inactive
+            // entity — a hit from beyond aggro_range aggros, even when the
+            // damage is fully mitigated (targeted counts). See DESIGN →
+            // Architecture (the aggro paragraph).
+            if (!defender.is_active) activateEntity(history, defender, attack.defender_index);
 
             // Trigger on_attack effect callbacks for attacker
             if (attack.triggers_effects) {
@@ -1489,6 +1505,9 @@ pub fn handleSubLevelEvent(
             const entity_a = getLevelEntity(current, swap.entity_a_index);
             const entity_b = getLevelEntity(current, swap.entity_b_index);
             if (entity_a.current_health == 0 or entity_b.current_health == 0) return;
+            // Hostile-effect activation — the swap TARGET (entity_b) is
+            // targeted even though no damage lands. See the attack arm.
+            if (!entity_b.is_active) activateEntity(history, entity_b, swap.entity_b_index);
             // Capture both positions before either move, then reuse
             // `move_entity` for both legs so all post-move events
             // (sound, momentum, pickup, aggro, level-end) fire
