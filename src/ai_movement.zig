@@ -1,18 +1,16 @@
 //! AI movement-mode selection: the per-turn decision of HOW a non-player
 //! entity moves — which reachable tile it seeks, and why. Pure functions
 //! over (caster, game state); the `enemy_turn_move` handler wires them
-//! into the turn flow (approach keeps its pathfinding there). Excluded
-//! from the SkillId scan (see build.zig scanDir, with skill.zig /
-//! helpers.zig / threat.zig). See DESIGN → Architecture (AI movement
-//! modes).
+//! into the turn flow (approach keeps its pathfinding there).
+//! See DESIGN → Architecture (AI movement modes).
 
 const std = @import("std");
-const types = @import("../types.zig");
-const state = @import("../state.zig");
-const functions = @import("../functions.zig");
-const lookups = @import("../generated_lookups.zig");
-const helpers = @import("helpers.zig");
-const threat = @import("threat.zig");
+const types = @import("types.zig");
+const state = @import("state.zig");
+const functions = @import("functions.zig");
+const lookups = @import("generated_lookups.zig");
+const helpers = @import("skill_helpers.zig");
+const threat = @import("ai_threat.zig");
 
 const Vector2 = types.Vector2;
 const GameState = state.GameState;
@@ -249,7 +247,7 @@ pub fn keepRangeDestination(
 // ============================================================
 
 const testing = std.testing;
-const test_harness = @import("../test_harness.zig");
+const test_harness = @import("test_harness.zig");
 
 /// Comptime rectangular tile grid (x in [0, width), y in [0, height)).
 fn tileGrid(comptime width: i32, comptime height: i32) [width * height]types.Vector2 {

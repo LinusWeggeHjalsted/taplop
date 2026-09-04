@@ -11412,3 +11412,30 @@ options menu. Smoke-verified by flipping one assertion (observed FAIL,
 reverted). DESIGN → Custom Missions & Online Services → Validation
 replay → Revalidate; the deferred top-bar-promotion decision lives in
 TODO → Level Editor.
+
+## src/skills/ + src/effects/ purity (interface/support files to src/ root)
+
+Author request: every file in src/skills/ should be a skill, and every
+file in src/effects/ an effect. Four non-skill files had accumulated in
+src/skills/ (excluded from the build.zig SkillId scan by name) and one
+in src/effects/; the directories now contain ONLY definitions.
+
+Moves (all to src/ root, names describing the job rather than the
+directory they happened to live in):
+
+- `skills/skill.zig` → `skill.zig` (the Skill interface)
+- `skills/helpers.zig` → `skill_helpers.zig` (targeting/lookup helpers)
+- `skills/threat.zig` → `ai_threat.zig` (AI range/threat math)
+- `skills/movement.zig` → `ai_movement.zig` (AI movement-mode selection)
+- `effects/effect.zig` → `effect.zig` (the Effect interface)
+
+build.zig: the `scanDir` exclusion-list parameter is GONE — both scans
+now assume directory purity (a non-definition file in src/skills/ would
+silently become a SkillId, which is exactly the enforcement we want).
+The generated-lookups template imports the root-level `skill.zig`/
+`effect.zig`. The ~60 definition files' imports re-pointed via a
+sed sweep dry-run on one file first (per the sweep-script rule);
+generated_lookups.zig + generated_test_root.zig regenerate per build.
+
+DESIGN/AGENTS pointers updated (AI threat model, AI movement modes,
+tiebreaking helpers); DONE archive entries left as-is per policy.

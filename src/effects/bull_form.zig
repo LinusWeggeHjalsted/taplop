@@ -1,4 +1,4 @@
-const effect_mod = @import("effect.zig");
+const effect_mod = @import("../effect.zig");
 
 const Effect = effect_mod.Effect;
 

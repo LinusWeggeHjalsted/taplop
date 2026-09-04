@@ -2,12 +2,12 @@
 //! functions (selectTarget / priority / getValidTargets / useSkill) tested
 //! directly against harness-built level states, independent of the handler
 //! drain. New skills add their tests here. Target-selection conventions
-//! live in skills/helpers.zig + DESIGN → Determinism & Tiebreaking.
+//! live in skill_helpers.zig + DESIGN → Determinism & Tiebreaking.
 
 const std = @import("std");
 const testing = std.testing;
 const types = @import("types.zig");
-const helpers = @import("skills/helpers.zig");
+const helpers = @import("skill_helpers.zig");
 const test_harness = @import("test_harness.zig");
 const shoot_skill = @import("skills/shoot.zig");
 const powerful_shot_skill = @import("skills/powerful_shot.zig");
@@ -16,7 +16,7 @@ const head_shot_skill = @import("skills/head_shot.zig");
 const heal_skill = @import("skills/heal.zig");
 const cleave_skill = @import("skills/cleave.zig");
 const meteor_skill = @import("skills/meteor.zig");
-const threat_mod = @import("skills/threat.zig");
+const threat_mod = @import("ai_threat.zig");
 const absorb_skill = @import("skills/absorb.zig");
 const reflect_skill = @import("skills/reflect.zig");
 const absorb_effect = @import("effects/absorb.zig");

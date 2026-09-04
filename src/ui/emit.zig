@@ -7,7 +7,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const element = @import("element.zig");
 const lookups = @import("../generated_lookups.zig");
-const Effect = @import("../effects/effect.zig").Effect;
+const Effect = @import("../effect.zig").Effect;
 const ui_tooltip = @import("tooltip.zig");
 
 const Action = types.Action;

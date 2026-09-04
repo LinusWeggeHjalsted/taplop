@@ -2,15 +2,12 @@
 //! events (see DESIGN → Architecture); these helpers factor the targeting/lookup/return
 //! boilerplate that is identical across most skills, so each skill file is
 //! mostly its distinctive `useSkill` recipe.
-//!
-//! Excluded from the SkillId scan in build.zig (like skill.zig) — this is a
-//! support file, not a skill.
 
 const std = @import("std");
-const types = @import("../types.zig");
-const state = @import("../state.zig");
-const events = @import("../events.zig");
-const functions = @import("../functions.zig");
+const types = @import("types.zig");
+const state = @import("state.zig");
+const events = @import("events.zig");
+const functions = @import("functions.zig");
 const skill_mod = @import("skill.zig");
 
 const Vector2 = types.Vector2;

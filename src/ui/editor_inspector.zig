@@ -17,7 +17,7 @@ const text_input = @import("text_input.zig");
 const ui_tooltip = @import("tooltip.zig");
 const utility_skills = @import("../utility_skills.zig");
 const lookups = @import("../generated_lookups.zig");
-const Skill = @import("../skills/skill.zig").Skill;
+const Skill = @import("../skill.zig").Skill;
 
 const Action = types.Action;
 const ScreenPosition = types.ScreenPosition;

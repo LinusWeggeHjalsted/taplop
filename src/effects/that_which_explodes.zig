@@ -3,7 +3,7 @@ const types = @import("../types.zig");
 const state = @import("../state.zig");
 const events = @import("../events.zig");
 const functions = @import("../functions.zig");
-const effect_mod = @import("effect.zig");
+const effect_mod = @import("../effect.zig");
 
 const Vector2 = types.Vector2;
 const GameState = state.GameState;

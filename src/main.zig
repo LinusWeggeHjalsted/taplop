@@ -50,7 +50,7 @@ const ReplayViewer = types.ReplayViewer;
 const Level = types.Level;
 const session_setup = @import("session_setup.zig");
 const FrameState = session_setup.FrameState;
-const Skill = @import("skills/skill.zig").Skill;
+const Skill = @import("skill.zig").Skill;
 const SkillType = types.SkillType;
 const utility_skill_count = types.utility_skill_count;
 

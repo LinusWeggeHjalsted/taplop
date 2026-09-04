@@ -1,7 +1,7 @@
 const std = @import("std");
 const state = @import("../state.zig");
 const events = @import("../events.zig");
-const effect_mod = @import("effect.zig");
+const effect_mod = @import("../effect.zig");
 
 const GameState = state.GameState;
 const Event = events.Event;

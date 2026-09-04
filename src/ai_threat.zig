@@ -1,14 +1,13 @@
 //! AI range + threat math, shared by the enemy AI (handlers/level.zig) and
 //! the defensive skills' priority fns (Absorb, Reflect). Lives in its own
-//! file — not helpers.zig — because it needs generated_lookups, which
+//! file — not skill_helpers.zig — because it needs generated_lookups, which
 //! imports every skill file; this file imports none, so there is no import
-//! cycle. Excluded from the SkillId scan (like skill.zig / helpers.zig).
-//! See DESIGN → Architecture (AI threat model).
+//! cycle. See DESIGN → Architecture (AI threat model).
 
-const types = @import("../types.zig");
-const state = @import("../state.zig");
-const functions = @import("../functions.zig");
-const lookups = @import("../generated_lookups.zig");
+const types = @import("types.zig");
+const state = @import("state.zig");
+const functions = @import("functions.zig");
+const lookups = @import("generated_lookups.zig");
 
 const GameState = state.GameState;
 const Entity = types.Entity;

@@ -443,12 +443,20 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   verification (`verifyReplayMatch`). See DESIGN → Determinism & Tiebreaking.
 - `src/tween.zig` — pure easing fns (`easeOutCubic`); read by `view()` for
   one-shot anim interpolation. See DESIGN → Animation.
-- `src/skills/` — one file per skill, Skill interface (+ threat.zig AI
-  range/threat math, helpers.zig target selection, movement.zig AI
-  movement modes)
-- `src/effects/` — Effect interface with 18 callbacks (interception +
+- `src/skill.zig` — the Skill interface (Skill struct, AiOption, the
+  priority_fn/ai_options_fn signatures, deals_damage + self_centered flags)
+- `src/skill_helpers.zig` — skill building blocks (targeting/lookup helpers
+  shared by most skill recipes)
+- `src/ai_threat.zig` — AI range/threat math (shared by the enemy AI and
+  defensive skills' rating fns). See DESIGN → Architecture (AI threat model)
+- `src/ai_movement.zig` — AI movement-mode selection (how a non-player
+  entity moves each turn). See DESIGN → Architecture (AI movement modes)
+- `src/effect.zig` — the Effect interface with 18 callbacks (interception +
   on-effect/turn/attack hooks + outgoing/incoming pairs for damage/stun/effect/
   knockback/collision + onRetreat + onOpponentDeath)
+- `src/skills/` — one file per skill (every file in the directory is a
+  skill; the SkillId scan in build.zig assumes exactly that)
+- `src/effects/` — one file per effect (same convention as src/skills/)
 
 ## Subsystem Map
 

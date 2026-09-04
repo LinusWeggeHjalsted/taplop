@@ -1,7 +1,7 @@
 const std = @import("std");
-const types = @import("../types.zig");
-const state = @import("../state.zig");
-const events = @import("../events.zig");
+const types = @import("types.zig");
+const state = @import("state.zig");
+const events = @import("events.zig");
 
 const Vector2 = types.Vector2;
 const AdditiveEffectModifiers = types.AdditiveEffectModifiers;

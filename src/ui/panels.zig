@@ -11,7 +11,7 @@ const emit = @import("emit.zig");
 const tooltip = @import("tooltip.zig");
 const state = @import("../state.zig");
 const lookups = @import("../generated_lookups.zig");
-const Effect = @import("../effects/effect.zig").Effect;
+const Effect = @import("../effect.zig").Effect;
 
 const Action = types.Action;
 const ScreenPosition = types.ScreenPosition;

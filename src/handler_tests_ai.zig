@@ -386,7 +386,7 @@ test "enemy_turn_move: moves up to speed steps toward the target" {
     try testing.expectEqual(@as(i32, 2), levelEntity(&history, 0).position.x);
 }
 
-// ────────────── movement modes (skills/movement.zig) ──────────────
+// ────────────── movement modes (ai_movement.zig) ──────────────
 
 /// Corridor grid: only column x = 1 — forced one-axis movement so
 /// stand-off distances are unambiguous.

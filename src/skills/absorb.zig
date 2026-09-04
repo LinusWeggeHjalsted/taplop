@@ -2,9 +2,9 @@ const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
 const events = @import("../events.zig");
-const skill_mod = @import("skill.zig");
-const helpers = @import("helpers.zig");
-const threat = @import("threat.zig");
+const skill_mod = @import("../skill.zig");
+const helpers = @import("../skill_helpers.zig");
+const threat = @import("../ai_threat.zig");
 
 const Vector2 = types.Vector2;
 const GameState = state.GameState;
@@ -39,7 +39,7 @@ fn getValidTargets(_: u32, _: GameState, _: std.mem.Allocator) ?[]const Vector2 
 }
 
 /// AI options: one self-cast — offered only when a hostile can reach and
-/// attack the caster next turn (the threat model, skills/threat.zig).
+/// attack the caster next turn (the threat model, ai_threat.zig).
 /// Rated 2 when threatened, 4 when threatened AND below half health
 /// For Absorb the 4 must outrank Heal's 3 on the idol bar — prevention +
 /// conversion beats a flat 20% when the hit is coming..

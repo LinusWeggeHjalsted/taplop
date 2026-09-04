@@ -2,8 +2,8 @@ const std = @import("std");
 const types = @import("../types.zig");
 const state = @import("../state.zig");
 const events = @import("../events.zig");
-const skill_mod = @import("skill.zig");
-const helpers = @import("helpers.zig");
+const skill_mod = @import("../skill.zig");
+const helpers = @import("../skill_helpers.zig");
 
 const Vector2 = types.Vector2;
 const GameState = state.GameState;

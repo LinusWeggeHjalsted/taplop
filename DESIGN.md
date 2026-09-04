@@ -799,7 +799,7 @@ combat-log UI rendering + replay-viewer UI still TODO)
   single-target offensive skill's AI OPTIONS pick the hostile with the
   LOWEST current health; ties break by Chebyshev distance to the caster,
   then `entity_index` (total order). Implemented once in
-  `skills/helpers.zig` (`weakestTarget`) and reused by every attack skill;
+  `skill_helpers.zig` (`weakestTarget`) and reused by every attack skill;
   two skills get a preference key IN FRONT of the same tail: knockback
   skills prefer a target the push will collide (`knockbackTarget`), stun
   skills prefer an unstunned target (`stunTarget` — see Architecture, the
@@ -1862,7 +1862,7 @@ So a clone is a permanent, compounding material factory keyed by mission.
   the player (a shorter stun on an already-stunned target changes nothing;
   a longer one replaces it). Stun skills' AI mirrors this: they rate up only
   when an unstunned target is in reach and select unstunned targets first
-  (`skills/helpers.zig` `stunTarget`).
+  (`skill_helpers.zig` `stunTarget`).
 - **AI options (the unified enemy decision surface).** A skill's
   `ai_options_fn` enumerates its meaningful casts as (target, rating)
   pairs, best-first — ONE decision instead of the old priority /
@@ -1881,7 +1881,7 @@ So a clone is a permanent, compounding material factory keyed by mission.
   self-cast / self-centered; flash strike's target is its landing tile).
 - **AI threat model (defensive-skill evaluation).** `Skill.deals_damage`
   (a required field on every skill definition) marks whether useSkill hurts
-  anything. `skills/threat.zig` turns that into reach math:
+  anything. `ai_threat.zig` turns that into reach math:
   `computeMaxDamageRange` = max effective (range ?? radius) over an entity's
   equipped, off-cooldown, DAMAGING skills; `hostileCanAttackNextTurn` = any
   hostile that is alive, active, unstunned, and within
@@ -1891,14 +1891,14 @@ So a clone is a permanent, compounding material factory keyed by mission.
   Reflect) rate on it: 0 unthreatened, 2 threatened, 4 threatened + below
   half health (the 4 must outrank Heal's 3 on the idol bar — prevention +
   conversion beats a flat 20% when the hit is coming). `computeMinRange`
-  (moved to threat.zig from the level handler) deliberately still counts
+  (moved to ai_threat.zig from the level handler) deliberately still counts
   every usable skill — min answers "when can I act", max answers "how far
   can I hurt"; a control-only enemy (e.g. Daze) should stop and cast from
   its range, not walk adjacent first. To reach this math from a skill
   priority fn, `priority_fn` receives the session's
   `weapon_type_definitions` (slot resolution needs the mapping — the same
   constraint that made Focus an orchestrator; most skills ignore the param).
-- **AI movement modes (`skills/movement.zig`).** `enemy_turn_move` picks
+- **AI movement modes (`ai_movement.zig`).** `enemy_turn_move` picks
   ONE mode per entity per turn (`selectMovementMode`), off the CURRENT
   cooldown state — a point-blank skill on cooldown does not shape that
   turn's movement:

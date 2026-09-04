@@ -215,7 +215,7 @@ stale).
 - [x] **AI threat model + deals_damage (the absorb interjection)** —
       `Skill.deals_damage` (required — every skill declares it);
       `priority_fn` widened to receive `weapon_type_definitions` (the
-      alias `types.WeaponTypeDefinitions`); `skills/threat.zig` (computeMinRange
+      alias `types.WeaponTypeDefinitions`); `ai_threat.zig` (computeMinRange
       moved there + computeMaxDamageRange + hostileCanAttackNextTurn: alive
       + active + unstunned + within speed + max damaging reach).
       Reflect's flat within-2 heuristic replaced with the same 0/2/4 tiers.

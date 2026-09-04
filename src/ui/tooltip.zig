@@ -9,7 +9,7 @@ const std = @import("std");
 const types = @import("../types.zig");
 const element = @import("element.zig");
 const lookups = @import("../generated_lookups.zig");
-const Skill = @import("../skills/skill.zig").Skill;
+const Skill = @import("../skill.zig").Skill;
 
 const Action = types.Action;
 const ScreenPosition = types.ScreenPosition;

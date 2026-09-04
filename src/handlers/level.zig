@@ -2,7 +2,7 @@
 //! `.sub_level_event` arms of processEvent (`handleLevelEvent` /
 //! `handleSubLevelEvent`) plus their helpers — entity activation, the
 //! damage/heal number anim direction, and the current-mission accessor.
-//! The enemy AI range/threat math lives in `skills/threat.zig`.
+//! The enemy AI range/threat math lives in `ai_threat.zig`.
 //! Pure state transforms; sound/anim side effects gate on `!replaying`
 //! via `history.session` (see DESIGN → Replay & Side Effects).
 
@@ -12,8 +12,8 @@ const events = @import("../events.zig");
 const state = @import("../state.zig");
 const functions = @import("../functions.zig");
 const lookups = @import("../generated_lookups.zig");
-const threat = @import("../skills/threat.zig");
-const movement = @import("../skills/movement.zig");
+const threat = @import("../ai_threat.zig");
+const movement = @import("../ai_movement.zig");
 const event_push = @import("../event_push.zig");
 const shared = @import("shared.zig");
 
@@ -460,7 +460,7 @@ pub fn handleLevelEvent(
                 return;
             }
 
-            // Movement mode (skills/movement.zig): cluster-seek when an
+            // Movement mode (ai_movement.zig): cluster-seek when an
             // offensive point-blank skill is ready; kite at min range when
             // the whole kit outranges melee; else approach. A mode
             // destination of null means the mode found nothing to work
