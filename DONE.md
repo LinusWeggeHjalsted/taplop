@@ -11329,3 +11329,36 @@ Design: DESIGN → Logging & Replay → Spawn-relative coordinates. This is
 the first half of the revalidate plan (the second: a revalidate button
 that re-certifies a stored replay against new content) — normalization
 makes benign bbox edits replay-compatible so revalidation can pass.
+
+## Replay checking mode (rejectReplay + reconstructFromEventLogChecking)
+
+The replay-verification layers (verifyReplayMatch, validatePlayerAction's
+whole validate* family, the non-player-seed check) all fail fast via
+@panic — a diverging replay is an integrity violation. The revalidate
+feature needs the SAME check as a benign report ("does this stored run
+still match the current content?"), so panicking had to become catchable.
+
+- Every `@panic` site in the replay-validation region (117 of them) became
+  `self.rejectReplay(msg); return;` — a scripted conversion with the
+  invariant `rg '@panic\("replay validation|@panic\(msg\)' src/state.zig`
+  returns zero (verified; the compile catches anything the sweep missed —
+  all sites are in void fns, so the `return` unwinds cleanly, including
+  `orelse` blocks where it diverges).
+- `rejectReplay`: normal mode panics with the identical message (behavior
+  unchanged — every existing replay test passes untouched); checking mode
+  records the FIRST failure on `history.replay_rejection` (event index +
+  backing-owned message) and returns, and the replay loops abort on the
+  next `replay_rejection != null` check.
+- New public `reconstructFromEventLogChecking` = reconstructFromEventLog
+  with checking mode on; returns `?ReplayRejection` (null = clean). On a
+  rejection the scratch history is left mid-replay — callers discard it.
+- This is deliberately the shape the future server-side upload validation
+  wants: the same error-returning path, no fail-fast wrapper. Design:
+  DESIGN → Determinism & Tiebreaking → Replay CHECKING mode.
+
+Tests (handler_tests_editor, the validation-fixture home): a clean log
+replays with NO rejection + lands on the main menu like the normal
+reconstruction; a content edit that moves the level end out from under
+the run's recorded exit step rejects at the machinery-divergence layer;
+an edit that deletes the exit tile makes the recorded move illegal and
+rejects at the seed-legality layer.

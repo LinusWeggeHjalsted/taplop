@@ -644,6 +644,19 @@ pub const ReconstructionCacheEntry = struct {
 pub const snapshot_count = 8; // snapshots saved in each direction from current position
 pub const checkpoint_count = 8; // checkpoints kept in ring buffer
 
+/// A replay-verification failure caught in CHECKING mode (see
+/// `GameStateHistory.replay_checking` / `reconstructFromEventLogChecking`).
+/// Normal replay fails fast via @panic instead and never produces one of
+/// these.
+pub const ReplayRejection = struct {
+    /// Index into the replayed event log where the divergence was caught
+    /// (the event the verification was comparing when it failed).
+    event_index: u32,
+    /// Human-readable description — the same text the fail-fast path
+    /// panics with.
+    message: []const u8,
+};
+
 pub const GameStateHistory = struct {
     // Player preferences — not part of game state, not affected by undo/redo.
     settings: Settings,
@@ -760,6 +773,21 @@ pub const GameStateHistory = struct {
     // stays panic-on-miss, since live play always cached before replay can
     // reach the same index.
     cross_session_replay: bool = false,
+
+    // Replay-verification CHECKING mode (the revalidate path — see
+    // `rejectReplay`). False (normal replay/undo/redo/cross-session
+    // reconstruction): verification failures fail fast via @panic — a
+    // diverging replay is an integrity violation. True: the first failure
+    // is recorded on `replay_rejection` and the replay loop aborts — the
+    // same failure is a benign "run no longer matches the content"
+    // report. Only set by `reconstructFromEventLogChecking`.
+    replay_checking: bool = false,
+
+    /// First verification failure of a checking-mode replay (null until
+    /// one fires; first wins — later rejections are ignored). The message
+    /// is backing-allocator-owned: valid until the history's allocator
+    /// deinits (checking mode runs on short-lived scratch histories).
+    replay_rejection: ?ReplayRejection = null,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -1119,6 +1147,26 @@ pub const GameStateHistory = struct {
         };
     }
 
+    /// Record (checking mode) or raise (normal mode) a replay-verification
+    /// failure. Normal mode: fail-fast @panic — a diverging replay is an
+    /// integrity violation (see DESIGN → Determinism & Tiebreaking →
+    /// Replay VERIFICATION). Checking mode (`replay_checking` — the
+    /// revalidate path): record the FIRST failure on `replay_rejection`
+    /// and return, so the replay loop aborts without crashing; the same
+    /// failure is a benign "run no longer matches the content" report.
+    /// Every converted validation site calls this instead of @panic.
+    fn rejectReplay(self: *GameStateHistory, message: []const u8) void {
+        if (!self.replay_checking) @panic(message);
+        if (self.replay_rejection == null) {
+            const owned = self.backing_allocator.dupe(u8, message) catch
+                @panic("failed to record a replay rejection");
+            self.replay_rejection = .{
+                .event_index = self.current_event_index,
+                .message = owned,
+            };
+        }
+    }
+
     /// Verify that the event about to be dispatched (the stack top) matches
     /// the recorded event at `recorded_index`. Called before each
     /// `apply_event` during the natural-stack replay loops (`replayTo` /
@@ -1149,7 +1197,8 @@ pub const GameStateHistory = struct {
                 "replay mismatch at recorded event {d}: handler would run {s}, but recorded history has {s} (first differing field: \"{s}\")",
                 .{ recorded_index, act_name, exp_name, field_hint },
             ) catch "replay mismatch: handler-pushed event does not match recorded history";
-            @panic(msg);
+            self.rejectReplay(msg);
+            return;
         }
     }
 
@@ -1214,27 +1263,33 @@ pub const GameStateHistory = struct {
         level_index: u32,
     ) void {
         if (self.current_state.screen != .editor) {
-            @panic("replay validation: editor level-metadata commit outside editor screen");
+            self.rejectReplay("replay validation: editor level-metadata commit outside editor screen");
+            return;
         }
         const editor = self.current_state.editor orelse {
-            @panic("replay validation: editor level-metadata commit with no editor");
+            self.rejectReplay("replay validation: editor level-metadata commit with no editor");
+            return;
         };
         if (level_index >= editor.levels.len) {
-            @panic("replay validation: editor level-metadata commit index out of range");
+            self.rejectReplay("replay validation: editor level-metadata commit index out of range");
+            return;
         }
     }
 
     fn validateInspectorEntityEdit(self: *GameStateHistory, target: types.EntityEditTarget) void {
         if (self.current_state.screen != .editor) {
-            @panic("replay validation: inspector scalar commit outside editor screen");
+            self.rejectReplay("replay validation: inspector scalar commit outside editor screen");
+            return;
         }
         const editor = self.current_state.editor orelse {
-            @panic("replay validation: inspector scalar commit with no editor");
+            self.rejectReplay("replay validation: inspector scalar commit with no editor");
+            return;
         };
         switch (target) {
             .entity_type => |type_id| {
                 if (type_id >= editor.entity_types.len) {
-                    @panic("replay validation: inspector scalar commit type id out of range");
+                    self.rejectReplay("replay validation: inspector scalar commit type id out of range");
+                    return;
                 }
             },
             .player_def => {},
@@ -1248,25 +1303,31 @@ pub const GameStateHistory = struct {
     /// editor_set_tool posture — the live path can't produce one).
     fn validateInspectorDecorationEdit(self: *GameStateHistory, type_id: u32) void {
         if (self.current_state.screen != .editor) {
-            @panic("replay validation: decoration inspector commit outside editor screen");
+            self.rejectReplay("replay validation: decoration inspector commit outside editor screen");
+            return;
         }
         const editor = self.current_state.editor orelse {
-            @panic("replay validation: decoration inspector commit with no editor");
+            self.rejectReplay("replay validation: decoration inspector commit with no editor");
+            return;
         };
         if (type_id >= editor.decoration_types.len) {
-            @panic("replay validation: decoration inspector commit type id out of range");
+            self.rejectReplay("replay validation: decoration inspector commit type id out of range");
+            return;
         }
     }
 
     fn validateInspectorItemEdit(self: *GameStateHistory, type_id: u32) void {
         if (self.current_state.screen != .editor) {
-            @panic("replay validation: item inspector commit outside editor screen");
+            self.rejectReplay("replay validation: item inspector commit outside editor screen");
+            return;
         }
         const editor = self.current_state.editor orelse {
-            @panic("replay validation: item inspector commit with no editor");
+            self.rejectReplay("replay validation: item inspector commit with no editor");
+            return;
         };
         if (type_id >= editor.item_types.len) {
-            @panic("replay validation: item inspector commit type id out of range");
+            self.rejectReplay("replay validation: item inspector commit type id out of range");
+            return;
         }
     }
 
@@ -1275,13 +1336,16 @@ pub const GameStateHistory = struct {
     /// `inventory_slot_count`.
     fn validateInspectorInventoryEdit(self: *GameStateHistory, index: u32) void {
         if (self.current_state.screen != .editor) {
-            @panic("replay validation: inventory inspector commit outside editor screen");
+            self.rejectReplay("replay validation: inventory inspector commit outside editor screen");
+            return;
         }
         if (self.current_state.editor == null) {
-            @panic("replay validation: inventory inspector commit with no editor");
+            self.rejectReplay("replay validation: inventory inspector commit with no editor");
+            return;
         }
         if (index >= types.inventory_slot_count) {
-            @panic("replay validation: inventory inspector commit slot index out of range");
+            self.rejectReplay("replay validation: inventory inspector commit slot index out of range");
+            return;
         }
     }
 
@@ -1300,13 +1364,17 @@ pub const GameStateHistory = struct {
                 const template = editor.entity_types[type_id].template;
                 if (layer_index) |index| {
                     if (index >= template.layers.len) {
-                        @panic("replay validation: entity layer commit layer index out of range");
+                        self.rejectReplay("replay validation: entity layer commit layer index out of range");
+                        return;
                     }
                 }
             },
             // The player loadout has no layers — the live path never
             // targets it (the Layers section is enemy content only).
-            .player_def => @panic("replay validation: entity layer commit on the player loadout"),
+            .player_def => {
+                self.rejectReplay("replay validation: entity layer commit on the player loadout");
+                return;
+            },
         }
     }
 
@@ -1327,12 +1395,14 @@ pub const GameStateHistory = struct {
             if (dims.x != definition.pixel_dims.x or
                 dims.y != definition.pixel_dims.y)
             {
-                @panic("replay validation: decoration layer commit dims differ from the base");
+                self.rejectReplay("replay validation: decoration layer commit dims differ from the base");
+                return;
             }
         }
         if (layer_index) |index| {
             if (index >= definition.layers.len) {
-                @panic("replay validation: decoration layer commit layer index out of range");
+                self.rejectReplay("replay validation: decoration layer commit layer index out of range");
+                return;
             }
         }
     }
@@ -1346,14 +1416,16 @@ pub const GameStateHistory = struct {
                 .player_exit_mission,
                 => {
                     if (self.current_state.screen != .level) {
-                        @panic("replay validation: player exit/skip action outside level screen");
+                        self.rejectReplay("replay validation: player exit/skip action outside level screen");
+                        return;
                     }
                 },
                 .player_exit_to_menu => {
                     if (self.current_state.screen != .level and self.current_state.screen != .hub and
                         self.current_state.screen != .editor)
                     {
-                        @panic("replay validation: player_exit_to_menu outside level/hub/editor screen");
+                        self.rejectReplay("replay validation: player_exit_to_menu outside level/hub/editor screen");
+                        return;
                     }
                 },
                 // Editor Test button: only from the editor's edit mode —
@@ -1361,13 +1433,16 @@ pub const GameStateHistory = struct {
                 // crafted log is rejected.
                 .player_start_playtest => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: editor playtest start outside editor screen");
+                        self.rejectReplay("replay validation: editor playtest start outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: editor playtest start with no editor");
+                        self.rejectReplay("replay validation: editor playtest start with no editor");
+                        return;
                     };
                     if (editor.mode != .edit) {
-                        @panic("replay validation: editor playtest start outside edit mode");
+                        self.rejectReplay("replay validation: editor playtest start outside edit mode");
+                        return;
                     }
                 },
                 // Validate: file-based (the handler needs no editor), so
@@ -1380,18 +1455,22 @@ pub const GameStateHistory = struct {
                 // path).
                 .player_start_validation => {
                     if (self.current_state.level != null or self.current_state.mission != null) {
-                        @panic("replay validation: player_start_validation with an active level/mission");
+                        self.rejectReplay("replay validation: player_start_validation with an active level/mission");
+                        return;
                     }
                 },
                 .player_set_editor_level => |set| {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_set_editor_level outside editor screen");
+                        self.rejectReplay("replay validation: player_set_editor_level outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_set_editor_level with no editor");
+                        self.rejectReplay("replay validation: player_set_editor_level with no editor");
+                        return;
                     };
                     if (set.level_index >= editor.levels.len) {
-                        @panic("replay validation: player_set_editor_level index out of range");
+                        self.rejectReplay("replay validation: player_set_editor_level index out of range");
+                        return;
                     }
                 },
                 // Structural legality: screen + editor + the tool's palette
@@ -1399,10 +1478,12 @@ pub const GameStateHistory = struct {
                 // cells; a hand-crafted log could name a nonexistent type).
                 .player_set_editor_tool => |set| {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_set_editor_tool outside editor screen");
+                        self.rejectReplay("replay validation: player_set_editor_tool outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_set_editor_tool with no editor");
+                        self.rejectReplay("replay validation: player_set_editor_tool with no editor");
+                        return;
                     };
                     const tool_valid = switch (set.tool) {
                         .select, .tile => true,
@@ -1411,7 +1492,8 @@ pub const GameStateHistory = struct {
                         .item_type => |type_id| type_id < editor.item_types.len,
                     };
                     if (!tool_valid) {
-                        @panic("replay validation: player_set_editor_tool type id out of range");
+                        self.rejectReplay("replay validation: player_set_editor_tool type id out of range");
+                        return;
                     }
                 },
                 // Structural legality: the editor screen with an editor
@@ -1419,10 +1501,12 @@ pub const GameStateHistory = struct {
                 // button; no other screen renders it).
                 .player_toggle_editor_inspector => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_toggle_editor_inspector outside editor screen");
+                        self.rejectReplay("replay validation: player_toggle_editor_inspector outside editor screen");
+                        return;
                     }
                     if (self.current_state.editor == null) {
-                        @panic("replay validation: player_toggle_editor_inspector with no editor");
+                        self.rejectReplay("replay validation: player_toggle_editor_inspector with no editor");
+                        return;
                     }
                 },
                 // Structural legality: same shape — the live path is a
@@ -1432,20 +1516,24 @@ pub const GameStateHistory = struct {
                 .player_add_editor_item_type,
                 => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_add_editor_type outside editor screen");
+                        self.rejectReplay("replay validation: player_add_editor_type outside editor screen");
+                        return;
                     }
                     if (self.current_state.editor == null) {
-                        @panic("replay validation: player_add_editor_type with no editor");
+                        self.rejectReplay("replay validation: player_add_editor_type with no editor");
+                        return;
                     }
                 },
                 // Structural legality: same shape — the live path is the
                 // top-bar add-level "+".
                 .player_add_editor_level => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_add_editor_level outside editor screen");
+                        self.rejectReplay("replay validation: player_add_editor_level outside editor screen");
+                        return;
                     }
                     if (self.current_state.editor == null) {
-                        @panic("replay validation: player_add_editor_level with no editor");
+                        self.rejectReplay("replay validation: player_add_editor_level with no editor");
+                        return;
                     }
                 },
                 // Structural legality: same shape — the live path is a level
@@ -1455,16 +1543,20 @@ pub const GameStateHistory = struct {
                 // crafted logs away from those panics).
                 .player_delete_editor_level => |delete| {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_delete_editor_level outside editor screen");
+                        self.rejectReplay("replay validation: player_delete_editor_level outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_delete_editor_level with no editor");
+                        self.rejectReplay("replay validation: player_delete_editor_level with no editor");
+                        return;
                     };
                     if (editor.levels.len <= 1) {
-                        @panic("replay validation: player_delete_editor_level with a single-level mission");
+                        self.rejectReplay("replay validation: player_delete_editor_level with a single-level mission");
+                        return;
                     }
                     if (delete.level_index >= editor.levels.len) {
-                        @panic("replay validation: player_delete_editor_level level index out of range");
+                        self.rejectReplay("replay validation: player_delete_editor_level level index out of range");
+                        return;
                     }
                 },
                 // Structural legality: the live path is a palette tool cell's
@@ -1473,10 +1565,12 @@ pub const GameStateHistory = struct {
                 // ignores out-of-range defensively).
                 .player_delete_editor_type => |delete| {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_delete_editor_type outside editor screen");
+                        self.rejectReplay("replay validation: player_delete_editor_type outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_delete_editor_type with no editor");
+                        self.rejectReplay("replay validation: player_delete_editor_type with no editor");
+                        return;
                     };
                     const type_valid = switch (delete.type_kind) {
                         .entity => delete.type_id < editor.entity_types.len,
@@ -1484,17 +1578,20 @@ pub const GameStateHistory = struct {
                         .item => delete.type_id < editor.item_types.len,
                     };
                     if (!type_valid) {
-                        @panic("replay validation: player_delete_editor_type type id out of range");
+                        self.rejectReplay("replay validation: player_delete_editor_type type id out of range");
+                        return;
                     }
                 },
                 // Structural legality: same shape — the live path is the
                 // editor's top-right toggle button.
                 .player_toggle_editor_metadata_sidebar => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_toggle_editor_metadata_sidebar outside editor screen");
+                        self.rejectReplay("replay validation: player_toggle_editor_metadata_sidebar outside editor screen");
+                        return;
                     }
                     if (self.current_state.editor == null) {
-                        @panic("replay validation: player_toggle_editor_metadata_sidebar with no editor");
+                        self.rejectReplay("replay validation: player_toggle_editor_metadata_sidebar with no editor");
+                        return;
                     }
                 },
                 // Structural legality: same shape as the inspector toggle —
@@ -1502,10 +1599,12 @@ pub const GameStateHistory = struct {
                 // (the session data + the max-player loadout).
                 .player_import_editor_player, .player_import_editor_max_player => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_import_editor_player outside editor screen");
+                        self.rejectReplay("replay validation: player_import_editor_player outside editor screen");
+                        return;
                     }
                     if (self.current_state.editor == null) {
-                        @panic("replay validation: player_import_editor_player with no editor");
+                        self.rejectReplay("replay validation: player_import_editor_player with no editor");
+                        return;
                     }
                 },
                 // Settings-sidebar commits. The mission-name commit needs
@@ -1515,10 +1614,12 @@ pub const GameStateHistory = struct {
                 // holds because the sidebar only ever renders real tabs).
                 .player_set_editor_mission_name => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_set_editor_mission_name outside editor screen");
+                        self.rejectReplay("replay validation: player_set_editor_mission_name outside editor screen");
+                        return;
                     }
                     if (self.current_state.editor == null) {
-                        @panic("replay validation: player_set_editor_mission_name with no editor");
+                        self.rejectReplay("replay validation: player_set_editor_mission_name with no editor");
+                        return;
                     }
                 },
                 .player_set_editor_level_name => |set|
@@ -1536,15 +1637,18 @@ pub const GameStateHistory = struct {
                 // range target here is a crafted log).
                 .player_set_editor_entity_name => |set| {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_set_editor_entity_name outside editor screen");
+                        self.rejectReplay("replay validation: player_set_editor_entity_name outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_set_editor_entity_name with no editor");
+                        self.rejectReplay("replay validation: player_set_editor_entity_name with no editor");
+                        return;
                     };
                     switch (set.target) {
                         .entity_type => |type_id| {
                             if (type_id >= editor.entity_types.len) {
-                                @panic("replay validation: player_set_editor_entity_name type id out of range");
+                                self.rejectReplay("replay validation: player_set_editor_entity_name type id out of range");
+                                return;
                             }
                         },
                         .player_def => {},
@@ -1553,15 +1657,18 @@ pub const GameStateHistory = struct {
                 // Same structural legality as the name commit.
                 .player_set_editor_entity_sprite => |set| {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_set_editor_entity_sprite outside editor screen");
+                        self.rejectReplay("replay validation: player_set_editor_entity_sprite outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_set_editor_entity_sprite with no editor");
+                        self.rejectReplay("replay validation: player_set_editor_entity_sprite with no editor");
+                        return;
                     };
                     switch (set.target) {
                         .entity_type => |type_id| {
                             if (type_id >= editor.entity_types.len) {
-                                @panic("replay validation: player_set_editor_entity_sprite type id out of range");
+                                self.rejectReplay("replay validation: player_set_editor_entity_sprite type id out of range");
+                                return;
                             }
                         },
                         .player_def => {},
@@ -1587,7 +1694,8 @@ pub const GameStateHistory = struct {
                 .player_set_editor_entity_team => |set| {
                     self.validateInspectorEntityEdit(set.target);
                     if (set.target == .player_def) {
-                        @panic("replay validation: player_set_editor_entity_team on the player target");
+                        self.rejectReplay("replay validation: player_set_editor_entity_team on the player target");
+                        return;
                     }
                 },
                 // The equipped-slot commit (one slot-parameterized event):
@@ -1598,11 +1706,13 @@ pub const GameStateHistory = struct {
                 .player_set_editor_entity_utility_skill => |set| {
                     self.validateInspectorEntityEdit(set.target);
                     if (set.slot_index >= types.utility_skill_count) {
-                        @panic("replay validation: player_set_editor_entity_utility_skill slot index out of range");
+                        self.rejectReplay("replay validation: player_set_editor_entity_utility_skill slot index out of range");
+                        return;
                     }
                     if (set.value) |skill_id| {
                         if (!utility_skills.isUtilitySkill(skill_id)) {
-                            @panic("replay validation: player_set_editor_entity_utility_skill with a weapon skill");
+                            self.rejectReplay("replay validation: player_set_editor_entity_utility_skill with a weapon skill");
+                            return;
                         }
                     }
                 },
@@ -1650,32 +1760,40 @@ pub const GameStateHistory = struct {
                 // hand-crafted log may contain one).
                 .player_toggle_editor_selection => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_toggle_editor_selection outside editor screen");
+                        self.rejectReplay("replay validation: player_toggle_editor_selection outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_toggle_editor_selection with no editor");
+                        self.rejectReplay("replay validation: player_toggle_editor_selection with no editor");
+                        return;
                     };
                     if (editor.levels.len == 0) {
-                        @panic("replay validation: player_toggle_editor_selection with no levels");
+                        self.rejectReplay("replay validation: player_toggle_editor_selection with no levels");
+                        return;
                     }
                     if (editor.active_tool != .select) {
-                        @panic("replay validation: player_toggle_editor_selection without the select tool active");
+                        self.rejectReplay("replay validation: player_toggle_editor_selection without the select tool active");
+                        return;
                     }
                 },
                 // Same structural legality as the toggle (the plain-click
                 // replace path).
                 .player_replace_editor_selection => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_replace_editor_selection outside editor screen");
+                        self.rejectReplay("replay validation: player_replace_editor_selection outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_replace_editor_selection with no editor");
+                        self.rejectReplay("replay validation: player_replace_editor_selection with no editor");
+                        return;
                     };
                     if (editor.levels.len == 0) {
-                        @panic("replay validation: player_replace_editor_selection with no levels");
+                        self.rejectReplay("replay validation: player_replace_editor_selection with no levels");
+                        return;
                     }
                     if (editor.active_tool != .select) {
-                        @panic("replay validation: player_replace_editor_selection without the select tool active");
+                        self.rejectReplay("replay validation: player_replace_editor_selection without the select tool active");
+                        return;
                     }
                 },
                 // Same structural legality as the toggle (the marquee is the
@@ -1685,16 +1803,20 @@ pub const GameStateHistory = struct {
                 // a hand-crafted log may contain one).
                 .player_select_editor_region => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_select_editor_region outside editor screen");
+                        self.rejectReplay("replay validation: player_select_editor_region outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_select_editor_region with no editor");
+                        self.rejectReplay("replay validation: player_select_editor_region with no editor");
+                        return;
                     };
                     if (editor.levels.len == 0) {
-                        @panic("replay validation: player_select_editor_region with no levels");
+                        self.rejectReplay("replay validation: player_select_editor_region with no levels");
+                        return;
                     }
                     if (editor.active_tool != .select) {
-                        @panic("replay validation: player_select_editor_region without the select tool active");
+                        self.rejectReplay("replay validation: player_select_editor_region without the select tool active");
+                        return;
                     }
                 },
                 // Tool-agnostic (a non-select active tool is legal: the
@@ -1703,29 +1825,36 @@ pub const GameStateHistory = struct {
                 // unbounded form).
                 .player_select_editor_all => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_select_editor_all outside editor screen");
+                        self.rejectReplay("replay validation: player_select_editor_all outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_select_editor_all with no editor");
+                        self.rejectReplay("replay validation: player_select_editor_all with no editor");
+                        return;
                     };
                     if (editor.levels.len == 0) {
-                        @panic("replay validation: player_select_editor_all with no levels");
+                        self.rejectReplay("replay validation: player_select_editor_all with no levels");
+                        return;
                     }
                 },
                 // Same structural legality as the toggle + region (the
                 // selection only exists while the select tool is active).
                 .player_delete_editor_selection => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_delete_editor_selection outside editor screen");
+                        self.rejectReplay("replay validation: player_delete_editor_selection outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_delete_editor_selection with no editor");
+                        self.rejectReplay("replay validation: player_delete_editor_selection with no editor");
+                        return;
                     };
                     if (editor.levels.len == 0) {
-                        @panic("replay validation: player_delete_editor_selection with no levels");
+                        self.rejectReplay("replay validation: player_delete_editor_selection with no levels");
+                        return;
                     }
                     if (editor.active_tool != .select) {
-                        @panic("replay validation: player_delete_editor_selection without the select tool active");
+                        self.rejectReplay("replay validation: player_delete_editor_selection without the select tool active");
+                        return;
                     }
                 },
                 // Structural legality: screen + editor (no levels check —
@@ -1733,10 +1862,12 @@ pub const GameStateHistory = struct {
                 // selection is an idempotent no-op in the handler).
                 .player_clear_editor_selection => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_clear_editor_selection outside editor screen");
+                        self.rejectReplay("replay validation: player_clear_editor_selection outside editor screen");
+                        return;
                     }
                     if (self.current_state.editor == null) {
-                        @panic("replay validation: player_clear_editor_selection with no editor");
+                        self.rejectReplay("replay validation: player_clear_editor_selection with no editor");
+                        return;
                     }
                 },
                 // Same structural legality as the selection delete (the
@@ -1745,16 +1876,20 @@ pub const GameStateHistory = struct {
                 // recorded session, the live gesture never fires one).
                 .player_move_editor_selection => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_move_editor_selection outside editor screen");
+                        self.rejectReplay("replay validation: player_move_editor_selection outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_move_editor_selection with no editor");
+                        self.rejectReplay("replay validation: player_move_editor_selection with no editor");
+                        return;
                     };
                     if (editor.levels.len == 0) {
-                        @panic("replay validation: player_move_editor_selection with no levels");
+                        self.rejectReplay("replay validation: player_move_editor_selection with no levels");
+                        return;
                     }
                     if (editor.active_tool != .select) {
-                        @panic("replay validation: player_move_editor_selection without the select tool active");
+                        self.rejectReplay("replay validation: player_move_editor_selection without the select tool active");
+                        return;
                     }
                 },
                 // Structural legality only: screen + editor + a level to
@@ -1764,13 +1899,16 @@ pub const GameStateHistory = struct {
                 // such no-op clicks), so there is no position check here.
                 .player_paint_editor_tile => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_paint_editor_tile outside editor screen");
+                        self.rejectReplay("replay validation: player_paint_editor_tile outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_paint_editor_tile with no editor");
+                        self.rejectReplay("replay validation: player_paint_editor_tile with no editor");
+                        return;
                     };
                     if (editor.levels.len == 0) {
-                        @panic("replay validation: player_paint_editor_tile with no levels");
+                        self.rejectReplay("replay validation: player_paint_editor_tile with no levels");
+                        return;
                     }
                 },
                 // Structural legality: the paint checks + the entity type
@@ -1781,16 +1919,20 @@ pub const GameStateHistory = struct {
                 // recorded session).
                 .player_place_editor_entity => |place| {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_place_editor_entity outside editor screen");
+                        self.rejectReplay("replay validation: player_place_editor_entity outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_place_editor_entity with no editor");
+                        self.rejectReplay("replay validation: player_place_editor_entity with no editor");
+                        return;
                     };
                     if (editor.levels.len == 0) {
-                        @panic("replay validation: player_place_editor_entity with no levels");
+                        self.rejectReplay("replay validation: player_place_editor_entity with no levels");
+                        return;
                     }
                     if (place.type_id >= editor.entity_types.len) {
-                        @panic("replay validation: player_place_editor_entity type id out of range");
+                        self.rejectReplay("replay validation: player_place_editor_entity type id out of range");
+                        return;
                     }
                 },
                 // Same shape as the entity placement: the paint checks +
@@ -1799,16 +1941,20 @@ pub const GameStateHistory = struct {
                 // recorded session).
                 .player_place_editor_decoration => |place| {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_place_editor_decoration outside editor screen");
+                        self.rejectReplay("replay validation: player_place_editor_decoration outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_place_editor_decoration with no editor");
+                        self.rejectReplay("replay validation: player_place_editor_decoration with no editor");
+                        return;
                     };
                     if (editor.levels.len == 0) {
-                        @panic("replay validation: player_place_editor_decoration with no levels");
+                        self.rejectReplay("replay validation: player_place_editor_decoration with no levels");
+                        return;
                     }
                     if (place.type_id >= editor.decoration_types.len) {
-                        @panic("replay validation: player_place_editor_decoration type id out of range");
+                        self.rejectReplay("replay validation: player_place_editor_decoration type id out of range");
+                        return;
                     }
                 },
                 // Same shape: the paint checks + the item type in palette
@@ -1816,16 +1962,20 @@ pub const GameStateHistory = struct {
                 // legal in a recorded session).
                 .player_place_editor_item => |place| {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_place_editor_item outside editor screen");
+                        self.rejectReplay("replay validation: player_place_editor_item outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_place_editor_item with no editor");
+                        self.rejectReplay("replay validation: player_place_editor_item with no editor");
+                        return;
                     };
                     if (editor.levels.len == 0) {
-                        @panic("replay validation: player_place_editor_item with no levels");
+                        self.rejectReplay("replay validation: player_place_editor_item with no levels");
+                        return;
                     }
                     if (place.type_id >= editor.item_types.len) {
-                        @panic("replay validation: player_place_editor_item type id out of range");
+                        self.rejectReplay("replay validation: player_place_editor_item type id out of range");
+                        return;
                     }
                 },
                 // The right-click delete: screen + editor + a level. The
@@ -1833,36 +1983,44 @@ pub const GameStateHistory = struct {
                 // no-op ones) is legal in a recorded session.
                 .player_delete_editor_at => {
                     if (self.current_state.screen != .editor) {
-                        @panic("replay validation: player_delete_editor_at outside editor screen");
+                        self.rejectReplay("replay validation: player_delete_editor_at outside editor screen");
+                        return;
                     }
                     const editor = self.current_state.editor orelse {
-                        @panic("replay validation: player_delete_editor_at with no editor");
+                        self.rejectReplay("replay validation: player_delete_editor_at with no editor");
+                        return;
                     };
                     if (editor.levels.len == 0) {
-                        @panic("replay validation: player_delete_editor_at with no levels");
+                        self.rejectReplay("replay validation: player_delete_editor_at with no levels");
+                        return;
                     }
                 },
                 .player_replay_mission => {
                     if (self.current_state.last_completed_mission == null) {
-                        @panic("replay validation: player_replay_mission with no completed mission");
+                        self.rejectReplay("replay validation: player_replay_mission with no completed mission");
+                        return;
                     }
                 },
                 .player_overwrite_clone => {
                     const info = self.current_state.last_completed_mission orelse {
-                        @panic("replay validation: player_overwrite_clone with no completed mission");
+                        self.rejectReplay("replay validation: player_overwrite_clone with no completed mission");
+                        return;
                     };
                     if (!info.overwrite_offered) {
-                        @panic("replay validation: player_overwrite_clone when not offered");
+                        self.rejectReplay("replay validation: player_overwrite_clone when not offered");
+                        return;
                     }
                 },
                 .player_continue => {
                     if (self.current_state.screen != .main_menu) {
-                        @panic("replay validation: player_continue outside main menu");
+                        self.rejectReplay("replay validation: player_continue outside main menu");
+                        return;
                     }
                 },
                 .player_load_save => {
                     if (self.current_state.screen != .main_menu) {
-                        @panic("replay validation: player_load_save outside main menu");
+                        self.rejectReplay("replay validation: player_load_save outside main menu");
+                        return;
                     }
                 },
                 // Level combat actions: inner legality checks.
@@ -1876,7 +2034,8 @@ pub const GameStateHistory = struct {
                             "replay validation: player moved to ({d},{d}) which is not reachable from ({d},{d})",
                             .{ action.destination.x, action.destination.y, player.position.x, player.position.y },
                         ) catch "replay validation: player moved to an unreachable tile";
-                        @panic(msg);
+                        self.rejectReplay(msg);
+                        return;
                     }
                 },
                 .player_use_skill => |use| {
@@ -1933,7 +2092,8 @@ pub const GameStateHistory = struct {
                     // list can contain weapon-skill tomes, so the drag path
                     // is validated here (the handler also no-ops defensively).
                     if (!utility_skills.isUtilitySkill(assign.skill_id)) {
-                        @panic("replay validation: player_assign_utility_skill with a weapon skill");
+                        self.rejectReplay("replay validation: player_assign_utility_skill with a weapon skill");
+                        return;
                     }
                 },
                 .player_swap_utility_skills => |swap| {
@@ -1975,25 +2135,28 @@ pub const GameStateHistory = struct {
             "replay validation: skill {s} not on bar or on cooldown",
             .{@tagName(skill_id)},
         ) catch "replay validation: skill not on bar or on cooldown";
-        @panic(msg);
+        self.rejectReplay(msg);
+        return;
     }
 
     /// Inventory/gear orchestrators only run from a level or hub (panels are
     /// shown nowhere else) and the inventory slot index must be in range.
     fn validateInventoryScreenAndSlot(self: *GameStateHistory, inventory_slot_index: u32) void {
         if (self.current_state.screen != .level and self.current_state.screen != .hub) {
-            @panic("replay validation: inventory action outside level/hub screen");
+            self.rejectReplay("replay validation: inventory action outside level/hub screen");
+            return;
         }
         if (inventory_slot_index >= types.inventory_slot_count) {
-            @panic("replay validation: inventory slot index out of range");
+            self.rejectReplay("replay validation: inventory slot index out of range");
+            return;
         }
     }
 
     /// Utility-skill orchestrators: the bar slot index must be in range.
     fn validateUtilitySlot(self: *GameStateHistory, slot_index: u32) void {
-        _ = self;
         if (slot_index >= types.utility_skill_count) {
-            @panic("replay validation: utility skill slot index out of range");
+            self.rejectReplay("replay validation: utility skill slot index out of range");
+            return;
         }
     }
 
@@ -2030,7 +2193,8 @@ pub const GameStateHistory = struct {
             "replay validation: skill {s} target ({d},{d}) is not a valid target",
             .{ @tagName(skill_id), target_tile.x, target_tile.y },
         ) catch "replay validation: skill target is not a valid target";
-        @panic(msg);
+        self.rejectReplay(msg);
+        return;
     }
 
     /// The destination must be reachable from the player's current position
@@ -2092,9 +2256,13 @@ pub const GameStateHistory = struct {
                         "replay: non-player event {s} seeded at idle point (event {d})",
                         .{ name, self.current_event_index },
                     ) catch "replay: non-player event seeded at idle point";
-                    @panic(msg);
+                    self.rejectReplay(msg);
+                    return;
                 }
                 self.validatePlayerAction(next);
+                // Checking mode: abort at the first recorded rejection
+                // (normal mode never records one — rejectReplay panics).
+                if (self.replay_rejection != null) return;
                 self.current_state.event_stack = &.{next};
             }
 
@@ -2102,6 +2270,7 @@ pub const GameStateHistory = struct {
             const expected = self.current_state.event_stack[
                 self.current_state.event_stack.len - 1];
             self.verifyReplayMatch(expected, self.current_event_index);
+            if (self.replay_rejection != null) return;
 
             apply_event(self);
         }
@@ -2164,9 +2333,13 @@ pub const GameStateHistory = struct {
                         "replay: non-player event {s} seeded at idle point (event {d})",
                         .{ name, self.current_event_index },
                     ) catch "replay: non-player event seeded at idle point";
-                    @panic(msg);
+                    self.rejectReplay(msg);
+                    return;
                 }
                 self.validatePlayerAction(next);
+                // Checking mode: abort at the first recorded rejection
+                // (normal mode never records one — rejectReplay panics).
+                if (self.replay_rejection != null) return;
                 self.current_state.event_stack = &.{next};
             }
 
@@ -2177,6 +2350,7 @@ pub const GameStateHistory = struct {
             const expected = self.current_state.event_stack[
                 self.current_state.event_stack.len - 1];
             self.verifyReplayMatch(expected, self.current_event_index);
+            if (self.replay_rejection != null) return;
 
             apply_event(self);
 
@@ -2323,6 +2497,26 @@ pub const GameStateHistory = struct {
         self.cross_session_replay = true;
         defer self.cross_session_replay = false;
         self.replayToWithIdleTracking(target_event_index, apply_event);
+    }
+
+    /// Cross-session reconstruction in CHECKING mode (the revalidate
+    /// path): identical to `reconstructFromEventLog`, but a
+    /// verification failure ABORTS the replay and is returned instead of
+    /// panicking — the same failure is a benign "run no longer matches
+    /// the content" report there. Null = the log replays cleanly against
+    /// the current content. On a rejection the history is left in the
+    /// aborted mid-replay state — callers use a short-lived scratch
+    /// history and discard it (see rejectReplay).
+    pub fn reconstructFromEventLogChecking(
+        self: *GameStateHistory,
+        event_log: []const Event,
+        target_event_index: u32,
+        apply_event: *const fn (*GameStateHistory) void,
+    ) ?ReplayRejection {
+        self.replay_checking = true;
+        defer self.replay_checking = false;
+        self.reconstructFromEventLog(event_log, target_event_index, apply_event);
+        return self.replay_rejection;
     }
 };
 

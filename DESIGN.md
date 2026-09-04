@@ -724,6 +724,19 @@ combat-log UI rendering + replay-viewer UI still TODO)
   the old virtual-depth bookkeeping (idle = stack empties). This is also the
   primitive the Online Services TODO wants for server-side replay validation
   (leaderboard anti-cheat).
+- **Replay CHECKING mode (the revalidate seam).** All three verification
+  layers route through `GameStateHistory.rejectReplay`: normal mode
+  (`replay_checking = false`, every standard replay origin) fails fast via
+  `@panic` exactly as before; checking mode (`reconstructFromEventLogChecking`)
+  records the FIRST failure on `replay_rejection` (event index + the same
+  message the panic carries) and the replay loop aborts — no crash. Same
+  verification logic, two policies: for replay-as-integrity-check a
+  divergence is a bug (panic); for revalidate ("does this stored run still
+  match the current content?") the same divergence is a benign answer.
+  On a rejection the scratch history is left mid-replay and discarded.
+  This is the in-process miniature of the future server-side mission
+  validation (the upload gate) — the same error-returning path, no
+  fail-fast wrapper.
 - **Replay PLAYER-ACTION LEGALITY validation.** Two layers gate what a
   replay log can seed at an idle point (when the stack drains and the next
   recorded event is pushed as a fresh top-level event):

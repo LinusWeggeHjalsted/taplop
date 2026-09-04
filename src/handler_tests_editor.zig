@@ -6105,6 +6105,126 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
     try testing.expect(history3.current_state.mission == null);
 }
 
+// ──────────── checking-mode replay (the revalidate machinery) ────────────
+// reconstructFromEventLogChecking replays a stored log against CURRENT
+// content, aborting + reporting at the first verification failure instead
+// of panicking — the validity check behind the revalidate button.
+
+test "reconstructFromEventLogChecking: a clean log replays with no rejection" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    try writeValidationFixtureMission(&harness);
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    try playFixtureRunToCompletion(&history, false);
+
+    const result = try readFixtureReplay(&harness, arena);
+    var scratch_start = test_harness.defaultStartingState();
+    scratch_start.event_stack = &.{};
+    var scratch = harness.newHistory(scratch_start);
+    const rejection = scratch.reconstructFromEventLogChecking(
+        result.replay.events,
+        @intCast(result.replay.events.len),
+        &event_handlers.processEvent,
+    );
+    try testing.expect(rejection == null);
+    // The full log lands on the main menu, exactly like the normal
+    // cross-session reconstruction of the same slice.
+    try testing.expect(scratch.current_state.screen == .main_menu);
+    try testing.expect(scratch.current_state.mission == null);
+}
+
+test "reconstructFromEventLogChecking: content that diverges the run rejects instead of panicking" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    try writeValidationFixtureMission(&harness);
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    try playFixtureRunToCompletion(&history, false);
+
+    // Move level 2's '=' out from under the run's recorded exit step: the
+    // replayed check_level_end no longer satisfies the win condition, so
+    // the recorded end_level diverges from what the handler pushes.
+    try harness.file_source.writeFile(
+        validation_fixture_path ++ "/level_2.txt",
+        \\Metadata
+        \\file_format_version 1
+        \\name Fixture Level Two
+        \\
+        \\Layout
+        \\..!..=
+        \\
+    );
+    const result = try readFixtureReplay(&harness, arena);
+    var scratch_start = test_harness.defaultStartingState();
+    scratch_start.event_stack = &.{};
+    var scratch = harness.newHistory(scratch_start);
+    const rejection = scratch.reconstructFromEventLogChecking(
+        result.replay.events,
+        @intCast(result.replay.events.len),
+        &event_handlers.processEvent,
+    );
+    try testing.expect(rejection != null);
+    try testing.expect(rejection.?.event_index < result.replay.events.len);
+    try testing.expect(rejection.?.message.len > 0);
+}
+
+test "reconstructFromEventLogChecking: an illegal recorded action rejects at the seed" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    try writeValidationFixtureMission(&harness);
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    try playFixtureRunToCompletion(&history, false);
+
+    // Remove level 1's exit tile entirely: the recorded exit step to (1,0)
+    // is now an unreachable tile — the seed-time legality check (the
+    // validatePlayerAction layer) rejects before any handler runs.
+    try harness.file_source.writeFile(
+        validation_fixture_path ++ "/level_1.txt",
+        \\Metadata
+        \\file_format_version 1
+        \\name Fixture Level One
+        \\
+        \\Layout
+        \\!
+        \\
+    );
+    const result = try readFixtureReplay(&harness, arena);
+    var scratch_start = test_harness.defaultStartingState();
+    scratch_start.event_stack = &.{};
+    var scratch = harness.newHistory(scratch_start);
+    const rejection = scratch.reconstructFromEventLogChecking(
+        result.replay.events,
+        @intCast(result.replay.events.len),
+        &event_handlers.processEvent,
+    );
+    try testing.expect(rejection != null);
+    try testing.expect(rejection.?.event_index < result.replay.events.len);
+    try testing.expect(rejection.?.message.len > 0);
+}
+
 /// Script one full validation run through the fixture mission: push
 /// start_validation, then per level either a full turn (skip + step onto
 /// the level end — 2 begun turns per level: the skip turn + the exit
