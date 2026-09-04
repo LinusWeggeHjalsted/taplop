@@ -11301,3 +11301,31 @@ validate-button/personal-best/stats-screen tests; main.zig editor
 playtest counter test (level entry already counts turn 1, the skip
 round begins turn 2); handler_tests_turnflow counter test moved to
 turn_start; validation_replay fixtures switched to turn_start events.
+
+## Spawn-relative coordinates (levels + hubs normalize to the '!' origin)
+
+Parse-time displacement: `loadLevel` + `loadHub` displace everything in a
+loaded layout by `-player_start` after the layout walk — the player spawn
+(`!`) is always world (0,0), coordinates can go negative.
+
+- The problem: the raw grid assigns world = grid index, so a layout-bbox
+  growth to the left/up (e.g. a decoration placed off the playable area —
+  decoration anchors carry no tile and expand the grid) shifted EVERY
+  existing thing at load. Absolute positions in recorded logs (validation
+  replays, session logs, crash dumps) silently broke even for edits that
+  didn't touch the run.
+- Spawn-relative positions are invariant under bbox growth in ANY
+  direction. The editor load path (`buildEditorMission` → `loadLevel`)
+  shares the normalization; the editor's writer already offsets by bbox
+  origin, so load→save round trips are idempotent. File bytes are
+  untouched → existing missions' content hashes unchanged.
+- Levels/hubs without a `!` are left as-is (nothing to anchor on).
+- Runtime coordinates of all shipped content changed (spawn-relative now);
+  tests pinning raw file positions updated to the displaced values
+  (loadLevel/loadHub parser tests, the beginnings editor round-trip test,
+  the validation-fixture level-2 expectations).
+
+Design: DESIGN → Logging & Replay → Spawn-relative coordinates. This is
+the first half of the revalidate plan (the second: a revalidate button
+that re-certifies a stored replay against new content) — normalization
+makes benign bbox edits replay-compatible so revalidation can pass.

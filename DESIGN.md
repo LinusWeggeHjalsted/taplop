@@ -607,6 +607,21 @@ gameplay — not in snapshots, not touched by replay.
 
 ## Logging & Replay
 
+### Spawn-relative coordinates (the parse-time normalization)
+
+`loadLevel` / `loadHub` displace EVERYTHING in a loaded layout by
+`-player_start` after the layout walk, so the player spawn (`!`) is always
+world (0,0) and coordinates can go negative. Rationale: the raw layout grid
+assigns world position = grid index, so growing the layout bbox left/up
+(adding a decoration off the playable area) shifted every existing thing —
+and absolute positions in recorded logs (validation replays, session logs,
+crash dumps) silently broke. Spawn-relative positions are invariant under
+bbox growth in ANY direction. The editor load path (`buildEditorMission` →
+`loadLevel`) shares the normalization, and the editor's writer already
+offsets by bbox origin, so load→save round trips are idempotent; the file
+bytes are untouched, so content hashes of existing missions are unaffected.
+Levels/hubs without a `!` are left as-is (nothing to anchor on).
+
 (session-log read/write/reconstruct is built; combat-log projection is built;
 combat-log UI rendering + replay-viewer UI still TODO)
 

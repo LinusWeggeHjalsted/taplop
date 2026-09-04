@@ -1604,16 +1604,16 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     try std.testing.expectEqual(@as(usize, 3), editor.levels[0].entity_placements.len);
     try std.testing.expectEqual(@as(u32, 0), editor.levels[0].entity_placements[0].type_id);
     // Ground items: mission-wide item palette. beginnings level_1 authors one
-    // ground item (Comfortable Boots at 'a' = (3,6)), level_2 another
-    // (Bamboo Spear) — two distinct types; level 0 has one placement.
-    // Level files author one item per stack (one layout char per item), so
-    // one placement per stack here.
+    // ground item (Comfortable Boots at 'a' — raw (3,6), (0,2) spawn-relative),
+    // level_2 another (Bamboo Spear) — two distinct types; level 0 has one
+    // placement. Level files author one item per stack (one layout char per
+    // item), so one placement per stack here.
     try std.testing.expectEqual(@as(usize, 2), editor.item_types.len);
     try std.testing.expectEqualStrings("Comfortable Boots", editor.item_types[0].id);
     try std.testing.expectEqualStrings("Bamboo Spear", editor.item_types[1].id);
     try std.testing.expectEqual(@as(usize, 1), editor.levels[0].item_placements.len);
     try std.testing.expectEqual(@as(u32, 0), editor.levels[0].item_placements[0].type_id);
-    try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 6 }, editor.levels[0].item_placements[0].position);
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 2 }, editor.levels[0].item_placements[0].position);
     try std.testing.expect(std.mem.eql(u8, "Player", editor.player_def.template.name));
     try std.testing.expect(std.mem.eql(u8, "player", editor.player_def.template.sprite));
 
@@ -1636,7 +1636,7 @@ test "editor building blocks: open -> playtest -> end -> close round-trips" {
     // The instantiated level carries the ground-item placements as stacks:
     // one boots stack at the 'a' position.
     try std.testing.expectEqual(@as(usize, 1), history.current_state.level.?.ground_items.len);
-    try std.testing.expectEqual(types.Vector2{ .x = 3, .y = 6 }, history.current_state.level.?.ground_items[0].position);
+    try std.testing.expectEqual(types.Vector2{ .x = 0, .y = 2 }, history.current_state.level.?.ground_items[0].position);
     try std.testing.expectEqual(@as(usize, 1), history.current_state.level.?.ground_items[0].items.len);
     try std.testing.expectEqualStrings("Comfortable Boots", history.current_state.level.?.ground_items[0].items[0].boots.name);
 

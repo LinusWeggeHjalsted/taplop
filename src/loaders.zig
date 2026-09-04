@@ -1782,6 +1782,35 @@ pub fn loadLevel(
         entity_list.items[0].position = position;
     }
 
+    // Spawn-relative coordinates: displace everything so the player
+    // spawn ('!') is the origin (0,0). World positions then stay
+    // invariant under layout-bbox growth in any direction — a decoration
+    // placed off the playable area expands the grid but shifts nothing,
+    // so absolute positions in recorded replays remain valid. The editor
+    // load path (buildEditorMission) reuses this loader, so editor
+    // coordinates agree; the editor's writer offsets by bbox origin, so
+    // the load→save round trip is idempotent. Levels without a '!' are
+    // left as-is (nothing to anchor on). See DESIGN → Logging & Replay
+    // → Spawn-relative coordinates.
+    if (player_start) |spawn| {
+        const offset = types.Vector2{ .x = -spawn.x, .y = -spawn.y };
+        for (tile_positions.items) |*tile| {
+            tile.* = .{ .x = tile.x + offset.x, .y = tile.y + offset.y };
+        }
+        for (entity_list.items) |*entity| {
+            entity.position = .{ .x = entity.position.x + offset.x, .y = entity.position.y + offset.y };
+        }
+        for (decoration_list.items) |*decoration| {
+            decoration.position = .{ .x = decoration.position.x + offset.x, .y = decoration.position.y + offset.y };
+        }
+        for (ground_item_list.items) |*stack| {
+            stack.position = .{ .x = stack.position.x + offset.x, .y = stack.position.y + offset.y };
+        }
+        if (level.level_end) |*end| {
+            end.* = .{ .x = end.x + offset.x, .y = end.y + offset.y };
+        }
+    }
+
     // Validate decoration footprints: each world footprint tile must not
     // overlap a level tile (placement invariant — see DESIGN → Decorations
     // & Footprint). Build a tile-position set for O(1) lookup.
@@ -1866,6 +1895,7 @@ pub fn loadHub(
     var decoration_list: std.ArrayList(types.Decoration) = .empty;
     var npc_list: std.ArrayList(types.NPC) = .empty;
     var exit_list: std.ArrayList(types.MissionExit) = .empty;
+    var player_start: ?types.Vector2 = null;
 
     if (findSection(sections, "Layout")) |section| {
         for (section.raw_lines, 0..) |row, raw_y| {
@@ -1879,6 +1909,7 @@ pub fn loadHub(
                     '.' => try tile_positions.append(allocator, position),
                     '!' => {
                         hub.player.position = position;
+                        player_start = position;
                         hub.player.name = dupeString(allocator, "Player");
                         hub.player.sprite = dupeString(allocator, "player");
                         try tile_positions.append(allocator, position);
@@ -1914,6 +1945,28 @@ pub fn loadHub(
                 }
             }
         }
+    }
+
+    // Spawn-relative coordinates — the same normalization as loadLevel
+    // ('!' → origin): session-log/crash replay reconstructs through hubs
+    // against current files, so hub positions must be bbox-growth-invariant
+    // too. See the loadLevel site + DESIGN → Logging & Replay →
+    // Spawn-relative coordinates.
+    if (player_start) |spawn| {
+        const offset = types.Vector2{ .x = -spawn.x, .y = -spawn.y };
+        for (tile_positions.items) |*tile| {
+            tile.* = .{ .x = tile.x + offset.x, .y = tile.y + offset.y };
+        }
+        for (decoration_list.items) |*decoration| {
+            decoration.position = .{ .x = decoration.position.x + offset.x, .y = decoration.position.y + offset.y };
+        }
+        for (npc_list.items) |*npc| {
+            npc.entity.position = .{ .x = npc.entity.position.x + offset.x, .y = npc.entity.position.y + offset.y };
+        }
+        for (exit_list.items) |*exit| {
+            exit.position = .{ .x = exit.position.x + offset.x, .y = exit.position.y + offset.y };
+        }
+        hub.player.position = .{ .x = hub.player.position.x + offset.x, .y = hub.player.position.y + offset.y };
     }
 
     // Validate decoration footprints (same as levels — see DESIGN →
@@ -2534,19 +2587,20 @@ test "loadLevel parses a complete level" {
     try std.testing.expectEqual(12, level.entities[2].max_health);
 
     // Tiles: all '.' and '!' and '=' positions, plus enemy positions
-    // Layout (top row = y=0, natural reading order):
-    //   row 0 (y=0) "  1.2" -> tiles at (2,0) enemy, (3,0), (4,0) enemy
-    //   row 1 (y=1) "..!.." -> tiles at (0,1), (1,1), (2,1) player, (3,1), (4,1)
-    //   row 2 (y=2) "  ..=" -> tiles at (2,2), (3,2), (4,2) level_end
+    // Layout (top row = y=0, natural reading order; then displaced
+    // spawn-relative so '!' is the origin):
+    //   row 0 (y=0) "  1.2" -> tiles at (-2,-1) enemy, (-1,-1), (0,-1) enemy
+    //   row 1 (y=1) "..!.." -> tiles at (-2,0), (-1,0), (0,0) player, (1,0), (2,0)
+    //   row 2 (y=2) "  ..=" -> tiles at (0,1), (1,1), (2,1) level_end
     try std.testing.expectEqual(11, level.level_tiles.len);
 
-    // Player position matches '!' location
-    try std.testing.expectEqual(2, level.entities[0].position.x);
-    try std.testing.expectEqual(1, level.entities[0].position.y);
+    // Player position: the '!' location is the origin.
+    try std.testing.expectEqual(0, level.entities[0].position.x);
+    try std.testing.expectEqual(0, level.entities[0].position.y);
 
-    // Level end matches '=' location
-    try std.testing.expectEqual(4, level.level_end.?.x);
-    try std.testing.expectEqual(2, level.level_end.?.y);
+    // Level end: raw (4,2) displaced by the spawn (2,1) → (2,1)
+    try std.testing.expectEqual(2, level.level_end.?.x);
+    try std.testing.expectEqual(1, level.level_end.?.y);
 }
 
 test "loadLevel decorations do not create tiles" {
@@ -2584,9 +2638,9 @@ test "loadLevel decorations do not create tiles" {
     try std.testing.expectEqual(1, level.decorations.len);
     try std.testing.expectEqualStrings("stone_1", level.decorations[0].name);
 
-    // Decoration position: row 1 (middle), col 1 -> y=1 (natural reading order)
-    // Row 0 (y=0) ".!.", Row 1 (y=1) ".A.", Row 2 (y=2) "..."
-    try std.testing.expectEqual(1, level.decorations[0].position.x);
+    // Decoration position: raw (1,1), displaced spawn-relative by the
+    // '!' at (1,0) → (0,1)
+    try std.testing.expectEqual(0, level.decorations[0].position.x);
     try std.testing.expectEqual(1, level.decorations[0].position.y);
 
     // Footprint (sprite-grid) + pixel dims resolved from the comptime table.
@@ -3008,24 +3062,24 @@ test "loadHub parses a complete hub" {
     // Metadata
     try std.testing.expectEqualStrings("Test Village", hub.name);
 
-    // Player position from '!'
+    // Player position from '!': the spawn is the origin.
     try std.testing.expectEqualStrings("Player", hub.player.name);
-    try std.testing.expectEqual(1, hub.player.position.x);
-    try std.testing.expectEqual(1, hub.player.position.y);
+    try std.testing.expectEqual(0, hub.player.position.x);
+    try std.testing.expectEqual(0, hub.player.position.y);
 
     // NPC
     try std.testing.expectEqual(1, hub.npcs.len);
     try std.testing.expectEqualStrings("Blacksmith", hub.npcs[0].entity.name);
-    // N at column 3, row 0 -> y=0 (natural reading order)
-    try std.testing.expectEqual(3, hub.npcs[0].entity.position.x);
-    try std.testing.expectEqual(0, hub.npcs[0].entity.position.y);
+    // N at raw (3,0), displaced by the spawn (1,1) → (2,-1)
+    try std.testing.expectEqual(2, hub.npcs[0].entity.position.x);
+    try std.testing.expectEqual(-1, hub.npcs[0].entity.position.y);
 
     // Mission exit
     try std.testing.expectEqual(1, hub.mission_exits.len);
     try std.testing.expectEqualStrings("first_mission", hub.mission_exits[0].mission_id);
-    // E at column 2, row 2 -> y=2
-    try std.testing.expectEqual(2, hub.mission_exits[0].position.x);
-    try std.testing.expectEqual(2, hub.mission_exits[0].position.y);
+    // E at raw (2,2), displaced by the spawn (1,1) → (1,1)
+    try std.testing.expectEqual(1, hub.mission_exits[0].position.x);
+    try std.testing.expectEqual(1, hub.mission_exits[0].position.y);
 
     // Tiles: all positions except decorations. No decorations here, so all non-space chars get tiles.
     // 5 + 5 + 5 = 15 total characters, minus 0 spaces = 15... wait, rows are 5 chars each

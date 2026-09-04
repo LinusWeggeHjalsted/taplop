@@ -5746,7 +5746,8 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
     history.current_state.player_data.player_name = "Mutated In Run";
 
     // Completing level 1 chains level 2 FROM THE FILE (the editor's
-    // single level is irrelevant): level_2.txt's '!' is at x=2, the
+    // single level is irrelevant): level_2.txt's '!' is at raw x=2
+    // (spawn-relative → 0,0 after the parse-time normalization), the
     // mission working copy persists (turns carried over), the mutation
     // survives, and the backup is still the campaign data.
     event_push.pushEvents(
@@ -5758,7 +5759,7 @@ test "a validation run chains the mission's levels (turns accumulate) and comple
     try testing.expect(history.current_state.screen == .level);
     try testing.expectEqualStrings("Fixture Level Two", history.current_state.level.?.name);
     try testing.expectEqual(
-        types.Vector2{ .x = 2, .y = 0 },
+        types.Vector2{ .x = 0, .y = 0 },
         history.current_state.level.?.entities[0].position,
     );
     try testing.expectEqual(@as(u32, 2), history.current_state.mission.?.current_level_index);
@@ -6036,7 +6037,8 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
     try testing.expectEqualStrings("Fixture Level Two", history.current_state.level.?.name);
 
     // Level 2: end the turn first (skip → turn_end → the round builder
-    // begins turn 4), then step onto the level end ('=' at x=3) DURING
+    // begins turn 4), then step onto the level end ('=' at raw x=3 —
+    // x=1 spawn-relative) DURING
     // that begun turn — end_level's transition clears the stack before
     // turn_end, but the turn still counts: turns_spent counts BEGUN
     // turns (the final exit turn included).
@@ -6050,7 +6052,7 @@ test "a validation run's slice reconstructs from a fresh state (no editor — th
     event_push.pushEvents(
         &history.current_state,
         &.{.{ .player_input_event = .{ .player_move_action = .{
-            .destination = .{ .x = 3, .y = 0 },
+            .destination = .{ .x = 1, .y = 0 },
         } } }},
         history.current_arena.allocator(),
     );
@@ -6129,8 +6131,9 @@ fn playFixtureRunToCompletion(history: *state.GameStateHistory, beeline: bool) !
             );
             runToIdle(history);
         }
-        // The level end: x=1 on level 1, x=3 on level 2.
-        const end_x: i32 = if (level_index == 0) 1 else 3;
+        // The level end: level 1's '=' at x=1; level 2's at raw x=3,
+        // x=1 after the spawn-relative normalization.
+        const end_x: i32 = 1;
         event_push.pushEvents(
             &history.current_state,
             &.{.{ .player_input_event = .{ .player_move_action = .{
