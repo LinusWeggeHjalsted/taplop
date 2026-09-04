@@ -626,6 +626,9 @@ pub const RaylibBackend = struct {
         // Vsync defaults on (matching Settings.vsync default); run() calls
         // applyVsync after loading settings to sync the window to the setting.
         rl.setConfigFlags(.{ .window_resizable = true, .vsync_hint = true });
+        // raylib defaults to LOG_INFO, printing every init/asset-load line;
+        // gate at warning so the console only shows real problems.
+        rl.setTraceLogLevel(.warning);
         rl.initWindow(width, height, title);
         rl.setExitKey(.null); // Escape is a game binding (options menu), not quit.
 
