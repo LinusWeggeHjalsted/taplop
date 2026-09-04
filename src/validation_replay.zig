@@ -10,6 +10,10 @@ const std = @import("std");
 const events_mod = @import("events.zig");
 const parser = @import("parser.zig");
 const session_log = @import("session_log.zig");
+const state_mod = @import("state.zig");
+const types = @import("types.zig");
+const loaders = @import("loaders.zig");
+const content_hash_mod = @import("content_hash.zig");
 
 const Event = events_mod.Event;
 
@@ -110,6 +114,141 @@ pub fn deriveValidationTurns(events: []const Event) u32 {
         }
     }
     return turns;
+}
+
+/// The verdict of `revalidateMission`: the stored run either still plays
+/// out identically against the current content (valid — the caller
+/// rewrites the replay with the new hash), or it doesn't (invalid — the
+/// user-facing reason says where it diverged). Pure decision data; the
+/// caller owns the file rewrite.
+pub const RevalidationResult = union(enum) {
+    valid: struct {
+        /// The CURRENT content's hash (hex) to stamp into the rewritten
+        /// replay.
+        content_hash_hex: [64]u8,
+        /// The run's derived turn count — unchanged by revalidation (the
+        /// events are the same run).
+        turns: u32,
+    },
+    invalid: struct {
+        /// User-facing failure reason (allocated with the caller's
+        /// `result_allocator`).
+        reason: []const u8,
+    },
+};
+
+/// Re-certify a stored validation replay against the CURRENT content of
+/// its mission dir (the Revalidate Mission button — see DESIGN → Custom
+/// Missions & Online Services → Validation replay). Pure computation +
+/// file READS only: the caller loads the replay, calls this, and owns the
+/// rewrite. The validity criterion is STRICT replay verification — the
+/// recorded run is reconstructed in checking mode
+/// (`GameStateHistory.reconstructFromEventLogChecking`) against the
+/// mission files as they are now; a content edit the run never touches
+/// (a decoration off the playable area, a rename) replays identically
+/// and passes, while anything that changes what the handlers would push
+/// (a moved tile on the route, a retuned enemy) diverges and rejects.
+/// This is the in-process miniature of the future server-side upload
+/// validation — same error-returning path, no fail-fast wrapper.
+///
+/// `history` is the TEMPLATE for the scratch history (settings, weapon/
+/// theme/salvage definitions, file_source, io — everything the handlers
+/// need); `apply_event` is the dispatch fn (event_handlers.processEvent
+/// at the call site, keeping this file import-cycle-free).
+pub fn revalidateMission(
+    history: *state_mod.GameStateHistory,
+    mission_dir: []const u8,
+    replay: ValidationReplay,
+    result_allocator: std.mem.Allocator,
+    apply_event: *const fn (*state_mod.GameStateHistory) void,
+) RevalidationResult {
+    // The scratch history: everything it allocates dies at return, so the
+    // result carries only by-value data (the hash) or result_allocator-
+    // owned text (failure reasons).
+    var scratch_backing = std.heap.ArenaAllocator.init(history.backing_allocator);
+    defer scratch_backing.deinit();
+    const scratch = scratch_backing.allocator();
+
+    const invalid = struct {
+        fn reason(allocator: std.mem.Allocator, comptime format: []const u8, args: anytype) RevalidationResult {
+            return .{ .invalid = .{
+                .reason = std.fmt.allocPrint(allocator, format, args) catch
+                    "revalidation failed (and formatting the reason failed)",
+            } };
+        }
+    }.reason;
+
+    // The CURRENT content's mission identity: a fresh read of mission.txt
+    // (uuid for the identity gate + level_count for the hash). The recorded
+    // files are read by the checking replay itself (start_validation
+    // re-loads them from disk).
+    const mission_path = std.fmt.allocPrint(scratch, "{s}/mission.txt", .{mission_dir}) catch
+        return invalid(result_allocator, "revalidation failed: out of memory", .{});
+    const mission_bytes = history.file_source.readFile(scratch, mission_path) catch
+        return invalid(result_allocator, "revalidation failed: could not read the mission's mission.txt", .{});
+    const mission_sections = parser.parseConfigFile(mission_bytes, scratch) catch
+        return invalid(result_allocator, "revalidation failed: the mission's mission.txt is malformed", .{});
+    const mission = loaders.loadMission(mission_sections, scratch) catch
+        return invalid(result_allocator, "revalidation failed: the mission's mission.txt is malformed", .{});
+
+    // Identity gate: the replay must certify THIS mission.
+    if (!std.mem.eql(u8, replay.mission_uuid, mission.uuid)) {
+        return invalid(result_allocator, "revalidation failed: the stored replay belongs to a different mission", .{});
+    }
+
+    // The checking replay: the recorded run against the current files.
+    // Empty stack — the slice starts at the seedable
+    // player_start_validation orchestrator (the cross-session shape; see
+    // the validation crown test), so the boot open_main_menu is
+    // deliberately NOT seeded.
+    const starting_state = state_mod.GameState{
+        .screen = .main_menu,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = null,
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    };
+    var scratch_history = state_mod.GameStateHistory.init(
+        scratch,
+        starting_state,
+        history.settings,
+        history.weapon_type_definitions,
+        history.color_theme_definitions,
+        history.salvage_definitions,
+        history.file_source,
+        history.io,
+    );
+    const rejection = scratch_history.reconstructFromEventLogChecking(
+        replay.events,
+        @intCast(replay.events.len),
+        apply_event,
+    );
+    if (rejection) |rejection_value| {
+        return invalid(
+            result_allocator,
+            "revalidation failed: the recorded run no longer matches this mission's content (event {d}): {s}",
+            .{ rejection_value.event_index, rejection_value.message },
+        );
+    }
+
+    // Clean replay: bind to the current content's hash.
+    const hash = content_hash_mod.computeMissionHash(
+        history.file_source,
+        scratch,
+        mission_dir,
+        mission.level_count,
+    ) catch
+        return invalid(result_allocator, "revalidation failed: could not hash the mission files", .{});
+
+    return .{ .valid = .{
+        .content_hash_hex = content_hash_mod.hashToHex(hash),
+        .turns = deriveValidationTurns(replay.events),
+    } };
 }
 
 /// Trackmania-style medal targets, derived from the author's turn count:

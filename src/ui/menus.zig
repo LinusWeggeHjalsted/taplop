@@ -76,7 +76,7 @@ pub fn buildOptionsMenu(
     } });
 
     const MenuButton = struct { label: []const u8, action: Action, tooltip: ?Tooltip = null };
-    var buttons: [8]MenuButton = undefined;
+    var buttons: [9]MenuButton = undefined;
     var button_count: usize = 0;
 
     buttons[button_count] = .{ .label = "Continue", .action = .toggle_options_menu };
@@ -182,6 +182,22 @@ pub fn buildOptionsMenu(
             .action = .new_editor_mission,
             .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
                 "Ctrl+N — replaces the mission being edited with a fresh one",
+            ))}) },
+        };
+        button_count += 1;
+
+        // Revalidate: re-certify the STORED validation replay against the
+        // current saved content — the author's post-edit repair for edits
+        // that don't affect the run (e.g. a decoration placed off the
+        // playable area): the recorded run is replayed against the files
+        // as they are now, and on success the replay is re-bound to the
+        // new content hash. Missions without a stored replay are told to
+        // run Validate first (the handler surfaces it).
+        buttons[button_count] = .{
+            .label = "Revalidate Mission",
+            .action = .revalidate_editor_mission,
+            .tooltip = .{ .body = try allocator.dupe(TooltipRow, &.{try spanRow(allocator, text(
+                "Re-checks the stored validation replay against the saved mission and re-binds it to the current content",
             ))}) },
         };
         button_count += 1;
@@ -1461,6 +1477,43 @@ test "buildEditorMissionBrowser: empty lists show per-tab placeholders, Back alw
         };
         try std.testing.expect(found_placeholder);
         try std.testing.expect(found_back);
+    }
+}
+
+test "buildOptionsMenu: Revalidate Mission is editor-only" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const metrics = FontMetrics{ .base_size = 100, .advances = [_]i32{50} ** 95 };
+    const screen = Rectangle{ .x = 0, .y = 0, .width = 3840, .height = 2160 };
+    const button_color: Color = .{ .r = 50, .g = 50, .b = 50 };
+
+    // Editor screen: the button is present (bottom of the editor block,
+    // under New Mission).
+    {
+        var elements: UiElementList = .empty;
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .editor, null, button_color, null);
+        var found = false;
+        for (elements.items) |element| switch (element) {
+            .button => |b| {
+                if (b.action == .revalidate_editor_mission) found = true;
+            },
+            else => {},
+        };
+        try std.testing.expect(found);
+    }
+
+    // Level screen: absent (the button only renders for the editor).
+    {
+        var elements: UiElementList = .empty;
+        try buildOptionsMenu(&elements, allocator, metrics, screen, .level, null, button_color, null);
+        for (elements.items) |element| switch (element) {
+            .button => |b| {
+                try std.testing.expect(b.action != .revalidate_editor_mission);
+            },
+            else => {},
+        };
     }
 }
 

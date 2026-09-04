@@ -11362,3 +11362,53 @@ reconstruction; a content edit that moves the level end out from under
 the run's recorded exit step rejects at the machinery-divergence layer;
 an edit that deletes the exit tile makes the recorded move illegal and
 rejects at the seed-legality layer.
+
+## Revalidate Mission (the re-certify button)
+
+Closes the scenario: an author validates a mission, places decorations
+off the playable area (or makes any edit the run doesn't touch), and the
+stored replay goes "unvalidated" on the content-hash mismatch — with no
+way to re-certify except replaying the whole mission by hand.
+
+Three slices:
+
+1. **Spawn-relative coordinates** (the earlier DONE entry) — makes
+   benign bbox-growing edits replay-COMPATIBLE (positions no longer
+   shift). Without it, revalidation would spuriously fail on exactly
+   the motivating edit.
+2. **Replay checking mode** (the earlier DONE entry) — the same
+   verification, catchable.
+3. **The feature** (this entry):
+   - `validation_replay.revalidateMission` — PURE (file reads only;
+     the caller owns the rewrite): load the stored replay, gate on the
+     mission.txt uuid identity, compute the current content hash, and
+     reconstruct the recorded run in a SCRATCH history via
+     reconstructFromEventLogChecking against the files as they are now.
+     Returns valid{hash_hex, turns} | invalid{reason}. Deliberately the
+     shape the future server-side upload validation wants (the
+     error-returning path, no fail-fast wrapper).
+   - The `player_revalidate_mission` orchestrator (handlers/
+     player_input.zig): entirely live-only (`!replaying` — the check
+     reads CURRENT files, not recorded state; a replayed session
+     re-records the click but re-runs nothing). On success rewrites
+     validation_replay.txt with the same events + the NEW content hash,
+     KEEPING the original created stamp + derived turns (same run,
+     re-certified). Every failure (no replay file, malformed, uuid
+     mismatch, divergence) surfaces via the error popup with the reason;
+     the old file is kept on failure.
+   - UI: the editor's options menu, "Revalidate Mission" under New
+     Mission (Action + applyAction + the options_action consumption —
+     save-first then push, the Validate contract). Button-only (no
+     keybind).
+   - validatePlayerAction arm: editor screen + editor present (the
+     structural bar; the handler owns the rest).
+
+Tests: benign edit (rename) re-binds the hash (turns/created/uuid kept,
+hash == the recomputed current hash and it CHANGED); divergent edit
+(moved level end) rejects + keeps the file; no-replay-file and
+uuid-mismatch reasons; the options-menu wiring end-to-end (save-first +
+orchestrator recorded + the popup); the button is editor-only in the
+options menu. Smoke-verified by flipping one assertion (observed FAIL,
+reverted). DESIGN → Custom Missions & Online Services → Validation
+replay → Revalidate; the deferred top-bar-promotion decision lives in
+TODO → Level Editor.

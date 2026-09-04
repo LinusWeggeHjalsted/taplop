@@ -745,6 +745,21 @@ pub const PlayerInputEvent = union(enum) {
         /// deep-copied when the event is recorded).
         mission_path: []const u8,
     },
+    // Options-menu Revalidate Mission: re-certify the stored validation
+    // replay against the CURRENT saved content. The checking-mode replay
+    // (GameStateHistory.reconstructFromEventLogChecking) re-runs the
+    // recorded events against the mission files as they are NOW; any
+    // divergence or illegality invalidates. On success the handler
+    // rewrites validation_replay.txt with the same events + the NEW
+    // content hash (the original created stamp is kept — same run,
+    // re-certified). The consumption site saves first (the Validate
+    // contract — the check certifies the saved files). See DESIGN →
+    // Custom Missions & Online Services → Validation replay.
+    player_revalidate_mission: struct {
+        /// The saved mission dir whose replay is re-certified (borrowed
+        /// from the push site; deep-copied when the event is recorded).
+        mission_path: []const u8,
+    },
     // Player inspector Import-button click: copy the session's player data
     // (or, with none, the new-game default save) into the editor player
     // loadout. The handler pushes `editor_import_player` — the loadout

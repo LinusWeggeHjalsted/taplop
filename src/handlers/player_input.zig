@@ -20,6 +20,9 @@ const shared = @import("shared.zig");
 const player_handlers = @import("player.zig");
 const editor_handlers = @import("../editor/handlers.zig");
 const planning = @import("../editor/planning.zig");
+const session_log = @import("../session_log.zig");
+const validation_replay = @import("../validation_replay.zig");
+const event_handlers = @import("../event_handlers.zig");
 
 const GameState = state.GameState;
 const GameStateHistory = state.GameStateHistory;
@@ -49,6 +52,84 @@ const salvageRegionOccupiedSlots = player_handlers.salvageRegionOccupiedSlots;
 /// machinery events as children via `pushEvents`. See `PlayerInputEvent` in
 /// events.zig + DESIGN → Determinism & Tiebreaking → Replay PLAYER-ACTION
 /// LEGALITY.
+/// The revalidate orchestrator's body: load the stored validation replay,
+/// re-certify it against the current content (validation_replay.
+/// revalidateMission — the checking-mode replay), and on success rewrite
+/// the file with the same events + the NEW content hash (the original
+/// created stamp is kept — same run, re-certified; the derived turn count
+/// is unchanged with it). Every failure surfaces via the error popup
+/// (recoverable class — the live session's state is untouched; the old
+/// replay file is kept so it still certifies the content it was recorded
+/// against).
+fn revalidateMissionArtifact(history: *GameStateHistory, mission_dir: []const u8) void {
+    const scratch = history.current_arena.allocator();
+
+    const replay_path = std.fmt.allocPrint(scratch, "{s}/validation_replay.txt", .{mission_dir}) catch
+        @panic("failed to allocate the validation replay path");
+    const replay_bytes = history.file_source.readFile(scratch, replay_path) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "This mission has no validation replay yet — run Validate first.",
+        );
+        return;
+    };
+    const sections = parser.parseConfigFile(replay_bytes, scratch) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "Revalidation failed: the stored validation replay is malformed.",
+        );
+        return;
+    };
+    const replay = validation_replay.loadValidationReplay(sections, scratch) catch {
+        history.session.setPendingError(
+            history.history_arena.allocator(),
+            "Revalidation failed: the stored validation replay is malformed.",
+        );
+        return;
+    };
+
+    const result = validation_replay.revalidateMission(
+        history,
+        mission_dir,
+        replay,
+        scratch,
+        event_handlers.processEvent,
+    );
+    switch (result) {
+        .invalid => |invalid| {
+            history.session.setPendingError(history.history_arena.allocator(), invalid.reason);
+        },
+        .valid => |valid| {
+            const replay_out = session_log.writeEventLogWithMetadata(
+                replay.events,
+                replay.created,
+                &.{
+                    .{ .name = "mission_uuid", .value = replay.mission_uuid },
+                    .{ .name = "content_hash", .value = &valid.content_hash_hex },
+                },
+                scratch,
+            ) catch {
+                history.session.setPendingError(
+                    history.history_arena.allocator(),
+                    "Revalidation failed: could not serialize the replay.",
+                );
+                return;
+            };
+            history.file_source.writeFile(replay_path, replay_out) catch {
+                history.session.setPendingError(
+                    history.history_arena.allocator(),
+                    "Revalidation failed: could not write validation_replay.txt.",
+                );
+                return;
+            };
+            history.session.setPendingError(
+                history.history_arena.allocator(),
+                "Revalidation passed — the stored replay again certifies the current mission content.",
+            );
+        },
+    }
+}
+
 pub fn handlePlayerInputEvent(
     history: *GameStateHistory,
     current: *GameState,
@@ -359,6 +440,15 @@ pub fn handlePlayerInputEvent(
             pushEvents(current, &.{.{ .meta_event = .{ .start_validation = .{
                 .mission_path = start.mission_path,
             } } }}, allocator);
+        },
+        // Options-menu Revalidate Mission (see the event's doc): entirely
+        // live-only — the artifact write is a side effect, and the check
+        // reads the mission files as they are NOW (not a pure function of
+        // recorded state), so a replayed/reconstructed session re-records
+        // the click but re-runs nothing.
+        .player_revalidate_mission => |revalidate| {
+            if (history.replaying) return;
+            revalidateMissionArtifact(history, revalidate.mission_path);
         },
         // Player inspector Import-button click: push the machinery event
         // (the loadout fields ride GameState — the import is undoable).

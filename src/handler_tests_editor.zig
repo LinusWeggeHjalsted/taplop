@@ -6225,6 +6225,206 @@ test "reconstructFromEventLogChecking: an illegal recorded action rejects at the
     try testing.expect(rejection.?.message.len > 0);
 }
 
+// ───────────── the revalidate orchestrator (the button path) ─────────────
+// player_revalidate_mission: load the stored replay, re-certify against
+// the CURRENT content, rewrite the file on success (new hash, same events
+// + created + derived turns).
+
+/// Push the revalidate orchestrator for the fixture dir + drain.
+fn pushRevalidateFixture(history: *state.GameStateHistory) void {
+    event_push.pushEvents(
+        &history.current_state,
+        &.{.{ .player_input_event = .{ .player_revalidate_mission = .{
+            .mission_path = validation_fixture_path,
+        } } }},
+        history.current_arena.allocator(),
+    );
+    runToIdle(history);
+}
+
+test "revalidate: a benign edit re-binds the stored replay to the new content" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    try writeValidationFixtureMission(&harness);
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    try playFixtureRunToCompletion(&history, false);
+
+    const before = try readFixtureReplay(&harness, arena);
+
+    // A benign edit: rename level 1 (metadata only — no event the run
+    // touches changes, so the checking replay passes; the content hash
+    // changes, which is what revalidation re-binds).
+    try harness.file_source.writeFile(
+        validation_fixture_path ++ "/level_1.txt",
+        \\Metadata
+        \\file_format_version 1
+        \\name Fixture Level One Prime
+        \\
+        \\Layout
+        \\!=
+        \\
+    );
+
+    pushRevalidateFixture(&history);
+    try testing.expect(history.session.pending_error != null);
+    try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "Revalidation passed") != null);
+
+    // Same run, new binding: events-derived turns + created + uuid are
+    // kept, the content hash is the CURRENT dir's (and it changed).
+    const after = try readFixtureReplay(&harness, arena);
+    try testing.expectEqual(before.turns, after.turns);
+    try testing.expectEqualStrings(before.replay.created, after.replay.created);
+    try testing.expectEqualStrings(before.replay.mission_uuid, after.replay.mission_uuid);
+    try testing.expect(!std.mem.eql(u8, before.replay.content_hash, after.replay.content_hash));
+
+    const mission_bytes = try harness.file_source.readFile(
+        arena,
+        validation_fixture_path ++ "/mission.txt",
+    );
+    const mission_sections = try parser.parseConfigFile(mission_bytes, arena);
+    const mission = try loaders.loadMission(mission_sections, arena);
+    const hash = try content_hash.computeMissionHash(
+        &harness.file_source,
+        arena,
+        validation_fixture_path,
+        mission.level_count,
+    );
+    try testing.expectEqualStrings(&content_hash.hashToHex(hash), after.replay.content_hash);
+}
+
+test "revalidate: a divergent edit rejects and keeps the stored replay unchanged" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    const arena = backing.allocator();
+    try writeValidationFixtureMission(&harness);
+
+    const levels = [_]types.EditorLevel{ .{}, .{} };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+    }));
+    runToIdle(&history);
+    try playFixtureRunToCompletion(&history, false);
+
+    const before = try readFixtureReplay(&harness, arena);
+
+    // A divergent edit: move level 2's '=' out from under the run's
+    // recorded exit step (the checking-mode divergence fixture).
+    try harness.file_source.writeFile(
+        validation_fixture_path ++ "/level_2.txt",
+        \\Metadata
+        \\file_format_version 1
+        \\name Fixture Level Two
+        \\
+        \\Layout
+        \\..!..=
+        \\
+    );
+
+    pushRevalidateFixture(&history);
+    try testing.expect(history.session.pending_error != null);
+    try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "no longer matches") != null);
+
+    // The stored replay is KEPT — it still certifies the content it was
+    // recorded against.
+    const after = try readFixtureReplay(&harness, arena);
+    try testing.expectEqualStrings(before.replay.content_hash, after.replay.content_hash);
+    try testing.expectEqualStrings(before.replay.created, after.replay.created);
+}
+
+test "revalidate: no stored replay / a different mission's uuid both reject" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+    try writeValidationFixtureMission(&harness);
+
+    // No run yet: the dir has no validation_replay.txt.
+    {
+        const levels = [_]types.EditorLevel{ .{}, .{} };
+        var history = harness.newHistory(editorStateWith(.{
+            .levels = &levels,
+            .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+        }));
+        runToIdle(&history);
+        pushRevalidateFixture(&history);
+        try testing.expect(history.session.pending_error != null);
+        try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "no validation replay") != null);
+    }
+
+    // A recorded run, then the mission's identity changes underneath it
+    // (a rewritten mission.txt uuid — the replay now belongs to a
+    // different mission).
+    {
+        const levels = [_]types.EditorLevel{ .{}, .{} };
+        var history = harness.newHistory(editorStateWith(.{
+            .levels = &levels,
+            .player_def = .{ .id = "Player", .template = .{ .name = "Editor Player" } },
+        }));
+        runToIdle(&history);
+        try playFixtureRunToCompletion(&history, false);
+        try harness.file_source.writeFile(
+            validation_fixture_path ++ "/mission.txt",
+            \\Metadata
+            \\file_format_version 2
+            \\mission_uuid 44444444-4444-4444-4444-444444444444
+            \\name Validation Fixture
+            \\level_count 2
+            \\
+        );
+        pushRevalidateFixture(&history);
+        try testing.expect(history.session.pending_error != null);
+        try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "different mission") != null);
+    }
+}
+
+test "the options-menu Revalidate button saves first, then revalidates the saved dir" {
+    var backing = std.heap.ArenaAllocator.init(testing.allocator);
+    defer backing.deinit();
+    var harness = Harness.init(backing.allocator());
+
+    // The Validate-button test's shape: an editor whose mission saves to
+    // a fresh dir. The dir has no validation replay yet — the click
+    // surfaces that, proving the save-first + orchestrator wiring.
+    const tiles = [_]types.Vector2{ .{ .x = 0, .y = 0 }, .{ .x = 1, .y = 0 } };
+    const levels = [_]types.EditorLevel{
+        .{ .level_tiles = &tiles, .player_start = .{ .x = 0, .y = 0 }, .level_end = .{ .x = 1, .y = 0 } },
+        .{ .level_tiles = &tiles, .player_start = .{ .x = 0, .y = 0 }, .level_end = .{ .x = 1, .y = 0 } },
+    };
+    var history = harness.newHistory(editorStateWith(.{
+        .levels = &levels,
+        .mission = .{ .name = "New Mission", .path = "missions/New Mission", .level_count = 2 },
+        .player_def = .{ .id = "Player", .template = .{ .name = "New Player", .sprite = "player", .team = 0 } },
+    }));
+    runToIdle(&history);
+
+    input_handlers.handleAnytimeInput(&history, .{
+        .options_action = .revalidate_editor_mission,
+    }, .{ .x = 0, .y = 0 }, &.{});
+    runToIdle(&history);
+
+    // The save landed (the memo) and the orchestrator ran against the
+    // fresh dir — no replay there yet, so the popup says so.
+    try testing.expect(history.session.editor_saved_mission != null);
+    try testing.expect(history.session.pending_error != null);
+    try testing.expect(std.mem.indexOf(u8, history.session.pending_error.?, "no validation replay") != null);
+    var found = false;
+    for (history.event_history.items) |event| {
+        if (event == .player_input_event and event.player_input_event == .player_revalidate_mission) {
+            found = true;
+        }
+    }
+    try testing.expect(found);
+}
+
 /// Script one full validation run through the fixture mission: push
 /// start_validation, then per level either a full turn (skip + step onto
 /// the level end — 2 begun turns per level: the skip turn + the exit

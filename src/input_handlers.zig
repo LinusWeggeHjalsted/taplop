@@ -1715,6 +1715,19 @@ pub fn handleAnytimeInput(
                     .mission_path = saved_dir,
                 } });
             },
+            // Options-menu Revalidate Mission: re-certify the stored
+            // validation replay against the current SAVED content. SAVE
+            // FIRST — same contract as Validate (the check certifies the
+            // files a player receives, and the hash binding must match
+            // them). A failed save surfaces its own popup — abort without
+            // revalidating.
+            .revalidate_editor_mission => {
+                if (current.editor == null) return;
+                const saved_dir = mission_io.saveEditorMission(history) orelse return;
+                pushPlayerActionAndDrain(history, .{ .player_revalidate_mission = .{
+                    .mission_path = saved_dir,
+                } });
+            },
             // Player inspector Import button: copy the session's player
             // data (or the new-game default, with none) into the editor
             // player loadout.

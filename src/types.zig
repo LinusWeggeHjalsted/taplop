@@ -223,6 +223,14 @@ pub const Action = enum {
     // ends the run back in the editor. See DESIGN → Level Editor
     // (playtest/validate framing).
     validate_editor_mission,
+    // The options-menu Revalidate Mission button (editor screen only):
+    // re-certify the stored validation replay against the current saved
+    // content — the recorded run is replayed in checking mode against the
+    // files as they are now, and on success the replay is re-bound to the
+    // new content hash. Pushes `player_revalidate_mission{mission_path}`
+    // (the consumption site saves first, the Validate contract). See
+    // DESIGN → Custom Missions & Online Services → Validation replay.
+    revalidate_editor_mission,
     // A settings-sidebar gradient swatch (world / enemy / player row):
     // open the centered theme picker for that role. The role rides in
     // `AnytimeInput.clicked_editor_gradient_role`; the picker target
@@ -612,6 +620,7 @@ pub fn actionBindingContexts(action: Action) BindingContextSet {
         .toggle_editor_metadata_sidebar,
         .test_editor_level,
         .validate_editor_mission,
+        .revalidate_editor_mission,
         .open_editor_level_gradient_picker,
         .select_editor_level_gradient,
         .toggle_editor_level_gradient_auto,

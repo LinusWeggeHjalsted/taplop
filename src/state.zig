@@ -1459,6 +1459,21 @@ pub const GameStateHistory = struct {
                         return;
                     }
                 },
+                // Revalidate: the options-menu button exists only on the
+                // editor screen with an editor present; the handler owns
+                // the rest (the replay file exists, the uuid identity
+                // gate, the checking replay). File-based like validate —
+                // no run-active check needed for a cross-session log.
+                .player_revalidate_mission => {
+                    if (self.current_state.screen != .editor) {
+                        self.rejectReplay("replay validation: player_revalidate_mission outside editor screen");
+                        return;
+                    }
+                    if (self.current_state.editor == null) {
+                        self.rejectReplay("replay validation: player_revalidate_mission with no editor");
+                        return;
+                    }
+                },
                 .player_set_editor_level => |set| {
                     if (self.current_state.screen != .editor) {
                         self.rejectReplay("replay validation: player_set_editor_level outside editor screen");

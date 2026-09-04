@@ -626,6 +626,13 @@ paragraph). Remaining work:
   `start_playtest` / `end_playtest` / `start_validation` / `end_validation` +
   `editor_set_active_level`; exit guard in `end_level` / `end_mission`;
   round-trip test). See DESIGN → Architecture → Level Editor.
+- **Revalidate Mission button** — DONE (the editor's options menu, under
+  New Mission: re-certifies the stored validation replay against the
+  current saved content — see DESIGN → Custom Missions & Online Services
+  → Validation replay → Revalidate). OPEN: consider promoting it to the
+  top bar next to Test/Validate (the options menu is where it landed for
+  now); also the success message currently rides the error popup — a
+  real notification/toast surface would be the proper home.
 - **Test/Validate buttons DONE** — the top-right icon buttons
   (`player_start_playtest` / `player_start_validation` orchestrators +
   `validatePlayerAction` arms) + the exit rules (restart continuation

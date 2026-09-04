@@ -1601,12 +1601,33 @@ for the run-side design.
   already was — the plan for general session-log sharing — unchanged by
   this.
 - **Turns are DERIVED, never stored** (see Turn counters above): count
-  the slice's `turn_end{entity_index = 0}` events
+  the slice's `turn_start{entity_index = 0}` events
   (`validation_replay.deriveValidationTurns`). The future server-side
   check reuses exactly this machinery: run the slice through
   `reconstructFromEventLog` headlessly (the test build already is
   headless — the crown test is the client-side prototype of the server
   check) and read `turns_spent` off the reconstructed state.
+- **Revalidate (the re-certify path).** `player_revalidate_mission`
+  (the editor's options menu — save first, the Validate contract: the
+  check certifies the saved files) re-certifies a stored replay against
+  the mission dir's CURRENT content: load the file, gate on the uuid
+  identity, replay the run in CHECKING MODE
+  (`reconstructFromEventLogChecking` — see DESIGN → Determinism &
+  Tiebreaking → Replay CHECKING mode) against the files as they are
+  now, and on success REWRITE the file with the same events + the NEW
+  `content_hash` (the original `created` stamp + derived turns are
+  kept — same run, re-certified). The criterion is strict replay
+  verification: benign edits the run never touches (a decoration placed
+  off the playable area — positions are spawn-relative, see DESIGN →
+  Logging & Replay → Spawn-relative coordinates — or a rename) replay
+  identically and pass; anything that changes what the handlers would
+  push diverges and rejects (the old file is KEPT — it still certifies
+  the content it was recorded against). `validation_replay.
+  revalidateMission` is pure (file reads only; the handler owns the
+  rewrite) and is deliberately the shape the future server-side upload
+  validation wants: the same error-returning path, no fail-fast
+  wrapper. The orchestrator is entirely live-only (`!replaying`) — the
+  check reads current files, not recorded state.
 - **Personal-best overwrite guard** (the clone auto-save pattern —
   auto-write on strictly-better, else offer manual overwrite): at
   `end_validation` success, build the new replay bytes + derive the new
