@@ -11181,3 +11181,49 @@ menu sets dormant — a playtest/validation run deactivates the binding),
 the consumption swap (fresh "New Mission" state, one template level,
 undo restores the old mission, main-menu no-op), and the options-menu
 builder pins the New Mission button + its ctrl+N tooltip.
+
+## Unified drag threshold (2px) + threshold-gated camera pan
+
+One movement threshold for every drag gesture, and the camera pan now
+respects it.
+
+- **The split before:** TWO constants with different values —
+  `ui.drag_threshold_pixels = 8` (inventory/skill slot drags, handleDrag)
+  and `input.drag_threshold_pixels = 0` (right-click inspect/delete
+  cancel, editor marquee, editor selection-move). Unrelated history: the
+  0 constant predated the UI drag lifecycle and was never retuned.
+- **Unified:** `ui/element.zig`'s `drag_threshold_pixels = 2` is the single
+  constant (re-exported `ui.drag_threshold_pixels`); `input.zig`'s copy is
+  DELETED (input.zig already imports ui.zig, so the layering holds —
+  no cycle: nothing in ui/ imports input.zig). All four input_gestures
+  sites + the three input_handlers test sites now reference the ui
+  constant. Strict `>` promotion everywhere (a zero value would still
+  tolerate a no-movement press — the rationale kept in the doc comments).
+- **Camera pan threshold:** `handleCameraPan` previously engaged the pan
+  on the very first held tick — a 1px wiggle panned. Now a right-press
+  records `camera_pan_press` (screen position) + the anchor (the world
+  point under the PRESS — press-anchored grab, so what you pressed on
+  sticks to the cursor), and the pan only ENGAGES once the pointer moves
+  beyond the threshold; crossing drops the press record (latch — moving
+  back near the press point keeps panning). A sub-threshold release is a
+  clean right-click, consistent with the pending-right-click gestures
+  that cancel at the same threshold. New `SessionState.camera_pan_press`
+  field, cleared alongside the anchor at main.zig's three pan-clear sites
+  (screen transition ×2, cameraRecenterKey). The pan offset still
+  persists after release (sticky pan — unchanged).
+- **Tile painting deliberately NOT changed:** the editor tile drag has no
+  threshold by design — click and drag paint the same thing (the tile
+  under the cursor), so there is no click-vs-drag distinction to make and
+  the press tile paints immediately (a clean click behaves identically to
+  the click path).
+- DESIGN updates: the camera-pan paragraph (press-record + threshold
+  engage + press-anchored solve) and the right-click-inspect coexistence
+  wording (both record at press; engage/cancel at the same threshold).
+
+Tests: new `handleCameraPan: pan engages only past the drag threshold`
+input_handlers test (the first camera-pan test at all — press records but
+doesn't pan, at-threshold stays unpromoted, past-threshold engages +
+latches, release clears anchor/press while the offset persists). The
+existing symbolic threshold tests (marquee, move-drag, right-click
+cancel) pass unchanged — they were written against the constant, not the
+value.

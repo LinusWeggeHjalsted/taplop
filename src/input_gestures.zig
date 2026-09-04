@@ -447,6 +447,13 @@ fn resolveInventoryClick(
 /// current pan offset (so screenToTile / floatWorldPoint map the cursor
 /// against the camera the player is actually seeing).
 ///
+/// The pan ENGAGES only once the pointer moves beyond
+/// `ui.drag_threshold_pixels` from the right-press: the press records the
+/// anchor (the world point under it) but a sub-threshold wiggle pans nothing,
+/// so a clean right-click stays clean (the pending-right-click gestures
+/// cancel at this same threshold). Once engaged the pan latches — a wiggle
+/// back near the press point keeps panning.
+///
 /// Pan-start is suppressed when the pointer is over a blocking UI element
 /// (same occlusion check as the tile cursor) — right-clicking a panel pans
 /// nothing. On player move (detected in frame()) the pan is cleared so the
@@ -477,16 +484,21 @@ pub fn handleCameraPan(
     if (pointer.right_pressed) {
         if (ui.blockingElementAt(ui_elements, pointer.position) != null) {
             session.camera_pan_anchor = null;
+            session.camera_pan_press = null;
             return;
         }
         const world = input.floatWorldPoint(pointer.position, camera, camera_zoom, viewport);
         session.camera_pan_anchor = .{ .world_x = world.x, .world_y = world.y };
+        session.camera_pan_press = pointer.position;
         return;
     }
 
     // No active drag — nothing to do on held/moved/released.
     if (session.camera_pan_anchor == null) {
-        if (pointer.right_released) session.camera_pan_anchor = null;
+        if (pointer.right_released) {
+            session.camera_pan_anchor = null;
+            session.camera_pan_press = null;
+        }
         return;
     }
 
@@ -501,6 +513,18 @@ pub fn handleCameraPan(
     // without the pan offset, so the offset is relative to the recentered
     // camera and survives a player move only until frame() clears it).
     if (pointer.right_held) {
+        // Threshold gate: until the pointer moves beyond the drag threshold
+        // there is no pan (a sub-threshold wiggle pans nothing, so a clean
+        // right-click stays clean — the pending-right-click gestures cancel
+        // at this same threshold). Crossing it drops the press record,
+        // latching the pan engaged: a later wiggle back near the press point
+        // keeps panning. Strict `>` matches the other drag gestures.
+        if (session.camera_pan_press) |press| {
+            const dx = pointer.position.x - press.x;
+            const dy = pointer.position.y - press.y;
+            if (dx * dx + dy * dy <= ui.drag_threshold_pixels * ui.drag_threshold_pixels) return;
+            session.camera_pan_press = null;
+        }
         const tile_pixels = input.tile_size_pixels * camera_zoom;
         const anchor = session.camera_pan_anchor.?;
         const cursor_x: f32 = @floatFromInt(pointer.position.x);
@@ -521,6 +545,7 @@ pub fn handleCameraPan(
 
     if (pointer.right_released) {
         session.camera_pan_anchor = null;
+        session.camera_pan_press = null;
     }
 }
 
@@ -678,7 +703,7 @@ pub fn handleRightClickInspect(
                 if (pointer.right_held) {
                     const dx = pointer.position.x - pending.press_position.x;
                     const dy = pointer.position.y - pending.press_position.y;
-                    if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
+                    if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
                         ui_state.pending_right_click = null;
                     }
                 }
@@ -783,7 +808,7 @@ pub fn handleRightClickEditorDelete(
                 if (pointer.right_held) {
                     const dx = pointer.position.x - pending.press_position.x;
                     const dy = pointer.position.y - pending.press_position.y;
-                    if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
+                    if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
                         ui_state.pending_right_click = null;
                     }
                 }
@@ -877,7 +902,7 @@ pub fn handleEditorMarquee(
         if (pointer.held) {
             const dx = pointer.position.x - marquee.press_position.x;
             const dy = pointer.position.y - marquee.press_position.y;
-            if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
+            if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
                 marquee.promoted = true;
             }
         }
@@ -1007,7 +1032,7 @@ pub fn handleEditorMoveDrag(
         if (pointer.held) {
             const dx = pointer.position.x - move_drag.press_position.x;
             const dy = pointer.position.y - move_drag.press_position.y;
-            if (dx * dx + dy * dy > input.drag_threshold_pixels * input.drag_threshold_pixels) {
+            if (dx * dx + dy * dy > ui.drag_threshold_pixels * ui.drag_threshold_pixels) {
                 move_drag.promoted = true;
             }
         }

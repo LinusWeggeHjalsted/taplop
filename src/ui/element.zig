@@ -267,11 +267,13 @@ pub const health_globe_border_height: i32 = slot_size; // 256 tall by design
 /// Gap between top-level UI items (e.g. bottom-bar segments).
 pub const ui_gap: i32 = 16;
 pub const slot_padding: i32 = 8;
-/// Movement threshold (reference-space pixels) separating a click from a
-/// drag: a press that moves less than this before release is a click; at or
-/// beyond it the press promotes to a drag (ghost appears). Standard UI
-/// disambiguation — see DESIGN → UI Framework.
-pub const drag_threshold_pixels: i32 = 8;
+/// Shared movement threshold (reference-space pixels) separating a click
+/// from a drag, used by EVERY drag gesture (slot drags, camera pan,
+/// marquee, selection move, right-click cancel). A press that moves no more
+/// than this before release is a click; strictly beyond it the press promotes
+/// to a drag (strict `>` so a zero value still tolerates a no-movement
+/// press). Standard UI disambiguation — see DESIGN → UI Framework.
+pub const drag_threshold_pixels: i32 = 2;
 /// Double-click window (microseconds, session-clock). Two plain single
 /// clicks on the same inventory slot + same button within this window fire
 /// the double-click intent. Modifier-clicks (ctrl/alt/shift) fire

@@ -608,6 +608,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             history.session.tile_cursor = null;
             history.session.camera_pan = null;
             history.session.camera_pan_anchor = null;
+            history.session.camera_pan_press = null;
             history.session.pressed_button = null;
             history.session.clearAnims();
         }
@@ -642,6 +643,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
             history.session.tile_cursor = null;
             history.session.camera_pan = null;
             history.session.camera_pan_anchor = null;
+            history.session.camera_pan_press = null;
             history.session.pressed_button = null;
             history.session.clearAnims();
         }
@@ -726,6 +728,7 @@ pub fn frame(backend: anytype, frame_state: *FrameState) void {
     {
         history.session.camera_pan = null;
         history.session.camera_pan_anchor = null;
+        history.session.camera_pan_press = null;
     }
 
     // Advance the animation clock by this frame's real-time delta, but only

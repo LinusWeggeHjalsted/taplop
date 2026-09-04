@@ -224,13 +224,20 @@ pub const SessionState = struct {
     validation_personal_best_turns: ?u32 = null,
     save_files_last_scan_us: u64 = save_files_never_scanned,
     // Camera pan (right-drag): offset in world pixels added to the player-
-    // centered camera, plus the drag anchor. Transient view state — off the
-    // undoable GameState, replay-safe by construction (like tile_cursor / the
-    // animation clock). Levels/hubs only; cleared on screen transition and on
-    // player move (the camera recenters when the player moves). See
-    // handleCameraPan in input_gestures.zig.
+    // centered camera, plus the drag anchor + press position. Transient view
+    // state — off the undoable GameState, replay-safe by construction (like
+    // tile_cursor / the animation clock). Levels/hubs only; cleared on screen
+    // transition and on player move (the camera recenters when the player
+    // moves). The pan engages only once the pointer moves beyond
+    // ui.drag_threshold_pixels from the press. See handleCameraPan in
+    // input_gestures.zig.
     camera_pan: ?types.Vector2 = null,
     camera_pan_anchor: ?CameraPanAnchor = null,
+    // Press screen position of a right-drag that hasn't crossed the drag
+    // threshold yet; dropped when the pan engages (latch — a wiggle back
+    // near the press point keeps panning) and on release. Read only by
+    // handleCameraPan.
+    camera_pan_press: ?types.ScreenPosition = null,
 
     /// Held keyboard modifiers at this frame, copied from the per-frame
     /// `PlayerInput.modifiers` each tick in `update()`. Read by `view()` to

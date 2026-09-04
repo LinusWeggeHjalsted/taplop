@@ -240,14 +240,6 @@ pub const PlayerInput = struct {
     text_edit_outcome: types.TextEditOutcome = .none,
 };
 
-/// Shared movement threshold for drag gestures (inventory drag once it
-/// gains click-vs-drag disambiguation, camera pan). A pointer move of more
-/// than this many reference pixels between press and release counts as a drag
-/// rather than a click. 0 = any move is a drag. Centralized so it can be
-/// tuned in one place if real-world use shows it needs a dead zone for jittery
-/// clicks. Referenced by handleCameraPan.
-pub const drag_threshold_pixels: i32 = 0;
-
 /// Synthetic key-repeat cadence (see `InputState.KeyRepeatEntry`). A held
 /// key fires its first repeat after this delay, then repeats at this
 /// interval. Owns the cadence so players cannot gain a real-time advantage

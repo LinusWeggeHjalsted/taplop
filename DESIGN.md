@@ -192,18 +192,23 @@ next session meets it as a surprise instead of a known.
   Panel widths come from `middlePanelWidth` (shared with
   `buildMiddlePanels`) so layout and clamp region can't drift apart.
 - **Camera pan (right-drag)** is transient view state on `SessionState`
-  (`camera_pan` + `camera_pan_anchor`), off `GameState` — replay-safe by
-  construction (like `tile_cursor` / the animation clock). Levels/hubs + the
-  editor viewport; cleared on player move, editor level-tab switch, or
-  screen transition — the `cameraRecenterKey` check in `update()`.
-  In the editor the camera centers on the active level's `player_start`
-  (`playerPosition` editor arm), so pan is relative to that. `handleCameraPan`
-  (input_gestures.zig) runs anytime (mid-wait / mid-turn), grabs the world
-  point under the cursor at drag start (sub-tile float precision via
-  `input.floatWorldPoint`, the float inverse of the camera transform), and
-  solves for the camera that keeps it under the cursor. Pan-start is
-  suppressed over blocking UI (`blockingElementAt`). Right mouse is the pan
-  button (cancel is Backspace only).
+  (`camera_pan` + `camera_pan_anchor` + `camera_pan_press`), off `GameState`
+  — replay-safe by construction (like `tile_cursor` / the animation clock).
+  Levels/hubs + the editor viewport; cleared on player move, editor
+  level-tab switch, or screen transition — the `cameraRecenterKey` check in
+  `update()`. In the editor the camera centers on the active level's
+  `player_start` (`playerPosition` editor arm), so pan is relative to that.
+  `handleCameraPan` (input_gestures.zig) runs anytime (mid-wait /
+  mid-turn). A right-press records the press position + the world point
+  under it (sub-tile float precision via `input.floatWorldPoint`, the float
+  inverse of the camera transform); the pan ENGAGES only once the pointer
+  moves beyond the shared `ui.drag_threshold_pixels` (the one threshold
+  every drag gesture uses — a sub-threshold wiggle pans nothing, keeping
+  clean right-clicks clean), then solves for the camera that keeps the
+  pressed point under the cursor (press-anchored, so the grabbed point
+  sticks to the cursor). Pan-start is suppressed over blocking UI
+  (`blockingElementAt`). Right mouse is the pan button (cancel is
+  Backspace only).
 - `build.zig` also generates `src/generated_lookups.zig` and the `generated`
   module (SkillId/EffectId enums) by scanning `src/skills/` and `src/effects/`,
   plus `generated_sprite_metadata.zig` (pixel dims from PNG IHDR for every
@@ -3608,9 +3613,11 @@ it shows is `UiState.inspected_entity_index`.
   on a world entity tile records a `PendingRightClick`; movement beyond
   `drag_threshold_pixels` cancels it (the press became a camera pan); a clean
   release toggles inspect (same → close, different → switch, none → open).
-  It coexists with `handleCameraPan` — a no-movement right-press sets both
-  the pan anchor + a pending right-click, and on release the anchor clears
-  (no offset was computed) while the pending right-click fires the inspect.
+  It coexists with `handleCameraPan` — both record state at right-press (the
+  pending right-click + the pan's press position/anchor), the pan engages
+  and the pending cancels at the same threshold, and on a sub-threshold
+  release the anchor clears (no offset was computed) while the
+  pending right-click fires the inspect.
   Suppressed over blocking UI (same `blockingElementAt` check as the tile
   cursor + pan) so a right-click on a panel never inspects the world behind
   it. Hubs are excluded — inspection is level-only by design.

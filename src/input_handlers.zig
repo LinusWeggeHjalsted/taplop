@@ -3054,7 +3054,7 @@ test "handleRightClickEditorDelete: clean click fires, drag cancels, UI press no
     );
     handleRightClickEditorDelete(
         &history,
-        .{ .right_held = true, .position = .{ .x = center.x + input.drag_threshold_pixels + 1, .y = center.y } },
+        .{ .right_held = true, .position = .{ .x = center.x + ui.drag_threshold_pixels + 1, .y = center.y } },
         &.{},
         camera,
         1.0,
@@ -3278,7 +3278,7 @@ test "handleEditorMarquee: shift-drag adds the region, shift-click toggles, shif
     // unpromoted (the end corner does not track before promotion).
     handleEditorMarquee(
         &history,
-        .{ .held = true, .position = .{ .x = tilePosition(.{ .x = 1, .y = 1 }).x + input.drag_threshold_pixels, .y = tilePosition(.{ .x = 1, .y = 1 }).y }, .modifiers = shift },
+        .{ .held = true, .position = .{ .x = tilePosition(.{ .x = 1, .y = 1 }).x + ui.drag_threshold_pixels, .y = tilePosition(.{ .x = 1, .y = 1 }).y }, .modifiers = shift },
         &.{},
         camera,
         1.0,
@@ -3482,7 +3482,7 @@ test "handleEditorMoveDrag: press on a selected thing moves it, plain click togg
     // threshold, then return to the press tile before releasing.
     handleEditorMoveDrag(
         &history,
-        .{ .held = true, .position = .{ .x = tilePosition(.{ .x = 1, .y = 1 }).x + input.drag_threshold_pixels + 10, .y = tilePosition(.{ .x = 1, .y = 1 }).y } },
+        .{ .held = true, .position = .{ .x = tilePosition(.{ .x = 1, .y = 1 }).x + ui.drag_threshold_pixels + 10, .y = tilePosition(.{ .x = 1, .y = 1 }).y } },
         &.{},
         camera,
         1.0,
@@ -3552,6 +3552,84 @@ test "handleEditorMoveDrag: press on a selected thing moves it, plain click togg
         viewport,
     );
     try std.testing.expect(history.session.ui_state.editor_move_drag == null);
+}
+
+test "handleCameraPan: pan engages only past the drag threshold" {
+    var backing = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer backing.deinit();
+    var harness = @import("test_harness.zig").Harness.init(backing.allocator());
+
+    const level_tiles = [_]types.Vector2{.{ .x = 1, .y = 0 }};
+    const levels = [_]types.EditorLevel{.{ .level_tiles = &level_tiles }};
+    var history = harness.newHistory(.{
+        .screen = .editor,
+        .event_stack = &.{},
+        .player_data = .{},
+        .camera = null,
+        .editor = .{ .levels = &levels },
+        .replay_viewer = null,
+        .campaign = null,
+        .mission = null,
+        .level = null,
+        .hub = null,
+    });
+
+    const camera = types.Camera{ .position = .{ .x = 128, .y = 128 } };
+    const viewport = input.ViewportSize{ .width = 3840, .height = 2160 };
+    const center = types.ScreenPosition{ .x = 1920, .y = 1080 };
+
+    // Press records the anchor + press position but does not pan yet.
+    input_gestures.handleCameraPan(
+        &history,
+        .{ .right_pressed = true, .position = center },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.camera_pan_anchor != null);
+    try std.testing.expect(history.session.camera_pan_press != null);
+    try std.testing.expect(history.session.camera_pan == null);
+
+    // Exactly AT the threshold (strict `>`): still no pan — a sub-threshold
+    // wiggle pans nothing, so a clean right-click stays clean.
+    input_gestures.handleCameraPan(
+        &history,
+        .{ .right_held = true, .position = .{ .x = center.x + ui.drag_threshold_pixels, .y = center.y } },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.camera_pan_press != null);
+    try std.testing.expect(history.session.camera_pan == null);
+
+    // Past the threshold: the pan engages (press record dropped, offset
+    // solved against the press-time anchor).
+    input_gestures.handleCameraPan(
+        &history,
+        .{ .right_held = true, .position = .{ .x = center.x + ui.drag_threshold_pixels + 1, .y = center.y } },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.camera_pan_press == null);
+    try std.testing.expect(history.session.camera_pan != null);
+
+    // Release: anchor + press clear; the offset persists (sticky pan —
+    // cleared on player move / screen transition, not on release).
+    input_gestures.handleCameraPan(
+        &history,
+        .{ .right_released = true, .position = .{ .x = center.x + ui.drag_threshold_pixels + 1, .y = center.y } },
+        &.{},
+        camera,
+        1.0,
+        viewport,
+    );
+    try std.testing.expect(history.session.camera_pan_anchor == null);
+    try std.testing.expect(history.session.camera_pan_press == null);
+    try std.testing.expect(history.session.camera_pan != null);
 }
 
 // --- Drag no-op gate (pure predicate) ---------------------------------------
