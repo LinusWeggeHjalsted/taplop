@@ -1,5 +1,5 @@
 //! Player-data mechanics: the `player_event` + `super_event` arms
-//! (`handlePlayerEvent` — learn/equip/salvage/swap verbs; 
+//! (`handlePlayerEvent` — learn/equip/salvage/swap verbs;
 //! `handleSuperEvent` — the entity↔PlayerData sync pair), the gear-slot
 //! mutators + salvage helpers, and the clone-harvest math. The input
 //! orchestrators live in player_input.zig; the cross-category helpers in
@@ -62,7 +62,6 @@ pub fn salvageRegionOccupiedSlots(
     return occupied.items;
 }
 
-
 fn gearSlotItem(player: *Entity, gear_slot: types.GearSlot) ?types.Item {
     return switch (gear_slot) {
         .main_hand => if (player.main_hand_weapon) |weapon| .{ .weapon = weapon } else null,
@@ -74,7 +73,6 @@ fn gearSlotItem(player: *Entity, gear_slot: types.GearSlot) ?types.Item {
         .boots => if (player.boots) |boots| .{ .boots = boots } else null,
     };
 }
-
 
 /// Whether an inventory item can be equipped into the given gear slot.
 /// Whether `item` can go into `gear_slot`. Shared by the equip/unequip
@@ -91,7 +89,6 @@ pub fn itemFitsGearSlot(item: types.Item, gear_slot: types.GearSlot) bool {
     };
 }
 
-
 /// Write an item into a gear slot. The caller must ensure the item fits the
 /// slot (see itemFitsGearSlot); the union access panics otherwise.
 fn setGearSlot(player: *Entity, gear_slot: types.GearSlot, item: types.Item) void {
@@ -106,7 +103,6 @@ fn setGearSlot(player: *Entity, gear_slot: types.GearSlot, item: types.Item) voi
     }
 }
 
-
 /// Empty a gear slot.
 fn clearGearSlot(player: *Entity, gear_slot: types.GearSlot) void {
     switch (gear_slot) {
@@ -119,7 +115,6 @@ fn clearGearSlot(player: *Entity, gear_slot: types.GearSlot) void {
         .boots => player.boots = null,
     }
 }
-
 
 /// Re-apply the mid-turn side effects of a gear change: weapons rewrite the
 /// first three skills (cancel targeting), boots change speed (refresh range).
@@ -141,7 +136,6 @@ fn applyGearChangeSideEffects(
         else => {},
     }
 }
-
 
 /// Set the incoming weapon's three skill cooldowns to `@max(old, new)` so
 /// equipping a fresh weapon can't bypass a cooldown that was ticking on the
@@ -180,38 +174,6 @@ fn transferWeaponCooldowns(
     }
 }
 
-
-/// Compare a just-completed run against an existing clone, per-material, on
-/// the per-turn rate (materials / turns). Pareto-strict: the new run is
-/// "strictly better" when its rate is `>=` the old rate for ALL materials
-/// AND `>` for at least one nonzero material. Tied-zero materials (a
-/// mission that gives no cloth in either run) don't block the comparison.
-/// Both turns values must be > 0 (the caller gates on that — see end_level).
-/// See DESIGN → Clones (clone system).
-pub fn cloneIsStrictlyBetter(
-    new_turns: u32,
-    new_materials: types.Materials,
-    old_turns: u32,
-    old_materials: types.Materials,
-) bool {
-    const fields = .{
-        .{ new_materials.wood, old_materials.wood },
-        .{ new_materials.metal, old_materials.metal },
-        .{ new_materials.leather, old_materials.leather },
-        .{ new_materials.cloth, old_materials.cloth },
-        .{ new_materials.knowledge, old_materials.knowledge },
-    };
-    var has_strict_gain = false;
-    inline for (fields) |pair| {
-        const new_rate = pair[0] / new_turns;
-        const old_rate = pair[1] / old_turns;
-        if (new_rate < old_rate) return false;
-        if (new_rate > old_rate) has_strict_gain = true;
-    }
-    return has_strict_gain;
-}
-
-
 /// Pure harvest payout: per material, `(materials_collected * turns_spent)
 /// / turns_to_complete` summed over all clones. The multiply happens BEFORE
 /// the divide so a clone whose per-turn rate is fractional (materials <
@@ -237,7 +199,6 @@ pub fn computeHarvest(clones: []const types.Clone, turns_spent: u32) types.Mater
     return payout;
 }
 
-
 /// Whether `skill_id` is in the player's `learned_skills` list. Pure —
 /// extracted from the `player_use_inventory_item` handler so the
 /// learn-vs-salvage decision for a skill tome is testable without the
@@ -249,8 +210,6 @@ pub fn isSkillLearned(learned_skills: []const types.SkillId, skill_id: types.Ski
     }
     return false;
 }
-
-
 
 /// Handle a `SuperEvent` — the entity↔PlayerData sync pair
 /// (build_player_from_data / build_data_from_player; see DESIGN →

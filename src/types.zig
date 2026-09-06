@@ -2051,9 +2051,10 @@ pub const MissionCompleteInfo = struct {
     damage_taken: u32 = 0,
     skills_used: u32 = 0,
     /// True when a clone for this mission already exists AND the just-completed
-    /// run was NOT strictly better (Pareto) — the overlay offers a manual
-    /// "Overwrite Clone" button. False on a first completion (auto-saved) or a
-    /// strictly-better run (auto-overwrote). See DESIGN → Clones (clone system).
+    /// run was not strictly faster (turns — the personal-best rule). The
+    /// overlay offers a manual "Overwrite Clone" button. False on a first
+    /// completion (auto-saved) or a strictly-faster run (auto-overwrote). See
+    /// DESIGN → Clones (clone system).
     overwrite_offered: bool = false,
     /// True when this "completion" was a VALIDATION RUN — end_validation
     /// populated the info so the mission-complete overlay renders over the

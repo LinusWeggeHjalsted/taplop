@@ -11502,3 +11502,25 @@ modifier hits an enemy at Chebyshev 2, not one at 3).
 Convention recorded: DESIGN → Architecture → "Skill logic always reads
 EFFECTIVE values" (raw reads are legal only as base inputs to a
 getEffective* call; runtime counters are read raw directly).
+
+## Clone auto-save decision: turns-only personal best
+
+The clone auto-save decision at mission completion no longer compares
+per-material harvest rates. It now matches the validation replay's
+personal-best rule (validation_replay.replayOverwriteDecision):
+strictly FEWER turns than the existing clone → auto-overwrite; tied or
+slower → keep the old clone and set overwrite_offered (the existing
+manual "Overwrite Clone" button on the mission-complete overlay).
+
+The harvest model is unchanged (a clone still stores
+materials_collected + turns_to_complete and pays out rate * turns on
+future completions) — only the overwrite DECISION is turns-only.
+Materials no longer influence whether a run replaces the clone; a
+material-rich slow run keeps the faster clone by default and can be
+stashed manually via the button.
+
+Removed: `cloneIsStrictlyBetter` (the Pareto per-material-rate helper)
++ its 4 turnflow tests; the decision is a single turns comparison
+inline in end_level. Comment/doc sites updated (types.zig overwrite_
+offered, events.zig + player_input.zig routing comments, DESIGN →
+Clones step 2/5).

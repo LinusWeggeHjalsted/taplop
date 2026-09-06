@@ -664,10 +664,14 @@ pub fn handleMetaEvent(
                             // Clone decision: harvest from all old
                             // clones, then auto-save a clone for this
                             // mission on first completion or a
-                            // strictly-better run (Pareto per-material
-                            // rate). Otherwise flag the overlay to
-                            // offer a manual overwrite button. See
-                            // DESIGN → Clones (clone system).
+                            // strictly-FASTER run — turns only, the
+                            // same personal-best rule as the validation
+                            // replay (replayOverwriteDecision):
+                            // strictly fewer turns wins, ties and slower
+                            // runs keep the old clone. Otherwise flag
+                            // the overlay to offer a manual overwrite
+                            // button. See DESIGN → Clones (clone
+                            // system).
                             const turns = mission.turns_spent;
                             const converted = mission.converted_materials_collected;
                             var existing_clone: ?types.Clone = null;
@@ -683,7 +687,7 @@ pub fn handleMetaEvent(
                                 clone_harvest_turns = turns;
                                 harvested = player_handlers.computeHarvest(current.player_data.clones, turns);
                                 if (existing_clone) |old| {
-                                    if (player_handlers.cloneIsStrictlyBetter(turns, converted, old.turns_to_complete, old.materials_collected)) {
+                                    if (turns < old.turns_to_complete) {
                                         clone_save_info = .{
                                             .mission_uuid = mission.uuid,
                                             .mission_name = mission.name,

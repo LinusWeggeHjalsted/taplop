@@ -1744,11 +1744,13 @@ So a clone is a permanent, compounding material factory keyed by mission.
 - **Completion flow** (in `end_level`'s last-level `.default` branch, after
   the completion sound, before the trailing `end_mission` push):
   1. Read `mission.{uuid, name, turns_spent, converted_materials_collected}`.
-  2. Find an existing clone by uuid. Compute `cloneIsStrictlyBetter` (Pareto:
-     `new_rate >= old_rate` for all 5 materials AND `>` for at least one).
-     Tied-zero materials (a mission that gives no cloth in either run) don't
-     block — `0 >= 0` passes, and `0 > 0` is false so it isn't the strict gain,
-     but a gain on any nonzero material makes the run strictly better.
+  2. Find an existing clone by uuid. Compare TURNS: a strictly faster run
+     (`turns_spent < old.turns_to_complete`) is the new personal best —
+     the same rule as the validation replay's overwrite guard
+     (`validation_replay.replayOverwriteDecision`): strictly faster wins,
+     ties and slower runs keep the old clone. Materials do not factor
+     into the decision (they still set the new clone's harvest rate —
+     that model is unchanged).
   3. Gate the whole block on `turns_spent > 0` (div-by-zero guard for dev
      skip-through via `player_skip_level`).
   4. **Harvest** (`harvest_clones` SuperEvent): sum over ALL existing clones,
@@ -1757,7 +1759,7 @@ So a clone is a permanent, compounding material factory keyed by mission.
      run's harvest (it pays out on future completions) — harvest runs before
      `save_clone_info` (LIFO).
   5. **Auto-save clone** (`save_clone_info` SuperEvent): if no existing clone
-     OR strictly better, replace/append. Otherwise set
+     OR strictly faster, replace/append. Otherwise set
      `MissionCompleteInfo.overwrite_offered = true` and DON'T auto-save — the
      overlay offers a manual "Overwrite Clone" button (`player_overwrite_clone`
      PlayerInputEvent → pushes `save_clone_info` from the `MissionCompleteInfo`

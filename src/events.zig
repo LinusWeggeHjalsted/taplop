@@ -1155,7 +1155,7 @@ pub const PlayerInputEvent = union(enum) {
     player_replay_mission: void,
     // Mission-complete overlay "Overwrite Clone" button (shown only when
     // `MissionCompleteInfo.overwrite_offered` is set — a clone exists AND the
-    // just-completed run was not strictly better). Handler reads
+    // just-completed run was not strictly faster). Handler reads
     // last_completed_mission and pushes save_clone_info with the run's data,
     // replacing the existing clone. See DESIGN → Clones (clone system).
     player_overwrite_clone: void,

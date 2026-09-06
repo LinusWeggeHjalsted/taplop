@@ -908,7 +908,7 @@ pub fn handlePlayerInputEvent(
         .player_overwrite_clone => {
             // Replace the existing clone for this mission with the just-
             // completed run's data. Only offered when overwrite_offered is
-            // set (a clone exists + the run was not strictly better). See
+            // set (a clone exists + the run was not strictly faster). See
             // DESIGN → Clones (clone system).
             const info = current.last_completed_mission orelse return;
             pushEvents(current, &.{.{ .super_event = .{ .save_clone_info = .{
