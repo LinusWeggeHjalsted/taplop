@@ -1272,6 +1272,21 @@ designed:
   impossible moves / unequipped or on-cooldown skills / invalid targets at
   the replay-seam; see DESIGN → Determinism & Tiebreaking → Replay
   PLAYER-ACTION LEGALITY validation. Server-side validation reuses this.
+  Settled (see DESIGN → Custom Missions & Online Services → Auth & the
+  server seam): the server ALWAYS revalidates by replaying the submitted
+  validation replay + deriving turns itself, and TAS is valid by design
+  (turn-based → any legal log is human-possible).
+  - **OPEN — game-version upload policy (decide at the server-seam
+    session):** all-versions support (player-friendly; the author lean)
+    vs. latest-only (force update). All-versions means retaining a
+    revalidator build per game version — replays only verify against
+    the EXACT logic that recorded them (verifyReplayMatch), so every
+    balance change forks verification semantics; latest-only keeps the
+    server to ONE build and comparable boards, and is near-free on web
+    (update = page reload) but strands native installs + mid-run patch
+    shipping. Adjacent decisions riding along: boards keyed by
+    (mission_uuid, content_hash) so content edits re-key the board; and
+    keep-and-stamp vs wipe existing entries on balance patches.
 - Custom content hosting: upload/download of missions (+ replays?),
   content-addressing (hash) for reproducibility, moderation, metadata.
 - Auth/identity model (if any).

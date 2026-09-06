@@ -1708,6 +1708,21 @@ the campaign.
 - **Auth model (real accounts vs. device-identity) is UNDECIDED** — only
   affects the publish action, which is the last thing to build. The
   local-first story doesn't depend on it. Decide when the server seam lands.
+- **Leaderboard integrity: the server REPLAYS, it never trusts claims.**
+  Every leaderboard upload is a submitted validation replay; the server
+  runs it through the same headless reconstruction the client uses for
+  revalidation (`reconstructFromEventLogChecking` — the crown test is the
+  prototype of this check), which gates each event on
+  `validatePlayerAction` legality + natural-stack verification, and
+  DERIVES the turns itself. Client-claimed times are never read.
+- **TAS is valid BY DESIGN — no anti-TAS work, ever.** The game is
+  turn-based, so any legal event log is in principle reproducible by a
+  human player, one decision at a time. The leaderboard certifies
+  "possible + reproducible", not "hand-played"; a hand-crafted legal
+  log passing the check is not a cheat — it's a route.
+- **Game-version upload policy is UNDECIDED (deferred to the server
+  seam session)** — see TODO → Online Services for the open question and
+  the tradeoffs.
 - **Server component is out of scope for the single-file exe** — a separate
   backend. The client only needs a thin HTTP fetch/submit seam + an auth
   token stored in the persistent dir.
