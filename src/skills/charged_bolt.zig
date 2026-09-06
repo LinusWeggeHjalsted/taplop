@@ -11,15 +11,15 @@ const Event = events.Event;
 const Skill = skill_mod.Skill;
 
 /// Charged Bolt: a spell. Attacks a single target within range for 1x
-/// effective spell damage with a DOUBLED converted momentum bonus —
+/// effective spell damage with a TRIPLED converted momentum bonus —
 /// getEffectiveSpellDamage already folds the momentum conversion in once
-/// (see Entity.getEffectiveSpellDamage); "doubled" adds it a second time
-/// (the impale/skewer precedent).
+/// (see Entity.getEffectiveSpellDamage); "tripled" adds it two more
+/// times (the impale/skewer precedent, one step further).
 pub const skill = Skill{
     .name = "Charged Bolt",
     .skill_type = .spell,
     .deals_damage = true,
-    .description = "Attack target with double converted momentum bonus",
+    .description = "Attack target with triple converted momentum bonus",
     .uses_targeting = true,
     .range = 3,
     .radius = null,
@@ -44,7 +44,7 @@ fn getValidTargets(
 }
 
 /// AI options: the weakest hostile (focus-fire) at rating 2 — one
-/// significant bonus (doubled momentum) over a plain hit.
+/// significant bonus (tripled momentum) over a plain hit.
 fn aiOptions(
     caster_index: u32,
     game_state: GameState,
@@ -69,7 +69,7 @@ fn playerPrepareSkill(
 }
 
 /// Use: attack the target for 1x effective spell damage with the converted
-/// momentum bonus applied a second time.
+/// momentum bonus applied two more times (triple total).
 fn useSkill(
     caster_index: u32,
     target: ?Vector2,
@@ -82,7 +82,7 @@ fn useSkill(
 
     const defender_index = helpers.hostileEntityAt(caster_index, target_position, game_state) orelse return &.{};
 
-    const damage = caster.getEffectiveSpellDamage() + caster.getConvertedMomentum();
+    const damage = caster.getEffectiveSpellDamage() + caster.getConvertedMomentum() * 2;
 
     return helpers.ownedEvents(allocator, &.{
         .{ .sub_level_event = .{ .attack = .{

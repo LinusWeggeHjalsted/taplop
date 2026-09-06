@@ -1452,13 +1452,13 @@ test "slam: options on the stacked-bump ladder (retrofit)" {
     }
 }
 
-test "charged bolt: useSkill attacks with the doubled momentum bonus" {
+test "charged bolt: useSkill attacks with the tripled momentum bonus" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
     // Amulet spell damage 6, momentum 4 (log2 → converted bonus 2):
     // getEffectiveSpellDamage folds the conversion in once (6 + 2 = 8),
-    // the doubled bonus adds it again → 10.
+    // the tripled bonus adds it twice more → 12.
     const caster = types.Entity{
         .team = 0,
         .position = .{ .x = 0, .y = 0 },
@@ -1477,7 +1477,7 @@ test "charged bolt: useSkill attacks with the doubled momentum bonus" {
     const attack = result[0].sub_level_event.attack;
     try testing.expectEqual(@as(u32, 0), attack.attacker_index);
     try testing.expectEqual(@as(u32, 1), attack.defender_index);
-    try testing.expectEqual(@as(u32, 10), attack.outgoing_damage);
+    try testing.expectEqual(@as(u32, 12), attack.outgoing_damage);
 }
 
 test "charged bolt: options offer the focus-fire pick at 2 (one significant bonus)" {
