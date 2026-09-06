@@ -67,8 +67,10 @@ fn playerPrepareSkill(
     return helpers.highlightTargets(getValidTargets(caster_index, game_state, allocator));
 }
 
-/// Use: attack for 2x off-hand damage with a doubled converted momentum bonus
-/// (see Impale for why one extra getConvertedMomentum doubles it).
+/// Use: attack for 2x the fully-modified off-hand damage, with the doubled
+/// converted momentum bonus folded in BEFORE the multiplier (multipliers
+/// apply last — see DESIGN → Architecture → Damage multiplier ordering;
+/// see Impale for why one extra getConvertedMomentum doubles it).
 fn useSkill(
     caster_index: u32,
     target: ?Vector2,
@@ -82,8 +84,8 @@ fn useSkill(
     const defender_index = helpers.hostileEntityAt(caster_index, target_position, game_state) orelse return &.{};
 
     const off_hand_damage: u32 = if (caster.off_hand_weapon) |weapon| weapon.weapon_damage else 0;
-    const base_damage = off_hand_damage * 2;
-    const damage = caster.getEffectiveOutgoingDamage(base_damage) + caster.getConvertedMomentum();
+    const modified_damage = caster.getEffectiveOutgoingDamage(off_hand_damage) + caster.getConvertedMomentum();
+    const damage = modified_damage * 2; // 2x, multiplier last
 
     return helpers.ownedEvents(allocator, &.{
         .{ .sub_level_event = .{ .attack = .{

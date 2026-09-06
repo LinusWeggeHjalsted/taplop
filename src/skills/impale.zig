@@ -67,9 +67,12 @@ fn playerPrepareSkill(
     return helpers.highlightTargets(getValidTargets(caster_index, game_state, allocator));
 }
 
-/// Use: attack for 1.5x main-hand damage with a doubled converted momentum
-/// bonus. getEffectiveOutgoingDamage already adds converted momentum once
-/// (like the base attack), so adding one more getConvertedMomentum doubles it.
+/// Use: attack for 1.5x the fully-modified main-hand damage, with the
+/// doubled converted momentum bonus folded in BEFORE the multiplier
+/// (multipliers apply last — see DESIGN → Architecture → Damage multiplier
+/// ordering). getEffectiveOutgoingDamage already adds converted momentum
+/// once (like the base attack), so adding one more getConvertedMomentum
+/// doubles it.
 fn useSkill(
     caster_index: u32,
     target: ?Vector2,
@@ -83,8 +86,8 @@ fn useSkill(
     const defender_index = helpers.hostileEntityAt(caster_index, target_position, game_state) orelse return &.{};
 
     const main_hand_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
-    const base_damage = main_hand_damage + main_hand_damage / 2; // 1.5x, integer math
-    const damage = caster.getEffectiveOutgoingDamage(base_damage) + caster.getConvertedMomentum();
+    const modified_damage = caster.getEffectiveOutgoingDamage(main_hand_damage) + caster.getConvertedMomentum();
+    const damage = helpers.damageTimesOneAndAHalf(modified_damage);
 
     return helpers.ownedEvents(allocator, &.{
         .{ .sub_level_event = .{ .attack = .{

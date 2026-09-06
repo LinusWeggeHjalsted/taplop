@@ -89,11 +89,11 @@ fn useSkill(
     const defender_index = helpers.hostileEntityAt(caster_index, target_position, game_state) orelse return &.{};
     const defender = level.entities[defender_index];
 
-    // Damage: 1.5x if the target is above half health (integer math).
+    // Damage: 1.5x if the target is above half health.
     const base_damage: u32 = if (caster.main_hand_weapon) |weapon| weapon.weapon_damage else 0;
     var damage: u32 = caster.getEffectiveOutgoingDamage(base_damage);
     if (defender.current_health * 2 > defender.getEffectiveMaxHealth()) {
-        damage = damage + damage / 2;
+        damage = helpers.damageTimesOneAndAHalf(damage);
     }
 
     return helpers.ownedEvents(allocator, &.{

@@ -1980,6 +1980,20 @@ So a clone is a permanent, compounding material factory keyed by mission.
   doc, then deleted — its use forced any encounter to run ≥5 extra turns
   with zero player decisions. When porting the remaining Unity designs,
   screen them against these principles first.
+- **Damage multiplier ordering (multipliers apply last).** When a skill
+  scales its damage (Throw/Retreating Swipe/Impale's 1.5x, Skewer's 2x,
+  Chop/Stab/Slice's conditional 1.5x), the multiplier applies to the
+  FULLY-MODIFIED total: first aggregate every additive modifier — the
+  weapon/spell pipeline (`getEffectiveOutgoingDamage`/
+  `getEffectiveSpellDamage`: gear, effects, converted momentum) plus any
+  skill-specific additive bonus (Impale/Skewer's doubled momentum rider
+  rides INSIDE the multiplier) — THEN multiply. Never scale the raw
+  weapon/spell number and add modifiers after. The shared 1.5x helper is
+  `skill_helpers.damageTimesOneAndAHalf` (Skewer's 2x is a one-off). Split
+  payload multiplications (Bash/Powerful Shot/Shockwave's collision damage
+  = half the effective total) already satisfy the rule, and Charged Bolt's
+  momentum ×3 is order-invariant (it multiplies a single modifier, not the
+  total).
 - **One top-level event per player action (orchestrator convention).** Each
   player input (`handleIdleInput`) pushes exactly ONE top-level event; if the
   action needs several verbs, the event is an orchestrator whose handler

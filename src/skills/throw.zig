@@ -66,7 +66,9 @@ fn playerPrepareSkill(
     return helpers.highlightTargets(getValidTargets(caster_index, game_state, allocator));
 }
 
-/// Use: attack the target for 1.5x off-hand damage.
+/// Use: attack the target for 1.5x the fully-modified off-hand damage
+/// (multipliers apply last — see DESIGN → Architecture → Damage multiplier
+/// ordering).
 fn useSkill(
     caster_index: u32,
     target: ?Vector2,
@@ -80,8 +82,7 @@ fn useSkill(
     const defender_index = helpers.hostileEntityAt(caster_index, target_position, game_state) orelse return &.{};
 
     const off_hand_damage: u32 = if (caster.off_hand_weapon) |weapon| weapon.weapon_damage else 0;
-    const base_damage = off_hand_damage + off_hand_damage / 2; // 1.5x, integer math
-    const damage = caster.getEffectiveOutgoingDamage(base_damage);
+    const damage = helpers.damageTimesOneAndAHalf(caster.getEffectiveOutgoingDamage(off_hand_damage));
 
     return helpers.ownedEvents(allocator, &.{
         .{ .sub_level_event = .{ .attack = .{

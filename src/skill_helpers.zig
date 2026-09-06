@@ -365,6 +365,14 @@ pub fn collidingTargetCount(
 /// to that target). "Per colliding target" is honest for an AoE — the
 /// cast has no target choice (contrast the single-target skills, whose
 /// collision bump rides their pick). 0 when nothing would be hit.
+/// 1.5x damage, integer math (base + base/2). Damage multipliers apply
+/// LAST — to the fully-modified damage (gear + effects + momentum + any
+/// skill-specific additive bonus), never to the raw weapon/spell number.
+/// See DESIGN → Architecture → Damage multiplier ordering.
+pub fn damageTimesOneAndAHalf(base_damage: u32) u32 {
+    return base_damage + base_damage / 2;
+}
+
 pub fn aoeKnockbackPriority(target_count: u32, colliding_count: u32, base_priority: u32) u32 {
     if (target_count == 0) return 0;
     return base_priority + target_count - 1 + colliding_count;

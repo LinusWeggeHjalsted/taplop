@@ -11458,3 +11458,27 @@ skill (self-stun as a cost), a design type rejected at all costs. It came
 from the original Unity design doc; the TODO Tier A entry now records the
 removal so a future skills pass doesn't re-port it as "missing". Tier A
 count: 19 skills.
+
+## Damage multiplier ordering (multipliers apply last)
+
+Skill damage multipliers now apply to the FULLY-MODIFIED total, never the
+raw weapon/spell number: aggregate every additive modifier first (the
+getEffective* pipeline: gear, effects, converted momentum — plus
+skill-specific additive riders), then multiply. Convention: DESIGN →
+Architecture → Damage multiplier ordering; the shared 1.5x helper is
+`skill_helpers.damageTimesOneAndAHalf`.
+
+- Reordered (were multiply-raw-then-modify): Throw, Retreating Swipe
+  (1.5x of the effective off-hand damage), Impale, Skewer. For
+  Impale/Skewer the doubled-momentum rider rides INSIDE the multiplier
+  (author decision: "all modifiers first" is literal — no exceptions;
+  Impale's momentum now effectively counts 3x: 2 × 1.5, a buff).
+- Already compliant, refactored onto the helper for structural
+  consistency: Chop, Stab, Slice (conditional 1.5x after the pipeline —
+  they always did it this way).
+- Unaffected: Bash/Powerful Shot/Shockwave (collision payload = half the
+  already-effective total), Charged Bolt (momentum ×3 multiplies a single
+  modifier — order-invariant).
+- Tests: three ordering regression guards in skill_tests.zig (Throw with
+  a gloves bonus proving the multiplier hits the modified total;
+  Impale/Skewer with momentum proving the rider rides inside).

@@ -40,6 +40,9 @@ const bull_form_skill = @import("skills/bull_form.zig");
 const that_which_rushes_skill = @import("skills/that_which_rushes.zig");
 const that_which_explodes_skill = @import("skills/that_which_explodes.zig");
 const promise_of_death_skill = @import("skills/promise_of_death.zig");
+const throw_skill = @import("skills/throw.zig");
+const impale_skill = @import("skills/impale.zig");
+const skewer_skill = @import("skills/skewer.zig");
 
 const that_which_explodes_effect = @import("effects/that_which_explodes.zig");
 const promise_of_death_effect = @import("effects/promise_of_death.zig");
@@ -1927,4 +1930,79 @@ test "promise of death: full-sweep reset + full heal on opponent death" {
     };
     try testing.expectEqual(@as(usize, 4), resets);
     try testing.expect(saw_heal);
+}
+
+test "damage multiplier ordering: Throw's 1.5x applies to the modified total" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // Off-hand 4 + gloves bonus 3 → effective 7; 1.5x of the MODIFIED
+    // total = 10. (The old order — 1.5x of the raw 4, then the gloves
+    // bonus — would give 9.) Regression guard for DESIGN → Architecture →
+    // Damage multiplier ordering.
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .off_hand_weapon = .{ .weapon_damage = 4 },
+        .gloves = .{ .damage_bonus = 3 },
+    };
+    const defender = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, defender },
+        &.{},
+    );
+
+    const result = throw_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), result.len);
+    try testing.expectEqual(@as(u32, 10), result[0].sub_level_event.attack.outgoing_damage);
+}
+
+test "damage multiplier ordering: Impale's doubled momentum rides inside the multiplier" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // Main 4, momentum 4 (converted bonus 2): pipeline = 4 + 2 = 6, the
+    // doubled-momentum rider → 8, then 1.5x LAST = 12. (The old order gave
+    // 10: 1.5x of the raw 4, +2 momentum, +2 more.)
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .main_hand_weapon = .{ .weapon_damage = 4 },
+        .momentum = 4,
+    };
+    const defender = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, defender },
+        &.{},
+    );
+
+    const result = impale_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), result.len);
+    try testing.expectEqual(@as(u32, 12), result[0].sub_level_event.attack.outgoing_damage);
+}
+
+test "damage multiplier ordering: Skewer's doubled momentum rides inside the multiplier" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // Off-hand 4, momentum 4 (converted bonus 2): pipeline = 6, doubled
+    // momentum → 8, then 2x LAST = 16.
+    const caster = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .off_hand_weapon = .{ .weapon_damage = 4 },
+        .momentum = 4,
+    };
+    const defender = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ caster, defender },
+        &.{},
+    );
+
+    const result = skewer_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 1), result.len);
+    try testing.expectEqual(@as(u32, 16), result[0].sub_level_event.attack.outgoing_damage);
 }
