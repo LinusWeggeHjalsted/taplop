@@ -11482,3 +11482,23 @@ Architecture → Damage multiplier ordering; the shared 1.5x helper is
 - Tests: three ordering regression guards in skill_tests.zig (Throw with
   a gloves bonus proving the multiplier hits the modified total;
   Impale/Skewer with momentum proving the rider rides inside).
+
+## Effective-value audit of all skill logic
+
+Author-requested verification that skill logic never uses base values
+where modifiers should apply. Audited: all 43 skills (damage bases,
+range/radius/distance reads, stun + skill durations, heal amounts,
+half-health conditions), the 9 effects, skill_helpers, ai_threat,
+ai_movement, and the cooldown system.
+
+Result: clean everywhere EXCEPT one catch —
+`effects/that_which_explodes.zig` hardcoded the explosion radius
+(`const radius: i32 = 1`), so radius modifiers (That Which Reaches +1)
+did nothing for the explosion. Fixed to
+`holder.getEffectiveRadius(1)`; TWR + TWE on the same holder now
+explode at radius 2. Regression test added (holder with a +1 radius
+modifier hits an enemy at Chebyshev 2, not one at 3).
+
+Convention recorded: DESIGN → Architecture → "Skill logic always reads
+EFFECTIVE values" (raw reads are legal only as base inputs to a
+getEffective* call; runtime counters are read raw directly).

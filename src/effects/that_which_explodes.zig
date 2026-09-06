@@ -11,10 +11,9 @@ const Event = events.Event;
 const Effect = effect_mod.Effect;
 
 /// That Which Explodes: while active, when the holder is dealt attack
-/// damage, the holder attacks every hostile within radius 1 of itself for
-/// 1x effective SPELL damage (utility-skill damage rule — see DESIGN →
-/// Architecture). The radius is fixed here (effects carry no per-skill
-/// config); it matches the skill's radius 1.
+/// damage, the holder attacks every hostile within its EFFECTIVE radius
+/// (base 1, effects carry no per-skill config) for 1x effective SPELL
+/// damage (utility-skill damage rule — see DESIGN → Architecture).
 pub const effect = Effect{
     .name = "That Which Explodes",
     .description = "Attack each enemy within radius when dealt damage",
@@ -40,9 +39,10 @@ pub const effect = Effect{
     .on_opponent_death_fn = effect_mod.no_op,
 };
 
-/// Explode: attack each hostile within radius 1 of the holder. Fires from
-/// the attack handler's on_incoming_damage stage (only when damage was
-/// actually applied and effects trigger).
+/// Explode: attack each hostile within the holder's effective radius
+/// (base 1) of the holder. Fires from the attack handler's
+/// on_incoming_damage stage (only when damage was actually applied and
+/// effects trigger).
 fn onIncomingDamage(
     entity_index: u32,
     game_state: GameState,
@@ -51,7 +51,7 @@ fn onIncomingDamage(
     const level = game_state.level orelse return null;
     const holder = level.entities[entity_index];
 
-    const radius: i32 = 1;
+    const radius: i32 = @intCast(holder.getEffectiveRadius(1));
     const damage = holder.getEffectiveSpellDamage();
 
     var effect_events: std.ArrayList(Event) = .empty;

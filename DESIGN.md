@@ -1980,6 +1980,15 @@ So a clone is a permanent, compounding material factory keyed by mission.
   doc, then deleted — its use forced any encounter to run ≥5 extra turns
   with zero player decisions. When porting the remaining Unity designs,
   screen them against these principles first.
+- **Skill logic always reads EFFECTIVE values.** Any gameplay read of an
+  authorable number goes through the `getEffective*` methods (range,
+  radius, distance, damage pipelines, stun/skill durations, cooldown at
+  the set site, max health). Raw field reads (`weapon.weapon_damage`,
+  `skill.range.?`, ...) are legal ONLY as the base input handed to a
+  `getEffective*` call, and only runtime counters (cooldown clocks,
+  current stun duration, current health) are read raw directly. The
+  That-Which-Explodes hardcoded radius was the one audit catch — effects
+  read their host's effective values too.
 - **Damage multiplier ordering (multipliers apply last).** When a skill
   scales its damage (Throw/Retreating Swipe/Impale's 1.5x, Skewer's 2x,
   Chop/Stab/Slice's conditional 1.5x), the multiplier applies to the

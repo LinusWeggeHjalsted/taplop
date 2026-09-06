@@ -1857,6 +1857,37 @@ test "that which explodes: the effect attacks hostiles in radius for spell damag
     }
 }
 
+test "that which explodes: the radius goes through the holder's effective radius" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    // Holder carries a +1 radius modifier (the That Which Reaches stack):
+    // base radius 1 → effective 2, so the enemy at Chebyshev 2 is hit too.
+    // Regression guard for the effective-value audit — the radius used to
+    // be hardcoded 1, so radius modifiers did nothing for the explosion.
+    const holder = types.Entity{
+        .team = 0,
+        .position = .{ .x = 0, .y = 0 },
+        .amulet = .{ .spell_damage = 6 },
+        .active_effects = &.{.{ .effect_id = .that_which_reaches, .duration = 2, .additive_effect_modifiers = .{ .radius = 1 } }},
+    };
+    const within_base = types.Entity{ .team = 1, .position = .{ .x = 1, .y = 0 } };
+    const within_effective = types.Entity{ .team = 1, .position = .{ .x = 2, .y = 0 } };
+    const beyond = types.Entity{ .team = 1, .position = .{ .x = 3, .y = 0 } };
+    const game_state = test_harness.levelStateWithEntities(
+        arena.allocator(),
+        &.{ holder, within_base, within_effective, beyond },
+        &.{},
+    );
+
+    const events = that_which_explodes_effect.effect.onIncomingDamage(0, game_state, arena.allocator());
+    try testing.expectEqual(@as(usize, 2), events.?.len);
+    for (events.?) |event| {
+        const attack = event.sub_level_event.attack;
+        try testing.expect(attack.defender_index == 1 or attack.defender_index == 2);
+    }
+}
+
 test "that which explodes: options gate on the threat model" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
