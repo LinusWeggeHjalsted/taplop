@@ -305,13 +305,15 @@ stale).
         reset (incl. off-bar preserved cds — self-buff, no exploit;
         contrast adrenaline's on-bar scope) + heal to full. Flat 1 when
         any active hostile exists.
-  - [x] enchantment diamond form — self-stun + invulnerability
-        interceptor + end-of-turn 10% heal. Options under the desperation
-        gate (threatened AND below half → 2). Collision damage still lands
-        (the interceptor rule). History in DONE.md.
+  - [x] enchantment diamond form — IMPLEMENTED then REMOVED (design
+        rejected: built-in downside + forced stalling — see DESIGN →
+        Architecture → Skill design principles + DONE.md). History in
+        DONE.md.
 
-**TIER A COMPLETE — 20 skills, 0 engine changes.** Remaining new-design
-work is Tier B (four small engine gaps) and Tier C (two design sessions).
+**TIER A COMPLETE — 19 skills, 0 engine changes** (20 designed;
+        Diamond Form removed after implementation). Remaining new-design
+        work is Tier B (four small engine gaps) and Tier C (two design
+        sessions).
 
 - [ ] **Non-ending pool rating audit.** The ported cantrips/enchantments
       kept their pre-value-unit numbers without scrutiny (replenish 3,
@@ -319,9 +321,6 @@ work is Tier B (four small engine gaps) and Tier C (two design sessions).
       on the scale). Re-rate them against the value-unit semantic — e.g.
       is a FULL heal really 3 while a 20% heal is 2? Cheap pass, do it
       before playtesting skews on stale numbers.
-All five spells done. Tier A remaining: cantrips (burst, meditate,
-accelerate) + enchantments (that which reaches, bull form, that which
-rushes, that which explodes, promise of death, diamond form).
 
 - [ ] **Tier B — small engine additions** (gap → the skills it unlocks):
   - effect-kind classification (enchantment vs curse) → cleanse,

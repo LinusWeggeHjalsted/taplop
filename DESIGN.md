@@ -1967,6 +1967,19 @@ So a clone is a permanent, compounding material factory keyed by mission.
   broken. Promise of Death (cast on SELF) does the FULL sweep, including
   off-bar preserved cooldowns — a self-buff has no count-driven damage to
   inflate, so there is nothing to exploit.
+- **Skill design principles (speedrun-first, no built-in downsides).** The
+  game's goal is speedrunning encounters, so a skill must never forcibly
+  extend an encounter (stall mechanics that make the fight longer no
+  matter what the player does) and must never take control away from the
+  player for more than an instant. Related: NO built-in-downside skills
+  (self-stun, self-damage as a cost) — a cost paid by degrading the
+  player's own agency feels bad and is avoided at all costs; skills pay
+  via cooldowns and momentum, never by locking the player out of their
+  turn. Diamond Form (self-stun 5 + invulnerability + end-of-turn heal)
+  is the removed precedent: implemented from the original Unity design
+  doc, then deleted — its use forced any encounter to run ≥5 extra turns
+  with zero player decisions. When porting the remaining Unity designs,
+  screen them against these principles first.
 - **One top-level event per player action (orchestrator convention).** Each
   player input (`handleIdleInput`) pushes exactly ONE top-level event; if the
   action needs several verbs, the event is an orchestrator whose handler
