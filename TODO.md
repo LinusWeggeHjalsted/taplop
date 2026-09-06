@@ -268,10 +268,10 @@ stale).
         distance 2, cd 5 (slam shape minus stun, spell damage). Lands with
         the stacked-bump ladder (aoeKnockbackPriority: base + AoE bump +
         collision bump); slam retrofitted onto it. History in DONE.md.
-  - [x] spell piston bolt — attack with double converted momentum,
-        range 3, cd 3 (impale shape, spell damage + the extra
-        getConvertedMomentum). Priority 3, weakestTarget pick. History in
-        DONE.md.
+  - [x] spell charged bolt (renamed from piston bolt) — attack with double
+        converted momentum, range 3, cd 3 (impale shape, spell damage + the
+        extra getConvertedMomentum). Priority 3, weakestTarget pick. History
+        in DONE.md.
   - [x] spell chain lightning — attack target + each hostile connected
         via neighboring hostiles (connected component by the skill's
         EFFECTIVE radius, Chebyshev; allies are not chain nodes — a hostile

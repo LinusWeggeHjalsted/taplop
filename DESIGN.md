@@ -1951,7 +1951,7 @@ So a clone is a permanent, compounding material factory keyed by mission.
   and the handler's slot-order tiebreak then prefers the skill further
   left — which makes weapon skills win equal-value ties against utility
   spells (the cheaper slot, generally the shorter cooldown). This is what
-  resolves "1-target Spinblade vs Piston Bolt": 1 < 2, the single-target
+  resolves "1-target Spinblade vs Charged Bolt": 1 < 2, the single-target
   skill wins.
 - **Utility skills deal spell damage — always.** Any damage a utility
   skill (spell / cantrip / enchantment / curse) deals — directly or via

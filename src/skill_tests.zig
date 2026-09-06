@@ -28,7 +28,7 @@ const stab_skill = @import("skills/stab.zig");
 const worldfire_skill = @import("skills/worldfire.zig");
 const shockwave_skill = @import("skills/shockwave.zig");
 const slam_skill = @import("skills/slam.zig");
-const piston_bolt_skill = @import("skills/piston_bolt.zig");
+const charged_bolt_skill = @import("skills/charged_bolt.zig");
 const blitz_skill = @import("skills/blitz.zig");
 const chain_lightning_skill = @import("skills/chain_lightning.zig");
 const adrenaline_surge_skill = @import("skills/adrenaline_surge.zig");
@@ -1452,7 +1452,7 @@ test "slam: options on the stacked-bump ladder (retrofit)" {
     }
 }
 
-test "piston bolt: useSkill attacks with the doubled momentum bonus" {
+test "charged bolt: useSkill attacks with the doubled momentum bonus" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
@@ -1472,7 +1472,7 @@ test "piston bolt: useSkill attacks with the doubled momentum bonus" {
         &.{},
     );
 
-    const result = piston_bolt_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
+    const result = charged_bolt_skill.skill.useSkill(0, defender.position, game_state, arena.allocator());
     try testing.expectEqual(@as(usize, 1), result.len);
     const attack = result[0].sub_level_event.attack;
     try testing.expectEqual(@as(u32, 0), attack.attacker_index);
@@ -1480,7 +1480,7 @@ test "piston bolt: useSkill attacks with the doubled momentum bonus" {
     try testing.expectEqual(@as(u32, 10), attack.outgoing_damage);
 }
 
-test "piston bolt: options offer the focus-fire pick at 2 (one significant bonus)" {
+test "charged bolt: options offer the focus-fire pick at 2 (one significant bonus)" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
@@ -1493,7 +1493,7 @@ test "piston bolt: options offer the focus-fire pick at 2 (one significant bonus
         &.{},
     );
 
-    const options = piston_bolt_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
+    const options = charged_bolt_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
     try testing.expectEqual(@as(usize, 1), options.len);
     try testing.expectEqual(in_range.position, options[0].target.?);
     try testing.expectEqual(@as(u32, 2), options[0].priority);

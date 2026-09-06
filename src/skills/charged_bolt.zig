@@ -10,13 +10,13 @@ const GameState = state.GameState;
 const Event = events.Event;
 const Skill = skill_mod.Skill;
 
-/// Piston Bolt: a spell. Attacks a single target within range for 1x
+/// Charged Bolt: a spell. Attacks a single target within range for 1x
 /// effective spell damage with a DOUBLED converted momentum bonus —
 /// getEffectiveSpellDamage already folds the momentum conversion in once
 /// (see Entity.getEffectiveSpellDamage); "doubled" adds it a second time
 /// (the impale/skewer precedent).
 pub const skill = Skill{
-    .name = "Piston Bolt",
+    .name = "Charged Bolt",
     .skill_type = .spell,
     .deals_damage = true,
     .description = "Attack target with double converted momentum bonus",
@@ -53,7 +53,7 @@ fn aiOptions(
 ) []const skill_mod.AiOption {
     const level = game_state.level orelse return &.{};
     const caster = level.entities[caster_index];
-    if (caster.skill_cooldowns.get(.piston_bolt) > 0) return &.{};
+    if (caster.skill_cooldowns.get(.charged_bolt) > 0) return &.{};
 
     const valid_targets = getValidTargets(caster_index, game_state, allocator);
     const target = helpers.weakestTarget(caster_index, valid_targets, game_state) orelse return &.{};
