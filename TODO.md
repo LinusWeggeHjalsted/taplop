@@ -291,7 +291,7 @@ stale).
         cooldown, cd 10 (composes change_cooldown directly — utility
         slots live on the entity, no machinery needed). Rating = reset
         count.
-  - [x] cantrip accelerate — +1 momentum per enemy within radius 3, cd 3.
+  - [x] cantrip accelerate — +2 momentum per enemy within radius 3, cd 3.
         Rating = direct enemy count (cantrip-pool ratings only ORDER the
         non-ending skills — all worthwhile ones fire before the
         turn-ender). History in DONE.md.

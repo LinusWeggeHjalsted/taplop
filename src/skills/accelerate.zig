@@ -10,14 +10,14 @@ const GameState = state.GameState;
 const Event = events.Event;
 const Skill = skill_mod.Skill;
 
-/// Accelerate: a cantrip. Gains 1 momentum for each enemy within radius of
+/// Accelerate: a cantrip. Gains 2 momentum for each enemy within radius of
 /// the caster. Self-centered, non-turn-ending, deals no damage (momentum
 /// is a rider stat — its damage conversion is log2-sublinear).
 pub const skill = Skill{
     .name = "Accelerate",
     .skill_type = .cantrip,
     .deals_damage = false,
-    .description = "Gain 1 momentum for each enemy within radius",
+    .description = "Gain 2 momentum for each enemy within radius",
     .uses_targeting = false,
     .range = null,
     .radius = 3,
@@ -61,8 +61,9 @@ fn playerPrepareSkill(_: u32, _: GameState, _: std.mem.Allocator) ?Event {
     return null;
 }
 
-/// Use: gain 1 momentum per enemy within radius (one change_momentum of
-/// the counted amount; the use_skill handler's universal +1 lands on top).
+/// Use: gain 2 momentum per enemy within radius (one change_momentum of
+/// twice the counted amount; the use_skill handler's universal +1 lands
+/// on top).
 fn useSkill(
     caster_index: u32,
     _: ?Vector2,
@@ -79,7 +80,7 @@ fn useSkill(
     return helpers.ownedEvents(allocator, &.{
         .{ .sub_level_event = .{ .change_momentum = .{
             .entity_index = caster_index,
-            .delta = @intCast(enemy_count),
+            .delta = @intCast(enemy_count * 2),
         } } },
     });
 }

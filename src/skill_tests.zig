@@ -1766,7 +1766,7 @@ test "meditate: resets each OTHER equipped utility skill, itself excluded" {
     try testing.expectEqual(@as(u32, 2), options[0].priority); // the reset count
 }
 
-test "accelerate: gains 1 momentum per enemy within radius" {
+test "accelerate: gains 2 momentum per enemy within radius" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
 
@@ -1785,7 +1785,7 @@ test "accelerate: gains 1 momentum per enemy within radius" {
     try testing.expectEqual(@as(usize, 1), result.len);
     const change = result[0].sub_level_event.change_momentum;
     try testing.expectEqual(@as(u32, 0), change.entity_index);
-    try testing.expectEqual(@as(i32, 2), change.delta); // two enemies within 3
+    try testing.expectEqual(@as(i32, 4), change.delta); // two enemies within 3, 2 momentum each
 
     const options = accelerate_skill.skill.aiOptions(0, game_state, undefined, arena.allocator());
     try testing.expectEqual(@as(u32, 2), options[0].priority); // direct enemy count
