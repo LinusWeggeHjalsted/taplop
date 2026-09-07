@@ -11614,3 +11614,45 @@ bar. Comptime-gated: non-dev builds analyze none of it. The friend's next
 build carries this; the mac 9-slice investigation (panels render nothing on
 mac, everything else renders — draw path audited and identical to working
 sprites) proceeds from his `logs/diag.txt`.
+
+## mac 9-slice panels: fixed by the OpenGL framework link (mechanism unknown)
+
+Mystery bug, empirically resolved. Two consecutive mac builds rendered
+EVERYTHING except 9-slice panels (all panels invisible; sprites, text,
+everything else fine). The next build — zero game-code changes to the draw
+path — renders panels correctly, deterministically per binary (the friend
+verified: old build still broken, new build works).
+
+The only rendering-relevant delta between the broken and working builds:
+the dev-diag work added `exe.root_module.linkFramework("OpenGL")` to
+build.zig (needed for the diag's direct `glGetString` extern — raylib
+resolves all GL through its internal glad loader, so nothing else links
+OpenGL; the broken builds linked no OpenGL framework at all).
+
+What the friend's diag.txt ruled out: the draw state on mac is byte-identical
+to Linux (same texture 384x384, same tint, same nine source/destination
+rects, same zero-height-piece skips), on Apple's GL-on-Metal shim (M1, GL
+4.1 / GLSL 4.10). So the game-side path is provably identical — the
+difference is purely link/dyld config: with the framework linked, dyld loads
+OpenGL eagerly at launch; without it, GL exists only via glad's lazy dlopen
+at raylib init. Loader/timing difference on Apple's shim is the plausible
+lever, but "sprites worked while panels didn't" fits no clean theory, and
+"eager vs lazy framework load changes 9-slice visibility" is the honest
+extent of our knowledge. The mechanism stays unexplained — the LINK is the
+fix. It is NOT dev-gated (release builds carry it); the build.zig comment +
+AGENTS note say so explicitly so it's never stripped as diag-only cruft.
+
+Open resolution: which precise element fixed it (framework link vs a
+dev-only diag behavior — the boot glGetString calls or the mid-frame probe
+file write). The decisive experiment is the release build (dev_mode=false
+→ all diag code comptime-dead, framework link present): if panels render
+there, the link alone suffices and release builds are safe; if they break
+again, a dev-only element is load-bearing and needs an always-on minimal
+variant (a boot-time glGetString touch, unconditional on mac). In flight —
+the friend has the release build.
+
+Diag bonus findings (mac, M1): window 1920x1080 points with framebuffer
+1920x1080 pixels — 1:1, i.e. NO retina/high-DPI scaling (raylib runs
+without FLAG_WINDOW_HIGHDPI; content upscaled by the compositor on retina
+screens), and 1920x1080 points likely exceeds the laptop screen at default
+scaling — window sizing follow-up in TODO → macOS native port.

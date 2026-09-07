@@ -1174,15 +1174,35 @@ Open:
         chord fires on Cmd with physical ctrl unchanged; one binding set
         still ships. Design: DESIGN → Input (macOS: Command reports as the
         Control ids); history in DONE.md.
-  - [ ] **9-slice panels don't render on mac** (reported on hardware;
-        renders fine on Linux + web). Investigating — the draw path is the
-        same `drawTexturePro` every other sprite uses, so the leading
-        suspects are mac GL driver differences (core-profile 3.3, stricter
-        GLSL) or the retina framebuffer. NEXT STEP: the dev diag log
-        (AGENTS → Dev Tools) — the friend sends back
-        `~/Library/Application Support/ziglop/logs/diag.txt` (play to a level
-        so the control probe fires alongside the panel probe), diff the two
-        probes' draw states.
+  - [x] **9-slice panels don't render on mac — FIXED, mechanism unknown.**
+        Reported on hardware across two builds (everything else rendered,
+        ALL panels invisible); renders correctly in the dev/diag build with
+        ZERO game-code changes to the draw path. The only rendering-relevant
+        delta: the explicit `linkFramework("OpenGL")` in build.zig (the
+        old builds linked no OpenGL framework — raylib resolves GL through
+        its glad loader, so nothing needed it until the diag's direct
+        glGetString). The friend's diag.txt confirmed sane draw state (same
+        rects/tint/texture as Linux) on Apple's GL-on-Metal 4.1 shim.
+        MECHANISM UNEXPLAINED (eager dyld load of the framework at launch vs
+        glad's lazy dlopen — loader timing on the Apple shim is the
+        plausible lever, but "sprites worked / panels didn't" doesn't fit
+        any clean theory). KEEP THE LINK — it is NOT dev-gated and must not
+        be stripped as diag-only. DECISIVE EXPERIMENT (in flight): the
+        release build (dev_mode=false → diag code comptime-dead, framework
+        link present) — if panels render there, the link alone suffices and
+        release builds are safe; if they break again, a dev-only diag
+        element (the boot glGetString or the mid-frame probe write) is
+        load-bearing and needs an always-on minimal variant (a boot-time
+        glGetString touch, unconditional on mac). History in DONE.md.
+  - [ ] **Window sizing / high-DPI on mac.** The diag shows window
+        1920×1080 points with a 1920×1080 framebuffer — 1:1, i.e. raylib
+        runs WITHOUT high-dpi (no retina upscaling — blurry on retina
+        screens), and 1920×1080 points likely EXCEEDS the friend's laptop
+        screen at default scaling. Follow-up: window opens sized to the
+        monitor (raylib `getMonitorWidth`-bounded, not fixed half-reference),
+        + consider FLAG_WINDOW_HIGHDPI (retina rendering; the letterbox /
+        pointer math operates in reference points either way — verify
+        GetRenderWidth vs GetScreenWidth through pollInput's transform).
   - [ ] App icon (needs art — an .icns can be generated from a square PNG;
         macOS shows the generic icon until then).
   - [ ] Deferred to the demo/distribution milestone: codesigning +
