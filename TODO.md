@@ -1168,6 +1168,18 @@ Open:
         into `~/Library/Application Support/ziglop/` (spaces in the path!);
         crash-dump write works; `--data-dir` flag + `$ZIGLOP_DATA` override
         still work.
+  - [x] **Ctrl bindings → Command (mac convention):** DONE — the backend
+        key table (`mac_key_mappings`, comptime `.macos`) maps
+        left/right_super to `ControlLeft`/`ControlRight`, so every ctrl
+        chord fires on Cmd with physical ctrl unchanged; one binding set
+        still ships. Design: DESIGN → Input (macOS: Command reports as the
+        Control ids); history in DONE.md.
+  - [ ] **9-slice panels don't render on mac** (reported on hardware;
+        renders fine on Linux + web). Investigating — the draw path is the
+        same `drawTexturePro` every other sprite uses, so the leading
+        suspects are mac GL driver differences (core-profile 3.3, stricter
+        GLSL) or the retina framebuffer; needs the friend's Terminal stderr
+        (raylib logs texture/shader warnings) + a screenshot to narrow it.
   - [ ] App icon (needs art — an .icns can be generated from a square PNG;
         macOS shows the generic icon until then).
   - [ ] Deferred to the demo/distribution milestone: codesigning +

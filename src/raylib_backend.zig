@@ -170,6 +170,25 @@ const sdf_outline_fs_source: [:0]const u8 = if (@import("builtin").target.cpu.ar
 else
     sdf_outline_fs_glsl330;
 
+/// raylib keys mapped to the game's binding ids on macOS only. Mac
+/// convention is Command for app shortcuts, so the super keys report as the
+/// Control ids — every `ControlLeft` binding (undo, save, select-all, …)
+/// fires on Cmd, and the physical ctrl keys keep working too. The ids
+/// flowing into translateInput stay platform-agnostic (settings files ship
+/// one binding set for all platforms); the convention lives HERE, at the
+/// backend key table. Held-key tracking is per-id, so holding Cmd + left
+/// ctrl and releasing one drops the modifier early — an irrelevant corner.
+const mac_key_mappings = [_]KeyMapping{
+    .{ .key = .left_super, .id = "ControlLeft" },
+    .{ .key = .right_super, .id = "ControlRight" },
+};
+
+/// The full key table for this target: the shared mappings plus, on macOS,
+/// the Command-as-Control entries. `max_events_per_frame` sizes the event
+/// buffer off this length.
+const key_mappings = shared_key_mappings ++
+    if (@import("builtin").os.tag == .macos) mac_key_mappings else &[_]KeyMapping{};
+
 /// A raylib key mapped to the game's binding id (Web KeyboardEvent.code style,
 /// e.g. "KeyZ", "Escape", "Digit1"). Only the keys the game actually binds are
 /// listed; unmapped keys are ignored. Modifiers are included so getModifiers()
@@ -179,7 +198,7 @@ const KeyMapping = struct {
     id: []const u8,
 };
 
-const key_mappings = [_]KeyMapping{
+const shared_key_mappings = [_]KeyMapping{
     // Modifiers (tracked as held keys so getModifiers can read them).
     .{ .key = .left_control, .id = "ControlLeft" },
     .{ .key = .right_control, .id = "ControlRight" },

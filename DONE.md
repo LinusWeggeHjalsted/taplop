@@ -11564,3 +11564,22 @@ persistent-dir design in DESIGN → File System & IO → Persistent path.
   is a demo-milestone decision).
 - Runtime validation on real hardware is STILL PENDING (compile ≠ run — the
   web-build lesson): checklist in TODO → Platform Layer → macOS native port.
+
+## macOS: Command as Control (backend key table)
+
+First mac hardware test surfaced the ctrl-vs-Command issue: the shipped
+binding set (`data/default_settings.txt`) names `ControlLeft` etc. (W3C
+KeyboardEvent.code ids — the cross-platform convention), but mac convention
+is Command for shortcuts, and nothing bound the super keys. Fix at the
+backend key table, the site that owns physical-key → id mapping:
+`mac_key_mappings` (comptime-gated on `builtin.os.tag == .macos`) maps
+`left_super`/`right_super` to `ControlLeft`/`ControlRight`, appended to
+`shared_key_mappings` (the old `key_mappings` const renamed). Every
+ControlLeft binding + the `getModifiers` chord machinery then work on Cmd
+unchanged; physical ctrl keys keep working (both map to the same ids).
+Held-key tracking is per-id, so a user holding Cmd + left-ctrl and releasing
+one drops the modifier early — accepted corner. One binding set still ships
+for all platforms; translateInput stays platform-agnostic. Design: DESIGN →
+Input (macOS: Command reports as the Control ids). The same hardware test
+reported 9-slice panels not rendering on mac (fine on Linux/web) — open,
+see TODO → macOS native port.

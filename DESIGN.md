@@ -861,6 +861,15 @@ combat-log UI rendering + replay-viewer UI still TODO)
   save-mission (missing dispatch line). The startup warning for bindings
   naming inputs no backend mapping can produce is still TODO (see TODO →
   New-keybind pipeline friction).
+- **macOS: Command reports as the Control ids.** Mac convention is Command
+  for app shortcuts, so on macos targets the backend key table maps
+  `left_super`/`right_super` to `ControlLeft`/`ControlRight`
+  (`mac_key_mappings` in raylib_backend.zig, comptime-gated): every
+  `ControlLeft` binding fires on Cmd, and physical ctrl keys keep working.
+  The ids flowing into `translateInput` stay platform-agnostic (one
+  binding set ships for all platforms in `data/default_settings.txt`);
+  the convention lives at the backend key table, the same site that owns
+  physical-key → id mapping.
 - **Binding modifier match is subset, not exact.** A binding's modifiers are
   REQUIREMENTS, not an exact match: a plain binding fires regardless of held
   modifiers (so ctrl+key works for any plain-bound action — e.g. ctrl+Space
