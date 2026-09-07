@@ -1174,26 +1174,27 @@ Open:
         chord fires on Cmd with physical ctrl unchanged; one binding set
         still ships. Design: DESIGN → Input (macOS: Command reports as the
         Control ids); history in DONE.md.
-  - [x] **9-slice panels don't render on mac — FIXED, mechanism unknown.**
-        Reported on hardware across two builds (everything else rendered,
-        ALL panels invisible); renders correctly in the dev/diag build with
-        ZERO game-code changes to the draw path. The only rendering-relevant
-        delta: the explicit `linkFramework("OpenGL")` in build.zig (the
-        old builds linked no OpenGL framework — raylib resolves GL through
-        its glad loader, so nothing needed it until the diag's direct
-        glGetString). The friend's diag.txt confirmed sane draw state (same
-        rects/tint/texture as Linux) on Apple's GL-on-Metal 4.1 shim.
-        MECHANISM UNEXPLAINED (eager dyld load of the framework at launch vs
-        glad's lazy dlopen — loader timing on the Apple shim is the
-        plausible lever, but "sprites worked / panels didn't" doesn't fit
-        any clean theory). KEEP THE LINK — it is NOT dev-gated and must not
-        be stripped as diag-only. DECISIVE EXPERIMENT (in flight): the
-        release build (dev_mode=false → diag code comptime-dead, framework
-        link present) — if panels render there, the link alone suffices and
-        release builds are safe; if they break again, a dev-only diag
-        element (the boot glGetString or the mid-frame probe write) is
-        load-bearing and needs an always-on minimal variant (a boot-time
-        glGetString touch, unconditional on mac). History in DONE.md.
+  - [x] **9-slice panels invisible on mac — FIX in flight
+        (`completeTextureUploadMac`).** Bug: optimized mac builds without
+        dev code rendered ALL panels as fully transparent (everything
+        else fine); Debug and release+dev-mode builds rendered them.
+        Bisection trail (4 friend-tested binaries + local tests): the
+        OpenGL framework link is NOT the fix (falsified — release+link
+        broken); optimize level is NOT the fix (release+dev-mode works;
+        Linux release fine); the DEV DIAG probes are load-bearing. Theory
+        that fits every data point: the first lazily-uploaded texture
+        (ui/panel, main menu) uploaded+drawn in the same frame samples as
+        fully transparent on Apple's GL-on-Metal shim without a stall
+        between upload and draw — the panel probe's mid-frame file write
+        IS that stall; a zero texel under the premultiplied blend is
+        src.rgb=0/src.a=0 = invisible (matches "not rendered at all", not
+        black). Fix: `completeTextureUploadMac` (raylib_backend.zig) —
+        glFinish + 2ms sleep after each sprite/outline texture upload,
+        mac-only, NOT dev-gated. PENDING: one friend round trip on a plain
+        release build (`--release=fast`, no dev-mode) to confirm; if it
+        still breaks, next candidate is a longer stall. History: DONE.md,
+        "mac 9-slice panels" entries (including the falsified framework-
+        link theory — keep the link anyway: glGetString/glFinish need it).
   - [ ] **Window sizing / high-DPI on mac.** The diag shows window
         1920×1080 points with a 1920×1080 framebuffer — 1:1, i.e. raylib
         runs WITHOUT high-dpi (no retina upscaling — blurry on retina

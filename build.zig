@@ -175,14 +175,11 @@ pub fn build(b: *std.Build) void {
         if (b.lazyDependency("xcode_frameworks", .{})) |frameworks| {
             exe.root_module.addSystemFrameworkPath(frameworks.path("Frameworks"));
             exe.root_module.addLibraryPath(frameworks.path("lib"));
-            // Link OpenGL explicitly. Two reasons: the dev diag section
-            // calls glGetString directly, and — empirically — this link is
-            // LOAD-BEARING for 9-slice panel rendering on the mac GL-on-
-            // Metal shim (all panels rendered invisible in builds without
-            // it, while everything else rendered fine; the mechanism is
-            // unexplained — see DONE.md, "mac 9-slice panels"). raylib
-            // resolves GL through its glad loader, so nothing else links
-            // OpenGL. Do NOT strip this as diag-only cruft.
+            // Link OpenGL explicitly: the dev diag section calls
+            // glGetString directly (raylib resolves GL through its glad
+            // loader, so nothing else links OpenGL), and the mac upload-
+            // completion fix calls glFinish — see raylib_backend.zig's
+            // completeTextureUploadMac + DONE.md, "mac 9-slice panels".
             exe.root_module.linkFramework("OpenGL", .{});
         } else {
             // First run after the dep is needed: zig fetches it now and the

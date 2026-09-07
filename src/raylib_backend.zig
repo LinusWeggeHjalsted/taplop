@@ -62,10 +62,30 @@ const diag_enabled = @import("build_info").dev_mode and
 // native target (framework on mac, libGL on Linux, opengl32 on Windows), so
 // the symbol resolves; only referenced from diag code (dev builds).
 extern "c" fn glGetString(name: c_int) ?[*:0]const u8;
+extern "c" fn glFinish() callconv(.c) void;
+extern "c" fn usleep(microseconds: c_uint) c_int;
 const gl_vendor: c_int = 0x1F00;
 const gl_renderer: c_int = 0x1F01;
 const gl_version: c_int = 0x1F02;
 const gl_shading_language_version: c_int = 0x8B8C;
+
+/// On macOS only: complete a freshly-uploaded texture before its first draw.
+/// EMPIRICAL FIX for the Apple GL-on-Metal shim — optimized builds without
+/// the dev diag probes rendered every 9-slice panel as fully transparent
+/// (ui/panel is the first lazily-uploaded texture of the main menu), while
+/// the SAME game code with the diag probes' mid-frame file-write between
+/// upload and draw rendered correctly; the probes' syscalls were the stall
+/// that made the shim finish staging the upload. glFinish syncs the GL
+/// command stream, the short sleep covers staging glFinish doesn't wait
+/// for. Not dev-gated: release builds need it too. Linux/other targets
+/// compile this out (no such race observed on Mesa). One-time per texture,
+/// bounded by the sprite count — invisible in practice. History + the
+/// bisection trail: DONE.md, "mac 9-slice panels" entries.
+fn completeTextureUploadMac() void {
+    if (comptime @import("builtin").os.tag != .macos) return;
+    glFinish();
+    _ = usleep(2_000);
+}
 
 fn glString(name: c_int) []const u8 {
     const string = glGetString(name) orelse return "(null)";
@@ -666,6 +686,12 @@ pub const RaylibBackend = struct {
     diag_boot_logged: bool = false,
     diag_sprite_probe_logged: bool = false,
     diag_panel_probe_logged: bool = false,
+    /// Reference-space destinations captured by the one-shot probes, read
+    /// back from the render target at the end of the same frame — the probes
+    /// fire mid-draw, the pixels only exist after `endTextureMode`.
+    diag_panel_destination: ?types.Rectangle = null,
+    diag_sprite_destination: ?types.Rectangle = null,
+    diag_readback_pending: bool = false,
 
     /// Last real-clock sample (microseconds) for delta computation. Updated
     /// each deltaMicroseconds() call. Real-clock based (rl.getTime), not
@@ -1126,6 +1152,7 @@ pub const RaylibBackend = struct {
         rl.endMode2D();
         rl.endBlendMode();
         rl.endTextureMode();
+        if (diag_enabled and self.diag_readback_pending) self.diagLogTargetReadback();
 
         // Blit the target to the window, letterboxed. RenderTextures are stored
         // y-flipped, so the source height is negated. The blit uses the RENDER
@@ -1734,6 +1761,13 @@ pub const RaylibBackend = struct {
         alpha: u8,
     ) void {
         self.diag_sprite_probe_logged = true;
+        self.diag_sprite_destination = .{
+            .x = @intFromFloat(destination.x),
+            .y = @intFromFloat(destination.y),
+            .width = @intFromFloat(destination.width),
+            .height = @intFromFloat(destination.height),
+        };
+        self.diag_readback_pending = true;
         self.diagAppend("\n[control] first drawSprite\n", .{});
         self.diagAppend("sprite_id {s}\n", .{sprite_id});
         self.diagAppend("texture id {d} {d}x{d}\n", .{ texture.id, texture.width, texture.height });
@@ -1756,6 +1790,8 @@ pub const RaylibBackend = struct {
         pieces: [9]ui.NineSlicePiece,
     ) void {
         self.diag_panel_probe_logged = true;
+        self.diag_panel_destination = destination;
+        self.diag_readback_pending = true;
         self.diagAppend("\n[probe] first drawNineSlice\n", .{});
         self.diagAppend("sprite_id {s}\n", .{panel.sprite_id});
         self.diagAppend("texture id {d} {d}x{d}\n", .{ texture.id, texture.width, texture.height });
@@ -1770,6 +1806,55 @@ pub const RaylibBackend = struct {
             );
         }
         self.diagFlush();
+    }
+
+    /// Read back the render target at the end of a frame where a probe fired
+    /// and log the pixels at the probed destinations. Splits the pipeline in
+    /// half: pixels PRESENT = the draw landed in the offscreen target, so a
+    /// missing panel on screen is the blit/present path (window/compositor);
+    /// pixels ABSENT = the batch draw itself failed. Samples are in TARGET
+    /// space (reference × `render_scale`); RenderTextures are stored
+    /// y-flipped, so the sampled row is flipped back.
+    fn diagLogTargetReadback(self: *RaylibBackend) void {
+        self.diag_readback_pending = false;
+        const image = rl.loadImageFromTexture(self.render_target.texture) catch return;
+        defer rl.unloadImage(image);
+        const colors = rl.loadImageColors(image) catch return;
+        defer rl.unloadImageColors(colors);
+        self.diagAppend("\n[readback] render target {d}x{d}\n", .{ image.width, image.height });
+        if (self.diag_panel_destination) |rect| {
+            self.diagLogSampledPixels(colors, "panel", rect);
+        }
+        if (self.diag_sprite_destination) |rect| {
+            self.diagLogSampledPixels(colors, "control", rect);
+        }
+        self.diagFlush();
+    }
+
+    /// Log three pixels along the horizontal center line of a probed
+    /// destination (25/50/75% — inside the 9-slice corner band at both ends
+    /// for a typical panel, center in the stretched middle).
+    fn diagLogSampledPixels(
+        self: *RaylibBackend,
+        colors: []rl.Color,
+        label: []const u8,
+        rect: types.Rectangle,
+    ) void {
+        for ([_]f32{ 0.25, 0.5, 0.75 }) |fraction| {
+            const column: i64 = @intFromFloat((@as(f32, @floatFromInt(rect.x)) +
+                @as(f32, @floatFromInt(rect.width)) * fraction) * render_scale);
+            const target_row: i64 = @intFromFloat((@as(f32, @floatFromInt(rect.y)) +
+                @as(f32, @floatFromInt(rect.height)) * 0.5) * render_scale);
+            const stored_row: i64 = render_height_int - 1 - target_row;
+            if (column < 0 or stored_row < 0 or column >= render_width_int or stored_row >= render_height_int) continue;
+            const index: usize = @intCast(stored_row * render_width_int + column);
+            if (index >= colors.len) continue;
+            const color = colors[index];
+            self.diagAppend(
+                "readback {s} at {d} pixel({d},{d}) r {d} g {d} b {d} a {d}\n",
+                .{ label, fraction, column, target_row, color.r, color.g, color.b, color.a },
+            );
+        }
     }
 
     /// Draw text with a black edge-outline of `outline_width` px (in the drawn
@@ -2118,6 +2203,7 @@ pub const RaylibBackend = struct {
             // than the design space. See DESIGN → Platform Seam → Render
             // target resolution.
             rl.setTextureFilter(tex, .bilinear);
+            completeTextureUploadMac();
             break :blk tex;
         };
 
@@ -2359,6 +2445,7 @@ pub const RaylibBackend = struct {
         // Bilinear: outline masks are drawn scaled (by world_scale + the
         // render camera zoom), so nearest-neighbor would show hard edges.
         rl.setTextureFilter(tex, .bilinear);
+        completeTextureUploadMac();
         return tex;
     }
 };

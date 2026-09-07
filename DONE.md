@@ -11656,3 +11656,44 @@ Diag bonus findings (mac, M1): window 1920x1080 points with framebuffer
 without FLAG_WINDOW_HIGHDPI; content upscaled by the compositor on retina
 screens), and 1920x1080 points likely exceeds the laptop screen at default
 scaling — window sizing follow-up in TODO → macOS native port.
+
+## mac 9-slice panels — CORRECTION + the real fix candidate (upload stall)
+
+The previous entry's conclusion (the OpenGL framework link was the fix) is
+FALSIFIED. Full bisection across friend-tested mac binaries + local tests:
+
+- mac ReleaseFast, no dev code, no framework link: panels INVISIBLE
+- mac ReleaseFast, no dev code, WITH framework link: panels INVISIBLE
+- mac Debug (dev diag present): panels render
+- mac ReleaseFast + `-Ddev-mode=true` (dev diag present): panels render
+- linux ReleaseFast (no dev code): panels render
+
+So neither the framework link nor the optimize level is the variable — the
+DEV DIAG CODE is load-bearing on mac. The one rendering-relevant thing the
+diag does that nothing else does: the panel probe's mid-frame file write
+between the panel texture's lazy upload (getTexture → ensureSpriteLoaded)
+and its first draw.
+
+Working theory (fits every data point): on Apple's GL-on-Metal shim, the
+FIRST lazily-uploaded texture uploaded and drawn within the same frame
+samples as fully transparent without a stall between upload and draw —
+ui/panel is the first such texture of the main menu, so all panels vanish
+while later-uploaded textures (entities, icons — warmed-up frames) survive;
+a zero texel under the premultiplied blend is src.rgb=0/src.a=0 = INVISIBLE,
+matching "don't render at all" (not black). The probe's syscalls are the
+stall that made the working builds work.
+
+Fix candidate: `completeTextureUploadMac` (raylib_backend.zig) — glFinish +
+2ms sleep after each sprite/outline texture upload, comptime mac-only, NOT
+dev-gated (release builds need it; ~30 textures × one-time cost = invisible
+at startup). Called from ensureSpriteLoaded + rgbaBufToTexture (the mid-frame
+upload sites). If glFinish alone doesn't cover shim staging, the sleep does;
+if the friend's next plain-release test still breaks, lengthen the stall.
+
+The OpenGL framework link STAYS regardless: glGetString (dev diag) and
+glFinish (the fix) need it. The diag harness also gained a render-target
+PIXEL READBACK probe (diagLogTargetReadback — samples the offscreen target
+at the probed destinations at end of frame; "pixels present" = blit/present
+failure, "pixels absent" = draw failure) — verified locally on Linux, unused
+so far on mac because the bisection resolved first; it's there for the next
+mac mystery.

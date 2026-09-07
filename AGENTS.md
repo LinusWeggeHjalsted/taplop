@@ -188,8 +188,8 @@ d  diff before running them across the tree.** Asserted replacements catch
   build.zig.zon declares the same package so the exe's link step gets the
   framework search paths raylib's own module doesn't propagate — see
   DONE.md, mac port). The build also links the OpenGL framework
-  explicitly — empirically load-bearing for panel rendering on the mac
-  GL-on-Metal shim; never strip it (see DONE.md, mac 9-slice panels).
+  explicitly (the dev diag's glGetString + the mac upload-completion fix's
+  glFinish need it; raylib itself goes through its glad loader).
   Produces `zig-out/bin/ziglop` PLUS the double-clickable
   `zig-out/ziglop.app/` bundle (minimal Info.plist, no icon yet, unsigned —
   a browser-downloaded copy needs `xattr -cr ziglop.app` once; codesigning
