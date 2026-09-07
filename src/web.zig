@@ -50,7 +50,9 @@ extern fn emscripten_run_script_int(script: [*:0]const u8) c_int;
 pub const panic = crash_dump.panic;
 
 /// The virtual path where the IDBFS-backed persistent dir is mounted. Mirrors
-/// $HOME/.ziglop on native — FileSource reads/writes against this path.
+/// the native persistent dir ($HOME/.ziglop on Linux, ~/Library/Application
+/// Support/ziglop on macOS — see native.zig) — FileSource reads/writes
+/// against this path.
 /// The constant lives in file_source.zig (shared with the JS seams that
 /// build absolute FS paths, e.g. triggerBrowserDownload).
 const persistent_virtual_path = file_source_mod.persistent_mount_path;

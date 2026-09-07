@@ -1,8 +1,9 @@
 //! Native (desktop) entry point. Root source of the native exe. This is one of
 //! the two files that compile against raylib (via raylib_backend.zig); the
 //! shared game logic in main.zig stays raylib-free. It sets up the allocator,
-//! IO, the persistent data directory (~/.ziglop by default, overridable via
-//! --data-dir or $ZIGLOP_DATA), and the FileSource, then hands control to
+//! IO, the persistent data directory (per-OS default — `$HOME/.ziglop` on
+//! Linux, `$HOME/Library/Application Support/ziglop` on macOS — overridable
+//! via --data-dir or $ZIGLOP_DATA), and the FileSource, then hands control to
 //! main.run with a RaylibBackend. An optional --replay <path> flag loads a
 //! session log and reconstructs the session before the loop starts. See
 //! DESIGN → File System & IO + Logging & Replay.
@@ -30,7 +31,9 @@ pub fn main(init: std.process.Init.Minimal) void {
     // Resolve and open the persistent data dir. Resolution order:
     //   1. --data-dir <path> command-line flag (explicit, per-invocation)
     //   2. $ZIGLOP_DATA env var (ambient, applies to every run)
-    //   3. $HOME/.ziglop (default)
+    //   3. per-OS default ($HOME/.ziglop on Linux,
+    //      $HOME/Library/Application Support/ziglop on macOS — the mac
+    //      player-visible convention; see DESIGN → File System & IO)
     // Created if missing. All writable artifacts (saves, logs, replays) live
     // here, and shipped-content reads check here first for player mods.
     const data_dir_override = parseStringFlag(init.args, allocator, "--data-dir");
@@ -142,8 +145,12 @@ fn openPersistentDir(
 /// Build the persistent data dir path in priority order:
 ///   1. --data-dir flag value (already resolved by the caller)
 ///   2. $ZIGLOP_DATA (override for dev / portable installs / tests)
-///   3. $HOME/.ziglop
-/// Returned bytes are caller-owned. Returns an error if none are available.
+///   3. per-OS default: `$HOME/.ziglop` on Linux,
+///      `$HOME/Library/Application Support/ziglop` on macOS
+/// The mac default follows the platform convention for player-visible save
+/// data (Finder's Go→Folder knows it) — the same discoverability-over-
+/// convention reasoning that picked the Linux dotfile. Returned bytes are
+/// caller-owned. Returns an error if none are available.
 fn resolvePersistentPath(
     allocator: std.mem.Allocator,
     flag_override: ?[]const u8,
@@ -157,7 +164,15 @@ fn resolvePersistentPath(
         return allocator.dupe(u8, std.mem.sliceTo(override, 0));
     }
     if (std.c.getenv("HOME")) |home| {
-        return std.fmt.allocPrint(allocator, "{s}/.ziglop", .{std.mem.sliceTo(home, 0)});
+        const home_slice = std.mem.sliceTo(home, 0);
+        return switch (@import("builtin").os.tag) {
+            .macos => std.fmt.allocPrint(
+                allocator,
+                "{s}/Library/Application Support/ziglop",
+                .{home_slice},
+            ),
+            else => std.fmt.allocPrint(allocator, "{s}/.ziglop", .{home_slice}),
+        };
     }
     return error.EnvironmentVariableMissing;
 }

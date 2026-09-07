@@ -182,6 +182,19 @@ d  diff before running them across the tree.** Asserted replacements catch
   (anything before GL/IDBFS init) can be probed like a native CLI. That
   technique diagnosed the 136-commit black screen entirely outside a
   browser.
+- macOS build: `zig build -Dtarget=aarch64-macos` cross-compiles from the
+  Linux box (Apple Silicon; raylib's macOS path uses the lazy
+  `xcode_frameworks` .tbd-stub package — fetched once, then offline; our
+  build.zig.zon declares the same package so the exe's link step gets the
+  framework search paths raylib's own module doesn't propagate — see
+  DONE.md, mac port). Produces `zig-out/bin/ziglop` PLUS the double-clickable
+  `zig-out/ziglop.app/` bundle (minimal Info.plist, no icon yet, unsigned —
+  a browser-downloaded copy needs `xattr -cr ziglop.app` once; codesigning
+  needs a mac host). **MAC COMPILES ≠ MAC RUNS** (the same lesson as web):
+  the binary is only validated when someone opens it on real hardware —
+  the runtime checklist lives in TODO (macOS native port). Persistent dir
+  on mac: `~/Library/Application Support/ziglop/` — see DESIGN → File
+  System & IO → Persistent path.
 - Test discovery is automatic: build.zig generates `src/generated_test_root.zig`
   (gitignored) importing every `src/**/*.zig`, and `addTest` uses it as root. Any
   `test` block in any src file is picked up with no manual wiring. Note this

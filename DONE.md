@@ -11524,3 +11524,43 @@ Removed: `cloneIsStrictlyBetter` (the Pareto per-material-rate helper)
 inline in end_level. Comment/doc sites updated (types.zig overwrite_
 offered, events.zig + player_input.zig routing comments, DESIGN →
 Clones step 2/5).
+
+## macOS native port (cross-build + persistent dir + .app bundle)
+
+Three slices, one session. Working rules in AGENTS → Build & Test; settled
+persistent-dir design in DESIGN → File System & IO → Persistent path.
+
+- **Cross-compile (aarch64-macos from the Linux box).** `zig build
+  -Dtarget=aarch64-macos` compiles raylib (ObjC/Cocoa sources) + the whole
+  game and links a Mach-O arm64 exe with no Apple SDK. The blocker: raylib's
+  `linkMacOS` adds the framework SEARCH paths (the `xcode_frameworks` .tbd
+  stubs) to the raylib library's module only — the `-framework X` link flags
+  propagate to a consumer exe but the `-F` paths do NOT, so our exe's link
+  failed with `unable to find framework 'Foundation'. searched paths: none`.
+  Fix: our build.zig.zon declares the SAME xcode_frameworks package (same
+  url+hash, deduped to one zig-pkg entry; `.lazy = true` so Linux builds
+  never fetch the 16 MB package) and build.zig adds
+  `addSystemFrameworkPath`/`addLibraryPath` to the exe's root module, gated
+  on a macos target. The lazy-dep protocol on a fresh machine: first build
+  configure returns early (zig fetches the package, re-runs the script);
+  second build links. Also gated the Linux-only `.so`-strip archive step on
+  `.linux` targets.
+- **Persistent dir.** `resolvePersistentPath` in native.zig gained a
+  `builtin.os.tag` switch: Linux keeps `$HOME/.ziglop`, mac defaults to
+  `$HOME/Library/Application Support/ziglop` (Finder-visible convention —
+  same discoverability-over-convention reasoning as the Linux dotfile, see
+  DESIGN). Flag/env overrides unchanged; web IDBFS unchanged. The name rides
+  the ziglop→taplop rename sweep. The path contains a space — all uses go
+  through `std.Io.Dir` handles + argv elements, nothing shells out to a
+  path string; runtime round-trip still on the hardware checklist.
+- **.app bundle.** For macos targets the install step also assembles
+  `zig-out/ziglop.app/` (Contents/MacOS/ziglop via `addInstallFileWithDir`
+  with a custom dest dir + Contents/Info.plist via WriteFiles +
+  `addInstallDirectory`). Minimal plist: identity
+  (com.linusweggehjalsted.ziglop), LSMinimumSystemVersion 11.0,
+  NSHighResolutionCapable. NO icon (no suitable art; generic icon until an
+  .icns is generated — TODO) and NO codesigning (needs a mac host; a
+  browser-downloaded bundle needs `xattr -cr ziglop.app` once — notarization
+  is a demo-milestone decision).
+- Runtime validation on real hardware is STILL PENDING (compile ≠ run — the
+  web-build lesson): checklist in TODO → Platform Layer → macOS native port.

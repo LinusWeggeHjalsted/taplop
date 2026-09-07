@@ -1155,6 +1155,24 @@ Logging follow-ups (open):
 Native + web builds DONE (history in DONE.md; seam in DESIGN → Platform Seam).
 Open:
 
+- **macOS native port** — cross-build + persistent dir + .app bundle landed
+  (history in DONE.md; persistent-dir design in DESIGN → File System & IO →
+  Persistent path; build workflow in AGENTS → Build & Test). REMAINING:
+  - [ ] **Runtime validation on real hardware** (friend's Apple Silicon
+        machine; compile ≠ run, the web-build lesson). Checklist: app
+        launches from Finder; main menu renders with readable SDF text (the
+        outline shader on a core-profile GL context — mac tops out at
+        deprecated OpenGL 4.1); retina/high-DPI window: letterbox + pointer
+        mapping stay in sync (reference-space input math vs pixel
+        framebuffer); audio device opens + sfx/music play; a save round-trip
+        into `~/Library/Application Support/ziglop/` (spaces in the path!);
+        crash-dump write works; `--data-dir` flag + `$ZIGLOP_DATA` override
+        still work.
+  - [ ] App icon (needs art — an .icns can be generated from a square PNG;
+        macOS shows the generic icon until then).
+  - [ ] Deferred to the demo/distribution milestone: codesigning +
+        notarization (needs an Apple Developer ID), universal binary
+        (x86_64 + aarch64 via lipo), Homebrew/cask.
 - 9-slice REFINEMENT: corners now render SQUARE 1:1 on any panel size
   (fixed — see DONE.md); remaining gap is edges + center STRETCHED, not
   tiled. Spec wants tiling — only matters once patterned panel art ships

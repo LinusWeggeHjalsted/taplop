@@ -165,7 +165,27 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("generated_sdf_font", sdf_font_module);
     exe.root_module.linkLibrary(raylib_artifact);
 
+    // macOS: the exe's LINK step needs the framework search paths (the
+    // .tbd stubs) on its own module — raylib's linkMacOS adds them to the
+    // raylib library's module and the -F paths don't propagate to a
+    // consumer's link line (only the -framework flags do). Same package
+    // raylib declares (deduped by hash); lazy, so a Linux/Windows build
+    // never fetches it.
+    if (target.result.os.tag == .macos) {
+        if (b.lazyDependency("xcode_frameworks", .{})) |frameworks| {
+            exe.root_module.addSystemFrameworkPath(frameworks.path("Frameworks"));
+            exe.root_module.addLibraryPath(frameworks.path("lib"));
+        } else {
+            // First run after the dep is needed: zig fetches it now and the
+            // build re-runs; a second `zig build` succeeds.
+            return;
+        }
+    }
+
     // Strip system .so files from the raylib archive before the exe links.
+    // Linux-only: the .so members come from raylib_zig's linkLinux(); the
+    // shell one-liner no-ops on other targets, but skipping it entirely keeps
+    // the macos build from shelling out at all.
     //
     // raylib_zig's linkLinux() calls linkSystemLibrary("GL"/"X11"/...) on the
     // raylib module, which archives the .so files into libraylib.a. LLD
@@ -181,16 +201,41 @@ pub fn build(b: *std.Build) void {
     // Arch, /usr/lib/x86_64-linux-gnu on Debian, etc.). The step depends on
     // the raylib artifact (so the archive exists) and the exe depends on the
     // step (so it runs before linking).
-    const strip_so = b.addSystemCommand(&.{
-        "sh", "-c",
-        "ar t \"$1\" | grep '\\.so$' | while read f; do \"$0\" ar d \"$1\" \"$f\"; done",
-    });
-    strip_so.addArg(b.graph.zig_exe); // $0 — zig executable (for `zig ar d`)
-    strip_so.addFileArg(raylib_artifact.getEmittedBin()); // $1 — libraylib.a path
-    strip_so.step.dependOn(&raylib_artifact.step);
-    exe.step.dependOn(&strip_so.step);
+    if (target.result.os.tag == .linux) {
+        const strip_so = b.addSystemCommand(&.{
+            "sh", "-c",
+            "ar t \"$1\" | grep '\\.so$' | while read f; do \"$0\" ar d \"$1\" \"$f\"; done",
+        });
+        strip_so.addArg(b.graph.zig_exe); // $0 — zig executable (for `zig ar d`)
+        strip_so.addFileArg(raylib_artifact.getEmittedBin()); // $1 — libraylib.a path
+        strip_so.step.dependOn(&raylib_artifact.step);
+        exe.step.dependOn(&strip_so.step);
+    }
 
     b.installArtifact(exe);
+
+    // macOS app bundle: `zig build -Dtarget=aarch64-macos` installs, next to
+    // the bare zig-out/bin/ziglop, a double-clickable zig-out/ziglop.app/
+    // with the exe at Contents/MacOS/ziglop and a minimal Info.plist. No icon
+    // yet (no suitable art; macOS falls back to the generic app icon) and no
+    // codesigning — that needs a mac host; an unsigned bundle runs locally,
+    // a browser-downloaded copy needs `xattr -cr ziglop.app` once.
+    if (target.result.os.tag == .macos) {
+        const app_contents = b.addWriteFiles();
+        _ = app_contents.add("Info.plist", appBundleInfoPlist());
+        const install_plist = b.addInstallDirectory(.{
+            .source_dir = app_contents.getDirectory(),
+            .install_dir = .prefix,
+            .install_subdir = "ziglop.app/Contents",
+        });
+        const install_bundle_exe = b.addInstallFileWithDir(
+            exe.getEmittedBin(),
+            .{ .custom = "ziglop.app/Contents/MacOS" },
+            "ziglop",
+        );
+        install_plist.step.dependOn(&install_bundle_exe.step);
+        b.getInstallStep().dependOn(&install_plist.step);
+    }
 
     const run_step = b.step("run", "Run the app");
     const run_cmd = b.addRunArtifact(exe);
@@ -355,6 +400,42 @@ fn computeGameVersion(b: *std.Build) []const u8 {
 
     // Git unavailable: mark the build as not stamped from tracked history.
     return b.fmt("{d:0>4}.{d:0>2}.unofficial", .{ year, month });
+}
+
+/// The .app bundle's Info.plist. Minimal but complete enough for Finder +
+/// Gatekeeper: identity fields, an LSMinimumSystemVersion matching what Zig
+/// builds against (aarch64 needs macOS 11), and NSHighResolutionCapable so
+/// retina rendering isn't forced to 1x. No icon yet (no suitable art).
+fn appBundleInfoPlist() []const u8 {
+    return \\<?xml version="1.0" encoding="UTF-8"?>
+\\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+\\<plist version="1.0">
+\\<dict>
+\\    <key>CFBundleDevelopmentRegion</key>
+\\    <string>en</string>
+\\    <key>CFBundleExecutable</key>
+\\    <string>ziglop</string>
+\\    <key>CFBundleIdentifier</key>
+\\    <string>com.linusweggehjalsted.ziglop</string>
+\\    <key>CFBundleInfoDictionaryVersion</key>
+\\    <string>6.0</string>
+\\    <key>CFBundleName</key>
+\\    <string>Ziglop</string>
+\\    <key>CFBundlePackageType</key>
+\\    <string>APPL</string>
+\\    <key>CFBundleShortVersionString</key>
+\\    <string>0.0.0</string>
+\\    <key>CFBundleVersion</key>
+\\    <string>0.0.0</string>
+\\    <key>LSMinimumSystemVersion</key>
+\\    <string>11.0</string>
+\\    <key>NSHighResolutionCapable</key>
+\\    <true/>
+\\    <key>NSPrincipalClass</key>
+\\    <string>NSApplication</string>
+\\</dict>
+\\</plist>
+    ;
 }
 
 /// Run a git command, returning its trimmed stdout, or null if git is

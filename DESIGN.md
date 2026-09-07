@@ -1150,7 +1150,7 @@ never touched by replay). It exposes:
 Read order (first hit wins):
   1. in-memory VFS — uploaded zips / fetched custom missions (transient; not
      wired)
-  2. persistent dir — `~/.ziglop/`
+  2. persistent dir — the per-OS default (see Persistent path below)
   3. embedded map — `data/**` + `assets/**` baked into the exe at build time
 
 A read of a shipped path with no persistent/VFS override hits layer 3. A read
@@ -1172,18 +1172,28 @@ existing files require a recompile (which `zig build run` does anyway).
 
 ### Persistent path
 
-Default: `~/.ziglop/` (dotfile in `$HOME`, NOT XDG — chosen for player-
-discoverability of saves/custom content over convention). Holds `autosave.txt`,
+Per-OS defaults, resolved in `native.zig:resolvePersistentPath` (the single
+site; `builtin.os.tag` switch):
+- **Linux**: `~/.ziglop/` — a dotfile in `$HOME`, NOT XDG — chosen for
+  player-discoverability of saves/custom content over convention.
+- **macOS**: `~/Library/Application Support/ziglop/` — the platform convention
+  for player-visible save data (Finder's Go→Folder knows it; the dotfile
+  would be hidden in Finder). Same discoverability-over-convention
+  reasoning, different platform convention.
+
+Holds `autosave.txt`,
 `saves/`, `logs/`, future `replays/` and `missions/`. Overridable via
 `--data-dir` flag / `$ZIGLOP_DATA` env var (dev, portable installs, tests);
 the flag wins over the env var, which wins over the default. For dev work,
 prefer `zig build run -- --data-dir <scratch-dir>` so session logs and
-autosaves don't mix into your real `~/.ziglop/` play data.
-macOS/Windows native paths are DEFERRED but the abstraction does not paint
-us into a corner: each backend just builds the source differently in its
-entry file. Web (emscripten) is WIRED: web.zig mounts an IDBFS slice at
+autosaves don't mix into your real persistent play data. The Windows native
+path is still DEFERRED (the same switch gains a `.windows` arm when that
+build exists). Web (emscripten) is WIRED: web.zig mounts an IDBFS slice at
 /ziglop (IndexedDB-backed, survives browser close) and builds FileSource on
 that dir — same read/write code path as native, just a different dir source.
+The dir name (`ziglop`) rides the planned ziglop→taplop rename sweep — free
+pre-release (no real players with saves yet); the rename adds one site per
+platform default + the `$ZIGLOP_DATA` env var name.
 
 ### Web IDBFS boot race (two-phase boot)
 
