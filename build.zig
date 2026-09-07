@@ -175,6 +175,11 @@ pub fn build(b: *std.Build) void {
         if (b.lazyDependency("xcode_frameworks", .{})) |frameworks| {
             exe.root_module.addSystemFrameworkPath(frameworks.path("Frameworks"));
             exe.root_module.addLibraryPath(frameworks.path("lib"));
+            // The dev diag section calls glGetString directly (GL context
+            // identity for the mac bring-up — see raylib_backend.zig's diag
+            // section); raylib itself goes through its glad loader, so the
+            // framework needs an explicit link from the exe.
+            exe.root_module.linkFramework("OpenGL", .{});
         } else {
             // First run after the dep is needed: zig fetches it now and the
             // build re-runs; a second `zig build` succeeds.

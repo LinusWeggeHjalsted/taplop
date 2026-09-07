@@ -1178,8 +1178,11 @@ Open:
         renders fine on Linux + web). Investigating — the draw path is the
         same `drawTexturePro` every other sprite uses, so the leading
         suspects are mac GL driver differences (core-profile 3.3, stricter
-        GLSL) or the retina framebuffer; needs the friend's Terminal stderr
-        (raylib logs texture/shader warnings) + a screenshot to narrow it.
+        GLSL) or the retina framebuffer. NEXT STEP: the dev diag log
+        (AGENTS → Dev Tools) — the friend sends back
+        `~/Library/Application Support/ziglop/logs/diag.txt` (play to a level
+        so the control probe fires alongside the panel probe), diff the two
+        probes' draw states.
   - [ ] App icon (needs art — an .icns can be generated from a square PNG;
         macOS shows the generic icon until then).
   - [ ] Deferred to the demo/distribution milestone: codesigning +

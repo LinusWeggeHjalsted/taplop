@@ -11583,3 +11583,34 @@ for all platforms; translateInput stays platform-agnostic. Design: DESIGN →
 Input (macOS: Command reports as the Control ids). The same hardware test
 reported 9-slice panels not rendering on mac (fine on Linux/web) — open,
 see TODO → macOS native port.
+
+## Dev diag log (dev-mode, persistent-dir troubleshooting)
+
+The mac bring-up needs data from a machine whose user shouldn't have to
+live in Terminal. Added a best-effort diagnostic log to raylib_backend.zig,
+gated `build_info.dev_mode and !emscripten`, flushed (whole-file rewrite)
+to `logs/diag.txt` in the persistent dir after every section:
+
+- **Boot section** (first render, once GL is live): game_version, target,
+  window points vs framebuffer pixels (the retina check), render-target
+  dims, and GL vendor/renderer/version/GLSL via a direct `extern glGetString`
+  call. raylib itself goes through its internal glad loader, so nothing
+  links raw gl* symbols — the macos build gained an explicit
+  `linkFramework("OpenGL")` on the exe for it (the xcode_frameworks
+  package ships the .tbd stubs; a Linux build already had libGL via
+  raylib's linkLinux).
+- **One-shot probes**: the first plain `drawSprite` (the known-working
+  control — fires on slots/health bars in-game; main-menu buttons are
+  spriteless so the control does NOT fire on the menu alone) and the first
+  `drawNineSlice` (full draw state: sprite id, texture id/dims, panel
+  color + theme_darkest + resolved tint, destination, all nine
+  source/destination piece rects — computed once via the pure
+  `ui.nineSlicePieces` and shared with the draw loop).
+
+Every write is `catch return` — diagnostics never crash the game. Verified
+locally end-to-end (Linux, `--data-dir` scratch): boot section + panel
+probe captured, including the zero-height center pieces of a 2-corner-tall
+bar. Comptime-gated: non-dev builds analyze none of it. The friend's next
+build carries this; the mac 9-slice investigation (panels render nothing on
+mac, everything else renders — draw path audited and identical to working
+sprites) proceeds from his `logs/diag.txt`.

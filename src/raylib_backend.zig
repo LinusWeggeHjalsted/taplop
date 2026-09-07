@@ -41,6 +41,36 @@ const render_width_int: i32 = types.render_width;
 const render_height_int: i32 = types.render_height;
 const render_width: f32 = @floatFromInt(render_width_int);
 const render_height: f32 = @floatFromInt(render_height_int);
+
+// -- Dev diagnostics (dev-mode builds only) --
+// A best-effort diagnostic log flushed to "logs/diag.txt" in the persistent
+// dir after every section (see AGENTS → Dev Tools). Purpose: troubleshooting
+// on machines without a Terminal workflow (the mac port bring-up; TODO →
+// macOS native port) — the file lands next to the session logs where a
+// player can attach it. Sections: boot-time GL context info, a one-shot
+// probe of the first plain sprite draw (the known-WORKING control), and a
+// one-shot probe of the first 9-slice panel draw (the mac panels-don't-
+// render bug — same drawTexturePro path as sprites, so the probe dumps the
+// full draw state to diff against the control). Not on web: the browser
+// console + the node headless trick already cover it (AGENTS → Build &
+// Test). Comptime-gated; in non-dev builds the probe call sites compile out
+// and none of this is analyzed or linked.
+const diag_enabled = @import("build_info").dev_mode and
+    @import("builtin").os.tag != .emscripten;
+
+// GL context identity, for the diag boot section. raylib links GL on every
+// native target (framework on mac, libGL on Linux, opengl32 on Windows), so
+// the symbol resolves; only referenced from diag code (dev builds).
+extern "c" fn glGetString(name: c_int) ?[*:0]const u8;
+const gl_vendor: c_int = 0x1F00;
+const gl_renderer: c_int = 0x1F01;
+const gl_version: c_int = 0x1F02;
+const gl_shading_language_version: c_int = 0x8B8C;
+
+fn glString(name: c_int) []const u8 {
+    const string = glGetString(name) orelse return "(null)";
+    return std.mem.sliceTo(string, 0);
+}
 const render_scale: f32 = render_width / reference_width;
 
 /// Base rasterization size for the TTF font. raylib bakes glyphs into an
@@ -629,6 +659,14 @@ pub const RaylibBackend = struct {
     /// all audio methods no-op (the game runs silent, never crashes).
     audio_ready: bool = false,
 
+    /// Dev diag log buffer (dev-mode builds; empty + unused otherwise).
+    /// Holds the accumulated "logs/diag.txt" content; rewritten whole on
+    /// every flush. Freed in deinit.
+    diag_buffer: std.ArrayListUnmanaged(u8) = .empty,
+    diag_boot_logged: bool = false,
+    diag_sprite_probe_logged: bool = false,
+    diag_panel_probe_logged: bool = false,
+
     /// Last real-clock sample (microseconds) for delta computation. Updated
     /// each deltaMicroseconds() call. Real-clock based (rl.getTime), not
     /// frame-rate based, so waits and gameplay logic are independent of the
@@ -702,6 +740,7 @@ pub const RaylibBackend = struct {
         }
         if (!self.font_is_default) rl.unloadFont(self.font);
         self.frame_arena.deinit();
+        if (diag_enabled) self.diag_buffer.deinit(self.allocator);
         rl.unloadRenderTexture(self.render_target);
         rl.closeWindow();
     }
@@ -1049,6 +1088,7 @@ pub const RaylibBackend = struct {
     ) void {
         _ = viewport;
         _ = self.frame_arena.reset(.retain_capacity);
+        if (diag_enabled and !self.diag_boot_logged) self.diagLogBoot();
 
         // Draw all reference-space content into the offscreen target. The
         // target may be smaller than the 4K reference (build option, default
@@ -1590,6 +1630,9 @@ pub const RaylibBackend = struct {
             .width = @floatFromInt(texture.width),
             .height = @floatFromInt(texture.height),
         };
+        if (diag_enabled and !self.diag_sprite_probe_logged) {
+            self.diagLogFirstSpriteDraw(sprite_id, texture, source orelse whole, destination, tint, alpha);
+        }
         rl.drawTexturePro(texture, source orelse whole, destination, .{ .x = 0, .y = 0 }, 0, toPremultipliedColor(tint, alpha));
     }
 
@@ -1601,8 +1644,7 @@ pub const RaylibBackend = struct {
         const texture = self.getTexture(panel.sprite_id) orelse {
             rl.drawRectangleRec(referenceRectangle(panel.screen_position, panel.width, panel.height), rl.Color.magenta);
             return;
-        };
-        // `default_tint` (pure white) is the "unset" sentinel: a panel that
+        };        // `default_tint` (pure white) is the "unset" sentinel: a panel that
         // didn't pick an explicit color inherits the active theme's `darkest`
         // (mirrors the text-label convention in `drawTextLabel`). An explicit
         // `.color` overrides it.
@@ -1617,7 +1659,11 @@ pub const RaylibBackend = struct {
             .width = panel.width,
             .height = panel.height,
         };
-        for (ui.nineSlicePieces(texture.width, texture.height, destination)) |piece| {
+        const pieces = ui.nineSlicePieces(texture.width, texture.height, destination);
+        if (diag_enabled and !self.diag_panel_probe_logged) {
+            self.diagLogFirstPanelDraw(panel, texture, tint, theme_darkest, destination, pieces);
+        }
+        for (pieces) |piece| {
             if (piece.destination.width <= 0 or piece.destination.height <= 0) continue;
             const source = rl.Rectangle{
                 .x = @floatFromInt(piece.source.x),
@@ -1633,6 +1679,97 @@ pub const RaylibBackend = struct {
             };
             rl.drawTexturePro(texture, source, piece_destination, .{ .x = 0, .y = 0 }, 0, tint);
         }
+    }
+
+    // -- Dev diagnostics methods (see the file-scope diag section) --
+
+    /// Append a line to the diag buffer. Best-effort: an OOM write is
+    /// dropped, never surfaced.
+    fn diagAppend(self: *RaylibBackend, comptime fmt: []const u8, args: anytype) void {
+        self.diag_buffer.print(self.allocator, fmt, args) catch return;
+    }
+
+    /// Rewrite "logs/diag.txt" from the diag buffer. Best-effort: a failed
+    /// write is silent (diagnostics must never crash the game).
+    fn diagFlush(self: *RaylibBackend) void {
+        self.file_source.writeFile("logs/diag.txt", self.diag_buffer.items) catch return;
+    }
+
+    /// Boot section: build identity + GL context info. Called once from the
+    /// first render, when the window + GL context are guaranteed live.
+    fn diagLogBoot(self: *RaylibBackend) void {
+        self.diag_boot_logged = true;
+        self.diagAppend("ziglop dev diag\n", .{});
+        self.diagAppend("game_version {s}\n", .{@import("build_info").game_version});
+        self.diagAppend("target {s}-{s}\n", .{
+            @tagName(@import("builtin").os.tag),
+            @tagName(@import("builtin").cpu.arch),
+        });
+        // Screen (window points) vs render (framebuffer pixels): a 2x gap
+        // here means a retina context without raylib's high-dpi flag — the
+        // letterbox/pointer math operates on points either way.
+        self.diagAppend("window {d}x{d} points, framebuffer {d}x{d} pixels\n", .{
+            rl.getScreenWidth(),
+            rl.getScreenHeight(),
+            rl.getRenderWidth(),
+            rl.getRenderHeight(),
+        });
+        self.diagAppend("render target {d}x{d}\n", .{ render_width_int, render_height_int });
+        self.diagAppend("GL_VENDOR {s}\n", .{glString(gl_vendor)});
+        self.diagAppend("GL_RENDERER {s}\n", .{glString(gl_renderer)});
+        self.diagAppend("GL_VERSION {s}\n", .{glString(gl_version)});
+        self.diagAppend("GL_SHADING_LANGUAGE_VERSION {s}\n", .{glString(gl_shading_language_version)});
+        self.diagFlush();
+    }
+
+    /// One-shot probe of the first plain sprite draw — the known-WORKING
+    /// control the first panel probe is diffed against.
+    fn diagLogFirstSpriteDraw(
+        self: *RaylibBackend,
+        sprite_id: []const u8,
+        texture: rl.Texture2D,
+        source: rl.Rectangle,
+        destination: rl.Rectangle,
+        tint: types.Color,
+        alpha: u8,
+    ) void {
+        self.diag_sprite_probe_logged = true;
+        self.diagAppend("\n[control] first drawSprite\n", .{});
+        self.diagAppend("sprite_id {s}\n", .{sprite_id});
+        self.diagAppend("texture id {d} {d}x{d}\n", .{ texture.id, texture.width, texture.height });
+        self.diagAppend("source x {d} y {d} w {d} h {d}\n", .{ source.x, source.y, source.width, source.height });
+        self.diagAppend("destination x {d} y {d} w {d} h {d}\n", .{ destination.x, destination.y, destination.width, destination.height });
+        self.diagAppend("tint r {d} g {d} b {d} alpha {d}\n", .{ tint.r, tint.g, tint.b, alpha });
+        self.diagFlush();
+    }
+
+    /// One-shot probe of the first 9-slice panel draw — full draw state
+    /// (texture, tint before + after default_tint resolution, destination,
+    /// all nine source/destination rect pairs) to diff against the control.
+    fn diagLogFirstPanelDraw(
+        self: *RaylibBackend,
+        panel: ui.NineSlicePanel,
+        texture: rl.Texture2D,
+        resolved_tint: rl.Color,
+        theme_darkest: types.Color,
+        destination: types.Rectangle,
+        pieces: [9]ui.NineSlicePiece,
+    ) void {
+        self.diag_panel_probe_logged = true;
+        self.diagAppend("\n[probe] first drawNineSlice\n", .{});
+        self.diagAppend("sprite_id {s}\n", .{panel.sprite_id});
+        self.diagAppend("texture id {d} {d}x{d}\n", .{ texture.id, texture.width, texture.height });
+        self.diagAppend("panel_color r {d} g {d} b {d}\n", .{ panel.color.r, panel.color.g, panel.color.b });
+        self.diagAppend("theme_darkest r {d} g {d} b {d}\n", .{ theme_darkest.r, theme_darkest.g, theme_darkest.b });
+        self.diagAppend("resolved_tint r {d} g {d} b {d} a {d}\n", .{ resolved_tint.r, resolved_tint.g, resolved_tint.b, resolved_tint.a });
+        self.diagAppend("destination x {d} y {d} w {d} h {d}\n", .{ destination.x, destination.y, destination.width, destination.height });
+        for (pieces, 0..) |piece, index| {
+            self.diagAppend(
+                "piece {d}: source x {d} y {d} w {d} h {d} destination x {d} y {d} w {d} h {d}\n",
+                .{ index, piece.source.x, piece.source.y, piece.source.width, piece.source.height, piece.destination.x, piece.destination.y, piece.destination.width, piece.destination.height },
+            );
+        }
+        self.diagFlush();
     }
 
     /// Draw text with a black edge-outline of `outline_width` px (in the drawn

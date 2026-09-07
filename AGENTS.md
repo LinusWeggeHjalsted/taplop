@@ -300,6 +300,17 @@ code via `@import("build_info").dev_mode` (comptime-constant per build,
   (ASSERTIONS, SAFE_HEAP, source maps) by default to speed up the emcc link
   (the dominant web-build cost). Pass `-Dweb-debug-runtime=true` to restore
   them for browser-devtools work (source maps, null-pointer checks, etc.).
+- **Dev diag log** (`raylib_backend.zig`, dev-mode builds, not on web):
+  `logs/diag.txt` in the persistent dir, rewritten after each section. Holds
+  boot-time GL context info (window points vs framebuffer pixels, GL
+  vendor/renderer/version/GLSL via a direct `glGetString` call — the macos
+  build links the OpenGL framework for this in build.zig) plus ONE-SHOT draw
+  probes: the first plain sprite draw (the known-working control — fires on
+  slots/health bars in-game) and the first 9-slice panel draw (full draw
+  state: texture, tint, destination, all nine pieces). Purpose: hardware
+  troubleshooting without a Terminal (the mac bring-up). Extend by adding a
+  probe site + a `diagAppend`/`diagFlush` section; never let a diag write
+  surface as a crash (best-effort `catch return` on every write).
   `-fsanitize=undefined` stays on regardless (raylib's C objects reference
   UBSan symbols). The sdf_atlas_generator also builds in Debug (not
   ReleaseFast) for faster clean builds; the SDF generation run is a few
