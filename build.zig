@@ -177,9 +177,10 @@ pub fn build(b: *std.Build) void {
             exe.root_module.addLibraryPath(frameworks.path("lib"));
             // Link OpenGL explicitly: the dev diag section calls
             // glGetString directly (raylib resolves GL through its glad
-            // loader, so nothing else links OpenGL), and the mac upload-
-            // completion fix calls glFinish — see raylib_backend.zig's
-            // completeTextureUploadMac + DONE.md, "mac 9-slice panels".
+            // loader, so nothing else links OpenGL). The unresolved mac
+            // 9-slice panel bug needs it too if a fix lands that touches GL
+            // — see TODO → macOS native port + DONE.md, "mac 9-slice
+            // panels" entries.
             exe.root_module.linkFramework("OpenGL", .{});
         } else {
             // First run after the dep is needed: zig fetches it now and the

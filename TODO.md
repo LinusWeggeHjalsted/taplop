@@ -1174,27 +1174,69 @@ Open:
         chord fires on Cmd with physical ctrl unchanged; one binding set
         still ships. Design: DESIGN → Input (macOS: Command reports as the
         Control ids); history in DONE.md.
-  - [x] **9-slice panels invisible on mac — FIX in flight
-        (`completeTextureUploadMac`).** Bug: optimized mac builds without
-        dev code rendered ALL panels as fully transparent (everything
-        else fine); Debug and release+dev-mode builds rendered them.
-        Bisection trail (4 friend-tested binaries + local tests): the
-        OpenGL framework link is NOT the fix (falsified — release+link
-        broken); optimize level is NOT the fix (release+dev-mode works;
-        Linux release fine); the DEV DIAG probes are load-bearing. Theory
-        that fits every data point: the first lazily-uploaded texture
-        (ui/panel, main menu) uploaded+drawn in the same frame samples as
-        fully transparent on Apple's GL-on-Metal shim without a stall
-        between upload and draw — the panel probe's mid-frame file write
-        IS that stall; a zero texel under the premultiplied blend is
-        src.rgb=0/src.a=0 = invisible (matches "not rendered at all", not
-        black). Fix: `completeTextureUploadMac` (raylib_backend.zig) —
-        glFinish + 2ms sleep after each sprite/outline texture upload,
-        mac-only, NOT dev-gated. PENDING: one friend round trip on a plain
-        release build (`--release=fast`, no dev-mode) to confirm; if it
-        still breaks, next candidate is a longer stall. History: DONE.md,
-        "mac 9-slice panels" entries (including the falsified framework-
-        link theory — keep the link anyway: glGetString/glFinish need it).
+  - [ ] **mac 9-slice panel bug — UNSOLVED, systematic bisection done.**
+        All panels render fully transparent on mac in optimized builds
+        WITHOUT dev-mode code; every build WITH dev-mode code renders them
+        fine. Everything else renders correctly in every build. The FULL
+        data matrix (each row = one binary the friend actually ran):
+        | build | panels |
+        |---|---|
+        | mac `--release=fast`, no dev code, no OpenGL framework link | BROKEN |
+        | mac `--release=fast`, no dev code, WITH framework link | BROKEN |
+        | mac Debug (dev diag present) | renders |
+        | mac `--release=fast -Ddev-mode=true` (dev diag present) | renders |
+        | mac `--release=fast`, dev off, + `completeTextureUploadMac`
+        (glFinish + 2ms sleep after every texture upload, since REVERTED) | BROKEN |
+        | linux `--release=fast`, no dev code | renders |
+        RULED OUT: the framework link (row 2); optimize level (row 4 vs 1);
+        upload→draw stall timing (row 5 — glFinish+2ms sat exactly where
+        the probe's file write sits, still broken); the game-side draw
+        state (probe data from a working mac build is byte-identical to
+        Linux: same texture/tint/rects); Linux repro (row 6).
+        REMAINING HYPOTHESES:
+        (A) a specific diag element is load-bearing — not the stall, but
+        the boot-time glGetString calls (they run before the FIRST
+        beginTextureMode; maybe they force shim context init that raylib's
+        own init doesn't), the mid-frame file writes, or mid-frame
+        allocations (DebugAllocator);
+        (B) BINARY LAYOUT NOISE / latent UB — any dev-mode code addition
+        shifts code/data layout and masks a memory bug; fits "content of
+        the addition doesn't matter" (link/stall/optimize all failed as
+        explanations); if so the real bug is mac-release-only UB somewhere
+        in the render path;
+        (C) an unidentified `build_info.dev_mode` consumer with rendering
+        side effects (the known ones are input-only).
+        NEXT-SESSION PLAN (one friend round trip at a time):
+        1. Enumerate ALL `@import("build_info").dev_mode` consumers
+           (rg the tree) — settle hypothesis C.
+        2. CHEAP FIRST BUILD: `zig build -Dtarget=aarch64-macos
+           -Doptimize=ReleaseSafe` (safety checks on, dev code off). If a
+           panic/stack trace appears → the UB is OURS and the trace points
+           at it (jackpot). If panels render → UB-dependent behavior, hunt
+           the UB. If panels break silently → the bug is below Zig safety
+           (C level or driver), skip to 3.
+        3. Bisect diag pieces in dev builds (friend ladder): disable the
+           panel probe only (one-line comptime toggle in the probe call
+           site) → broken? ⇒ the panel probe's presence between upload and
+           draw is load-bearing (then move the probe call AFTER the piece
+           loop: still broken ⇒ mid-draw position matters; renders ⇒ mere
+           presence); renders? ⇒ disable the boot section next, then the
+           control probe, then everything → whatever toggle flips it to
+           broken IS the load-bearing element.
+        4. Once a BROKEN build WITH diag is constructible (some diag piece
+           disabled), pair it with the render-target READBACK probe
+           (diagLogTargetReadback — already implemented + verified on
+           Linux, never yet exercised on a broken mac build): "pixels
+           present in the target" = blit/present-side failure;
+           "pixels absent" = the draw itself fails → then instrument the
+           failing stage directly.
+        5. Do NOT re-add stall/sleep hacks as fixes — row 5 falsified the
+           stall theory; every landed "fix" must name its mechanism.
+        Instruments available: the dev diag log (AGENTS → Dev Tools) with
+        boot GL info + draw probes + pixel readback; the friend reproduces
+        deterministically per binary and sends diag.txt without Terminal.
+        History: DONE.md "mac 9-slice panels" entries (incl. two falsified
+        theories — framework link, upload stall — kept for the trail).
   - [ ] **Window sizing / high-DPI on mac.** The diag shows window
         1920×1080 points with a 1920×1080 framebuffer — 1:1, i.e. raylib
         runs WITHOUT high-dpi (no retina upscaling — blurry on retina

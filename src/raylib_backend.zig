@@ -62,30 +62,10 @@ const diag_enabled = @import("build_info").dev_mode and
 // native target (framework on mac, libGL on Linux, opengl32 on Windows), so
 // the symbol resolves; only referenced from diag code (dev builds).
 extern "c" fn glGetString(name: c_int) ?[*:0]const u8;
-extern "c" fn glFinish() callconv(.c) void;
-extern "c" fn usleep(microseconds: c_uint) c_int;
 const gl_vendor: c_int = 0x1F00;
 const gl_renderer: c_int = 0x1F01;
 const gl_version: c_int = 0x1F02;
 const gl_shading_language_version: c_int = 0x8B8C;
-
-/// On macOS only: complete a freshly-uploaded texture before its first draw.
-/// EMPIRICAL FIX for the Apple GL-on-Metal shim — optimized builds without
-/// the dev diag probes rendered every 9-slice panel as fully transparent
-/// (ui/panel is the first lazily-uploaded texture of the main menu), while
-/// the SAME game code with the diag probes' mid-frame file-write between
-/// upload and draw rendered correctly; the probes' syscalls were the stall
-/// that made the shim finish staging the upload. glFinish syncs the GL
-/// command stream, the short sleep covers staging glFinish doesn't wait
-/// for. Not dev-gated: release builds need it too. Linux/other targets
-/// compile this out (no such race observed on Mesa). One-time per texture,
-/// bounded by the sprite count — invisible in practice. History + the
-/// bisection trail: DONE.md, "mac 9-slice panels" entries.
-fn completeTextureUploadMac() void {
-    if (comptime @import("builtin").os.tag != .macos) return;
-    glFinish();
-    _ = usleep(2_000);
-}
 
 fn glString(name: c_int) []const u8 {
     const string = glGetString(name) orelse return "(null)";
@@ -2203,7 +2183,6 @@ pub const RaylibBackend = struct {
             // than the design space. See DESIGN → Platform Seam → Render
             // target resolution.
             rl.setTextureFilter(tex, .bilinear);
-            completeTextureUploadMac();
             break :blk tex;
         };
 
@@ -2445,7 +2424,6 @@ pub const RaylibBackend = struct {
         // Bilinear: outline masks are drawn scaled (by world_scale + the
         // render camera zoom), so nearest-neighbor would show hard edges.
         rl.setTextureFilter(tex, .bilinear);
-        completeTextureUploadMac();
         return tex;
     }
 };

@@ -11697,3 +11697,24 @@ at the probed destinations at end of frame; "pixels present" = blit/present
 failure, "pixels absent" = draw failure) — verified locally on Linux, unused
 so far on mac because the bisection resolved first; it's there for the next
 mac mystery.
+
+## mac 9-slice panels — upload-stall theory FALSIFIED, fix reverted
+
+The completeTextureUploadMac fix candidate (glFinish + 2ms usleep after
+every texture upload, mac-only, not dev-gated) did NOT fix the friend's
+build — panels still fully transparent. This falsifies the upload→draw
+stall theory (the stall sat exactly where the dev probe's file write sits)
+and the fix was REVERTED (falsified fixes don't linger as dead code).
+
+Current state of the mystery — six friend-tested/local binaries:
+release-no-dev broken (with and without the OpenGL framework link),
+Debug-dev and release+dev-mode render, release-no-dev+upload-stall broken,
+linux release renders. Ruled out: framework link, optimize level,
+upload-stall timing, game-side draw state (byte-identical on a working mac
+build), Linux repro. The surviving variable: dev-mode-conditional code
+presence — prime suspects now the diag boot glGetString calls (before the
+first beginTextureMode), the diag file writes, mid-frame allocations,
+binary-layout noise masking latent UB, or an unidentified dev_mode consumer.
+Full matrix + hypothesis list + the next-session experiment ladder (incl.
+the ReleaseSafe first build and the never-yet-exercised-on-mac render-target
+readback probe) live in TODO → macOS native port → mac 9-slice panel bug.
