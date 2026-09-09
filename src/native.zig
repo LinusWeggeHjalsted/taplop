@@ -9,6 +9,7 @@
 //! DESIGN → File System & IO + Logging & Replay.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const game = @import("main.zig");
 const session_setup = @import("session_setup.zig");
 const RaylibBackend = @import("raylib_backend.zig").RaylibBackend;
@@ -21,8 +22,20 @@ const crash_dump = @import("crash_dump.zig");
 pub const panic = crash_dump.panic;
 
 pub fn main(init: std.process.Init.Minimal) void {
+    // Debug + ReleaseSafe: DebugAllocator (double-free detection; stack
+    // traces are Debug-only — the std default zeroes them elsewhere).
+    // Other release configs: libc malloc, same as the web build — at those
+    // optimize levels DebugAllocator's safety is off by default
+    // (std.debug.runtime_safety), leaving only its mmap-backed slowness.
+    // The leak report never fires in any config: main() doesn't deinit the
+    // allocator, and process-lifetime allocations are intentional, so a
+    // deinit would only report false positives.
+    // Design: DESIGN → Memory & Budget → Session allocator.
     var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
-    const allocator = debug_allocator.allocator();
+    const allocator = if (builtin.mode == .Debug or builtin.mode == .ReleaseSafe)
+        debug_allocator.allocator()
+    else
+        std.heap.c_allocator;
 
     var threaded_io = std.Io.Threaded.init(allocator, .{});
     defer threaded_io.deinit();

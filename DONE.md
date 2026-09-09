@@ -11723,3 +11723,43 @@ binary-layout noise masking latent UB, or an unidentified dev_mode consumer.
 Full matrix + hypothesis list + the next-session experiment ladder (incl.
 the ReleaseSafe first build and the never-yet-exercised-on-mac render-target
 readback probe) live in TODO → macOS native port → mac 9-slice panel bug.
+
+## Native allocator: c_allocator in release builds (DebugAllocator was boilerplate)
+
+The native entry had used `std.heap.DebugAllocator(.{})` unconditionally
+since the first functional commit ("rendering!") — standard Zig template
+boilerplate, never a decision (the old DONE line "DebugAllocator in debug,
+page_allocator in release" described a config switch that never existed in
+the code). Web got a deliberate exception early (c_allocator —
+DebugAllocator's mmap backing breaks emscripten's JS heap views); native
+never got the same review.
+
+What the audit found (Zig 0.16 std source): DebugAllocator's stack traces
+default to Debug-only (0 frames elsewhere), its safety checks (double-free
+detection, canaries) follow `std.debug.runtime_safety` — on in Debug +
+ReleaseSafe, OFF in ReleaseFast/Small — and its leak report only fires on
+`.deinit()`, which the entry point never calls (and shouldn't:
+process-lifetime allocations — settings, the persistent-dir path — are
+intentional, so a deinit would only report false positives). Net: in
+ReleaseFast the DebugAllocator bought NOTHING — just "quite slow and
+wasteful" (std's own words, >100 bytes overhead per small allocation) with
+an mmap/page-fault-prone backing, sitting next to libc malloc that's
+already linked via raylib.
+
+Fix: `native.zig` main() now picks the allocator by optimize mode —
+DebugAllocator in Debug + ReleaseSafe (double-free detection stays
+available in dev playtesting AND in the safety-net/troubleshooting
+config), `c_allocator` in other release configs (matches the web build's
+allocator exactly). Compiled + verified both branches (Debug and
+ReleaseFast link clean). Design: DESIGN → Memory & Budget → Session
+allocator.
+
+Mac-bug relevance: this lands MID-INVESTIGATION and is a legitimate
+named-mechanism experiment — allocation timing through mmap/page faults
+is exactly the class of thing that differs on Apple's GL-on-Metal shim.
+The in-flight first-state 2×2 binaries (a472891) predate the switch and
+are unaffected (all four cells DebugAllocator-backed). From this commit
+on, any HEAD `--release=fast` mac cell doubles as the allocator
+experiment: if panels render with c_allocator, the DebugAllocator's
+mmap timing on the shim was load-bearing — see TODO → macOS native port
+→ mac 9-slice panel bug (the NOTE in the experiment ladder).

@@ -1214,9 +1214,11 @@ Open:
         (input_handlers), the player_skip_level replay whitelist
         (state.zig), and the diag code (raylib_backend). No rendering
         consumers outside the diag → C folds into A. Also ruled out as a
-        dev/non-dev variable: native.zig uses `DebugAllocator`
-        unconditionally in every config, so the allocator is identical
-        across all cells.
+        dev/non-dev variable: every friend-tested cell so far is
+        DebugAllocator-backed (the c_allocator release switch landed
+        AFTER the first-state 2×2 binaries — see DONE, "Native
+        allocator"), so the allocator is identical across all tested
+        cells.
         EXPERIMENT LADDER (one friend round trip at a time):
         0. IN FLIGHT — first-state 2×2 at a472891 (the first mac build
            + Command-key fix, BEFORE any diag code; dev-mode code there
@@ -1231,6 +1233,15 @@ Open:
            breakage was INTRODUCED between first state and HEAD →
            bisect the mac commits. The rebuilt release-nodev cell also
            confirms the repro survives the key-mapping delta.
+        NOTE (allocator switch, landed after the 2×2 binaries were built):
+        HEAD release builds now use c_allocator instead of DebugAllocator
+        (native.zig, Debug/ReleaseSafe keep it — see DONE). The first-state
+        2×2 binaries predate the switch (a472891, all four cells
+        DebugAllocator-backed — their comparison is unaffected). From the
+        switch on, any HEAD `--release=fast` cell DOUBLES as the allocator
+        experiment: panels render there ⇒ the DebugAllocator's
+        mmap/page-fault timing on the Metal shim was load-bearing — a
+        named mechanism (and the switch is correct regardless).
         1. DONE — dev_mode consumer enumeration (see C above).
         2. CHEAP FIRST BUILD (HEAD): `zig build -Dtarget=aarch64-macos
            -Doptimize=ReleaseSafe` (safety checks on, dev code off). If a

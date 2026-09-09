@@ -3637,11 +3637,21 @@ and threads them through `emitSkillButton`/`emitIconButton`.
 ## Memory & Budget
 
 Arenas are NOT fixed size: they grow from a backing allocator
-(ArenaAllocator → DebugAllocator → page_allocator → OS/wasm). Allocation
+(ArenaAllocator → the session allocator → OS/wasm). Allocation
 fails only when the backing fails: OS OOM (native, rare) or wasm
 `memory.grow` hitting the module maximum / 4 GiB wasm32 ceiling (the
 realistic case). Caps are estimates for now, to be tuned from real
 measurements (see TODO.md).
+
+- **Session allocator (entry files):** native uses `DebugAllocator` in
+  Debug + ReleaseSafe (double-free detection + canaries — the reason to
+  keep safety builds checked) and `c_allocator` in other release configs —
+  the same allocator the web build uses (libc is linked via raylib).
+  Never `std.heap.page_allocator` for the session allocator. The
+  DebugAllocator leak report never fires: the entry point doesn't deinit
+  the allocator, and process-lifetime allocations (settings, the
+  persistent-dir path) are intentional, so a deinit would only report
+  false positives.
 
 - **History residency:** ~26 full GameState deep copies resident (16
   snapshot slots + 8 checkpoints + current + initial). Per-copy size ≈
