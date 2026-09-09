@@ -11813,3 +11813,27 @@ GL-on-Metal shim, or unchecked Zig↔C interop. The remaining question is
 WHICH diag element is load-bearing; the piece bisection (leave-one-out +
 all-on control, five cells) is designed in TODO → mac 9-slice panel bug
 → ladder step 0b.
+
+## mac 9-slice panels — round 3 results: the panel probe is THE necessary piece
+
+Piece bisection (leave-one-out + all-on control; five HEAD release+dev
+cells, c_allocator, each diag piece gated by a temp uncommitted comptime
+toggle): no-boot renders, no-sprite-probe renders, no-readback renders,
+the all-on control renders, and NO-PANEL-PROBE is the ONLY broken cell.
+The panel probe — the mid-frame log that sits between the panel
+texture's lazy upload and its first drawNineSlice — is the necessary
+piece; every other diag piece is individually dispensable.
+
+This pins the mechanism class tightly: the probe makes NO GL calls at
+that position. Its effects there are formatting allocations into the
+diag buffer through the session allocator (it rescues under both
+DebugAllocator and c_allocator), the diagFlush file write, and trivial
+state writes. The previously-falsified glFinish+2ms stall sat at the
+same position and did NOT rescue — so pure GPU sync / time delay is
+out, and the discriminator is CPU-side: allocations vs file-write
+syscalls vs mere presence at the position. Layout-noise (B) is nearly
+dead: the control rendered and three other piece-removals rendered —
+each removal shifts layout too, so "exactly the panel-probe removal is
+layout-unlucky" is implausible. Next round (within-probe split:
+format-only / flush-only / moved-after-draw) is designed in TODO → mac
+9-slice panel bug → ladder step 0c.

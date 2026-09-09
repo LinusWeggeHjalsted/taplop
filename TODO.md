@@ -1201,6 +1201,11 @@ Open:
         comptime toggle, allocator + dev code otherwise identical) | BROKEN |
         | HEAD r2 ReleaseSafe no dev (DebugAllocator, safety ON) | BROKEN
         silently — no panic, no trace |
+        | HEAD r3 (release+dev, c_allocator) no-boot | renders |
+        | HEAD r3 no-sprite-probe | renders |
+        | HEAD r3 no-panel-probe | **BROKEN** |
+        | HEAD r3 no-readback | renders |
+        | HEAD r3 all-on control (rebuilt through the toggle consts) | renders |
         KEY REFRAME (the first-state 2×2, friend-confirmed): the
         dev/non-dev axis was an ARTIFACT of which HEAD cells happened to
         be tested — at first state, release is broken REGARDLESS of dev
@@ -1228,22 +1233,24 @@ Open:
         first-state cells show dev code doesn't rescue release; the diag
         code does).
         REMAINING HYPOTHESES:
-        (A) CONFIRMED at the diag-block level (HEAD r2: diag killed →
-        broken, diag on → renders, allocator + dev code held constant) —
-        a specific diag element masks the bug in release builds. The
-        four pieces, each with a clean gate site in raylib_backend.zig:
-        the boot section (glGetString calls + flush at first render),
-        the sprite control probe (mid-frame log+flush), the panel probe
-        (mid-frame log+flush between upload and first draw), the
-        end-of-frame readback (glReadPixels via loadImageFromTexture).
-        Next: WHICH piece (ladder 0b);
-        (B) WEAKENED but alive — binary layout noise / latent UB: the
-        diag block's layout effect could be the mask (content of the
-        code doesn't matter). The piece bisection's all-on CONTROL cell
-        (rebuilt through the toggle consts) probes exactly this: if the
-        control breaks, the toggling methodology itself perturbs layout
-        and single-piece results are unreliable. If real, the underlying
-        bug is below Zig safety (see RULED OUT) in the render path.
+        (A) CONFIRMED at the PIECE level (HEAD r3 leave-one-out): the
+        PANEL PROBE is the necessary piece — the only breaking cell is
+        the one without it; boot, sprite probe, and readback are
+        individually dispensable, and the all-on control renders. The
+        probe sits between the panel texture's lazy upload and its
+        first draw and makes NO GL calls there — its effects at that
+        position: formatting allocations into the diag buffer via the
+        session allocator (rescues under BOTH DebugAllocator and
+        c_allocator), the diagFlush file write (FileSource → std.Io),
+        and trivial state writes. glFinish + 2ms sleep at the same
+        position did NOT rescue, so the discriminator is CPU-side:
+        allocations vs file-write syscalls vs mere presence — ladder 0c
+        splits these;
+        (B) NEARLY DEAD — layout noise: the control rendered AND three
+        of the four piece-removals rendered (each removal shifts layout
+        too), so a layout coincidence where exactly the panel-probe
+        removal is unlucky is implausible. Survives only if 0c's cells
+        behave incoherently;
         (C) RESOLVED (consumer enumeration done): `build_info.dev_mode`
         has exactly three consumers — the skip_level handler
         (input_handlers), the player_skip_level replay whitelist
@@ -1267,30 +1274,31 @@ Open:
            code specifically rescues — hypothesis A confirmed at block
            level); ReleaseSafe BROKEN SILENTLY (not Zig-safety-catchable
            — the fault is below Zig safety). See the matrix + RULED OUT.
-        0b. NEXT ROUND — piece bisection, LEAVE-ONE-OUT: five HEAD
-           release+dev cells (c_allocator), the four diag pieces each
-           gated by a temp comptime toggle const (uncommitted, worktree
-           build): cells 1-4 disable exactly ONE piece (no-boot /
-           no-sprite-probe / no-panel-probe / no-readback), cell 5 =
-           all-on CONTROL rebuilt through the same toggle consts.
-           Leave-one-out reads NECESSITY: a cell that breaks names a
-           necessary piece; a cell that renders clears its piece.
-           Interpretation: exactly one breaks → that piece is necessary
-           (next: is it sufficient ALONE, and — if the breaking cell
-           isn't the panel probe itself — its remaining probes give the
-           first diag.txt from a BROKEN build); several break →
-           necessary set found; none break → no single piece is
-           necessary → follow up with ONE-ALONE cells (each piece alone,
-           all others off — reads sufficiency); control breaks → the
-           toggle methodology itself perturbs layout (hypothesis B at
-           the methodology level) — treat single-piece results as
-           unreliable and fall back to coarser cuts (e.g. all probes vs
-           boot only).
-           Note: readback is triggered by a probe setting
-           diag_readback_pending, so the no-sprite-probe cell still
-           arms readback via the panel probe — the pieces are gated at
-           their call sites, not perfectly independent; fine for
-           necessity reading.
+        0b. DONE — piece bisection, leave-one-out + control (five HEAD
+           release+dev cells, c_allocator, temp comptime toggle consts).
+           RESULTS: no-boot renders, no-sprite-probe renders, no-readback
+           renders, all-on control renders, NO-PANEL-PROBE BROKEN — the
+           panel probe is the necessary piece; see (A).
+        0c. NEXT ROUND — within-probe split (three HEAD release+dev
+           cells, c_allocator, temp toggles inside the panel probe):
+           - FORMAT-ONLY (appends yes, flush no): formatting work
+             between upload and draw, no file write there (note: may or
+             may not allocate — the boot section may have left enough
+             buffer capacity; a bare-alloc follow-up disambiguates);
+           - FLUSH-ONLY (appends no, flush yes): file write between
+             upload and draw, no formatting;
+           - MOVED-AFTER-DRAW (full probe, call site after the piece
+             loop): same work, NOT between upload and first draw.
+           Interpretation: format-only renders + flush-only broken ⇒
+           the formatting/allocations are load-bearing (minimal-fix
+           candidate: a bare alloc at the site); flush-only renders +
+           format-only broken ⇒ the file write is load-bearing (then a
+           bare syscall at the site); both render ⇒ either alone
+           suffices; both broken ⇒ the pair or the state writes (next
+           split: bare-minimum probe); moved-after-draw broken ⇒ the
+           position between upload and draw is what matters (an
+           upload→draw adjacency mechanism); renders ⇒ position
+           irrelevant, a frame-level effect of the probe's work.
         NOTE (allocator switch, landed after the 2×2 binaries were built):
         HEAD release builds now use c_allocator instead of DebugAllocator
         (native.zig, Debug/ReleaseSafe keep it — see DONE). The first-state
