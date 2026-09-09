@@ -11837,3 +11837,30 @@ each removal shifts layout too, so "exactly the panel-probe removal is
 layout-unlucky" is implausible. Next round (within-probe split:
 format-only / flush-only / moved-after-draw) is designed in TODO → mac
 9-slice panel bug → ladder step 0c.
+
+## mac 9-slice panels — round 4 results: formatting work is the rescuer; ui/panel is the session's first upload
+
+Within-probe split (three HEAD release+dev cells, c_allocator, temp
+uncommitted toggles inside the panel probe): FORMAT-ONLY renders,
+FLUSH-ONLY (the file write at the probe position) BROKEN, FULL-PROBE-
+AFTER-THE-DRAW renders. So the rescuer is the probe's FORMATTING work,
+and it is position-flexible — same frame after the upload, before or
+after the first draw. The boot section's appends (same frame, BEFORE the
+upload) don't rescue (r3 app-3), and the flush-only cell's end-of-frame
+readback appends didn't either — with no probe appends the diag buffer
+had spare capacity so they allocated NOTHING, while the format cells'
+~750 bytes of appends GREW the buffer. Working hypothesis: a
+session-allocator ALLOCATION after ui/panel's upload, within that first
+frame, is the rescuer.
+
+Two deductions from the r4 diag files: (1) the [control] sprite-probe
+section is absent from all three → no drawSprite ever ran → the friend
+judged on the spriteless main menu → the probed first panel
+(1408,824 1024×160) is a MAIN-MENU panel and ui/panel is the session's
+FIRST texture upload (all other textures upload later, in-game, and
+work); (2) the broken cell's readback shows the panel ABSENT from the
+offscreen target (75% sample (190,199,97) vs the working builds'
+(132,93,76) — the panel's own tint) → the failure is INSIDE the target,
+not the blit/present path. Central open question: does the texture
+UPLOAD transparent, or does its draw fail? Round 5 (minimal-rescuer
+split + raw texel dump) is designed in TODO → ladder step 0d.

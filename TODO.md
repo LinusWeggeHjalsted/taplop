@@ -1206,6 +1206,20 @@ Open:
         | HEAD r3 no-panel-probe | **BROKEN** |
         | HEAD r3 no-readback | renders |
         | HEAD r3 all-on control (rebuilt through the toggle consts) | renders |
+        | HEAD r4 (release+dev, within-probe toggles) format-only
+        (appends, no file write at the probe) | renders |
+        | HEAD r4 flush-only (file write at the probe, no appends) | **BROKEN** |
+        | HEAD r4 full probe moved AFTER the draw loop | renders |
+        FIRST-UPLOAD GROUNDING (r4 diags): the [control] sprite-probe
+        section is ABSENT from all three r4 diag files → no drawSprite
+        ever ran → the friend judged on the spriteless main menu → the
+        probed first panel (destination 1408,824 1024×160) is a MAIN-MENU
+        panel, and ui/panel is the session's FIRST texture upload (all
+        other textures upload later, in-game — and work). The broken
+        cell's readback shows the panel ABSENT from the offscreen target
+        (75% sample (190,199,97) vs the working builds' (132,93,76) =
+        the panel's own tint) → the failure is INSIDE the target (the
+        upload or the draw of that texture), NOT the blit/present path.
         KEY REFRAME (the first-state 2×2, friend-confirmed): the
         dev/non-dev axis was an ARTIFACT of which HEAD cells happened to
         be tested — at first state, release is broken REGARDLESS of dev
@@ -1233,23 +1247,24 @@ Open:
         first-state cells show dev code doesn't rescue release; the diag
         code does).
         REMAINING HYPOTHESES:
-        (A) CONFIRMED at the PIECE level (HEAD r3 leave-one-out): the
-        PANEL PROBE is the necessary piece — the only breaking cell is
-        the one without it; boot, sprite probe, and readback are
-        individually dispensable, and the all-on control renders. The
-        probe sits between the panel texture's lazy upload and its
-        first draw and makes NO GL calls there — its effects at that
-        position: formatting allocations into the diag buffer via the
-        session allocator (rescues under BOTH DebugAllocator and
-        c_allocator), the diagFlush file write (FileSource → std.Io),
-        and trivial state writes. glFinish + 2ms sleep at the same
-        position did NOT rescue, so the discriminator is CPU-side:
-        allocations vs file-write syscalls vs mere presence — ladder 0c
-        splits these;
+        (A) REFIRMED + RESHAPED by r4: the rescuer is the probe's
+        FORMATTING work — format-only renders, flush-only (the file
+        write) BROKEN, full-probe-after-the-draw renders (position-
+        flexible: same frame, after the upload, before OR after the
+        first draw). The boot section's appends — same frame but BEFORE
+        the upload — do NOT rescue (r3 app-3). And the flush-only cell's
+        end-of-frame readback appends didn't rescue either — with no
+        probe appends the diag buffer had spare capacity, so they
+        ALLOCATED NOTHING, while the format cells' ~750 bytes of appends
+        GREW the buffer. Working hypothesis: the rescuer is a
+        session-allocator ALLOCATION after ui/panel's upload, within
+        that first frame. Which minimal component suffices (bare
+        alloc? formatting without alloc? field reads?) + the upload-vs-
+        draw split = ladder 0d;
         (B) NEARLY DEAD — layout noise: the control rendered AND three
         of the four piece-removals rendered (each removal shifts layout
         too), so a layout coincidence where exactly the panel-probe
-        removal is unlucky is implausible. Survives only if 0c's cells
+        removal is unlucky is implausible. Survives only if 0d's cells
         behave incoherently;
         (C) RESOLVED (consumer enumeration done): `build_info.dev_mode`
         has exactly three consumers — the skip_level handler
@@ -1279,41 +1294,39 @@ Open:
            RESULTS: no-boot renders, no-sprite-probe renders, no-readback
            renders, all-on control renders, NO-PANEL-PROBE BROKEN — the
            panel probe is the necessary piece; see (A).
-        0c. NEXT ROUND — within-probe split (three HEAD release+dev
-           cells, c_allocator, temp toggles inside the panel probe):
-           - FORMAT-ONLY (appends yes, flush no): formatting work
-             between upload and draw, no file write there (note: may or
-             may not allocate — the boot section may have left enough
-             buffer capacity; a bare-alloc follow-up disambiguates);
-           - FLUSH-ONLY (appends no, flush yes): file write between
-             upload and draw, no formatting;
-           - MOVED-AFTER-DRAW (full probe, call site after the piece
-             loop): same work, NOT between upload and first draw.
-           Interpretation: format-only renders + flush-only broken ⇒
-           the formatting/allocations are load-bearing (minimal-fix
-           candidate: a bare alloc at the site); flush-only renders +
-           format-only broken ⇒ the file write is load-bearing (then a
-           bare syscall at the site); both render ⇒ either alone
-           suffices; both broken ⇒ the pair or the state writes (next
-           split: bare-minimum probe); moved-after-draw broken ⇒ the
-           position between upload and draw is what matters (an
-           upload→draw adjacency mechanism); renders ⇒ position
-           irrelevant, a frame-level effect of the probe's work.
-           ROUND-3 APP-3 DIAG.TXT (the one broken build that logs): boot
-           section ONLY — the friend judged from the spriteless main
-           menu and quit, so the sprite probe never fired and readback
-           was never armed (panel probe off = panel destination never
-           set). Two findings: the boot flush's file write (first
-           render, BEFORE the upload→draw window) does NOT rescue —
-           position-sensitivity corroborated; and no target data was
-           captured (by construction). Round 4 changes that: the
-           probe's state writes (panel destination + readback arming)
-           are OUTSIDE the format/flush gates, so a BROKEN round-4
-           cell that goes in-game captures the first panel-pixel
-           readback from a broken build — panel pixels PRESENT in the
-           target ⇒ blit/present-side failure; ABSENT ⇒ the upload/
-           draw itself fails. The handoff instructions emphasize going
-           in-game before grabbing diag.txt.
+        0c. DONE — within-probe split (three cells). RESULTS: format-only
+           RENDERS, flush-only BROKEN, moved-after-draw RENDERS. The
+           rescuer is the formatting work, position-flexible; the file
+           write is not it. See (A) + the FIRST-UPLOAD GROUNDING note.
+        0d. NEXT ROUND — minimal-rescuer split + the upload-vs-draw
+           probe (four HEAD release+dev cells, c_allocator, temp
+           toggles, all at the standard probe site):
+           - ALLOC-ONLY: one 4096-byte session-allocator alloc + free,
+             nothing else. Renders ⇒ a bare allocation suffices (the
+             buffer-growth theory confirmed); the minimal repro is then
+             "one malloc after the session's first texture upload, in
+             that frame".
+           - STACK-FORMAT-ONLY: the same ~750 bytes of formatting into
+             a fixed stack buffer (no heap alloc), sunk via
+             doNotOptimizeAway (DCE guard). Renders ⇒ formatting CPU
+             work suffices without any allocation.
+           - READS-ONLY: the same field reads summed + sunk. Renders ⇒
+             the field reads (codegen perturbation) suffice.
+           - ALL broken ⇒ the alloc+format combination is needed.
+           - TEXEL-DUMP (the decisive one): flush-only config (both
+             file-write and end-of-frame readback proven NON-rescuing in
+             r4) + a gated block that reads the panel texture's OWN
+             texels (rl.loadImageFromTexture + loadImageColors),
+             copies 3 sample texels (40,40 / 192,192 / 344,344 — all
+             opaque in the art) as RAW 12 bytes to
+             logs/diag-texels.bin via FileSource.writeFile (no session
+             allocs, no formatting). If this cell stays BROKEN, the
+             texel bytes split the fault: alpha 0 ⇒ the texture UPLOADED
+             TRANSPARENT (upload-side corruption of the session's
+             first texture); panel-art values ⇒ the texture is fine
+             and its DRAW fails. If it renders, the GL texture read
+             (or raylib's internal mallocs) is itself a rescuer — a
+             data point, and the dump then describes a healthy build.
         NOTE (allocator switch, landed after the 2×2 binaries were built):
         HEAD release builds now use c_allocator instead of DebugAllocator
         (native.zig, Debug/ReleaseSafe keep it — see DONE). The first-state
