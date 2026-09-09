@@ -11892,3 +11892,49 @@ Color) or the loop building them from `pieces`. Next: read-set bisection
 time in this hunt, a LOCAL investigation: emit aarch64-macos LLVM IR/asm
 with vs without the reads and diff the generated code on the Linux box
 (ladder 0f).
+
+## mac 9-slice panels — ROOT CAUSE FOUND: uninitialized tint (aarch64-macos miscompile)
+
+The IR codegen diff (ladder 0f — done locally, no friend needed): built the
+friend-tested round-5 pair (alloc-only = BROKEN, reads-only = RENDERS) for
+aarch64-macos ReleaseFast with LLVM-IR emission (temp uncommitted
+`getEmittedLlvmIr` in the bisect worktree's build.zig), extracted
+drawNineSlice from both, and diffed.
+
+THE MISCOMPILE: in the broken build, the `tint` of drawNineSlice —
+
+    const tint = if (std.meta.eql(panel.color, ui.default_tint))
+        toRaylibColor(theme_darkest, 255)
+    else
+        toRaylibColor(panel.color, 255);
+
+— compiles to TWO NEVER-INITIALIZED STACK SLOTS (`%4`/`%5` = `alloca
+%raylib.Color`), a pointer-`select` between them, and an i64 load from the
+selected slot passed as `DrawTexturePro`'s tint argument. **There is not a
+single store to either slot in the whole function.** The two inlined
+`toRaylibColor` results' stores are absent — the draw tints with
+uninitialized stack memory. On the friend's machine the garbage byte in
+the alpha position reads 0, and under premultiplied BLEND_ALPHA that is a
+fully transparent draw — invisible panels, everything else fine.
+
+Evidence chain: (1) broken aarch64-macos IR — two Color allocas, pointer
+select, ZERO stores, i64 tint load; (2) reads-only (renders) aarch64-macos
+IR — the same two slots EXIST and ARE stored (i8 stores of r/g/b/a); (3)
+identical source on Linux x86_64 ReleaseFast — stores present (Linux
+renders). Debug builds (-O0) don't run the offending optimization;
+ReleaseSafe does (same LLVM opt level, silent — matches the round-2
+ReleaseSafe-broken cell).
+
+This explains the ENTIRE data matrix including the unified rescue
+condition: any read of `resolved_tint` (probe format, stack-format,
+reads-only, texel dump — all read the tint) forces the color to
+materialize correctly → renders; any cell that doesn't read it (alloc-
+only, flush-only, glFinish+sleep, boot, no-probe) draws the garbage tint
+→ invisible. PREDICTION for the in-flight round 6: the tint-read cell
+renders; texture/pieces/destination reads stay broken.
+
+Attribution (Zig frontend emission vs an LLVM pass eliminating the
+stores) is open — matters only for the upstream report. Our fix is a
+source restructure that avoids the two-branch if/else-expression
+returning an extern struct by value (single `toRaylibColor` call on a
+pre-selected `types.Color`), verified in IR + a friend cell.
