@@ -1174,12 +1174,34 @@ Open:
         chord fires on Cmd with physical ctrl unchanged; one binding set
         still ships. Design: DESIGN → Input (macOS: Command reports as the
         Control ids); history in DONE.md.
-  - [ ] **mac 9-slice panel bug — UNSOLVED, systematic bisection done.**
-        All panels render fully transparent on mac in ReleaseFast builds
-        UNLESS the dev diag code is compiled in (it masks the bug); Debug
-        builds never exhibit it. Everything else renders correctly in
-        every build. The FULL data matrix (each row = one binary the
-        friend actually ran):
+  - [x] **mac 9-slice panel bug — ROOT CAUSE FOUND (pending round-6
+        validation + the fix cell).** All panels render fully transparent
+        on mac in ReleaseFast builds WITHOUT dev-mode code; every build
+        WITH dev-mode code renders them fine... because every diag variant
+        READS the tint. The IR diff (ladder 0f, local) shows the broken
+        aarch64-macos codegen of drawNineSlice's `tint` if/else-expression
+        produces TWO NEVER-STORED `alloca %raylib.Color` slots, a pointer
+        `select` between them, and an i64 load passed as DrawTexturePro's
+        tint — the draw tints with UNINITIALIZED STACK MEMORY; garbage
+        alpha=0 under premultiplied blend = invisible panels. The reads
+        variant (and Linux x86_64, and Debug -O0) materialize the stores
+        correctly. Full evidence chain + explanation of every matrix
+        cell: DONE.md, "mac 9-slice panels — ROOT CAUSE FOUND".
+        Remaining:
+        - [ ] Round-6 validation (in flight): prediction — tint-read cell
+              RENDERS, texture/pieces/destination reads BROKEN.
+        - [ ] THE FIX: restructure the tint to a single call on a
+              pre-selected types.Color (no two-branch if/else returning an
+              extern struct by value) — verify in IR that the stores
+              appear on aarch64-macos, then a friend cell confirms.
+        - [ ] Audit the tree for the same pattern elsewhere (if/else
+              expressions returning extern/C structs by value feeding
+              extern calls — drawSprite/drawTextLabel tint paths are the
+              candidates; sprites render, so drawSprite is presumably
+              fine, but verify the pattern is absent).
+        - [ ] Upstream zig issue with a minimized repro + the IR evidence.
+        The historical matrix + the full experiment ladder are below.
+        (each matrix row = one binary the friend actually ran)
         | build | panels |
         |---|---|
         | mac `--release=fast`, no dev code, no OpenGL framework link | BROKEN |
