@@ -1194,6 +1194,13 @@ Open:
         | FIRST STATE `--release=fast` no dev | BROKEN |
         | FIRST STATE Debug +dev | renders |
         | FIRST STATE Debug no-dev | renders |
+        | HEAD round 2 (c_allocator release switch landed) `--release=fast`
+        no dev | BROKEN |
+        | HEAD r2 `--release=fast -Ddev-mode=true` (diag ON) | renders |
+        | HEAD r2 `--release=fast -Ddev-mode=true`, diag KILLED (temp
+        comptime toggle, allocator + dev code otherwise identical) | BROKEN |
+        | HEAD r2 ReleaseSafe no dev (DebugAllocator, safety ON) | BROKEN
+        silently — no panic, no trace |
         KEY REFRAME (the first-state 2×2, friend-confirmed): the
         dev/non-dev axis was an ARTIFACT of which HEAD cells happened to
         be tested — at first state, release is broken REGARDLESS of dev
@@ -1209,26 +1216,34 @@ Open:
         timing by GL sync alone (glFinish+2ms sat exactly where the
         probe's file write sits, still broken — note the stall build had
         NO allocations, so the probe's mid-frame FORMATTING ALLOCATIONS
-        remain a live sub-candidate); "optimize level" which was
-        previously listed as ruled out — CORRECTED: it is the base
-        variable (the old row-4-vs-1 inference attributed the release
-        delta to dev code, but the first-state cells show dev code
-        doesn't rescue release; the diag code does).
+        remain a live sub-candidate); the allocator as the sole rescuer
+        (HEAD r2 cell 1: c_allocator release-no-dev still broken — the
+        switch stays on its own merits); Zig-safety-catchable UB in game
+        code (HEAD r2 cell 4: ReleaseSafe breaks SILENTLY — checked UB
+        would panic with a trace, so the fault is below Zig safety:
+        raylib C under optimization, the GL-on-Metal shim, or unchecked
+        Zig↔C interop); "optimize level" which was previously listed as
+        ruled out — CORRECTED: it is the base variable (the old row-4-vs-1
+        inference attributed the release delta to dev code, but the
+        first-state cells show dev code doesn't rescue release; the diag
+        code does).
         REMAINING HYPOTHESES:
-        (A) WORKING THEORY — a specific diag element masks the bug in
-        release builds: candidates are the boot-time direct glGetString
-        calls (before the FIRST beginTextureMode), the boot/mid-frame
-        file writes (std.Io syscalls), the mid-frame formatting
-        ALLOCATIONS through the session allocator (the falsified stall
-        test had none — glFinish+sleep is not equivalent), or the
-        end-of-frame readback glReadPixels sync;
-        (B) WEAKENED — binary layout noise / latent UB: any code
-        addition shifts layout; but the first-state cells show generic
-        dev code (skip-level) did NOT shift layout the lucky way, so a
-        layout mask would have to come specifically from the diag code
-        — indistinguishable from (A) until the piece bisection; if real,
-        the underlying bug is mac-ReleaseFast-only UB in the render
-        path.
+        (A) CONFIRMED at the diag-block level (HEAD r2: diag killed →
+        broken, diag on → renders, allocator + dev code held constant) —
+        a specific diag element masks the bug in release builds. The
+        four pieces, each with a clean gate site in raylib_backend.zig:
+        the boot section (glGetString calls + flush at first render),
+        the sprite control probe (mid-frame log+flush), the panel probe
+        (mid-frame log+flush between upload and first draw), the
+        end-of-frame readback (glReadPixels via loadImageFromTexture).
+        Next: WHICH piece (ladder 0b);
+        (B) WEAKENED but alive — binary layout noise / latent UB: the
+        diag block's layout effect could be the mask (content of the
+        code doesn't matter). The piece bisection's all-on CONTROL cell
+        (rebuilt through the toggle consts) probes exactly this: if the
+        control breaks, the toggling methodology itself perturbs layout
+        and single-piece results are unreliable. If real, the underlying
+        bug is below Zig safety (see RULED OUT) in the render path.
         (C) RESOLVED (consumer enumeration done): `build_info.dev_mode`
         has exactly three consumers — the skip_level handler
         (input_handlers), the player_skip_level replay whitelist
@@ -1246,27 +1261,36 @@ Open:
            rescue); Debug renders with and without dev. Optimize level
            is the base variable; the diag code is the only known
            release rescuer — see the KEY REFRAME above.
-        0a. NEXT ROUND — four HEAD cells (all carry the c_allocator
-           release switch, so they're internally consistent; vs
-           pre-switch cells the allocator is a noted delta):
-           - HEAD `--release=fast` no dev (c_allocator) — the ALLOCATOR
-             probe: renders ⇒ named mechanism (mmap/page-fault timing
-             on the shim), likely solved; broken ⇒ allocator ruled out
-             as the sole rescuer.
-           - HEAD `--release=fast -Ddev-mode=true` (diag ON, c_allocator)
-             — regression check that the switch didn't break the
-             known-working dev cell.
-           - HEAD `--release=fast -Ddev-mode=true`, diag KILLED (temp
-             comptime toggle on `diag_enabled` in raylib_backend, built
-             from a worktree, NOT committed) — closes the diag loop:
-             broken (with the allocator cell also broken) ⇒ the diag
-             code specifically rescues → piece bisection (step 3);
-             renders ⇒ the allocator rescued without diag.
-           - HEAD ReleaseSafe no dev (DebugAllocator, safety ON) — the
-             UB probe: panic + stack trace ⇒ jackpot (the UB is ours
-             and the trace names it); renders ⇒ safety-dependent
-             behavior, strong UB hint; broken silently ⇒ the bug is
-             below Zig safety (raylib C level or driver).
+        0a. DONE — four HEAD cells (all c_allocator). RESULTS: allocator
+           probe BROKEN (allocator ruled out as sole rescuer); dev+diag
+           RENDERS (regression passed); dev+diag-killed BROKEN (the diag
+           code specifically rescues — hypothesis A confirmed at block
+           level); ReleaseSafe BROKEN SILENTLY (not Zig-safety-catchable
+           — the fault is below Zig safety). See the matrix + RULED OUT.
+        0b. NEXT ROUND — piece bisection, LEAVE-ONE-OUT: five HEAD
+           release+dev cells (c_allocator), the four diag pieces each
+           gated by a temp comptime toggle const (uncommitted, worktree
+           build): cells 1-4 disable exactly ONE piece (no-boot /
+           no-sprite-probe / no-panel-probe / no-readback), cell 5 =
+           all-on CONTROL rebuilt through the same toggle consts.
+           Leave-one-out reads NECESSITY: a cell that breaks names a
+           necessary piece; a cell that renders clears its piece.
+           Interpretation: exactly one breaks → that piece is necessary
+           (next: is it sufficient ALONE, and — if the breaking cell
+           isn't the panel probe itself — its remaining probes give the
+           first diag.txt from a BROKEN build); several break →
+           necessary set found; none break → no single piece is
+           necessary → follow up with ONE-ALONE cells (each piece alone,
+           all others off — reads sufficiency); control breaks → the
+           toggle methodology itself perturbs layout (hypothesis B at
+           the methodology level) — treat single-piece results as
+           unreliable and fall back to coarser cuts (e.g. all probes vs
+           boot only).
+           Note: readback is triggered by a probe setting
+           diag_readback_pending, so the no-sprite-probe cell still
+           arms readback via the panel probe — the pieces are gated at
+           their call sites, not perfectly independent; fine for
+           necessity reading.
         NOTE (allocator switch, landed after the 2×2 binaries were built):
         HEAD release builds now use c_allocator instead of DebugAllocator
         (native.zig, Debug/ReleaseSafe keep it — see DONE). The first-state

@@ -11796,3 +11796,20 @@ from the diag code). Next round designed in TODO → mac 9-slice panel bug
 → ladder step 0a: four HEAD cells — allocator probe (c_allocator
 release), dev regression check, diag-killed loop-closer, and the
 ReleaseSafe UB probe.
+
+## mac 9-slice panels — round 2 results: the diag code is THE rescuer; the fault is below Zig safety
+
+Four HEAD cells (all carrying the c_allocator release switch), friend-
+tested: release-no-dev BROKEN (allocator ruled out as the sole rescuer —
+the switch stays on its own merits); release+dev+diag RENDERS (the switch
+didn't break the known-working dev cell); release+dev with the diag
+KILLED via a temp comptime toggle BROKEN — with allocator, dev code, and
+everything else held constant, flipping only `diag_enabled` re-breaks
+it, so the diag code specifically rescues (hypothesis A confirmed at the
+block level); ReleaseSafe-no-dev BROKEN SILENTLY — no panic, no trace,
+and every Zig-checkable UB class would panic with a trace in ReleaseSafe,
+so the fault is below Zig safety: raylib C under optimization, the
+GL-on-Metal shim, or unchecked Zig↔C interop. The remaining question is
+WHICH diag element is load-bearing; the piece bisection (leave-one-out +
+all-on control, five cells) is designed in TODO → mac 9-slice panel bug
+→ ladder step 0b.
