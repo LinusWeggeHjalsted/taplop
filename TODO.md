@@ -1299,6 +1299,21 @@ Open:
            position between upload and draw is what matters (an
            upload→draw adjacency mechanism); renders ⇒ position
            irrelevant, a frame-level effect of the probe's work.
+           ROUND-3 APP-3 DIAG.TXT (the one broken build that logs): boot
+           section ONLY — the friend judged from the spriteless main
+           menu and quit, so the sprite probe never fired and readback
+           was never armed (panel probe off = panel destination never
+           set). Two findings: the boot flush's file write (first
+           render, BEFORE the upload→draw window) does NOT rescue —
+           position-sensitivity corroborated; and no target data was
+           captured (by construction). Round 4 changes that: the
+           probe's state writes (panel destination + readback arming)
+           are OUTSIDE the format/flush gates, so a BROKEN round-4
+           cell that goes in-game captures the first panel-pixel
+           readback from a broken build — panel pixels PRESENT in the
+           target ⇒ blit/present-side failure; ABSENT ⇒ the upload/
+           draw itself fails. The handoff instructions emphasize going
+           in-game before grabbing diag.txt.
         NOTE (allocator switch, landed after the 2×2 binaries were built):
         HEAD release builds now use c_allocator instead of DebugAllocator
         (native.zig, Debug/ReleaseSafe keep it — see DONE). The first-state
